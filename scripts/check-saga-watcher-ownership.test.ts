@@ -91,6 +91,32 @@ describe('saga watcher ownership guard', () => {
     ]);
   });
 
+  it('rejects separated take and takeMaybe Redux watcher loops', () => {
+    const source = [
+      "import { call, take, takeMaybe } from 'typed-redux-saga';",
+      "import { start, stop } from '../slice';",
+      'function* consumeExternal(channel: unknown) {',
+      '  while (true) { const event = yield* take(channel); yield* call(forward, event); }',
+      '}',
+      'export function* badSaga() {',
+      '  while (true) {',
+      '    const startAction = yield* take(start);',
+      '    yield* call(startWorker, startAction);',
+      '    const stopAction = yield* takeMaybe(stop);',
+      '    yield* call(stopWorker, stopAction);',
+      '  }',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+    ]);
+    expect(result.violations).toEqual([
+      expect.stringContaining('manual Redux watcher loop'),
+      expect.stringContaining('manual Redux watcher loop'),
+    ]);
+  });
+
   it.each([
     'runningTasks',
     'workerRegistry',
@@ -215,6 +241,26 @@ describe('saga watcher ownership guard', () => {
     expect(result.violations).toEqual([]);
   });
 
+  it('recognizes effects called through supported namespace imports', () => {
+    const source = [
+      "import * as typedEffects from 'typed-redux-saga';",
+      "import * as sagaEffects from 'redux-saga/effects';",
+      "import * as contextEffects from '$store/renderer/utils/context-saga-effects';",
+      "import { load, start, stop } from '../slice';",
+      'export function* goodSaga() {',
+      '  yield* typedEffects.takeEvery(load, loadWorker);',
+      '  yield sagaEffects.takeLatest(start, startWorker);',
+      '  yield* contextEffects.takeLeadingInContext(stop, getContext, stopWorker);',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['goodSaga'], ["import { goodSaga } from './slices/good/sagas/good-saga';"]),
+      { path: 'src/store/renderer/slices/good/sagas/good-saga.ts', content: source },
+    ]);
+    expect(result.watcherCount).toBe(3);
+    expect(result.violations).toEqual([]);
+  });
+
   it('detects duplicate ownership shared by native and contextual watchers', () => {
     const first = [
       "import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';",
@@ -271,6 +317,19 @@ describe('saga watcher ownership guard', () => {
     ]);
     expect(result.violations).toEqual([
       expect.stringContaining('duplicate root saga registration'),
+    ]);
+  });
+
+  it('reports malformed source without throwing on parse diagnostics', () => {
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      {
+        path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts',
+        content: 'export function* badSaga() { yield*',
+      },
+    ]);
+    expect(result.violations).toEqual([
+      'src/store/renderer/slices/bad/sagas/bad-saga.ts:1: TypeScript parse failure',
     ]);
   });
 });

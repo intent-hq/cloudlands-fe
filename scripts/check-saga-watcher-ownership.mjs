@@ -59,6 +59,8 @@ const visit = (node, callback) => {
 };
 const lineFor = (source, node) =>
   source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+const lineForDiagnostic = (source, diagnostic) =>
+  source.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1;
 const isFunction = (node) =>
   ts.isFunctionDeclaration(node) ||
   ts.isFunctionExpression(node) ||
@@ -95,6 +97,19 @@ function importsFor(source) {
   return imports;
 }
 
+function effectNamespacesFor(source) {
+  const namespaces = new Map();
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamespaceImport(bindings)) {
+      namespaces.set(bindings.name.text, statement.moduleSpecifier.text);
+    }
+  }
+  return namespaces;
+}
+
 function isEffectImport(binding) {
   if (
     (binding.specifier === 'typed-redux-saga' || binding.specifier === 'redux-saga/effects') &&
@@ -105,6 +120,15 @@ function isEffectImport(binding) {
     CONTEXT_WATCHERS.has(binding.imported) &&
     /(?:^|\/)context-saga-effects$/.test(binding.specifier)
   );
+}
+
+function effectForExpression(expression, effectNames, effectNamespaces) {
+  if (ts.isIdentifier(expression)) return effectNames.get(expression.text);
+  if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.expression))
+    return undefined;
+  const specifier = effectNamespaces.get(expression.expression.text);
+  const imported = expression.name.text;
+  return specifier && isEffectImport({ imported, specifier }) ? imported : undefined;
 }
 
 function localArray(source, expression) {
@@ -141,13 +165,14 @@ function enclosingWhile(node) {
   return undefined;
 }
 
-function enclosingWorkerCall(node, effectNames) {
+function enclosingWorkerCall(node, effectNames, effectNamespaces) {
   for (let current = node.parent; current; current = current.parent) {
     if (
       ts.isCallExpression(current) &&
       current !== node &&
-      ts.isIdentifier(current.expression) &&
-      effectNames.get(current.expression.text) === 'call'
+      ['call', 'fork', 'spawn'].includes(
+        effectForExpression(current.expression, effectNames, effectNamespaces),
+      )
     )
       return current;
     if (ts.isWhileStatement(current) || isFunction(current)) return undefined;
@@ -171,6 +196,33 @@ function containsIdentifier(node, name) {
   return found;
 }
 
+function laterWorkerCall(source, node, effectNames, effectNamespaces) {
+  const declaration = declarationFor(source, node);
+  const loop = enclosingWhile(node);
+  const owner = enclosingFunction(node);
+  if (!declaration || !loop) return undefined;
+  let found;
+  visit(loop.statement, (child) => {
+    if (
+      found ||
+      child.pos < node.end ||
+      !ts.isCallExpression(child) ||
+      enclosingFunction(child) !== owner ||
+      !['call', 'fork', 'spawn'].includes(
+        effectForExpression(child.expression, effectNames, effectNamespaces),
+      )
+    )
+      return;
+    if (
+      child.arguments
+        .slice(1)
+        .some((argument) => containsIdentifier(argument, declaration.name.text))
+    )
+      found = child;
+  });
+  return found;
+}
+
 function containsActionType(node, parameterName) {
   let found = false;
   visit(node, (child) => {
@@ -185,13 +237,12 @@ function containsActionType(node, parameterName) {
   return found;
 }
 
-function effectCallCount(node, effectNames) {
+function effectCallCount(node, effectNames, effectNamespaces) {
   let count = 0;
   visit(node, (child) => {
     if (
       ts.isCallExpression(child) &&
-      ts.isIdentifier(child.expression) &&
-      effectNames.has(child.expression.text)
+      effectForExpression(child.expression, effectNames, effectNamespaces)
     )
       count++;
   });
@@ -280,14 +331,15 @@ export function inspectSagaWatcherOwnership(files) {
     const source = sources.get(filePath);
     if (!source) continue;
     const imports = importsFor(source);
+    const effectNamespaces = effectNamespacesFor(source);
     const effectNames = new Map();
     for (const [local, binding] of imports) {
       if (isEffectImport(binding)) effectNames.set(local, binding.imported);
     }
     const composed = new Set();
     visit(source, (node) => {
-      if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return;
-      const effect = effectNames.get(node.expression.text);
+      if (!ts.isCallExpression(node)) return;
+      const effect = effectForExpression(node.expression, effectNames, effectNamespaces);
       if (!['call', 'fork', 'spawn'].includes(effect)) return;
       const child = node.arguments[0];
       if (child && ts.isIdentifier(child)) composed.add(child.text);
@@ -308,10 +360,13 @@ export function inspectSagaWatcherOwnership(files) {
     if (!source) continue;
     const diagnostic = source.parseDiagnostics[0];
     if (diagnostic) {
-      violations.push(`${filePath}:${lineFor(source, diagnostic)}: TypeScript parse failure`);
+      violations.push(
+        `${filePath}:${lineForDiagnostic(source, diagnostic)}: TypeScript parse failure`,
+      );
       continue;
     }
     const imports = importsFor(source);
+    const effectNamespaces = effectNamespacesFor(source);
     const effectNames = new Map();
     for (const [local, binding] of imports) {
       if (isEffectImport(binding)) effectNames.set(local, binding.imported);
@@ -338,8 +393,9 @@ export function inspectSagaWatcherOwnership(files) {
       visit(node, (child) => {
         if (
           ts.isCallExpression(child) &&
-          ts.isIdentifier(child.expression) &&
-          ['fork', 'spawn'].includes(effectNames.get(child.expression.text))
+          ['fork', 'spawn'].includes(
+            effectForExpression(child.expression, effectNames, effectNamespaces),
+          )
         )
           createsExecution = true;
       });
@@ -347,8 +403,8 @@ export function inspectSagaWatcherOwnership(files) {
     });
     const executionResults = new Set();
     visit(source, (node) => {
-      if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) return;
-      const effect = effectNames.get(node.expression.text);
+      if (!ts.isCallExpression(node)) return;
+      const effect = effectForExpression(node.expression, effectNames, effectNamespaces);
       if (!effect) return;
       const first = node.arguments[0];
       if (WILDCARD_EFFECTS.has(effect) && wildcardPattern(effect, node))
@@ -371,7 +427,8 @@ export function inspectSagaWatcherOwnership(files) {
         (effect === 'take' || effect === 'takeMaybe') &&
         pattern &&
         enclosingWhile(node) &&
-        enclosingWorkerCall(node, effectNames)
+        (enclosingWorkerCall(node, effectNames, effectNamespaces) ||
+          laterWorkerCall(source, node, effectNames, effectNamespaces))
       ) {
         const importedPattern =
           ts.isStringLiteralLike(pattern) ||
@@ -434,15 +491,19 @@ export function inspectSagaWatcherOwnership(files) {
             let routedBranches = 0;
             visit(declaration.body, (child) => {
               if (ts.isIfStatement(child) && containsActionType(child.expression, parameter)) {
-                if (effectCallCount(child.thenStatement, effectNames) > 0) routedBranches++;
-                if (child.elseStatement && effectCallCount(child.elseStatement, effectNames) > 0)
+                if (effectCallCount(child.thenStatement, effectNames, effectNamespaces) > 0)
+                  routedBranches++;
+                if (
+                  child.elseStatement &&
+                  effectCallCount(child.elseStatement, effectNames, effectNamespaces) > 0
+                )
                   routedBranches++;
               } else if (
                 ts.isSwitchStatement(child) &&
                 containsActionType(child.expression, parameter)
               ) {
                 routedBranches += child.caseBlock.clauses.filter(
-                  (clause) => effectCallCount(clause, effectNames) > 0,
+                  (clause) => effectCallCount(clause, effectNames, effectNamespaces) > 0,
                 ).length;
               }
             });
@@ -496,8 +557,7 @@ export function inspectSagaWatcherOwnership(files) {
         }
         if (
           ts.isCallExpression(child) &&
-          ts.isIdentifier(child.expression) &&
-          effectNames.get(child.expression.text) === 'cancel' &&
+          effectForExpression(child.expression, effectNames, effectNamespaces) === 'cancel' &&
           containsIdentifier(child, name)
         )
           cancelsEntries = true;
