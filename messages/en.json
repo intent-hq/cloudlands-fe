@@ -5537,8 +5537,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_label": "View PR ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Opens monitored pull request {repo}#{number} on GitHub in your browser.",
   "workspace_card_morePrs_label": "+{count}",
-  "workspace_card_morePrs_tooltip_one": "1 more active monitored PR",
-  "workspace_card_morePrs_tooltip_many": "{count} more active monitored PRs",
+  "workspace_card_morePrs_tooltip_one": "1 more workspace PR",
+  "workspace_card_morePrs_tooltip_many": "{count} more workspace PRs",
   "bgExecutor_service_generateFailed_error": "Failed to generate",
   "bgExecutor_service_unavailable_error": "One-shot completion is not available for the current provider",
   "bgExecutor_service_noResult_error": "No result extracted from the model response"

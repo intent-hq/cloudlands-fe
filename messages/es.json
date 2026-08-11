@@ -5537,8 +5537,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_label": "Ver PR ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Abre el pull request supervisado {repo}#{number} en GitHub en tu navegador.",
   "workspace_card_morePrs_label": "+{count}",
-  "workspace_card_morePrs_tooltip_one": "1 PR supervisado activo más",
-  "workspace_card_morePrs_tooltip_many": "{count} PRs supervisados activos más",
+  "workspace_card_morePrs_tooltip_one": "1 PR del espacio de trabajo más",
+  "workspace_card_morePrs_tooltip_many": "{count} PRs del espacio de trabajo más",
   "bgExecutor_service_generateFailed_error": "Error al generar",
   "bgExecutor_service_unavailable_error": "La finalización de una sola pasada no está disponible para el proveedor actual",
   "bgExecutor_service_noResult_error": "No se extrajo ningún resultado de la respuesta del modelo"
