@@ -58,6 +58,7 @@ import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
   hydrateAgentsRequested,
+  setAgentsLoaded,
   workspaceAgentsReducer,
   emptyWorkspaceAgentState,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -790,6 +791,31 @@ describe('lifecycleReadSaga', () => {
     ]);
     await settle();
     expect(mocks.agents.list).toHaveBeenCalledTimes(2);
+    await stop(run.task);
+  });
+
+  it('does not cancel concurrent agent hydrates across workspaces', async () => {
+    const otherWorkspaceId = 'ws-other';
+    const resolvers: Record<string, (value: AgentSession[]) => void> = {};
+    mocks.agents.list.mockImplementation(
+      (workspaceId: string) =>
+        new Promise<AgentSession[]>((resolve) => {
+          resolvers[workspaceId] = resolve;
+        }),
+    );
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+    resolvers[WS]!([]);
+    resolvers[otherWorkspaceId]!([]);
+    await settle();
+
+    expect(run.actions).toContainEqual(setAgentsLoaded(WS, true));
+    expect(run.actions).toContainEqual(setAgentsLoaded(otherWorkspaceId, true));
     await stop(run.task);
   });
 

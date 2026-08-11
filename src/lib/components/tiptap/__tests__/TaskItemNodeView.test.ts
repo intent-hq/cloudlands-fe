@@ -62,6 +62,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectSelectedNoteId: Object.assign(() => mockReadable(null), {
     select: () => null,
   }),
+  selectNotesVersion: () => mockReadable(0),
   selectWorkspaceNotesState: () => ({
     subscribe(fn: (value: { initialized: boolean }) => void) {
       return linkedNoteState.initializedReadable.subscribe((initialized) => fn({ initialized }));
@@ -216,6 +217,31 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     // The checkbox is a div with role="checkbox" (custom checkbox component)
     const checkbox = container.querySelector('[role="checkbox"]');
     expect(checkbox).toBeTruthy();
+  });
+
+  it('renders dependency and conflict chips for a linked task', async () => {
+    linkedNoteState.set({
+      id: 'task-with-relations',
+      workspaceId: 'workspace-1',
+      title: 'Task with relations',
+      metadata: {
+        task: {
+          status: 'in_progress',
+          dependsOn: ['dependency-1'],
+          conflictsWith: ['conflict-1'],
+        },
+      },
+    });
+    linkedNoteState.setInitialized(true);
+
+    const { getByText } = render(TestTaskItemNodeView, {
+      props: createLinkedTaskProps('task-with-relations'),
+    });
+
+    const dependencyChip = await waitFor(() => getByText('Waits on 1'));
+    const conflictChip = getByText('Conflicts 1');
+    expect(dependencyChip.getAttribute('title')).toBe('Waiting on: Task with relations');
+    expect(conflictChip.getAttribute('title')).toBe('May conflict with: Task with relations');
   });
 
   it('should render unchecked checkbox for todo status', () => {

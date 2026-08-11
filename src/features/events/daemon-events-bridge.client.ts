@@ -156,14 +156,22 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
+  bulkUpsertSessions,
+  removeSession,
   renameSession,
   setProcessQueueHint,
   clearProcessQueueHint,
   updateSession,
   updateAgentDigest,
+  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import { hydrateAgentsRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  hydrateAgentsRequested,
+  removeAgent,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+import { pruneRecentlyClosed } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -172,6 +180,8 @@ import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
+  markWorkspacePendingDeletion,
+  removeWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
@@ -179,6 +189,12 @@ import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-s
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
 import { ensureAgentSession } from '$features/agent/agent-read-service';
+import {
+  getPendingAgentDeletion,
+  isAgentDeletionPending,
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
 import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
@@ -2076,6 +2092,11 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
  * blocked from the store for the remainder of the post-delete grace window.
  */
 function handleWorkspaceCreatedEvent(workspaceId: string): void {
+  const tombstoneTimer = workspaceDeleteTombstoneTimers.get(workspaceId);
+  if (tombstoneTimer) {
+    clearTimeout(tombstoneTimer);
+    workspaceDeleteTombstoneTimers.delete(workspaceId);
+  }
   appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
   const state = appStore.state as {
     agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
@@ -2086,6 +2107,167 @@ function handleWorkspaceCreatedEvent(workspaceId: string): void {
     agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;
   if (!hasLocalState) return;
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(hydrateAgentsRequested(workspaceId));
+}
+
+/**
+ * How long a bridge-armed pending-delete tombstone outlives the daemon's
+ * commit deadline, so stale `list`/`get` responses computed before the commit
+ * cannot resurrect the row. Mirrors WORKSPACE_DELETION_TOMBSTONE_TTL_MS /
+ * AGENT_DELETION_TOMBSTONE_TTL_MS in the owning sagas (kept local — the
+ * bridge stays saga-import-free).
+ */
+const DELETE_TOMBSTONE_TTL_MS = 60_000;
+/** Fallback window used when a schedule event carries no parsable deleteAt. */
+const DELETE_GRACE_FALLBACK_MS = 15_000;
+
+/** Bridge-armed tombstone-clear timers, keyed by workspaceId / agentId. */
+const workspaceDeleteTombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const agentDeleteTombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** ms until `deleteAt` + the tombstone TTL (fallback window when unparsable). */
+function tombstoneClearDelayMs(deleteAt: unknown): number {
+  const deadline = typeof deleteAt === 'string' ? Date.parse(deleteAt) : Number.NaN;
+  const untilDeadline = Number.isFinite(deadline)
+    ? Math.max(0, deadline - Date.now())
+    : DELETE_GRACE_FALLBACK_MS;
+  return untilDeadline + DELETE_TOMBSTONE_TTL_MS;
+}
+
+/**
+ * `workspace:delete-scheduled` (PROTOCOL §5.1 delete grace window, v6.7) —
+ * `{ workspaceId, deleteAt }`. In the originating window the operations saga
+ * already hid the row and set the tombstone, so the dispatches below are
+ * idempotent no-ops there; in OTHER windows/clients this is the only signal,
+ * so hide the row and set the `pendingDeletions` tombstone — the tombstone is
+ * what stops a stale `workspace.get`/`list` response (computed before the
+ * schedule, arriving after) from resurrecting the row via
+ * `setWorkspaceEntity` (monorepo#1977). Local agent/chat state is deliberately
+ * NOT purged: a cancel must restore instantly, and the commit's
+ * `workspace:deleted` performs the purge. The tombstone is cleared on
+ * `workspace:delete-cancelled`, on `workspace:created` (recycled ID), or by
+ * the timer at deleteAt + grace — the timer only lifts the tombstone (nothing
+ * refetches here), so after a missed cancel event the row converges back on
+ * the next workspace-list refetch rather than instantly.
+ *
+ * Late-delivery race: if the originating window's undo completes before this
+ * event is delivered (slow delivery / reconnect replay), the row is
+ * transiently re-hidden — but `delete-scheduled`/`delete-cancelled` are
+ * ordered on the stream, so the cancelled event that must follow lifts the
+ * tombstone and its refetch restores the row.
+ */
+function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  appStore.dispatch(removeWorkspaceEntity(workspaceId));
+  appStore.dispatch(markWorkspacePendingDeletion(workspaceId));
+  navigateAwayIfViewing(workspaceId).catch((error) => {
+    logger.warn('navigateAwayIfViewing failed after workspace:delete-scheduled', error);
+  });
+  const existing = workspaceDeleteTombstoneTimers.get(workspaceId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    workspaceDeleteTombstoneTimers.delete(workspaceId);
+    appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
+  }, tombstoneClearDelayMs(data?.deleteAt));
+  workspaceDeleteTombstoneTimers.set(workspaceId, timer);
+}
+
+/**
+ * `workspace:delete-cancelled` (PROTOCOL §5.1, v6.7) — `{ workspaceId }`. Lift
+ * the tombstone and refetch the workspace so a window that hid the pending row
+ * restores it promptly instead of waiting for the next unrelated refetch. The
+ * payload carries no row, so reuse the single-flighted `workspace.get` →
+ * `setWorkspaceEntity` fetch. In the originating window the undo saga already
+ * restored its snapshot; the refetch simply reconciles.
+ */
+function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
+  const timer = workspaceDeleteTombstoneTimers.get(workspaceId);
+  if (timer) {
+    clearTimeout(timer);
+    workspaceDeleteTombstoneTimers.delete(workspaceId);
+  }
+  appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
+  void reconcileWorkspaceAgentSummary(workspaceId);
+}
+
+/**
+ * `agent:delete-scheduled` (PROTOCOL §5.5 delete grace window, v6.7) —
+ * `{ agentId, workspaceId, deleteAt }`. In the originating window the agent
+ * mutation saga already soft-hid the session and registered the pending entry
+ * (before the RPC resolved, so before this event can arrive) — skip so the
+ * saga's own snapshot/tombstone lifecycle stays authoritative. In OTHER
+ * windows, mirror the saga's soft-hide and ALWAYS register a registry entry —
+ * with a snapshot when the session is hydrated locally (instant restore on
+ * cancel), and without one otherwise, so the id is still tombstoned against a
+ * stale `agent.get`/`list` begun before the schedule (no `pendingDeleteAt` on
+ * the row) that resolves after it; a snapshot-less entry restores via the
+ * cancel handler's reconcile refetch. The bridge timer lifts the entry at
+ * deleteAt + grace — after the commit's `agent:deleted` the entry is exactly
+ * the stale-refetch tombstone, and if a cancel event was missed the agent
+ * converges back on the next refetch once the entry lifts. Same
+ * late-delivery race note as the workspace handler above: an undo completing
+ * before this event lands transiently re-hides, and the ordered cancelled
+ * event restores.
+ */
+function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const agentId = data?.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return;
+  if (isAgentDeletionPending(agentId)) return;
+  const snapshot = appStore.state.agentSessions?.byAgentId[agentId];
+  appStore.dispatch(removeAgent(workspaceId, agentId));
+  appStore.dispatch(removeSession(agentId));
+  appStore.dispatch(removeWatchedAgent(workspaceId, agentId));
+  appStore.dispatch(pruneRecentlyClosed(workspaceId, { agentId }));
+  // Always register the tombstone — even without a locally hydrated session.
+  // An `agent.get`/`agent.list` begun before this event (no `pendingDeleteAt`
+  // on the row) can resolve after it; without an entry that stale read would
+  // resurrect the agent. Snapshot-less entries restore via the cancel
+  // handler's reconcile refetch instead of an instant snapshot.
+  setPendingAgentDeletion({ wsId: workspaceId, agentId, snapshot });
+  const existing = agentDeleteTombstoneTimers.get(agentId);
+  if (existing) clearTimeout(existing);
+  const entry = getPendingAgentDeletion(agentId);
+  const timer = setTimeout(() => {
+    agentDeleteTombstoneTimers.delete(agentId);
+    // Only lift the exact entry this timer was armed for — a later
+    // re-delete's fresh entry (own saga or a newer schedule event) must
+    // keep its own lifecycle.
+    if (getPendingAgentDeletion(agentId) === entry) {
+      removePendingAgentDeletion(agentId);
+    }
+  }, tombstoneClearDelayMs(data?.deleteAt));
+  agentDeleteTombstoneTimers.set(agentId, timer);
+}
+
+/**
+ * `agent:delete-cancelled` (PROTOCOL §5.5, v6.7) — `{ agentId, workspaceId }`.
+ * Restore the soft-hidden session from the registry snapshot when one exists
+ * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
+ * canonical agent list — this also covers a window that filtered the pending
+ * row out of a wire response before ever holding a snapshot. In the
+ * originating window the undo saga restores its own snapshot; the registry
+ * entry is already gone by the time this event lands, so only the reconcile
+ * refetch runs there.
+ */
+function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const agentId = data?.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return;
+  const timer = agentDeleteTombstoneTimers.get(agentId);
+  if (timer) {
+    clearTimeout(timer);
+    agentDeleteTombstoneTimers.delete(agentId);
+  }
+  const pending = getPendingAgentDeletion(agentId);
+  if (pending) {
+    removePendingAgentDeletion(agentId);
+    if (pending.snapshot) {
+      appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
+      appStore.dispatch(upsertSession(pending.snapshot));
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    }
+  }
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
 }
 
@@ -2606,6 +2788,26 @@ export function routeDaemonEventsNotification(
     handleWorkspaceCreatedEvent(workspaceId);
     // fall through so the activity timeline records the creation.
   }
+  // Delete grace window (§5.1/§5.5, v6.7): schedule events hide the pending
+  // row in every window (the originating one already did — idempotent), and
+  // cancel events restore it promptly instead of waiting for the next
+  // refetch (monorepo#1977).
+  if (type === 'workspace:delete-scheduled') {
+    handleWorkspaceDeleteScheduledEvent(event, workspaceId);
+    return;
+  }
+  if (type === 'workspace:delete-cancelled') {
+    handleWorkspaceDeleteCancelledEvent(workspaceId);
+    return;
+  }
+  if (type === 'agent:delete-scheduled') {
+    handleAgentDeleteScheduledEvent(event, workspaceId);
+    return;
+  }
+  if (type === 'agent:delete-cancelled') {
+    handleAgentDeleteCancelledEvent(event, workspaceId);
+    return;
+  }
   // `workspace:updated` (§6.5) — merge the applied delta onto the workspace
   // entity so agent-driven `workspace.setTitle` / `workspace.update` writes
   // reflect in the sidebar/header live. Side effect, never an early return:
@@ -2965,6 +3167,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
+  // Delete grace window (§5.1, v6.7): schedule/cancel events keep the hidden
+  // pending row consistent across windows (monorepo#1977). The agent-side
+  // counterparts are covered by the `agent:*` wildcard above.
+  'workspace:delete-scheduled',
+  'workspace:delete-cancelled',
   // Daemon filter is exact-match unless the pattern ends in `:*`; a bare
   // `task:ready-tasks-changed` therefore silently drops `task:status-changed`
   // and every other task family the bridge's reducers act on. Use the
@@ -3026,6 +3233,14 @@ export function disposeDaemonEventsRoutingState(): void {
     clearTimeout(timer);
   }
   tasksRefreshTimersByWorkspace.clear();
+  for (const timer of workspaceDeleteTombstoneTimers.values()) {
+    clearTimeout(timer);
+  }
+  workspaceDeleteTombstoneTimers.clear();
+  for (const timer of agentDeleteTombstoneTimers.values()) {
+    clearTimeout(timer);
+  }
+  agentDeleteTombstoneTimers.clear();
   scriptOutputDecoders.clear();
   agentSummaryFetchInFlightByWorkspace.clear();
   agentSummaryFetchFollowUpWantedByWorkspace.clear();
