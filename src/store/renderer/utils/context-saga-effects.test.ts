@@ -422,6 +422,58 @@ describe('context-scoped saga effects', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('completes an idle single-flight watcher on caller-owned channel END', async () => {
+    const input = channel<WorkMessage>();
+    const close = vi.spyOn(input, 'close');
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, function* () {
+      yield* takeSingleFlightInContext(
+        input,
+        (message) => message.context,
+        function* worker() {},
+      );
+    });
+    const completion = task.toPromise();
+    await settle();
+
+    input.close();
+
+    await expect(completion).resolves.toBeUndefined();
+    expect(task.isCancelled()).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains accepted single-flight trailing work once after caller-owned channel END', async () => {
+    const input = channel<WorkMessage>();
+    const close = vi.spyOn(input, 'close');
+    const harness = createWorkerHarness();
+    const a1 = harness.addGate('a1');
+    const a2 = harness.addGate('a2');
+    const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, function* () {
+      yield* takeSingleFlightInContext(input, (message) => message.context, harness.worker, 'run');
+    });
+    const completion = task.toPromise();
+    await settle();
+
+    input.put({ context: 'a', id: 'a1' });
+    await settle();
+    input.put({ context: 'a', id: 'a2' });
+    await settle();
+    input.close();
+    input.put({ context: 'a', id: 'a3' });
+    await settle();
+
+    expect(harness.started).toEqual(['run:a1']);
+    a1.resolve();
+    await settle();
+    expect(harness.started).toEqual(['run:a1', 'run:a2']);
+    a2.resolve();
+
+    await expect(completion).resolves.toBeUndefined();
+    expect(harness.finished).toEqual(['a1', 'a2']);
+    expect(task.isCancelled()).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('propagates unhandled single-flight worker failures through attached tasks', async () => {
     const input = stdChannel();
     const error = new Error('single-flight worker failed');

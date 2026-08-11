@@ -1,7 +1,7 @@
 import type { ActionMatchingPattern, ActionPattern, Saga } from '@redux-saga/types';
 import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import type { TakeableChannel, Task } from 'redux-saga';
-import { call, cancel, fork, take, type SagaGenerator } from 'typed-redux-saga';
+import { call, cancel, cancelled, fork, take, type SagaGenerator } from 'typed-redux-saga';
 
 type ContextWorker<PrefixArgs extends unknown[], Message> = Saga<[...PrefixArgs, Message]>;
 type ContextSource<Message> = ActionPattern | TakeableChannel<Message>;
@@ -133,7 +133,7 @@ function* watchSingleFlightInContext<Message, PrefixArgs extends unknown[]>(
       if (!task.isRunning() && slots.get(context) === slot) slots.delete(context);
     }
   } finally {
-    slots.clear();
+    if (yield* cancelled()) slots.clear();
   }
 }
 
@@ -238,7 +238,7 @@ export function* takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
  * message received while that context is running for one trailing rerun. Returning
  * `{ context, cancel: true }` cancels and retires that context without running queued
  * trailing work. Workers remain attached to the watcher, and caller-owned channels
- * are never closed.
+ * are never closed. Natural channel END stops new intake and drains accepted trailing work.
  */
 export function takeSingleFlightInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,
