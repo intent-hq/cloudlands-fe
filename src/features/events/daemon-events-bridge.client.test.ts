@@ -5066,6 +5066,456 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
     expect(state.workspace.pendingDeletions[TOMBSTONED_WS]).toBeUndefined();
   });
+
+  it('disarms the pending-delete tombstone timer on a recycled ID', async () => {
+    const TIMER_WS = 'ws-bridge-recycled-timer';
+    const { markWorkspacePendingDeletion, clearWorkspacePendingDeletion } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      // A schedule event arms the self-lift timer…
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-ws-del-scheduled-recycle-timer',
+            workspaceId: TIMER_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: TIMER_WS, deleteAt: new Date(Date.now() + 15_000).toISOString() },
+          },
+        },
+      });
+      // …then the ID is recycled by a new create, which must disarm it.
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-workspace-created-recycle-timer',
+            workspaceId: TIMER_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:created',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: TIMER_WS },
+          },
+        },
+      });
+
+      // A later delete of the recycled workspace sets a fresh tombstone; the
+      // stale timer (had it survived) would fire and wrongly lift it.
+      appStore.dispatch(markWorkspacePendingDeletion(TIMER_WS));
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+
+      const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
+      expect(state.workspace.pendingDeletions[TIMER_WS]).toBe(true);
+      appStore.dispatch(clearWorkspacePendingDeletion(TIMER_WS));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('daemonEventsBridge (delete grace window schedule/cancel events, monorepo#1977)', () => {
+  const PENDING_WS = 'ws-bridge-pending-del';
+  const PENDING_AGENT = 'agent-bridge-pending-del';
+  const DELETE_AT = new Date(Date.now() + 15_000).toISOString();
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    const { clearPendingAgentDeletions } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    clearPendingAgentDeletions();
+    appStore.dispatch(clearAllSessions());
+    const { clearWorkspacePendingDeletion, removeWorkspaceEntity } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    appStore.dispatch(clearWorkspacePendingDeletion(PENDING_WS));
+    appStore.dispatch(removeWorkspaceEntity(PENDING_WS));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    navigateAwayIfViewingSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function makeWorkspace(overrides: Record<string, unknown> = {}) {
+    return {
+      id: PENDING_WS,
+      title: 'Pending WS',
+      path: '/tmp/pending-ws',
+      status: 'Active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  async function workspaceRow(): Promise<unknown> {
+    const { selectWorkspaceById } = await import(
+      '$store/renderer/slices/workspace/workspace-selectors'
+    );
+    return selectWorkspaceById.select(appStore.state, PENDING_WS);
+  }
+
+  it('workspace:delete-scheduled hides the row, sets the tombstone, and blocks a stale entity write', async () => {
+    const { setWorkspaceEntity } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    appStore.dispatch(setWorkspaceEntity(makeWorkspace() as never));
+    expect(await workspaceRow()).toBeDefined();
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-ws-del-scheduled',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    expect(await workspaceRow()).toBeUndefined();
+    const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
+    expect(state.workspace.pendingDeletions[PENDING_WS]).toBe(true);
+    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(PENDING_WS);
+
+    // Second-window stale-read race (monorepo#1977): a workspace.get/list
+    // response generated BEFORE the schedule (no pendingDeleteAt on the row)
+    // that lands after must NOT resurrect the row — the tombstone blocks it.
+    appStore.dispatch(setWorkspaceEntity(makeWorkspace() as never));
+    expect(await workspaceRow()).toBeUndefined();
+  });
+
+  it('workspace:delete-cancelled lifts the tombstone and refetches the row', async () => {
+    const { markWorkspacePendingDeletion, removeWorkspaceEntity } = await import(
+      '$store/renderer/slices/workspace/workspace-slice'
+    );
+    appStore.dispatch(removeWorkspaceEntity(PENDING_WS));
+    appStore.dispatch(markWorkspacePendingDeletion(PENDING_WS));
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'workspace.get') {
+        return Promise.resolve({ workspace: makeWorkspace() });
+      }
+      return Promise.resolve({ subscriptionId: 'sub-1' });
+    });
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-ws-del-cancelled',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    const state = appStore.state as { workspace: { pendingDeletions: Record<string, boolean> } };
+    expect(state.workspace.pendingDeletions[PENDING_WS]).toBeUndefined();
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: PENDING_WS });
+    expect(await workspaceRow()).toBeDefined();
+  });
+
+  it('agent:delete-scheduled soft-hides the hydrated session and registers the pending entry', async () => {
+    const { isAgentDeletionPending } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const pendingSession: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-pending',
+      workspaceId: PENDING_WS,
+      name: 'Pending',
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([pendingSession]));
+    appStore.dispatch(upsertSession(pendingSession));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, unknown> };
+      workspaceAgents: { byWorkspaceId: Record<string, { agentIds?: string[] }> };
+    };
+    expect(state.agentSessions.byAgentId[PENDING_AGENT]).toBeUndefined();
+    expect(state.workspaceAgents.byWorkspaceId[PENDING_WS]?.agentIds ?? []).not.toContain(
+      PENDING_AGENT,
+    );
+    // The registry entry doubles as the read-path guard so refetches
+    // (ensureAgentSession, transcript loads) cannot resurrect the row.
+    expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+  });
+
+  it('agent:delete-scheduled registers the tombstone even without a hydrated session', async () => {
+    const { isAgentDeletionPending, getPendingAgentDeletion } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    // No session hydrated locally for PENDING_AGENT: an agent.get/list begun
+    // before the schedule (row without pendingDeleteAt) could still resolve
+    // after it — the snapshot-less tombstone must block that stale read.
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-nosnap',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+    expect(getPendingAgentDeletion(PENDING_AGENT)?.snapshot).toBeUndefined();
+  });
+
+  it('agent:delete-scheduled with an existing registry entry is a no-op (originating window)', async () => {
+    const { setPendingAgentDeletion, getPendingAgentDeletion } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const snapshot: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-own',
+      workspaceId: PENDING_WS,
+      name: 'Own window',
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    const sagaEntry = { wsId: PENDING_WS, agentId: PENDING_AGENT, snapshot };
+    setPendingAgentDeletion(sagaEntry);
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-own',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    // The saga's entry (with its own lifecycle) stays authoritative.
+    expect(getPendingAgentDeletion(PENDING_AGENT)).toBe(sagaEntry);
+  });
+
+  it('bridge tombstones self-lift at deleteAt + grace, sparing a newer entry', async () => {
+    const { isAgentDeletionPending, setPendingAgentDeletion, getPendingAgentDeletion } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      const deleteAt = new Date(Date.now() + 15_000).toISOString();
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-agent-del-scheduled-lift',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'agent:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt },
+          },
+        },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-ws-del-scheduled-lift',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: PENDING_WS, deleteAt },
+          },
+        },
+      });
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+
+      // A newer entry (e.g. a re-delete's own saga registration) replaces the
+      // bridge's — the armed timer must leave it alone when it fires.
+      const newerEntry = { wsId: PENDING_WS, agentId: PENDING_AGENT };
+      setPendingAgentDeletion(newerEntry);
+
+      // deleteAt (15s) + tombstone TTL (60s).
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+
+      expect(getPendingAgentDeletion(PENDING_AGENT)).toBe(newerEntry);
+      const state = appStore.state as {
+        workspace: { pendingDeletions: Record<string, boolean> };
+      };
+      expect(state.workspace.pendingDeletions[PENDING_WS]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disposeDaemonEventsRoutingState clears armed tombstone timers', async () => {
+    const { isAgentDeletionPending } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const { disposeDaemonEventsRoutingState } = await import(
+      '$features/events/daemon-events-bridge.client'
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-agent-del-scheduled-dispose',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'agent:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: {
+              agentId: PENDING_AGENT,
+              workspaceId: PENDING_WS,
+              deleteAt: new Date(Date.now() + 15_000).toISOString(),
+            },
+          },
+        },
+      });
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+
+      disposeDaemonEventsRoutingState();
+
+      // The cancelled timer never fires; the registry entry is left for the
+      // owning window's lifecycle (dispose only tears down bridge-owned state).
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('agent:delete-cancelled restores the snapshot and refetches the canonical list', async () => {
+    const { setPendingAgentDeletion } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const snapshot: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-pending',
+      workspaceId: PENDING_WS,
+      name: 'Restored',
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    setPendingAgentDeletion({ wsId: PENDING_WS, agentId: PENDING_AGENT, snapshot });
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-cancelled',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    const { isAgentDeletionPending } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    expect(isAgentDeletionPending(PENDING_AGENT)).toBe(false);
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, { name?: string }> };
+      workspaceAgents: { byWorkspaceId: Record<string, { agentIds?: string[] }> };
+    };
+    expect(state.agentSessions.byAgentId[PENDING_AGENT]?.name).toBe('Restored');
+    expect(state.workspaceAgents.byWorkspaceId[PENDING_WS]?.agentIds ?? []).toContain(
+      PENDING_AGENT,
+    );
+    // Reconcile refetch also runs — covers a window that never held a snapshot.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
+  });
+
+  it('agent:delete-cancelled without a local snapshot still refetches the canonical list', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-cancelled-nosnap',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: PENDING_WS });
+  });
 });
 
 describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', () => {

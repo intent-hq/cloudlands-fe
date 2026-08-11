@@ -146,6 +146,22 @@ describe('agentReadService (fake seam, real store)', () => {
     expect(agentsApi.get).toHaveBeenCalledWith(agentId);
   });
 
+  // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
+  // (or before an FE restart) is not in this window's local pending-delete
+  // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
+  // (PROTOCOL §5.5, v6.7+) is the only signal, and it must not be upserted.
+  it('drops a fetched row carrying pendingDeleteAt (deletion scheduled elsewhere)', async () => {
+    const agentId = 'agent-read-wire-pending-del';
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({ id: agentId, pendingDeleteAt: '2026-01-01T00:00:15.000Z' }) as never,
+    );
+
+    await ensureAgentSession(agentId);
+
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+  });
+
   // Regression (PR review): if the deletion becomes pending WHILE the
   // `agent.get` fetch is in flight, the resolved response must not be
   // upserted — otherwise the soft-hidden agent is resurrected anyway.

@@ -496,7 +496,11 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLatest(loadWorkspaceDataRequested, loadChangesWorker),
       takeLeading(loadOlderCommitsRequested, olderCommitsWorker),
       takeLeading(requestAgentLineStats, agentLineStatsWorker),
-      takeLatest(hydrateAgentsRequested, agentsWorker),
+      // Per-workspace latest: the daemon events bridge dispatches this for
+      // whichever workspace an event names (agent:status-changed, agent:idle,
+      // agent:delete-cancelled), so a global takeLatest would let workspace
+      // B's event cancel A's in-flight agents hydrate and discard its result.
+      takeLatestByWorkspace(hydrateAgentsRequested, agentsWorker),
       takeLeading(hydrateTerminalsRequested, terminalsWorker),
       takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
