@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Wire-contract tests for the CHECK_NODE / CHECK_GH handlers in
+ * Wire-contract tests for the CHECK_GIT / CHECK_NODE / CHECK_GH handlers in
  * `system.ipc.ts`.
  *
- * Both probes are delegated to the daemon host via the uncached
- * `host.checkNode` / `host.checkGh` methods (host.checkGit idiom). These
+ * The probes are delegated to the daemon host via the uncached
+ * `host.checkGit` / `host.checkNode` / `host.checkGh` methods. These
  * tests capture the registered `ipcMain.handle` callback for each channel,
  * invoke it, and assert the exact wire request (method name, no params)
  * plus the response mapping: node versions are v-stripped and compared
  * against MINIMUM_NODE_VERSION, gh versions are forwarded verbatim, and
- * failures fold to `available:false` — never an error.
+ * failures fold to a `success:true` envelope — never an error. For git a
+ * daemon-reported probe answer folds to `available:false` while a transport
+ * failure folds to `available:'unknown'`.
  */
 
 type Handler = (...args: unknown[]) => unknown;
@@ -71,6 +73,40 @@ function handlerFor(channel: string): Handler {
 beforeEach(() => {
   vi.clearAllMocks();
   setupSystemIPC();
+});
+
+describe('SYSTEM_CHANNELS.CHECK_GIT → host.checkGit (uncached daemon probe)', () => {
+  it('issues exactly `host.checkGit` with no params and forwards the version', async () => {
+    backendMocks.request.mockResolvedValue({ available: true, version: 'git version 2.43.0' });
+
+    const handler = handlerFor(SYSTEM_CHANNELS.CHECK_GIT);
+    const result = await handler({});
+
+    expect(backendMocks.request).toHaveBeenCalledTimes(1);
+    expect(backendMocks.request).toHaveBeenCalledWith('host.checkGit');
+    expect(result).toEqual({
+      success: true,
+      data: { available: true, version: 'git version 2.43.0' },
+    });
+  });
+
+  it('folds a daemon `available:false` answer (genuine missing binary) to { available:false }', async () => {
+    backendMocks.request.mockResolvedValue({ available: false });
+
+    const handler = handlerFor(SYSTEM_CHANNELS.CHECK_GIT);
+    const result = await handler({});
+
+    expect(result).toEqual({ success: true, data: { available: false } });
+  });
+
+  it("folds a wire rejection (RPC timeout / daemon unreachable) to { available:'unknown' }, never available:false", async () => {
+    backendMocks.request.mockRejectedValue(new Error('Request timeout'));
+
+    const handler = handlerFor(SYSTEM_CHANNELS.CHECK_GIT);
+    const result = await handler({});
+
+    expect(result).toEqual({ success: true, data: { available: 'unknown' } });
+  });
 });
 
 describe('SYSTEM_CHANNELS.CHECK_NODE → host.checkNode (uncached daemon probe)', () => {

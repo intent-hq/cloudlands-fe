@@ -64,18 +64,18 @@ describe("host-bridge-seeder", () => {
       expect(response).toEqual({ success: true, data: { available: false } });
     });
 
-    it("folds an RPC failure to {available:false} so the home-screen banner is suppressed", async () => {
-      // The pre-existing main-process handler swallowed errors as
-      // `{available:false}` (system.ipc.ts:2996). Preserve that contract so
-      // the FE never flashes the "Git not installed" banner on a transient
-      // transport hiccup.
+    it("folds an RPC failure to {available:'unknown'} so the UI never claims git is missing", async () => {
+      // A transport failure (RPC timeout / daemon unreachable) means the
+      // probe never ran — it is NOT a daemon-reported missing binary. Fold
+      // to `available:'unknown'` so the FE renders a non-blocking "unable
+      // to verify" notice instead of the "Git is not installed" banner.
       mockedRequest.mockRejectedValueOnce(new Error("transport down"));
 
-      const response = await mockInvoke<{ success: boolean; data: { available: boolean } }>(
+      const response = await mockInvoke<{ success: boolean; data: { available: string } }>(
         IPC_CHANNELS.SYSTEM.CHECK_GIT,
       );
 
-      expect(response).toEqual({ success: true, data: { available: false } });
+      expect(response).toEqual({ success: true, data: { available: "unknown" } });
     });
   });
 
