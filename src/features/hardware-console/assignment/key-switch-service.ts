@@ -31,6 +31,7 @@ import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { LogicalKeyId } from '../input/types';
 import { agentKeyToSlot, isKeyAssignableWorkspace, resolveKeySlots } from './key-assignment';
+import { isConsoleOwner } from '../owner-gate';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { focusPanel, setActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -46,6 +47,8 @@ export interface KeySwitchDeps {
   navigate?: (route: string) => Promise<void>;
   /** Focus an agent tab's chat composer. Defaults to `focusAgentComposer`. */
   focusComposer?: (agentId: string) => void;
+  /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
+  isOwner?: () => boolean;
 }
 
 function resolveSlotWorkspaceId(slot: number): string | null {
@@ -195,12 +198,15 @@ export function installHardwareConsoleKeySwitching(
     detachDecoder = null;
   };
 
+  const isOwner = deps.isOwner ?? isConsoleOwner;
+
   const setupDecoder = (): void => {
     teardownDecoder();
     const decoder = new HardwareInputDecoder({
       deviceModel: manager.connectedDevice?.model ?? 'creator-micro-2',
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
+      if (!isOwner()) return;
       handleAgentKeyEvent(key, deps);
     });
     const offRaw = manager.onRawMessage((message) => decoder.handleMessage(message));
