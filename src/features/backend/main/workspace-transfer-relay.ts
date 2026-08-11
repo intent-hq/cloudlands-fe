@@ -305,6 +305,12 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     if (session && !session.committed && !session.cancelled) {
       return { success: false, error: 'a transfer is already in progress' };
     }
+    // A committed-but-unfinalized leftover (renderer reloaded/crashed before
+    // finalize or close, so no transfer:cancel ever arrived) would otherwise
+    // be overwritten with its export staging leaked on the source.
+    if (session?.committed && session.exportId) {
+      await abortExport(session.source, session.exportId);
+    }
     const { workspaceId, destination } = params;
     const source = deps.getSourceClient();
     const current: RelaySession = {

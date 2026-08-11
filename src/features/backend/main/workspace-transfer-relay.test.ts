@@ -303,6 +303,41 @@ describe('workspace-transfer relay — server destination', () => {
     expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(true);
   });
 
+  it('a new start aborts a stale committed-but-unfinalized export on the old source', async () => {
+    const source = makeSource();
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = createWorkspaceTransferRelay(deps);
+
+    const first = relay.start({
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await first;
+    // No finalize and no cancel (e.g. renderer reload) — the session lingers.
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
+
+    const second = relay.start({
+      workspaceId: 'ws-2',
+      destination: { kind: 'server', connectionId: 'conn-1' },
+    });
+    await vi.waitFor(() => {
+      if (!source.calls.some((c) => c.method === 'workspace.export.abort')) {
+        throw new Error('stale export not aborted yet');
+      }
+    });
+    const abort = source.calls.find((c) => c.method === 'workspace.export.abort');
+    expect(abort?.params).toMatchObject({ exportId: 'export-1' });
+    await vi.waitFor(() => {
+      if (source.calls.filter((c) => c.method === 'workspace.export.start').length < 2) {
+        throw new Error('second export not started yet');
+      }
+    });
+    source.emit('workspace:transfer:ready', { ...READY_DATA, workspaceId: 'ws-2' });
+    await second;
+  });
+
   it('rejects a second concurrent start', async () => {
     const source = makeSource();
     const target = makeTarget();
