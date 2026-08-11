@@ -132,6 +132,14 @@
   let searchValue = $state('');
   let debouncedSearchValue = $state('');
   let searchDebounceTimer: NodeJS.Timeout | null = null;
+  // Server-side prefix search (GitHub repos only): branches matching the
+  // typed prefix beyond the daemon's first page (`github.branches.list`
+  // `prefix` param, PROTOCOL §5.27). Merged into the displayed list; the
+  // unfiltered `branches` state stays untouched so clearing the search
+  // restores today's first-page view.
+  let githubSearchBranches: string[] = $state([]);
+  // Guards out-of-order prefix-search responses (only the latest wins).
+  let githubSearchRequestId = 0;
   // Using 'any' because this binds to a Svelte Input component, not a native HTMLInputElement
   // The Input component exports focus() and select() methods that we use
   let searchInputElement: any = $state(null);
@@ -391,6 +399,8 @@
         showRemoteBranches = false;
         hasAttemptedRemoteFetch = false; // Reset so we can fetch for new repo
         githubAuthNeeded = 'none'; // Reset auth state for new repo
+        githubSearchRequestId++; // Discard in-flight prefix searches from the previous repo
+        githubSearchBranches = []; // Drop prefix-search results from the previous repo
         error = null;
         resetBranchStatus(); // Reset stale branch status from previous repo
 
@@ -958,7 +968,7 @@
    */
   function setInternalBranch(branchName: string) {
     internalSelectedBranch = branchName;
-    searchValue = '';
+    clearSearch();
     // Notify parent so form validation knows about the auto-selected default
     logger.debug('setInternalBranch called', {
       branchName,
@@ -988,7 +998,7 @@
    */
   function selectBranch(branch: string, keepSkipIsolation = false) {
     internalSelectedBranch = branch;
-    searchValue = '';
+    clearSearch();
     try {
       if (typeof onchange === 'function') {
         onchange(new CustomEvent('change', { detail: { branch } }));
@@ -1028,6 +1038,20 @@
     searchDebounceTimer = setTimeout(() => {
       debouncedSearchValue = value;
     }, 100); // 100ms debounce for smoother experience
+  }
+
+  /**
+   * Reset the search box AND its debounced mirror — a pending debounce tick
+   * or a lingering debounced value would otherwise keep the filtered view
+   * (and the server-side prefix results) active behind a blank search field.
+   */
+  function clearSearch() {
+    searchValue = '';
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
+    debouncedSearchValue = '';
   }
 
   async function handleRefresh() {
@@ -1187,6 +1211,60 @@
     }
   });
 
+  /**
+   * Owner/repo for the prefix search — the same GitHub URL (or shorthand
+   * `owner/repo` repoPath) parsing fetchBranches applies.
+   */
+  function parseGithubOwnerRepo(): { owner: string; repo: string } | null {
+    // `||` (not `??`): fetchBranches treats an empty githubUrl as absent and
+    // reconstructs it from a shorthand repoPath (lines 541-546) — match that.
+    const url =
+      githubUrl ||
+      (repoPath && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(repoPath)
+        ? `https://github.com/${repoPath}`
+        : undefined);
+    const match = url?.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
+    return match ? { owner: match[1], repo: match[2] } : null;
+  }
+
+  // Server-side prefix search: when the user types in a GitHub repo's search
+  // box, ask the daemon for branches matching the prefix
+  // (`github.branches.list` `prefix` param, PROTOCOL §5.27) so branches
+  // beyond the first page become findable. Clearing the search drops the
+  // results (no empty-prefix request) and resets to the first-page view.
+  // Failures are silent — the already-loaded first page still filters
+  // locally.
+  $effect(() => {
+    const prefix = debouncedSearchValue.trim();
+    if (repoType !== 'github' || !prefix) {
+      githubSearchRequestId++; // Discard any in-flight response
+      githubSearchBranches = [];
+      return;
+    }
+    const parsed = parseGithubOwnerRepo();
+    if (!parsed) {
+      // Same as the clear branch: without the bump, a still-in-flight request
+      // from a previous run could land later and repopulate the results.
+      githubSearchRequestId++;
+      githubSearchBranches = [];
+      return;
+    }
+    const requestId = ++githubSearchRequestId;
+    // Drop the previous prefix's results immediately: while the new request
+    // is in flight (or if it fails), only the loaded first page may match —
+    // stale beyond-page branches must not linger under a different prefix.
+    githubSearchBranches = [];
+    void appClient.integrations
+      .githubBranches(parsed.owner, parsed.repo, prefix)
+      .then((listing) => {
+        if (requestId !== githubSearchRequestId) return; // Superseded by a newer prefix
+        githubSearchBranches = listing.branches;
+      })
+      .catch(() => {
+        // Silent: the unfiltered first page keeps filtering locally.
+      });
+  });
+
   // Helper to identify Dependabot branches
   function isDependabotBranch(branch: string): boolean {
     return branch.startsWith('dependabot/');
@@ -1250,9 +1328,19 @@
     return false;
   }
 
+  // View source for the dropdown lists: the unfiltered first page merged
+  // with the server-side prefix-search results, deduped (first-page branches
+  // keep their listing order). The `branches` state stays untouched so
+  // clearing the search restores today's first-page view.
+  const displayBranches = $derived(
+    githubSearchBranches.length > 0
+      ? [...branches, ...githubSearchBranches.filter((b) => !branches.includes(b))]
+      : branches,
+  );
+
   // Separate regular, dependabot, and workspace branches
   const regularBranches = $derived(
-    branches
+    displayBranches
       .filter(
         (b) =>
           !isWorkspaceBranch(b) &&
@@ -1270,7 +1358,7 @@
   );
 
   const dependabotBranches = $derived(
-    branches
+    displayBranches
       .filter(
         (b) =>
           isDependabotBranch(b) && b.toLowerCase().includes(debouncedSearchValue.toLowerCase()),
@@ -1279,7 +1367,7 @@
   );
 
   const workspaceBranches = $derived(
-    branches
+    displayBranches
       .filter(
         (b) => isWorkspaceBranch(b) && b.toLowerCase().includes(debouncedSearchValue.toLowerCase()),
       )
@@ -1429,7 +1517,7 @@
               variant="ghost-light"
               size="icon"
               disabled={isLoading}
-              aria-label="Refresh branches"
+              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
             >
               <Fa icon={faRotate} class={isLoading ? 'animate-spin' : ''} />
             </Button>

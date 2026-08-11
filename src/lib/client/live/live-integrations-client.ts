@@ -62,22 +62,33 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * so sequencing them doubles the settle time). Unlike the issue reads,
    * branch-list failures PROPAGATE: the BranchSelector must render an explicit
    * error/auth state, never an empty-or-fabricated list. The default-branch
-   * read is best-effort — its failure degrades to `undefined`.
+   * read is best-effort — its failure degrades to `undefined`. A non-empty
+   * `prefix` is forwarded so the daemon filters server-side (matching-refs);
+   * empty/omitted keeps the unfiltered wire shape for older daemons. Prefix
+   * searches SKIP the `github.repos.get` leg entirely — the default branch
+   * can't change based on the filter and the caller discards it, so per-
+   * keystroke searches cost one REST call, not two.
    */
-  async githubBranches(owner: string, repo: string): Promise<GitHubBranchListing> {
+  async githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing> {
     const [result, defaultBranch] = await Promise.all([
-      backendRequest<{ branches?: unknown }>("github.branches.list", { owner, repo }),
-      backendRequest<{ repo?: { defaultBranch?: unknown } | null }>("github.repos.get", {
+      backendRequest<{ branches?: unknown }>("github.branches.list", {
         owner,
         repo,
-      }).then(
-        (repoResult) => {
-          const value = repoResult?.repo?.defaultBranch;
-          return typeof value === "string" && value.length > 0 ? value : undefined;
-        },
-        // Default branch is a nicety; the branch list alone is sufficient.
-        () => undefined,
-      ),
+        ...(prefix ? { prefix } : {}),
+      }),
+      prefix
+        ? Promise.resolve(undefined)
+        : backendRequest<{ repo?: { defaultBranch?: unknown } | null }>("github.repos.get", {
+            owner,
+            repo,
+          }).then(
+            (repoResult) => {
+              const value = repoResult?.repo?.defaultBranch;
+              return typeof value === "string" && value.length > 0 ? value : undefined;
+            },
+            // Default branch is a nicety; the branch list alone is sufficient.
+            () => undefined,
+          ),
     ]);
     const branches = Array.isArray(result?.branches)
       ? result.branches.filter((branch): branch is string => typeof branch === "string")

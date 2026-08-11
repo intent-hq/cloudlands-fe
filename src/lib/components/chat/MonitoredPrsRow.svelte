@@ -94,8 +94,7 @@
 
   function handleOpenPr(monitor: PrMonitorRow, close: () => void) {
     close();
-    const url =
-      monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+    const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
     void handleLink(url, {
       workspaceId: workspaceId as WorkspaceId,
       forceExternal: true,
@@ -202,33 +201,27 @@
                     <span class="text-subtle font-normal">{monitor.lastSnapshot.state}</span>
                   {/if}
                 </div>
-                <div class="text-subtle">
+                <div class="flex flex-col text-subtle">
                   <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
                   <span>{monitor.repo}#{monitor.prNumber}</span>
                   {#if checksSummary(monitor)}
-                    <span class="mx-1" aria-hidden="true">·</span>
                     <span>{checksSummary(monitor)}</span>
                   {/if}
                   {#if approvalsSummary(monitor)}
-                    <span class="mx-1" aria-hidden="true">·</span>
                     <span>{approvalsSummary(monitor)}</span>
                   {/if}
                   {#if threadsSummary(monitor)}
-                    <span class="mx-1" aria-hidden="true">·</span>
                     <span>{threadsSummary(monitor)}</span>
                   {/if}
-                </div>
-                {#if mergeSummary(monitor)}
-                  <div class="text-subtle">{mergeSummary(monitor)}</div>
-                {/if}
-                <div class="text-subtle">
+                  {#if mergeSummary(monitor)}
+                    <span>{mergeSummary(monitor)}</span>
+                  {/if}
                   {#if monitor.lastChangeAt}
                     <span
                       >{m.chat_monitoredPrs_hover_lastChange_label({
                         time: formatTime(monitor.lastChangeAt, { seconds: true }),
                       })}</span
                     >
-                    <span class="mx-1" aria-hidden="true">·</span>
                   {/if}
                   {#if monitor.hasPendingChanges}
                     <span data-testid="monitored-pr-pending"
@@ -238,8 +231,6 @@
                             count: formatInteger(monitor.pendingChanges.length),
                           })}</span
                     >
-                  {:else}
-                    <span>{m.chat_monitoredPrs_hover_noPending_label()}</span>
                   {/if}
                 </div>
               </div>
