@@ -14,12 +14,21 @@ import {
   removeTaskAgentAssociation,
   taskAgentAssociationsReducer,
 } from '../task-agent-associations-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { taskAgentAssociationsSaga } from './task-agent-associations-saga';
 
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+};
+
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 };
 
 type AssociationAction = Parameters<typeof taskAgentAssociationsReducer>[1];
@@ -153,13 +162,9 @@ describe('taskAgentAssociationsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('starts same-key wire work independently with native takeEvery semantics', async () => {
-    let resolveFirst!: () => void;
-    mocks.linkAgent.mockReturnValue(
-      new Promise<void>((resolve) => {
-        resolveFirst = resolve;
-      }),
-    );
+  it('runs same-key mutations FIFO', async () => {
+    const firstCall = deferred();
+    mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
     const run = harness();
     await settle();
     const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
@@ -168,14 +173,122 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
     await settle();
+    expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
+    firstCall.resolve();
+    await settle();
     expect(mocks.linkAgent.mock.calls).toEqual([
       ['ws-1', 'note-1', first],
       ['ws-1', 'note-1', second],
     ]);
     run.task.cancel();
     await run.task.toPromise();
-    resolveFirst();
+  });
+
+  it('runs different composite task keys concurrently', async () => {
+    const firstCall = deferred();
+    mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
+    const run = harness();
     await settle();
-    expect(mocks.linkAgent).toHaveBeenCalledTimes(2);
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    await settle();
+    run.send(addTaskAgentAssociation('ws-1', 'note-2', second));
+    await settle();
+    expect(mocks.linkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', first],
+      ['ws-1', 'note-2', second],
+    ]);
+    firstCall.resolve();
+    await settle();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('orders prune fan-out behind active work only for each affected key', async () => {
+    const firstCall = deferred();
+    mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
+    mocks.unlinkAgent.mockResolvedValue(undefined);
+    const run = harness({
+      'note-1': {
+        first: { taskKey: 'first', taskText: 'First', agentId: 'agent-1' },
+        second: { taskKey: 'second', taskText: 'Second', agentId: 'agent-2' },
+      },
+    });
+    await settle();
+    const relinked = { taskKey: 'first', taskText: 'First', agentId: 'agent-3' };
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', relinked));
+    await settle();
+    run.send(pruneTaskAgentAssociationsForNote('ws-1', 'note-1', []));
+    await settle();
+    expect(mocks.unlinkAgent.mock.calls).toEqual([['ws-1', 'note-1', 'second']]);
+    firstCall.resolve();
+    await settle();
+    expect(mocks.unlinkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', 'second'],
+      ['ws-1', 'note-1', 'first'],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('continues same-key FIFO work after a failed mutation', async () => {
+    mocks.linkAgent.mockRejectedValueOnce(new Error('first failed')).mockResolvedValue(undefined);
+    const run = harness();
+    await settle();
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
+    await settle();
+    expect(mocks.linkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', first],
+      ['ws-1', 'note-1', second],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops workspace queues and can rebuild authoritative snapshots afterward', async () => {
+    const firstCall = deferred();
+    mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
+    mocks.unlinkAgent.mockResolvedValue(undefined);
+    const run = harness();
+    await settle();
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
+    await settle();
+    run.send(workspaceUnmounted('ws-1'));
+    await settle();
+    firstCall.resolve();
+    await settle();
+    expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
+
+    const restored = { taskKey: 'restored', taskText: 'Restored', agentId: 'agent-3' };
+    run.send(hydrateTaskAgentAssociations('ws-1', { 'note-2': { restored } }));
+    run.send(removeTaskAgentAssociation('ws-1', 'note-2', 'restored'));
+    await settle();
+    expect(mocks.unlinkAgent.mock.calls).toEqual([['ws-1', 'note-2', 'restored']]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drops queued mutations when the root saga is cancelled', async () => {
+    const firstCall = deferred();
+    mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
+    const run = harness();
+    await settle();
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
+    await settle();
+    run.task.cancel();
+    await run.task.toPromise();
+    firstCall.resolve();
+    await settle();
+    expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
   });
 });
