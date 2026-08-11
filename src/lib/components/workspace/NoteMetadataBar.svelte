@@ -8,6 +8,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
+  import TaskRelationLink from './TaskRelationLink.svelte';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -60,6 +61,26 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   const childTasks = $derived.by(() => {
     const allNotes = $allNotes$;
     return allNotes.filter((n) => n.parentId === note.id && n.metadata?.task);
+  });
+
+  // Task relations (PROTOCOL §5.2/§5.4). `unmetDependsOn` is the
+  // daemon-computed projection carried on note-shaped payloads; unmet
+  // highlighting is suppressed once the task itself is complete, matching
+  // the task-row chip semantics.
+  const dependsOn = $derived(taskMetadata?.dependsOn ?? []);
+  const conflictsWith = $derived(taskMetadata?.conflictsWith ?? []);
+  const unmetDependsOn = $derived(new Set<string>(taskMetadata?.unmetDependsOn ?? []));
+  const isComplete = $derived(taskMetadata?.status === 'complete');
+
+  // Reverse dependency edges computed client-side from the notes slice:
+  // task notes whose dependsOn includes this note. Sorted by id so the
+  // rendered order is stable regardless of notes-slice iteration order.
+  const dependedOnBy = $derived.by(() => {
+    const allNotes = $allNotes$;
+    return allNotes
+      .filter((n) => n.id !== note.id && n.metadata?.task?.dependsOn?.includes(note.id))
+      .map((n) => n.id)
+      .sort();
   });
 
 
@@ -238,6 +259,38 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           {/if}
         </div>
       </div>
+
+      <!-- Relations rows (hidden when the task has no relations) -->
+      {#if dependsOn.length > 0}
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+          <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependsOn_label()}</div>
+          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+            {#each dependsOn as depId (depId)}
+              <TaskRelationLink noteId={depId} unmet={!isComplete && unmetDependsOn.has(depId)} />
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if dependedOnBy.length > 0}
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+          <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependedOnBy_label()}</div>
+          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+            {#each dependedOnBy as dependentId (dependentId)}
+              <TaskRelationLink noteId={dependentId} />
+            {/each}
+          </div>
+        </div>
+      {/if}
+      {#if conflictsWith.length > 0}
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+          <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_conflictsWith_label()}</div>
+          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+            {#each conflictsWith as conflictId (conflictId)}
+              <TaskRelationLink noteId={conflictId} variant="conflict" />
+            {/each}
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
