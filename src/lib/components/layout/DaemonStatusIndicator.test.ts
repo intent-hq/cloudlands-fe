@@ -686,7 +686,13 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
-      await fireEvent.click(screen.getByText('desk:4180'));
+      // With r1 active, the trigger button also shows "desk:4180" next to the
+      // dot — target the connections-list row (the submenu trigger).
+      const menuRow = screen
+        .getAllByText('desk:4180')
+        .map((el) => el.closest('button'))
+        .find((btn) => btn?.getAttribute('aria-haspopup') === 'menu');
+      await fireEvent.click(menuRow!);
       const switchBtn = screen.getByText('Switch').closest('button');
       expect(switchBtn?.disabled).toBe(true);
     });
@@ -784,6 +790,109 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       expect(screen.getByText('studio.local (10.0.0.2:4180)')).toBeTruthy();
+    });
+  });
+
+  describe('remote machine name next to the status dot', () => {
+    const healthy = {
+      health: 'healthy' as const,
+      stats: null,
+      lastUpdated: null,
+      polling: false,
+    };
+
+    const localRecord = {
+      id: 'local',
+      label: 'Local',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const remoteWithHostname = {
+      id: 'r1',
+      label: '10.0.0.2:4180',
+      host: '10.0.0.2',
+      port: 4180,
+      fingerprint: 'AA:BB',
+      hostname: 'studio.local',
+      isLocal: false,
+    };
+    const remoteWithoutHostname = {
+      id: 'r2',
+      label: '10.0.0.3:4180',
+      host: '10.0.0.3',
+      port: 4180,
+      fingerprint: 'CC:DD',
+      isLocal: false,
+    };
+
+    function withActive(activeId: string) {
+      return {
+        connections: createCollection('id', [localRecord, remoteWithHostname, remoteWithoutHostname]),
+        activeId,
+        status: 'idle',
+        error: null,
+        certMismatch: null,
+      };
+    }
+
+    it('shows the hostname inside the trigger button when a remote with hostname is active', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r1') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      const label = screen.getByText('studio.local');
+      expect(trigger.contains(label)).toBe(true);
+      // Subtle, truncated styling so a long name cannot crowd the title bar.
+      expect(label.classList.contains('truncate')).toBe(true);
+      expect(label.classList.contains('max-w-32')).toBe(true);
+      expect(label.classList.contains('text-subtle')).toBe(true);
+    });
+
+    it('falls back to the record label (host:port) when the remote has no hostname', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r2') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      const label = screen.getByText('10.0.0.3:4180');
+      expect(trigger.contains(label)).toBe(true);
+    });
+
+    it('shows no label when the local connection is active (dot-only trigger)', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('local') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(trigger.textContent?.trim()).toBe('');
+      // Dot-only trigger keeps the original fixed width.
+      expect(trigger.classList.contains('w-6')).toBe(true);
+    });
+
+    it('shows no label when connections have not loaded yet', async () => {
+      mockStoreState = { daemonHealth: { ...healthy } };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(trigger.textContent?.trim()).toBe('');
+    });
+
+    it('clicking the label toggles the same dropdown as the dot', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withActive('r1') };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByText('studio.local'));
+      expect(screen.getByText('Connect to another intentd…')).toBeTruthy();
     });
   });
 

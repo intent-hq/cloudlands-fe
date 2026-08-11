@@ -201,6 +201,15 @@
       : '',
   );
 
+  // Compact machine name shown next to the status dot when the active
+  // connection is remote (name only, no host:port — same preference order as
+  // formatConnectionLabel). Null when local/unknown → dot-only trigger.
+  const activeRemoteName = $derived.by(() => {
+    const conn = $connections$.find((c) => c.id === $activeConnectionId$);
+    if (!conn || conn.isLocal) return null;
+    return conn.hostname?.trim() || conn.label;
+  });
+
   const stopUnslothDescription = $derived.by(() => {
     const count = $unslothStatus$?.attachedAgentCount ?? 0;
     const model = $unslothStatus$?.repoId ?? m.layout_daemonStatus_unslothFallbackModel_label();
@@ -301,10 +310,16 @@
       {/snippet}
       <button
         onclick={toggle}
-        class="flex items-center justify-center w-6 h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer"
+        class={cn(
+          'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
+          activeRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
+        )}
         aria-label={healthLabels[$health$]()}
       >
-        <div class={cn('w-2 h-2 rounded-full', healthColors[$health$])}></div>
+        {#if activeRemoteName}
+          <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
+        {/if}
+        <div class={cn('w-2 h-2 rounded-full shrink-0', healthColors[$health$])}></div>
       </button>
     </Tooltip>
   {/snippet}
