@@ -3,25 +3,27 @@
  *
  * MonitoredPrsRow rendering (PROTOCOL §6.9): "Monitored PRs:" chip row for
  * the active agent's ACTIVE monitors, cross-repo label prefixing, hover-card
- * last-refresh details, and the click action menu (flush / open / cancel)
- * dispatch wiring.
+ * last-refresh details, and the click action menu (check and flush / open in
+ * app / open in external browser / cancel) dispatch wiring.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 
-const { dispatchMock, monitorsState, workspaceState, handleLinkMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-  monitorsState: { monitors: [] as unknown[] },
-  workspaceState: {
-    workspace: {
-      id: 'ws-1',
-      repositoryOwner: 'acme',
-      repositoryName: 'widgets',
-    } as unknown,
-  },
-  handleLinkMock: vi.fn(),
-}));
+const { dispatchMock, monitorsState, workspaceState, handleLinkMock, openInBrowserPanelMock } =
+  vi.hoisted(() => ({
+    dispatchMock: vi.fn(),
+    monitorsState: { monitors: [] as unknown[] },
+    workspaceState: {
+      workspace: {
+        id: 'ws-1',
+        repositoryOwner: 'acme',
+        repositoryName: 'widgets',
+      } as unknown,
+    },
+    handleLinkMock: vi.fn(),
+    openInBrowserPanelMock: vi.fn(),
+  }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -52,6 +54,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 
 vi.mock('$features/navigation/link-handler', () => ({
   handleLink: handleLinkMock,
+  openInBrowserPanel: openInBrowserPanelMock,
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
@@ -102,6 +105,7 @@ describe('MonitoredPrsRow', () => {
     cleanup();
     dispatchMock.mockClear();
     handleLinkMock.mockClear();
+    openInBrowserPanelMock.mockClear();
   });
 
   it('renders the "Monitored PRs:" label and a chip per active monitor', () => {
@@ -232,7 +236,23 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('Not mergeable');
   });
 
-  it('chip menu Flush now dispatches the flush trigger', async () => {
+  it('chip menu shows exactly the four items in order: Check and Flush, Open in App, Open in External Browser, Cancel monitor', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
+    const menu = flushItem.closest('.flex.w-48.flex-col') as HTMLElement;
+    const items = Array.from(menu.querySelectorAll('button'));
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      'Check and Flush',
+      'Open in App',
+      'Open in External Browser',
+      'Cancel monitor',
+    ]);
+  });
+
+  it('chip menu Check and Flush dispatches the flush trigger with check: true', async () => {
     monitorsState.monitors = [makeMonitor({ hasPendingChanges: true, pendingChanges: ['x'] })];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -240,16 +260,19 @@ describe('MonitoredPrsRow', () => {
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
     await fireEvent.click(flushItem);
 
-    expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1'));
+    expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
   });
 
-  it('chip menu disables Flush now when nothing is pending', async () => {
+  it('chip menu Check and Flush stays enabled when nothing is pending', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-flush-item'));
-    expect((flushItem as HTMLButtonElement).disabled).toBe(true);
+    expect((flushItem as HTMLButtonElement).disabled).toBe(false);
+
+    await fireEvent.click(flushItem);
+    expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
   });
 
   it('chip menu Cancel monitor dispatches the cancel trigger', async () => {
@@ -263,7 +286,22 @@ describe('MonitoredPrsRow', () => {
     expect(dispatchMock).toHaveBeenCalledWith(cancelPrMonitorRequested('ws-1', 'mon-1'));
   });
 
-  it('chip menu Open PR routes the PR URL through the external link handler', async () => {
+  it('chip menu Open in App opens the PR URL in the embedded browser panel', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
+    await fireEvent.click(openInAppItem);
+
+    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+      'https://github.com/acme/widgets/pull/42',
+      'ws-1',
+    );
+    expect(handleLinkMock).not.toHaveBeenCalled();
+  });
+
+  it('chip menu Open in External Browser routes the PR URL through the forceExternal link handler', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -274,6 +312,21 @@ describe('MonitoredPrsRow', () => {
     expect(handleLinkMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       expect.objectContaining({ forceExternal: true }),
+    );
+    expect(openInBrowserPanelMock).not.toHaveBeenCalled();
+  });
+
+  it('open actions fall back to the canonical GitHub URL when the monitor has no url', async () => {
+    monitorsState.monitors = [makeMonitor({ url: undefined })];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
+    await fireEvent.click(openInAppItem);
+
+    expect(openInBrowserPanelMock).toHaveBeenCalledWith(
+      'https://github.com/acme/widgets/pull/42',
+      'ws-1',
     );
   });
 });

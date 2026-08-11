@@ -84,7 +84,17 @@ describe('prMonitorSaga', () => {
     };
     expect(flushEffect.type).toBe('CALL');
     expect(flushEffect.payload.fn).toBe(flushPrMonitor);
-    expect(flushEffect.payload.args).toEqual(['ws-1', 'mon-1']);
+    expect(flushEffect.payload.args).toEqual(['ws-1', 'mon-1', undefined]);
+
+    // Check-and-flush trigger (§5.42) forwards the check flag to the service.
+    const checkIterator = flushPrMonitorWorker(flushPrMonitorRequested('ws-1', 'mon-1', true));
+    const checkEffect = checkIterator.next().value as {
+      type: string;
+      payload: { fn: unknown; args: unknown[] };
+    };
+    expect(checkEffect.type).toBe('CALL');
+    expect(checkEffect.payload.fn).toBe(flushPrMonitor);
+    expect(checkEffect.payload.args).toEqual(['ws-1', 'mon-1', true]);
 
     const cancelIterator = cancelPrMonitorWorker(cancelPrMonitorRequested('ws-1', 'mon-1'));
     const cancelEffect = cancelIterator.next().value as {

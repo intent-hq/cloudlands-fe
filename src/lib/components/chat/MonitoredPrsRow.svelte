@@ -9,8 +9,10 @@
    * differs from the workspace repository. Hovering shows a last-refresh
    * details card (title, state, checks/reviews/threads summary,
    * mergeable/blocked reason, last-change time, pending-emit status);
-   * clicking opens an action menu — flush now (`prMonitor.flush`), cancel
-   * monitor (`prMonitor.cancel`), open the PR in the external browser.
+   * clicking opens a 4-item action menu — check and flush
+   * (`prMonitor.flush` with `check: true`, always enabled), open the PR in
+   * the embedded browser panel, open it in the external browser, cancel
+   * monitor (`prMonitor.cancel`).
    * Hidden entirely when the agent has no active monitors.
    *
    * All wire traffic lives in the `prMonitor` slice + its companion read
@@ -21,8 +23,9 @@
   import Fa from 'svelte-fa';
   import {
     faArrowUpRightFromSquare,
+    faArrowsRotate,
     faCodePullRequest,
-    faPaperPlane,
+    faWindowMaximize,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import { safeSlide } from '$lib/utils/animations';
@@ -32,7 +35,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatTime } from '$lib/i18n/format';
-  import { handleLink } from '$features/navigation/link-handler';
+  import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
   import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
@@ -82,9 +85,9 @@
     return number;
   }
 
-  function handleFlush(monitor: PrMonitorRow, close: () => void) {
+  function handleCheckAndFlush(monitor: PrMonitorRow, close: () => void) {
     close();
-    appStore.dispatch(flushPrMonitorRequested(monitor.workspaceId, monitor.monitorId));
+    appStore.dispatch(flushPrMonitorRequested(monitor.workspaceId, monitor.monitorId, true));
   }
 
   function handleCancel(monitor: PrMonitorRow, close: () => void) {
@@ -92,10 +95,20 @@
     appStore.dispatch(cancelPrMonitorRequested(monitor.workspaceId, monitor.monitorId));
   }
 
-  function handleOpenPr(monitor: PrMonitorRow, close: () => void) {
+  /** PR URL, falling back to the canonical GitHub URL when `url` is absent. */
+  function prUrl(monitor: PrMonitorRow): string {
+    return monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
+  }
+
+  function handleOpenInApp(monitor: PrMonitorRow, close: () => void) {
     close();
-    const url = monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
-    void handleLink(url, {
+    // Built-in fallback to the external browser when the panel cannot open.
+    void openInBrowserPanel(prUrl(monitor), workspaceId as WorkspaceId);
+  }
+
+  function handleOpenExternal(monitor: PrMonitorRow, close: () => void) {
+    close();
+    void handleLink(prUrl(monitor), {
       workspaceId: workspaceId as WorkspaceId,
       forceExternal: true,
     });
@@ -255,27 +268,36 @@
         {/snippet}
 
         {#snippet content({ close }: { close: () => void })}
-          <div class="flex w-40 flex-col p-1">
+          <div class="flex w-48 flex-col p-1">
             <Button
               variant="ghost-light"
               size="xs"
               class="justify-start"
-              disabled={!monitor.hasPendingChanges}
               data-testid="monitored-pr-flush-item"
-              onclick={() => handleFlush(monitor, close)}
+              onclick={() => handleCheckAndFlush(monitor, close)}
             >
-              <Fa icon={faPaperPlane} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_flushNow_label()}
+              <Fa icon={faArrowsRotate} class="w-2.5 h-2.5" />
+              {m.chat_monitoredPrs_checkAndFlush_label()}
+            </Button>
+            <Button
+              variant="ghost-light"
+              size="xs"
+              class="justify-start"
+              data-testid="monitored-pr-open-in-app-item"
+              onclick={() => handleOpenInApp(monitor, close)}
+            >
+              <Fa icon={faWindowMaximize} class="w-2.5 h-2.5" />
+              {m.chat_monitoredPrs_openInApp_label()}
             </Button>
             <Button
               variant="ghost-light"
               size="xs"
               class="justify-start"
               data-testid="monitored-pr-open-item"
-              onclick={() => handleOpenPr(monitor, close)}
+              onclick={() => handleOpenExternal(monitor, close)}
             >
               <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_openPr_label()}
+              {m.chat_monitoredPrs_openInExternalBrowser_label()}
             </Button>
             <Button
               variant="ghost-light"

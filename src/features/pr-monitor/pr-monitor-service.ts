@@ -177,9 +177,19 @@ export async function cancelPrMonitor(workspaceId: string, monitorId: string): P
 }
 
 /** `prMonitor.flush` (§6.9) — deliver the pending debounced changes now;
- * a no-op (`flushed: false`) when nothing is pending. */
-export async function flushPrMonitor(workspaceId: string, monitorId: string): Promise<void> {
-  await backendRequest('prMonitor.flush', { workspaceId, monitorId });
+ * a no-op (`flushed: false`) when nothing is pending. `check: true` (§5.42,
+ * additive) makes the daemon re-poll the PR first and flush anything that
+ * changed vs. the emit baseline; omitted, semantics are unchanged. */
+export async function flushPrMonitor(
+  workspaceId: string,
+  monitorId: string,
+  check?: boolean,
+): Promise<void> {
+  await backendRequest('prMonitor.flush', {
+    workspaceId,
+    monitorId,
+    ...(check !== undefined ? { check } : {}),
+  });
 }
 
 /** `events.event` envelope subset this module consumes (§6.3). */

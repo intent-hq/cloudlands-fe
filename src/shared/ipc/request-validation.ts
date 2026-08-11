@@ -164,6 +164,18 @@ export const TerminalWriteRequestSchema = z.object({
 });
 
 // ============================================================================
+// Daemon Wire Method Schemas (PROTOCOL.md)
+// ============================================================================
+
+/** `prMonitor.flush` request (PROTOCOL §5.42): `check?: boolean` is additive —
+ * `true` re-polls the PR before flushing; omitted preserves flush-only. */
+export const PrMonitorFlushRequestSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+  monitorId: z.string().min(1, 'Monitor ID is required'),
+  check: z.boolean().optional(),
+});
+
+// ============================================================================
 // Schema Registry
 // ============================================================================
 
