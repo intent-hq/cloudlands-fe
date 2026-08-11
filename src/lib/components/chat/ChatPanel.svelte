@@ -98,6 +98,7 @@
     selectChatReceivedFirstChunk,
     selectChatStatusEvents,
     selectChatStreamingStartTime,
+    selectTranscriptHydratedOnce,
     selectTranscriptHydration,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
@@ -201,6 +202,7 @@
     deriveQueuedMessagesVisibility,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
+    shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -299,6 +301,18 @@
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
+  // First-hydration latch: false until the initial hydration settles, then
+  // true for the agent's lifetime — gates the indeterminate skeleton so a
+  // partially-loaded transcript never renders as if complete.
+  const transcriptHydratedOnce$ = selectTranscriptHydratedOnce(agentIdStore);
+  // Indeterminate first-hydration gate: while the INITIAL hydration is in
+  // flight (never settled before for this agent), a partially-loaded message
+  // list — e.g. the standing subscription's newest page landing ahead of the
+  // paged history read — must not render as a complete conversation. Refresh
+  // re-hydrations (latch already true) keep the messages visible.
+  const isFirstHydrationLoading = $derived(
+    !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
+  );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
@@ -3238,8 +3252,8 @@
               skipIsolation={onboardingContext.skipWorktree}
             />
           </div>
-        {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled' || $agentSession$.backendSessionId !== null) && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
-          <!-- Skeleton: hydration not settled OR existing session (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
+        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasBackendSession: $agentSession$?.backendSessionId != null, hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
+          <!-- Skeleton: FIRST hydration in flight (even with partial/streaming messages — never render a partial transcript as complete), or hydration not settled / existing session with zero messages (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
           {#if isInitialWorkspaceAgent && onboardingContext}
             <div class="pt-16 pb-6">
               <WorkspaceSetupCard

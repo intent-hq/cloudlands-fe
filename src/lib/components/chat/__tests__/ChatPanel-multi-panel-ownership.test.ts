@@ -100,6 +100,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
   selectTranscriptHydration: testState.selector({ isHydrating: false }),
+  selectTranscriptHydratedOnce: testState.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
   selectAgentQueueMessages: testState.selector([]),

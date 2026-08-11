@@ -13,6 +13,7 @@ import {
   isSessionActivelyResponding,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
+  shouldShowTranscriptSkeleton,
   shouldStopChatBeforeSending,
 } from '../chat-panel-visibility';
 
@@ -211,6 +212,91 @@ describe('chat panel visibility helpers', () => {
         ...completedTurnState,
         error: null,
         modelUnavailable: { failedModel: 'old', nextAvailableModel: 'new' },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('shouldShowTranscriptSkeleton', () => {
+  const settledExistingSession = {
+    isFirstHydrationLoading: false,
+    hasSession: true,
+    hydrationSettled: true,
+    hasBackendSession: true,
+    hasMessages: false,
+    isStreaming: false,
+    hasPendingInitialPrompt: false,
+  };
+
+  it('shows the skeleton during the FIRST hydration even while an assistant message is streaming mid-turn', () => {
+    // DoD: never render a partial transcript as if complete — the standing
+    // subscription's in-flight assistant message must not bypass the skeleton
+    // while the initial hydration is still in flight.
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        isFirstHydrationLoading: true,
+        hydrationSettled: false,
+        hasMessages: true,
+        isStreaming: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('shows the skeleton during the first hydration with partial non-streaming messages', () => {
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        isFirstHydrationLoading: true,
+        hydrationSettled: false,
+        hasMessages: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps messages visible during refresh re-hydrations (latch already set)', () => {
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        hydrationSettled: false,
+        hasMessages: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps the streaming exception for post-first-hydration empty transcripts', () => {
+    // After the first hydration, an in-flight turn with no persisted messages
+    // renders the streaming affordances, not the skeleton.
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        hydrationSettled: false,
+        isStreaming: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('shows the skeleton for an existing empty session before hydration settles', () => {
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        hydrationSettled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('covers the failed-hydration case: settled + empty + existing backend session', () => {
+    expect(shouldShowTranscriptSkeleton(settledExistingSession)).toBe(true);
+  });
+
+  it('suppresses the skeleton when a pending initial prompt renders optimistically', () => {
+    expect(
+      shouldShowTranscriptSkeleton({
+        ...settledExistingSession,
+        isFirstHydrationLoading: true,
+        hydrationSettled: false,
+        hasBackendSession: false,
+        hasPendingInitialPrompt: true,
       }),
     ).toBe(false);
   });

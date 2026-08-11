@@ -28,7 +28,13 @@
  * `agent.getConversation` snapshot.
  */
 import type { AgentMessage, ContentBlock } from '$shared/types';
-import type { ChatClient, ChatLiveStreamPhase, ChatTranscript, Unsubscribe } from '../app-client';
+import type {
+  ChatClient,
+  ChatLiveStreamPhase,
+  ChatSubscribeOptions,
+  ChatTranscript,
+  Unsubscribe,
+} from '../app-client';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
@@ -40,6 +46,13 @@ interface ChatSnapshotPayload {
   /** §7.1 activity-flag overlay (same fields as the `AgentLite` projection). */
   isResponding?: boolean;
   turnInFlight?: boolean;
+  /**
+   * Resume disposition (§7.1): present ONLY when the registration carried
+   * `sinceMessageId` — `true` when `messages` is the post-anchor delta,
+   * `false` when the daemon fell back to the standard newest page (unknown/
+   * pruned anchor). Absent on non-resume snapshots.
+   */
+  resumed?: boolean;
 }
 
 /** Hydration result surfaced to callers (mirrors `agent.getConversation` shape). */
@@ -83,6 +96,17 @@ function extractSnapshot(raw: unknown): ChatSnapshotResult {
     truncated: Boolean(p.truncated),
     totalMessages: typeof p.totalMessages === 'number' ? p.totalMessages : 0,
   };
+}
+
+/**
+ * The §7.1 resume disposition carried on a resume-requesting registration's
+ * seq-0 snapshot, or `undefined` when the snapshot does not carry one (the
+ * registration sent no `sinceMessageId`).
+ */
+function extractResumedFlag(raw: unknown): boolean | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const resumed = (raw as ChatSnapshotPayload).resumed;
+  return typeof resumed === 'boolean' ? resumed : undefined;
 }
 
 function isSnapshotPush(
@@ -426,10 +450,17 @@ export class LiveChatClient implements ChatClient {
     agentId: string,
     handler: (transcript: ChatTranscript) => void,
     onPhase?: (phase: ChatLiveStreamPhase) => void,
+    options?: ChatSubscribeOptions,
   ): Unsubscribe {
     const reconciler = new ChatTranscriptReconciler();
     let disposed = false;
     let subscriptionId: string | undefined;
+    // Resume anchor (§7.1 `sinceMessageId`): sent on every registration until
+    // the FIRST snapshot applies, then cleared — the reconciler then holds
+    // daemon-served state, so internal re-registrations (gap resnapshot,
+    // reconnect, backoff retry) need the full newest page, not a delta from
+    // an anchor the reconciler no longer represents.
+    let resumeAnchor = options?.sinceMessageId;
     // Observational lifecycle phase (deduped). Reporting NEVER alters the
     // subscription's behavior — registration, retry, and gap semantics are
     // unchanged whether or not a listener is attached.
@@ -504,8 +535,10 @@ export class LiveChatClient implements ChatClient {
     // replayed once the registration resolves to their id.
     let buffered: ChatPush[] = [];
 
-    const emit = (): void => {
-      if (!disposed) handler(reconciler.transcript());
+    const emit = (resumed?: boolean): void => {
+      if (disposed) return;
+      const transcript = reconciler.transcript();
+      handler(resumed === undefined ? transcript : { ...transcript, resumed });
     };
 
     const processPush = (push: ChatPush): void => {
@@ -525,7 +558,12 @@ export class LiveChatClient implements ChatClient {
         // A snapshot push (applied or a stale re-delivery on an already-live
         // transcript) means the stream is hydrated either way.
         setPhase('live');
-        if (reconciler.applySnapshot(push.seq, push.snapshot)) emit();
+        // §7.1 resume: the anchor rides only until the first snapshot lands
+        // — after that the reconciler holds daemon-served state, and every
+        // internal re-registration must take the full newest page.
+        const resumed = resumeAnchor === undefined ? undefined : extractResumedFlag(push.snapshot);
+        resumeAnchor = undefined;
+        if (reconciler.applySnapshot(push.seq, push.snapshot)) emit(resumed);
       } else if (!awaitingResnapshot) {
         const outcome = reconciler.applyDelta(
           push.seq,
@@ -547,7 +585,10 @@ export class LiveChatClient implements ChatClient {
       // registration reports `connecting`; a backoff retry keeps reporting
       // `delayed` until a snapshot hydrates.
       if (!retrying) setPhase(awaitingResnapshot ? 'resyncing' : 'connecting');
-      backendRequest<{ subscriptionId?: string }>('chat.subscribe', { agentId })
+      backendRequest<{ subscriptionId?: string }>(
+        'chat.subscribe',
+        resumeAnchor === undefined ? { agentId } : { agentId, sinceMessageId: resumeAnchor },
+      )
         .then((result) => {
           const id = result?.subscriptionId;
           if (generation !== thisGeneration || disposed) {
