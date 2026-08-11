@@ -111,7 +111,7 @@ vi.mock('$features/workspace/mark-workspace-seen', () => ({
 
 // RESUB-1: mock chat-read-service so the bridge's reconnect refresh path can
 // assert `loadChatTranscript(activeAgentId)` fires without touching the real
-// `appClient.chat.subscribeSnapshot` seam.
+// `appClient.agents.getConversation` seam.
 const { loadChatTranscriptSpy } = vi.hoisted(() => ({
   loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
 }));

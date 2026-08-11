@@ -14,6 +14,7 @@ import {
 
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: vi.fn(),
+  findBinaryStrict: vi.fn(),
   getCommonNpmPaths: vi.fn(() => []),
 }));
 
@@ -21,7 +22,7 @@ vi.mock('../../../../shared/main/host-exec', () => ({
   hostExec: vi.fn(),
 }));
 
-import { findBinary } from '../../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict } from '../../../../shared/main/find-binary';
 import { hostExec } from '../../../../shared/main/host-exec';
 import {
   clearPiCache,
@@ -59,7 +60,7 @@ describe('pi-resolver', () => {
 
   describe('isPiInstalled()', () => {
     it('returns true when the pi engine is found', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name) => {
+      vi.mocked(findBinaryStrict).mockImplementation(async (name) => {
         if (name === 'pi') return '/usr/local/bin/pi';
         return null;
       });
@@ -68,8 +69,16 @@ describe('pi-resolver', () => {
     });
 
     it('returns false when the pi engine is not found', async () => {
-      vi.mocked(findBinary).mockResolvedValue(null);
+      vi.mocked(findBinaryStrict).mockResolvedValue(null);
       expect(await isPiInstalled()).toBe(false);
+    });
+
+    it('propagates a probe failure instead of reporting uninstalled', async () => {
+      // A failed daemon RPC proves nothing about availability — the caller
+      // (provider availability check) must see the failure, not false.
+      vi.mocked(findBinaryStrict).mockRejectedValue(new Error('transport down'));
+
+      await expect(isPiInstalled()).rejects.toThrow('transport down');
     });
   });
 

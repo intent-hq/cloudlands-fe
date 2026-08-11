@@ -9,7 +9,7 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
 import { hostExec } from '../../../shared/main/host-exec';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -31,14 +31,15 @@ export function clearPiCache(): void {
 }
 
 /**
- * Find the `pi` engine executable path.
+ * Find the `pi` engine executable path. `strict` keeps probe failures
+ * distinct from "not found" (the lookup rejects instead of resolving null).
  */
-async function findPiPath(): Promise<string | null> {
+async function findPiPath(strict = false): Promise<string | null> {
   if (cachedPiPath) {
     return cachedPiPath;
   }
 
-  const result = await findBinary('pi', {
+  const result = await (strict ? findBinaryStrict : findBinary)('pi', {
     commonPaths: getCommonNpmPaths('pi'),
     timeout: 3000,
     useEnhancedPath: true,
@@ -55,9 +56,11 @@ async function findPiPath(): Promise<string | null> {
 /**
  * Check if the `pi` engine is installed.
  * Used for accurate status detection in the provider status panel.
+ * Rejects when the probe itself fails (daemon RPC error) — a failed probe
+ * proves nothing about availability, so callers must not fold it to false.
  */
 export async function isPiInstalled(): Promise<boolean> {
-  const piPath = await findPiPath();
+  const piPath = await findPiPath(true);
   return piPath !== null;
 }
 

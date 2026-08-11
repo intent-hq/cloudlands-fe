@@ -19,8 +19,8 @@ import {
 } from '../../../shared/main/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
-import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
+import { findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { findAuggiePathStrict } from '../../auggie/main/auggie-path';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 import { clearCodexCache, isCodexInstalled } from '../../codex/main/codex-resolver';
 import { clearCortexCache, isCortexInstalled } from '../../cortex/main/cortex-resolver';
@@ -39,26 +39,33 @@ export type { NpxStatus, ProviderAvailabilityResult, ProviderStatus };
 const logger = new Logger('ProviderAvailability');
 
 /**
+ * All check*Availability probes below use the STRICT lookups
+ * (`findBinaryStrict` / `findAuggiePathStrict` / the throwing
+ * `is*Installed` resolvers) and let probe failures REJECT: a daemon RPC
+ * failure/timeout proves nothing about availability, so it must never fold
+ * into `available:false`. The IPC handlers catch the rejection and return an
+ * explicit failure envelope, which the renderer saga maps to
+ * `checkSingleProviderFailure` — preserving the last-known status.
+ */
+
+/**
  * Check if auggie is available by asking the daemon (`host.checkAuggie` via
- * `findAuggiePathAsync`). The BE owns the settings precedence and binary
+ * `findAuggiePathStrict`). The BE owns the settings precedence and binary
  * discovery — no local file probing or install-path scans here.
  */
 async function checkAuggieAvailability(): Promise<ProviderStatus> {
-  try {
-    const auggiePath = await findAuggiePathAsync();
-    return { available: auggiePath !== null };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const auggiePath = await findAuggiePathStrict();
+  return { available: auggiePath !== null };
 }
 
 /**
  * Check whether the claude CLI resolves on the daemon host
  * (`host.findBinary`) — the prerequisite for the claude-code provider.
+ * Rejects when the probe itself fails.
  */
 async function isClaudeCliInstalled(): Promise<boolean> {
   return (
-    (await findBinary('claude', {
+    (await findBinaryStrict('claude', {
       commonPaths: getCommonNpmPaths('claude'),
     })) !== null
   );
@@ -67,25 +74,22 @@ async function isClaudeCliInstalled(): Promise<boolean> {
 /**
  * Check if claude-code is available by checking if the claude CLI is installed.
  * The ACP adapter itself always runs via npx (intentd pins the package); when
- * the CLI is installed but npx is missing, the status carries an explicit
- * warning so the UI can tell the user the adapter cannot run.
+ * the CLI is installed but npx is authoritatively missing, the status carries
+ * an explicit warning so the UI can tell the user the adapter cannot run. A
+ * FAILED npx probe rejects instead — it must not fabricate the warning.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isClaudeCliInstalled();
-    const status: ProviderStatus = { available: installed };
-    const npxPath = installed
-      ? await findBinary('npx', {
-          commonPaths: getCommonNpmPaths('npx'),
-        })
-      : null;
-    if (installed && npxPath === null) {
-      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
-    }
-    return status;
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
+  const installed = await isClaudeCliInstalled();
+  const status: ProviderStatus = { available: installed };
+  const npxPath = installed
+    ? await findBinaryStrict('npx', {
+        commonPaths: getCommonNpmPaths('npx'),
+      })
+    : null;
+  if (installed && npxPath === null) {
+    status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
+  return status;
 }
 
 /**
@@ -93,12 +97,8 @@ async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkCodexAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isCodexInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const installed = await isCodexInstalled();
+  return { available: installed };
 }
 
 /**
@@ -106,12 +106,8 @@ async function checkCodexAvailability(): Promise<ProviderStatus> {
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkCortexAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isCortexInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const installed = await isCortexInstalled();
+  return { available: installed };
 }
 
 /**
@@ -119,12 +115,8 @@ async function checkCortexAvailability(): Promise<ProviderStatus> {
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isOpenCodeInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const installed = await isOpenCodeInstalled();
+  return { available: installed };
 }
 
 /**
@@ -132,12 +124,8 @@ async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkPiAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isPiInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const installed = await isPiInstalled();
+  return { available: installed };
 }
 
 /**
@@ -145,12 +133,8 @@ async function checkPiAvailability(): Promise<ProviderStatus> {
  * Does not fall back to npx - we want accurate "is installed" status.
  */
 async function checkDroidAvailability(): Promise<ProviderStatus> {
-  try {
-    const installed = await isDroidInstalled();
-    return { available: installed };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  const installed = await isDroidInstalled();
+  return { available: installed };
 }
 
 /**
@@ -161,9 +145,8 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
  * by the callers.
  */
 async function checkGrokAvailability(): Promise<ProviderStatus> {
-  // findBinary never throws (it folds RPC errors to null), so no try/catch;
-  // every call hits the daemon so a fresh install is picked up on recheck.
-  const grokPath = await findBinary('grok');
+  // Every call hits the daemon so a fresh install is picked up on recheck.
+  const grokPath = await findBinaryStrict('grok');
   return { available: grokPath !== null };
 }
 
@@ -175,12 +158,12 @@ async function checkGrokAvailability(): Promise<ProviderStatus> {
  * opencode`) — so availability requires BOTH binaries to resolve on the
  * daemon host. Like grok, there is no FE-side resolver module — the
  * aggregate path uses the daemon's provider discovery and this fallback
- * covers the RPC-degraded / single-recheck path.
+ * covers the single-recheck path.
  */
 async function checkUnslothAvailability(): Promise<ProviderStatus> {
   const [opencodePath, unslothPath] = await Promise.all([
-    findBinary('opencode'),
-    findBinary('unsloth'),
+    findBinaryStrict('opencode'),
+    findBinaryStrict('unsloth'),
   ]);
   return { available: opencodePath !== null && unslothPath !== null };
 }
