@@ -521,6 +521,10 @@ const ALLOWED_CHANNELS = [
   "connections:protocol-mismatch",
   "connections:auth-rejected",
   "connections:get-boot-fallback",
+  "transfer:start",
+  "transfer:finalize",
+  "transfer:cancel",
+  "transfer:progress",
   "hardware-console:clear-lighting",
   "hardware-console:clear-lighting-done",
   "hardware-console:get-owner-status",
@@ -672,7 +676,8 @@ const ALLOWED_CHANNELS = [
   "connections:changed",
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
-  "connections:auth-rejected"
+  "connections:auth-rejected",
+  "transfer:progress"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -843,7 +848,8 @@ const EVENT_CHANNELS = [
   "connections:changed",
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
-  "connections:auth-rejected"
+  "connections:auth-rejected",
+  "transfer:progress"
 ];
 
 /**
