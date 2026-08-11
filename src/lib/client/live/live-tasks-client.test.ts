@@ -348,6 +348,30 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     expect(tasks[0].unmetDependsOn).toBeUndefined();
   });
 
+  it("list discards a malformed relation list (non-string member) with a warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [
+        {
+          id: "note-1",
+          title: "T",
+          status: "not_started",
+          dependsOn: ["dep-a", 42],
+        },
+      ],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].dependsOn).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("discarding malformed dependsOn"),
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
   it("note-shaped entities carry relations from metadata.task", async () => {
     mockedRequest.mockResolvedValueOnce({
       tasks: [

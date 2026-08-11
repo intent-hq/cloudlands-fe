@@ -662,14 +662,14 @@ export interface WorkspaceTask {
    */
   rev?: number;
   /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
-  dependsOn?: string[];
+  dependsOn?: NoteId[];
   /** Task-note ids this task may conflict with (advisory); omitted when empty. */
-  conflictsWith?: string[];
+  conflictsWith?: NoteId[];
   /**
    * Daemon-computed: `dependsOn` ids whose task is not yet `complete` (missing
    * and cancelled deps count as unmet). Omitted when empty (PROTOCOL §5.4).
    */
-  unmetDependsOn?: string[];
+  unmetDependsOn?: NoteId[];
 }
 
 /**

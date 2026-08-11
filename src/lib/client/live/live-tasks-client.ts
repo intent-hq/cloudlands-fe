@@ -10,7 +10,7 @@
  * (intent-hq/monorepo#1697); there is no legacy `task:*`/`note:*`
  * events-driven refetch.
  */
-import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import type { NoteId, TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import type {
   CreatePrerequisiteOptions,
   MarkAsTaskOptions,
@@ -35,11 +35,25 @@ import {
   runMutationWithId,
   subscribeWorkspaceIds,
 } from "./live-support";
+import { createLogger } from "$lib/utils/client-logger";
 
-/** Carry a wire string-array field through only when it is a non-empty string array. */
-function stringArray(value: unknown): string[] | undefined {
+const logger = createLogger("LiveTasksClient");
+
+/**
+ * Carry a wire string-array field through only when it is a non-empty string
+ * array. A non-empty array with a non-string member is a contract divergence
+ * (PROTOCOL §5.4 lists are task-note id strings) — it is discarded with a warn
+ * so a BE-side break surfaces instead of vanishing silently.
+ */
+function stringArray(field: string, value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
-  return value.every((v) => typeof v === "string") ? (value as string[]) : undefined;
+  if (!value.every((v) => typeof v === "string")) {
+    logger.warn(`discarding malformed ${field}: expected string[], got non-string member`, {
+      value,
+    });
+    return undefined;
+  }
+  return value as string[];
 }
 
 /**
@@ -51,9 +65,9 @@ function relationFields(
   source: Record<string, unknown>,
   raw: Record<string, unknown>,
 ): Pick<WorkspaceTask, "dependsOn" | "conflictsWith" | "unmetDependsOn"> {
-  const dependsOn = stringArray(source.dependsOn);
-  const conflictsWith = stringArray(source.conflictsWith);
-  const unmetDependsOn = stringArray(raw.unmetDependsOn);
+  const dependsOn = stringArray("dependsOn", source.dependsOn) as NoteId[] | undefined;
+  const conflictsWith = stringArray("conflictsWith", source.conflictsWith) as NoteId[] | undefined;
+  const unmetDependsOn = stringArray("unmetDependsOn", raw.unmetDependsOn) as NoteId[] | undefined;
   return {
     ...(dependsOn ? { dependsOn } : {}),
     ...(conflictsWith ? { conflictsWith } : {}),

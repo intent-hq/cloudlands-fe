@@ -112,9 +112,12 @@
   });
 
   // Task relations (PROTOCOL §5.4, v6.8). `unmetDependsOn` mirrors the daemon's
-  // projection — a dep is unmet unless its task note exists and is `complete`
-  // (missing and cancelled deps count as unmet) — recomputed live off the notes
-  // slice so dependency status changes update the indicator without a refetch.
+  // `unmet_depends_on_ids` projection (intent-services) — a dep is unmet unless
+  // its task note exists and is `complete` (missing and cancelled deps count as
+  // unmet) — recomputed live off the notes slice so dependency status changes
+  // update the indicator without a refetch. Note-shaped push entities do not
+  // carry the computed field; moving this projection BE-side is tracked in
+  // intent-hq/monorepo#1979.
   let linkedTaskDependsOn = $derived(linkedTaskNote?.metadata?.task?.dependsOn ?? []);
   let linkedTaskConflictsWith = $derived(linkedTaskNote?.metadata?.task?.conflictsWith ?? []);
   let unmetDependsOn = $derived.by(() => {
@@ -477,7 +480,7 @@
               <span
                 class="shrink-0 inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
                 title={m.tiptap_taskItem_waitsOn_tooltip({
-                  titles: relationTitles(unmetDependsOn as NoteId[]),
+                  titles: relationTitles(unmetDependsOn),
                 })}
                 contenteditable="false"
               >
@@ -485,11 +488,11 @@
                 {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
               </span>
             {/if}
-            {#if linkedTaskConflictsWith.length > 0}
+            {#if linkedTaskConflictsWith.length > 0 && !effectiveChecked}
               <span
                 class="shrink-0 inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
                 title={m.tiptap_taskItem_conflicts_tooltip({
-                  titles: relationTitles(linkedTaskConflictsWith as NoteId[]),
+                  titles: relationTitles(linkedTaskConflictsWith),
                 })}
                 contenteditable="false"
               >
