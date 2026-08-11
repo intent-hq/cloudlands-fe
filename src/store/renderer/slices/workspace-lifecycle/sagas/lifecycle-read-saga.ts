@@ -365,28 +365,30 @@ type TasksReadAction = ReturnType<
   | typeof workspaceUnmounted
 >;
 
-function* tasksWorker(action: TasksReadAction) {
+function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
+  const workspaceId = action.payload[0];
+  if (isWorkspaceCleanupAction(action)) {
+    pendingForcedReads.delete(workspaceId);
+    return { context: workspaceId, cancel: true as const };
+  }
+  if (workspaceId && action.type === loadWorkspaceTasksRequested.type) {
+    pendingForcedReads.add(workspaceId);
+  }
+  return workspaceId;
+}
+
+function* tasksWorker(pendingForcedReads: Set<string>, action: TasksReadAction) {
   if (isWorkspaceCleanupAction(action)) return;
   const workspaceId = action.payload[0];
-  if (action.type === ensureWorkspaceTasksLoaded.type) {
-    yield* runWorkspaceRead(
-      'tasks',
-      workspaceId,
-      function* (id) {
-        yield* refreshTasks(id, true);
-      },
-      false,
-    );
-  } else if (action.type === loadWorkspaceTasksRequested.type) {
-    yield* runWorkspaceRead(
-      'tasks',
-      workspaceId,
-      function* (id) {
-        yield* refreshTasks(id, false);
-      },
-      false,
-    );
-  }
+  const force = pendingForcedReads.delete(workspaceId);
+  yield* runWorkspaceRead(
+    'tasks',
+    workspaceId,
+    function* (id) {
+      yield* refreshTasks(id, !force);
+    },
+    false,
+  );
 }
 
 function* eventsWorker(action: ReturnType<typeof loadEventsRequested>) {
@@ -498,6 +500,7 @@ function* clearUnmountedInitializedContext(
 
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const initializedContexts = new Set<string>();
+  const pendingForcedTaskReads = new Set<string>();
   try {
     yield* all([
       takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
@@ -508,8 +511,9 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
           workspaceDeleted,
           workspaceUnmounted,
         ],
-        workspaceReadContext,
+        (action) => tasksReadContext(pendingForcedTaskReads, action),
         tasksWorker,
+        pendingForcedTaskReads,
       ),
       takeLeadingByWorkspace(loadEventsRequested, eventsWorker),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker),
@@ -540,5 +544,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
     ]);
   } finally {
     initializedContexts.clear();
+    pendingForcedTaskReads.clear();
   }
 }
