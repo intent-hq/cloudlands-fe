@@ -55,6 +55,7 @@ interface WireResult {
 interface ReadCoordinator {
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
+  pendingSnapshots: Set<string>;
   pendingConfirmations: Set<string>;
 }
 
@@ -193,10 +194,13 @@ function* readSnapshotTask(
   } finally {
     coordinator.reads.delete(key);
     const taskCancelled = yield* cancelled();
+    const snapshotPending = coordinator.pendingSnapshots.delete(key);
     const confirmationPending = coordinator.pendingConfirmations.delete(key);
     if (!taskCancelled && !workspaceCleanedUp) {
       if (confirmationPending) {
         yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+      } else if (snapshotPending) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
       } else if (completed) {
         yield* scheduleCompletedCleanup(coordinator, wsId, agentId);
       }
@@ -212,7 +216,11 @@ function* startSnapshotRead(
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
   if (coordinator.reads.has(key)) {
-    if (mode === 'confirmation') coordinator.pendingConfirmations.add(key);
+    if (mode === 'confirmation') {
+      coordinator.pendingConfirmations.add(key);
+    } else {
+      coordinator.pendingSnapshots.add(key);
+    }
     return;
   }
   if (mode === 'snapshot') {
@@ -254,6 +262,7 @@ export function* agentSubscriptionReadSaga() {
   const coordinator: ReadCoordinator = {
     reads: new Map(),
     completedCleanups: new Map(),
+    pendingSnapshots: new Set(),
     pendingConfirmations: new Set(),
   };
   yield* all([
