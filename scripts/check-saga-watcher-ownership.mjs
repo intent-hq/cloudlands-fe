@@ -23,6 +23,7 @@ const WATCHERS = new Set([
 ]);
 const WILDCARD_EFFECTS = new Set([...WATCHERS, 'take', 'takeMaybe', 'actionChannel']);
 const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
+const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /workspace-lifecycle-slice\.ts#workspace(?:Deleted|Unmounted|Mounted)$/,
@@ -142,21 +143,50 @@ function importBindingForPattern(pattern, imports, namespaces) {
   return specifier && { local: pattern.name.text, imported: pattern.name.text, specifier };
 }
 
-function isExternalChannelBinding(binding) {
-  if (/(?:^|\/)(?:[^/]*-)?slice(?:\.[cm]?[jt]s)?$/i.test(binding.specifier)) return false;
+function actionFactoryForExpression(expression, imports, namespaces) {
+  const binding = importBindingForPattern(expression, imports, namespaces);
   return (
-    /channels?$/i.test(binding.local) ||
-    /channels?$/i.test(binding.imported) ||
-    /(?:^|\/)(?:[^/]*-)?channels?(?:\/index)?(?:\.[cm]?[jt]s)?$/i.test(binding.specifier)
+    binding &&
+    /(?:^|\/)create-action$/.test(binding.specifier) &&
+    ACTION_FACTORIES.has(binding.imported)
   );
 }
 
-function isImportedReduxPattern(pattern, actions, imports, namespaces) {
+function actionExportsFor(source) {
+  const imports = importsFor(source);
+  const namespaces = effectNamespacesFor(source);
+  const actions = new Set();
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer &&
+        ts.isCallExpression(declaration.initializer) &&
+        actionFactoryForExpression(declaration.initializer.expression, imports, namespaces)
+      )
+        actions.add(declaration.name.text);
+    }
+  }
+  return actions;
+}
+
+function isImportedReduxPattern(
+  pattern,
+  actions,
+  imports,
+  namespaces,
+  sources,
+  filePath,
+  actionExports,
+) {
   const patterns = actions.length > 0 ? actions : [pattern];
   return patterns.some((candidate) => {
     if (ts.isStringLiteralLike(candidate)) return true;
     const binding = importBindingForPattern(candidate, imports, namespaces);
-    return binding && !isExternalChannelBinding(binding);
+    if (!binding) return false;
+    const target = resolvedModulePath(sources, filePath, binding.specifier);
+    return target ? actionExports.get(target)?.has(binding.imported) : false;
   });
 }
 
@@ -315,6 +345,9 @@ export function inspectSagaWatcherOwnership(files) {
       }),
   );
   const violations = [];
+  const actionExports = new Map(
+    [...sources].map(([filePath, source]) => [filePath, actionExportsFor(source)]),
+  );
   const audited = new Set([
     ROOT_SAGAS,
     ...[...sources.keys()].filter((filePath) => SAGA_SOURCE.test(filePath)),
@@ -459,7 +492,17 @@ export function inspectSagaWatcherOwnership(files) {
         (enclosingWorkerCall(node, effectNames, effectNamespaces) ||
           laterWorkerCall(source, node, effectNames, effectNamespaces))
       ) {
-        if (isImportedReduxPattern(pattern, actions, imports, effectNamespaces))
+        if (
+          isImportedReduxPattern(
+            pattern,
+            actions,
+            imports,
+            effectNamespaces,
+            sources,
+            filePath,
+            actionExports,
+          )
+        )
           violations.push(
             `${filePath}:${lineFor(source, node)}: manual Redux watcher loop; use a native watcher effect`,
           );
