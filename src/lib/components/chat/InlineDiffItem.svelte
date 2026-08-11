@@ -147,6 +147,9 @@
     const isStaged = 'staged' in change && change.staged === true;
     const category = 'category' in change ? (change.category as string) : undefined;
     const commitHash = 'commitHash' in change ? (change.commitHash as string) : undefined;
+    // Submodule (gitlink) marking from git.status — routes the viewer to the
+    // pin presentation and suppresses file reads (#1739).
+    const gitlink = 'gitlink' in change ? (change.gitlink as TrackedChange['gitlink']) : undefined;
     // Check if this is full file content from git:diff (vs snippet content from tool calls)
     // Snippet content should NOT be editable because saving would overwrite the full file
     const isFullFileContent =
@@ -171,6 +174,7 @@
       relativePath: filePath,
       stage,
       commitHash,
+      gitlink,
       stats: {
         additions,
         deletions,

@@ -33,6 +33,7 @@
 } from './diff-ipc-batcher';
   import {
   gitlinkSidesFromHunks,
+  gitlinkSidesFromShas,
   isGitlinkDiffChunk,
 } from './gitlink';
   import { appClient } from '$lib/client';
@@ -359,7 +360,10 @@
     error = null;
     contentTooLarge = false;
     noChangesAtStage = false;
-    isGitlinkChange = false;
+    // A change carrying git.status gitlink metadata (mode 160000, #1739) is
+    // classified upfront — its path is a directory, so no working-tree read
+    // may fire even before the diff load resolves.
+    isGitlinkChange = Boolean(change?.gitlink);
     oldContent = '';
     newContent = '';
     committedPatch = '';
@@ -490,7 +494,11 @@
         // flag via the batcher + show-file dedup cache. Returns true when the
         // diff chunk (or its fallback) populated both sides.
         const tryLoadAtStage = async (stagedFlag: boolean): Promise<boolean> => {
-          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath);
+          // gitlink metadata lets the batcher skip the content reads that can
+          // only fail on a status-marked submodule entry (#1739).
+          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath, {
+            gitlink: change.gitlink,
+          });
 
           if (diffChunk) {
             // Gitlink (submodule) entry (intent-hq/monorepo#1739): no blob
@@ -504,6 +512,16 @@
               oldContent = sides.oldContent;
               newContent = sides.newContent;
               return true;
+            }
+
+            // Status-marked gitlink whose hunks didn't structurally classify:
+            // render the pin change from the git.status pin SHAs instead of
+            // falling through to content reads that can only fail.
+            if (change.gitlink) {
+              const sides = gitlinkSidesFromShas(change.gitlink);
+              oldContent = sides.oldContent;
+              newContent = sides.newContent;
+              return oldContent.length > 0 || newContent.length > 0;
             }
 
             const hasValidOld =
@@ -558,6 +576,14 @@
               oldContentLength: oldContent.length,
               newContentLength: newContent.length,
             });
+          } else if (change.gitlink) {
+            // Status-marked gitlink with no diff chunk at either stage (e.g. a
+            // dirty submodule worktree with an unchanged pin): render the pin
+            // presentation from the git.status SHAs (#1739).
+            const sides = gitlinkSidesFromShas(change.gitlink);
+            oldContent = sides.oldContent;
+            newContent = sides.newContent;
+            if (!oldContent && !newContent) noChangesAtStage = true;
           } else {
             // Neither stage has changes - fall back to provided content if available
             // This handles cases where changes have been committed, reverted, or modified

@@ -35,6 +35,19 @@ export interface LocalFileChange extends ChatFileChange {
   commitMessage?: string;
   /** Diff chunks with context lines from git:diff */
   chunks?: DiffHunk[];
+  /**
+   * Submodule (gitlink) metadata from `git.status` (mode 160000 entries) —
+   * routes the entry to the submodule presentation without file reads that
+   * can only fail (intent-hq/monorepo#1739).
+   */
+  gitlink?: {
+    /** Octal tree-entry mode string (`"160000"`). */
+    mode: string;
+    /** Pre-change submodule pin SHA (absent for a newly added submodule). */
+    oldSha?: string;
+    /** Post-change submodule pin SHA (absent for a deleted submodule). */
+    newSha?: string;
+  };
   /** Full file content from disk (for agent changes visualization) */
   fullFileContent?: string;
   /** For merged changes: the unstaged part of the change */

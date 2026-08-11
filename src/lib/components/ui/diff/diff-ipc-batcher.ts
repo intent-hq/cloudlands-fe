@@ -28,7 +28,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
-import { gitlinkSidesFromHunks, isGitlinkDiffChunk } from './gitlink';
+import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
 
 const logger = createLogger('diff-ipc-batcher');
 
@@ -71,6 +71,32 @@ interface ShowFileResponse {
   success: boolean;
   data?: string;
   error?: string;
+  /**
+   * True when the daemon rejected the read with the typed `not-a-file` error
+   * (`-32602`, `data.code: "not-a-file"`): the path resolves to a non-blob
+   * tree entry — a gitlink (mode 160000) or a directory — so no file content
+   * exists at any ref (intent-hq/monorepo#1739). Callers route these to the
+   * submodule presentation instead of logging an error.
+   */
+  notAFile?: boolean;
+}
+
+/** Duck-typed check for the daemon's typed `not-a-file` error payload. */
+function isNotAFileError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, data } = error as { code?: unknown; data?: { code?: unknown } };
+  return code === 'not-a-file' || data?.code === 'not-a-file';
+}
+
+/**
+ * Submodule pin SHAs from a `git.status` mode-160000 entry
+ * (intent-hq/monorepo#1739). Callers that know a request path is a gitlink
+ * pass this so enrichment composes the pin sides from the SHAs instead of
+ * issuing content reads that can only fail.
+ */
+interface GitlinkMeta {
+  oldSha?: string;
+  newSha?: string;
 }
 
 interface PendingDiff {
@@ -81,6 +107,9 @@ interface PendingDiff {
   /** Original request path → the (possibly worktree-relative-normalized) path
    * sent on the wire; used by the `git.diffs` batcher only. */
   wirePaths?: Map<string, string>;
+  /** Original request path → caller-provided gitlink metadata; used by the
+   * `git.diffs` batcher only (#1739). */
+  gitlinks?: Map<string, GitlinkMeta>;
 }
 
 const pendingDiffs = new Map<string, PendingDiff>();
@@ -220,15 +249,26 @@ async function readWorkingTreeContent(
  *
  * Gitlink (submodule) chunks (intent-hq/monorepo#1739) are composed from
  * their `Subproject commit <sha>` hunk lines instead: a gitlink has no blob,
- * so `git.showFile` fails (`-32603`) and `file.read` hits a directory.
+ * so `git.showFile` rejects it with the typed `-32602` `not-a-file` error
+ * and `file.read` hits a directory. A status-marked gitlink whose hunks did
+ * not structurally classify (e.g. a dirty-worktree entry with no pin move)
+ * composes from the caller-provided `git.status` pin SHAs instead of issuing
+ * those reads at all.
  */
 async function enrichChunkContents(
   workspaceId: string,
   staged: boolean,
   chunk: DiffChunk,
+  gitlink?: GitlinkMeta,
 ): Promise<void> {
   if (isGitlinkDiffChunk(chunk)) {
     const sides = gitlinkSidesFromHunks(chunk.chunks ?? []);
+    chunk.oldContent = sides.oldContent;
+    chunk.newContent = sides.newContent;
+    return;
+  }
+  if (gitlink) {
+    const sides = gitlinkSidesFromShas(gitlink);
     chunk.oldContent = sides.oldContent;
     chunk.newContent = sides.newContent;
     return;
@@ -240,14 +280,28 @@ async function enrichChunkContents(
       : readWorkingTreeContent(workspaceId, chunk.file),
   ]);
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';
-  else logger.warn('git.showFile failed for old diff side', {
+  else if (oldRes.notAFile) {
+    // Typed not-a-file rejection (#1739): a gitlink/directory entry whose
+    // hunks didn't structurally classify above — expected, not a failure.
+    logger.debug('git.showFile old side is not a file (gitlink/directory)', {
+      workspaceId,
+      filePath: chunk.file,
+      staged,
+    });
+  } else logger.warn('git.showFile failed for old diff side', {
     workspaceId,
     filePath: chunk.file,
     staged,
     error: oldRes.error,
   });
   if (newRes.success) chunk.newContent = newRes.data ?? '';
-  else logger.warn('content read failed for new diff side', {
+  else if (newRes.notAFile) {
+    logger.debug('git.showFile new side is not a file (gitlink/directory)', {
+      workspaceId,
+      filePath: chunk.file,
+      staged,
+    });
+  } else logger.warn('content read failed for new diff side', {
     workspaceId,
     filePath: chunk.file,
     staged,
@@ -346,12 +400,21 @@ async function flushDiffGroup(key: string) {
     }
 
     // Enrichment runs once over the union of narrowed + recovered matches
-    // (the Set dedupes), so no chunk is enriched twice.
+    // (the Set dedupes), so no chunk is enriched twice. Each chunk carries
+    // the gitlink metadata of the request path it matched (if any), so
+    // status-marked gitlinks skip the failing content reads (#1739).
     const matchedChunks = new Set(
       [...matches.values()].filter((chunk): chunk is DiffChunk => chunk !== undefined),
     );
+    const gitlinkByChunk = new Map<DiffChunk, GitlinkMeta>();
+    for (const [path, chunk] of matches) {
+      const gitlink = pending.gitlinks?.get(path);
+      if (chunk && gitlink && !gitlinkByChunk.has(chunk)) gitlinkByChunk.set(chunk, gitlink);
+    }
     await Promise.all(
-      [...matchedChunks].map((chunk) => enrichChunkContents(wsId, staged, chunk)),
+      [...matchedChunks].map((chunk) =>
+        enrichChunkContents(wsId, staged, chunk, gitlinkByChunk.get(chunk)),
+      ),
     );
 
     for (const [path, resolvers] of pending.resolvers) {
@@ -415,11 +478,17 @@ async function flushBranchBaseDiffGroup(key: string) {
  * narrowing matches it; the caller's promise still resolves against the
  * original path. Returns the matching chunk, or `undefined` if the daemon
  * returned no entry for it.
+ *
+ * `options.gitlink` marks the path as a `git.status` mode-160000 submodule
+ * entry (#1739): its chunk's sides are composed from the pin SHAs when the
+ * hunks don't structurally classify, instead of `git.showFile`/`file.read`
+ * calls that can only fail on a gitlink.
  */
 export function batchedGitDiff(
   workspaceId: string,
   staged: boolean,
   filePath: string,
+  options?: { gitlink?: GitlinkMeta },
 ): Promise<DiffChunk | undefined> {
   const key = diffGroupKey(workspaceId, staged);
   const existing = pendingDiffs.get(key);
@@ -429,6 +498,7 @@ export function batchedGitDiff(
     rejecters: [],
     timer: null,
     wirePaths: new Map(),
+    gitlinks: new Map(),
   };
   if (!existing) {
     pendingDiffs.set(key, pending);
@@ -441,6 +511,7 @@ export function batchedGitDiff(
     : filePath;
   pending.paths.add(wirePath);
   pending.wirePaths?.set(filePath, wirePath);
+  if (options?.gitlink) pending.gitlinks?.set(filePath, options.gitlink);
 
   return new Promise<DiffChunk | undefined>((resolve, reject) => {
     let resolvers = pending.resolvers.get(filePath);
@@ -506,7 +577,10 @@ function showKey(workspaceId: string, ref: string, filePath: string): string {
  * revision, index ref ':0' supported; a path missing at the ref folds to ''
  * on the daemon side). Concurrent callers for the same `(workspace, ref,
  * path)` share a single in-flight request. Daemon/transport errors fold into
- * `{ success: false, error }`, preserving the legacy handler's envelope.
+ * `{ success: false, error }`, preserving the legacy handler's envelope; the
+ * typed `not-a-file` rejection (gitlink/directory entry, #1739) additionally
+ * sets `notAFile: true` so callers can route it instead of treating it as a
+ * failure.
  */
 export function dedupedShowFile(
   workspaceId: string,
@@ -532,6 +606,7 @@ export function dedupedShowFile(
       (error): ShowFileResponse => ({
         success: false,
         error: error instanceof Error ? error.message : String(error),
+        ...(isNotAFileError(error) ? { notAFile: true } : {}),
       }),
     )
     .finally(() => {

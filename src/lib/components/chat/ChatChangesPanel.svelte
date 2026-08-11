@@ -588,13 +588,18 @@
    * - Files are added/removed from the list
    * - File staging status changes (staged → unstaged or vice versa)
    * - File category changes (uncommitted → committed)
+   * - A submodule's gitlink pin SHAs change (#1739)
    */
   function generateChangesKey(changes: LocalFileChange[]): string {
     return changes
       .map((c) => {
         // Use filePath + staging info as the stable key
         // category is 'staged' | 'unstaged' | 'committed', or fall back to staged boolean
-        return `${c.filePath}|${c.category || c.staged}|${c.commitHash || ''}`;
+        // Gitlink (submodule) pin SHAs are included because a pin-only update
+        // changes neither category nor line stats — without them a moved pin
+        // would keep the stale entry (#1739).
+        const gitlinkKey = c.gitlink ? `|gl:${c.gitlink.oldSha || ''}:${c.gitlink.newSha || ''}` : '';
+        return `${c.filePath}|${c.category || c.staged}|${c.commitHash || ''}${gitlinkKey}`;
       })
       .sort()
       .join(';;');
@@ -896,7 +901,12 @@
               });
           }
           if (item.kind === 'fetch-local') {
-            return batchedGitDiff(workspaceId, item.staged, item.change.filePath)
+            // Pass gitlink metadata so the batcher composes a status-marked
+            // submodule's sides from its pin SHAs instead of issuing
+            // git.showFile/file.read calls that can only fail (#1739).
+            return batchedGitDiff(workspaceId, item.staged, item.change.filePath, {
+              gitlink: item.change.gitlink,
+            })
               .then((chunk) => ({ item, chunk }))
               .catch((error) => {
                 logger.warn('[fetchContent] Failed to fetch local diff', {
@@ -1185,7 +1195,13 @@
       `gbc:${groupByCommit}::` +
       sorted
         .map((c) => {
-          const baseKey = `${c.filePath}|${c.category || c.staged}|${c.isMerged || false}|${c.additions || 0}|${c.deletions || 0}`;
+          // Gitlink pin SHAs are part of the key: a pin-to-pin move keeps the
+          // same stats (1 addition + 1 deletion), so without them the stale
+          // entry would be retained (#1739).
+          const gitlinkKey = c.gitlink
+            ? `|gl:${c.gitlink.oldSha || ''}:${c.gitlink.newSha || ''}`
+            : '';
+          const baseKey = `${c.filePath}|${c.category || c.staged}|${c.isMerged || false}|${c.additions || 0}|${c.deletions || 0}${gitlinkKey}`;
           // For merged changes, also include the individual part stats
           if (c.isMerged) {
             const stagedStats = c.stagedPart
