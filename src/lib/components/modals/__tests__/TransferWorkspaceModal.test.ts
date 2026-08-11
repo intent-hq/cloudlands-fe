@@ -133,7 +133,9 @@ describe('TransferWorkspaceModal — confirm step', () => {
     expect(screen.getByText(/they will be stopped/)).toBeTruthy();
     expect(screen.getByText(/will be snapshotted/)).toBeTruthy();
     expect(screen.getByText(/Event history, terminal sessions/)).toBeTruthy();
-    expect(screen.getByTestId('transfer-coming-soon')).toBeTruthy();
+    // Start button is enabled once the plan is loaded.
+    const start = screen.getByTestId('transfer-start-button') as HTMLButtonElement;
+    expect(start.disabled).toBe(false);
   });
 
   it('shows the loading and error states', async () => {
@@ -161,5 +163,228 @@ describe('TransferWorkspaceModal — confirm step', () => {
 
     await fireEvent.click(screen.getByText('Back'));
     expect(onBack).toHaveBeenCalled();
+  });
+
+  it('Start transfer fires onStart; disabled while the plan is loading', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onStart = vi.fn();
+
+    const { unmount } = render(TransferWorkspaceModal, {
+      props: { open: true, step: 'confirm', planStatus: 'loading', onStart },
+    });
+    expect((screen.getByTestId('transfer-start-button') as HTMLButtonElement).disabled).toBe(true);
+    unmount();
+
+    render(TransferWorkspaceModal, {
+      props: { open: true, step: 'confirm', planStatus: 'loaded', plan, onStart },
+    });
+    await fireEvent.click(screen.getByTestId('transfer-start-button'));
+    expect(onStart).toHaveBeenCalled();
+  });
+});
+
+describe('TransferWorkspaceModal — transferring step', () => {
+  it('renders build stage, then relay byte counters against the estimate', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    const { unmount } = render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'transferring',
+        connections: [remote('conn-1', '10.0.0.2')],
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        plan,
+        runStatus: 'running',
+        progress: {
+          phase: 'building',
+          stage: 'bundling-git',
+          bytesDown: 0,
+          bytesUp: 0,
+          chunksDone: 0,
+        },
+      },
+    });
+    expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
+      'Bundling git repository',
+    );
+    // Building: no fraction yet (indeterminate bar).
+    expect(screen.getByTestId('transfer-progress-bar').getAttribute('aria-valuenow')).toBeNull();
+    unmount();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'transferring',
+        connections: [remote('conn-1', '10.0.0.2')],
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        plan,
+        runStatus: 'running',
+        progress: {
+          phase: 'relaying',
+          bytesTotal: 4 * 1024 * 1024,
+          bytesDown: 2 * 1024 * 1024,
+          bytesUp: 1024 * 1024,
+          chunksTotal: 4,
+          chunksDone: 1,
+        },
+      },
+    });
+    expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
+      'Transferring archive',
+    );
+    const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
+    expect(bytes).toContain('Downloaded: 2Mi');
+    expect(bytes).toContain('Uploaded: 1Mi');
+    // (2 + 1) MiB of 2×4 MiB → 38%.
+    expect(screen.getByTestId('transfer-progress-bar').getAttribute('aria-valuenow')).toBe('38');
+    // Restart toggle only renders for server destinations.
+    expect(screen.getByTestId('transfer-restart-agents')).toBeTruthy();
+  });
+
+  it('hides the upload counter and restart toggle for downloads', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'transferring',
+        destination: { kind: 'download' },
+        plan,
+        runStatus: 'running',
+        progress: {
+          phase: 'relaying',
+          bytesTotal: 4 * 1024 * 1024,
+          bytesDown: 1024 * 1024,
+          bytesUp: 0,
+          chunksTotal: 4,
+          chunksDone: 1,
+        },
+      },
+    });
+    const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
+    expect(bytes).toContain('Downloaded: 1Mi');
+    expect(bytes).not.toContain('Uploaded');
+    expect(screen.queryByTestId('transfer-restart-agents')).toBeNull();
+    // Download fraction counts down only: 1 of 4 MiB → 25%.
+    expect(screen.getByTestId('transfer-progress-bar').getAttribute('aria-valuenow')).toBe('25');
+  });
+
+  it('forwards the restart-agents toggle', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onSetRestartAgents = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'transferring',
+        connections: [remote('conn-1', '10.0.0.2')],
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        runStatus: 'running',
+        restartAgents: false,
+        onSetRestartAgents,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('checkbox'));
+    expect(onSetRestartAgents).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('TransferWorkspaceModal — result step', () => {
+  it('success (server): archive checkbox, Done and Switch buttons', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onFinalize = vi.fn();
+    const onSetArchiveSource = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'result',
+        connections: [remote('conn-1', '10.0.0.2')],
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        runStatus: 'succeeded',
+        restartAgents: true,
+        interruptedAgents: ['agent-1', 'agent-2'],
+        archiveSource: true,
+        onFinalize,
+        onSetArchiveSource,
+      },
+    });
+
+    expect(screen.getByTestId('transfer-result-success')).toBeTruthy();
+    expect(screen.getByTestId('transfer-result-interrupted').textContent).toContain('2');
+    expect(screen.getByTestId('transfer-archive-source')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('checkbox'));
+    expect(onSetArchiveSource).toHaveBeenCalledWith(false);
+
+    await fireEvent.click(screen.getByTestId('transfer-switch-button'));
+    expect(onFinalize).toHaveBeenCalledWith(true);
+    await fireEvent.click(screen.getByTestId('transfer-done-button'));
+    expect(onFinalize).toHaveBeenCalledWith(false);
+  });
+
+  it('success (download): shows the file path, no switch button', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'download' },
+        runStatus: 'succeeded',
+        downloadFilePath: '/tmp/ws-1-transfer.zip',
+      },
+    });
+
+    expect(screen.getByTestId('transfer-result-file').textContent).toContain(
+      '/tmp/ws-1-transfer.zip',
+    );
+    expect(screen.queryByTestId('transfer-switch-button')).toBeNull();
+    expect(screen.getByTestId('transfer-done-button')).toBeTruthy();
+  });
+
+  it('failure: shows the reason and a Retry affordance', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onRetry = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        runStatus: 'failed',
+        runError: 'versions must match exactly',
+        onRetry,
+      },
+    });
+
+    expect(screen.getByTestId('transfer-result-failed')).toBeTruthy();
+    expect(screen.getByTestId('transfer-failed-reason').textContent).toContain(
+      'versions must match exactly',
+    );
+    await fireEvent.click(screen.getByTestId('transfer-retry-button'));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('finalize failure renders inline error', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'server', connectionId: 'conn-1' },
+        connections: [remote('conn-1', '10.0.0.2')],
+        runStatus: 'succeeded',
+        finalizeStatus: 'error',
+        finalizeError: 'workspace gone',
+      },
+    });
+
+    expect(screen.getByTestId('transfer-finalize-error').textContent).toContain('workspace gone');
   });
 });

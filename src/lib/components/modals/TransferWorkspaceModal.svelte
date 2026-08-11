@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * TransferWorkspaceModal — the Transfer/Download wizard (steps 1–2).
+   * TransferWorkspaceModal — the Transfer/Download wizard.
    *
    * Presentational: all state arrives as props from the Redux host
    * (`TransferWorkspaceModalHost`), following the ConnectBackendModal layout.
@@ -8,13 +8,18 @@
    *      active backend) or "Download to file".
    *   2. `confirm` — render the `workspace.transfer.plan` result: manifest
    *      counts, size estimate, git summary, and pre-flight warnings.
-   * Starting the transfer is a later surface; Next on the confirm step is
-   * intentionally absent.
+   *   3. `transferring` — live progress (build stage, bytes down/up vs the
+   *      plan estimate) + the "restart in-flight agents" toggle.
+   *   4. `result` — success (archive-source checkbox, Done / Switch buttons)
+   *      or failure (reason + Retry; the source stays usable).
    */
 
   import { Button } from '$lib/components/ui/button';
+  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import Fa from 'svelte-fa';
   import {
+    faCircleCheck,
+    faCircleXmark,
     faDownload,
     faServer,
     faTriangleExclamation,
@@ -26,8 +31,11 @@
   import type { ConnectionRecord } from '$store/renderer/slices/connections/connections-types';
   import type {
     TransferDestination,
+    TransferFinalizeStatus,
     TransferPlan,
     TransferPlanStatus,
+    TransferProgress,
+    TransferRunStatus,
     TransferStep,
   } from '$store/renderer/slices/workspace-transfer/workspace-transfer-types';
 
@@ -41,10 +49,24 @@
     planStatus?: TransferPlanStatus;
     plan?: TransferPlan | null;
     planError?: string | null;
+    runStatus?: TransferRunStatus;
+    progress?: TransferProgress | null;
+    runError?: string | null;
+    restartAgents?: boolean;
+    downloadFilePath?: string | null;
+    interruptedAgents?: string[];
+    archiveSource?: boolean;
+    finalizeStatus?: TransferFinalizeStatus;
+    finalizeError?: string | null;
     onSelectDestination?: (destination: TransferDestination) => void;
     onNext?: () => void;
     onBack?: () => void;
     onCancel?: () => void;
+    onStart?: () => void;
+    onRetry?: () => void;
+    onSetRestartAgents?: (value: boolean) => void;
+    onSetArchiveSource?: (value: boolean) => void;
+    onFinalize?: (switchToTarget: boolean) => void;
   }
 
   let {
@@ -56,10 +78,24 @@
     planStatus = 'idle',
     plan = null,
     planError = null,
+    runStatus = 'idle',
+    progress = null,
+    runError = null,
+    restartAgents = false,
+    downloadFilePath = null,
+    interruptedAgents = [],
+    archiveSource = true,
+    finalizeStatus = 'idle',
+    finalizeError = null,
     onSelectDestination,
     onNext,
     onBack,
     onCancel,
+    onStart,
+    onRetry,
+    onSetRestartAgents,
+    onSetArchiveSource,
+    onFinalize,
   }: Props = $props();
 
   const canNext = $derived(step === 'destination' && destination != null);
@@ -75,6 +111,49 @@
 
   /** Tables with at least one row, for the manifest counts table. */
   const populatedTables = $derived((plan?.manifest.tables ?? []).filter((t) => t.rowCount > 0));
+
+  const targetLabel = $derived.by(() => {
+    if (!destination || destination.kind !== 'server') return '';
+    const conn = connections.find((c) => c.id === destination.connectionId);
+    return conn ? formatConnectionLabel(conn) : destination.connectionId;
+  });
+
+  /** Human copy for the current build stage / relay phase (step 3). */
+  const progressLabel = $derived.by(() => {
+    if (!progress) return m.workspace_transfer_stage_building();
+    if (progress.phase === 'committing') return m.workspace_transfer_phase_committing();
+    if (progress.phase === 'relaying') return m.workspace_transfer_phase_relaying();
+    switch (progress.stage) {
+      case 'stopping-agents':
+        return m.workspace_transfer_stage_stoppingAgents();
+      case 'exporting-rows':
+        return m.workspace_transfer_stage_exportingRows();
+      case 'bundling-git':
+        return m.workspace_transfer_stage_bundlingGit();
+      case 'writing-archive':
+        return m.workspace_transfer_stage_writingArchive();
+      default:
+        return m.workspace_transfer_stage_building();
+    }
+  });
+
+  /**
+   * Progress fraction for the bar: relay bytes against the sealed archive
+   * size once known, indeterminate (null) while the source is still building.
+   */
+  const progressFraction = $derived.by(() => {
+    if (!progress || progress.phase === 'building') return null;
+    const total = progress.bytesTotal;
+    if (!total || total <= 0) return null;
+    // For server relays count down+up against 2× total; downloads down only.
+    const isRelay = destination?.kind === 'server';
+    const done = isRelay ? progress.bytesDown + progress.bytesUp : progress.bytesDown;
+    const denominator = isRelay ? total * 2 : total;
+    return Math.min(1, done / denominator);
+  });
+
+  /** Size baseline shown next to the counters: actual, else plan estimate. */
+  const sizeBaseline = $derived(progress?.bytesTotal ?? plan?.totalSizeBytes ?? 0);
 
   function isSelected(candidate: TransferDestination): boolean {
     if (!destination) return false;
@@ -179,7 +258,7 @@
               </span>
             </button>
           </div>
-        {:else}
+        {:else if step === 'confirm'}
           <p class="text-sm text-subtle">{m.workspace_transfer_confirm_description()}</p>
           {#if destinationLabel}
             <p class="text-xs text-subtle" data-testid="transfer-destination-summary">
@@ -273,8 +352,133 @@
             </div>
 
             <p class="text-xs text-subtle">{m.workspace_transfer_notTransferred_message()}</p>
-            <p class="text-xs text-subtle italic" data-testid="transfer-coming-soon">
-              {m.workspace_transfer_comingSoon_message()}
+          {/if}
+        {:else if step === 'transferring'}
+          <p class="text-sm" data-testid="transfer-progress-label">
+            {m.workspace_transfer_transferring_title({ title: workspaceTitle })}
+          </p>
+          <p class="text-sm text-subtle" data-testid="transfer-progress-stage">{progressLabel}</p>
+
+          <div
+            class="h-2 w-full rounded bg-muted overflow-hidden"
+            role="progressbar"
+            aria-label={m.workspace_transfer_progress_ariaLabel()}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressFraction != null ? Math.round(progressFraction * 100) : undefined}
+            data-testid="transfer-progress-bar"
+          >
+            {#if progressFraction != null}
+              <div
+                class="h-full bg-primary transition-[width] duration-300"
+                style="width: {Math.round(progressFraction * 100)}%"
+              ></div>
+            {:else}
+              <div class="h-full w-1/3 bg-primary/60 animate-pulse"></div>
+            {/if}
+          </div>
+
+          <ul class="text-xs text-subtle space-y-0.5" data-testid="transfer-progress-bytes">
+            <li>
+              {m.workspace_transfer_bytesDown_label({
+                bytes: formatBytesBinary(progress?.bytesDown ?? 0),
+              })}
+              {#if sizeBaseline > 0}
+                {m.workspace_transfer_ofEstimate_label({ bytes: formatBytesBinary(sizeBaseline) })}
+              {/if}
+            </li>
+            {#if destination?.kind === 'server'}
+              <li>
+                {m.workspace_transfer_bytesUp_label({
+                  bytes: formatBytesBinary(progress?.bytesUp ?? 0),
+                })}
+                {#if sizeBaseline > 0}
+                  {m.workspace_transfer_ofEstimate_label({
+                    bytes: formatBytesBinary(sizeBaseline),
+                  })}
+                {/if}
+              </li>
+            {/if}
+          </ul>
+
+          {#if destination?.kind === 'server'}
+            <label
+              class="flex items-start gap-2 text-sm cursor-pointer"
+              data-testid="transfer-restart-agents"
+            >
+              <Checkbox
+                checked={restartAgents}
+                onCheckedChange={(v) => onSetRestartAgents?.(v)}
+                ariaLabel={m.workspace_transfer_restartAgents_label()}
+              />
+              <span class="flex flex-col">
+                <span>{m.workspace_transfer_restartAgents_label()}</span>
+                <span class="text-xs text-subtle">
+                  {m.workspace_transfer_restartAgents_description()}
+                </span>
+              </span>
+            </label>
+          {/if}
+        {:else if step === 'result'}
+          {#if runStatus === 'succeeded'}
+            <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-success">
+              <Fa icon={faCircleCheck} class="text-green-500 shrink-0" />
+              <span class="font-semibold">{m.workspace_transfer_result_success_title()}</span>
+            </p>
+            {#if downloadFilePath}
+              <p class="text-sm text-subtle" data-testid="transfer-result-file">
+                {m.workspace_transfer_result_downloadSuccess_message({
+                  filePath: downloadFilePath,
+                })}
+              </p>
+            {:else}
+              <p class="text-sm text-subtle">
+                {m.workspace_transfer_result_serverSuccess_message({ title: workspaceTitle })}
+              </p>
+              {#if restartAgents && interruptedAgents.length > 0}
+                <p class="text-xs text-subtle" data-testid="transfer-result-interrupted">
+                  {interruptedAgents.length === 1
+                    ? m.workspace_transfer_result_interrupted_one()
+                    : m.workspace_transfer_result_interrupted_many({
+                        count: interruptedAgents.length,
+                      })}
+                </p>
+              {/if}
+            {/if}
+
+            <label
+              class="flex items-start gap-2 text-sm cursor-pointer"
+              data-testid="transfer-archive-source"
+            >
+              <Checkbox
+                checked={archiveSource}
+                onCheckedChange={(v) => onSetArchiveSource?.(v)}
+                ariaLabel={m.workspace_transfer_archiveSource_label()}
+              />
+              <span class="flex flex-col">
+                <span>{m.workspace_transfer_archiveSource_label()}</span>
+                <span class="text-xs text-subtle">
+                  {m.workspace_transfer_archiveSource_description()}
+                </span>
+              </span>
+            </label>
+
+            {#if finalizeStatus === 'running'}
+              <p class="text-xs text-subtle" data-testid="transfer-finalizing">
+                {m.workspace_transfer_finalizing_message()}
+              </p>
+            {:else if finalizeStatus === 'error'}
+              <p class="text-xs text-red-500" data-testid="transfer-finalize-error">
+                {m.workspace_transfer_finalizeFailed_error({ error: finalizeError ?? '' })}
+              </p>
+            {/if}
+          {:else}
+            <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-failed">
+              <Fa icon={faCircleXmark} class="text-red-500 shrink-0" />
+              <span class="font-semibold">{m.workspace_transfer_result_failed_title()}</span>
+            </p>
+            <p class="text-xs text-subtle" data-testid="transfer-failed-reason">
+              {m.workspace_transfer_result_failed_message({ error: runError ?? '' })}
             </p>
           {/if}
         {/if}
@@ -289,12 +493,50 @@
           <Button variant="default" onclick={() => onNext?.()} disabled={!canNext}>
             {m.workspace_transfer_next_label()}
           </Button>
-        {:else}
+        {:else if step === 'confirm'}
           <Button variant="ghost" onclick={() => onBack?.()}>
             {m.workspace_transfer_back_label()}
           </Button>
-          <Button variant="default" onclick={() => onCancel?.()}>
+          <Button variant="ghost" onclick={() => onCancel?.()}>
             {m.workspace_transfer_cancel_label()}
+          </Button>
+          <Button
+            variant="default"
+            onclick={() => onStart?.()}
+            disabled={planStatus !== 'loaded'}
+            data-testid="transfer-start-button"
+          >
+            {m.workspace_transfer_start_label()}
+          </Button>
+        {:else if step === 'transferring'}
+          <Button variant="ghost" onclick={() => onCancel?.()}>
+            {m.workspace_transfer_cancel_label()}
+          </Button>
+        {:else if runStatus === 'succeeded'}
+          {#if destination?.kind === 'server'}
+            <Button
+              variant="ghost"
+              onclick={() => onFinalize?.(true)}
+              disabled={finalizeStatus === 'running'}
+              data-testid="transfer-switch-button"
+            >
+              {m.workspace_transfer_switchToTarget_label({ label: targetLabel })}
+            </Button>
+          {/if}
+          <Button
+            variant="default"
+            onclick={() => onFinalize?.(false)}
+            disabled={finalizeStatus === 'running'}
+            data-testid="transfer-done-button"
+          >
+            {m.workspace_transfer_done_label()}
+          </Button>
+        {:else}
+          <Button variant="ghost" onclick={() => onCancel?.()}>
+            {m.workspace_transfer_close_label()}
+          </Button>
+          <Button variant="default" onclick={() => onRetry?.()} data-testid="transfer-retry-button">
+            {m.workspace_transfer_retry_label()}
           </Button>
         {/if}
       </div>
