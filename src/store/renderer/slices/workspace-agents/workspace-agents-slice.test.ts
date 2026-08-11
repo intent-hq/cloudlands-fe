@@ -468,6 +468,18 @@ describe('workspace-agents selectors', () => {
       expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
       expect(selectInitialAgentId.select(state, WS_2)).toBe('agent-2');
     });
+
+    it('resolves the first flagged agent in agentIds order when multiple carry the flag', () => {
+      const firstFlagged = initialFlaggedAgent('agent-1');
+      const secondFlagged = initialFlaggedAgent('agent-2');
+      const workspaceAgents = workspaceAgentsReducer(
+        initialState,
+        setAgents(WS_1, [firstFlagged, secondFlagged]),
+      );
+      const state = mockState(workspaceAgents, [firstFlagged, secondFlagged]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBe('agent-1');
+    });
   });
 
   // -----------------------------------------------------------------------
