@@ -224,6 +224,8 @@ describe('daemonEventsSaga', () => {
       'workspace:updated',
       'workspace:created',
       'workspace:deleted',
+      'workspace:delete-scheduled',
+      'workspace:delete-cancelled',
       'task:*',
       'git:*',
       'changes:git-status',

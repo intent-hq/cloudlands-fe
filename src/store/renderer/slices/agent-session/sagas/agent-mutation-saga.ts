@@ -405,7 +405,11 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
     }
     if (cancel.success && cancel.cancelled) {
       removePendingAgentDeletion(agentId);
-      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+      // This saga always registers entries with a snapshot; the guard covers
+      // the registry's snapshot-less entries (events-bridge-registered).
+      if (pending.snapshot) {
+        yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+      }
       yield* put(action.success(true));
     } else {
       // Race-safe non-error: the daemon already committed (or the cancel RPC

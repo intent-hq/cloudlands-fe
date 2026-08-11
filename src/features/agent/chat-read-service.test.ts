@@ -197,6 +197,24 @@ describe('chatReadService (fake seam, real store)', () => {
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual(['after']);
   });
 
+  // Regression (monorepo#1977): a deletion scheduled by ANOTHER window/client
+  // (or before an FE restart) is not in this window's local pending-delete
+  // registry — the fetched row's daemon-owned `pendingDeleteAt` deadline
+  // (PROTOCOL §5.5, v6.7+) is the only signal, and the load must skip.
+  it('skips hydration when the fetched session carries pendingDeleteAt', async () => {
+    const agentId = 'agent-chat-wire-pending-del';
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({ id: agentId, pendingDeleteAt: '2026-01-01T00:00:15.000Z' }) as never,
+    );
+
+    await loadChatTranscript(agentId);
+
+    expect(agentsApi.get).toHaveBeenCalledWith(agentId);
+    expect(agentsApi.getConversation).not.toHaveBeenCalled();
+    expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+  });
+
   // Regression (PR review): if the deletion becomes pending WHILE the load is
   // in flight (session already fetched, transcript paging underway), the
   // hydrated result must be discarded rather than upserted.

@@ -10,11 +10,12 @@
  * (intent-hq/monorepo#1697); there is no legacy `task:*`/`note:*`
  * events-driven refetch.
  */
-import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
+import type { NoteId, TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import type {
   CreatePrerequisiteOptions,
   MarkAsTaskOptions,
   MutationResult,
+  SetRelationsParams,
   SubscriptionHandler,
   TaskCheckboxStatus,
   TaskUpdatePatch,
@@ -34,6 +35,45 @@ import {
   runMutationWithId,
   subscribeWorkspaceIds,
 } from "./live-support";
+import { createLogger } from "$lib/utils/client-logger";
+
+const logger = createLogger("LiveTasksClient");
+
+/**
+ * Carry a wire string-array field through only when it is a non-empty string
+ * array. A non-empty array with a non-string member is a contract divergence
+ * (PROTOCOL §5.4 lists are task-note id strings) — it is discarded with a warn
+ * so a BE-side break surfaces instead of vanishing silently.
+ */
+function stringArray(field: string, value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  if (!value.every((v) => typeof v === "string")) {
+    logger.warn(`discarding malformed ${field}: expected string[], got non-string member`, {
+      value,
+    });
+    return undefined;
+  }
+  return value as string[];
+}
+
+/**
+ * Relation fields (v6.8, presence-detected): `dependsOn` / `conflictsWith`
+ * from the source shape, plus the daemon-computed `unmetDependsOn` when the
+ * row carries it (`task.list` rows do; note-shaped entities do not).
+ */
+function relationFields(
+  source: Record<string, unknown>,
+  raw: Record<string, unknown>,
+): Pick<WorkspaceTask, "dependsOn" | "conflictsWith" | "unmetDependsOn"> {
+  const dependsOn = stringArray("dependsOn", source.dependsOn) as NoteId[] | undefined;
+  const conflictsWith = stringArray("conflictsWith", source.conflictsWith) as NoteId[] | undefined;
+  const unmetDependsOn = stringArray("unmetDependsOn", raw.unmetDependsOn) as NoteId[] | undefined;
+  return {
+    ...(dependsOn ? { dependsOn } : {}),
+    ...(conflictsWith ? { conflictsWith } : {}),
+    ...(unmetDependsOn ? { unmetDependsOn } : {}),
+  };
+}
 
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
 function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
@@ -53,6 +93,7 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
     // returns it, left undefined otherwise (no behavior change → last-writer-wins).
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+    ...relationFields(task as Record<string, unknown>, raw),
   };
 }
 
@@ -77,6 +118,7 @@ function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null
           ? raw.updated_at
           : undefined,
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+    ...relationFields(raw, raw),
   };
 }
 
@@ -248,9 +290,27 @@ export class LiveTasksClient implements TasksClient {
           ? { acceptanceCriteria: options.acceptanceCriteria }
           : {}),
         ...(options?.effort !== undefined ? { effort: options.effort } : {}),
+        ...(options?.dependsOn !== undefined ? { dependsOn: options.dependsOn } : {}),
+        ...(options?.conflictsWith !== undefined
+          ? { conflictsWith: options.conflictsWith }
+          : {}),
       },
       expectedVersion,
     );
+  }
+
+  /**
+   * `task.setRelations` (PROTOCOL §5.4, v6.8): replace the task's relation
+   * lists. Omitted params are NOT sent — the daemon keeps the existing list;
+   * `[]` is sent and clears it.
+   */
+  async setRelations(noteId: string, relations: SetRelationsParams): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.setRelations", {
+      ...(relations.dependsOn !== undefined ? { dependsOn: relations.dependsOn } : {}),
+      ...(relations.conflictsWith !== undefined
+        ? { conflictsWith: relations.conflictsWith }
+        : {}),
+    });
   }
 
   async assignAgent(
