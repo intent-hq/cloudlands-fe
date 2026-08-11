@@ -509,6 +509,49 @@ describe('daemonHealthReducer', () => {
 
       expect(next.hostLocality).toBe('local');
     });
+
+    it('falls back to the top-level transport when stats are built for the first time (#1963)', () => {
+      const bootTransport: BackendTransportInfo = {
+        mode: 'sidecar-uds',
+        target: '/tmp/intentd.sock',
+      };
+      // Boot ordering: the connect event lands while stats are still null, so
+      // the transport only exists at the top level of the slice.
+      const connected = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('connected', bootTransport),
+      );
+      expect(connected.stats).toBeNull();
+      expect(connected.transport).toEqual(bootTransport);
+
+      const payload: SystemStatusWirePayload = {
+        running: true,
+        listenMode: 'uds',
+        transports: ['uds'],
+        port: null,
+        clients: 1,
+        agents: 0,
+        maxAgents: 8,
+        version: '0.1.0',
+        uptimeSeconds: 5,
+        cpuPercent: 1.0,
+        memoryBytes: 1024,
+        fingerprint: 'abc123',
+        protocolVersion: '2.0',
+        host: {
+          os: 'macos',
+          arch: 'aarch64',
+          hasDisplay: true,
+          locality: 'local',
+        },
+      };
+      const next = daemonHealthReducer(
+        connected,
+        systemStatusSuccess(payload, '2026-08-11T00:00:00.000Z'),
+      );
+
+      expect(next.stats?.transport).toEqual(bootTransport);
+    });
   });
 
   describe('systemStatusFailure', () => {
