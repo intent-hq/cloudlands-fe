@@ -129,6 +129,9 @@
   });
 
   function relationTitles(ids: NoteId[]): string {
+    // Track notesVersion so tooltip titles refresh when referenced notes change
+    // (e.g. a rename of a note referenced only by conflictsWith).
+    void $notesVersion;
     const wsId = $activeWorkspaceId;
     const state = appStore.state;
     return ids
