@@ -103,4 +103,61 @@ describe('context-api', () => {
       expect((contextApi as any).createNoteContext).toBeUndefined();
     });
   });
+
+  describe('placeAttachment (file.placeAttachment, PROTOCOL §5.9, v6.5)', () => {
+    it('sends the base64 data variant on the wire and returns the daemon result', async () => {
+      mockBackendRequest.mockResolvedValueOnce({
+        ok: true,
+        path: '.intent/attachments/dump.har',
+        fileName: 'dump.har',
+        size: 12_582_912,
+      });
+
+      const result = await contextApi.placeAttachment('ws-1', 'dump.har', {
+        data: 'data:application/json;base64,eyJsb2ciOnt9fQ==',
+      });
+
+      expect(mockBackendRequest).toHaveBeenCalledWith('file.placeAttachment', {
+        workspaceId: 'ws-1',
+        fileName: 'dump.har',
+        data: 'data:application/json;base64,eyJsb2ciOnt9fQ==',
+      });
+      expect(result).toEqual({
+        ok: true,
+        path: '.intent/attachments/dump.har',
+        fileName: 'dump.har',
+        size: 12_582_912,
+      });
+    });
+
+    it('sends the sourcePath variant on the wire (same-host fast path)', async () => {
+      mockBackendRequest.mockResolvedValueOnce({
+        ok: true,
+        path: '.intent/attachments/dump-2.har',
+        fileName: 'dump-2.har',
+        size: 42,
+      });
+
+      const result = await contextApi.placeAttachment('ws-1', 'dump.har', {
+        sourcePath: '/home/user/Downloads/dump.har',
+      });
+
+      expect(mockBackendRequest).toHaveBeenCalledWith('file.placeAttachment', {
+        workspaceId: 'ws-1',
+        fileName: 'dump.har',
+        sourcePath: '/home/user/Downloads/dump.har',
+      });
+      // The daemon owns collision-safe renaming — the FE surfaces its choice.
+      expect(result.fileName).toBe('dump-2.har');
+      expect(result.path).toBe('.intent/attachments/dump-2.har');
+    });
+
+    it('propagates daemon errors to the caller — never a fabricated placement', async () => {
+      mockBackendRequest.mockRejectedValueOnce(new Error('-32602 invalid params'));
+
+      await expect(
+        contextApi.placeAttachment('ws-1', 'dump.har', { data: 'AAAA' }),
+      ).rejects.toThrow('-32602 invalid params');
+    });
+  });
 });

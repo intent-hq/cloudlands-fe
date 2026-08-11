@@ -84,6 +84,42 @@ export async function searchFiles(
   }
 }
 
+/** Result of `file.placeAttachment` (PROTOCOL §5.9, v6.5). */
+export interface PlaceAttachmentResult {
+  ok: boolean;
+  /** Workspace-relative path under `.intent/attachments/`. */
+  path: string;
+  /** The collision-safe file name the daemon actually chose. */
+  fileName: string;
+  /** Placed byte length. */
+  size: number;
+}
+
+/**
+ * Place a chat attachment into the workspace's `.intent/attachments/`
+ * directory via the daemon (`file.placeAttachment`, PROTOCOL §5.9, v6.5).
+ * Exactly one of `data` (base64, `data:` URL prefix tolerated) or
+ * `sourcePath` (absolute host-local path the daemon copies directly) must be
+ * provided. Errors propagate to the caller.
+ */
+export async function placeAttachment(
+  workspaceId: string,
+  fileName: string,
+  source: { data?: string; sourcePath?: string },
+): Promise<PlaceAttachmentResult> {
+  logger.debug('Placing attachment', {
+    workspaceId,
+    fileName,
+    viaSourcePath: source.sourcePath !== undefined,
+  });
+  return await backendRequest<PlaceAttachmentResult>('file.placeAttachment', {
+    workspaceId,
+    fileName,
+    ...(source.data !== undefined ? { data: source.data } : {}),
+    ...(source.sourcePath !== undefined ? { sourcePath: source.sourcePath } : {}),
+  });
+}
+
 /** Maximum file size for context (1MB) - prevents crashes with large files */
 const MAX_CONTEXT_FILE_SIZE = 1 * 1024 * 1024;
 
