@@ -288,6 +288,7 @@ import {
   isSameHostBackendActive,
   reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
+import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
@@ -1494,6 +1495,7 @@ app.whenReady().then(async () => {
   await reconcileActiveConnectionOnBoot();
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
+  registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
 
   // Hydrate the main-process provider catalog cache (non-blocking): the
   // JSON-RPC client queues the request until the daemon socket connects.

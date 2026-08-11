@@ -839,6 +839,17 @@ export const IPC_CHANNELS = {
     GET_BOOT_FALLBACK: 'connections:get-boot-fallback',
   },
 
+  // Workspace transfer relay (main-process, wizard steps 3–4). The renderer
+  // starts/finalizes/cancels the relay; archive bytes never cross IPC —
+  // progress counters arrive on the `transfer:progress` push channel
+  // (EVENT_CHANNELS).
+  TRANSFER: {
+    START: 'transfer:start',
+    FINALIZE: 'transfer:finalize',
+    CANCEL: 'transfer:cancel',
+    PROGRESS: 'transfer:progress',
+  },
+
   // Hardware console (Codex Micro / Creator Micro 2)
   HARDWARE_CONSOLE: {
     // Main → renderer: ask the renderer to send the lighting off-frame
@@ -1035,6 +1046,9 @@ export const EVENT_CHANNELS = [
   // A 401/403 WebSocket-upgrade rejection (bad token / WS API disabled)
   // surfaced as a distinct auth failure instead of a generic transport error.
   'connections:auth-rejected',
+  // Workspace transfer relay progress (main → renderer): byte/chunk counters
+  // for the wizard's step-3 progress UI. Never carries archive bytes.
+  'transfer:progress',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

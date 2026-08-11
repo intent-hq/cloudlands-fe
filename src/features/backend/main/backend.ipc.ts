@@ -942,8 +942,12 @@ async function broadcastConnectionsChanged(): Promise<void> {
  * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
  * Throws for an unknown/incomplete connection or a missing token — the caller
  * runs this BEFORE any teardown so a bad target never disrupts the live backend.
+ *
+ * Exported for the workspace-transfer relay, which builds a second,
+ * short-lived JsonRpcClient to the chosen target while the active client
+ * stays pinned to the source.
  */
-async function buildConfigForConnection(id: string): Promise<{
+export async function buildConfigForConnection(id: string): Promise<{
   config: BackendConnectionConfig;
   meta: { id: string; host: string; port: number } | null;
 }> {
