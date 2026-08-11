@@ -12,7 +12,6 @@ const initializerSource = readFileSync(
   resolve(process.cwd(), 'src/lib/components/workspace/CompactWorkspaceInitializer.svelte'),
   'utf8',
 );
-const messagesSource = readFileSync(resolve(process.cwd(), 'messages/en.json'), 'utf8');
 const windowSource = readFileSync(resolve(process.cwd(), 'src/main/window.ts'), 'utf8');
 
 describe('root route removal', () => {
@@ -21,7 +20,7 @@ describe('root route removal', () => {
     expect(uiTargetsSource).not.toContain("id: 'home'");
     expect(initializerSource).not.toContain('stayOnHomePage');
     expect(initializerSource).not.toContain('rapidFire');
-    expect(messagesSource).not.toContain('workspace_home_');
+    expect(layoutSource).not.toContain('workspace_home_');
     expect(
       existsSync(resolve(process.cwd(), 'src/lib/components/workspace/WorkspaceTableView.svelte')),
     ).toBe(false);

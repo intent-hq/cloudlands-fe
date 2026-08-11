@@ -484,10 +484,8 @@
               return true;
             }
 
-            const hasValidOld =
-              diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
-            const hasValidNew =
-              diffChunk.newContent !== undefined && diffChunk.newContent !== '';
+            const hasValidOld = diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
+            const hasValidNew = diffChunk.newContent !== undefined && diffChunk.newContent !== '';
 
             if (hasValidOld && hasValidNew) {
               oldContent = diffChunk.oldContent || '';
@@ -1243,11 +1241,13 @@
           {#if modifiedCount > 0}
             {#if change.stage === 'unstaged' && onStageHunk}
               <button class="hunk-action-btn hunk-stage-btn" onclick={stageSelectedLines}>
-                <span class="icon">+</span> {m.ui_trackedDiff_stage_label()}
+                <span class="icon">+</span>
+                {m.ui_trackedDiff_stage_label()}
               </button>
             {:else if change.stage === 'staged' && onUnstageHunk}
               <button class="hunk-action-btn hunk-unstage-btn" onclick={unstageSelectedLines}>
-                <span class="icon">−</span> {m.ui_trackedDiff_unstage_label()}
+                <span class="icon">−</span>
+                {m.ui_trackedDiff_unstage_label()}
               </button>
             {/if}
           {/if}

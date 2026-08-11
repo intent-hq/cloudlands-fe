@@ -62,7 +62,7 @@ const rawByFile = new Map();
 const palettePattern =
   /(?:bg|text|border|ring|fill|stroke)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:[1-9]50|[1-9]00)\b/g;
 const arbitraryPattern =
-  /(?:bg|text|border|ring|fill|stroke|shadow|rounded|w|h|min-w|min-h|max-w|max-h|p[trblxy]?|m[trblxy]?|gap)-\[[^\]]+\]/g;
+  /(?:bg|text|border|ring|fill|stroke|shadow|rounded|w|h|min-w|min-h|max-w|max-h|p[trblxy]?|m[trblxy]?|gap)-\[[^\]\r\n]+\]/g;
 
 function withoutNegativeAssertions(source) {
   return source.replace(

@@ -4,14 +4,7 @@ import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
 
 export type AppSettingValueType =
-  | 'string'
-  | 'boolean'
-  | 'number'
-  | 'object'
-  | 'array'
-  | 'enum'
-  | 'status'
-  | 'readonly';
+  'string' | 'boolean' | 'number' | 'object' | 'array' | 'enum' | 'status' | 'readonly';
 
 export type AppSettingSource =
   /**

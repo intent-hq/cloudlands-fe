@@ -2,10 +2,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import {
-  sanitizeWorkspaceEvent,
-  sanitizeWorkspaceEventsList,
-} from './workspace-events-sanitizer';
+import { sanitizeWorkspaceEvent, sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
 
 // Buffer depth. The raw feed includes chatty machine events (agent:stream:*,
 // tool-call status patches, git-status ticks) that UI consumers filter out, so
@@ -61,60 +58,60 @@ export const setEventsLoading = createAction<[workspaceId: string, loading: bool
 
 export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState);
 workspaceEventsReducer.with(eventReceived, (state, { payload: [workspaceId, event] }) => {
-    const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
-    if (!safeEvent) return state;
-    const wsState = getWorkspaceState(state, workspaceId);
-    // Dedup by id against the current buffer: `eventsLoaded` seeds a boot
-    // snapshot from `event.query`, and a subsequent live push carrying the
-    // same id (fan-out gate notwithstanding) must not double-append.
-    if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
-    // STAB-2: Insert the new event in timestamp-sorted order (oldest→newest)
-    // instead of blindly appending. The boot snapshot from `eventsLoaded` is
-    // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
-    // order when live events arrive from the daemon-events-bridge.
-    const combined = [...wsState.events, safeEvent].sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      return timeA - timeB;
-    });
-    const nextEvents = combined.slice(-MAX_EVENTS);
-    return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+  const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
+  if (!safeEvent) return state;
+  const wsState = getWorkspaceState(state, workspaceId);
+  // Dedup by id against the current buffer: `eventsLoaded` seeds a boot
+  // snapshot from `event.query`, and a subsequent live push carrying the
+  // same id (fan-out gate notwithstanding) must not double-append.
+  if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
+  // STAB-2: Insert the new event in timestamp-sorted order (oldest→newest)
+  // instead of blindly appending. The boot snapshot from `eventsLoaded` is
+  // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
+  // order when live events arrive from the daemon-events-bridge.
+  const combined = [...wsState.events, safeEvent].sort((a, b) => {
+    const timeA = new Date(a.timestamp).getTime();
+    const timeB = new Date(b.timestamp).getTime();
+    return timeA - timeB;
   });
+  const nextEvents = combined.slice(-MAX_EVENTS);
+  return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+});
 workspaceEventsReducer.with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
-    const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
-    if (safeEvents.length === 0) return state;
-    const wsState = getWorkspaceState(state, workspaceId);
-    const seenIds = new Set(wsState.events.map((existing) => existing.id));
-    const deduped: WorkspaceEvent[] = [];
-    for (const candidate of safeEvents) {
-      if (seenIds.has(candidate.id)) continue;
-      seenIds.add(candidate.id);
-      deduped.push(candidate);
-    }
-    if (deduped.length === 0) return state;
-    // STAB-2: Merge and sort by timestamp (oldest→newest) to maintain
-    // chronological order regardless of the arrival sequence of live events.
-    const combined = [...wsState.events, ...deduped].sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      return timeA - timeB;
-    });
-    const nextEvents = combined.slice(-MAX_EVENTS);
-    return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+  const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
+  if (safeEvents.length === 0) return state;
+  const wsState = getWorkspaceState(state, workspaceId);
+  const seenIds = new Set(wsState.events.map((existing) => existing.id));
+  const deduped: WorkspaceEvent[] = [];
+  for (const candidate of safeEvents) {
+    if (seenIds.has(candidate.id)) continue;
+    seenIds.add(candidate.id);
+    deduped.push(candidate);
+  }
+  if (deduped.length === 0) return state;
+  // STAB-2: Merge and sort by timestamp (oldest→newest) to maintain
+  // chronological order regardless of the arrival sequence of live events.
+  const combined = [...wsState.events, ...deduped].sort((a, b) => {
+    const timeA = new Date(a.timestamp).getTime();
+    const timeB = new Date(b.timestamp).getTime();
+    return timeA - timeB;
   });
+  const nextEvents = combined.slice(-MAX_EVENTS);
+  return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+});
 workspaceEventsReducer.with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
-    const wsState = getWorkspaceState(state, workspaceId);
-    const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
-    return setWorkspaceState(state, workspaceId, {
-      ...wsState,
-      events: safeEvents.slice(-MAX_EVENTS),
-      loading: false,
-    });
+  const wsState = getWorkspaceState(state, workspaceId);
+  const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
+  return setWorkspaceState(state, workspaceId, {
+    ...wsState,
+    events: safeEvents.slice(-MAX_EVENTS),
+    loading: false,
   });
+});
 workspaceEventsReducer.with(eventsCleared, (state, { payload: [workspaceId] }) => {
-    return clearWorkspaceState(state, workspaceId);
-  });
+  return clearWorkspaceState(state, workspaceId);
+});
 workspaceEventsReducer.with(setEventsLoading, (state, { payload: [workspaceId, loading] }) => {
-    const wsState = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, { ...wsState, loading });
-  });
+  const wsState = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, { ...wsState, loading });
+});

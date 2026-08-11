@@ -68,6 +68,7 @@ test-results
 test-reports
 playwright-report
 test-harness-report.json
+.demo-artifacts/
 
 # Temporary files
 *.tmp

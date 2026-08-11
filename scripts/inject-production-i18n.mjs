@@ -5,7 +5,8 @@ import { injectParaglideBundle } from './fix-production-html-utils.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = process.argv[2];
-if (!outputDirectory) throw new Error('Usage: node scripts/inject-production-i18n.mjs <output-directory>');
+if (!outputDirectory)
+  throw new Error('Usage: node scripts/inject-production-i18n.mjs <output-directory>');
 const outputRoot = path.resolve(repositoryRoot, outputDirectory);
 
 function findHtmlFiles(directory) {
@@ -27,4 +28,6 @@ for (const file of htmlFiles) {
   writeFileSync(file, injectParaglideBundle(html));
 }
 
-console.log(`Injected the production i18n bundle into ${htmlFiles.length} HTML file(s) in ${outputDirectory}`);
+console.log(
+  `Injected the production i18n bundle into ${htmlFiles.length} HTML file(s) in ${outputDirectory}`,
+);

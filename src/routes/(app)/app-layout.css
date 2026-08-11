@@ -19,15 +19,16 @@ body {
   pointer-events: none;
 }
 
-button,
-a,
-input,
-select,
-textarea,
-[role='button'],
-[role='tab'],
-[role='menuitem'],
-[data-interactive],
-[tabindex]:not([tabindex='-1']) {
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region select,
+.app-drag-region textarea,
+.app-drag-region [role='button'],
+.app-drag-region [role='tab'],
+.app-drag-region [role='menuitem'],
+.app-drag-region [data-interactive],
+.app-drag-region [tabindex]:not([tabindex='-1']),
+.app-no-drag {
   -webkit-app-region: no-drag;
 }

@@ -651,12 +651,12 @@ describe('DaemonStatusIndicator', () => {
 
       // Local: Switch present, Forget absent (un-forgettable).
       await fireEvent.click(screen.getByText('This machine (local)'));
-      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
       // Remote: both Switch and Forget present.
       await fireEvent.click(screen.getByText('desk:4180'));
-      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getAllByText('Switch')).toHaveLength(2);
       expect(screen.getByText('Forget')).toBeTruthy();
     });
 

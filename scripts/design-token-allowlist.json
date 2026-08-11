@@ -123,10 +123,10 @@
     {
       "token": "--text-ghost",
       "owner": "design-system",
-      "reason": "Legacy decorative text utility",
+      "reason": "Legacy decorative text utility retained by the HUD axis label",
       "replacement": "--muted-foreground with opacity",
       "removalCondition": "Tailwind ghost usages reach zero",
-      "allowedFiles": []
+      "allowedFiles": ["src/features/hud/right-column/TokRatePanel.svelte"]
     },
     {
       "token": "--bg-primary",

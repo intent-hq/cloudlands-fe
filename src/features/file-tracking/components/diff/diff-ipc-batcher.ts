@@ -125,10 +125,7 @@ function isSuspiciousDiffPath(filePath: string): boolean {
  * TrackedChangeDiffViewer). '' when the workspace row is not loaded (yet). */
 function workspaceWorktreeRoot(workspaceId: string): string {
   try {
-    const workspace = getItem(
-      appStore.state.workspace.workspaces,
-      workspaceId as Workspace['id'],
-    );
+    const workspace = getItem(appStore.state.workspace.workspaces, workspaceId as Workspace['id']);
     return workspace?.worktreePath || workspace?.repositoryPath || '';
   } catch {
     return '';
@@ -521,18 +518,14 @@ export function dedupedShowFile(
     filePath,
     ref,
   })
-    .then(
-      (result): ShowFileResponse => ({
-        success: true,
-        data: typeof result?.content === 'string' ? result.content : '',
-      }),
-    )
-    .catch(
-      (error): ShowFileResponse => ({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    )
+    .then((result): ShowFileResponse => ({
+      success: true,
+      data: typeof result?.content === 'string' ? result.content : '',
+    }))
+    .catch((error): ShowFileResponse => ({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }))
     .finally(() => {
       pendingShows.delete(key);
     });

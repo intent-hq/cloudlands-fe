@@ -1,10 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-    faPlus,
-    faGear,
-    faPencil,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGear, faPencil } from '@fortawesome/free-solid-svg-icons';
   import {
     filterSpecialistsByGitHubAuth,
     selectSpecialists,
@@ -22,9 +18,7 @@
 
   // View type definition
   export type AIBehaviorView =
-    | { type: 'system-prompt' }
-    | { type: 'specialist'; id: string }
-    | { type: 'create-specialist' };
+    { type: 'system-prompt' } | { type: 'specialist'; id: string } | { type: 'create-specialist' };
 
   interface Props {
     activeView: AIBehaviorView;

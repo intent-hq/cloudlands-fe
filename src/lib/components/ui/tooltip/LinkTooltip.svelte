@@ -34,7 +34,9 @@
   {#if state.visible}
     <div class="link-tooltip" style={tooltipStyle} role="tooltip">
       <div class="link-tooltip-url">{displayUrl}</div>
-      <div class="link-tooltip-hint">{state.copied ? m.ui_linkTooltip_copied_label() : hintText}</div>
+      <div class="link-tooltip-hint">
+        {state.copied ? m.ui_linkTooltip_copied_label() : hintText}
+      </div>
     </div>
   {/if}
 </Portal>

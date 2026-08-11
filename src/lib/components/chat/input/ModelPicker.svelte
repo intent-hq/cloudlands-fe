@@ -890,6 +890,12 @@
   // condition) updates the same single toast instead of stacking a new one.
   let noProviderToastShown = false;
 
+  function openProviderSettings() {
+    void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
+      logger.error('Failed to open provider settings from model picker', error);
+    });
+  }
+
   $effect(() => {
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
@@ -899,13 +905,7 @@
           duration: 6000,
           action: {
             label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: () => {
-              void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch(
-                (error: unknown) => {
-                  logger.error('Failed to open provider settings from no-provider toast', error);
-                },
-              );
-            },
+            onClick: openProviderSettings,
           },
         });
       }
@@ -1051,7 +1051,10 @@
     !!agentId &&
       $fallbackInfo$ === null &&
       isSelectedModelMissingFromCatalog &&
-      (!$hasCheckedOnce$ || isLoadingModels || !allProvidersLoaded || isSelectedModelProviderPending),
+      (!$hasCheckedOnce$ ||
+        isLoadingModels ||
+        !allProvidersLoaded ||
+        isSelectedModelProviderPending),
   );
 
   const modelLoadingTitle = $derived(
@@ -1363,7 +1366,7 @@
     onchange={handleModelChange}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
-    searchable={true}
+    searchable={!hasNoAvailableProvider}
     placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
     headerClass="border-b-0!"
@@ -1522,18 +1525,15 @@
     {/snippet}
 
     {#snippet empty()}
-      <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
+      <ModelPickerEmptyState
+        {isLoadingModels}
+        {blockingLoadError}
+        {hasNoAvailableProvider}
+        onOpenProviderSettings={openProviderSettings}
+        onRetry={handleRetry}
+      />
     {/snippet}
   </Dropdown>
-
-  <ModelPickerProviderNotice
-    warning={hasNoAvailableProvider ? m.chat_modelPicker_noProviderAvailable_title() : undefined}
-    show={hasNoAvailableProvider}
-    title={m.chat_modelPicker_noProviderAvailable_title()}
-    description={m.chat_modelPicker_noProviderAvailable_description()}
-    variant="warning"
-    class={resolvedNoticeClass}
-  />
 
   <ModelPickerProviderNotice
     warning={codexFallbackWarning?.message}

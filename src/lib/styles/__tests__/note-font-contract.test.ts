@@ -19,7 +19,7 @@ describe('note font contract', () => {
     expect(editor).toMatch(/\.note-font-serif \.tiptap-editor h1 \{[\s\S]*?font-size: 2rem;/);
     expect(editor).toContain('line-height: 1.48;');
     expect(editor).toMatch(/\.note-font-serif \.tiptap-editor em \{\s*font-style: italic;/);
-    expect(editor).toContain('margin: 0 0 var(--space-5);');
+    expect(editor).toContain('margin: 1em 0 var(--space-5);');
     expect(editor).toContain('margin: var(--space-6) 0 var(--space-3);');
     expect(editor).toContain('margin: 0 0 var(--space-4);');
     expect(editor).toContain('ul:not(.task-list)');

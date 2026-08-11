@@ -10,11 +10,12 @@ export const toggleGroupMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
+    'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/components/file-tracking/CodeChangesPanel.svelte',
     'src/lib/components/settings/ColorThemeSettings.svelte',
-    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle-group/toggle-group.test.ts',

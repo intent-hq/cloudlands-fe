@@ -1,11 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-  faPlus,
-  faRotateLeft,
-  faTrash,
-  faPencil,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
     selectDefaultReasoningEffort,
@@ -14,27 +9,26 @@
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
 
-
   import {
-  selectSpecialists,
-  selectIsBuiltIn,
-  selectIsFileBased,
-  selectExplicitModel,
-  selectEffectiveBehaviorPrompt,
-  selectGetFileSpecialist,
-  selectHasOverrides,
-  selectSpecialistFilePath,
-  selectSpecialistSourceLabel,
-  selectSpecialistsFolderPath,
-  selectEffectiveCodingAgent,
-  selectExplicitReasoningEffort,
-  selectFileSpecialists,
-  selectBundledSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectIsBuiltIn,
+    selectIsFileBased,
+    selectExplicitModel,
+    selectEffectiveBehaviorPrompt,
+    selectGetFileSpecialist,
+    selectHasOverrides,
+    selectSpecialistFilePath,
+    selectSpecialistSourceLabel,
+    selectSpecialistsFolderPath,
+    selectEffectiveCodingAgent,
+    selectExplicitReasoningEffort,
+    selectFileSpecialists,
+    selectBundledSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
-  deleteFileSpecialist as deleteFileSpecialistAction,
-  saveFileSpecialist,
-} from '$store/renderer/slices/specialists/specialists-slice';
+    deleteFileSpecialist as deleteFileSpecialistAction,
+    saveFileSpecialist,
+  } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -67,6 +61,9 @@
     type SpecialistModelOption,
   } from '$shared/specialist-file-types';
   import { store as appStore } from '$store/renderer/store';
+
+  // i18n-ignore (file path)
+  const getSpecialistOverridePath = (id: string) => `~/.intent/specialists/${id}.md`;
 
   interface Props {
     activeView: AIBehaviorView;
@@ -138,15 +135,11 @@
   );
 
   const isBuiltIn = $derived(
-    currentSpecialist
-      ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id)
-      : false,
+    currentSpecialist ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id) : false,
   );
 
   const isFileBased = $derived(
-    currentSpecialist
-      ? selectIsFileBased.select(appStore.state, currentSpecialist.id)
-      : false,
+    currentSpecialist ? selectIsFileBased.select(appStore.state, currentSpecialist.id) : false,
   );
 
   /**
@@ -181,9 +174,7 @@
 
   // Model the effort level applies to: the explicit pin when present, else
   // the daemon-resolved preview of what an inheriting specialist would run.
-  const specialistEffortModel = $derived(
-    specialistModelValue ?? currentSpecialist?.resolvedModel,
-  );
+  const specialistEffortModel = $derived(specialistModelValue ?? currentSpecialist?.resolvedModel);
 
   // Saved model options from the resolved specialist view (file override →
   // bundled). Reactive to file specialist changes so the rows resync after
@@ -210,7 +201,10 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(
+        appStore.state,
+        currentSpecialist.id,
+      );
       specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
@@ -275,16 +269,10 @@
       specialistModelValue = undefined;
       // The effort level now applies to the inherited (daemon-resolved)
       // model — drop it when that model lacks the level.
-      const nextEffort = effortForModel(
-        currentSpecialist.resolvedModel,
-        specialistEffortValue,
-      );
+      const nextEffort = effortForModel(currentSpecialist.resolvedModel, specialistEffortValue);
       specialistEffortValue = nextEffort;
       if (!isFileBased) return;
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
+      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (!fileSpec || !fileSpec.model) return;
       // If clearing the pin leaves the override identical to the bundled
       // defaults, delete the file instead of rewriting it — a redundant file
@@ -297,9 +285,7 @@
           { ignoreModelPin: true },
         )
       ) {
-        appStore.dispatch(
-          deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }),
-        );
+        appStore.dispatch(deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }));
         return;
       }
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
@@ -331,10 +317,7 @@
 
     if (isFileBased) {
       // Already a file specialist (user or project) — update in place
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
+      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (fileSpec) {
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
@@ -460,10 +443,7 @@
   function handlePromptSave(prompt: string) {
     if (!currentSpecialist) return;
     if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
+      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
       if (fileSpec) {
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
@@ -675,7 +655,9 @@
     );
     // Show success toast with file path
     const folderPath = $specialistsFolderPath;
-    const expectedPath = folderPath ? `${folderPath}/${createdId}.md` : `~/.intent/specialists/${createdId}.md`;
+    const expectedPath = folderPath
+      ? `${folderPath}/${createdId}.md`
+      : `~/.intent/specialists/${createdId}.md`;
     toast.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
       description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
     });
@@ -773,7 +755,12 @@
               type="text"
               value={currentSpecialist.name}
               onblur={(e) => handleNameSave(e.currentTarget.value)}
-              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
               class="w-full text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
@@ -781,7 +768,9 @@
             <div class="flex items-center gap-2">
               <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
               {#if isBuiltIn && hasOverrides}
-                <span class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1">
+                <span
+                  class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                >
                   <Fa icon={faPencil} class="w-2.5 h-2.5" />
                   {m.settings_aiBehavior_modifiedBadge()}
                 </span>
@@ -794,7 +783,12 @@
               type="text"
               value={currentSpecialist.description}
               onblur={(e) => handleDescriptionSave(e.currentTarget.value)}
-              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
               placeholder={m.settings_aiBehavior_specialistDescription_placeholder()}
               class="w-full text-sm text-muted-foreground bg-transparent border-none outline-none px-0 py-0 mt-1 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
@@ -814,18 +808,25 @@
       <p class="text-sm text-muted-foreground mt-2">
         {#if isBuiltIn && !hasOverrides}
           {m.settings_aiBehavior_builtInInfo_before()}
-          <!-- i18n-ignore (file path) -->
-          <code class="bg-muted px-1 py-0.5 rounded">~/.intent/specialists/{currentSpecialist.id}.md</code>.
+          <code class="bg-muted px-1 py-0.5 rounded"
+            >{getSpecialistOverridePath(currentSpecialist.id)}</code
+          >.
         {:else if isBuiltIn && hasOverrides}
           {m.settings_aiBehavior_customizedInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>.
+          <code class="bg-muted px-1 py-0.5 rounded"
+            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
+          >.
           {m.settings_aiBehavior_customizedInfo_after()}
         {:else if sourceLabel === 'Project'}
           {m.settings_aiBehavior_projectInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>.
+          <code class="bg-muted px-1 py-0.5 rounded"
+            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
+          >.
         {:else}
           {m.settings_aiBehavior_personalInfo_before()}
-          <code class="bg-muted px-1 py-0.5 rounded">{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code>.
+          <code class="bg-muted px-1 py-0.5 rounded"
+            >{specialistFilePath?.replace(/^\/Users\/[^/]+/, '~') ?? ''}</code
+          >.
           {m.settings_aiBehavior_personalInfo_middle()}
           <!-- i18n-ignore (file path) -->
           <code class="bg-muted px-1 py-0.5 rounded">&lt;repo&gt;/.intent/specialists/</code>
@@ -899,9 +900,7 @@
         minRows={12}
         maxLength={50000}
         onSave={handlePromptSave}
-        onReset={isBuiltIn
-          ? resetToDefault
-          : undefined}
+        onReset={isBuiltIn ? resetToDefault : undefined}
       />
     </div>
 
@@ -923,7 +922,9 @@
   {:else if activeView.type === 'create-specialist'}
     <!-- Metadata -->
     <div class="mb-4">
-      <h2 class="text-base font-medium text-foreground">{m.settings_aiBehavior_createSpecialist_title()}</h2>
+      <h2 class="text-base font-medium text-foreground">
+        {m.settings_aiBehavior_createSpecialist_title()}
+      </h2>
       <p class="text-sm text-muted-foreground mt-1">
         {m.settings_aiBehavior_createSpecialist_pathNote_before()}
         <!-- i18n-ignore (file path) -->
@@ -986,8 +987,7 @@
         placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
         class="w-full grow p-3 text-sm rounded-lg border border-border bg-background resize-none
           focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2
-          {newPromptIsOverLimit ? 'border-destructive' : ''}"
-      ></textarea>
+          {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
       {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
         <div
           class="flex items-center justify-end text-xs shrink-0 {newPromptIsOverLimit

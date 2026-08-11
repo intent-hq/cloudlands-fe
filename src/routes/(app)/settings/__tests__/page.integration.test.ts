@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import type { ReduxStoreContext } from '$store/renderer/types';
@@ -91,13 +91,13 @@ vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/OpenInAppsSettings.svelte', async () => ({
-  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/McpServersSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$lib/components/settings/BackgroundAgentSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/ColorThemeSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
@@ -121,6 +121,10 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 type SettingsCatalog = Awaited<ReturnType<typeof appClient.settings.list>>;
 let settingsCatalogResponse: SettingsCatalog;
+
+beforeAll(() => {
+  storeContext = initAppStore(appStore);
+});
 
 beforeEach(() => {
   resetMockIpcRouter();
@@ -153,16 +157,20 @@ beforeEach(() => {
     value: vi.fn(),
     configurable: true,
   });
+  appStore.dispatch(simulateSetState({ status: 'idle' }));
 });
 
 afterEach(() => {
-  storeContext?.dispose();
-  storeContext = undefined;
   cleanup();
   window.electronAPI!.invoke = originalInvoke;
   resetMockIpcRouter();
   document.documentElement.classList.remove('light', 'dark');
   vi.useRealTimers();
+});
+
+afterAll(() => {
+  storeContext?.dispose();
+  storeContext = undefined;
 });
 
 function createFixtureContext(
@@ -328,7 +336,6 @@ function renderSettings(
     ? SETTINGS_CAPTURE_FIXTURES.find(({ id }) => id === fixtureId)
     : SETTINGS_CAPTURE_FIXTURES.find(({ tab }) => tab === requestedTab);
   const activeFixture = fixture ?? SETTINGS_CAPTURE_FIXTURES[0];
-  storeContext = initAppStore(appStore);
   const fixtureContext = createFixtureContext(activeFixture, catalog);
   return render(SettingsPage, {
     context: new Map([
@@ -403,7 +410,7 @@ describe('settings deterministic capture fixtures', () => {
 
       renderSettings(url, id, catalog);
 
-      const activeTab = screen.getByRole('tab', { name: label });
+      const activeTab = screen.getByRole('button', { name: label });
       await waitFor(() => expect(activeTab.className).toContain('text-foreground'));
       expect(document.documentElement.classList.contains(theme)).toBe(true);
       expect(window.innerWidth).toBe(width);
@@ -485,133 +492,59 @@ describe('settings deterministic capture fixtures', () => {
 
 describe('settings tab route and focus behavior', () => {
   it.each([
-    ['accounts', 'Providers'],
-    ['agents', 'Agent behavior'],
-    ['setup', 'Projects & Git'],
+    ['providers', null],
+    ['agents', null],
+    ['tools', null],
     ['fonts-colors', 'Appearance'],
     ['notifications', 'Notifications'],
     ['general', 'Updates'],
   ])('uses the shared wide section layout for %s', (tab, heading) => {
     const { container } = renderSettings(`/settings?tab=${tab}`);
-    const content = container.querySelector(`[data-settings-${tab}]`);
-    const scroller = container.querySelector('[data-settings-content-scroll]') as HTMLElement;
+    const content = container.querySelector('main');
 
-    expect(content?.className).toContain('max-w-5xl');
-    expect(content?.className).toContain('space-y-8');
-    expect(scroller.style.scrollbarGutter).toBe('stable both-edges');
-    expect(screen.getByRole('region', { name: heading })).toBeTruthy();
+    expect(content?.className).toContain('max-w-4xl');
+    expect(content?.className).toContain('flex-col');
+    if (heading) expect(screen.getByRole('heading', { name: heading })).toBeTruthy();
   });
 
   it.each([
-    ['accounts', 'Accounts & models'],
-    ['agents', 'Agent behavior'],
-    ['setup', 'Projects & tools'],
+    ['accounts', 'Providers'],
+    ['agents', 'Agents'],
+    ['setup', 'Tools'],
     ['fonts-colors', 'Appearance'],
-    ['notifications', 'Notifications'],
-    ['general', 'Advanced'],
-    ['connections', 'Accounts & models'],
+    ['notifications', 'General'],
+    ['general', 'General'],
+    ['connections', 'Connections'],
     ['interface-system', 'Appearance'],
-    ['unknown', 'Accounts & models'],
+    ['unknown', 'General'],
   ])('maps ?tab=%s to %s', async (tab, label) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: label }).className).toContain('text-foreground'),
+      expect(screen.getByRole('button', { name: label }).getAttribute('aria-current')).toBe('page'),
     );
   });
 
-  it('exposes a real tablist, tabs, selected state, and linked active panel', async () => {
+  it('exposes sidebar navigation buttons with the active page marked', async () => {
     renderSettings('/settings?tab=accounts');
-    expect(screen.getByRole('tablist', { name: 'Settings sections' })).toBeTruthy();
-    const accounts = screen.getByRole('tab', { name: 'Accounts & models' });
-    const agents = screen.getByRole('tab', { name: 'Agent behavior' });
-    expect(accounts.getAttribute('aria-selected')).toBe('true');
-    expect(accounts.getAttribute('tabindex')).toBe('0');
-    expect(agents.getAttribute('aria-selected')).toBe('false');
-    expect(agents.getAttribute('tabindex')).toBe('-1');
-    const panel = screen.getByRole('tabpanel');
-    expect(accounts.getAttribute('aria-controls')).toBe(panel.id);
-    expect(panel.getAttribute('aria-labelledby')).toBe(accounts.id);
+    expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(screen.getByRole('button', { name: 'Agents' }).hasAttribute('aria-current')).toBe(false);
   });
 
-  it('activates a clicked tab with roving tabindex while preserving params and hash', async () => {
+  it('activates a clicked sidebar item while preserving params and hash', async () => {
     renderSettings('/settings?tab=accounts&specialist=reviewer#integrations');
-    const accounts = screen.getByRole('tab', { name: 'Accounts & models' });
-    const general = screen.getByRole('tab', { name: 'Advanced' });
-    general.focus();
-    await fireEvent.click(general);
+    const providers = screen.getByRole('button', { name: 'Providers' });
+    const advanced = screen.getByRole('button', { name: 'Advanced' });
+    advanced.focus();
+    await fireEvent.click(advanced);
 
-    expect(document.activeElement).toBe(general);
-    expect(general.getAttribute('aria-selected')).toBe('true');
-    expect(general.getAttribute('tabindex')).toBe('0');
-    expect(accounts.getAttribute('tabindex')).toBe('-1');
-    expect(window.location.search).toBe('?tab=general&specialist=reviewer');
+    expect(document.activeElement).toBe(advanced);
+    expect(advanced.getAttribute('aria-current')).toBe('page');
+    expect(providers.hasAttribute('aria-current')).toBe(false);
+    expect(window.location.search).toBe('?tab=advanced&specialist=reviewer');
     expect(window.location.hash).toBe('#integrations');
-  });
-
-  it('activates with Enter while preserving focus, URL params, and hash', async () => {
-    renderSettings('/settings?tab=accounts&specialist=reviewer#integrations');
-    const general = screen.getByRole('tab', { name: 'Advanced' });
-    general.focus();
-    await fireEvent.keyDown(general, { key: 'Enter' });
-
-    expect(document.activeElement).toBe(general);
-    expect(window.location.search).toBe('?tab=general&specialist=reviewer');
-    expect(window.location.hash).toBe('#integrations');
-    await waitFor(() => expect(general.className).toContain('text-foreground'));
-  });
-
-  it('activates with Space while preserving focus, URL params, hash, and roving tabindex', async () => {
-    renderSettings('/settings?tab=accounts&view=create-specialist#integrations');
-    const accounts = screen.getByRole('tab', { name: 'Accounts & models' });
-    const setup = screen.getByRole('tab', { name: 'Projects & tools' });
-    setup.focus();
-    await fireEvent.keyDown(setup, { key: ' ' });
-
-    expect(document.activeElement).toBe(setup);
-    expect(setup.getAttribute('aria-selected')).toBe('true');
-    expect(setup.getAttribute('tabindex')).toBe('0');
-    expect(accounts.getAttribute('tabindex')).toBe('-1');
-    expect(window.location.search).toBe('?tab=setup&view=create-specialist');
-    expect(window.location.hash).toBe('#integrations');
-  });
-
-  it('moves focus and activation with arrows and restores focus when reversing direction', async () => {
-    renderSettings('/settings?tab=accounts');
-    const accounts = screen.getByRole('tab', { name: 'Accounts & models' });
-    const agents = screen.getByRole('tab', { name: 'Agent behavior' });
-    accounts.focus();
-
-    await fireEvent.keyDown(accounts, { key: 'ArrowRight' });
-    expect(document.activeElement).toBe(agents);
-    await waitFor(() => expect(agents.getAttribute('aria-selected')).toBe('true'));
-
-    await fireEvent.keyDown(agents, { key: 'ArrowLeft' });
-    expect(document.activeElement).toBe(accounts);
-    await waitFor(() => expect(accounts.getAttribute('aria-selected')).toBe('true'));
-  });
-
-  it('moves focus and activation to the first and last tabs with Home and End', async () => {
-    renderSettings('/settings?tab=setup&specialist=reviewer#notifications');
-    const setup = screen.getByRole('tab', { name: 'Projects & tools' });
-    const accounts = screen.getByRole('tab', { name: 'Accounts & models' });
-    const general = screen.getByRole('tab', { name: 'Advanced' });
-    setup.focus();
-
-    await fireEvent.keyDown(setup, { key: 'End' });
-    expect(document.activeElement).toBe(general);
-    expect(general.getAttribute('aria-selected')).toBe('true');
-    expect(general.getAttribute('tabindex')).toBe('0');
-    expect(setup.getAttribute('tabindex')).toBe('-1');
-    expect(window.location.search).toBe('?tab=general&specialist=reviewer');
-    expect(window.location.hash).toBe('#notifications');
-
-    await fireEvent.keyDown(general, { key: 'Home' });
-    expect(document.activeElement).toBe(accounts);
-    expect(accounts.getAttribute('aria-selected')).toBe('true');
-    expect(accounts.getAttribute('tabindex')).toBe('0');
-    expect(general.getAttribute('tabindex')).toBe('-1');
-    expect(window.location.search).toBe('?tab=accounts&specialist=reviewer');
-    expect(window.location.hash).toBe('#notifications');
   });
 
   it.each([
@@ -620,9 +553,9 @@ describe('settings tab route and focus behavior', () => {
   ])('opens the requested Agents query view for %s', async (url, expectedView) => {
     renderSettings(url);
     await waitFor(() =>
-      expect(
-        screen.getByRole('tab', { name: 'Agent behavior' }).getAttribute('aria-selected'),
-      ).toBe('true'),
+      expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
     );
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain(expectedView);
   });
@@ -646,26 +579,19 @@ describe('settings back and footer behavior', () => {
       'https://www.intentapp.dev/docs',
     );
     expect(screen.getByRole('link', { name: 'Support' }).getAttribute('target')).toBe('_blank');
-
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
     const update = await screen.findByRole('button', { name: 'Update available' });
-    const dispatchSpy = vi.fn(appStore.dispatch);
-    Object.defineProperty(appStore, 'dispatch', { value: dispatchSpy, configurable: true });
-    try {
-      await fireEvent.click(update);
-      expect(dispatchSpy).toHaveBeenCalledWith(installUpdate());
-    } finally {
-      delete (appStore as typeof appStore & { dispatch?: unknown }).dispatch;
-    }
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+    await fireEvent.click(update);
+    expect(dispatchSpy).toHaveBeenCalledWith(installUpdate());
   });
 });
 
 describe('settings hash target integration', () => {
   it.each([
-    ['default-model', 'backgroundAgents.defaultModel', 'Agent behavior'],
-    ['utility-default-model', 'utility-default-model', 'Accounts & models'],
-    ['notifications', 'notifications', 'Notifications'],
-    ['websocket-api', 'websocket-api', 'Advanced'],
+    ['default-model', 'quickActions.defaultModel', 'Agents'],
+    ['utility-default-model', 'utility-default-model', 'Tools'],
+    ['notifications', 'notifications', 'General'],
     ['color-theme', 'color-theme', 'Appearance'],
     ['note-font', 'note-font', 'Appearance'],
     ['agent-chat-font', 'agent-chat-font', 'Appearance'],
@@ -678,8 +604,8 @@ describe('settings hash target integration', () => {
 
       renderSettings(`/settings#${hash}`);
 
-      const expectedTab = screen.getByRole('tab', { name: tabLabel });
-      await waitFor(() => expect(expectedTab.className).toContain('text-foreground'));
+      const expectedTab = screen.getByRole('button', { name: tabLabel });
+      await waitFor(() => expect(expectedTab.getAttribute('aria-current')).toBe('page'));
 
       const targetElement = await waitFor(() => {
         const element = document.querySelector<HTMLElement>(target?.highlightSelector ?? '');
@@ -688,7 +614,6 @@ describe('settings hash target integration', () => {
       });
 
       storeContext.store.dispatch(requestUiHighlight(target!.id));
-
       await waitFor(() => {
         expect(targetElement.classList.contains('ui-highlight-pulse-ring')).toBe(true);
       });

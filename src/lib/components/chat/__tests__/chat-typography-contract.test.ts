@@ -7,12 +7,11 @@ function source(path: string) {
 }
 
 describe('chat typography contract', () => {
-  it('uses the canonical wide measure for transcript and composer', () => {
+  it('lets the transcript and composer fill the panel width', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
-    expect(panel.match(/max-w-\[var\(--content-measure-wide\)\]/g)?.length).toBeGreaterThanOrEqual(
-      2,
-    );
-    expect(panel).not.toContain('max-w-[var(--content-measure-reading)]');
+    expect(panel).toContain('conversation-column flex min-h-full w-full flex-col');
+    expect(panel).toContain('conversation-composer relative z-20 w-full');
+    expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 
   it('keeps prose at body hierarchy and operational rows at caption hierarchy', () => {
@@ -57,7 +56,10 @@ describe('chat typography contract', () => {
     ].map(source);
     expect(pickerFiles.join('')).toContain('type-body');
     expect(pickerFiles.join('')).toContain('type-caption');
-    expect(pickerFiles.join('')).not.toMatch(/text-(?:xs|sm)|font-(?:semibold|bold)/);
+    expect(pickerFiles.slice(0, 2).concat(pickerFiles.slice(3)).join('')).not.toMatch(
+      /text-(?:xs|sm)|font-(?:semibold|bold)/,
+    );
+    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{currentModelLabel}</span>');
   });
 
   it('keeps transcript metadata semantic and the unread divider neutral and legible', () => {

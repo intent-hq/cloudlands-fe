@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal } from '$shared/types/proposal';
 
@@ -115,8 +115,14 @@ describe('SettingsChangeCard', () => {
     const trigger = screen.getByLabelText('Theme preset');
     expect(trigger.textContent).toContain('Default');
 
-    await fireEvent.click(trigger);
-    await fireEvent.click(screen.getByRole('button', { name: 'Default' }));
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger.textContent).toContain('Dracula'));
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger.textContent).toContain('Default'));
     await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
 
     expect(onApply.mock.calls[0]?.[0].editedFields['theme.activePresetId']).toBeNull();

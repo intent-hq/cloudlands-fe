@@ -9,23 +9,20 @@
 
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-  executeBackgroundAgent,
-  cancelExecution,
-} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+    executeBackgroundAgent,
+    cancelExecution,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import type { ReviewStatus } from './types';
-  import {
-  CodeWalkthroughSection,
-  parseWalkthrough,
-} from './walkthrough';
+  import { CodeWalkthroughSection, parseWalkthrough } from './walkthrough';
   import type { CodeWalkthrough, WalkthroughStatus } from './walkthrough';
   import Fa from 'svelte-fa';
   import {
-  faWandMagicSparkles,
-  faSpinner,
-  faStop,
-  faRotateRight,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faWandMagicSparkles,
+    faSpinner,
+    faStop,
+    faRotateRight,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -34,13 +31,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-
   interface Props {
     workspaceId: string;
   }
 
   let { workspaceId }: Props = $props();
-
 
   // Get workspace and staged files
   const activeWorkspace = selectActiveWorkspace();
@@ -128,9 +123,11 @@
     streamingText = '';
     error = '';
 
-    appStore.dispatch(executeBackgroundAgent(workspaceId, 'review', {
-      files: $ftStagedChanges$.map((f) => f.relativePath),
-    }));
+    appStore.dispatch(
+      executeBackgroundAgent(workspaceId, 'review', {
+        files: $ftStagedChanges$.map((f) => f.relativePath),
+      }),
+    );
   }
 
   function handleStop() {
@@ -159,7 +156,9 @@
         >
           <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
         </div>
-        <h3 class="text-sm font-medium text-foreground mb-2">{m.codeReview_tabContent_reviewYourChanges_title()}</h3>
+        <h3 class="text-sm font-medium text-foreground mb-2">
+          {m.codeReview_tabContent_reviewYourChanges_title()}
+        </h3>
         <p class="text-xs text-subtle mb-4 max-w-60">
           {#if hasChanges}
             {$ftStagedChanges$.length === 1

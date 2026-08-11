@@ -1,17 +1,6 @@
-import {
-  BrowserWindow,
-  dialog,
-  nativeTheme,
-  screen,
-} from 'electron';
-import {
-  join,
-  dirname,
-} from 'path';
-import {
-  pathToFileURL,
-  fileURLToPath,
-} from 'url';
+import { BrowserWindow, dialog, nativeTheme, screen } from 'electron';
+import { join, dirname } from 'path';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { ConfigManager } from '../services/config-manager';
 import { Logger } from '../../lib/utils/logger';
 import { getWindowAppearanceOptions } from './window-appearance';

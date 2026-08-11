@@ -167,14 +167,10 @@ describe('editorial conversation presentation contract', () => {
     expect(agentCard).toContain("? 'flex-row items-center gap-2'");
     expect(agentCard).toContain("? 'type-body items-center rounded-md");
     expect(agentCard).toContain("? 'inline-agent-card-header overflow-hidden'");
-    expect(agentCard).toContain("inline ? 'inline-agent-card-preview min-w-0'");
     expect(agentCard).toContain('<div class="relative shrink-0 {inline ?');
     expect(agentCard).toContain('{#if delegatedByName && !inline}');
-    expect(agentCard).toContain(": 'flex-1 text-sm'");
-    expect(agentCard).toContain(": 'max-w-[40%] text-ui'");
-    expect(agentCard).toMatch(
-      /@container \(max-width: 480px\) \{[\s\S]{0,100}\.delegated-by-text \{[\s\S]{0,50}display: none;/,
-    );
+    expect(agentCard).toContain('{#if inline && statusLabel}');
+    expect(agentCard).toContain('max-w-[40%] shrink-0 truncate text-ui text-subtle');
     expect(agentCard).not.toContain('max-w-[52%]');
     expect(agentCard).not.toContain('· {statusLabel}');
     expect(agentCard).not.toContain('· Delegated by');
@@ -197,7 +193,7 @@ describe('editorial conversation presentation contract', () => {
 
     expect(input).toMatch(/edgeDocked\s*\?/);
     expect(input).toContain(
-      'rounded-none border-x-0 border-b-0 border-t border-border bg-card shadow-none',
+      'rounded-none border-x-0 border-b-0 border-t border-border bg-transparent shadow-none',
     );
     expect(input).toContain('rounded-lg border border-border shadow-(--elevation-raised)');
     expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');

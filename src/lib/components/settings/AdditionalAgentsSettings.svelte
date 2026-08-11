@@ -9,9 +9,9 @@
 
   import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-  selectProviderCatalogEntries,
-  selectProviderDisplayName,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectProviderCatalogEntries,
+    selectProviderDisplayName,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

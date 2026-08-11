@@ -11,8 +11,9 @@ describe('List', () => {
     const { container, getByRole } = render(ListHarness);
     const list = container.querySelector('[data-slot="list-container"]');
     const selected = getByRole('button', { name: /A long list title/ });
-    expect(list?.className).toContain('rounded-(--radius-medium)');
-    expect(list?.className).toContain('border-border');
+    expect(list?.className).toContain('gap-px');
+    expect(selected.className).toContain('rounded-md');
+    expect(selected.className).toContain('border-transparent');
     expect(selected.className).toContain('focus-visible:border-ring');
     expect(selected.className).toContain('focus-visible:ring-2');
     expect(selected.className).toContain('bg-accent');

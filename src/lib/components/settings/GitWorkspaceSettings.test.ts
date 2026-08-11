@@ -72,7 +72,9 @@ const baseSettings = [
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../ui/__tests__/mocks/Fa.svelte'));
-warmImport(() => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'));
+warmImport(
+  () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
+);
 
 describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
   beforeEach(() => {
@@ -336,7 +338,6 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
   });
 });
 
-
 describe('GitWorkspaceSettings — default shell select', () => {
   const SHELL_TRIGGER = { name: /Default Shell/ };
   const withShell = (value: string) =>
@@ -375,10 +376,11 @@ describe('GitWorkspaceSettings — default shell select', () => {
     render(GitWorkspaceSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'Zsh' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([

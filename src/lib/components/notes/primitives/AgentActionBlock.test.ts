@@ -98,10 +98,12 @@ describe('AgentActionBlock creation confirmation', () => {
     const action = dispatchMock.mock.calls[0][0];
     // The agent name is derived from the primitive goal — the session must
     // stay self-renameable (nameExplicitlySet: false on the wire).
-    expect(action.payload[1]).toEqual(expect.objectContaining({
-      name: 'Run the confirmation task',
-      nameExplicitlySet: false,
-    }));
+    expect(action.payload[1]).toEqual(
+      expect.objectContaining({
+        name: 'Run the confirmation task',
+        nameExplicitlySet: false,
+      }),
+    );
     action.success({ id: 'agent-confirmed', name: 'Confirmed Agent' });
 
     await waitFor(() => expect(updateAttributes).toHaveBeenCalledTimes(1));

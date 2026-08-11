@@ -10,7 +10,9 @@ describe('webview permission boundaries', () => {
       true,
     );
     expect(isDefaultSessionPermissionAllowed('clipboard-read', 'https://example.com')).toBe(false);
-    expect(isDefaultSessionPermissionAllowed('geolocation', 'app://workspaces/index.html')).toBe(false);
+    expect(isDefaultSessionPermissionAllowed('geolocation', 'app://workspaces/index.html')).toBe(
+      false,
+    );
   });
 
   it('never grants clipboard read to arbitrary embedded websites', () => {

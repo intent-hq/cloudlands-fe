@@ -245,7 +245,8 @@ export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[nu
  *  is no local re-derivation from PR/task fields. */
 export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
   return (
-    typeof value === 'string' && (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
+    typeof value === 'string' &&
+    (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
   );
 }
 
@@ -980,10 +981,7 @@ export interface AgentInfo {
 }
 
 export type AgentScope =
-  | 'workspace'
-  | { diffs: string[] }
-  | { filePattern: string }
-  | { taskType: string };
+  'workspace' | { diffs: string[] } | { filePattern: string } | { taskType: string };
 
 // Auggie output markers
 export const AUGGIE_MARKERS = {

@@ -4,7 +4,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import { appClient } from '$lib/client';
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
 import { selectProposalAppliedState } from '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors';
 import type {
@@ -73,7 +73,10 @@ import {
   setActiveProvider,
   setProviderEnabled,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { setEnabled, setDisabledServers } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+import {
+  setEnabled,
+  setDisabledServers,
+} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
   setAgentFontStyle,
   setBetaUpdatesEnabled,

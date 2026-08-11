@@ -84,11 +84,11 @@ function makeWorkspace(id: string, title: string, overrides?: Partial<Workspace>
 }
 
 function getGroupHeaders(): string[] {
-  return screen.queryAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
+  return screen.queryAllByRole('heading', { level: 4 }).map((el) => el.textContent ?? '');
 }
 
 function getRedesignedGroupHeaders(): string[] {
-  return screen.queryAllByRole('heading', { level: 4 }).map((el) => el.textContent ?? '');
+  return getGroupHeaders();
 }
 
 describe('AllWorkspacesCard BE displayStatus (Status view)', () => {

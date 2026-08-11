@@ -99,14 +99,15 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses equal muted launchers with direct item actions that disappear when expanded', () => {
     const workspace = source('../../../workspace/WorkspaceLayout.svelte');
     const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
+    const tabDefinitions = source('../../../workspace/multi-select-sidebar-tabs.ts');
     const launcherMarkup = sidebar.slice(sidebar.indexOf('<!-- Lightweight launchers'));
 
     expect(workspace).toContain('sidebarMinWidth = 280');
     expect(workspace).toContain('sidebarDefaultWidth = 360');
-    expect(sidebar).toContain("label: 'Context'");
-    expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
+    expect(tabDefinitions).toContain("label: 'Context'");
+    expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain('rounded-lg bg-muted/35 p-3');
+    expect(launcherMarkup).toContain('rounded-lg bg-card border border-border p-3');
     expect(sidebar).toContain('<AuggieAvatar');
     expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
@@ -117,13 +118,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
-    expect(sidebar).toContain('aria-label={`Close ${tab.label}`}');
+    expect(sidebar).toContain('aria-label={m.ui_tab_close_ariaLabel()}');
     expect(sidebar).toContain('data-sidebar-close');
     expect(sidebar).toContain('hover:bg-transparent hover:text-foreground');
-    expect(sidebar).toContain('sidebar-expanded-card flex');
-    expect(sidebar).toContain('rounded-lg bg-muted/35');
-    expect(sidebar).toContain('.sidebar-expanded-card :global(*)');
-    expect(sidebar).toContain('view-transition-name: sidebar-section');
+    expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
+    expect(sidebar).toContain('rounded-lg bg-background border border-border');
+    expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
+    expect(sidebar).not.toContain('view-transition-name: sidebar-section');
+    expect(sidebar).toContain('in:cardMorph|global');
+    expect(sidebar).toContain('out:cardMorph|global');
     expect(sidebar).not.toContain('h-16 grid-cols-4 gap-1.5');
   });
 
@@ -137,21 +140,20 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(titlebar).toContain('grid-template-columns: minmax(0, 1fr) auto');
     expect(titlebar).toContain(
-      'titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-hidden pl-2',
+      'titlebar-left-drag-surface flex min-w-0 self-stretch items-center gap-1 overflow-hidden',
     );
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
     expect(titlebar).toContain('titlebar-left-drag-handle w-4 shrink-0 self-stretch');
     expect(titlebar).toContain('class="flex min-w-0 items-center gap-1"');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
-    expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
+    expect(titlebar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
     expect(titlebar).toContain('data-titlebar-workspace-controls');
-    expect(titlebar.indexOf('<ChiefTrigger />')).toBeLessThan(titlebar.indexOf('<SidebarNav />'));
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
     expect(titlebar).toContain(
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
-    expect(titlebar).toContain('activeTabBounds.left + panelOffset + 1');
+    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 7');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
@@ -162,18 +164,18 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
-    expect(tabs).toContain('w-fit min-w-0 max-w-[55vw]');
+    expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(tabs).toContain('onActiveTabBoundsChange?.({');
     expect(titlebar).toContain('data-active-tab-border-mask');
-    expect(titlebar).toContain('absolute -bottom-px z-[60] h-0.5 bg-background');
+    expect(titlebar).toContain('absolute -bottom-px z-[60] h-0.5 bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(chiefTrigger).toContain("togglePanel('chief')");
     expect(chiefTrigger).toContain('data-chief-trigger');
-    expect(workspaceHeader).toContain("label: 'Toggle sidebar'");
+    expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
-    expect(progressCard).toContain("label: 'Toggle sidebar'");
+    expect(progressCard).toContain('label: m.ui_sidebar_toggle_label()');
     expect(progressCard).toContain('additionalActions={[sidebarToggleAction, sidebarSideAction]}');
     expect(titlebar).not.toContain('class="search-bar"');
   });
@@ -190,7 +192,7 @@ describe('editorial workspace shell presentation contract', () => {
     const chiefTrigger = source('../../sidebar-nav/ChiefTrigger.svelte');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
-    expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 pl-2');
+    expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
@@ -212,7 +214,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appCss).toContain('background-color: transparent');
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(appLayout).toContain('overflow-hidden bg-background border');
+    expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
     expect(appLayout).not.toContain('backdrop-filter:');
     expect(appLayout).not.toContain('flex flex-col bg-background"');
   });
@@ -221,16 +223,13 @@ describe('editorial workspace shell presentation contract', () => {
     const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
     const dock = source('../../../workspace/WorkspaceTerminalDock.svelte');
     const terminal = source('../../../terminal/QuakeTerminalOverlay.svelte');
-    const route = source('../../../../../routes/(app)/workspace/[id]/+page.svelte');
+    const route = source('../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte');
 
     expect(sidebar).toContain('<WorkspaceTerminalDock {workspaceId} />');
     expect(sidebar).toContain("class={cn('flex h-full flex-col bg-transparent', className)}");
-    expect(dock).toContain('{#each $terminals$ as terminal (terminal.id)}');
+    expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain("'flex h-10 shrink-0 items-center gap-1 pr-3'");
-    expect(dock).toContain("$sidebarSide$ === 'left' ? 'pl-14' : 'pl-3'");
-    expect(dock).not.toContain('border-t');
-    expect(dock).not.toContain('bg-background');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-4 py-2');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');
@@ -250,14 +249,14 @@ describe('editorial workspace shell presentation contract', () => {
 
   it('orders workspace identity, progress, and status like the reference hierarchy', () => {
     const progressCard = source('../../../workspace/sidebar/WorkspaceProgressCard.svelte');
-    const fullMode = progressCard.slice(progressCard.indexOf('<!-- Full mode for sidebar -->'));
+    const fullMode = progressCard.slice(progressCard.indexOf('data-workspace-header-actions'));
     const repository = fullMode.indexOf('<!-- repository and branch metadata -->');
-    const progress = fullMode.indexOf('<!-- Flame Graph Progress Section');
+    const progress = fullMode.indexOf('data-workspace-task-progress');
     const status = fullMode.indexOf('<!-- Status follows identity and progress');
 
     expect(repository).toBeGreaterThan(-1);
     expect(progress).toBeGreaterThan(repository);
     expect(status).toBeGreaterThan(progress);
-    expect(fullMode).toContain('showLabel');
+    expect(fullMode).toContain('{#if showFlameGraph}');
   });
 });

@@ -596,7 +596,9 @@
     {/if}
     <div>
       {#if !isStreamingPR}
-        <span class="text-xs text-subtle mb-1 block">{m.fileTracking_changeTimeline_title_label()}</span>
+        <span class="text-xs text-subtle mb-1 block"
+          >{m.fileTracking_changeTimeline_title_label()}</span
+        >
         <Input
           value={prTitle}
           oninput={handlePRTitleInput}
@@ -1551,8 +1553,7 @@
                         class="w-full resize-none rounded border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                         rows="3"
                         placeholder={m.fileTracking_changeTimeline_commitMessage_placeholder()}
-                        bind:value={commitMessage}
-                      ></textarea>
+                        bind:value={commitMessage}></textarea>
                       <div class="flex items-center gap-2 flex-wrap mt-2">
                         <Button
                           variant="default"
@@ -1769,9 +1770,7 @@
                                   {generatingMessagePreview.split('\n').pop()?.slice(0, 60) || ''}
                                 </span>
                               {:else}
-                                <span
-                                  class="flex-1 text-left text-xs text-subtle italic"
-                                >
+                                <span class="flex-1 text-left text-xs text-subtle italic">
                                   {m.fileTracking_changeTimeline_waitingForResponse_label()}
                                 </span>
                               {/if}

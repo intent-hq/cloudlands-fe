@@ -16,10 +16,7 @@ if (fs.existsSync(indexPath)) {
   let html = fs.readFileSync(indexPath, 'utf8');
 
   // Remove the entire Vite client import script block more aggressively
-  html = html.replace(
-    /<script type="module">[\s\S]*?\/\/@vite\/client[\s\S]*?<\/script>/g,
-    '',
-  );
+  html = html.replace(/<script type="module">[\s\S]*?\/\/@vite\/client[\s\S]*?<\/script>/g, '');
 
   // Also remove the specific pattern we see in the HTML
   html = html.replace(

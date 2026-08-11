@@ -37,7 +37,11 @@
   const UTILITY_AGENT_GROUPS = [
     // i18n-ignore (brand name)
     { id: 'git', label: 'Git', types: ['commit-message', 'pr-description'] },
-    { id: 'review', label: m.agentOverview_hierarchyGraph_reviewCorral_label(), types: ['code-review', 'code-walkthrough'] },
+    {
+      id: 'review',
+      label: m.agentOverview_hierarchyGraph_reviewCorral_label(),
+      types: ['code-review', 'code-walkthrough'],
+    },
   ] as const;
 
   // Pan/zoom state
@@ -622,13 +626,21 @@
               <!-- Hover status reads the selector-derived graph status; AgentNode
                 intentionally carries no separate waiting boolean. -->
               {#if hoveredAgent.status === 'waiting'}
-                <span class="text-yellow-500">● {m.agentOverview_hierarchyGraph_statusWaiting_label()}</span>
+                <span class="text-yellow-500"
+                  >● {m.agentOverview_hierarchyGraph_statusWaiting_label()}</span
+                >
               {:else if hoveredAgent.status === 'responding'}
-                <span class="text-primary">● {m.agentOverview_hierarchyGraph_statusResponding_label()}</span>
+                <span class="text-primary"
+                  >● {m.agentOverview_hierarchyGraph_statusResponding_label()}</span
+                >
               {:else if hoveredAgent.status === 'completed'}
-                <span class="text-green-500">● {m.agentOverview_hierarchyGraph_statusCompleted_label()}</span>
+                <span class="text-green-500"
+                  >● {m.agentOverview_hierarchyGraph_statusCompleted_label()}</span
+                >
               {:else if hoveredAgent.status === 'failed'}
-                <span class="text-red-500">● {m.agentOverview_hierarchyGraph_statusFailed_label()}</span>
+                <span class="text-red-500"
+                  >● {m.agentOverview_hierarchyGraph_statusFailed_label()}</span
+                >
               {:else}
                 <span>● {m.agentOverview_hierarchyGraph_statusIdle_label()}</span>
               {/if}
@@ -636,7 +648,9 @@
 
             <!-- Created time -->
             <div class="text-xs text-subtle">
-              {m.agentOverview_hierarchyGraph_created_label({ time: formatRelativeTime(hoveredAgent.createdAt) })}
+              {m.agentOverview_hierarchyGraph_created_label({
+                time: formatRelativeTime(hoveredAgent.createdAt),
+              })}
             </div>
 
             <!-- Last response preview -->
@@ -650,7 +664,11 @@
             {#if hoveredAgent.activeToolName}
               <div class="text-xs text-subtle flex items-center gap-1">
                 <Fa icon={faGear} size="xs" class="animate-spin" />
-                <span>{m.agentOverview_hierarchyGraph_usingTool_label({ tool: hoveredAgent.activeToolName })}</span>
+                <span
+                  >{m.agentOverview_hierarchyGraph_usingTool_label({
+                    tool: hoveredAgent.activeToolName,
+                  })}</span
+                >
               </div>
             {/if}
           </div>

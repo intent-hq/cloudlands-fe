@@ -45,19 +45,19 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     );
   });
 
-  it("create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
+  it('create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();
-    const progressId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const progressId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
     await client.create({
-      title: "With progress",
-      githubUrl: "https://github.com/example/repo",
+      title: 'With progress',
+      githubUrl: 'https://github.com/example/repo',
       progressId,
     } as CreateWorkspaceRequest);
 
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.create",
+      'workspace.create',
       expect.objectContaining({ progressId }),
       { timeoutMs: 120_000 },
     );
@@ -550,9 +550,9 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
     expect(await client.getTokenUsage('ws-abc')).toBeNull();
   });
 
-  it("passes provider cost through unchanged when the daemon reports it", async () => {
+  it('passes provider cost through unchanged when the daemon reports it', async () => {
     // PROTOCOL §5.23 `cost` is optional and provider-reported (never estimated).
-    const cost = { amount: 0.42, currency: "USD" };
+    const cost = { amount: 0.42, currency: 'USD' };
     const entry = {
       inputTokens: 12000,
       outputTokens: 3400,
@@ -561,15 +561,15 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
       cost,
     };
     const tokenUsage = {
-      byAgentId: { "agent-123": entry },
-      byModel: { "opus-4.8": entry },
+      byAgentId: { 'agent-123': entry },
+      byModel: { 'opus-4.8': entry },
       totals: entry,
-      lastScanAt: "2026-06-17T12:00:00Z",
+      lastScanAt: '2026-06-17T12:00:00Z',
     };
     mockedRequest.mockResolvedValueOnce({ tokenUsage });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getTokenUsage("ws-abc")).toEqual(tokenUsage);
+    expect(await client.getTokenUsage('ws-abc')).toEqual(tokenUsage);
   });
 });
 

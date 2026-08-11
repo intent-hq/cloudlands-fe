@@ -71,7 +71,10 @@
         code: inputValue.trim(),
       });
       if (result?.status === 'already_active') {
-        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
+        feedback = {
+          message: m.modals_featureCode_alreadyActive_feedback(),
+          color: 'text-yellow-400',
+        };
       } else {
         feedback = { message: m.modals_featureCode_activated_feedback(), color: 'text-green-400' };
         needsRestart = true;
@@ -84,7 +87,10 @@
         message.toLowerCase().includes('already active') ||
         message.toLowerCase().includes('already_active')
       ) {
-        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
+        feedback = {
+          message: m.modals_featureCode_alreadyActive_feedback(),
+          color: 'text-yellow-400',
+        };
       } else {
         feedback = { message: m.modals_featureCode_invalidCode_feedback(), color: 'text-red-400' };
       }
@@ -198,9 +204,15 @@
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>{needsRestart ? m.modals_featureCode_close_label() : m.modals_featureCode_cancel_label()}</Button>
+        <Button variant="ghost" onclick={close}
+          >{needsRestart
+            ? m.modals_featureCode_close_label()
+            : m.modals_featureCode_cancel_label()}</Button
+        >
         {#if needsRestart}
-          <Button variant="outline" onclick={restartApp}>{m.modals_featureCode_restartNow_label()}</Button>
+          <Button variant="outline" onclick={restartApp}
+            >{m.modals_featureCode_restartNow_label()}</Button
+          >
         {/if}
         <Button
           variant="default"

@@ -25,11 +25,12 @@ const testStore = appStore as typeof appStore & {
 testStore.getExistingStoreContext = function () {
   return this.storeContext;
 };
+import { applySettingsChanges, BG_MODEL_MIGRATION_MARKER_KEY } from './settings-hydration-service';
 import {
-  applySettingsChanges,
-  BG_MODEL_MIGRATION_MARKER_KEY,
-} from './settings-hydration-service';
-import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  hydrateActiveProvider,
+  loadEnabledProvidersFromStorage,
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { loadProviderModelsFromStorage } from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   beforeAll(() => {
@@ -162,7 +163,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     expect(stateAfter.backgroundAgentSettings.typeOverrides.pr).toBe('pr-model');
   });
 
-  describe("legacy haiku4.5 background-model migration", () => {
+  describe('legacy haiku4.5 background-model migration', () => {
     type BgState = {
       backgroundAgentSettings: {
         defaultModel: string;
@@ -175,9 +176,7 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     const storage = new Map<string, string>();
     beforeEach(() => {
       storage.clear();
-      vi.mocked(localStorage.getItem).mockImplementation(
-        (key: string) => storage.get(key) ?? null,
-      );
+      vi.mocked(localStorage.getItem).mockImplementation((key: string) => storage.get(key) ?? null);
       vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
         storage.set(key, String(value));
       });
@@ -188,66 +187,64 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
 
     it("migrates legacy persisted haiku4.5 (default + overrides) to '' and persists the migration", () => {
       applySettingsChanges([
-        { path: "quickActions.defaultModel", value: "haiku4.5" },
+        { path: 'quickActions.defaultModel', value: 'haiku4.5' },
         {
-          path: "quickActions.typeOverrides",
-          value: { commit: "haiku4.5", pr: "pr-model", review: "", fast: "" },
+          path: 'quickActions.typeOverrides',
+          value: { commit: 'haiku4.5', pr: 'pr-model', review: '', fast: '' },
         },
       ]);
 
       const state = appStore.state as BgState;
-      expect(state.backgroundAgentSettings.defaultModel).toBe("");
-      expect(state.backgroundAgentSettings.typeOverrides.commit).toBe("");
+      expect(state.backgroundAgentSettings.defaultModel).toBe('');
+      expect(state.backgroundAgentSettings.typeOverrides.commit).toBe('');
       // Non-legacy overrides pass through untouched.
-      expect(state.backgroundAgentSettings.typeOverrides.pr).toBe("pr-model");
+      expect(state.backgroundAgentSettings.typeOverrides.pr).toBe('pr-model');
 
       // The normalized values are written back to the daemon settings catalog.
       expect(updateSpy).toHaveBeenCalledTimes(1);
       expect(updateSpy).toHaveBeenCalledWith({
         changes: [
-          { path: "quickActions.defaultModel", value: "" },
+          { path: 'quickActions.defaultModel', value: '' },
           {
-            path: "quickActions.typeOverrides",
-            value: { commit: "", pr: "pr-model", review: "", fast: "" },
+            path: 'quickActions.typeOverrides',
+            value: { commit: '', pr: 'pr-model', review: '', fast: '' },
           },
         ],
       });
-      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe("1");
+      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
     });
 
-    it("passes any other persisted model id through untouched (and never writes back)", () => {
+    it('passes any other persisted model id through untouched (and never writes back)', () => {
       applySettingsChanges([
-        { path: "quickActions.defaultModel", value: "claude-sonnet" },
+        { path: 'quickActions.defaultModel', value: 'claude-sonnet' },
         {
-          path: "quickActions.typeOverrides",
-          value: { commit: "fast-1", pr: "", review: "", fast: "" },
+          path: 'quickActions.typeOverrides',
+          value: { commit: 'fast-1', pr: '', review: '', fast: '' },
         },
       ]);
 
       const state = appStore.state as BgState;
-      expect(state.backgroundAgentSettings.defaultModel).toBe("claude-sonnet");
-      expect(state.backgroundAgentSettings.typeOverrides.commit).toBe("fast-1");
+      expect(state.backgroundAgentSettings.defaultModel).toBe('claude-sonnet');
+      expect(state.backgroundAgentSettings.typeOverrides.commit).toBe('fast-1');
       expect(updateSpy).not.toHaveBeenCalled();
       // The marker is still set so later hydrations skip the migration check.
-      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe("1");
+      expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
     });
 
-    it("does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim", () => {
+    it('does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim', () => {
       // First hydration runs (and completes) the migration.
       applySettingsChanges([
-        { path: "quickActions.defaultModel", value: "haiku4.5" },
-        { path: "quickActions.typeOverrides", value: { commit: "", pr: "", review: "", fast: "" } },
+        { path: 'quickActions.defaultModel', value: 'haiku4.5' },
+        { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
       ]);
-      expect((appStore.state as BgState).backgroundAgentSettings.defaultModel).toBe("");
+      expect((appStore.state as BgState).backgroundAgentSettings.defaultModel).toBe('');
       updateSpy.mockClear();
 
       // The user re-picks haiku4.5; the daemon echoes it back via settings:changed.
-      applySettingsChanges([
-        { path: "quickActions.defaultModel", value: "haiku4.5" },
-      ]);
+      applySettingsChanges([{ path: 'quickActions.defaultModel', value: 'haiku4.5' }]);
 
       const state = appStore.state as BgState;
-      expect(state.backgroundAgentSettings.defaultModel).toBe("haiku4.5");
+      expect(state.backgroundAgentSettings.defaultModel).toBe('haiku4.5');
       expect(updateSpy).not.toHaveBeenCalled();
     });
   });
@@ -291,7 +288,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       catalogSpy.mockResolvedValue(CATALOG);
       // Reset the slice map so no enablement state bleeds between tests (the
       // app store is a module singleton).
+      appStore.dispatch(hydrateActiveProvider(''));
       appStore.dispatch(loadEnabledProvidersFromStorage({}));
+      appStore.dispatch(loadProviderModelsFromStorage({}));
     });
 
     it('seeds an unset default provider to true and persists the map back (pre-2.17 upgrade)', async () => {
@@ -325,6 +324,36 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(updateSpy).toHaveBeenCalledWith({
         changes: [{ path: 'providers.enabled', value: { auggie: true } }],
       });
+    });
+
+    it('seeds the sole persisted model provider when providers.active is unset', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: null },
+        { path: 'model.providerDefaults', value: { auggie: 'gpt5.6-sol' } },
+        { path: 'providers.enabled', value: null },
+      ]);
+
+      await vi.waitFor(() => expect(updateSpy).toHaveBeenCalledTimes(1));
+      expect(enabledProviders()).toEqual({ auggie: true });
+      expect(updateSpy).toHaveBeenCalledWith({
+        changes: [{ path: 'providers.enabled', value: { auggie: true } }],
+      });
+    });
+
+    it('leaves an unset active provider unresolved when persisted model providers are ambiguous', async () => {
+      applySettingsChanges([
+        { path: 'providers.active', value: null },
+        {
+          path: 'model.providerDefaults',
+          value: { auggie: 'gpt5.6-sol', codex: 'gpt-5.3-codex/high' },
+        },
+        { path: 'providers.enabled', value: null },
+      ]);
+
+      await flushAsync();
+      expect(enabledProviders()).toEqual({});
+      expect(catalogSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
     });
 
     it('preserves an explicit persisted false (deliberate disable) without touching the wire', async () => {

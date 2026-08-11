@@ -4021,12 +4021,8 @@
         {agentId}
         selectedModel={hydratedInputModel}
         compactMode={isCompactMode}
-        editorClassName={isChiefWorkspace
-          ? 'w-full px-1.5!'
-          : 'w-full px-4! sm:px-6!'}
-        contentInsetClassName={isChiefWorkspace
-          ? 'w-full px-1.5'
-          : 'w-full px-4 sm:px-6'}
+        editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
+        contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
         edgeDocked
         requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}

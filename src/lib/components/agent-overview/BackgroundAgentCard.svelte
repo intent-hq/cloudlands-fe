@@ -18,9 +18,9 @@
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
-  selectAgentAttentionRequest,
-  selectAgentIsWaitingForOtherAgents,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentAttentionRequest,
+    selectAgentIsWaitingForOtherAgents,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AgentAttentionKind } from '$shared/utils/agent-attention';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 

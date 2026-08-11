@@ -63,7 +63,7 @@
   );
 </script>
 
-<div class="grid grid-cols-[repeat(auto-fit,_minmax(220px,_1fr))] gap-x-10 gap-y-6">
+<div class="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
   <!-- Desktop notifications -->
   <div class="flex justify-between">
     <div>

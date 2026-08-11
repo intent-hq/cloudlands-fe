@@ -9,6 +9,11 @@
   import PathSettingField from './PathSettingField.svelte';
   import { Select } from '$lib/components/ui/select';
 
+  // i18n-ignore (file path)
+  const WORKTREES_PLACEHOLDER = '~/intent/workspaces';
+  // i18n-ignore (file path)
+  const SSH_KEY_PLACEHOLDER = '~/.ssh/id_ed25519';
+
   // Settings state
   let worktreesLocation = $state('');
   let sshKeyPath = $state('');
@@ -197,7 +202,7 @@
       <PathSettingField
         id="worktreesLocation"
         bind:value={worktreesLocation}
-        placeholder={'~/intent/workspaces' /* i18n-ignore (file path) */}
+        placeholder={WORKTREES_PLACEHOLDER}
         pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
         confirm={{
           title: m.settings_gitWorkspace_worktreesLocation_confirm_title(),
@@ -225,8 +230,8 @@
         mode="file"
         id="sshKeyPath"
         bind:value={sshKeyPath}
-        placeholder={'~/.ssh/id_ed25519' /* i18n-ignore (file path) */}
-        defaultPath={'~/.ssh' /* i18n-ignore (file path) */}
+        placeholder={SSH_KEY_PLACEHOLDER}
+        defaultPath={'~/.ssh'}
         pickerTitle={m.settings_gitWorkspace_sshKeyPath_label()}
         onchange={handleSave}
       />

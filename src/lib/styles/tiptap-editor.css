@@ -245,8 +245,7 @@
 
 .note-font-monospace .tiptap-editor {
   /* iA Writer Mono and JetBrains Mono are bundled via @fontsource (see +layout.svelte) */
-  font-family:
-    'iA Writer Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  font-family: 'iA Writer Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   letter-spacing: -0.011em;
   font-feature-settings:
     'calt' 1,

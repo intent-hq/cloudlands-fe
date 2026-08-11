@@ -61,8 +61,8 @@ function expectReadableAgentArg(mock: ReturnType<typeof vi.fn>, expectedAgentId:
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
-warmImport(() => import('../../agent-overview/__tests__/mocks/MockAuggieAvatar.svelte'));
-warmImport(() => import('../__tests__/mocks/Fa.svelte'));
+warmImport(() => import('$lib/components/agent-overview/__tests__/mocks/MockAuggieAvatar.svelte'));
+warmImport(() => import('$lib/components/ui/__tests__/mocks/Fa.svelte'));
 
 describe('AugieAvatarWithState avatar wiring', () => {
   beforeEach(() => {

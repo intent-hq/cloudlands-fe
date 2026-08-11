@@ -7,9 +7,21 @@
  * not live, then refetches the list.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
+
+const scriptSelectorState = vi.hoisted(() => {
+  const subscribers = new Set<(scripts: ScriptWithState[]) => void>();
+  return {
+    scripts: [] as ScriptWithState[],
+    initialized: false,
+    subscribers,
+    flush() {
+      for (const subscriber of subscribers) subscriber(this.scripts);
+    },
+  };
+});
 
 vi.mock('$store/renderer/store', async () => {
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
@@ -69,6 +81,25 @@ vi.mock('$store/renderer/store', async () => {
   return { store };
 });
 
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectWorkspaceScriptEntries: Object.assign(
+    () => ({
+      subscribe(listener: (scripts: ScriptWithState[]) => void) {
+        listener(scriptSelectorState.scripts);
+        scriptSelectorState.subscribers.add(listener);
+        return () => scriptSelectorState.subscribers.delete(listener);
+      },
+    }),
+    { select: () => scriptSelectorState.scripts },
+  ),
+  selectWorkspaceScriptsInitialized: () => ({
+    subscribe(listener: (initialized: boolean) => void) {
+      listener(scriptSelectorState.initialized);
+      return () => {};
+    },
+  }),
+}));
+
 vi.mock('../Terminal.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
@@ -127,10 +158,7 @@ import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
 
-function makeScript(
-  id: string,
-  runtime: Partial<ScriptRuntimeState> = {},
-): ScriptWithState {
+function makeScript(id: string, runtime: Partial<ScriptRuntimeState> = {}): ScriptWithState {
   return {
     id,
     workspaceId: WS_A,
@@ -146,6 +174,9 @@ function makeScript(
 function seedScripts(scripts: ScriptWithState[]) {
   appStore.dispatch(setScriptsData(WS_A, scripts));
   appStore.dispatch(setScriptsInitialized(WS_A, true));
+  scriptSelectorState.scripts = scripts;
+  scriptSelectorState.initialized = true;
+  scriptSelectorState.flush();
 }
 
 function scriptTabs(container: HTMLElement): HTMLElement[] {
@@ -169,9 +200,12 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     vi.clearAllMocks();
     (appStore as any).__reset();
     (appStore as any).__setActiveWorkspace(WS_A);
+    scriptSelectorState.scripts = [];
+    scriptSelectorState.initialized = false;
+    scriptSelectorState.subscribers.clear();
   });
 
-  it('renders a tab for each previously-running script without auto-selecting it', () => {
+  it('renders a tab for each previously-running script without auto-selecting it', async () => {
     seedScripts([
       makeScript('prev-1', { previouslyRunning: true }),
       makeScript('prev-2', { previouslyRunning: true }),
@@ -180,6 +214,7 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
 
+    await waitFor(() => expect(scriptTabs(container)).toHaveLength(2));
     const tabs = scriptTabs(container);
     const labels = tabs.map((tab) => tab.textContent ?? '');
     expect(labels.some((text) => text.includes('script-prev-1'))).toBe(true);
@@ -190,11 +225,12 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(dispatchedTypes()).not.toContain('terminals/selectScript');
   });
 
-  it('still renders live scripts as tabs, without a dismiss button', () => {
+  it('still renders live scripts as tabs, without a dismiss button', async () => {
     seedScripts([makeScript('live-1', { status: 'running', pid: 42 })]);
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
 
+    await waitFor(() => expect(scriptTabs(container)).toHaveLength(1));
     const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
     expect(labels.some((text) => text.includes('script-live-1'))).toBe(true);
     expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
@@ -205,11 +241,13 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
 
+    await waitFor(() =>
+      expect(container.querySelector('[data-dismiss-script-tab="prev-1"]')).not.toBeNull(),
+    );
     const dismiss = container.querySelector<HTMLButtonElement>(
       '[data-dismiss-script-tab="prev-1"]',
     );
-    expect(dismiss).not.toBeNull();
-    dismiss!.click();
+    await fireEvent.click(dismiss!);
     // The handler awaits scriptsClient.stop before dispatching the refresh.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -220,10 +258,14 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
   it('a previously-running script that goes live keeps its tab and loses the dismiss button', async () => {
     seedScripts([makeScript('prev-1', { previouslyRunning: true })]);
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
-    expect(container.querySelector('[data-dismiss-script-tab="prev-1"]')).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector('[data-dismiss-script-tab="prev-1"]')).not.toBeNull(),
+    );
 
     seedScripts([makeScript('prev-1', { status: 'running', pid: 42 })]);
-    await Promise.resolve();
+    await waitFor(() =>
+      expect(container.querySelector('[data-dismiss-script-tab="prev-1"]')).toBeNull(),
+    );
 
     const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
     expect(labels.some((text) => text.includes('script-prev-1'))).toBe(true);

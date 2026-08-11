@@ -12,13 +12,20 @@
   interface Props {
     notes: Note[];
     onTaskClick?: (noteId: string) => void;
-    /** Canonical BE-owned completion ratio, from 0 to 1. */
+    /** Canonical BE-owned completion ratio, from 0 to 1. Undefined while loading. */
     progress?: number;
+    loading?: boolean;
     /** Remounts the visual bar so workspace switches replay the entrance animation. */
     animationKey?: string;
   }
 
-  let { notes = [], onTaskClick, progress = 0, animationKey }: Props = $props();
+  let {
+    notes = [],
+    onTaskClick,
+    progress,
+    loading = progress === undefined,
+    animationKey,
+  }: Props = $props();
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -142,7 +149,7 @@
   const completedCount = $derived(
     taskList.filter((task) => task.note.metadata?.task?.status === 'complete').length,
   );
-  const progressPercent = $derived(Math.min(100, Math.max(0, progress * 100)));
+  const progressPercent = $derived(Math.min(100, Math.max(0, (progress ?? 0) * 100)));
 
   interface StatusBar {
     status: TaskStatus;
@@ -229,20 +236,24 @@
 {/snippet}
 
 {#key animationKey}
-  <Tooltip
-    content={taskListTooltip}
-    side="bottom"
-    align="start"
-    sideOffset={6}
-    delayDuration={300}
-    disableHoverableContent={false}
-    contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"
-    class="w-full {specNoteId && onTaskClick ? 'cursor-pointer' : ''}"
-    onclick={() => specNoteId && onTaskClick?.(specNoteId)}
-    showArrow
-  >
-    {@render progressBar()}
-  </Tooltip>
+  {#if loading}
+    <div class="h-5 w-full" data-flame-progress-placeholder aria-hidden="true"></div>
+  {:else}
+    <Tooltip
+      content={taskListTooltip}
+      side="bottom"
+      align="start"
+      sideOffset={6}
+      delayDuration={300}
+      disableHoverableContent={false}
+      contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"
+      class="w-full {specNoteId && onTaskClick ? 'cursor-pointer' : ''}"
+      onclick={() => specNoteId && onTaskClick?.(specNoteId)}
+      showArrow
+    >
+      {@render progressBar()}
+    </Tooltip>
+  {/if}
 {/key}
 
 <style>

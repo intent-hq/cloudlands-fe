@@ -241,14 +241,12 @@
         });
 
         // Map daemon workspace-relative paths into search results
-        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map(
-          (path) => ({
-            name: path.split('/').pop() || path,
-            path,
-            relativePath: path,
-            type: 'file' as const,
-          }),
-        );
+        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map((path) => ({
+          name: path.split('/').pop() || path,
+          path,
+          relativePath: path,
+          type: 'file' as const,
+        }));
 
         // Filter to only changed files if showOnlyChanged is enabled
         const gitStatusRec = $gitStatusRecord$;

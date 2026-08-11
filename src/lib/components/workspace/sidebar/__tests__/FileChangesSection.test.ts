@@ -261,7 +261,9 @@ describe('FileChangesSection', () => {
     const { container } = await renderSection();
 
     const rows = Array.from(container.querySelectorAll('[data-testid="file-row"]'));
-    expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(2);
+    expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(
+      2,
+    );
   });
 
   it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {

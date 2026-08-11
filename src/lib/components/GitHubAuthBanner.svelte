@@ -183,7 +183,8 @@
       <p class="text-xs text-subtle">{m.lib_githubAuth_daemonAuthFirst_message()}</p>
       <p class="text-xs text-subtle">
         <!-- i18n-ignore (shell command) -->
-        {m.lib_githubAuth_run_before()} <code class="bg-muted px-1 rounded">auggie login</code> {m.lib_githubAuth_inYourTerminal_after()}
+        {m.lib_githubAuth_run_before()} <code class="bg-muted px-1 rounded">auggie login</code>
+        {m.lib_githubAuth_inYourTerminal_after()}
       </p>
     </div>
   {:else if hasDeviceFlow && $deviceFlow$}

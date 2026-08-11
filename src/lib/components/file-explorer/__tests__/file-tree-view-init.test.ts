@@ -10,7 +10,7 @@ const {
   appStore,
   createReadable,
   dispatchMock,
-    error$,
+  error$,
   initializationInputs$,
   initializeFileExplorerMock,
   loadGitStatusMock,
@@ -104,19 +104,27 @@ vi.mock('$store/renderer/slices/file-explorer/file-explorer-selectors', () => ({
   selectFileExplorerGitStatus: () => createReadable({}),
   selectFlattenedNodes: () => createReadable([]),
   selectHasExpandedDirectories: { select: vi.fn(() => false) },
-  selectEffectiveFileExplorerWorkspacePath: Object.assign(vi.fn(() => workspacePath$), {
-    select: vi.fn(() => workspacePath$.value),
-  }),
-  selectFileExplorerInitializationInputs: Object.assign(vi.fn(() => initializationInputs$), {
-    select: vi.fn(() => initializationInputs$.value),
-  }),
+  selectEffectiveFileExplorerWorkspacePath: Object.assign(
+    vi.fn(() => workspacePath$),
+    {
+      select: vi.fn(() => workspacePath$.value),
+    },
+  ),
+  selectFileExplorerInitializationInputs: Object.assign(
+    vi.fn(() => initializationInputs$),
+    {
+      select: vi.fn(() => initializationInputs$.value),
+    },
+  ),
   selectShouldInitializeFileExplorerForWorkspace: {
     select: vi.fn(() => shouldInitializeState.value),
   },
 }));
 
 function initializationDispatches() {
-  return dispatchMock.mock.calls.filter(([action]) => action.type === 'fileExplorer/initializeFileExplorer');
+  return dispatchMock.mock.calls.filter(
+    ([action]) => action.type === 'fileExplorer/initializeFileExplorer',
+  );
 }
 
 async function renderTree() {
@@ -201,16 +209,13 @@ describe('FileTreeView initialization trigger', () => {
         isInitialized: false,
       },
     ],
-  ])(
-    'dispatches when %s makes the internal gate true again',
-    async (_caseName, nextInputs) => {
-      await renderTree();
-      await markInitializationSettled();
+  ])('dispatches when %s makes the internal gate true again', async (_caseName, nextInputs) => {
+    await renderTree();
+    await markInitializationSettled();
 
-      shouldInitializeState.value = true;
-      initializationInputs$.set(nextInputs);
+    shouldInitializeState.value = true;
+    initializationInputs$.set(nextInputs);
 
-      await waitFor(() => expect(initializationDispatches()).toHaveLength(2));
-    },
-  );
+    await waitFor(() => expect(initializationDispatches()).toHaveLength(2));
+  });
 });

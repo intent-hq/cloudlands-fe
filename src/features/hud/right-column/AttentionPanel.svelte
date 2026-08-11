@@ -73,7 +73,8 @@
 
   let listStyle = $derived.by(() => {
     if (reducedMotion.current || slide.phase === 'idle') return '';
-    if (slide.phase === 'prep') return `transform: translateY(-${SLIDE_OFFSET_PX}px); transition: none;`;
+    if (slide.phase === 'prep')
+      return `transform: translateY(-${SLIDE_OFFSET_PX}px); transition: none;`;
     return 'transform: translateY(0); transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);';
   });
 
@@ -91,9 +92,7 @@
   data-testid="hud-attention-panel"
 >
   <header class="hud-attention-header">
-    <span
-      class="hud-attention-blink"
-      class:hud-attention-blink-static={reducedMotion.current}
+    <span class="hud-attention-blink" class:hud-attention-blink-static={reducedMotion.current}
     ></span>
     <span class="hud-attention-title">{m.hud_attention_title()}</span>
     <span class="hud-attention-rule"></span>

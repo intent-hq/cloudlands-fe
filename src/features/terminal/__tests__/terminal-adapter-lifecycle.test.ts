@@ -486,12 +486,12 @@ describe('TerminalAdapter cursor suppression on exit', () => {
   });
 });
 
-
 describe('TerminalAdapter code-font preference wiring', () => {
   beforeEach(() => {
     xtermMock.instances.length = 0;
     vi.clearAllMocks();
-    fontMock.current = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
+    fontMock.current =
+      "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),

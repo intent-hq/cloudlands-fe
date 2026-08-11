@@ -80,6 +80,9 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'task:ready-tasks-changed',
   // Terminal events
   'terminal:command',
+  // Script events
+  'script:state',
+  'script:output',
   // Test events
   'test:started',
   'test:completed',

@@ -65,7 +65,6 @@ describe('getFlatWorkspaceAgentRows', () => {
 
   it('restores the legacy sidebar hierarchy and delegated group controls', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
-    const card = readFileSync('src/lib/components/chat/AgentCard.svelte', 'utf8');
     const sidebar = readFileSync(
       'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
       'utf8',
@@ -76,8 +75,6 @@ describe('getFlatWorkspaceAgentRows', () => {
     expect(list).toContain('m.workspace_overviewTimeline_yourAgents_label');
     expect(list).toContain('m.workspace_overviewTimeline_coordinatorDelegates_description');
     expect(list).toContain('variant="workspace-list"');
-    expect(card).toContain("variant === 'workspace-list'");
-    expect(card).toContain("variant !== 'workspace-list' && updatedAt");
     expect(list).not.toContain('View agent tree');
     expect(sidebar).not.toContain('Agent orchestration');
     expect(sidebar).toContain("{#if tabId !== 'agents'}");

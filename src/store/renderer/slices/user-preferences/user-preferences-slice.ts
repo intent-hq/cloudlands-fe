@@ -94,7 +94,7 @@ export const initialState: UserPreferencesState = {
   ...notificationSettingsInitialState,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
-  githubLinkDefaultAction: "show-choices",
+  githubLinkDefaultAction: 'show-choices',
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -178,7 +178,7 @@ export const setLanguagePreference = createAction<[preference: string]>(
 );
 
 export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaultAction]>(
-  "userPreferences/setGithubLinkDefaultAction"
+  'userPreferences/setGithubLinkDefaultAction',
 );
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
@@ -215,10 +215,10 @@ export const setHasCompletedProviderSetup = hasCompletedProviderSetupPreference.
 export const toggleHasCompletedProviderSetup = hasCompletedProviderSetupPreference.toggleAction;
 
 const showReasoningBlocksPreference = createBooleanPreference<UserPreferencesState>({
-  sliceName: "userPreferences",
-  field: "showReasoningBlocks",
-  setActionName: "setShowReasoningBlocks",
-  toggleActionName: "toggleShowReasoningBlocks",
+  sliceName: 'userPreferences',
+  field: 'showReasoningBlocks',
+  setActionName: 'setShowReasoningBlocks',
+  toggleActionName: 'toggleShowReasoningBlocks',
 });
 
 export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;

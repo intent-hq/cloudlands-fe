@@ -15,6 +15,7 @@ export const textareaMetadata = parseUiComponentMetadata({
     'src/lib/components/file-tracking/accept-changes/ChangeTimeline.svelte',
     'src/lib/components/settings/AgentRulesEditor.svelte',
     'src/lib/components/settings/AutoSaveTextarea.svelte',
+    'src/lib/components/settings/mcp/McpJsonImport.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/sidebar/CommitDrawer.svelte',
     'src/lib/components/workspace/sidebar/MergePanel.svelte',

@@ -1,158 +1,40 @@
 {
-  "agentOverview_hierarchyCard_agent_fallback": [
-    "de",
-    "fr"
-  ],
-  "agentOverview_hierarchyCard_note_label": [
-    "fr"
-  ],
-  "agentOverview_hierarchyGraph_background_badge": [
-    "ja",
-    "ko",
-    "de"
-  ],
-  "agentOverview_hierarchyGraph_reviewCorral_label": [
-    "de"
-  ],
-  "agentOverview_timeScrubber_live_label": [
-    "de"
-  ],
-  "agent_failureToast_agentWorkspace_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_agentCard_background_badge": [
-    "ja",
-    "ko",
-    "de"
-  ],
-  "chat_agentThread_assistant_label": [
-    "fr"
-  ],
-  "chat_agentThread_error_label": [
-    "es"
-  ],
-  "chat_agentThread_id_label": [
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "chat_agentsList_agentShortId_fallback": [
-    "de",
-    "fr"
-  ],
-  "chat_agentsList_threads_title": [
-    "de"
-  ],
-  "chat_backgroundHooks_modal_scriptTab_label": [
-    "fr",
-    "es"
-  ],
-  "chat_backgroundHooks_modal_title": [
-    "de",
-    "es"
-  ],
-  "chat_changesPanel_commitCount_many": [
-    "fr",
-    "es"
-  ],
-  "chat_changesPanel_commitCount_one": [
-    "fr",
-    "es"
-  ],
-  "chat_changesPanel_note_fallback": [
-    "fr"
-  ],
-  "chat_chatHeader_chat_fallback": [
-    "de",
-    "es"
-  ],
-  "chat_chatHeader_statusError_label": [
-    "es"
-  ],
-  "chat_chatMessage_githubIssue_fallback": [
-    "ja"
-  ],
-  "chat_chatMessage_linearIssue_fallback": [
-    "ja"
-  ],
-  "chat_chatMessage_sentryIssue_fallback": [
-    "ja"
-  ],
-  "chat_chatSearch_filterAssistant_label": [
-    "fr"
-  ],
-  "chat_contextEngine_sourceConversations_label": [
-    "fr"
-  ],
-  "chat_detectedScripts_service_badge": [
-    "fr"
-  ],
-  "chat_effortPicker_level_minimal": [
-    "de",
-    "fr"
-  ],
-  "chat_eventWakeup_summaryJoin_label": [
-    "de"
-  ],
-  "chat_hookWakeAttribution_fallbackName_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_longRunningDebug_notAvailable_fallback": [
-    "ja",
-    "fr"
-  ],
-  "chat_mentions_agents_group": [
-    "fr"
-  ],
-  "chat_mentions_terminalIndex_subtitle": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_messageEditor_kbdEsc_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "chat_modelChangeNotice_model_label": [
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_monitoredPrs_crossRepoChip_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_monitoredPrs_hover_untitled_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_permissionParser_browser_action": [
-    "de"
-  ],
+  "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],
+  "agentOverview_hierarchyCard_note_label": ["fr"],
+  "agentOverview_hierarchyGraph_background_badge": ["ja", "ko", "de"],
+  "agentOverview_hierarchyGraph_reviewCorral_label": ["de"],
+  "agentOverview_timeScrubber_live_label": ["de"],
+  "agent_failureToast_agentWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "chat_agentCard_background_badge": ["ja", "ko", "de"],
+  "chat_agentThread_assistant_label": ["fr"],
+  "chat_agentThread_error_label": ["es"],
+  "chat_agentThread_id_label": ["ja", "ko", "de", "es"],
+  "chat_agentsList_agentShortId_fallback": ["de", "fr"],
+  "chat_agentsList_threads_title": ["de"],
+  "chat_backgroundHooks_modal_scriptTab_label": ["fr", "es"],
+  "chat_backgroundHooks_modal_title": ["de", "es"],
+  "chat_changesPanel_commitCount_many": ["fr", "es"],
+  "chat_changesPanel_commitCount_one": ["fr", "es"],
+  "chat_changesPanel_note_fallback": ["fr"],
+  "chat_chatHeader_chat_fallback": ["de", "es"],
+  "chat_chatHeader_statusError_label": ["es"],
+  "chat_chatMessage_githubIssue_fallback": ["ja"],
+  "chat_chatMessage_linearIssue_fallback": ["ja"],
+  "chat_chatMessage_sentryIssue_fallback": ["ja"],
+  "chat_chatSearch_filterAssistant_label": ["fr"],
+  "chat_contextEngine_sourceConversations_label": ["fr"],
+  "chat_detectedScripts_service_badge": ["fr"],
+  "chat_effortPicker_level_minimal": ["de", "fr"],
+  "chat_eventWakeup_summaryJoin_label": ["de"],
+  "chat_hookWakeAttribution_fallbackName_label": ["de", "fr", "es"],
+  "chat_longRunningDebug_notAvailable_fallback": ["ja", "fr"],
+  "chat_mentions_agents_group": ["fr"],
+  "chat_mentions_terminalIndex_subtitle": ["de", "fr", "es"],
+  "chat_messageEditor_kbdEsc_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
+  "chat_modelChangeNotice_model_label": ["ko", "de", "fr", "es"],
+  "chat_monitoredPrs_crossRepoChip_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "chat_monitoredPrs_hover_untitled_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "chat_permissionParser_browser_action": ["de"],
   "chat_prMonitorWakeAttribution_crossRepoChip_label": [
     "zh-CN",
     "zh-TW",
@@ -162,271 +44,73 @@
     "fr",
     "es"
   ],
-  "chat_previewToolLabel_tool_fallback": [
-    "de"
-  ],
-  "chat_proposalCard_repo_label": [
-    "de"
-  ],
-  "chat_richInput_fileTypeSize_description": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_shared_agentName_fallback": [
-    "de",
-    "fr"
-  ],
-  "chat_shared_browser_fallback": [
-    "de"
-  ],
-  "chat_shared_diff_fallback": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "chat_shared_general_fallback": [
-    "es"
-  ],
-  "chat_shared_note_fallback": [
-    "fr"
-  ],
-  "chat_shared_tool_title": [
-    "de"
-  ],
-  "chat_toolCall_message_label": [
-    "fr"
-  ],
-  "chat_toolClassifier_agent_label": [
-    "de",
-    "fr"
-  ],
-  "chat_toolClassifier_browser_label": [
-    "de"
-  ],
-  "chat_toolClassifier_conversations_label": [
-    "fr"
-  ],
-  "chat_toolClassifier_hover_label": [
-    "de"
-  ],
-  "chat_toolClassifier_page_subject": [
-    "fr"
-  ],
-  "chat_toolClassifier_screenshot_label": [
-    "de"
-  ],
-  "chat_toolClassifier_snapshot_label": [
-    "de"
-  ],
-  "chat_toolDetails_agentCount_many": [
-    "fr"
-  ],
-  "chat_toolDetails_agentCount_one": [
-    "fr"
-  ],
-  "chat_toolDetails_agent_fallback": [
-    "fr"
-  ],
-  "chat_toolDetails_assets_label": [
-    "de"
-  ],
-  "chat_toolDetails_issueCount_many": [
-    "es"
-  ],
-  "chat_toolDetails_issueCount_one": [
-    "es"
-  ],
-  "chat_toolDetails_noteCount_many": [
-    "fr"
-  ],
-  "chat_toolDetails_noteCount_one": [
-    "fr"
-  ],
-  "chat_toolDetails_pr_badge": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "codeReview_commentCard_severityImportant_label": [
-    "fr"
-  ],
-  "codeReview_commentCard_severitySuggestion_label": [
-    "fr"
-  ],
-  "codeReview_panel_review_label": [
-    "de"
-  ],
-  "codeReview_panel_versionPosition_label": [
-    "de"
-  ],
-  "codeReview_types_categoryApi_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "codeReview_types_categoryBug_label": [
-    "de",
-    "fr"
-  ],
-  "codeReview_types_categoryDocumentation_label": [
-    "fr"
-  ],
-  "codeReview_types_severityImportant_label": [
-    "fr"
-  ],
-  "codeWalkthrough_diffViewer_annotationCount_many": [
-    "fr"
-  ],
-  "codeWalkthrough_diffViewer_annotationCount_one": [
-    "fr"
-  ],
-  "codeWalkthrough_main_annotationCount_label": [
-    "fr"
-  ],
-  "codeWalkthrough_main_sectionCount_label": [
-    "fr"
-  ],
-  "codeWalkthrough_section_annotationCount_many": [
-    "fr"
-  ],
-  "codeWalkthrough_section_annotationCount_one": [
-    "fr"
-  ],
-  "codeWalkthrough_section_sectionNumber_label": [
-    "fr"
-  ],
-  "dialog_about_version": [
-    "de"
-  ],
-  "dialog_error_title": [
-    "es"
-  ],
-  "ecosystem_canvas_esc_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "ecosystem_canvas_fileSize_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "de",
-    "es"
-  ],
-  "ecosystem_canvas_inPrCount_label": [
-    "de"
-  ],
-  "editor_codeEditor_fileSizeBytes_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "de",
-    "es"
-  ],
-  "editor_codeEditor_fileSizeKb_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "de",
-    "es"
-  ],
-  "editor_codeEditor_fileSizeMb_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "de",
-    "es"
-  ],
-  "error_handler_info_title": [
-    "de",
-    "fr"
-  ],
-  "error_page_statusLine_label": [
-    "de"
-  ],
-  "error_page_status_label": [
-    "es"
-  ],
-  "events_activity_actorVerbFile_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "events_activity_agent_fallback": [
-    "de",
-    "fr"
-  ],
-  "events_activity_note_fallback": [
-    "fr"
-  ],
-  "events_activity_partVerbSpace_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "events_activity_verbFile_label": [
-    "zh-CN",
-    "zh-TW",
-    "de",
-    "fr",
-    "es"
-  ],
-  "externalEditors_ipc_applications_filterName": [
-    "fr"
-  ],
-  "fileExplorer_vscodePanel_code_title": [
-    "de",
-    "fr"
-  ],
-  "fileTracking_changeTimeline_agent_fallback": [
-    "de",
-    "fr"
-  ],
-  "fileTracking_changeTimeline_description_label": [
-    "fr"
-  ],
-  "fileTracking_changeTimeline_squashMerge_label": [
-    "de"
-  ],
-  "fileTracking_codeChanges_commitsCount_title": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "fileTracking_prNode_commitCount_many": [
-    "fr",
-    "es"
-  ],
-  "fileTracking_prNode_commitCount_one": [
-    "fr",
-    "es"
-  ],
-  "hardwareConsole_connectionToast_firmware_description": [
-    "de",
-    "es"
-  ],
-  "hardwareConsole_connectionToast_transportBluetooth_label": [
-    "ja",
-    "de",
-    "fr",
-    "es"
-  ],
+  "chat_previewToolLabel_tool_fallback": ["de"],
+  "chat_proposalCard_repo_label": ["de"],
+  "chat_richInput_fileTypeSize_description": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "chat_shared_agentName_fallback": ["de", "fr"],
+  "chat_shared_browser_fallback": ["de"],
+  "chat_shared_diff_fallback": ["de", "fr", "es"],
+  "chat_shared_general_fallback": ["es"],
+  "chat_shared_note_fallback": ["fr"],
+  "chat_shared_tool_title": ["de"],
+  "chat_toolCall_message_label": ["fr"],
+  "chat_toolClassifier_agent_label": ["de", "fr"],
+  "chat_toolClassifier_browser_label": ["de"],
+  "chat_toolClassifier_conversations_label": ["fr"],
+  "chat_toolClassifier_hover_label": ["de"],
+  "chat_toolClassifier_page_subject": ["fr"],
+  "chat_toolClassifier_screenshot_label": ["de"],
+  "chat_toolClassifier_snapshot_label": ["de"],
+  "chat_toolDetails_agentCount_many": ["fr"],
+  "chat_toolDetails_agentCount_one": ["fr"],
+  "chat_toolDetails_agent_fallback": ["fr"],
+  "chat_toolDetails_assets_label": ["de"],
+  "chat_toolDetails_issueCount_many": ["es"],
+  "chat_toolDetails_issueCount_one": ["es"],
+  "chat_toolDetails_noteCount_many": ["fr"],
+  "chat_toolDetails_noteCount_one": ["fr"],
+  "chat_toolDetails_pr_badge": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "codeReview_commentCard_severityImportant_label": ["fr"],
+  "codeReview_commentCard_severitySuggestion_label": ["fr"],
+  "codeReview_panel_review_label": ["de"],
+  "codeReview_panel_versionPosition_label": ["de"],
+  "codeReview_types_categoryApi_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "codeReview_types_categoryBug_label": ["de", "fr"],
+  "codeReview_types_categoryDocumentation_label": ["fr"],
+  "codeReview_types_severityImportant_label": ["fr"],
+  "codeWalkthrough_diffViewer_annotationCount_many": ["fr"],
+  "codeWalkthrough_diffViewer_annotationCount_one": ["fr"],
+  "codeWalkthrough_main_annotationCount_label": ["fr"],
+  "codeWalkthrough_main_sectionCount_label": ["fr"],
+  "codeWalkthrough_section_annotationCount_many": ["fr"],
+  "codeWalkthrough_section_annotationCount_one": ["fr"],
+  "codeWalkthrough_section_sectionNumber_label": ["fr"],
+  "dialog_about_version": ["de"],
+  "dialog_error_title": ["es"],
+  "ecosystem_canvas_esc_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
+  "ecosystem_canvas_fileSize_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "ecosystem_canvas_inPrCount_label": ["de"],
+  "editor_codeEditor_fileSizeBytes_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "editor_codeEditor_fileSizeKb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "editor_codeEditor_fileSizeMb_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
+  "error_handler_info_title": ["de", "fr"],
+  "error_page_statusLine_label": ["de"],
+  "error_page_status_label": ["es"],
+  "events_activity_actorVerbFile_label": ["de", "fr", "es"],
+  "events_activity_agent_fallback": ["de", "fr"],
+  "events_activity_note_fallback": ["fr"],
+  "events_activity_partVerbSpace_label": ["de", "fr", "es"],
+  "events_activity_verbFile_label": ["zh-CN", "zh-TW", "de", "fr", "es"],
+  "externalEditors_ipc_applications_filterName": ["fr"],
+  "fileExplorer_vscodePanel_code_title": ["de", "fr"],
+  "fileTracking_changeTimeline_agent_fallback": ["de", "fr"],
+  "fileTracking_changeTimeline_description_label": ["fr"],
+  "fileTracking_changeTimeline_squashMerge_label": ["de"],
+  "fileTracking_codeChanges_commitsCount_title": ["de", "fr", "es"],
+  "fileTracking_prNode_commitCount_many": ["fr", "es"],
+  "fileTracking_prNode_commitCount_one": ["fr", "es"],
+  "hardwareConsole_connectionToast_firmware_description": ["de", "es"],
+  "hardwareConsole_connectionToast_transportBluetooth_label": ["ja", "de", "fr", "es"],
   "hardwareConsole_connectionToast_transportUsb_label": [
     "zh-CN",
     "zh-TW",
@@ -436,917 +120,215 @@
     "fr",
     "es"
   ],
-  "hud_attention_kindGeneric_label": [
-    "fr"
-  ],
-  "hud_attention_kindQuestion_label": [
-    "fr"
-  ],
-  "hud_attention_sourceAgent_label": [
-    "de",
-    "fr"
-  ],
-  "hud_attention_sourceWorkspace_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_attention_title": [
-    "fr"
-  ],
-  "hud_card_attnBlocker_label": [
-    "de"
-  ],
-  "hud_card_attnFailed_label": [
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "hud_card_pr_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_card_tokens_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_feedKind_attentionChanged_label": [
-    "fr"
-  ],
-  "hud_feedKind_gitCommit_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_feedKind_gitPull_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_header_fleetOps_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_shell_title": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_system_agents_label": [
-    "fr"
-  ],
-  "hud_system_offline_label": [
-    "de"
-  ],
-  "hud_system_online_label": [
-    "de"
-  ],
-  "hud_system_title": [
-    "de"
-  ],
-  "hud_takeover_kindQuestion_label": [
-    "fr"
-  ],
-  "hud_takeover_status_label": [
-    "de"
-  ],
-  "hud_tokenBurn_perMinute_label": [
-    "fr",
-    "es"
-  ],
-  "hud_tokenBurn_session_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "hud_workspaceState_attention_label": [
-    "fr"
-  ],
-  "layout_agentTab_fontSample_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_aiLayout_agentNumbered_fallback": [
-    "de",
-    "fr"
-  ],
-  "layout_aiLayout_agent_fallback": [
-    "de",
-    "fr"
-  ],
-  "layout_aiLayout_note_fallback": [
-    "fr"
-  ],
-  "layout_allCard_status_label": [
-    "de"
-  ],
-  "layout_commandPalette_agents_group": [
-    "fr"
-  ],
-  "layout_commandPalette_browser_group": [
-    "de"
-  ],
-  "layout_commandPalette_terminals_group": [
-    "de"
-  ],
-  "layout_daemonStatus_cpu_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "layout_daemonStatus_host_label": [
-    "de",
-    "es"
-  ],
-  "layout_daemonStatus_phase_label": [
-    "de",
-    "fr"
-  ],
-  "layout_daemonStatus_port_label": [
-    "de",
-    "fr"
-  ],
-  "layout_daemonStatus_status_label": [
-    "de"
-  ],
-  "layout_daemonStatus_transport_label": [
-    "de",
-    "fr"
-  ],
-  "layout_daemonStatus_version_label": [
-    "de",
-    "fr"
-  ],
-  "layout_layoutHeader_presetWithShortcut_tooltip": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_navigation_commit_title": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_panelEmptyState_agent_label": [
-    "de",
-    "fr"
-  ],
-  "layout_panelEmptyState_browser_label": [
-    "de"
-  ],
-  "layout_panelEmptyState_note_label": [
-    "fr"
-  ],
-  "layout_panelEmptyState_terminal_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_panelLayout_browser_fallback": [
-    "de"
-  ],
-  "layout_panelLayout_terminal_fallback": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_panelTabBar_bgBadge_label": [
-    "ja",
-    "ko",
-    "de"
-  ],
-  "layout_panelTabBar_fileManagerExplorer_label": [
-    "de"
-  ],
-  "layout_panelTabBar_fileManagerFinder_label": [
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_panel_ariaLabel": [
-    "de",
-    "es"
-  ],
-  "layout_sidebarNav_assistant_label": [
-    "fr"
-  ],
-  "layout_sidebarNav_hud_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_tabTypes_agent_title": [
-    "de",
-    "fr"
-  ],
-  "layout_tabTypes_agents_category": [
-    "fr"
-  ],
-  "layout_tabTypes_browser_category": [
-    "de"
-  ],
-  "layout_tabTypes_browser_title": [
-    "de"
-  ],
-  "layout_tabTypes_diff_title": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_tabTypes_note_title": [
-    "fr"
-  ],
-  "layout_tabTypes_panel_category": [
-    "de",
-    "es"
-  ],
-  "layout_tabTypes_terminal_category": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "layout_tabTypes_terminal_title": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "lib_auggieSetup_docs_label": [
-    "fr"
-  ],
-  "lib_commandPalette_esc_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "lib_commandPalette_note_pill": [
-    "fr"
-  ],
-  "lib_commandPalette_terminal_pill": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "lib_errorDisplay_error_title": [
-    "es"
-  ],
-  "lib_errorDisplay_info_title": [
-    "de",
-    "fr"
-  ],
-  "lib_gitCredentials_gcmOption_title": [
-    "de"
-  ],
-  "log_filters_actorAgents_label": [
-    "fr"
-  ],
-  "log_filters_actorSystem_label": [
-    "de"
-  ],
-  "log_filters_actor_label": [
-    "es"
-  ],
-  "log_friendlyLabels_agentFallback_label": [
-    "de",
-    "fr"
-  ],
-  "modals_connect_host_label": [
-    "de",
-    "es"
-  ],
-  "modals_connect_port_label": [
-    "de",
-    "fr"
-  ],
-  "modals_input_confirm_label": [
-    "ja",
-    "de",
-    "fr"
-  ],
-  "modals_protocolMismatch_remoteVersion_label": [
-    "de"
-  ],
-  "modals_pullConflict_branch_label": [
-    "de"
-  ],
-  "notes_cliBlock_exit_label": [
-    "de"
-  ],
-  "notes_fontStyleButton_specimen_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "notes_panel_title": [
-    "fr"
-  ],
-  "notification_assistant_title": [
-    "fr"
-  ],
-  "notification_assistant_titled": [
-    "fr"
-  ],
-  "notification_specialist_agent": [
-    "de",
-    "fr"
-  ],
-  "onboarding_dirPicker_computer_label": [
-    "de"
-  ],
-  "onboarding_dirPicker_desktop_label": [
-    "de"
-  ],
-  "onboarding_dirPicker_documents_label": [
-    "fr"
-  ],
-  "onboarding_dirPicker_downloads_label": [
-    "de"
-  ],
-  "onboarding_dirPicker_home_label": [
-    "de"
-  ],
-  "onboarding_newProjectTab_projectName_placeholder": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "onboarding_promptStep_setupEnvWith_after": [
-    "fr",
-    "es"
-  ],
-  "onboarding_requirementsStep_ghOptional_label": [
-    "de"
-  ],
-  "onboarding_setupCard_ranSetupIn_middle": [
-    "de"
-  ],
-  "settings_agentBackend_autoPlaceholder": [
-    "fr"
-  ],
-  "settings_aiBehavior_description_label": [
-    "fr"
-  ],
-  "settings_aiBehavior_effort_label": [
-    "fr"
-  ],
-  "settings_aiBehavior_name_label": [
-    "de"
-  ],
-  "settings_back_space": [
-    "de"
-  ],
-  "settings_connections_sentry_orgSlug_placeholder": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "settings_fontStyle_mono": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "settings_fontStyle_sans": [
-    "fr"
-  ],
-  "settings_font_notes_label": [
-    "fr"
-  ],
-  "settings_footer_support": [
-    "de"
-  ],
-  "settings_gitWorkspace_experimental_badge": [
-    "es"
-  ],
-  "settings_hardware_joystickExplainer_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "settings_hardware_ledStatus_failed_label": [
-    "es"
-  ],
-  "settings_language_system_option": [
-    "de"
-  ],
-  "settings_mcpServers_documentation": [
-    "fr"
-  ],
-  "settings_mcp_form_arguments_label": [
-    "fr"
-  ],
-  "settings_mcp_form_auth_oauth": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "settings_mcp_form_transport_http": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "settings_mcp_form_transport_sse": [
-    "de",
-    "fr"
-  ],
-  "settings_mcp_form_transport_stdio": [
-    "fr",
-    "es"
-  ],
-  "settings_mcp_form_url_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "settings_mcp_status_error": [
-    "es"
-  ],
-  "settings_notifications_volume_label": [
-    "fr"
-  ],
-  "settings_pathField_confirm_ok_label": [
-    "ja",
-    "de",
-    "fr"
-  ],
-  "settings_section_hardware": [
-    "de",
-    "es"
-  ],
-  "settings_section_notifications": [
-    "fr"
-  ],
-  "settings_section_updates": [
-    "de"
-  ],
-  "settings_section_websocketApi": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "settings_sidebar_agents_label": [
-    "fr"
-  ],
-  "settings_sidebar_general_label": [
-    "es"
-  ],
-  "settings_sidebar_groupAi_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "settings_tab_notifications": [
-    "fr"
-  ],
-  "settings_theme_label": [
-    "de"
-  ],
-  "settings_theme_system": [
-    "de"
-  ],
-  "settings_voice_inputDevice_label": [
-    "fr"
-  ],
-  "settings_voice_inputDevice_unnamed": [
-    "fr"
-  ],
-  "settings_wsApi_port_label": [
-    "de",
-    "fr"
-  ],
-  "shared_agentAttribution_agent_fallback": [
-    "de",
-    "fr"
-  ],
-  "specialists_builtin_ralph_name": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "stats_monthCard_bestMonthValue_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "stats_monthCard_deltaVs_label": [
-    "fr",
-    "es"
-  ],
-  "stats_monthCard_trend_label": [
-    "de"
-  ],
-  "stats_overlay_png_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "stats_passportCard_sessions_label": [
-    "fr"
-  ],
-  "terminal_adapter_errorLine_label": [
-    "es"
-  ],
-  "terminal_quakeOverlay_name_placeholder": [
-    "de"
-  ],
-  "terminal_quakeOverlay_scripts_title": [
-    "fr",
-    "es"
-  ],
-  "terminal_quakeOverlay_status_errorCode": [
-    "es"
-  ],
-  "terminal_quakeOverlay_terminalNumber_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "terminal_quakeOverlay_terminal_fallback": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "terminal_scriptOutput_script_fallback": [
-    "fr",
-    "es"
-  ],
-  "terminal_setupBanner_name_label": [
-    "de"
-  ],
-  "terminal_sidebar_moreScripts_label": [
-    "fr",
-    "es"
-  ],
-  "terminal_sidebar_terminals_title": [
-    "de"
-  ],
-  "tiptap_attributionGutter_agent_label": [
-    "de",
-    "fr"
-  ],
-  "tiptap_bubbleMenu_code_label": [
-    "de",
-    "fr"
-  ],
-  "tiptap_choiceBlock_option1_placeholder": [
-    "de",
-    "fr"
-  ],
-  "tiptap_choiceBlock_option2_placeholder": [
-    "de",
-    "fr"
-  ],
-  "tiptap_commentDialog_typeQuestion_label": [
-    "fr"
-  ],
-  "tiptap_commentDialog_typeSuggestion_label": [
-    "fr"
-  ],
-  "tiptap_contextMention_link_fallback": [
-    "de"
-  ],
-  "tiptap_contextMention_providerUrl_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "tiptap_launchDialog_enterKey_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de"
-  ],
-  "tiptap_launchDialog_escKey_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "es"
-  ],
-  "tiptap_suggestionTooltip_modification_label": [
-    "fr"
-  ],
-  "tiptap_suggestionTooltip_original_label": [
-    "de",
-    "es"
-  ],
-  "tiptap_suggestionTooltip_suggestion_label": [
-    "fr"
-  ],
-  "tiptap_taskStatus_status_tooltip": [
-    "de"
-  ],
-  "ui_dropdownMenu_ariaLabel": [
-    "fr"
-  ],
-  "ui_imageLightbox_image_alt": [
-    "fr"
-  ],
-  "ui_openCombo_copyBranch_shortLabel": [
-    "de"
-  ],
-  "ui_patchBlock_label": [
-    "de"
-  ],
-  "ui_shortcuts_chatCategory_title": [
-    "de",
-    "es"
-  ],
-  "ui_shortcuts_editorCategory_title": [
-    "de",
-    "es"
-  ],
-  "ui_shortcuts_globalCategory_title": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "ui_shortcuts_navigationCategory_title": [
-    "de",
-    "fr"
-  ],
-  "ui_shortcuts_panelCategory_title": [
-    "de"
-  ],
-  "ui_updateToast_speedBps_label": [
-    "zh-CN",
-    "zh-TW",
-    "ko",
-    "de",
-    "es"
-  ],
-  "ui_updateToast_speedKbps_label": [
-    "zh-CN",
-    "zh-TW",
-    "ko",
-    "de",
-    "es"
-  ],
-  "ui_updateToast_speedMbps_label": [
-    "zh-CN",
-    "zh-TW",
-    "ko",
-    "de",
-    "es"
-  ],
-  "workspace_addContext_note_label": [
-    "fr"
-  ],
-  "workspace_addRemoteSetupModal_host_label": [
-    "de",
-    "es"
-  ],
-  "workspace_addRemoteSetupModal_port_label": [
-    "de",
-    "fr"
-  ],
-  "workspace_addRemoteSetupModal_wsUrl_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "workspace_browserUrlPicker_url_placeholder": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "workspace_card_commits_label": [
-    "fr",
-    "es"
-  ],
-  "workspace_card_morePrs_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_card_prBadge_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_commitsTimeline_commits_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_compactInitializer_progressWithPercent_label": [
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_compactInitializer_setupDevEnvWith_after": [
-    "fr",
-    "es"
-  ],
-  "workspace_contextItem_spec_label": [
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_digestCard_prNumber_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_fileChanges_agent_label": [
-    "de",
-    "fr"
-  ],
-  "workspace_hoverCard_pullRequest_label": [
-    "fr",
-    "es"
-  ],
-  "workspace_initialAgentPicker_general_label": [
-    "es"
-  ],
-  "workspace_isolationMode_worktree_label": [
-    "ja",
-    "ko",
-    "fr",
-    "es"
-  ],
-  "workspace_issueSuggestions_team_label": [
-    "de"
-  ],
-  "workspace_mergePanel_squashMerge_label": [
-    "de"
-  ],
-  "workspace_mergePanel_viaGit_label": [
-    "fr"
-  ],
-  "workspace_mergePanel_viaPr_label": [
-    "de",
-    "fr"
-  ],
-  "workspace_multiSelectSidebar_agentsTab_label": [
-    "fr"
-  ],
-  "workspace_multiSelectSidebar_browser_label": [
-    "de"
-  ],
-  "workspace_nav_dashboard_label": [
-    "de"
-  ],
-  "workspace_noteMetadataBar_status_label": [
-    "de"
-  ],
-  "workspace_noteVersionHistory_error_label": [
-    "es"
-  ],
-  "workspace_overviewTimeline_prNumber_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_overviewTimeline_pullRequest_label": [
-    "fr",
-    "es"
-  ],
-  "workspace_page_createFile_placeholder": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko"
-  ],
-  "workspace_page_space_title": [
-    "de"
-  ],
-  "workspace_prCreator_descriptionField_label": [
-    "fr"
-  ],
-  "workspace_prSection_commits_many": [
-    "fr",
-    "es"
-  ],
-  "workspace_prSection_commits_one": [
-    "fr",
-    "es"
-  ],
-  "workspace_prSection_pullRequests_label": [
-    "de"
-  ],
-  "workspace_setupScriptEditor_variables_label": [
-    "fr",
-    "es"
-  ],
-  "workspace_skills_title": [
-    "de"
-  ],
-  "workspace_switcher_pr_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
-  "workspace_tokenUsage_agentFallback_label": [
-    "de",
-    "fr"
-  ],
-  "workspace_tokenUsage_agent_label": [
-    "de",
-    "fr"
-  ]
+  "hud_attention_kindGeneric_label": ["fr"],
+  "hud_attention_kindQuestion_label": ["fr"],
+  "hud_attention_sourceAgent_label": ["de", "fr"],
+  "hud_attention_sourceWorkspace_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_attention_title": ["fr"],
+  "hud_card_attnBlocker_label": ["de"],
+  "hud_card_attnFailed_label": ["ja", "ko", "de", "es"],
+  "hud_card_pr_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_card_tokens_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_feedKind_attentionChanged_label": ["fr"],
+  "hud_feedKind_gitCommit_label": ["de", "fr", "es"],
+  "hud_feedKind_gitPull_label": ["de", "fr", "es"],
+  "hud_header_fleetOps_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_shell_title": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_system_agents_label": ["fr"],
+  "hud_system_offline_label": ["de"],
+  "hud_system_online_label": ["de"],
+  "hud_system_title": ["de"],
+  "hud_takeover_kindQuestion_label": ["fr"],
+  "hud_takeover_status_label": ["de"],
+  "hud_tokenBurn_perMinute_label": ["fr", "es"],
+  "hud_tokenBurn_session_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "hud_workspaceState_attention_label": ["fr"],
+  "layout_agentTab_fontSample_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "layout_aiLayout_agentNumbered_fallback": ["de", "fr"],
+  "layout_aiLayout_agent_fallback": ["de", "fr"],
+  "layout_aiLayout_note_fallback": ["fr"],
+  "layout_allCard_status_label": ["de"],
+  "layout_commandPalette_agents_group": ["fr"],
+  "layout_commandPalette_browser_group": ["de"],
+  "layout_commandPalette_terminals_group": ["de"],
+  "layout_daemonStatus_cpu_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
+  "layout_daemonStatus_host_label": ["de", "es"],
+  "layout_daemonStatus_phase_label": ["de", "fr"],
+  "layout_daemonStatus_port_label": ["de", "fr"],
+  "layout_daemonStatus_status_label": ["de"],
+  "layout_daemonStatus_transport_label": ["de", "fr"],
+  "layout_daemonStatus_version_label": ["de", "fr"],
+  "layout_layoutHeader_presetWithShortcut_tooltip": ["de", "fr", "es"],
+  "layout_navigation_commit_title": ["de", "fr", "es"],
+  "layout_panelEmptyState_agent_label": ["de", "fr"],
+  "layout_panelEmptyState_browser_label": ["de"],
+  "layout_panelEmptyState_note_label": ["fr"],
+  "layout_panelEmptyState_terminal_label": ["de", "fr", "es"],
+  "layout_panelLayout_browser_fallback": ["de"],
+  "layout_panelLayout_terminal_fallback": ["de", "fr", "es"],
+  "layout_panelTabBar_bgBadge_label": ["ja", "ko", "de"],
+  "layout_panelTabBar_fileManagerExplorer_label": ["de"],
+  "layout_panelTabBar_fileManagerFinder_label": ["ja", "ko", "de", "fr", "es"],
+  "layout_panel_ariaLabel": ["de", "es"],
+  "layout_sidebarNav_assistant_label": ["fr"],
+  "layout_sidebarNav_hud_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "layout_tabTypes_agent_title": ["de", "fr"],
+  "layout_tabTypes_agents_category": ["fr"],
+  "layout_tabTypes_browser_category": ["de"],
+  "layout_tabTypes_browser_title": ["de"],
+  "layout_tabTypes_diff_title": ["de", "fr", "es"],
+  "layout_tabTypes_note_title": ["fr"],
+  "layout_tabTypes_panel_category": ["de", "es"],
+  "layout_tabTypes_terminal_category": ["de", "fr", "es"],
+  "layout_tabTypes_terminal_title": ["de", "fr", "es"],
+  "lib_auggieSetup_docs_label": ["fr"],
+  "lib_commandPalette_esc_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
+  "lib_commandPalette_note_pill": ["fr"],
+  "lib_commandPalette_terminal_pill": ["de", "fr", "es"],
+  "lib_errorDisplay_error_title": ["es"],
+  "lib_errorDisplay_info_title": ["de", "fr"],
+  "lib_gitCredentials_gcmOption_title": ["de"],
+  "log_filters_actorAgents_label": ["fr"],
+  "log_filters_actorSystem_label": ["de"],
+  "log_filters_actor_label": ["es"],
+  "log_friendlyLabels_agentFallback_label": ["de", "fr"],
+  "modals_connect_host_label": ["de", "es"],
+  "modals_connect_port_label": ["de", "fr"],
+  "modals_input_confirm_label": ["ja", "de", "fr"],
+  "modals_protocolMismatch_remoteVersion_label": ["de"],
+  "modals_pullConflict_branch_label": ["de"],
+  "notes_cliBlock_exit_label": ["de"],
+  "notes_fontStyleButton_specimen_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "notes_panel_title": ["fr"],
+  "notification_assistant_title": ["fr"],
+  "notification_assistant_titled": ["fr"],
+  "notification_specialist_agent": ["de", "fr"],
+  "onboarding_dirPicker_computer_label": ["de"],
+  "onboarding_dirPicker_desktop_label": ["de"],
+  "onboarding_dirPicker_documents_label": ["fr"],
+  "onboarding_dirPicker_downloads_label": ["de"],
+  "onboarding_dirPicker_home_label": ["de"],
+  "onboarding_newProjectTab_projectName_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "onboarding_promptStep_setupEnvWith_after": ["fr", "es"],
+  "onboarding_requirementsStep_ghOptional_label": ["de"],
+  "onboarding_setupCard_ranSetupIn_middle": ["de"],
+  "settings_agentBackend_autoPlaceholder": ["fr"],
+  "settings_aiBehavior_description_label": ["fr"],
+  "settings_aiBehavior_effort_label": ["fr"],
+  "settings_aiBehavior_name_label": ["de"],
+  "settings_back_space": ["de"],
+  "settings_connections_sentry_orgSlug_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "settings_fontStyle_mono": ["de", "fr", "es"],
+  "settings_fontStyle_sans": ["fr"],
+  "settings_font_notes_label": ["fr"],
+  "settings_footer_support": ["de"],
+  "settings_gitWorkspace_experimental_badge": ["es"],
+  "settings_hardware_joystickExplainer_label": ["de", "fr", "es"],
+  "settings_hardware_ledStatus_failed_label": ["es"],
+  "settings_language_system_option": ["de"],
+  "settings_mcpServers_documentation": ["fr"],
+  "settings_mcp_form_arguments_label": ["fr"],
+  "settings_mcp_form_auth_oauth": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "settings_mcp_form_transport_http": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "settings_mcp_form_transport_sse": ["de", "fr"],
+  "settings_mcp_form_transport_stdio": ["fr", "es"],
+  "settings_mcp_form_url_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "settings_mcp_status_error": ["es"],
+  "settings_notifications_volume_label": ["fr"],
+  "settings_pathField_confirm_ok_label": ["ja", "de", "fr"],
+  "settings_section_hardware": ["de", "es"],
+  "settings_section_notifications": ["fr"],
+  "settings_section_updates": ["de"],
+  "settings_section_websocketApi": ["zh-CN", "zh-TW", "ja", "ko"],
+  "settings_sidebar_agents_label": ["fr"],
+  "settings_sidebar_general_label": ["es"],
+  "settings_sidebar_groupAi_label": ["zh-CN", "zh-TW", "ja", "ko"],
+  "settings_tab_notifications": ["fr"],
+  "settings_theme_label": ["de"],
+  "settings_theme_system": ["de"],
+  "settings_voice_inputDevice_label": ["fr"],
+  "settings_voice_inputDevice_unnamed": ["fr"],
+  "settings_wsApi_port_label": ["de", "fr"],
+  "shared_agentAttribution_agent_fallback": ["de", "fr"],
+  "specialists_builtin_ralph_name": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "stats_monthCard_bestMonthValue_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "stats_monthCard_deltaVs_label": ["fr", "es"],
+  "stats_monthCard_trend_label": ["de"],
+  "stats_overlay_png_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "stats_passportCard_sessions_label": ["fr"],
+  "terminal_adapter_errorLine_label": ["es"],
+  "terminal_quakeOverlay_name_placeholder": ["de"],
+  "terminal_quakeOverlay_scripts_title": ["fr", "es"],
+  "terminal_quakeOverlay_status_errorCode": ["es"],
+  "terminal_quakeOverlay_terminalNumber_label": ["de", "fr", "es"],
+  "terminal_quakeOverlay_terminal_fallback": ["de", "fr", "es"],
+  "terminal_scriptOutput_script_fallback": ["fr", "es"],
+  "terminal_setupBanner_name_label": ["de"],
+  "terminal_sidebar_moreScripts_label": ["fr", "es"],
+  "terminal_sidebar_terminals_title": ["de"],
+  "tiptap_attributionGutter_agent_label": ["de", "fr"],
+  "tiptap_bubbleMenu_code_label": ["de", "fr"],
+  "tiptap_choiceBlock_option1_placeholder": ["de", "fr"],
+  "tiptap_choiceBlock_option2_placeholder": ["de", "fr"],
+  "tiptap_commentDialog_typeQuestion_label": ["fr"],
+  "tiptap_commentDialog_typeSuggestion_label": ["fr"],
+  "tiptap_contextMention_link_fallback": ["de"],
+  "tiptap_contextMention_providerUrl_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "tiptap_launchDialog_enterKey_label": ["zh-CN", "zh-TW", "ja", "ko", "de"],
+  "tiptap_launchDialog_escKey_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
+  "tiptap_suggestionTooltip_modification_label": ["fr"],
+  "tiptap_suggestionTooltip_original_label": ["de", "es"],
+  "tiptap_suggestionTooltip_suggestion_label": ["fr"],
+  "tiptap_taskStatus_status_tooltip": ["de"],
+  "ui_dropdownMenu_ariaLabel": ["fr"],
+  "ui_imageLightbox_image_alt": ["fr"],
+  "ui_openCombo_copyBranch_shortLabel": ["de"],
+  "ui_patchBlock_label": ["de"],
+  "ui_shortcuts_chatCategory_title": ["de", "es"],
+  "ui_shortcuts_editorCategory_title": ["de", "es"],
+  "ui_shortcuts_globalCategory_title": ["de", "fr", "es"],
+  "ui_shortcuts_navigationCategory_title": ["de", "fr"],
+  "ui_shortcuts_panelCategory_title": ["de"],
+  "ui_updateToast_speedBps_label": ["zh-CN", "zh-TW", "ko", "de", "es"],
+  "ui_updateToast_speedKbps_label": ["zh-CN", "zh-TW", "ko", "de", "es"],
+  "ui_updateToast_speedMbps_label": ["zh-CN", "zh-TW", "ko", "de", "es"],
+  "workspace_addContext_note_label": ["fr"],
+  "workspace_addRemoteSetupModal_host_label": ["de", "es"],
+  "workspace_addRemoteSetupModal_port_label": ["de", "fr"],
+  "workspace_addRemoteSetupModal_wsUrl_label": ["zh-CN", "zh-TW", "ja", "ko"],
+  "workspace_browserUrlPicker_url_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "workspace_card_commits_label": ["fr", "es"],
+  "workspace_card_morePrs_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "workspace_card_prBadge_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "workspace_commitsTimeline_commits_label": ["de", "fr", "es"],
+  "workspace_compactInitializer_progressWithPercent_label": ["ko", "de", "fr", "es"],
+  "workspace_compactInitializer_setupDevEnvWith_after": ["fr", "es"],
+  "workspace_contextItem_spec_label": ["de", "fr", "es"],
+  "workspace_digestCard_prNumber_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "workspace_fileChanges_agent_label": ["de", "fr"],
+  "workspace_hoverCard_pullRequest_label": ["fr", "es"],
+  "workspace_initialAgentPicker_general_label": ["es"],
+  "workspace_isolationMode_worktree_label": ["ja", "ko", "fr", "es"],
+  "workspace_issueSuggestions_team_label": ["de"],
+  "workspace_mergePanel_squashMerge_label": ["de"],
+  "workspace_mergePanel_viaGit_label": ["fr"],
+  "workspace_mergePanel_viaPr_label": ["de", "fr"],
+  "workspace_multiSelectSidebar_agentsTab_label": ["fr"],
+  "workspace_multiSelectSidebar_browser_label": ["de"],
+  "workspace_nav_dashboard_label": ["de"],
+  "workspace_noteMetadataBar_status_label": ["de"],
+  "workspace_noteVersionHistory_error_label": ["es"],
+  "workspace_overviewTimeline_prNumber_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "workspace_overviewTimeline_pullRequest_label": ["fr", "es"],
+  "workspace_page_createFile_placeholder": ["zh-CN", "zh-TW", "ja", "ko"],
+  "workspace_page_space_title": ["de"],
+  "workspace_prCreator_descriptionField_label": ["fr"],
+  "workspace_prSection_commits_many": ["fr", "es"],
+  "workspace_prSection_commits_one": ["fr", "es"],
+  "workspace_prSection_pullRequests_label": ["de"],
+  "workspace_setupScriptEditor_variables_label": ["fr", "es"],
+  "workspace_skills_title": ["de"],
+  "workspace_switcher_pr_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
+  "workspace_tokenUsage_agentFallback_label": ["de", "fr"],
+  "workspace_tokenUsage_agent_label": ["de", "fr"]
 }

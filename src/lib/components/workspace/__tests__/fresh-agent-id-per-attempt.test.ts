@@ -63,7 +63,6 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
 }));
 
-
 vi.mock('$features/setup-scripts', () => ({
   SETUP_SCRIPT_TEMPLATES: [],
   getTemplateContent: vi.fn(() => ''),

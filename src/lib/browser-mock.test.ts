@@ -280,9 +280,8 @@ describe('browser-mock backend:* transport envelope', () => {
   });
 
   it('unwraps cleanly through the real electron-ipc transport (no BackendError on boot reads)', async () => {
-    const { createElectronIpcBackendTransport } = await import(
-      './client/live/electron-ipc-transport'
-    );
+    const { createElectronIpcBackendTransport } =
+      await import('./client/live/electron-ipc-transport');
     const transport = createElectronIpcBackendTransport();
     const result = await transport.request<{ workspaces?: unknown[] }>('workspace.list');
     expect(Array.isArray(result.workspaces)).toBe(true);

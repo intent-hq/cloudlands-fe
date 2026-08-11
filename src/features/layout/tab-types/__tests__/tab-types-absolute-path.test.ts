@@ -5,20 +5,8 @@
  * the exact path each component emits for a Windows-absolute in-root input,
  * plus the unchanged Unix behavior (relative joins, `/abs` passthrough).
  */
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 
 const { createMockSelector, dispatchMock, mockReduxState, resetMockReduxState } = vi.hoisted(() => {
   const mockReduxState = {
@@ -85,7 +73,8 @@ const { createMockSelector, dispatchMock, mockReduxState, resetMockReduxState } 
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -94,6 +83,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspace: createMockSelector(() => mockReduxState.workspace),
+  selectActiveWorkspaceId: createMockSelector(() => mockReduxState.workspace.id),
   selectWorkspaceById: createMockSelector((wsId: unknown) =>
     wsId === mockReduxState.workspace.id ? mockReduxState.workspace : undefined,
   ),
@@ -129,6 +120,18 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectFocusedPanelId: createMockSelector(() => null),
+}));
+
+vi.mock('$store/renderer/slices/files/files-selectors', () => ({
+  selectOriginalFileContent: createMockSelector(() => null),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectCodeFontFamilyCSS: createMockSelector(() => 'monospace'),
+}));
+
+vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
+  selectIsDarkTheme: createMockSelector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
@@ -186,7 +189,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-vi.mock('$lib/components/ui/diff', async () => ({
+vi.mock('$features/file-tracking/components/diff', async () => ({
   TrackedChangeDiffViewer: (await import('./mocks/MockTrackedChangeDiffViewer.svelte')).default,
 }));
 
@@ -194,7 +197,7 @@ vi.mock('$lib/components/chat/ChatChangesPanel.svelte', async () => ({
   default: (await import('./mocks/MockChatChangesPanel.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/OpenComboButton.svelte', async () => ({
+vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('./mocks/MockOpenComboButton.svelte')).default,
 }));
 
@@ -242,9 +245,7 @@ function makeTrackedChange(path: string, stage: string) {
 
 async function findChangePaths(): Promise<string[]> {
   await screen.findByTestId('chat-changes-panel');
-  return screen
-    .getAllByTestId('chat-change')
-    .map((el) => el.getAttribute('data-file-path') ?? '');
+  return screen.getAllByTestId('chat-change').map((el) => el.getAttribute('data-file-path') ?? '');
 }
 
 describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {

@@ -209,6 +209,7 @@ vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviderIds: () => enabledProviderIds$,
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,
 }));
 
@@ -432,9 +433,7 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'auggie',
-    );
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('auggie');
   });
 
   it('falls back to the active provider when no model or provider is resolvable', () => {
@@ -479,7 +478,9 @@ describe('ModelPicker trigger label regressions', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('claude-code');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
   });
 

@@ -424,8 +424,7 @@
   function restoreLastUsedSetupScript(repo: string) {
     // GitHub selections key last-used by path + source URL: the path is only
     // the clone destination, which two different repos can share.
-    const ghUrl =
-      projectSelection?.type === 'github' ? projectSelection?.githubUrl : undefined;
+    const ghUrl = projectSelection?.type === 'github' ? projectSelection?.githubUrl : undefined;
     const lastUsed = repo ? getLastUsedSetupScript(repo, ghUrl) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
@@ -856,7 +855,8 @@
             branch: projectSelection.branch,
           });
         } catch (err) {
-          onboardingPullError = err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
+          onboardingPullError =
+            err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
           onboardingShowPullConflictDialog = true;
           isOnboardingCreating = false;
           return;
@@ -1052,7 +1052,8 @@
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
       logger.error('Workspace creation failed', err as Error);
-      onboardingCreationError = err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
+      onboardingCreationError =
+        err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
     }
   }

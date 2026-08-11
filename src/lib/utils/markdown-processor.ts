@@ -466,7 +466,7 @@ export async function processMarkdownToHTML(
     if (content.includes('```ws-block')) {
       logger.debug('Content looks like HTML but has ws-blocks, processing anyway');
     } else {
-      return content;
+      return sanitizeMarkdownHTML(content);
     }
   }
 

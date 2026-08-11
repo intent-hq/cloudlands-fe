@@ -302,6 +302,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
     select: () => 'spec',
   }),
   selectNotesVersion: () => notesVersionReadable,
+  selectWorkspaceNotesState: () => constantReadable({ initialized: true }),
 }));
 
 vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({

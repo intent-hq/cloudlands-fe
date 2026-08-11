@@ -7,11 +7,7 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import {
-  faChevronDown,
-  faChevronRight,
-  faFile,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronRight, faFile } from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
   import WalkthroughDiffViewer from './WalkthroughDiffViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -74,7 +70,9 @@
 
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
-        <span class="text-xs font-medium text-subtle">{m.codeWalkthrough_section_sectionNumber_label({ number: index + 1 })}</span>
+        <span class="text-xs font-medium text-subtle"
+          >{m.codeWalkthrough_section_sectionNumber_label({ number: index + 1 })}</span
+        >
         <span class="text-sm font-medium truncate">{section.title}</span>
       </div>
       {#if section.description}
@@ -87,9 +85,11 @@
         <Fa icon={faFile} class="h-3 w-3" />
         {section.files.length}
       </span>
-      <span>{totalAnnotations === 1
+      <span
+        >{totalAnnotations === 1
           ? m.codeWalkthrough_section_annotationCount_one({ count: totalAnnotations })
-          : m.codeWalkthrough_section_annotationCount_many({ count: totalAnnotations })}</span>
+          : m.codeWalkthrough_section_annotationCount_many({ count: totalAnnotations })}</span
+      >
     </div>
   </button>
 

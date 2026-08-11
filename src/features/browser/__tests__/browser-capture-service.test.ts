@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let cdpMessageHandler: ((method: string, params: unknown) => void) | undefined;
 
+const electronMocks = vi.hoisted(() => ({ getPath: vi.fn() }));
+
 vi.mock('electron', () => ({
+  app: { getPath: electronMocks.getPath },
   webContents: { fromId: vi.fn(() => undefined) },
 }));
 
@@ -52,6 +55,7 @@ describe('BrowserCaptureService path boundaries', () => {
   beforeEach(async () => {
     previousWorkspaceRoot = process.env.WORKSPACES_BASE_DIR;
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'browser-capture-'));
+    electronMocks.getPath.mockReturnValue(tempRoot);
     process.env.WORKSPACES_BASE_DIR = tempRoot;
     await Promise.all([
       fs.mkdir(path.join(tempRoot, 'workspaces', 'workspace-a'), { recursive: true }),

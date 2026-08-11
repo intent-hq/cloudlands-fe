@@ -16,7 +16,10 @@ describe('panel canvas width', () => {
     { viewport: 360, columns: 2, expected: { defaultWidth: 960, minWidth: 0 } },
     // Zero-viewport (pre-measurement) falls back to preferred width.
     { viewport: 0, columns: 2, expected: { defaultWidth: 960, minWidth: 0 } },
-  ])('sizes $columns column(s) within a $viewport px viewport', ({ viewport, columns, expected }) => {
-    expect(getPanelCanvasWidths(viewport, columns)).toEqual(expected);
-  });
+  ])(
+    'sizes $columns column(s) within a $viewport px viewport',
+    ({ viewport, columns, expected }) => {
+      expect(getPanelCanvasWidths(viewport, columns)).toEqual(expected);
+    },
+  );
 });

@@ -82,6 +82,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
 }));
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
+  selectDividerSession: mocks.selector(null),
+}));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectIsAgentMonospace: mocks.selector(false),
 }));
@@ -265,6 +268,7 @@ describe('ChatPanel mounted lifecycle', () => {
 
     mocks.pendingQuestions = null;
     mocks.agentMessages.set([]);
+    await tick();
     await tick();
 
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(

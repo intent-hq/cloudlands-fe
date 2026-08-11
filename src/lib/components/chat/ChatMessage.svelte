@@ -1120,10 +1120,7 @@
               : agentAttribution
                 ? ''
                 : 'line-clamp-6'} {isSticky ||
-            (onEditSubmit &&
-              !agentAttribution &&
-              !hookWakeAttribution &&
-              !prMonitorWakeAttribution)
+            (onEditSubmit && !agentAttribution && !hookWakeAttribution && !prMonitorWakeAttribution)
               ? 'cursor-pointer'
               : 'cursor-text'} {agentAttribution && shouldOfferAgentMessageExpansion
               ? 'agent-message-body'

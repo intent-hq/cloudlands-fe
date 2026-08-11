@@ -2663,7 +2663,10 @@
                     </div>
                   </div>
                   {#if expandedCommits.has(group.hash)}
-                    <div class="flex flex-col gap-2 mt-2 mx-2" transition:safeSlide={{ duration: 150 }}>
+                    <div
+                      class="flex flex-col gap-2 mt-2 mx-2"
+                      transition:safeSlide={{ duration: 150 }}
+                    >
                       {#each group.changes as change (getExpandKey(change))}
                         {@render fileCard(change, true)}
                       {/each}

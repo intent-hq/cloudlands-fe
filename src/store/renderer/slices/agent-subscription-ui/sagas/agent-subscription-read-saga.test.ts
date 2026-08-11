@@ -185,6 +185,65 @@ describe('agentSubscriptionReadSaga', () => {
     await run.task.toPromise();
   });
 
+  it('preserves subscriptions that become active during the completed display window', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValueOnce(empty()).mockResolvedValueOnce(active());
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('completed');
+
+    await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('waiting');
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('refreshes every tracked agent in the requested workspace only', async () => {
+    let seeded = initialState;
+    for (const [workspaceId, agentId] of [
+      [WS, AGENT],
+      [WS, 'agent-second'],
+      ['ws-other', 'agent-other'],
+    ] as const) {
+      seeded = agentSubscriptionUIReducer(
+        seeded,
+        setSubscriptionSnapshot(workspaceId, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+    }
+    mocks.request.mockResolvedValue(active());
+    const run = harness(seeded);
+
+    run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: 'agent-second' }],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('cancels late reads and deletes tracked entries on workspace deletion', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
     mocks.request.mockReturnValue(

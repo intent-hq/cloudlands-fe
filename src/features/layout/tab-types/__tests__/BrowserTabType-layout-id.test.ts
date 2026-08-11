@@ -53,11 +53,7 @@ describe('BrowserTabType panel layout routing', () => {
       updateTabTitle('workspace-1', 'browser-tab', 'Next title'),
     );
     expect(dispatch).toHaveBeenCalledWith(
-      updateTabFavicon(
-        'workspace-1',
-        'browser-tab',
-        'https://next.example/favicon.ico',
-      ),
+      updateTabFavicon('workspace-1', 'browser-tab', 'https://next.example/favicon.ico'),
     );
     expect(dispatch).toHaveBeenCalledWith(
       updateContextItem('workspace-1', 'context-1', { url: 'https://next.example/' }),

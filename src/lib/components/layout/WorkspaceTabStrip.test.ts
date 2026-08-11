@@ -139,8 +139,8 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     const loadingTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
-    const placeholder = loadingTab.querySelector('[aria-hidden="true"]')!;
-    expect(loadingTab.classList).toContain('rounded-md');
+    const placeholder = loadingTab.querySelector('[class~="bg-sidebar-foreground/10"]')!;
+    expect(loadingTab.classList).toContain('rounded-t-md');
     expect(loadingTab.classList).toContain('border-border');
     expect(loadingTab.classList).toContain('border-b-transparent');
     expect(loadingTab.classList).toContain('bg-sidebar');

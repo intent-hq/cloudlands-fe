@@ -8,8 +8,8 @@
  * This module owns its transient process-local state and exposes synchronous access.
  */
 
-import { Logger } from "../../../../shared/logger";
-import type { ContentBlock } from "../../../../shared/types";
+import { Logger } from '../../../../shared/logger';
+import type { ContentBlock } from '../../../../shared/types';
 import type { MainStoreState } from '../../types';
 import {
   startAccumulation as startAccumulationAction,
@@ -21,20 +21,17 @@ import {
   clearAllAccumulators as clearAllAccumulatorsAction,
   cleanupStaleAccumulators as cleanupStaleAccumulatorsAction,
   messageAccumulatorReducer,
-} from "./message-accumulator-slice";
+} from './message-accumulator-slice';
 import {
   selectAccumulator,
   selectPartialContent,
   selectActiveSessionIds,
   selectAccumulatorStats,
-} from "./message-accumulator-selectors";
-import type {
-  AccumulatorStats,
-  SerializedAccumulatedMessage,
-} from "./message-accumulator-types";
-import { DEFAULT_ACCUMULATOR_CONFIG } from "./message-accumulator-types";
+} from './message-accumulator-selectors';
+import type { AccumulatorStats, SerializedAccumulatedMessage } from './message-accumulator-types';
+import { DEFAULT_ACCUMULATOR_CONFIG } from './message-accumulator-types';
 
-const logger = new Logger("MessageAccumulatorAPI");
+const logger = new Logger('MessageAccumulatorAPI');
 
 // Reusable TextEncoder (non-serializable, kept outside Redux)
 const textEncoder = new TextEncoder();
@@ -72,18 +69,20 @@ export function addChunk(
   const acc = selectAccumulator.select(state, sessionId);
 
   if (!acc) {
-    logger.error("[MessageAccumulatorAPI] No accumulator found for session", { sessionId });
+    logger.error('[MessageAccumulatorAPI] No accumulator found for session', { sessionId });
     return;
   }
   if (acc.isComplete) {
-    logger.warn("[MessageAccumulatorAPI] Attempting to add chunk to completed accumulator", { sessionId });
+    logger.warn('[MessageAccumulatorAPI] Attempting to add chunk to completed accumulator', {
+      sessionId,
+    });
     return;
   }
 
   // Check size limit
   const chunkByteSize = textEncoder.encode(chunk).length;
   if (acc.byteSize + chunkByteSize > config.maxMessageSize) {
-    logger.error("[MessageAccumulatorAPI] Message size limit exceeded", {
+    logger.error('[MessageAccumulatorAPI] Message size limit exceeded', {
       sessionId,
       currentSize: acc.byteSize,
       chunkSize: chunkByteSize,
@@ -106,7 +105,7 @@ export function updateContentBlock(sessionId: string, block: ContentBlock): bool
 
   // Check if block exists before dispatching
   const exists = acc.orderedItems.some(
-    (item) => item.type === "block" && (item.content as ContentBlock).id === block.id,
+    (item) => item.type === 'block' && (item.content as ContentBlock).id === block.id,
   );
   if (!exists) return false;
 
@@ -132,15 +131,14 @@ export function clearAll(): void {
 // Read Operations
 // ============================================================================
 
-export function getAccumulated(
-  sessionId: string,
-): SerializedAccumulatedMessage | undefined {
+export function getAccumulated(sessionId: string): SerializedAccumulatedMessage | undefined {
   return selectAccumulator.select(getState(), sessionId);
 }
 
-export function getPartialContent(
-  sessionId: string,
-): { content: string; contentBlocks: ContentBlock[] } {
+export function getPartialContent(sessionId: string): {
+  content: string;
+  contentBlocks: ContentBlock[];
+} {
   return selectPartialContent.select(getState(), sessionId);
 }
 
@@ -168,4 +166,3 @@ export function cleanupStale(): void {
     dispatch(cleanupStaleAccumulatorsAction(staleIds));
   }
 }
-

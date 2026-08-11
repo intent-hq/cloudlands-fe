@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
@@ -123,9 +117,7 @@ describe('workspace IPC read contract', () => {
   });
 
   it('wraps current-workspace reads and missing-workspace responses consistently', async () => {
-    mocks.getWorkspace
-      .mockResolvedValueOnce(secondWorkspace)
-      .mockResolvedValueOnce(null);
+    mocks.getWorkspace.mockResolvedValueOnce(secondWorkspace).mockResolvedValueOnce(null);
 
     const getCurrentHandler = mocks.handlers.get(WORKSPACE_CHANNELS.GET_CURRENT);
     const getHandler = mocks.handlers.get(WORKSPACE_CHANNELS.GET);

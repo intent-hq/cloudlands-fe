@@ -302,7 +302,9 @@
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
       toast.error(
-        error instanceof Error ? error.message : m.ui_openCombo_openFailed_error({ name: actionId }),
+        error instanceof Error
+          ? error.message
+          : m.ui_openCombo_openFailed_error({ name: actionId }),
       );
     }
   }

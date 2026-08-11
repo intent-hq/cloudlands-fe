@@ -33,9 +33,9 @@ export const dropdownCallerLedger = [
     reason: 'non-searchable single-value selection',
   },
   {
-    caller: 'src/lib/components/settings/BackgroundAgentSettings.svelte',
+    caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
     replacement: 'Combobox',
-    reason: 'searchable model value selection',
+    reason: 'shared option model for ModelPicker',
   },
   {
     caller: 'src/lib/components/settings/mcp/McpServerCard.svelte',

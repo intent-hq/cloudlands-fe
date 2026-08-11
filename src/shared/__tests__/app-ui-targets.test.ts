@@ -98,7 +98,6 @@ describe('app UI targets registry', () => {
   it('falls back to the raw hash when no registry target exists for a route', () => {
     expect(getHighlightIdFromRoute('/settings#custom-target')).toBe('custom-target');
   });
-
 });
 
 describe('isResolvableNavTarget', () => {

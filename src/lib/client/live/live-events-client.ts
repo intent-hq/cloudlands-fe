@@ -13,14 +13,14 @@
  * `subscribe()` here only emits an initial snapshot (mock parity) and returns
  * an idle disposer.
  */
-import type { WorkspaceEvent } from "$features/events/types";
+import type { WorkspaceEvent } from '$features/events/types';
 import type {
   EventQueryOptions,
   EventsClient,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
+} from '../app-client';
+import { backendRequest } from './backend-transport';
 
 /** Boot snapshot size — matches the renderer event buffer cap (MAX_EVENTS). */
 const BOOT_SNAPSHOT_LIMIT = 300;
@@ -31,21 +31,15 @@ export class LiveEventsClient implements EventsClient {
     return [...events].reverse();
   }
 
-  async query(
-    workspaceId: string,
-    options: EventQueryOptions = {},
-  ): Promise<WorkspaceEvent[]> {
-    const result = await backendRequest<unknown>("event.query", {
+  async query(workspaceId: string, options: EventQueryOptions = {}): Promise<WorkspaceEvent[]> {
+    const result = await backendRequest<unknown>('event.query', {
       workspaceId,
       ...options,
     });
     return Array.isArray(result) ? (result as WorkspaceEvent[]) : [];
   }
 
-  subscribe(
-    workspaceId: string,
-    handler: SubscriptionHandler<WorkspaceEvent[]>,
-  ): Unsubscribe {
+  subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe {
     void this.list(workspaceId)
       .then((events) => handler(events))
       .catch(() => handler([]));

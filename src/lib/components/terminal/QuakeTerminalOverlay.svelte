@@ -26,6 +26,7 @@
     selectTerminalOverlayHeight,
     selectActiveTerminalIdForWorkspace,
     selectTerminalsForWorkspace,
+    selectWorkspaceTerminalState,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
     openTerminalOverlay,
@@ -35,8 +36,11 @@
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
+    clearScriptSelection,
+    terminalCreated,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
+  import { appClient } from '$lib/client';
 
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import Terminal from './Terminal.svelte';
@@ -280,7 +284,7 @@
     }
   }
 
-  async function handleScriptAction(
+  export async function handleScriptAction(
     action: 'start' | 'stop' | 'restart' | 'delete',
     scriptId: string,
   ) {
@@ -294,7 +298,11 @@
     if (!succeeded) return;
 
     if (action === 'delete') {
+      const wasSelected =
+        selectWorkspaceTerminalState.select(appStore.state, mutationWorkspaceId)
+          .selectedScriptId === scriptId;
       appStore.dispatch(removeScript(mutationWorkspaceId, scriptId));
+      if (wasSelected) appStore.dispatch(clearScriptSelection(mutationWorkspaceId));
       if (workspaceOwnership === ownership && selectedScriptId === scriptId) {
         selectedScriptId = null;
       }
@@ -442,10 +450,22 @@
       });
   }
 
-  // Live scripts (running/restarting) shown as tabs in the bottom bar
+  // Live and previously-running scripts shown as tabs in the bottom bar.
   const runningScripts = $derived(
-    $scriptEntries$.filter((s) => isLiveScriptStatus(s.runtime.status)),
+    $scriptEntries$.filter(
+      (s) => isLiveScriptStatus(s.runtime.status) || s.runtime.previouslyRunning === true,
+    ),
   );
+
+  async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
+    event.stopPropagation();
+    if (!workspaceId) return;
+    const succeeded = await runScriptMutation(
+      () => scriptsClient.stop(workspaceId, scriptId),
+      m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+    );
+    if (succeeded) appStore.dispatch(refreshScripts(workspaceId));
+  }
 
   // Constants
   const TAB_BAR_HEIGHT = 36; // h-9 = 2.25rem = 36px
@@ -684,25 +704,43 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  function createNewTerminal() {
-    if (!workspaceId) return;
-    const newId = `terminal-${Date.now()}`;
-    selectedScriptId = null;
-    appStore.dispatch(
-      addTerminal(
-        workspaceId,
-        newId,
-        m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-      ),
-    );
-    if (!$isOpen) {
-      appStore.dispatch(openTerminalOverlay(workspaceId, newId));
+  let isCreatingTerminal = false;
+
+  async function createNewTerminal() {
+    if (!workspaceId || isCreatingTerminal) return;
+    const createWorkspaceId = workspaceId;
+    isCreatingTerminal = true;
+    try {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- mutation must return the daemon-assigned PTY id before the Redux tab is created
+      const result = await appClient.terminals.create({
+        workspaceId: createWorkspaceId,
+        cols: 80,
+        rows: 24,
+      });
+      if (!result.success || !result.id) {
+        toast.error(m.terminal_adapter_openFailed_error());
+        return;
+      }
+      const stale = workspaceId !== createWorkspaceId;
+      if (!stale) {
+        selectedScriptId = null;
+        appStore.dispatch(
+          addTerminal(
+            createWorkspaceId,
+            result.id,
+            m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
+          ),
+        );
+      }
+      appStore.dispatch(terminalCreated(createWorkspaceId));
+      if (stale) return;
+      if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
+      requestAnimationFrame(() => overlayContainer?.focus());
+    } catch {
+      toast.error(m.terminal_adapter_openFailed_error());
+    } finally {
+      isCreatingTerminal = false;
     }
-    // Focus the overlay container immediately so keyboard shortcuts
-    // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
-    requestAnimationFrame(() => {
-      overlayContainer?.focus();
-    });
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -1207,6 +1245,9 @@
           <!-- Running Script Tabs -->
           {#each runningScripts as script (script.id)}
             {@const isScriptActive = selectedScriptId === script.id && $isOpen}
+            {@const isPreviouslyRunningOnly =
+              script.runtime.previouslyRunning === true &&
+              !isLiveScriptStatus(script.runtime.status)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
@@ -1271,6 +1312,19 @@
                     aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
                   >
                     <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                  </Button>
+                {/if}
+                {#if isPreviouslyRunningOnly}
+                  <Button
+                    variant="plain"
+                    size="icon-xs"
+                    iconOnly
+                    class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                    data-dismiss-script-tab={script.id}
+                    onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
+                    aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
+                  >
+                    <Fa icon={faXmark} size="xs" />
                   </Button>
                 {/if}
               {/if}

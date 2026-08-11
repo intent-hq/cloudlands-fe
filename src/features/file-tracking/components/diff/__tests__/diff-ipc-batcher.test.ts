@@ -23,9 +23,8 @@ const storeState = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createCollection } = await import(
-    '@augmentcode/themis/utils/collections/collection-utils'
-  );
+  const { createCollection } =
+    await import('@augmentcode/themis/utils/collections/collection-utils');
   return {
     store: {
       get state() {
@@ -79,9 +78,7 @@ function mockNarrowingDaemon(fullTree: unknown[]) {
     if (method === 'git.diffs') {
       if (Array.isArray(p.paths)) {
         const paths = p.paths as string[];
-        return fullTree.filter((entry) =>
-          paths.includes((entry as { path: string }).path),
-        );
+        return fullTree.filter((entry) => paths.includes((entry as { path: string }).path));
       }
       return fullTree;
     }
@@ -172,9 +169,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
 
     await expect(promise).resolves.toBeUndefined();
     // A well-formed relative path never triggers the full-tree recovery read.
-    expect(
-      mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs'),
-    ).toHaveLength(1);
+    expect(mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs')).toHaveLength(1);
   });
 
   it('folds a deleted working-tree file to an empty new side', async () => {
@@ -202,8 +197,16 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       newStart: 1,
       newLines: 1,
       lines: [
-        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 1 },
-        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n', newNumber: 1 },
+        {
+          type: 'Deletion',
+          content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+          oldNumber: 1,
+        },
+        {
+          type: 'Addition',
+          content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
+          newNumber: 1,
+        },
       ],
     };
     mockDaemon({ diffs: [{ path: 'packages/intentd', hunks: [gitlinkHunk] }] });
@@ -218,9 +221,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
     });
     // No blob exists for a gitlink, so neither failing read is attempted.
-    expect(
-      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
-    ).toEqual([]);
+    expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([]);
   });
 
   it('composes an empty old side for an added submodule (one-sided gitlink hunk)', async () => {
@@ -230,7 +231,11 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       newStart: 1,
       newLines: 1,
       lines: [
-        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n', newNumber: 1 },
+        {
+          type: 'Addition',
+          content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+          newNumber: 1,
+        },
       ],
     };
     mockDaemon({ diffs: [{ path: 'packages/new-sub', hunks: [addedGitlinkHunk] }] });
@@ -244,9 +249,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       oldContent: '',
       newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
     });
-    expect(
-      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
-    ).toEqual([]);
+    expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([]);
   });
 
   it('does not classify a regular file with Subproject-commit-looking lines as a gitlink', async () => {
@@ -259,9 +262,22 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       newStart: 1,
       newLines: 2,
       lines: [
-        { type: 'Context', content: 'Subproject commit cccccccccccccccccccccccccccccccccccccccc\n', oldNumber: 1, newNumber: 1 },
-        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 2 },
-        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n', newNumber: 2 },
+        {
+          type: 'Context',
+          content: 'Subproject commit cccccccccccccccccccccccccccccccccccccccc\n',
+          oldNumber: 1,
+          newNumber: 1,
+        },
+        {
+          type: 'Deletion',
+          content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+          oldNumber: 2,
+        },
+        {
+          type: 'Addition',
+          content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
+          newNumber: 2,
+        },
       ],
     };
     mockDaemon({
@@ -539,9 +555,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       await expect(aPromise).resolves.toMatchObject({ file: 'src/a.ts' });
       await expect(bPromise).resolves.toMatchObject({ file: 'src/b.ts' });
       await expect(cPromise).resolves.toMatchObject({ file: 'src/c.ts' });
-      expect(
-        mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs'),
-      ).toHaveLength(2);
+      expect(mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs')).toHaveLength(2);
       vi.mocked(console.warn).mockRestore();
     });
 

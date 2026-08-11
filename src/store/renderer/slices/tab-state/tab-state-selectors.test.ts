@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
 import type { TabState } from './tab-state-slice';
-import {
-  selectPersistedWorkspaceTabsState,
-  selectWorkspaceTabOrder,
-} from './tab-state-selectors';
+import { selectPersistedWorkspaceTabsState, selectWorkspaceTabOrder } from './tab-state-selectors';
 
 const tabState: TabState = {
   isDragging: false,

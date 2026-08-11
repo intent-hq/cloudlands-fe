@@ -97,6 +97,13 @@ function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   };
 }
 
+async function openHoverCard() {
+  const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+  expect(trigger).toBeTruthy();
+  await fireEvent.pointerMove(trigger);
+  return waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+}
+
 describe('MonitoredPrsRow', () => {
   afterEach(() => {
     cleanup();
@@ -150,12 +157,7 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    expect(trigger).toBeTruthy();
-    // bits-ui opens the tooltip on trigger focus (no hover delay)
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     expect(card.textContent).toContain('Fix widget rendering');
     expect(card.textContent).toContain('open');
     expect(card.textContent).toContain('checks: 1/4 running');
@@ -171,10 +173,7 @@ describe('MonitoredPrsRow', () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    await openHoverCard();
     const tooltipContent = document.querySelector('[data-tooltip-content]') as HTMLElement;
     expect(tooltipContent).toBeTruthy();
     // Regression (intent-hq/monorepo#1913): the Tooltip base class
@@ -197,10 +196,7 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     expect(card.textContent).toContain('Merge blocked: required checks failing');
     expect(card.textContent).not.toContain('Not mergeable');
   });

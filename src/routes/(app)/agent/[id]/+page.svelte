@@ -184,12 +184,15 @@
     <h1 class="text-2xl font-semibold text-foreground">
       {agent?.agentInfo?.name || m.chat_agentThread_name_fallback()}
     </h1>
-    <span class="text-sm text-subtle font-mono">{m.chat_agentThread_id_label({ id: agentId })}</span>
+    <span class="text-sm text-subtle font-mono">{m.chat_agentThread_id_label({ id: agentId })}</span
+    >
   </div>
 
   <div class="flex-1 flex flex-col bg-card border border-border rounded-lg overflow-hidden">
     {#if loading}
-      <div class="flex-1 flex items-center justify-center text-subtle">{m.chat_agentThread_loading_label()}</div>
+      <div class="flex-1 flex items-center justify-center text-subtle">
+        {m.chat_agentThread_loading_label()}
+      </div>
     {:else}
       <div
         bind:this={scrollContainer}
@@ -215,7 +218,9 @@
                   ? 'text-primary'
                   : 'text-success'}"
               >
-                {message.role === 'user' ? m.chat_agentThread_you_label() : m.chat_agentThread_assistant_label()}
+                {message.role === 'user'
+                  ? m.chat_agentThread_you_label()
+                  : m.chat_agentThread_assistant_label()}
               </span>
               {#if message.timestamp}
                 <span class="text-xs text-subtle">{formatTimestamp(message.timestamp)}</span>

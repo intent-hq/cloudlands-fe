@@ -10,13 +10,7 @@ export const CHIEF_WORKSPACE_ID = '__chief__';
 export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
 
 export type SidebarNavItem =
-  | 'new-workspace'
-  | 'active'
-  | 'chief'
-  | 'all-workspaces'
-  | 'hud'
-  | 'stats'
-  | 'settings';
+  'new-workspace' | 'active' | 'chief' | 'all-workspaces' | 'hud' | 'stats' | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
 
 /** Panel items that render the combined workspace list and Chief chat. */

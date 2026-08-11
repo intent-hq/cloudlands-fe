@@ -191,12 +191,20 @@
             {/if}
           </div>
           {#if isExpanded}
-            <Tooltip content={$isCardPinned$ ? m.layout_sidebarNav_unpinSidebar_tooltip() : m.layout_sidebarNav_pinSidebar_tooltip()} side="bottom" sideOffset={4}>
+            <Tooltip
+              content={$isCardPinned$
+                ? m.layout_sidebarNav_unpinSidebar_tooltip()
+                : m.layout_sidebarNav_pinSidebar_tooltip()}
+              side="bottom"
+              sideOffset={4}
+            >
               <button
                 class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50
                   {$isCardPinned$ ? 'text-foreground rotate-0' : 'text-muted-foreground rotate-45'}"
                 onclick={() => appStore.dispatch(toggleCardPinned())}
-                aria-label={$isCardPinned$ ? m.layout_sidebarNav_unpinSidebar_tooltip() : m.layout_sidebarNav_pinSidebar_tooltip()}
+                aria-label={$isCardPinned$
+                  ? m.layout_sidebarNav_unpinSidebar_tooltip()
+                  : m.layout_sidebarNav_pinSidebar_tooltip()}
               >
                 <Fa icon={faThumbtack} size="xs" />
               </button>

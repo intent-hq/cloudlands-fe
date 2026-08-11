@@ -83,7 +83,12 @@ function* completedCleanupSaga(wsId: string, agentId: string) {
       agentId,
     });
     if ((fresh.subscriptions?.length ?? 0) > 0 || (fresh.delegationGroups?.length ?? 0) > 0) {
-      yield* put(requestSubscriptionFetch(wsId, agentId));
+      yield* put(
+        setSubscriptionSnapshot(wsId, agentId, {
+          ...mapResult(fresh),
+          waitingState: 'waiting',
+        }),
+      );
       return;
     }
   } catch {

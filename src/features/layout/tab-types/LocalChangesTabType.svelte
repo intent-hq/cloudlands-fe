@@ -69,7 +69,8 @@
     return [
       ...unstaged.map((c) => {
         const rawPath = c.file || c.relativePath;
-        const filePath = rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
+        const filePath =
+          rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
         return {
           filePath,
           action: 'modify' as const,
@@ -85,7 +86,8 @@
       }),
       ...staged.map((c) => {
         const rawPath = c.file || c.relativePath;
-        const filePath = rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
+        const filePath =
+          rawPath && isAbsolutePath(rawPath) ? rawPath : `${workspacePath}/${rawPath}`;
         return {
           filePath,
           action: 'modify' as const,
@@ -103,9 +105,8 @@
         (commit.files || []).map(
           (file: { path?: string; additions?: number; deletions?: number } | string) => {
             const filePath = typeof file === 'string' ? file : file.path || '';
-            const normalizedPath = filePath && isAbsolutePath(filePath)
-              ? filePath
-              : `${workspacePath}/${filePath}`;
+            const normalizedPath =
+              filePath && isAbsolutePath(filePath) ? filePath : `${workspacePath}/${filePath}`;
             const additions = typeof file === 'string' ? 0 : file.additions || 0;
             const deletions = typeof file === 'string' ? 0 : file.deletions || 0;
             return {

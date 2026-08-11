@@ -429,8 +429,8 @@ describe('CommitsTimeline', () => {
     });
 
     const { container } = await renderTimeline();
-    const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.getAttribute('title') === 'Toggle file list',
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('title') === 'Toggle file list',
     ) as HTMLButtonElement;
     expect(toggle).toBeDefined();
     await fireEvent.click(toggle);
@@ -462,8 +462,8 @@ describe('CommitsTimeline', () => {
     });
 
     const { container } = await renderTimeline();
-    const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.getAttribute('title') === 'Toggle file list',
+    const toggle = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('title') === 'Toggle file list',
     ) as HTMLButtonElement;
     await fireEvent.click(toggle);
     expect(mockCommitDetails).toHaveBeenCalledTimes(1);
@@ -497,7 +497,9 @@ describe('CommitsTimeline', () => {
 
     const { container } = await renderTimeline();
     const buttons = Array.from(container.querySelectorAll('button[data-slot="button"]'));
-    const undoBtn = buttons.find((b) => b.querySelector('[data-icon="rotate-left"]')) as HTMLButtonElement;
+    const undoBtn = buttons.find((b) =>
+      b.querySelector('[data-icon="rotate-left"]'),
+    ) as HTMLButtonElement;
     expect(undoBtn).toBeDefined();
     await fireEvent.click(undoBtn);
 
@@ -507,9 +509,7 @@ describe('CommitsTimeline', () => {
         'undo-commit',
         expect.objectContaining({
           upToCommitHash: 'base',
-          undoCommitsMetadata: [
-            expect.objectContaining({ hash: 'abc', files: ['src/a.ts'] }),
-          ],
+          undoCommitsMetadata: [expect.objectContaining({ hash: 'abc', files: ['src/a.ts'] })],
         }),
       ),
     );

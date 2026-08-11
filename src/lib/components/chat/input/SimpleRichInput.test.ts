@@ -344,12 +344,13 @@ describe('SimpleRichInput action bar layout', () => {
     expect(screen.getByTestId('message-input').className).not.toContain('focus-within:ring-2');
   });
 
-  it('uses the raised semantic surface when edge-docked', () => {
+  it('keeps the prompt surface transparent when edge-docked', () => {
     render(SimpleRichInput, {
       props: { value: '', contextItems: [], edgeDocked: true },
     });
 
-    expect(screen.getByTestId('message-input').className).toContain('bg-card');
+    expect(screen.getByTestId('message-input').className).toContain('bg-transparent');
+    expect(screen.getByTestId('message-input').className).not.toContain('bg-card');
   });
 });
 

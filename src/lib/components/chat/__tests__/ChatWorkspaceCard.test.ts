@@ -103,10 +103,9 @@ vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', ()
   selectHardwareConsoleKeyPins: { select: vi.fn(() => [null, null, null, null, null, null]) },
   selectHardwareConsoleKeySlots: { select: vi.fn(() => [null, null, null, null, null, null]) },
   selectWorkspacePinnedKeySlot: { select: vi.fn(() => null) },
-  selectWorkspaceResolvedKeySlot: Object.assign(
-    () => mocks.readable(() => null),
-    { select: vi.fn(() => null) },
-  ),
+  selectWorkspaceResolvedKeySlot: Object.assign(() => mocks.readable(() => null), {
+    select: vi.fn(() => null),
+  }),
 }));
 
 vi.mock('$features/hardware-console/device/connection-status', () => ({

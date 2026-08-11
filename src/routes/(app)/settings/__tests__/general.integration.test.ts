@@ -3,7 +3,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTO_UPDATE_CHANNELS } from '$features/auto-update/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { resetMockIpcRouter } from '$shared/ipc-mock-router';
@@ -90,27 +90,25 @@ let storeContext: ReduxStoreContext | undefined;
 const originalInvoke = window.electronAPI!.invoke;
 let setChannelResponse: { success: boolean; error?: { message: string } };
 
-function renderGeneral() {
-  window.history.pushState({}, '', '/settings?tab=general');
+function renderSettingsTab(tab: 'general' | 'advanced') {
+  window.history.pushState({}, '', `/settings?tab=${tab}`);
   mocks.page.url = new URL(window.location.href);
   return render(SettingsPage, {
     context: new Map([[STORE_CONTEXT, storeContext]]),
   });
 }
 
+const renderGeneral = () => renderSettingsTab('general');
+const renderAdvanced = () => renderSettingsTab('advanced');
+
 function installDispatchRecorder() {
-  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(appStore), 'dispatch');
-  const originalDispatch = descriptor?.get?.call(appStore) as (action: unknown) => unknown;
-  const calls: unknown[] = [];
-  Object.defineProperty(appStore, 'dispatch', {
-    configurable: true,
-    enumerable: true,
-    get: () => (action: unknown) => {
-      calls.push(action);
-      return originalDispatch(action);
+  const spy = vi.spyOn(appStore, 'dispatch');
+  return {
+    get calls() {
+      return spy.mock.calls.map(([action]) => action);
     },
-  });
-  return { calls, restore: () => delete (appStore as { dispatch?: unknown }).dispatch };
+    restore: () => spy.mockRestore(),
+  };
 }
 
 function backendCalls() {
@@ -118,6 +116,10 @@ function backendCalls() {
     .mocked(window.electronAPI!.invoke)
     .mock.calls.filter(([channel]) => channel === IPC_CHANNELS.BACKEND.REQUEST);
 }
+
+beforeAll(() => {
+  storeContext = initAppStore(appStore);
+});
 
 beforeEach(() => {
   resetMockIpcRouter();
@@ -128,7 +130,6 @@ beforeEach(() => {
     return { success: true, data: null };
   });
   registerAutoUpdateBridge();
-  storeContext = initAppStore(appStore);
   appStore.dispatch(setBetaUpdatesEnabled(false));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
@@ -143,93 +144,69 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete (appStore as { dispatch?: unknown }).dispatch;
-  storeContext?.dispose();
-  storeContext = undefined;
+  vi.restoreAllMocks();
   cleanup();
   window.electronAPI!.invoke = originalInvoke;
   resetMockIpcRouter();
 });
 
+afterAll(() => {
+  storeContext?.dispose();
+  storeContext = undefined;
+});
+
 describe('General settings migration', () => {
-  it('sets beta through the exact IPC request before the exact Redux success action', async () => {
+  it('dispatches the exact Redux beta preference action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
     renderGeneral();
 
-    await fireEvent.click(screen.getByRole('switch', { name: 'Beta updates' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'Enable beta updates' }));
 
     await waitFor(() => expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(true));
-    expect(window.electronAPI!.invoke).toHaveBeenCalledWith(AUTO_UPDATE_CHANNELS.SET_CHANNEL, {
-      channel: 'beta',
-    });
-    expect(
-      vi
-        .mocked(window.electronAPI!.invoke)
-        .mock.calls.filter(([channel]) => channel === AUTO_UPDATE_CHANNELS.SET_CHANNEL),
-    ).toEqual([
-      [AUTO_UPDATE_CHANNELS.SET_CHANNEL, { channel: 'beta' }],
-      [AUTO_UPDATE_CHANNELS.SET_CHANNEL, { channel: 'beta' }],
-    ]);
+    expect(recorder.calls).toContainEqual(setBetaUpdatesEnabled(true));
+    expect(backendCalls()).toHaveLength(0);
+    expect(window.electronAPI!.invoke).not.toHaveBeenCalledWith(
+      AUTO_UPDATE_CHANNELS.SET_CHANNEL,
+      expect.anything(),
+    );
+    recorder.restore();
+  });
+
+  it('keeps the beta switch focusable and dispatches the exact enabled preference action', async () => {
+    const recorder = installDispatchRecorder();
+    renderGeneral();
+
+    const toggle = screen.getByRole('switch', { name: 'Enable beta updates' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(true));
     expect(recorder.calls).toContainEqual(setBetaUpdatesEnabled(true));
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });
 
-  it('keeps Redux unchanged and exposes the shaped set-channel failure accessibly', async () => {
-    setChannelResponse = {
-      success: false,
-      error: { message: 'The beta feed is unavailable.' },
-    };
+  it('does not activate reset from Escape and preserves focus', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
-
-    await fireEvent.click(screen.getByRole('switch', { name: 'Beta updates' }));
-
-    expect((await screen.findByRole('alert')).textContent).toContain(
-      'The beta feed is unavailable.',
-    );
-    expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(false);
-    expect(window.electronAPI!.invoke).toHaveBeenCalledWith(AUTO_UPDATE_CHANNELS.SET_CHANNEL, {
-      channel: 'beta',
-    });
-    expect(recorder.calls).not.toContainEqual(setBetaUpdatesEnabled(true));
-    expect(backendCalls()).toHaveLength(0);
-    recorder.restore();
-  });
-
-  it('cancels and dismisses reset by Escape with focus restoration and no reset actions', async () => {
-    const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAdvanced();
     const trigger = screen.getByRole('button', { name: 'Reset to Defaults' });
     trigger.focus();
-    await fireEvent.click(trigger);
-    expect(screen.getByRole('dialog', { name: 'Reset Settings' })).toBeTruthy();
-
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
-
-    await fireEvent.click(trigger);
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
-    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    await fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(document.activeElement).toBe(trigger);
     expect(
       recorder.calls.filter((action) => /reset|FontStyle/.test((action as { type: string }).type)),
     ).toEqual([]);
     recorder.restore();
   });
 
-  it('confirms the existing reset action sequence without resetting update preferences', async () => {
+  it('runs the existing reset action sequence without resetting update preferences', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
+    renderAdvanced();
     const trigger = screen.getByRole('button', { name: 'Reset to Defaults' });
     trigger.focus();
     await fireEvent.click(trigger);
-    await fireEvent.click(screen.getByRole('button', { name: 'Reset Settings' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
     const resetTypes = new Set([
       'theme/requestThemePreferenceChange',
       'fontSettings/setNoteFontStyle',
@@ -271,38 +248,33 @@ describe('General settings migration', () => {
   });
 
   it('preserves footer states, canonical actions, support semantics, and fixed-row geometry', async () => {
-    const recorder = installDispatchRecorder();
-    const { container } = renderGeneral();
+    const initial = renderGeneral();
+    const { container } = initial;
     expect(screen.getByText(/v2\.0\.10/)).toBeTruthy();
     expect(screen.getByText('Up to date')).toBeTruthy();
     const support = screen.getByRole('link', { name: 'Support' });
     expect(support.getAttribute('href')).toBe('https://www.intentapp.dev/docs');
     expect(support.getAttribute('target')).toBe('_blank');
     expect(support.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(support.getAttribute('data-slot')).toBe('button');
-
+    expect(container.firstElementChild?.className).toContain('flex h-full');
+    expect(container.querySelector('aside')?.className).toContain('border-r');
     appStore.dispatch(simulateSetState({ status: 'downloaded' }));
     const update = await screen.findByRole('button', { name: 'Update available' });
-    expect(update.getAttribute('data-slot')).toBe('button');
+    const recorder = installDispatchRecorder();
     await fireEvent.click(update);
     expect(recorder.calls).toContainEqual(installUpdate());
-    expect(container.firstElementChild?.className).toContain(
-      'grid-rows-[min-content_1fr_min-content]',
-    );
-    expect(container.querySelector('[data-settings-footer] .max-w-5xl')?.className).toContain(
-      'flex-wrap',
-    );
     recorder.restore();
   });
 
   it('preserves exact developer simulation payloads behind the dev-only section', async () => {
     const recorder = installDispatchRecorder();
-    renderGeneral();
-    expect(screen.getByRole('region', { name: 'Developer' })).toBeTruthy();
+    renderAdvanced();
+    const developer = document.getElementById('developer')!;
+    expect(screen.getByRole('heading', { name: 'Developer' })).toBeTruthy();
     await fireEvent.click(screen.getByRole('button', { name: 'Simulate Update Flow' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Simulate No Update' }));
     await fireEvent.click(
-      within(screen.getByRole('region', { name: 'Developer' })).getByRole('button', {
+      within(developer).getByRole('button', {
         name: 'Reset',
       }),
     );
@@ -350,15 +322,11 @@ describe('General settings migration', () => {
   });
 
   it('uses canonical responsive composition and deterministic visual/accessibility fixtures', () => {
-    const { container } = renderGeneral();
-    expect(container.querySelector('[data-settings-general]')?.className).toContain('max-w-5xl');
-    expect(screen.getByRole('region', { name: 'Updates' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'WebSocket API' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Reset' }).className).toContain('border-destructive');
-    expect(container.querySelector('[data-settings-footer]')?.className).toContain('border-t');
-    for (const row of container.querySelectorAll('[data-slot="settings-field-row"]')) {
-      expect(row.className).toContain('min-w-0');
-    }
+    const { container } = renderAdvanced();
+    expect(container.querySelector('main')?.className).toContain('max-w-4xl');
+    expect(screen.getByRole('heading', { name: 'WebSocket API' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Reset' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Developer' })).toBeTruthy();
     expect(GENERAL_VISUAL_FIXTURES).toHaveLength(4);
     expect(new Set(GENERAL_VISUAL_FIXTURES.map(({ id }) => id)).size).toBe(4);
     expect(new Set(GENERAL_VISUAL_FIXTURES.map(({ theme }) => theme))).toEqual(
@@ -387,7 +355,8 @@ describe('General settings migration', () => {
       reducedMotion: true,
       overflow: 'none',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Reset to Defaults' }));
-    expect(screen.getByRole('dialog').className).toContain('motion-reduce:animate-none');
+    expect(screen.getByRole('button', { name: 'Reset to Defaults' }).className).toContain(
+      'motion-reduce:transition-none',
+    );
   });
 });

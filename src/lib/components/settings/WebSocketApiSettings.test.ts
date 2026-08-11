@@ -237,8 +237,8 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
-          )
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+          ),
         ).toBeTruthy();
       });
 
@@ -279,8 +279,8 @@ describe('WebSocketApiSettings', () => {
       // Assert: no remote info panel, no error toast
       expect(
         screen.queryByText(
-          'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
-        )
+          'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+        ),
       ).toBeNull();
       expect(mockToast.error).not.toHaveBeenCalled();
     });
@@ -298,8 +298,8 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
-          )
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+          ),
         ).toBeTruthy();
       });
       expect(mocks.mockSettingsList).not.toHaveBeenCalled();
@@ -322,7 +322,7 @@ describe('WebSocketApiSettings', () => {
       mocks.mockSettingsList.mockReturnValue(
         new Promise<{ path: string; value: unknown }[]>((resolve) => {
           resolveSettingsList = resolve;
-        })
+        }),
       );
 
       render(WebSocketApiSettings);
@@ -344,8 +344,8 @@ describe('WebSocketApiSettings', () => {
       await waitFor(() => {
         expect(
           screen.getByText(
-            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.'
-          )
+            'WebSocket API settings are managed on the machine running the daemon and are only available when connected locally.',
+          ),
         ).toBeTruthy();
       });
       expect(mocks.mockPairingInfo).not.toHaveBeenCalled();

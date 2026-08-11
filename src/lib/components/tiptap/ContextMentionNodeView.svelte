@@ -346,7 +346,9 @@
                 <span class="text-ui text-subtle">{meta.project}</span>
               {/if}
               {#if meta.author}
-                <span class="text-ui text-subtle">{m.tiptap_contextMention_byAuthor_label({ author: meta.author })}</span>
+                <span class="text-ui text-subtle"
+                  >{m.tiptap_contextMention_byAuthor_label({ author: meta.author })}</span
+                >
               {/if}
               {#if meta.createdAt}
                 <span class="text-ui text-subtle ml-auto">{formatRelativeTime(meta.createdAt)}</span
@@ -382,7 +384,11 @@
 
   <!-- Branch switch button - positioned to the right of the pill -->
   {#if branchDiffers}
-    <Tooltip content={m.tiptap_contextMention_switchBranch_tooltip()} side="top" delayDuration={200}>
+    <Tooltip
+      content={m.tiptap_contextMention_switchBranch_tooltip()}
+      side="top"
+      delayDuration={200}
+    >
       <button
         type="button"
         onclick={handleSwitchToPRBranch}

@@ -5,19 +5,16 @@
   Supports removal and displays file metadata.
 -->
 <script lang="ts">
-  import {
-  fade,
-  scale,
-} from 'svelte/transition';
+  import { fade, scale } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-  faXmark,
-  faFile,
-  faImage,
-  faFileCode,
-  faFileAlt,
-} from '@fortawesome/free-solid-svg-icons';
+    faXmark,
+    faFile,
+    faImage,
+    faFileCode,
+    faFileAlt,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -128,11 +125,7 @@
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}
       title={name}
     >
-      <img
-        src={thumbnailUrl}
-        alt={name}
-        class="w-full h-full object-cover"
-      />
+      <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
     </button>
     {#if onRemove}
       <Button

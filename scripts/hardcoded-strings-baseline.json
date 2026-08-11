@@ -1,0 +1,2406 @@
+{
+  "version": 1,
+  "generatedBy": "node scripts/check-hardcoded-strings.mjs --update-baseline",
+  "violations": [
+    {
+      "path": "src/features/backend/main/backend-connection.ts",
+      "kind": "string literal",
+      "snippet": "Legacy INTENTD_TCP transport is disabled because authenticat",
+      "count": 1
+    },
+    {
+      "path": "src/features/browser/main/browser-action-executor.ts",
+      "kind": "string literal",
+      "snippet": "No browser tabs available. Use { action: \"openTab\", url: \"..",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent asked for permission",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent assigned to",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent assigned to a task",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent message failed to deliver",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent unassigned from",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Agent unassigned from a task",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Available skills changed",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Base branch set to",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Branch set to",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Changed setting",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Changed settings",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Changed workspace",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Cleared report",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Cleared workspace status",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "GitHub authentication changed",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "GitHub sign-in expired",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Linked PR #",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Linked a pull request",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Message to failed to deliver",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "No tasks ready to start",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Permission request answered",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Permission request dismissed",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Permission requested:",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Pull request updated",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Ran a git operation",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Ran a terminal command",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Renamed agent to",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Renamed an agent",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Renamed workspace to",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Reopened a comment thread",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Repository cloned",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Resolved a comment thread",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Restored an agent",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Searched the codebase",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Settings changed",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Signed in to GitHub",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Terminal exited with code",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Terminal running",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Terminal session ended",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Terminal title changed",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Unlinked pull request",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Update from",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Worked on a file",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Worked on a note",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Workspace context updated",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "Workspace marked",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "You messaged",
+      "count": 1
+    },
+    {
+      "path": "src/features/events/activity-labels.ts",
+      "kind": "string literal",
+      "snippet": "You sent a message",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/components/WorkspaceActionsMenu.svelte",
+      "kind": "string literal",
+      "snippet": "w-full min-w-0 justify-start gap-2 pl-2! pr-2.5! focus-visib",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "Close Panel, Tab, or Space",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "New Panel",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "New Space",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "Reopen Closed Tab or Space",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "Select Last Space Tab",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "Select Space Tab",
+      "count": 1
+    },
+    {
+      "path": "src/features/workspace/utils/workspace-tab-navigation.ts",
+      "kind": "string literal",
+      "snippet": "Space Tab",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/chat/ChatImageBlock.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "View {alt.toLowerCase()} full size",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/chat/ChatImageBlock.svelte",
+      "kind": "string literal",
+      "snippet": "Image from agent",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/chat/MessageContent.svelte",
+      "kind": "attribute alt",
+      "snippet": "Image returned by tool",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/chat/RulesInspector.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close rules inspector",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/chat/input/SimpleRichInput.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Save and resend",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/code-review/CodeReviewPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Next review version",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/code-review/CodeReviewPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Previous review version",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-explorer/VSCodeFileExplorer.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show all files",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-explorer/VSCodeFileExplorer.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show only changed files",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-explorer/file-tree-view.svelte",
+      "kind": "template text",
+      "snippet": "Retry",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Refresh changes",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Stage all",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Unstage all",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/KeyboardShortcutsCheatSheet.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close keyboard shortcuts",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Agent working",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Loading workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open spaces",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Running agent",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Running agents",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "of tasks complete",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "fallback literal",
+      "snippet": "Untitled",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceTabStrip.svelte",
+      "kind": "string literal",
+      "snippet": "Moved to position",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceViewModeToggle.svelte",
+      "kind": "attribute title",
+      "snippet": "Show open spaces as columns",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/WorkspaceViewModeToggle.svelte",
+      "kind": "attribute title",
+      "snippet": "Use tab view",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Go back",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Go forward",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/Panel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close panel",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/PanelEmptyState.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Create in empty panel",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/PanelEmptyState.svelte",
+      "kind": "template text",
+      "snippet": "Recently closed",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/panel-system/PanelTabBar.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close panel",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/sidebar-nav/ChiefTrigger.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Toggle Chief of Staff",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/sidebar-nav/SidebarPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Hide search",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/sidebar-nav/SidebarPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Resize workspace list and chat",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/sidebar-nav/SidebarPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Search workspaces",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/layout/sidebar-nav/SidebarPanel.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Sort or group spaces:",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/modals/InputDialog.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close input dialog",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/modals/Modal.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close modal",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/modals/PullConflictDialog.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close pull conflict dialog",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
+      "kind": "string literal",
+      "snippet": "Failed to rename script",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
+      "kind": "string literal",
+      "snippet": "Failed to script",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
+      "kind": "string literal",
+      "snippet": "Failed to update script command",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/tiptap/TaskItemNodeView.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Convert to task note",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/tiptap/comments/ResponsiveCommentThread.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show comment thread",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/badge/badge.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Badge semantic states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/badge/badge.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and semantic variants and fixtures pas",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/BreadcrumbHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Project path",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/BreadcrumbHarness.svelte",
+      "kind": "template text",
+      "snippet": "Cloudlands workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/BreadcrumbHarness.svelte",
+      "kind": "template text",
+      "snippet": "Navigation and help component documentation",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/BreadcrumbHarness.svelte",
+      "kind": "template text",
+      "snippet": "Projects",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/breadcrumb.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Breadcrumb navigation states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/breadcrumb/breadcrumb.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while navigation, current-page, ellipsis, and respons",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button-group/button-group.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Connected button orientations",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button-group/button-group.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and group semantics and fixtures pass.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button/button.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Button content and motion",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button/button.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Button interaction states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button/button.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and behavior, accessibility, and fixtu",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/button/button.svelte",
+      "kind": "string literal",
+      "snippet": "Icon-only Button requires a non-empty aria-label, aria-label",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Editorial card",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Inert card",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "A deliberately long editorial card title that wraps cleanly",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "Card content uses the canonical raised surface and quiet bou",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "Manage",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "No configuration is available for this intentionally inert s",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "Supporting metadata stays compact and readable.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/CardHarness.svelte",
+      "kind": "template text",
+      "snippet": "Updated moments ago",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Cards",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Lists",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Settings composition",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute label",
+      "snippet": "A deliberately long preference label that demonstrates mobil",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute label",
+      "snippet": "Automatic updates",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Active row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Application settings",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Disabled row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "General",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Recent work",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Selected editorial row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "A canonical raised surface with one-pixel structure and rest",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "A contained side panel with stable dividers, semantic surfac",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Cancel",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Changes save according to each field's existing behavior.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Check now",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Configure",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Connected to the local development daemon.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Connection",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Delete workspace",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Delete workspace?",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Done",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Duplicate",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Editorial overlays and reusable surfaces",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Intentionally inert content uses the shared semantic hatch.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Long content wraps within the panel at compact widths and re",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Manage",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Morning penguin workspace and its local session history",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Open editorial menu",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Open workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Operate patterns",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Show metadata",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Structured metadata remains quiet and readable.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Thin boundaries, compact rows, semantic focus, generous comp",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "This destructive confirmation preserves focus trapping, expl",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Updated moments ago",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Workspace details",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/OperatePatternsVisualHarness.svelte",
+      "kind": "template text",
+      "snippet": "Workspace notifications",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/card.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Editorial card states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/card.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while reusable editorial surfaces require structured ",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
+      "kind": "string literal",
+      "snippet": "Desktop Chrome",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/ui/checkbox/checkbox.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Checkbox states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/checkbox/checkbox.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported; form and accessibility behavior tests",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Combobox result states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Combobox states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while callers need the pattern and catalog coverage r",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.svelte",
+      "kind": "string literal",
+      "snippet": "No options available",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.svelte",
+      "kind": "string literal",
+      "snippet": "Search options",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.svelte",
+      "kind": "string literal",
+      "snippet": "Select an option",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.svelte",
+      "kind": "template text",
+      "snippet": "Loading options…",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.test-harness.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "Select people",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Ada Lovelace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Disabled person",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/combobox.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Grace Hopper",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "attribute tooltip",
+      "snippet": "Grouped tooltip",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "attribute tooltip",
+      "snippet": "People tooltip",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Ada Lovelace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Grace Hopper",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "string literal",
+      "snippet": "Linus Torvalds",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Detail:",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Footer action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Header action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Rename",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/combobox/legacy-wrappers.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "description",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Dialog destructive count",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Dialog field",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Canonical dialog",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Delete item",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Dialog behavior fixture",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Long dialog content row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Nested dialog action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/DialogHarness.svelte",
+      "kind": "template text",
+      "snippet": "Open dialog",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/dialog-content.svelte",
+      "kind": "string literal",
+      "snippet": "Close dialog",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/dialog.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Dialog states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/dialog.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported; require metadata, fixtures, and behav",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/legacy-overlays.meta.ts",
+      "kind": "string literal",
+      "snippet": "Remove after SetupScriptModal migrates and Dialog behavior t",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/dialog/legacy-overlays.meta.ts",
+      "kind": "string literal",
+      "snippet": "Remove after the legacy layout export has zero static and dy",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/FileInputHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Bound filenames",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/FileInputHarness.svelte",
+      "kind": "attribute label",
+      "snippet": "Choose theme files",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/FileInputHarness.svelte",
+      "kind": "template text",
+      "snippet": "Reset form",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/FileInputHarness.svelte",
+      "kind": "template text",
+      "snippet": "Reset from parent",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/file-input.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "File input states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/file-input.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and file activation, feedback, and fix",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/file-input.svelte",
+      "kind": "string literal",
+      "snippet": "Choose file",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/file-input/file-input.svelte",
+      "kind": "string literal",
+      "snippet": "No file selected",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/grouped-combobox/grouped-combobox.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Toggle",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/indicators/spinner.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Spinner loading states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/indicators/spinner.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain Spinner while canonical callers and deterministic loa",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Input states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and binding, focus, validation, and fi",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.test-harness.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "Enter a profile name",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "A profile name is required.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Profile name",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/input/input.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Shown to collaborators.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/label/label.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Label states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/label/label.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and association and fixture tests pass",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/label/label.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Team name",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/ListHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Selected list value",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/ListHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "A long list title that truncates without forcing horizontal ",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/ListHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Active row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/ListHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Disabled row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/ListHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Recent work",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/list.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Editorial list states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/list/list.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while product lists use the canonical compact row and",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/LegacyMenuHarness.svelte",
+      "kind": "template text",
+      "snippet": "Legacy actions",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/LegacyMenuHarness.svelte",
+      "kind": "template text",
+      "snippet": "Legacy command",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Actions",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Apple",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Archive",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Banana",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Cherry",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Comfortable",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Compact",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Delete item",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Disabled action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "More",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
+      "kind": "template text",
+      "snippet": "Show panel",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/menu.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Command menu states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/menu/menu.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain the compatibility wrapper until all 15 callers migrat",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/scroll-area/ScrollAreaHarness.svelte",
+      "kind": "template text",
+      "snippet": "Scrollable documentation row with deliberately long horizont",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/scroll-area/ScrollAreaHarness.svelte",
+      "kind": "template text",
+      "snippet": "Short content",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/scroll-area/scroll-area.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Scroll area orientations and overflow",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/scroll-area/scroll-area.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while viewport focus, orientation, long-content, and ",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/searchable-combobox/searchable-combobox.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Rename",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/select/select.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Select content and motion",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/select/select.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Select states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/select/select.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and behavior, accessibility, and fixtu",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/select/select.test-harness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Choose fruit",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/select/select.test-harness.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "Choose fruit",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/separator/separator.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Separator states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/separator/separator.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and orientation, semantic, and fixture",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-field-row/SettingsFieldRowHarness.svelte",
+      "kind": "attribute label",
+      "snippet": "Notification volume",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-field-row/settings-field-row.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Settings field row states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-field-row/settings-field-row.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while Settings consumers need persistent field semant",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Back action count",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Settings sections",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Application settings",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Linked settings",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "Accounts and providers",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "Appearance and colors",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "Field control",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "General",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "Linked shell content",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/SettingsPageShellHarness.svelte",
+      "kind": "template text",
+      "snippet": "Settings footer",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/settings-page-shell.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Busy Settings shell",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/settings-page-shell.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Editorial Settings shell",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-page-shell/settings-page-shell.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while Settings consumers need the shell and catalog c",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-section/SettingsSectionHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Notifications",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-section/SettingsSectionHarness.svelte",
+      "kind": "template text",
+      "snippet": "Reset section",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-section/SettingsSectionHarness.svelte",
+      "kind": "template text",
+      "snippet": "Section fields",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-section/settings-section.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Settings section states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/settings-section/settings-section.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while Settings consumers need section hierarchy and c",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Sheet destructive count",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Sheet field",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Canonical sheet",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Delete item",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Long sheet content row",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Nested sheet action",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Open sheet",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/SheetHarness.svelte",
+      "kind": "template text",
+      "snippet": "Sheet behavior fixture",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/sheet.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Sheet states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sheet/sheet.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported; require metadata, fixtures, and behav",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Disabled navigation",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Overview",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Sidebar menu selections",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Sidebar open state",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "template text",
+      "snippet": "Disabled navigation",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "template text",
+      "snippet": "Navigation",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "template text",
+      "snippet": "Overview",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
+      "kind": "template text",
+      "snippet": "Workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/sidebar-trigger.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Toggle sidebar",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/sidebar.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Sidebar responsive navigation states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/sidebar/sidebar.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while host-independent collapsed, mobile, menu, and s",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/skeleton/skeleton.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Skeleton loading states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/skeleton/skeleton.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and loading, reduced-motion, and fixtu",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/slider/slider.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Slider interaction states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/slider/slider.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and native range, accessibility, and f",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/switch/switch.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Switch states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/switch/switch.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported; switch semantics and form behavior te",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/textarea/textarea.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Textarea states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/textarea/textarea.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported and binding, resize, validation, and f",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/textarea/textarea.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "A short editorial summary.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/textarea/textarea.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "A summary is required.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/textarea/textarea.test-harness.svelte",
+      "kind": "template text",
+      "snippet": "Workspace summary",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Toggle group states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while exported; single, multiple, and keyboard behavi",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.test-harness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Display mode",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.test-harness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Display options",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.test-harness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "List view",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/ui/toggle-group/toggle-group.test-harness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Tree view",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/ui/toggle/toggle.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Deprecated Toggle modes",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle/toggle.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Toggle states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/toggle/toggle.meta.ts",
+      "kind": "string literal",
+      "snippet": "Remove only when source-derived static and dynamic variant=\"",
+      "count": 3
+    },
+    {
+      "path": "src/lib/components/ui/toggle/toggle.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain canonical aria-pressed Toggle; remove compatibility m",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show keyboard help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show rich help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show wrapped help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Tooltip open state",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "attribute title",
+      "snippet": "Rich button help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "template text",
+      "snippet": "Passive status",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "template text",
+      "snippet": "Press Command K to open navigation.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "template text",
+      "snippet": "Rich help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "template text",
+      "snippet": "Show keyboard help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/TooltipHarness.svelte",
+      "kind": "template text",
+      "snippet": "Wrapped help",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/tooltip.fixtures.ts",
+      "kind": "string literal",
+      "snippet": "Tooltip interaction and content states",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/ui/tooltip/tooltip.meta.ts",
+      "kind": "string literal",
+      "snippet": "Retain while delay, keyboard focus, Escape, portal, and redu",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Show local change",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte",
+      "kind": "template text",
+      "snippet": "/ /.workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte",
+      "kind": "template text",
+      "snippet": "Sync",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/MultiSelectTabbedSidebar.svelte",
+      "kind": "template text",
+      "snippet": "local change",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/PullRequestCreator.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close pull request creator",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/SidebarBrowserLauncher.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open Browser",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/SidebarBrowserLauncher.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open at in Browser",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/SidebarBrowserLauncher.svelte",
+      "kind": "attribute tooltip",
+      "snippet": "Open at",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/SidebarBrowserLauncher.svelte",
+      "kind": "template text",
+      "snippet": "Browser",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceColumnsView.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open spaces in columns",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceColumnsView.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Workspace column",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceSidebarHeader.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Workspace actions",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceSidebarHeader.svelte",
+      "kind": "string literal",
+      "snippet": "Branch name copied to clipboard",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceSidebarHeader.svelte",
+      "kind": "string literal",
+      "snippet": "Failed to copy branch name",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceSidebarHeader.svelte",
+      "kind": "template text",
+      "snippet": "Base",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceTerminalDock.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceTerminalDock.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "dev scripts",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/WorkspaceTerminalDock.svelte",
+      "kind": "template text",
+      "snippet": "Shell",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "/home/user/myrepo",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "wss://dev.example.com/ws",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/initializer/BranchSelector.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Refresh branches",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/initializer/RepoSelector.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "new-project",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/initializer/RepoSelector.svelte",
+      "kind": "attribute placeholder",
+      "snippet": "owner/repo",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
+      "kind": "string literal",
+      "snippet": "Agents working on your task in this space.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
+      "kind": "string literal",
+      "snippet": "Files changed manually or by agents working in this space.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
+      "kind": "string literal",
+      "snippet": "Notes about the task, shared with all agents in this space.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
+      "kind": "string literal",
+      "snippet": "The agents in this space are working off a copy of your file",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/multi-select-sidebar-tabs.ts",
+      "kind": "string literal",
+      "snippet": "Workspace status, progress, and key metrics at a glance.",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/ActivityLogPreview.svelte",
+      "kind": "attribute title",
+      "snippet": "Open agent",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/AddContextSection.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Add context",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/FlameGraph.svelte",
+      "kind": "attribute aria-label",
+      "snippet": ": task",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/FlameGraph.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open ,",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/FlameGraph.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Open spec, of tasks complete",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/FlameGraph.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Task progress",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/FlameGraph.svelte",
+      "kind": "template text",
+      "snippet": "/ tasks complete",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Close workspace",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Workspace actions",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte",
+      "kind": "template text",
+      "snippet": "Base",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte",
+      "kind": "template text",
+      "snippet": "Copied",
+      "count": 2
+    },
+    {
+      "path": "src/lib/components/workspace/utils/task-status-display.ts",
+      "kind": "string literal",
+      "snippet": "Discussion needed",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/utils/task-status-display.ts",
+      "kind": "string literal",
+      "snippet": "In progress",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/utils/task-status-display.ts",
+      "kind": "string literal",
+      "snippet": "Not started",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/utils/task-status-display.ts",
+      "kind": "string literal",
+      "snippet": "Review required",
+      "count": 1
+    },
+    {
+      "path": "src/lib/components/workspace/workspace-phase.ts",
+      "kind": "string literal",
+      "snippet": "Describe what you want to build",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Application shell",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "attribute aria-label",
+      "snippet": "Main content",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Command Palette (Alt)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Command Palette (Mac)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Command Palette (Win/Linux)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Feature Code Entry",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "GitHub connected",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Go to Definition",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Go to Line (Mac)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Go to Line (Win/Linux)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Not found",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Open Command Palette (Config)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Open Model Picker",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Quick Open (Mac)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Quick Open (Win/Linux)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Resend Message",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Scroll Conversation Down",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Scroll Conversation Up",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Search in files",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle All Spaces (Mac)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle All Spaces (Win/Linux)",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle Keyboard Shortcuts",
+      "count": 2
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle Settings",
+      "count": 1
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle Terminal Overlay",
+      "count": 2
+    },
+    {
+      "path": "src/routes/(app)/+layout.svelte",
+      "kind": "string literal",
+      "snippet": "Toggle Word Wrap",
+      "count": 1
+    }
+  ]
+}

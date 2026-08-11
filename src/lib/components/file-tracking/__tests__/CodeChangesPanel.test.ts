@@ -65,7 +65,8 @@ vi.mock('$features/git/git-write-service', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ uiLayout: { collapsiblePanelCollapsed: {} } }),
     dispatch: mockDispatch,
@@ -86,9 +87,18 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   setMainPanelView: vi.fn((v: any) => ({ type: 'changes/setMainPanelView', payload: v })),
-  unstageChangesRequested: vi.fn((...a: any[]) => ({ type: 'changes/unstageChangesRequested', payload: a })),
-  revertChangeRequested: vi.fn((...a: any[]) => ({ type: 'changes/revertChangeRequested', payload: a })),
-  loadWorkspaceDataRequested: vi.fn((...a: any[]) => ({ type: 'changes/loadWorkspaceDataRequested', payload: a })),
+  unstageChangesRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/unstageChangesRequested',
+    payload: a,
+  })),
+  revertChangeRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/revertChangeRequested',
+    payload: a,
+  })),
+  loadWorkspaceDataRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/loadWorkspaceDataRequested',
+    payload: a,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -102,7 +112,10 @@ vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors'
 }));
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
-  setAutoCommitEnabled: vi.fn((...a: any[]) => ({ type: 'ws-settings/setAutoCommitEnabled', payload: a })),
+  setAutoCommitEnabled: vi.fn((...a: any[]) => ({
+    type: 'ws-settings/setAutoCommitEnabled',
+    payload: a,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
@@ -119,14 +132,20 @@ vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte'))
 vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, any>;
   return new Proxy(actual, {
-    get: (t, p) => (p in t ? (t as any)[p] : { iconName: String(p), prefix: 'fas', icon: [0, 0, [], '', ''] }),
+    get: (t, p) =>
+      p in t ? (t as any)[p] : { iconName: String(p), prefix: 'fas', icon: [0, 0, [], '', ''] },
   });
 });
 
 vi.mock('svelte-sonner', () => ({ toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 vi.mock('$lib/utils/logger', () => ({
-  Logger: class { info() {} warn() {} error() {} debug() {} },
+  Logger: class {
+    info() {}
+    warn() {}
+    error() {}
+    debug() {}
+  },
 }));
 
 vi.mock('../FileChangesList.svelte', async () => ({
@@ -175,7 +194,10 @@ describe('CodeChangesPanel git-write-service routing', () => {
   });
 
   it('routes "Stage all" through the git-write-service seam', async () => {
-    store.unstaged = [makeChange({ relativePath: 'src/a.ts' }), makeChange({ relativePath: 'src/b.ts' })];
+    store.unstaged = [
+      makeChange({ relativePath: 'src/a.ts' }),
+      makeChange({ relativePath: 'src/b.ts' }),
+    ];
     const { container } = await renderPanel();
     await waitFor(() => expect(container.textContent).toContain('Unstaged'));
     // The "Stage all" action button is icon-only (faPlus); the Fa mock renders
@@ -189,7 +211,9 @@ describe('CodeChangesPanel git-write-service routing', () => {
   it('keeps unstage on the legacy dispatch path (BE-gated)', async () => {
     store.staged = [makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged })];
     const { container } = await renderPanel();
-    await waitFor(() => expect(container.querySelector('[data-testid="unstage-btn"]')).toBeTruthy());
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="unstage-btn"]')).toBeTruthy(),
+    );
     await fireEvent.click(container.querySelector('[data-testid="unstage-btn"]')!);
     expect(mockStageFiles).not.toHaveBeenCalled();
     expect(mockDispatch).toHaveBeenCalledWith(

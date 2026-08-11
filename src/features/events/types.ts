@@ -75,7 +75,12 @@ export interface CanonicalAgentStatusFields {
    * a parent or client can tell a PR-monitor-waiting idle agent from a
    * stalled one. Rendered verbatim.
    */
-  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
+  waitingOnPrMonitors?: Array<{
+    monitorId: string;
+    repo: string;
+    prNumber: number;
+    title?: string;
+  }>;
 }
 
 // ============================================================================

@@ -45,7 +45,6 @@
         error = m.settings_mcp_import_noServersError();
         return;
       }
-
     } catch {
       error = m.settings_mcp_import_invalidJsonError();
       return;
@@ -84,7 +83,9 @@
   {/if}
 
   <div class="flex gap-2">
-    <Button variant="outline" onclick={onCancel} class="flex-1">{m.settings_mcp_import_cancel()}</Button>
+    <Button variant="outline" onclick={onCancel} class="flex-1"
+      >{m.settings_mcp_import_cancel()}</Button
+    >
     <Button onclick={handleImport} disabled={importing} class="flex-1">
       {importing ? m.settings_mcp_import_importing() : m.settings_mcp_import_importServers()}
     </Button>

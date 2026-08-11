@@ -13,7 +13,8 @@ describe('CompactWorkspaceInitializer create button', () => {
     const end = initializer.indexOf('<!-- Error message -->', start);
     const createButtonMarkup = initializer.slice(start, end);
 
-    expect(createButtonMarkup).toContain('<Button onclick={handleSubmit}');
+    expect(createButtonMarkup).toContain('onclick={handleSubmit}');
+    expect(createButtonMarkup).toContain('text-primary-foreground');
     expect(createButtonMarkup).not.toContain('text-white');
   });
 });

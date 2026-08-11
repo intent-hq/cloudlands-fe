@@ -70,9 +70,7 @@
 
     <!-- Code snippet (if available) -->
     {#if codeLines.length > 0}
-      <div
-        class="mb-2 overflow-hidden rounded-lg border border-border bg-muted/30"
-      >
+      <div class="mb-2 overflow-hidden rounded-lg border border-border bg-muted/30">
         <div class="overflow-x-auto">
           <div class="font-mono text-xs leading-relaxed">
             {#each codeLines as line, i}

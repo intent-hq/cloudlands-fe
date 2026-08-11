@@ -383,15 +383,19 @@
     }
 
     // Always load workspaces - the Header needs them for tabs regardless of current page
-    const loadData = async () => {
+    let workspacesIdleHandle: number | null = null;
+    let workspacesTimerHandle: ReturnType<typeof setTimeout> | null = null;
+    const loadData = () => {
       // Use requestIdleCallback to load workspaces when browser is idle
       if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(() => {
+        workspacesIdleHandle = requestIdleCallback(() => {
+          workspacesIdleHandle = null;
           appStore.dispatch(loadWorkspacesRequested());
         });
       } else {
         // Fallback to setTimeout for browsers without requestIdleCallback
-        setTimeout(() => {
+        workspacesTimerHandle = setTimeout(() => {
+          workspacesTimerHandle = null;
           appStore.dispatch(loadWorkspacesRequested());
         }, 100);
       }
@@ -735,6 +739,8 @@
     window.addEventListener('keydown', handleBrowserNavigation);
 
     return () => {
+      if (workspacesIdleHandle !== null) cancelIdleCallback(workspacesIdleHandle);
+      if (workspacesTimerHandle !== null) clearTimeout(workspacesTimerHandle);
       paletteShortcuts?.detach();
       paletteShortcuts?.destroy();
       paletteShortcuts = null;
@@ -912,7 +918,7 @@
     />
 
     <!-- Update indicator (top-right corner) -->
-    <div class="absolute top-2 right-3 z-10">
+    <div class="app-no-drag absolute top-2 right-3 z-10">
       <UpdateDownloadIndicator />
     </div>
 
@@ -933,7 +939,7 @@
           <main
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
               ? ''
-              : 'rounded-xl bg-sidebar border border-border shadow-sm backdrop-blur-2xl'}"
+              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
             aria-label="Main content"
           >
             <div

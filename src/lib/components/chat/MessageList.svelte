@@ -12,20 +12,13 @@
 
   import type { AgentMessage } from '$shared/types';
   import type { SearchResult } from '$lib/utils/messageSearch';
-  import {
-  groupMessagesByDate,
-  shouldShowTimeSeparator,
-} from '$lib/utils/timeFormatting';
+  import { groupMessagesByDate, shouldShowTimeSeparator } from '$lib/utils/timeFormatting';
   import { formatTime as formatClockTime } from '$lib/i18n/format';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
-  import {
-  onMount,
-  onDestroy,
-  tick,
-} from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   // untrack available if needed for future optimizations
 

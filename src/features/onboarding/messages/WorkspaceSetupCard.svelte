@@ -221,14 +221,17 @@
     {/snippet}
     {#snippet repoActive()}
       {#if skipIsolation}
-        {m.onboarding_setupCard_opening_before()} {@render repoNameCopyable()}{m.onboarding_setupCard_opening_after()}
+        {m.onboarding_setupCard_opening_before()}
+        {@render repoNameCopyable()}{m.onboarding_setupCard_opening_after()}
       {:else}
         {m.onboarding_setupCard_creatingIsolatedCopy_before()} {@render repoNameCopyable()}
       {/if}
     {/snippet}
     {#snippet repoDone()}
       {#if skipIsolation}
-        {m.onboarding_setupCard_workingDirectlyOn_before()} <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code> {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
+        {m.onboarding_setupCard_workingDirectlyOn_before()}
+        <code class="text-sm bg-secondary py-1 px-1.5">{displayBranch}</code>
+        {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
             isDirectory={true}
@@ -242,7 +245,8 @@
             >
           </OpenComboButton>{/if}.
       {:else}
-        {m.onboarding_setupCard_createdIsolatedCopy_before()} {@render repoNameCopyable()}
+        {m.onboarding_setupCard_createdIsolatedCopy_before()}
+        {@render repoNameCopyable()}
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
@@ -266,15 +270,18 @@
     {#snippet branchActive()}
       {#if skipIsolation}
         {#if branch}
-          {m.onboarding_setupCard_workingOnBranchNamed_before()} <span class="">{branch}</span>{m.onboarding_setupCard_workingOnBranchActive_after()}
+          {m.onboarding_setupCard_workingOnBranchNamed_before()}
+          <span class="">{branch}</span>{m.onboarding_setupCard_workingOnBranchActive_after()}
         {:else}
           {m.onboarding_setupCard_workingOnBranch_label()}
         {/if}
       {:else if branch}
-        {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span> {m.onboarding_setupCard_creatingBranch_middle()}
+        {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span>
+        {m.onboarding_setupCard_creatingBranch_middle()}
         <button
           class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-          onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}>{baseRef}</button
+          onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}
+          >{baseRef}</button
         >{m.onboarding_setupCard_creatingBranch_after()}
       {:else}
         {m.onboarding_setupCard_creatingBranchNoName_label()}
@@ -294,14 +301,24 @@
     {#snippet branchDone()}
       {#if skipIsolation}
         {#if branch}
-          {m.onboarding_setupCard_workingOnBranchNamed_before()} {@render copyableRef(branch, m.onboarding_setupCard_branchName_label())}{m.onboarding_setupCard_workingOnBranchDone_after()}
+          {m.onboarding_setupCard_workingOnBranchNamed_before()}
+          {@render copyableRef(
+            branch,
+            m.onboarding_setupCard_branchName_label(),
+          )}{m.onboarding_setupCard_workingOnBranchDone_after()}
         {:else}
           {m.onboarding_setupCard_workingDirectlyOnBranch_label()}
         {/if}
       {:else if branch}
         {m.onboarding_setupCard_workingInNewBranch_before()}
-        {@render copyableRef(branch, m.onboarding_setupCard_branchName_label())}{m.onboarding_setupCard_workingInNewBranch_middle()}
-        {@render copyableRef(baseRef, m.onboarding_setupCard_baseRef_label())}{m.onboarding_setupCard_workingInNewBranch_after()}
+        {@render copyableRef(
+          branch,
+          m.onboarding_setupCard_branchName_label(),
+        )}{m.onboarding_setupCard_workingInNewBranch_middle()}
+        {@render copyableRef(
+          baseRef,
+          m.onboarding_setupCard_baseRef_label(),
+        )}{m.onboarding_setupCard_workingInNewBranch_after()}
       {:else}
         {m.onboarding_setupCard_branchCreated_label()}
       {/if}
@@ -312,10 +329,16 @@
       {@render stepRow(setupScriptStatus, faTerminal, 'ml-[0.5px]', setupActive, setupDone)}
     {/if}
     {#snippet setupActive()}
-      {m.onboarding_setupCard_runningSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_runningSetup_after()}
+      {m.onboarding_setupCard_runningSetup_before()}
+      {#if projectType}<span class="">{projectType}</span
+        >{:else}{m.onboarding_setupCard_project_label()}{/if}
+      {m.onboarding_setupCard_runningSetup_after()}
     {/snippet}
     {#snippet setupDone()}
-      {m.onboarding_setupCard_ranSetup_before()} {#if projectType}<span class="">{projectType}</span>{:else}{m.onboarding_setupCard_project_label()}{/if} {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_middle()}
+      {m.onboarding_setupCard_ranSetup_before()}
+      {#if projectType}<span class="">{projectType}</span
+        >{:else}{m.onboarding_setupCard_project_label()}{/if}
+      {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_middle()}
         <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
           {#snippet trigger()}
             <button
@@ -330,7 +353,9 @@
             {/if}
           {/snippet}
           {#snippet footer()}
-            <span class="text-xs text-muted-foreground opacity-50">{m.onboarding_setupCard_openTerminal_footer()}</span>
+            <span class="text-xs text-muted-foreground opacity-50"
+              >{m.onboarding_setupCard_openTerminal_footer()}</span
+            >
           {/snippet}
         </TooltipRich>{/if}{m.onboarding_setupCard_ranSetup_after()}
     {/snippet}
@@ -353,32 +378,46 @@
           {/if}
         {/snippet}
         {#snippet footer()}
-          <span class="text-xs text-muted-foreground opacity-50"> {m.onboarding_setupCard_editInSettings_footer()} </span>
+          <span class="text-xs text-muted-foreground opacity-50">
+            {m.onboarding_setupCard_editInSettings_footer()}
+          </span>
         {/snippet}
       </TooltipRich>
     {/snippet}
     {#snippet agentActive()}
       {#if !hasPrompt && specialistId}
-        {m.onboarding_setupCard_agentReadyNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentReadyNamed_after()}
+        {m.onboarding_setupCard_agentReadyNamed_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
       {:else if specialistId === 'spec-writer'}
-        {m.onboarding_setupCard_specStartingUp_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_specStartingUp_after()}
+        {m.onboarding_setupCard_specStartingUp_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_specStartingUp_after()}
       {:else if specialistId}
-        {m.onboarding_setupCard_startingUpNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_startingUpNamed_after()}
+        {m.onboarding_setupCard_startingUpNamed_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_startingUpNamed_after()}
       {:else}
         {m.onboarding_setupCard_startingUp_label()}
       {/if}
     {/snippet}
     {#snippet agentDone()}
       {#if !hasPrompt && specialistId}
-        {m.onboarding_setupCard_agentReadyNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentReadyNamed_after()}
+        {m.onboarding_setupCard_agentReadyNamed_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
       {:else if specialistId === 'spec-writer'}
-        {m.onboarding_setupCard_specDone_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_specDone_after()}
+        {m.onboarding_setupCard_specDone_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_specDone_after()}
       {:else if specialistId}
-        {m.onboarding_setupCard_agentDoneNamed_before()} {@render specialistWithTooltip()} {m.onboarding_setupCard_agentDoneNamed_after()}
+        {m.onboarding_setupCard_agentDoneNamed_before()}
+        {@render specialistWithTooltip()}
+        {m.onboarding_setupCard_agentDoneNamed_after()}
       {:else}
         {m.onboarding_setupCard_agentOrienting_label()}
       {/if}

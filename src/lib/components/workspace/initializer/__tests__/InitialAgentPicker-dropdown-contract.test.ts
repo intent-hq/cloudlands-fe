@@ -8,12 +8,13 @@ const picker = readFileSync(
 );
 
 describe('InitialAgentPicker specialist dropdown', () => {
-  it('lets the menu primitive own trigger toggling', () => {
+  it('uses the menu trigger toggle only after single-agent mode is selected', () => {
     const start = picker.indexOf('<DropdownMenu');
     const end = picker.indexOf('</DropdownMenu>', start);
     const dropdownMarkup = picker.slice(start, end);
 
-    expect(dropdownMarkup).toContain('{#snippet trigger()}');
-    expect(dropdownMarkup).not.toContain('toggle()');
+    expect(dropdownMarkup).toContain('{#snippet trigger({ toggle }');
+    expect(dropdownMarkup).toContain('if (isTeamMode)');
+    expect(dropdownMarkup).toContain('toggle();');
   });
 });

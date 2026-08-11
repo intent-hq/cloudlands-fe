@@ -185,7 +185,9 @@
         <div
           class="flex flex-col-reverse gap-2 border-t border-border/70 bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
         >
-          <Button variant="outline" onclick={handleAbandonAll}>{m.modals_interruptedAgents_abandonAll_label()}</Button>
+          <Button variant="outline" onclick={handleAbandonAll}
+            >{m.modals_interruptedAgents_abandonAll_label()}</Button
+          >
           <Button variant="default" class="sm:min-w-[11rem]" onclick={handleResumeSelected}>
             {m.modals_interruptedAgents_resumeSelected_label()}
           </Button>

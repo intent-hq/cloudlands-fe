@@ -4,9 +4,9 @@
  * Notification and reconnect subscribers each share one underlying preload
  * listener, so IPC listener counts do not scale with subscriber modules.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { createElectronIpcBackendTransport } from './electron-ipc-transport';
 
 const STATUS = IPC_CHANNELS.BACKEND.STATUS;
 const NOTIFICATION = IPC_CHANNELS.BACKEND.NOTIFICATION;
@@ -50,13 +50,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("electron-ipc-transport onNotification fan-out", () => {
-  it("registers one IPC listener and fans the exact notification out to every subscriber", () => {
+describe('electron-ipc-transport onNotification fan-out', () => {
+  it('registers one IPC listener and fans the exact notification out to every subscriber', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
     const handlers = Array.from({ length: 20 }, () => vi.fn());
     const disposers = handlers.map((handler) => transport.onNotification(handler));
-    const notification = { method: "events.event", params: { event: { type: "agent:idle" } } };
+    const notification = { method: 'events.event', params: { event: { type: 'agent:idle' } } };
 
     expect(api.listenerCount(NOTIFICATION)).toBe(1);
     api.emit(NOTIFICATION, notification);
@@ -66,19 +66,19 @@ describe("electron-ipc-transport onNotification fan-out", () => {
     expect(api.listenerCount(NOTIFICATION)).toBe(0);
   });
 
-  it("keeps duplicate subscriptions and their idempotent disposers independent", () => {
+  it('keeps duplicate subscriptions and their idempotent disposers independent', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
     const handler = vi.fn();
     const disposeFirst = transport.onNotification(handler);
     const disposeSecond = transport.onNotification(handler);
 
-    api.emit(NOTIFICATION, { method: "events.event" });
+    api.emit(NOTIFICATION, { method: 'events.event' });
     expect(handler).toHaveBeenCalledTimes(2);
 
     disposeFirst();
     disposeFirst();
-    api.emit(NOTIFICATION, { method: "events.event" });
+    api.emit(NOTIFICATION, { method: 'events.event' });
     expect(handler).toHaveBeenCalledTimes(3);
     expect(api.listenerCount(NOTIFICATION)).toBe(1);
 
@@ -86,17 +86,17 @@ describe("electron-ipc-transport onNotification fan-out", () => {
     expect(api.listenerCount(NOTIFICATION)).toBe(0);
   });
 
-  it("isolates a throwing subscriber so later subscribers still receive the notification", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it('isolates a throwing subscriber so later subscribers still receive the notification', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
     const disposeFirst = transport.onNotification(() => {
-      throw new Error("boom");
+      throw new Error('boom');
     });
     const second = vi.fn();
     const disposeSecond = transport.onNotification(second);
 
-    api.emit(NOTIFICATION, { method: "events.event" });
+    api.emit(NOTIFICATION, { method: 'events.event' });
     expect(second).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledOnce();
 
@@ -105,8 +105,8 @@ describe("electron-ipc-transport onNotification fan-out", () => {
   });
 });
 
-describe("electron-ipc-transport onReconnected fan-out", () => {
-  it("registers a single backend:status listener for many subscribers and fans out", () => {
+describe('electron-ipc-transport onReconnected fan-out', () => {
+  it('registers a single backend:status listener for many subscribers and fans out', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
 
@@ -115,42 +115,42 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
 
     expect(api.listenerCount(STATUS)).toBe(1);
 
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     for (const handler of handlers) expect(handler).toHaveBeenCalledOnce();
 
     disposers.forEach((dispose) => dispose());
   });
 
-  it("does not fire handlers on non-reconnect payloads", () => {
+  it('does not fire handlers on non-reconnect payloads', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
     const handler = vi.fn();
     const dispose = transport.onReconnected(handler);
 
-    api.emit(STATUS, { status: "connected" });
-    api.emit(STATUS, { status: "disconnected" });
-    api.emit(STATUS, { status: "disconnected", reconnected: true });
+    api.emit(STATUS, { status: 'connected' });
+    api.emit(STATUS, { status: 'disconnected' });
+    api.emit(STATUS, { status: 'disconnected', reconnected: true });
     api.emit(STATUS, undefined);
     expect(handler).not.toHaveBeenCalled();
 
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(handler).toHaveBeenCalledOnce();
     dispose();
   });
 
-  it("isolates a throwing handler so remaining handlers still run", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it('isolates a throwing handler so remaining handlers still run', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
 
     const first = vi.fn(() => {
-      throw new Error("boom");
+      throw new Error('boom');
     });
     const second = vi.fn();
     const disposeFirst = transport.onReconnected(first);
     const disposeSecond = transport.onReconnected(second);
 
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(first).toHaveBeenCalledOnce();
     expect(second).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledOnce();
@@ -159,7 +159,7 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     disposeSecond();
   });
 
-  it("removes individual handlers on dispose and the IPC listener with the last one", () => {
+  it('removes individual handlers on dispose and the IPC listener with the last one', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
 
@@ -169,7 +169,7 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     const disposeSecond = transport.onReconnected(second);
 
     disposeFirst();
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledOnce();
     expect(api.listenerCount(STATUS)).toBe(1);
@@ -181,13 +181,13 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     const third = vi.fn();
     const disposeThird = transport.onReconnected(third);
     expect(api.listenerCount(STATUS)).toBe(1);
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(third).toHaveBeenCalledOnce();
     disposeThird();
     expect(api.listenerCount(STATUS)).toBe(0);
   });
 
-  it("keeps duplicate subscriptions of the same handler independent", () => {
+  it('keeps duplicate subscriptions of the same handler independent', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
 
@@ -195,11 +195,11 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     const disposeFirst = transport.onReconnected(handler);
     const disposeSecond = transport.onReconnected(handler);
 
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(handler).toHaveBeenCalledTimes(2);
 
     disposeFirst();
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(handler).toHaveBeenCalledTimes(3);
     expect(api.listenerCount(STATUS)).toBe(1);
 
@@ -207,7 +207,7 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     expect(api.listenerCount(STATUS)).toBe(0);
   });
 
-  it("makes disposers idempotent (double-dispose cannot drop a later subscriber)", () => {
+  it('makes disposers idempotent (double-dispose cannot drop a later subscriber)', () => {
     const api = installFakeApi();
     const transport = createElectronIpcBackendTransport();
 
@@ -220,12 +220,12 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     dispose();
 
     expect(api.listenerCount(STATUS)).toBe(1);
-    api.emit(STATUS, { status: "connected", reconnected: true });
+    api.emit(STATUS, { status: 'connected', reconnected: true });
     expect(second).toHaveBeenCalledOnce();
     disposeSecond();
   });
 
-  it("returns a no-op disposer when the bridge is unavailable", () => {
+  it('returns a no-op disposer when the bridge is unavailable', () => {
     const transport = createElectronIpcBackendTransport();
     const dispose = transport.onReconnected(vi.fn());
     expect(() => dispose()).not.toThrow();

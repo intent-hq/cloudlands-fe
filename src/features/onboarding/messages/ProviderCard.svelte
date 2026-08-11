@@ -287,10 +287,12 @@
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
-            {m.onboarding_providerCard_requiresNpx_before()} <button
+            {m.onboarding_providerCard_requiresNpx_before()}
+            <button
               type="button"
               class="underline hover:no-underline"
-              onclick={() => shell.open('https://nodejs.org')}>{m.onboarding_providerCard_installFromNodejs_label()}</button
+              onclick={() => shell.open('https://nodejs.org')}
+              >{m.onboarding_providerCard_installFromNodejs_label()}</button
             >
           </span>
         </div>

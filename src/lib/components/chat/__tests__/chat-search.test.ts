@@ -13,9 +13,9 @@ describe('chat search utilities', () => {
     ]);
 
     expect(findChatSearchMatches([message], 'hidden', new Map())).toEqual([]);
-    expect(findChatSearchMatches([message], 'match', new Map([['assistant-1', 'turn-1']]))).toEqual([
-      { messageId: 'assistant-1', matchIndexInMessage: 0, turnKey: 'turn-1' },
-    ]);
+    expect(findChatSearchMatches([message], 'match', new Map([['assistant-1', 'turn-1']]))).toEqual(
+      [{ messageId: 'assistant-1', matchIndexInMessage: 0, turnKey: 'turn-1' }],
+    );
   });
 
   it('creates a range for a match spanning multiple text nodes', () => {

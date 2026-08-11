@@ -79,8 +79,8 @@ function renderWith(workspaces: Workspace[]) {
 }
 
 function pressEnterOnCard(container: HTMLElement): void {
-  const card = container.querySelector('div[tabindex]') as HTMLElement;
-  card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  const cardList = container.querySelector('nav') as HTMLElement;
+  cardList.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
 
 describe('ActiveWorkspacesCard unread-row activation', () => {

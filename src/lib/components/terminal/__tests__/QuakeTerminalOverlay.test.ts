@@ -57,6 +57,11 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   removeTerminal: (...payload: any[]) => ({ type: 'terminals/remove', payload }),
   setTerminalOverlayHeight: (...payload: any[]) => ({ type: 'terminals/setHeight', payload }),
   renameTerminal: (...payload: any[]) => ({ type: 'terminals/rename', payload }),
+  clearScriptSelection: (...payload: any[]) => ({
+    type: 'terminals/clearScriptSelection',
+    payload,
+  }),
+  terminalCreated: (...payload: any[]) => ({ type: 'terminals/terminalCreated', payload }),
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
@@ -269,7 +274,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     const { container, unmount } = render(QuakeTerminalOverlay, {
       props: { workspaceId: 'ws-1' as any },
     });
-    const resizeHandle = container.querySelector<HTMLElement>('[class*="group/resize"]');
+    const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
     expect(resizeHandle).toBeTruthy();
 
     await fireEvent.mouseDown(resizeHandle!);

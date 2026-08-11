@@ -11,11 +11,8 @@ describe('workspace frame outer inset', () => {
     expect(appLayout).not.toContain('workspace-frame relative mr-2 mb-2');
   });
 
-  it('squares the workspace surface beneath the first tab when the sidebar is open', () => {
-    expect(appLayout).toContain(
-      'currentWorkspaceId !== undefined &&\n      $panelItem$ !== null &&\n      currentWorkspaceId === $workspaceTabOrder[0]',
-    );
-    expect(appLayout).toContain("? 'rounded-tr-xl rounded-br-xl rounded-bl-xl'");
-    expect(appLayout).toContain(": 'rounded-xl'");
+  it('keeps the single-workspace surface rounded while columns remain transparent', () => {
+    expect(appLayout).toContain("showWorkspaceColumns\n              ? ''");
+    expect(appLayout).toContain(": 'rounded-xl bg-sidebar border border-border shadow-sm'");
   });
 });

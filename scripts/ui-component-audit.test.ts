@@ -121,13 +121,14 @@ describe('UI component inventory gate', () => {
     );
 
     expect(toggleGroup?.callers).toEqual([
+      'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
+      'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/file-tracking/CodeChangesPanel.svelte',
       'src/lib/components/settings/ColorThemeSettings.svelte',
-      'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(15);
+    expect(dropdownMenu?.callers).toHaveLength(16);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });

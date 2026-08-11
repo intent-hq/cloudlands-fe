@@ -97,8 +97,8 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+        'src/lib/components/settings/HardwareConsoleSettings.svelte',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
-        'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
         'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
@@ -107,28 +107,33 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/debug/DebugPanel.svelte',
         'src/lib/components/file-tracking/CodeChangesPanel.svelte',
-        'src/lib/components/settings/McpServersSettings.svelte',
         'src/lib/components/settings/OpenInAppsSettings.svelte',
         'src/lib/components/settings/mcp/McpServerCard.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
-        'src/routes/(app)/settings/+page.svelte',
       ],
       toggle: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+        'src/lib/components/layout/WorkspaceViewModeToggle.svelte',
         'src/lib/components/settings/AdditionalAgentsSettings.svelte',
+        'src/lib/components/settings/AgentFeaturesSettings.svelte',
+        'src/lib/components/settings/HardwareConsoleSettings.svelte',
+        'src/lib/components/settings/LegacyImportSettings.svelte',
+        'src/lib/components/settings/McpServersSettings.svelte',
         'src/lib/components/settings/NotificationSettings.svelte',
         'src/lib/components/settings/RtkSettings.svelte',
         'src/lib/components/settings/WebSocketApiSettings.svelte',
+        'src/lib/components/settings/WorkspaceApiSettings.svelte',
         'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
-        'src/routes/(app)/+page.svelte',
+        'src/routes/(app)/settings/+page.svelte',
       ],
       'toggle-group': [
+        'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
+        'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/file-tracking/CodeChangesPanel.svelte',
         'src/lib/components/settings/ColorThemeSettings.svelte',
-        'src/routes/(app)/settings/+page.svelte',
       ],
     };
 
@@ -151,7 +156,10 @@ describe('B2 caller metadata regression', () => {
   it('keeps compatibility usage counts, replacements, and removal gates verifiable', () => {
     const usages = discoverCompatibilityUsages();
     const expectedUsages = {
-      group: [{ path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 }],
+      group: [
+        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
+        { path: 'src/routes/(app)/settings/+page.svelte', count: 3 },
+      ],
       switch: [
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
         { path: 'src/lib/components/workspace/sidebar/FileChangesSection.svelte', count: 1 },
@@ -159,10 +167,15 @@ describe('B2 caller metadata regression', () => {
       indicator: [
         { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
         { path: 'src/lib/components/settings/AdditionalAgentsSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
+        { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
-        { path: 'src/routes/(app)/+page.svelte', count: 2 },
+        { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
+        { path: 'src/routes/(app)/settings/+page.svelte', count: 1 },
       ],
     };
     const replacements = {

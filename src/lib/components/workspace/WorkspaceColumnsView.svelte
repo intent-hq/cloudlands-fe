@@ -455,6 +455,7 @@
     syncWithDefaultWidth={restoreStatus !== 'idle' &&
       restoreStatus !== 'pending' &&
       sidebarWidths[workspaceId] !== undefined}
+    doSkipResize={stackLength > 1 && panelColumnCount === 0}
     resizeScrollContainer={stackIndex === $workspaceStacks$.length - 1 ? columnsScroller : null}
     side="left"
     onWidthChange={(width) => persistWorkspaceColumnWidth(workspaceId, width)}

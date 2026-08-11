@@ -47,6 +47,7 @@ export default defineConfig(async () => {
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
         'tests/integration/**', // Dedicated Node integration config owns this suite.
         '**/*.ct.spec.ts', // Exclude Playwright component tests
+        '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
         '**/remote-env.test.ts', // Exclude remote env tests - requires real environment
         '**/remote-git.test.ts', // Exclude remote git tests - requires real environment
         // ================================================================================

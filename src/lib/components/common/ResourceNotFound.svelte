@@ -28,7 +28,14 @@
     onNavigateAway: () => void;
   }
 
-  let { kind, resourceLabel, resourceId, detail, headingLevel = 1, onNavigateAway }: Props = $props();
+  let {
+    kind,
+    resourceLabel,
+    resourceId,
+    detail,
+    headingLevel = 1,
+    onNavigateAway,
+  }: Props = $props();
 
   const title = $derived(
     kind === 'not_found'

@@ -32,11 +32,16 @@ test.beforeAll(async () => {
     resolve: {
       alias: {
         $lib: path.resolve('src/lib'),
+        $store: path.resolve('src/store'),
         $features: path.resolve('src/features'),
         $shared: path.resolve('src/shared'),
       },
     },
     css: { postcss: { plugins: [tailwindcss, autoprefixer] } },
+    define: {
+      'process.env.DEBUG': JSON.stringify('false'),
+      'process.env.NODE_ENV': JSON.stringify('test'),
+    },
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();

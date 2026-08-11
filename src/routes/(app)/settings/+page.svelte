@@ -33,6 +33,7 @@
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -293,15 +294,21 @@
   });
 
   // Listen for hash changes while already on the settings page
+  let hashScrollTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     window.addEventListener('hashchange', handleHashNavigation);
     return () => {
       window.removeEventListener('hashchange', handleHashNavigation);
+      if (hashScrollTimer !== undefined) clearTimeout(hashScrollTimer);
     };
   });
 
   /** Navigate to the correct tab and scroll to the hash target */
   function handleHashNavigation() {
+    if (hashScrollTimer !== undefined) {
+      clearTimeout(hashScrollTimer);
+      hashScrollTimer = undefined;
+    }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
 
@@ -312,7 +319,8 @@
     }
 
     // Scroll to hash target after tab switch
-    setTimeout(() => {
+    hashScrollTimer = setTimeout(() => {
+      hashScrollTimer = undefined;
       const targetEl = document.getElementById(targetId);
       if (targetEl) {
         const scrollContainer = targetEl.closest('.overflow-auto');
@@ -456,7 +464,12 @@
 
         <!-- Agents Tab -->
         {#if activeTab === 'agents'}
-          <div class="grid min-w-0 grow grid-cols-[13rem_minmax(0,1fr)] gap-4 xl:gap-6">
+          <div
+            id="default-model"
+            data-highlight-id="quickActions.defaultModel"
+            use:highlightTarget
+            class="grid min-w-0 grow grid-cols-[13rem_minmax(0,1fr)] gap-4 xl:gap-6"
+          >
             <AIBehaviorSidebar
               activeView={aiBehaviorView}
               onSelect={(view) => (aiBehaviorView = view)}
@@ -532,7 +545,12 @@
           </div>
 
           <!-- Quick Actions -->
-          <div id="utility-default-model" class="mb-12">
+          <div
+            id="utility-default-model"
+            data-highlight-id="utility-default-model"
+            use:highlightTarget
+            class="mb-12"
+          >
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_quickActions()}
             </h2>
@@ -564,7 +582,12 @@
                   />
                 </div>
               </section>
-              <section id="color-theme" class="px-6 py-5">
+              <section
+                id="color-theme"
+                data-highlight-id="color-theme"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
               </section>
             </div>
@@ -576,7 +599,12 @@
               {m.settings_section_fontStyle()}
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section id="note-font" class="px-6 py-5">
+              <section
+                id="note-font"
+                data-highlight-id="note-font"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -598,7 +626,12 @@
                   />
                 </div>
               </section>
-              <section id="agent-chat-font" class="px-6 py-5">
+              <section
+                id="agent-chat-font"
+                data-highlight-id="agent-chat-font"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -620,7 +653,12 @@
                   />
                 </div>
               </section>
-              <section id="code-font" class="px-6 py-5">
+              <section
+                id="code-font"
+                data-highlight-id="code-font"
+                use:highlightTarget
+                class="px-6 py-5"
+              >
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
@@ -697,7 +735,12 @@
           </div>
 
           <!-- Notifications -->
-          <div id="notifications" class="mb-12">
+          <div
+            id="notifications"
+            data-highlight-id="notifications"
+            use:highlightTarget
+            class="mb-12"
+          >
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_notifications()}
             </h2>
@@ -736,7 +779,12 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <!-- WebSocket API -->
-          <div id="websocket-api" class="mb-12">
+          <div
+            id="websocket-api"
+            data-highlight-id="websocket-api"
+            use:highlightTarget
+            class="mb-12"
+          >
             <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
               {m.settings_section_websocketApi()}
             </h2>

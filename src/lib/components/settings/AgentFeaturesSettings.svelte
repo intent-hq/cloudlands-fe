@@ -260,9 +260,7 @@
               <button
                 type="button"
                 onclick={handleDebounceSave}
-                disabled={debounceSaving ||
-                  !isDebounceValid ||
-                  !values['agentFeatures.prMonitor']}
+                disabled={debounceSaving || !isDebounceValid || !values['agentFeatures.prMonitor']}
                 class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {debounceSaving

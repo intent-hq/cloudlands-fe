@@ -432,7 +432,8 @@ export function parseToolResult(
     name.includes('read-process') ||
     name.includes('terminal') ||
     name.includes('bash') ||
-    (input.command && (input.wait !== undefined || input.cwd !== undefined || input.max_wait_seconds !== undefined))
+    (input.command &&
+      (input.wait !== undefined || input.cwd !== undefined || input.max_wait_seconds !== undefined))
   ) {
     return parseTerminalResult(input, resultText);
   }
@@ -457,7 +458,11 @@ export function parseToolResult(
   }
 
   // Note read tools (including read_external_note)
-  if (name.includes('read_note') || name.includes('read-note') || name.includes('read_external_note')) {
+  if (
+    name.includes('read_note') ||
+    name.includes('read-note') ||
+    name.includes('read_external_note')
+  ) {
     return parseNoteReadResult(input, resultText);
   }
 
@@ -541,15 +546,16 @@ export function parseToolResult(
   }
 
   // Browser tools (MCP browser_exec with actions array)
-  if (
-    (name.includes('browser') && Array.isArray(input.actions)) ||
-    name.includes('browser_exec')
-  ) {
+  if ((name.includes('browser') && Array.isArray(input.actions)) || name.includes('browser_exec')) {
     return parseBrowserResult(input, result);
   }
 
   // ── Reference docs → markdown content ──
-  if (name.includes('reference_doc') || name.includes('reference-doc') || name.includes('get_reference')) {
+  if (
+    name.includes('reference_doc') ||
+    name.includes('reference-doc') ||
+    name.includes('get_reference')
+  ) {
     return { type: 'note-view' as const, content: resultText || undefined };
   }
 
@@ -585,7 +591,11 @@ export function parseToolResult(
     name.includes('add_patch') ||
     name.includes('add_agent_action')
   ) {
-    return { type: 'note-edit' as const, editSummary: resultText || m.chat_toolDetails_updated_label(), content: resultText || undefined };
+    return {
+      type: 'note-edit' as const,
+      editSummary: resultText || m.chat_toolDetails_updated_label(),
+      content: resultText || undefined,
+    };
   }
 
   // ── Workspace/agent rename → confirmation ──
@@ -606,7 +616,11 @@ export function parseToolResult(
   }
 
   // ── Timeline / context / asset reads → content display ──
-  if (name.includes('timeline') || name.includes('current_context') || name.includes('read_asset')) {
+  if (
+    name.includes('timeline') ||
+    name.includes('current_context') ||
+    name.includes('read_asset')
+  ) {
     return { type: 'confirmation' as const, content: resultText || undefined };
   }
 
@@ -1598,7 +1612,6 @@ function parseNoteListResult(
   return parsed;
 }
 
-
 /**
  * Parse browser tool result (MCP browser_exec with actions array)
  *
@@ -1626,10 +1639,7 @@ function parseNoteListResult(
  * - navigate: { url: string, tabId?: string }
  * - focusTab: boolean
  */
-function parseBrowserResult(
-  input: Record<string, any>,
-  result: unknown,
-): ParsedToolResult {
+function parseBrowserResult(input: Record<string, any>, result: unknown): ParsedToolResult {
   const parsed: ParsedToolResult = {
     type: 'browser',
   };
@@ -1767,7 +1777,11 @@ function parseUnwrappedBrowserAction(parsed: ParsedToolResult, resultText: strin
       // first action in a multi-action batch.
       // ActionResult objects always have both "action" and "success" keys.
       const trimmed = resultText.trimStart();
-      if (trimmed.startsWith('[') && trimmed.includes('"action"') && trimmed.includes('"success"')) {
+      if (
+        trimmed.startsWith('[') &&
+        trimmed.includes('"action"') &&
+        trimmed.includes('"success"')
+      ) {
         // Looks like a multi-action result array (valid or truncated) — don't handle here
         return false;
       }
@@ -1898,7 +1912,9 @@ function parseAgentListResult(
     const data = JSON.parse(result);
     if (Array.isArray(data)) {
       parsed.agents = data
-        .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+        .filter(
+          (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+        )
         .map((agent: { name?: string; id?: string; agentId?: string; status?: string }) => ({
           name: agent.name || m.chat_shared_agentName_fallback(),
           agentId: agent.id || agent.agentId || '',
@@ -1952,7 +1968,8 @@ function parseGitResult(
   if (name.includes('status')) command = 'git status';
   else if (name.includes('stage')) command = 'git stage';
   else if (name.includes('commit')) command = 'git commit';
-  else if (name.includes('merge_conflict') || name.includes('merge-conflict')) command = 'git merge --check';
+  else if (name.includes('merge_conflict') || name.includes('merge-conflict'))
+    command = 'git merge --check';
 
   return {
     type: 'terminal',
@@ -1960,7 +1977,7 @@ function parseGitResult(
     content: result || undefined,
     // Detect failures via patterns that reliably indicate git errors, not arbitrary
     // substrings like "Error" which appear in normal diff/commit output.
-    exitCode: result && /^(fatal|error):/mi.test(result) ? 1 : 0,
+    exitCode: result && /^(fatal|error):/im.test(result) ? 1 : 0,
   };
 }
 
@@ -2033,11 +2050,17 @@ function parseAgentStatusResult(
   const statusMatch = result.match(/Status:\s*(\S+)/);
 
   if (nameMatch || idMatch) {
-    parsed.agents = [{
-      name: nameMatch ? nameMatch[1].trim() : 'Agent',
-      agentId: idMatch ? idMatch[1].trim() : (typeof input.agentId === 'string' ? input.agentId : ''),
-      status: statusMatch ? statusMatch[1].trim() : undefined,
-    }];
+    parsed.agents = [
+      {
+        name: nameMatch ? nameMatch[1].trim() : 'Agent',
+        agentId: idMatch
+          ? idMatch[1].trim()
+          : typeof input.agentId === 'string'
+            ? input.agentId
+            : '',
+        status: statusMatch ? statusMatch[1].trim() : undefined,
+      },
+    ];
   }
 
   // Store full content as fallback
@@ -2226,10 +2249,11 @@ function parseSentrySearchResults(result: string): ParsedToolResult {
 
   if (data) {
     // Could be { issues: [...] } or direct array
-    const issues = Array.isArray(data) ? data : (data.issues || data.results || []);
+    const issues = Array.isArray(data) ? data : data.issues || data.results || [];
     if (Array.isArray(issues)) {
       parsed.sentryIssues = issues.slice(0, 20).map((issue: any) => ({
-        title: issue.title || issue.metadata?.title || m.chat_toolResultParser_unknownTitle_fallback(),
+        title:
+          issue.title || issue.metadata?.title || m.chat_toolResultParser_unknownTitle_fallback(),
         shortId: issue.shortId || issue.short_id || '',
         status: issue.status || 'unknown',
         level: issue.level || 'error',
@@ -2243,7 +2267,8 @@ function parseSentrySearchResults(result: string): ParsedToolResult {
 
   // Text format fallback: parse lines like "PROJ-123 | Error title | unresolved | error | 42 events"
   if (!parsed.sentryIssues?.length) {
-    const issuePattern = /(\S+-\d+)\s*[-|]\s*(.+?)(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\d+)\s*events?)?/gi;
+    const issuePattern =
+      /(\S+-\d+)\s*[-|]\s*(.+?)(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\w+))?(?:\s*[-|]\s*(\d+)\s*events?)?/gi;
     let match;
     const issues: ParsedToolResult['sentryIssues'] = [];
     while ((match = issuePattern.exec(result)) !== null) {
@@ -2372,7 +2397,6 @@ function parseFigmaResult(
   return parsed;
 }
 
-
 /**
  * Parse GitHub API tool results into rich preview data.
  *
@@ -2455,7 +2479,8 @@ function parseGitHubIssues(result: string): ParsedToolResult {
         }
       }
 
-      const htmlUrl = extractGitHubYamlField(item, 'html_url') || extractGitHubYamlField(item, 'url');
+      const htmlUrl =
+        extractGitHubYamlField(item, 'html_url') || extractGitHubYamlField(item, 'url');
 
       githubIssues.push({
         number: parseInt(number, 10),
@@ -2526,7 +2551,8 @@ function parseGitHubChecks(result: string): ParsedToolResult {
 
   for (const item of items) {
     const name = extractGitHubYamlField(item, 'name') || extractGitHubYamlField(item, 'context');
-    const status = extractGitHubYamlField(item, 'status') || extractGitHubYamlField(item, 'state') || 'unknown';
+    const status =
+      extractGitHubYamlField(item, 'status') || extractGitHubYamlField(item, 'state') || 'unknown';
     const conclusion = extractGitHubYamlField(item, 'conclusion');
 
     if (name) {
@@ -2556,17 +2582,26 @@ function parseGitHubChecks(result: string): ParsedToolResult {
  */
 function parseGitHubAutoDetect(result: string): ParsedToolResult {
   // Check for issue/PR patterns
-  if (result.includes('pull_request:') || (result.includes('number:') && result.includes('state:') && result.includes('title:'))) {
+  if (
+    result.includes('pull_request:') ||
+    (result.includes('number:') && result.includes('state:') && result.includes('title:'))
+  ) {
     return parseGitHubIssues(result);
   }
 
   // Check for PR files patterns
-  if (result.includes('filename:') && (result.includes('additions:') || result.includes('deletions:'))) {
+  if (
+    result.includes('filename:') &&
+    (result.includes('additions:') || result.includes('deletions:'))
+  ) {
     return parseGitHubPRFiles(result);
   }
 
   // Check for check runs patterns
-  if (result.includes('check_runs:') || (result.includes('conclusion:') && result.includes('status:'))) {
+  if (
+    result.includes('check_runs:') ||
+    (result.includes('conclusion:') && result.includes('status:'))
+  ) {
     return parseGitHubChecks(result);
   }
 
@@ -2593,9 +2628,10 @@ function extractGitHubYamlItems(yaml: string): string[] {
   const indentMatch = listContent.match(/^(\s+)-\s/m);
   if (indentMatch) {
     const indent = indentMatch[1];
-    listContent = listContent.split('\n').map(line =>
-      line.startsWith(indent) ? line.slice(indent.length) : line
-    ).join('\n');
+    listContent = listContent
+      .split('\n')
+      .map((line) => (line.startsWith(indent) ? line.slice(indent.length) : line))
+      .join('\n');
   }
 
   // Split on top-level list items (lines starting with "- ")

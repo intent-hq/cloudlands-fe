@@ -76,6 +76,7 @@ describe('editorial panel resize handles', () => {
     await fireEvent.mouseDown(handle, { clientX: 20 });
     expect(document.body.classList.contains('panel-resizing')).toBe(true);
     await fireEvent.mouseMove(window, { clientX: 29 });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     expect(onResize).toHaveBeenCalledWith(9);
     await fireEvent.mouseUp(window);
     expect(onResizeEnd).toHaveBeenCalledOnce();
@@ -89,6 +90,7 @@ describe('editorial panel resize handles', () => {
     const handle = screen.getByRole('button', { name: 'Resize panel' });
     await fireEvent.mouseDown(handle, { clientY: 12 });
     await fireEvent.mouseMove(window, { clientY: 19 });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     expect(onResize).toHaveBeenCalledWith(7);
     await fireEvent.mouseUp(window);
   });

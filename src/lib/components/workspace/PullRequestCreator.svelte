@@ -198,7 +198,9 @@
       {:else}
         <!-- Title Field -->
         <div class="space-y-2">
-          <label for="pr-title" class="text-sm font-medium">{m.workspace_prCreator_titleField_label()}</label>
+          <label for="pr-title" class="text-sm font-medium"
+            >{m.workspace_prCreator_titleField_label()}</label
+          >
           {#if formData.title.loading}
             <Skeleton class="h-10 w-full" />
           {:else}
@@ -213,7 +215,9 @@
 
         <!-- Description Field -->
         <div class="space-y-2">
-          <label for="pr-description" class="text-sm font-medium">{m.workspace_prCreator_descriptionField_label()}</label>
+          <label for="pr-description" class="text-sm font-medium"
+            >{m.workspace_prCreator_descriptionField_label()}</label
+          >
           {#if formData.description.loading}
             <div class="space-y-2">
               <Skeleton class="h-4 w-full" />

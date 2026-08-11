@@ -5,18 +5,8 @@
  * disappear when the daemon is remote — and the `actions[0]` primary-action
  * fallback must land on "Copy path" instead of "Other".
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { toNativePath } from '$lib/utils/path-utils';
 import type { StoreState } from '$store/renderer/types';
@@ -101,7 +91,9 @@ function makeState(
 }
 
 async function renderCombo(props: Record<string, unknown> = {}) {
-  const OpenComboButton = (await import('../OpenComboButton.svelte')).default;
+  const OpenComboButton = (
+    await import('$features/external-editors/components/OpenComboButton.svelte')
+  ).default;
   const { container } = render(OpenComboButton, {
     props: { filePath: '/tmp/project', branchName: 'main', ...props },
   });
@@ -131,7 +123,7 @@ function actionLabels(container: HTMLElement): string[] {
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/dropdown-menu.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
-warmImport(() => import('../OpenComboButton.svelte'));
+warmImport(() => import('$features/external-editors/components/OpenComboButton.svelte'));
 
 describe('OpenComboButton locality gating (monorepo#883)', () => {
   beforeEach(() => {
@@ -144,6 +136,7 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
 
     expect(actionLabels(container)).toEqual([
       'Visual Studio Code',
+      'Finder',
       'Other',
       'Copy path',
       'Copy branch name',
@@ -182,6 +175,7 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
 
     expect(actionLabels(container)).toEqual([
       'Visual Studio Code',
+      'Finder',
       'Other',
       'Copy path',
       'Copy branch name',

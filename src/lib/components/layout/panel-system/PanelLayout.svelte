@@ -1,11 +1,4 @@
 <script lang="ts">
-  /**
-   * PanelLayout - Root component for the panel system
-   *
-   * Manages the panel tree for a workspace and provides the context
-   * for opening tabs, splitting panels, etc.
-   */
-
   import { setContext, onMount, onDestroy, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
@@ -1197,4 +1190,9 @@
   <HandleDropOverlay />
 {/if}
 
-<style>.panel-layout { display: flex; flex-direction: column; }</style>
+<style>
+  .panel-layout {
+    display: flex;
+    flex-direction: column;
+  }
+</style>

@@ -1,14 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
 // CustomTaskItem renders TaskItemNodeView.svelte which calls these at init time
@@ -24,6 +17,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectWorkspaceNotesState: () => mockReadable({ initialized: true }),
   selectNoteById: Object.assign(() => mockReadable(undefined), {
     select: () => undefined,
   }),
@@ -34,7 +28,8 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -43,7 +38,9 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')
+  >()),
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -55,10 +52,7 @@ import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import { CustomTaskItem } from '../CustomTaskItem';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
-import {
-  mapLineAttributionsToBlocks,
-  type AttributionInfo,
-} from '../line-to-block-mapper';
+import { mapLineAttributionsToBlocks, type AttributionInfo } from '../line-to-block-mapper';
 
 describe('Line to Block Attribution Mapper', () => {
   let editor: Editor | null = null;

@@ -185,10 +185,15 @@
     <!-- Navigation buttons - always present -->
     <div class="flex items-center h-full mr-1 relative border-l border-border ml-3">
       <div class="flex items-center h-full pl-3">
-        <TooltipShortcut label={m.ui_contentHeader_goBack_tooltip()} shortcut="cmd+[" side="bottom" delayDuration={300}>
+        <TooltipShortcut
+          label={m.ui_contentHeader_goBack_tooltip()}
+          shortcut="cmd+["
+          side="bottom"
+          delayDuration={300}
+        >
           <Button
             size="icon-xs"
-              aria-label={m.ui_contentHeader_goBack_tooltip()}
+            aria-label={m.ui_contentHeader_goBack_tooltip()}
             variant="ghost-light"
             onclick={() => onNavigateBack?.()}
             disabled={!canGoBack}
@@ -197,10 +202,15 @@
             <Fa icon={faChevronLeft} size="sm" />
           </Button>
         </TooltipShortcut>
-        <TooltipShortcut label={m.ui_contentHeader_goForward_tooltip()} shortcut="cmd+]" side="bottom" delayDuration={300}>
+        <TooltipShortcut
+          label={m.ui_contentHeader_goForward_tooltip()}
+          shortcut="cmd+]"
+          side="bottom"
+          delayDuration={300}
+        >
           <Button
             size="icon-xs"
-              aria-label={m.ui_contentHeader_goForward_tooltip()}
+            aria-label={m.ui_contentHeader_goForward_tooltip()}
             variant="ghost-light"
             onclick={() => onNavigateForward?.()}
             disabled={!canGoForward}
@@ -213,7 +223,11 @@
     </div>
 
     {#if showClose && onClose}
-      <TooltipShortcut label={m.ui_contentHeader_closePanel_tooltip()} side="bottom" delayDuration={300}>
+      <TooltipShortcut
+        label={m.ui_contentHeader_closePanel_tooltip()}
+        side="bottom"
+        delayDuration={300}
+      >
         <Button
           size="icon-xs"
           variant="ghost-light"

@@ -48,9 +48,7 @@
   $effect(() => {
     if (containerRef) {
       const element = containerRef.firstElementChild as
-        | HTMLButtonElement
-        | HTMLAnchorElement
-        | null;
+        HTMLButtonElement | HTMLAnchorElement | null;
       ref = element;
     }
   });

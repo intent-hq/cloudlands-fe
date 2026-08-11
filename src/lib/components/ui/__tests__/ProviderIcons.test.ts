@@ -23,7 +23,7 @@ describe('domain provider icon contracts', () => {
       props: { provider: 'github', class: 'context-provider', size: 18 },
     });
 
-    const icon = container.querySelector('svg[viewBox="0 0 24 24"]');
+    const icon = container.querySelector('svg');
     expect(icon).not.toBeNull();
     expect(icon?.classList.contains('context-provider')).toBe(true);
     expect(icon?.getAttribute('width')).toBe('18');

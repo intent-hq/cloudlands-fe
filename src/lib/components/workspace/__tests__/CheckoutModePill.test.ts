@@ -186,7 +186,12 @@ describe('CheckoutModePill', () => {
     invalidateCowIsolationSetting();
     mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
     await rerender({
-      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+      workspace: {
+        ...baseWorkspace,
+        id: 'ws-2',
+        checkoutMode: 'cow',
+        cowSupported: true,
+      } as Workspace,
     });
     await flushLabel();
     expect(screen.getByText('Direct')).toBeTruthy();
@@ -206,7 +211,12 @@ describe('CheckoutModePill', () => {
     // the shared single-flight cache coalesces both onto deferred[0].
     invalidateCowIsolationSetting();
     await rerender({
-      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+      workspace: {
+        ...baseWorkspace,
+        id: 'ws-2',
+        checkoutMode: 'cow',
+        cowSupported: true,
+      } as Workspace,
     });
     await tick();
     await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(2));
@@ -231,7 +241,12 @@ describe('CheckoutModePill', () => {
       workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
     });
     await renderPill({
-      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'cow', cowSupported: true } as Workspace,
+      workspace: {
+        ...baseWorkspace,
+        id: 'ws-2',
+        checkoutMode: 'cow',
+        cowSupported: true,
+      } as Workspace,
     });
     await flushLabel();
     expect(screen.getAllByText('CoW')).toHaveLength(2);
@@ -356,9 +371,7 @@ describe('CheckoutModePill', () => {
       await tick();
 
       expect(mocks.diskUsage).toHaveBeenCalledTimes(2);
-      expect(screen.getByTestId('tooltip-content').textContent).toContain(
-        'Total size: 2.17Gi',
-      );
+      expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
       expect(screen.queryByRole('status', { name: 'Loading disk usage' })).toBeNull();
     } finally {
       vi.useRealTimers();

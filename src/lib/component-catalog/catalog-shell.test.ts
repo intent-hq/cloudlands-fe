@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
 const appRouteFiles = [
-  ['(app)/+page.svelte', '/'],
   ['(app)/agent/[id]/+page.svelte', '/agent/[id]'],
   ['(app)/settings/+page.svelte', '/settings'],
   ['(app)/test-comments/+page.svelte', '/test-comments'],
@@ -71,13 +70,14 @@ describe('catalog route shell', () => {
     expect(existsSync(path.join(routesRoot, '(app)/sandbox'))).toBe(false);
   });
 
-  it('keeps host startup inside the app shell and the root layout minimal', () => {
+  it('starts shared state at the root while keeping product host code inside the app shell', () => {
     const rootLayout = readFileSync(path.join(routesRoot, '+layout.svelte'), 'utf8');
     const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
     expect(rootLayout).toContain("import '../app.css'");
-    expect(rootLayout).not.toMatch(/\$store|electron-bridge|LiveAppClient|seedMockStore/);
+    expect(rootLayout).toContain('startRootStoreLifecycle');
+    expect(rootLayout).not.toMatch(/electron-bridge|LiveAppClient|seedMockStore/);
     expect(appLayout).toContain('data-testid="app-ready"');
-    expect(appLayout).toContain('seedMockStore');
+    expect(appLayout).toContain('LiveAppClient');
   });
 
   it('moves async-data lint baseline paths without changing baseline membership', () => {
@@ -98,7 +98,9 @@ describe('catalog route shell', () => {
 
   it('keeps catalog shell and fixture modules host and domain independent', () => {
     const files = [
-      ...sourceFiles(path.join(routesRoot, 'sandbox')),
+      path.join(routesRoot, 'sandbox/+layout.svelte'),
+      path.join(routesRoot, 'sandbox/+page.svelte'),
+      path.join(routesRoot, 'sandbox/[slug]/+page.svelte'),
       ...sourceFiles(path.join(root, 'src/lib/component-catalog')),
     ];
     const forbidden =

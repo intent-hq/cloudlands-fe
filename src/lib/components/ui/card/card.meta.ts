@@ -26,10 +26,7 @@ export const cardMetadata = parseUiComponentMetadata({
   ],
   category: 'pattern',
   owner: '012-E',
-  callers: [
-    'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
-    'src/lib/components/ui/settings-section/settings-section.svelte',
-  ],
+  callers: ['src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/card/card.test.ts',
   removalGate: 'Retain while reusable editorial surfaces require structured card slots.',

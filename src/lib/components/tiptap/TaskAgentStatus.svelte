@@ -536,7 +536,8 @@
       {:else if !agent && !agentFound}
         <span class="status-text loading-text">{m.tiptap_taskAgentStatus_spinningUp_label()}</span>
       {:else if !agent}
-        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_loadingAgent_label()}</span>
+        <span class="status-text loading-text">{m.tiptap_taskAgentStatus_loadingAgent_label()}</span
+        >
       {:else if latestContent?.toolBlock}
         <span class="status-text">
           <AgentPreviewToolLabel

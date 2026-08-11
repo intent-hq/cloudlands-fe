@@ -11,9 +11,9 @@ describe('panel and workspace lifecycle motion', () => {
     const columns = source('../../../workspace/WorkspaceColumnsView.svelte');
 
     expect(tabs).toContain('data-workspace-tab-motion={workspaceId}');
-    expect(tabs).toContain('in:fly={{ x: 8, duration: 180, easing: cubicOut }}');
-    expect(tabs).toContain('out:fly={{ x: -8, duration: 140, easing: cubicOut }}');
     expect(tabs).toContain('animate:flip={{ duration: 180, easing: cubicOut }}');
+    expect(tabs).not.toContain('in:fly=');
+    expect(tabs).not.toContain('out:fly=');
     expect(columns).toContain('data-workspace-column-motion={workspaceId}');
     expect(columns).toContain('lifecycleMotionReady && !isResizingWorkspaceColumn ? 180 : 0');
     expect(columns).toContain("transition:resize={{ axis: 'x', duration: layoutMotionDuration }}");
@@ -21,9 +21,9 @@ describe('panel and workspace lifecycle motion', () => {
     expect(columns).toContain('onResizeEnd={(previousWidth, nextWidth) => {');
     expect(columns).not.toContain('onResize={(previousWidth, nextWidth) =>');
     expect(columns).toContain(':global(body.panel-resizing) [data-workspace-stack]');
-    expect(columns).toContain(
-      'resizeWithDefaultWidth={panelLayoutsReady && sidebarMeasurementsReady}',
-    );
+    expect(columns).toContain("syncWithDefaultWidth={restoreStatus !== 'idle' &&");
+    expect(columns).toContain("restoreStatus !== 'pending' &&");
+    expect(columns).toContain('sidebarWidths[workspaceId] !== undefined}');
     expect(columns).not.toContain('transition:fade');
   });
 

@@ -83,15 +83,14 @@ function renderFontsColors() {
 }
 
 function installDispatchRecorder() {
-  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(appStore), 'dispatch');
-  const originalDispatch = descriptor?.get?.call(appStore) as (action: unknown) => unknown;
+  const originalDispatch = appStore.dispatch;
   const calls: unknown[] = [];
   Object.defineProperty(appStore, 'dispatch', {
     configurable: true,
     enumerable: true,
-    get: () => (action: unknown) => {
+    value: (action: unknown) => {
       calls.push(action);
-      return originalDispatch(action);
+      return originalDispatch.call(appStore, action);
     },
   });
   return { calls, restore: () => delete (appStore as { dispatch?: unknown }).dispatch };
@@ -130,22 +129,19 @@ describe('Fonts & Colors settings migration', () => {
     const recorder = installDispatchRecorder();
     try {
       renderFontsColors();
-      const light = screen.getByRole('radio', { name: 'Light' });
-      const dark = screen.getByRole('radio', { name: 'Dark' });
-      expect(light.getAttribute('aria-checked')).toBe('true');
-      light.focus();
-      await fireEvent.keyDown(light, { key: 'ArrowRight' });
-      expect(document.activeElement).toBe(dark);
+      const light = screen.getByRole('button', { name: 'Light' });
+      const dark = screen.getByRole('button', { name: 'Dark' });
+      expect(light.getAttribute('aria-pressed')).toBe('true');
       await fireEvent.click(dark);
 
       await fireEvent.click(
-        within(document.getElementById('note-font')!).getByRole('radio', { name: 'Mono' }),
+        within(document.getElementById('note-font')!).getByRole('button', { name: 'Mono' }),
       );
       await fireEvent.click(
-        within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
+        within(document.getElementById('agent-chat-font')!).getByRole('button', { name: 'Mono' }),
       );
 
-      const codeFont = screen.getByRole('button', { name: 'Font' });
+      const codeFont = document.querySelector<HTMLElement>('[data-select-trigger]')!;
       await fireEvent.keyDown(codeFont, { key: 'Enter' });
       expect(await screen.findByRole('option', { name: LONG_FONT_NAME })).toBeTruthy();
       await fireEvent.keyDown(codeFont, { key: 'ArrowDown' });
@@ -183,17 +179,11 @@ describe('Fonts & Colors settings migration', () => {
       const target = document.getElementById(id);
       expect(target?.getAttribute('data-highlight-id')).toBe(id);
     }
-    expect(screen.getByRole('region', { name: 'Appearance' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Font Style' })).toBeTruthy();
-    expect(container.querySelector('[data-settings-fonts-colors]')?.className).toContain(
-      'max-w-5xl',
-    );
-    const rows = [...container.querySelectorAll('[data-slot="settings-field-row"]')];
-    expect(rows).toHaveLength(4);
-    for (const row of rows) {
-      expect(row.getAttribute('data-orientation')).toBe('responsive');
-      expect(row.className).toContain('md:grid-cols-');
-    }
+    expect(screen.getByRole('heading', { name: 'Appearance' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Font Style' })).toBeTruthy();
+    expect(container.querySelector('main')?.className).toContain('max-w-4xl');
+    expect(document.getElementById('theme')?.className).toContain('mb-12');
+    expect(document.getElementById('font-style')?.className).toContain('mb-12');
   });
 
   it('defines deterministic light/dark desktop/compact visual fixtures', () => {

@@ -4,17 +4,17 @@
  * Tests that tool results are correctly parsed for display.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseToolResult } from '../tool-result-parser';
 
 describe('tool-result-parser', () => {
   describe('terminal result parsing', () => {
     it('should parse terminal result with output', () => {
-      const result = parseToolResult('bash', { command: 'npm test' }, 'Test passed\n✓ All tests pass');
+      const result = parseToolResult(
+        'bash',
+        { command: 'npm test' },
+        'Test passed\n✓ All tests pass',
+      );
 
       expect(result.type).toBe('terminal');
       expect(result.command).toBe('npm test');
@@ -60,7 +60,11 @@ describe('tool-result-parser', () => {
     });
 
     it('should handle launch-process tool', () => {
-      const result = parseToolResult('launch-process', { command: 'npm run build' }, 'Build complete');
+      const result = parseToolResult(
+        'launch-process',
+        { command: 'npm run build' },
+        'Build complete',
+      );
 
       expect(result.type).toBe('terminal');
       expect(result.command).toBe('npm run build');
@@ -98,7 +102,11 @@ describe('tool-result-parser', () => {
 
     it('should route ACP "Run" tool with command input to terminal parser', () => {
       const xmlResult = `Here are the results from executing the command.\n<return-code>\n0\n</return-code>\n<output>\nhello world\n</output>`;
-      const result = parseToolResult('Run', { command: 'echo hello world', wait: true, max_wait_seconds: 5, cwd: '/tmp' }, xmlResult);
+      const result = parseToolResult(
+        'Run',
+        { command: 'echo hello world', wait: true, max_wait_seconds: 5, cwd: '/tmp' },
+        xmlResult,
+      );
 
       expect(result.type).toBe('terminal');
       expect(result.command).toBe('echo hello world');
@@ -120,7 +128,7 @@ describe('tool-result-parser', () => {
       const result = parseToolResult(
         'glob',
         { pattern: '**/*.ts', path: 'src/' },
-        'Here\'s the files and directories up to 2 levels deep in src/:\n- index.ts\n- utils/\n  - helpers.ts',
+        "Here's the files and directories up to 2 levels deep in src/:\n- index.ts\n- utils/\n  - helpers.ts",
       );
 
       expect(result.type).toBe('directory-listing');
@@ -188,7 +196,11 @@ describe('tool-result-parser', () => {
     });
 
     it('should add information_request to content when retrieval has no results', () => {
-      const result = parseToolResult('codebase-retrieval', { information_request: 'Find all API endpoints' }, '');
+      const result = parseToolResult(
+        'codebase-retrieval',
+        { information_request: 'Find all API endpoints' },
+        '',
+      );
 
       expect(result.type).toBe('code-search');
       expect(result.content).toBe('Search: Find all API endpoints');
@@ -249,11 +261,7 @@ describe('tool-result-parser', () => {
 
   describe('single-field JSON envelope unwrapping (#1758)', () => {
     it('unwraps an object result with a single output field to plain text', () => {
-      const result = parseToolResult(
-        'some_mcp_tool',
-        {},
-        { output: 'line1\nline2' },
-      );
+      const result = parseToolResult('some_mcp_tool', {}, { output: 'line1\nline2' });
 
       expect(result.type).toBe('confirmation');
       expect(result.content).toBe('line1\nline2');
@@ -286,22 +294,16 @@ describe('tool-result-parser', () => {
     });
 
     it('unwraps a single MCP text item carrying a single-field JSON envelope', () => {
-      const result = parseToolResult(
-        'some_mcp_tool',
-        {},
-        [{ type: 'text', text: '{"output": "plain text payload"}' }],
-      );
+      const result = parseToolResult('some_mcp_tool', {}, [
+        { type: 'text', text: '{"output": "plain text payload"}' },
+      ]);
 
       expect(result.type).toBe('confirmation');
       expect(result.content).toBe('plain text payload');
     });
 
     it('does not unwrap multi-field JSON objects', () => {
-      const result = parseToolResult(
-        'some_mcp_tool',
-        {},
-        '{"output": "text", "exitCode": 0}',
-      );
+      const result = parseToolResult('some_mcp_tool', {}, '{"output": "text", "exitCode": 0}');
 
       expect(result.type).toBe('confirmation');
       expect(result.content).toBe('{"output": "text", "exitCode": 0}');

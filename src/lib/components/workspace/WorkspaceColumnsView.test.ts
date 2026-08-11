@@ -146,6 +146,27 @@ describe('WorkspaceColumnsView', () => {
     expect(ws2?.dataset.defaultWidth).toBe('1320');
   });
 
+  it('fills the shared stack width after the final panel closes', async () => {
+    workspaceStacks.set([['ws-1', 'ws-2']]);
+    panelCounts.set({ 'ws-1': 1, 'ws-2': 2 });
+    panelCanvasWidths.set({ 'ws-1': 480, 'ws-2': 960 });
+    render(WorkspaceColumnsView);
+    const panels = screen.getAllByTestId('mock-resizable-panel');
+    const ws1 = panels.find(
+      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-1',
+    )!;
+    const ws2 = panels.find(
+      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-2',
+    )!;
+
+    expect(ws1.dataset.skipResize).toBe('false');
+    panelCounts.set({ 'ws-1': 0, 'ws-2': 2 });
+    await tick();
+
+    expect(ws1.dataset.skipResize).toBe('true');
+    expect(ws2.dataset.skipResize).toBe('false');
+  });
+
   it('uses the shared top and horizontal zones for stack and reorder drops', async () => {
     render(WorkspaceColumnsView);
     const source = screen.getByLabelText('Workspace column ws-1');

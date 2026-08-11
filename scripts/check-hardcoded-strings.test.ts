@@ -20,9 +20,9 @@ function withFixture(files: Record<string, string>, run: (dir: string) => void) 
   }
 }
 
-function runGate(dir?: string) {
+function runGate(args: string[] = []) {
   try {
-    const stdout = execFileSync(process.execPath, [scriptPath, ...(dir ? [dir] : [])], {
+    const stdout = execFileSync(process.execPath, [scriptPath, ...args], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -38,10 +38,14 @@ function runGate(dir?: string) {
 }
 
 describe('hardcoded user-facing string gate', () => {
-  it('passes on the enforced directories', () => {
+  it('scans the full intended path inventory and passes against the debt baseline', () => {
     const result = runGate();
     expect(result.exitCode).toBe(0);
-    expect(result.output).toContain('✓ No hardcoded-string violations found.');
+    expect(result.output).toContain('Scanning: src/lib/components/');
+    expect(result.output).toContain('Scanning: src/features/workspace/');
+    expect(result.output).toContain('Scanning: src/routes/(app)/workspace/');
+    expect(result.output).toMatch(/Known i18n debt:.*[1-9][0-9]* violation/);
+    expect(result.output).toContain('✓ No new or changed hardcoded-string violations found.');
   });
 
   it('flags literal template text and user-facing attributes in Svelte files', () => {
@@ -57,7 +61,7 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('[template text] "Save changes"');
         expect(result.output).toContain('[attribute title] "Save your work"');
@@ -82,9 +86,9 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(0);
-        expect(result.output).toContain('✓ No hardcoded-string violations found.');
+        expect(result.output).toContain('✓ No new or changed hardcoded-string violations found.');
       },
     );
   });
@@ -103,7 +107,7 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('[attribute title] "Unpin from list"');
         expect(result.output).toContain('[attribute title] "Pin to list"');
@@ -127,7 +131,7 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('[fallback literal] "Untitled"');
         expect(result.output).not.toContain('fallback_label');
@@ -148,7 +152,7 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('[string literal] "Failed to save note"');
         expect(result.output).not.toContain('flex items-center');
@@ -172,7 +176,7 @@ describe('hardcoded user-facing string gate', () => {
         '__tests__/helper.ts': "const msg = 'Another sentence that would fail';",
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(0);
       },
     );
@@ -187,7 +191,7 @@ describe('hardcoded user-facing string gate', () => {
         ].join('\n'),
       },
       (dir) => {
-        const result = runGate(dir);
+        const result = runGate([dir]);
         expect(result.exitCode).toBe(1);
         expect(result.output).toContain('[string literal] "Failed to save note"');
         expect(result.output).not.toContain('Deliberate literal here');
@@ -195,8 +199,52 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('allows known debt but fails when a baseline violation changes', () => {
+    withFixture({ 'Example.svelte': '<button>Save changes</button>' }, (dir) => {
+      const baseline = join(dir, 'baseline.json');
+      const update = runGate([dir, '--baseline', baseline, '--update-baseline']);
+      expect(update.exitCode).toBe(0);
+
+      const known = runGate([dir, '--baseline', baseline]);
+      expect(known.exitCode).toBe(0);
+      expect(known.output).toContain('Known i18n debt:');
+
+      writeFileSync(join(dir, 'Example.svelte'), '<button>Save different changes</button>');
+      const changed = runGate([dir, '--baseline', baseline]);
+      expect(changed.exitCode).toBe(1);
+      expect(changed.output).toContain('[New or changed hardcoded user-facing strings]');
+      expect(changed.output).toContain('"Save different changes"');
+    });
+  });
+
+  it('fails when an identical violation is added beyond its baseline count', () => {
+    withFixture({ 'Example.svelte': '<span>Save changes</span>' }, (dir) => {
+      const baseline = join(dir, 'baseline.json');
+      expect(runGate([dir, '--baseline', baseline, '--update-baseline']).exitCode).toBe(0);
+
+      writeFileSync(
+        join(dir, 'Example.svelte'),
+        '<span>Save changes</span>\n<span>Save changes</span>',
+      );
+      const result = runGate([dir, '--baseline', baseline]);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain('1 new or changed hardcoded-string violation');
+    });
+  });
+
+  it('does not treat line-only movement as changed debt', () => {
+    withFixture({ 'Example.svelte': '<span>Save changes</span>' }, (dir) => {
+      const baseline = join(dir, 'baseline.json');
+      expect(runGate([dir, '--baseline', baseline, '--update-baseline']).exitCode).toBe(0);
+
+      writeFileSync(join(dir, 'Example.svelte'), '\n\n<span>Save changes</span>');
+      const result = runGate([dir, '--baseline', baseline]);
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
   it('exits 2 when an enforced directory is missing', () => {
-    const result = runGate(join(tmpdir(), 'definitely-missing-dir-i18n-gate'));
+    const result = runGate([join(tmpdir(), 'definitely-missing-dir-i18n-gate')]);
     expect(result.exitCode).toBe(2);
     expect(result.output).toContain('Enforced path not found');
   });

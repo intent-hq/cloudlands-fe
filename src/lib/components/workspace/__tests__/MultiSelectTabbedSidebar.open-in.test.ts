@@ -59,12 +59,19 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentWorkspaceId: mocks.selector('ws-1'),
-  selectCurrentStagedWorkingChanges: mocks.selector([]),
-  selectCurrentUnstagedWorkingChanges: mocks.selector([]),
-  selectCurrentCommits: mocks.selector([]),
+  selectStagedWorkingChanges: mocks.selector([]),
+  selectUnstagedWorkingChanges: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectActiveTab: mocks.selector(null),
+  selectAllTabs: mocks.selector([]),
+}));
+vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectWorkspaceScriptEntries: mocks.selector([]),
+}));
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
+  selectActiveTerminalIdForWorkspace: mocks.selector(null),
+  selectTerminalsForWorkspace: mocks.selector([]),
 }));
 vi.mock('$store/renderer/slices/app-layout/app-layout-selectors', () => ({
   selectPendingLocateInSidebar: mocks.selector(null),

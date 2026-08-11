@@ -263,7 +263,7 @@ class IPCDebugTracker {
     validationErrors: number;
     missingHandlers: string[];
     recentErrors: IPCDebugEntry[];
-    } {
+  } {
     const validationErrors = this.entries.filter((e) => e.type === 'validation_error');
     const successfulCalls = this.entries.filter((e) => e.type === 'success');
     const recentErrors = this.entries

@@ -41,10 +41,9 @@ describe('activity navigation contract', () => {
     expect(sidebar).not.toContain('appStore.dispatch(openWorkspaceDiff(workspaceId, change');
   });
 
-  it('caps the collapsed sidebar activity preview at three rows', () => {
+  it('initially caps the sidebar activity preview at three rows', () => {
     const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
 
     expect(sidebar).toContain('maxItems={3}');
-    expect(sidebar).toContain('expandable={false}');
   });
 });

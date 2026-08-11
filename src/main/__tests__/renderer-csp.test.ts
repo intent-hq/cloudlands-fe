@@ -20,7 +20,7 @@ describe('renderer Content Security Policy', () => {
     expect(scriptSrc).toBe("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
   });
 
-  it('limits renderer connections to self and explicit local development endpoints', () => {
+  it('limits renderer connections to secure remote transports and local development', () => {
     const content = appHtml.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/)?.[1];
     expect(content).toBeDefined();
 
@@ -29,7 +29,7 @@ describe('renderer Content Security Policy', () => {
       .map((directive) => directive.trim())
       .find((directive) => directive.startsWith('connect-src '));
     expect(connectSrc).toBe(
-      "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+      "connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
     );
   });
 });

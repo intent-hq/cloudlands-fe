@@ -31,7 +31,9 @@ function summarizeImageBlocks(value: unknown) {
     imageBlocksDataLength: imageBlocks.reduce(
       (total, block) =>
         total +
-        (block && typeof block === 'object' && typeof (block as { data?: unknown }).data === 'string'
+        (block &&
+        typeof block === 'object' &&
+        typeof (block as { data?: unknown }).data === 'string'
           ? (block as { data: string }).data.length
           : 0),
       0,

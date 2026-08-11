@@ -87,7 +87,7 @@ describe('AgentCard live preview precedence', () => {
     expect(preview.textContent).not.toContain('stale persisted text');
   });
 
-  it('places the timestamp at the right edge of the standard preview row', async () => {
+  it('places the timestamp at the right edge of the standard header row', async () => {
     seedSession({
       status: AgentStatus.Idle,
       messages: [assistantMessage('second-row preview text')],
@@ -96,12 +96,12 @@ describe('AgentCard live preview precedence', () => {
     const { container } = render(AgentCard, { props: { agentId } });
 
     const preview = await screen.findByTestId('agent-card-preview');
-    const previewRow = container.querySelector('[data-agent-card-preview-row]');
-    const timestamp = container.querySelector('.agent-card-preview-time');
-    expect(previewRow).not.toBeNull();
-    expect(previewRow?.contains(preview)).toBe(true);
-    expect(previewRow?.contains(timestamp)).toBe(true);
-    expect(container.querySelector('.agent-card-header')?.contains(timestamp)).toBe(false);
+    const header = container.querySelector('.agent-card-header');
+    const timestamp = header?.querySelector('[data-relative-time]') ?? header?.lastElementChild;
+    expect(preview).toBeTruthy();
+    expect(header).not.toBeNull();
+    expect(timestamp).not.toBeNull();
+    expect(header?.contains(timestamp)).toBe(true);
   });
 
   it('lets the viewed-agent chat.subscribe streaming buffer win over lastAgentResponse', async () => {

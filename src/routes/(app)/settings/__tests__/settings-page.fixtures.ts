@@ -1,16 +1,16 @@
 export const SETTINGS_TABS = [
   {
     id: 'accounts',
-    label: 'Accounts & models',
-    heading: 'Providers',
+    label: 'Providers',
+    heading: '',
     stateOwners: ['Redux providerSettings', 'Redux auth', 'local availability'],
     saveModes: ['immediate'],
     states: ['loading', 'installed', 'missing', 'auth-required', 'active', 'disabled', 'error'],
   },
   {
     id: 'agents',
-    label: 'Agent behavior',
-    heading: 'Agent behavior',
+    label: 'Agents',
+    heading: '',
     stateOwners: ['Redux specialists', 'Redux model', 'Redux providerSettings', 'local draft'],
     saveModes: ['autosave', 'explicit destructive confirmation'],
     states: [
@@ -25,8 +25,8 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'setup',
-    label: 'Projects & tools',
-    heading: 'Projects & Git',
+    label: 'Tools',
+    heading: '',
     stateOwners: ['daemon settings', 'Redux MCP', 'Redux externalEditors', 'local pairing'],
     saveModes: ['immediate', 'blur-or-enter', 'explicit'],
     states: ['loading', 'empty', 'validation', 'disabled', 'saving', 'success', 'error'],
@@ -41,7 +41,7 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'notifications',
-    label: 'Notifications',
+    label: 'General',
     heading: 'Notifications',
     stateOwners: ['Redux notifications'],
     saveModes: ['immediate'],
@@ -49,7 +49,7 @@ export const SETTINGS_TABS = [
   },
   {
     id: 'general',
-    label: 'Advanced',
+    label: 'General',
     heading: 'Updates',
     stateOwners: ['Redux autoUpdate'],
     saveModes: ['immediate', 'confirmation'],
@@ -65,6 +65,13 @@ const VIEWPORTS = {
   desktop: { width: 1440, height: 1000 },
   compact: { width: 900, height: 760 },
 } as const;
+
+const SETTINGS_TAB_QUERY: Partial<Record<SettingsTabId, string>> = {
+  accounts: 'providers',
+  setup: 'tools',
+  'fonts-colors': 'appearance',
+  notifications: 'general',
+};
 
 const CAPTURE_CASES = [
   ['accounts', 'light', 'desktop', 'loading', 'Redux providerSettings', 'immediate'],
@@ -111,7 +118,7 @@ export const SETTINGS_CAPTURE_FIXTURES = CAPTURE_CASES.map(
       theme,
       viewport,
       ...VIEWPORTS[viewport],
-      url: `/settings?tab=${tabId}`,
+      url: `/settings?tab=${SETTINGS_TAB_QUERY[tabId] ?? tabId}`,
       state,
       stateOwner,
       saveMode,

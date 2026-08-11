@@ -752,7 +752,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('renders workspace-scoped changes when another workspace is globally active', async () => {
+    it('hides stale changes while another workspace is globally active', async () => {
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
       mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/scoped.ts' })];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -760,9 +760,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const rows = container.querySelectorAll('[data-testid="file-row"]');
-        expect(rows).toHaveLength(1);
-        expect(rows[0].getAttribute('data-file-path')).toBe('src/scoped.ts');
+        expect(container.querySelector('.sidebar-changes-container')).toBeNull();
+        expect(container.querySelectorAll('[data-testid="file-row"]')).toHaveLength(0);
       });
     });
 

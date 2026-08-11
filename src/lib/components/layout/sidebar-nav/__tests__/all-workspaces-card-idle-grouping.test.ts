@@ -17,7 +17,12 @@ import {
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { setAllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { WorkspaceStatus, PullRequestStatus, type Workspace, type WorkspaceId } from '$shared/types';
+import {
+  WorkspaceStatus,
+  PullRequestStatus,
+  type Workspace,
+  type WorkspaceId,
+} from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
@@ -39,11 +44,7 @@ vi.mock('$features/agent/services/active-streams-tracker', () => {
   };
 });
 
-function makeWorkspace(
-  id: string,
-  title: string,
-  overrides?: Partial<Workspace>,
-): Workspace {
+function makeWorkspace(id: string, title: string, overrides?: Partial<Workspace>): Workspace {
   return {
     id: id as WorkspaceId,
     title,
@@ -69,7 +70,8 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
   let streamingIdsMap: Map<string, string[]>;
 
   beforeEach(async () => {
-    const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
+    const { activeStreamsTracker } =
+      await import('$features/agent/services/active-streams-tracker');
     streamingIdsMap = (activeStreamsTracker as any).__getStreamingIdsMap();
     streamingIdsMap.clear();
   });

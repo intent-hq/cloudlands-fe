@@ -458,7 +458,11 @@
         <!-- Copy dropdown -->
         <DropdownMenu align="end">
           {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Tooltip content={m.notes_diagramBlock_copyDiagram_tooltip()} side="top" delayDuration={300}>
+            <Tooltip
+              content={m.notes_diagramBlock_copyDiagram_tooltip()}
+              side="top"
+              delayDuration={300}
+            >
               <button
                 type="button"
                 class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"

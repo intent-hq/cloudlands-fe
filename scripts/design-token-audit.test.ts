@@ -99,6 +99,27 @@ describe('design token audit', () => {
     }
   });
 
+  it('does not let an unterminated utility assertion consume later lines', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'scanner.test.ts'),
+        [
+          "expect(source).not.toContain('max-w-[var(--content-measure-');",
+          "const className = 'w-[42px]';",
+        ].join('\n'),
+      );
+      const output = execFileSync(process.execPath, [script, 'raw'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(output).toContain('arbitrary\t1');
+      expect(output).toContain('scanner.test.ts\t0\t1');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('requires every undefined-token exception to name its owned files', () => {
     const allowlist = JSON.parse(
       readFileSync(path.resolve(process.cwd(), 'scripts/design-token-allowlist.json'), 'utf8'),

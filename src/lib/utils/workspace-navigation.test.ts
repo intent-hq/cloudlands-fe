@@ -2,13 +2,7 @@
  * Unit tests for workspace navigation utilities
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   navigateToAgent,
   navigateToNote,
@@ -34,7 +28,8 @@ vi.mock('svelte/store', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -158,6 +153,7 @@ describe('workspace-navigation', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         openWorkspaceNote('test-workspace-id', 'note-456', {
           openInAdjacentPanel: false,
+          openInNewAdjacentPanel: false,
           sourcePanelId: undefined,
         }),
       );

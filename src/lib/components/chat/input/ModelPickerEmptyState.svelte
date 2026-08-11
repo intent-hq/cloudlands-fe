@@ -3,6 +3,7 @@
   import { faArrowsRotate, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
+  import { faSettings } from '$lib/icons/faSettings';
   import { cn } from '$lib/utils';
   import type { ProviderLoadError } from './model-picker-provider-errors';
   import { m } from '$shared/paraglide/messages.js';
@@ -10,14 +11,49 @@
   interface Props {
     isLoadingModels: boolean;
     blockingLoadError: ProviderLoadError | null;
+    hasNoAvailableProvider?: boolean;
+    onOpenProviderSettings: () => void;
     onRetry: () => void;
   }
 
-  let { isLoadingModels, blockingLoadError, onRetry }: Props = $props();
+  let {
+    isLoadingModels,
+    blockingLoadError,
+    hasNoAvailableProvider = false,
+    onOpenProviderSettings,
+    onRetry,
+  }: Props = $props();
 </script>
 
 <div class="px-1 py-1" transition:fade={{ duration: 150 }}>
-  {#if isLoadingModels}
+  {#if hasNoAvailableProvider}
+    <div class="flex items-start gap-2.5 px-3 py-3" role="status">
+      <Fa
+        icon={faExclamationTriangle}
+        class="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-foreground"
+      />
+      <div class="min-w-0">
+        <div class="type-body font-medium text-foreground">
+          {m.chat_modelPicker_noProviderAvailable_title()}
+        </div>
+        <div class="type-caption mt-0.5 leading-snug text-subtle">
+          {m.chat_modelPicker_noProviderAvailable_description()}
+        </div>
+        <button
+          type="button"
+          class={cn(
+            'type-caption mt-2 flex items-center gap-1.5 rounded-md px-2 py-1 font-medium',
+            'bg-muted hover:bg-muted/80 text-foreground transition-colors',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          )}
+          onclick={onOpenProviderSettings}
+        >
+          <Fa icon={faSettings} class="h-3 w-3" />
+          {m.chat_modelPicker_noProviderAvailable_openSettings_label()}
+        </button>
+      </div>
+    </div>
+  {:else if isLoadingModels}
     {#each [4, 3] as itemCount, i}
       <div>
         <div class="px-3 pt-3 pb-1 flex items-center gap-2">

@@ -4,8 +4,11 @@ import { toggleFixtures } from './toggle.fixtures';
 export const toggleCompatibilityModes = {
   group: {
     replacement: '$lib/components/ui/toggle-group',
-    callers: [{ path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 }],
-    staticUsageCount: 1,
+    callers: [
+      { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
+      { path: 'src/routes/(app)/settings/+page.svelte', count: 3 },
+    ],
+    staticUsageCount: 4,
     dynamicUsageCount: 0,
     removalGate:
       'Remove only when source-derived static and dynamic variant="group" usage counts both reach zero.',
@@ -26,12 +29,17 @@ export const toggleCompatibilityModes = {
     callers: [
       { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
       { path: 'src/lib/components/settings/AdditionalAgentsSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
+      { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
       { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
-      { path: 'src/routes/(app)/+page.svelte', count: 2 },
+      { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
+      { path: 'src/routes/(app)/settings/+page.svelte', count: 1 },
     ],
-    staticUsageCount: 9,
+    staticUsageCount: 13,
     dynamicUsageCount: 0,
     removalGate:
       'Remove only when source-derived static and dynamic variant="indicator" usage counts both reach zero.',
@@ -48,12 +56,18 @@ export const toggleMetadata = {
   owner: '007-B2',
   callers: [
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+    'src/lib/components/layout/WorkspaceViewModeToggle.svelte',
     'src/lib/components/settings/AdditionalAgentsSettings.svelte',
+    'src/lib/components/settings/AgentFeaturesSettings.svelte',
+    'src/lib/components/settings/HardwareConsoleSettings.svelte',
+    'src/lib/components/settings/LegacyImportSettings.svelte',
+    'src/lib/components/settings/McpServersSettings.svelte',
     'src/lib/components/settings/NotificationSettings.svelte',
     'src/lib/components/settings/RtkSettings.svelte',
     'src/lib/components/settings/WebSocketApiSettings.svelte',
+    'src/lib/components/settings/WorkspaceApiSettings.svelte',
     'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
-    'src/routes/(app)/+page.svelte',
+    'src/routes/(app)/settings/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/toggle/toggle.test.ts',

@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
 import {
   bulkEventsReceived,
@@ -166,13 +162,19 @@ describe('workspaceEventsReducer', () => {
   });
 
   it('clears workspace state on eventsCleared', () => {
-    const loaded = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [mockEvent('evt-1')]));
+    const loaded = workspaceEventsReducer(
+      initialState,
+      bulkEventsReceived(WS_1, [mockEvent('evt-1')]),
+    );
     const cleared = workspaceEventsReducer(loaded, eventsCleared(WS_1));
     expect(cleared.byWorkspaceId[WS_1]).toBeUndefined();
   });
 
   it('does not affect other workspaces', () => {
-    let state = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [mockEvent('evt-1')]));
+    let state = workspaceEventsReducer(
+      initialState,
+      bulkEventsReceived(WS_1, [mockEvent('evt-1')]),
+    );
     state = workspaceEventsReducer(state, bulkEventsReceived(WS_2, [mockEvent('evt-2', WS_2)]));
     state = workspaceEventsReducer(state, eventsCleared(WS_1));
     expect(state.byWorkspaceId[WS_1]).toBeUndefined();

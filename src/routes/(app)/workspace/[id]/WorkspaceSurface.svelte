@@ -128,7 +128,6 @@
   const panelLayoutRoot$ = selectPanelLayoutRoot(panelLayoutIdStore);
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
   const columnPanelCount = $derived($panelColumnCountsByWorkspaceId$[panelLayoutId] ?? 0);
-  // @ts-expect-error - Svelte 5 rune scoping issue with the legacy `state` variable below
   let sidebarFillsAvailableWidth = $state(false);
   let previousColumnPanelCount: number | null = null;
   let sidebarFillTimer: ReturnType<typeof setTimeout> | null = null;
@@ -190,8 +189,7 @@
   // @ts-expect-error - Svelte 5 rune scoping issue
   let createFileDialogOpen = $state(false);
   let createFileFolderPath = '';
-  // @ts-expect-error - Svelte 5 rune scoping issue with the legacy `state` variable below
-  let surfaceElement = $state(null);
+  let surfaceElement = $state<HTMLElement | null>(null);
 
   /**
    * Initialize a new workspace state for the given ID, pre-populating data from the store
@@ -518,13 +516,13 @@
   });
 
   // Convenient state access
-  let state: any = $derived(workspaceState?.state);
+  let pageState: any = $derived(workspaceState?.state);
 
   // Mirror selectedNoteId into a writable store so the isNewWorkspaceSession selector
   // can subscribe to it reactively alongside Redux state.
   const selectedNoteIdStore = writable<string | null>(null);
   $effect(() => {
-    selectedNoteIdStore.set(state?.mainPanel?.selectedNoteId ?? null);
+    selectedNoteIdStore.set(pageState?.mainPanel?.selectedNoteId ?? null);
   });
   const isNewWorkspaceSession$ = selectIsNewWorkspaceSession(workspaceIdStore, selectedNoteIdStore);
 
@@ -546,9 +544,9 @@
 
   // Debug workspace state changes
   $effect(() => {
-    if (workspace === undefined && state?.workspaceData === undefined && workspaceState) {
+    if (workspace === undefined && pageState?.workspaceData === undefined && workspaceState) {
       logger.warn('[WorkspacePage] Workspace became undefined', {
-        hasState: !!state,
+        hasState: !!pageState,
         hasWorkspaceState: !!workspaceState,
         workspaceId,
       });
@@ -590,7 +588,7 @@
       return workspaceState;
     },
     get state() {
-      return state;
+      return pageState;
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
@@ -796,7 +794,7 @@
     },
     onFocusDrawer: () => {
       // Open drawer if not open, then focus it
-      if (!state?.drawer?.open) {
+      if (!pageState?.drawer?.open) {
         workspaceState?.openDrawer('overview', 'overview');
       }
       // Focus will happen after drawer opens

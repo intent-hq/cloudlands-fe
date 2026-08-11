@@ -108,15 +108,14 @@ describe('ReleaseNotesModal markdown rendering', () => {
 
 describe('Tailwind entry point (monorepo#1748 / monorepo#1875)', () => {
   // Tailwind v4 uses CSS-first config and ignores the legacy
-  // tailwind.config.js. The typography plugin's global `prose` styles broke
-  // note-editor typography (monorepo#1875), so markdown surfaces render via
-  // MarkdownViewer instead and app.css must NOT load the plugin. The
+  // tailwind.config.js. MarkdownViewer uses the typography plugin's generated
+  // `prose` classes, so the CSS-first entry point must load it explicitly. The
   // class-based dark variant stays — the app toggles `.dark`/`.light` on the
   // root element, so `dark:` variants must key off the class.
   const appCss = readFileSync(path.resolve(__dirname, '../../../../app.css'), 'utf8');
 
-  it('does not load the typography plugin', () => {
-    expect(appCss).not.toMatch(/@plugin\s+["']@tailwindcss\/typography["']/);
+  it('loads the typography plugin from the CSS-first entry point', () => {
+    expect(appCss).toMatch(/@plugin\s+["']@tailwindcss\/typography["']/);
   });
 
   it('defines the class-based dark variant', () => {

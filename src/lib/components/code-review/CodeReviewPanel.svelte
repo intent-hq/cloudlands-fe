@@ -329,7 +329,13 @@
 
 <PanelWrapper
   title={m.codeReview_panel_title()}
-  breadcrumbs={[{ label: m.codeReview_panel_changesBreadcrumb_label(), icon: faCodeCompare, onClick: onNavigateToChanges }]}
+  breadcrumbs={[
+    {
+      label: m.codeReview_panel_changesBreadcrumb_label(),
+      icon: faCodeCompare,
+      onClick: onNavigateToChanges,
+    },
+  ]}
   {canGoBack}
   {canGoForward}
   {onNavigateBack}
@@ -388,7 +394,9 @@
             : m.codeReview_panel_commentCount_many({ count: totalCount })}
         </Badge>
       {:else if isStale}
-        <Badge variant="outline" class="text-xs text-amber-600">{m.codeReview_panel_outdated_label()}</Badge>
+        <Badge variant="outline" class="text-xs text-amber-600"
+          >{m.codeReview_panel_outdated_label()}</Badge
+        >
       {/if}
 
       <!-- Action buttons -->
@@ -420,7 +428,9 @@
       >
         <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
       </div>
-      <h3 class="text-sm font-medium text-foreground mb-2">{m.codeReview_panel_noReview_title()}</h3>
+      <h3 class="text-sm font-medium text-foreground mb-2">
+        {m.codeReview_panel_noReview_title()}
+      </h3>
       <p class="text-xs text-subtle mb-4 max-w-60">
         {m.codeReview_panel_noReview_description()}
       </p>
@@ -439,7 +449,9 @@
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              <span class="text-sm font-medium text-foreground">{m.codeReview_panel_reviewingCode_label()}</span>
+              <span class="text-sm font-medium text-foreground"
+                >{m.codeReview_panel_reviewingCode_label()}</span
+              >
             </div>
             {#if agentId}
               <Button

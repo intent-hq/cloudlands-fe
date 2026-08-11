@@ -274,7 +274,6 @@ describe('workspaceAgentsReducer', () => {
 
     expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1', 'agent-2']);
   });
-
 });
 
 describe('workspace-agents actions', () => {

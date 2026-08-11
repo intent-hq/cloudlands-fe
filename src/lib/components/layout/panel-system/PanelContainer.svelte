@@ -325,7 +325,10 @@
       const previousWidth = canvasResizeAccumulatedWidth ?? canvasResizeStartWidth;
       const nextWidth = Math.max(1, previousWidth + delta);
       const targetChildStartWidth = canvasResizeStartChildWidths[index] ?? 0;
-      const nextChildWidth = Math.max(1, targetChildStartWidth + (nextWidth - canvasResizeStartWidth));
+      const nextChildWidth = Math.max(
+        1,
+        targetChildStartWidth + (nextWidth - canvasResizeStartWidth),
+      );
       applyLiveCanvasResizeChildWidths(index, nextChildWidth);
       if (nextWidth === previousWidth) return;
       canvasResizeAccumulatedWidth = nextWidth;
@@ -365,9 +368,9 @@
     canvasResizeAccumulatedWidth = null;
     canvasResizeStartChildWidths =
       growsCanvasAtRootHorizontal && containerRef
-        ? Array.from(
-            containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-          ).map((el) => el.getBoundingClientRect().width)
+        ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
+            (el) => el.getBoundingClientRect().width,
+          )
         : null;
   }
 

@@ -123,7 +123,11 @@
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
     appStore.dispatch(
-      runAgentForNoteRequested(workspaceId, note.id, note.title || m.workspace_noteCodeChanges_task_label()),
+      runAgentForNoteRequested(
+        workspaceId,
+        note.id,
+        note.title || m.workspace_noteCodeChanges_task_label(),
+      ),
     );
   }
 

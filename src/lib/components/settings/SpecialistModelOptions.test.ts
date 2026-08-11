@@ -24,9 +24,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}) });
 });
 
@@ -39,9 +38,8 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 }));
 
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
-  default: (
-    await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte')
-  ).default,
+  default: (await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte'))
+    .default,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -70,9 +68,11 @@ describe('SpecialistModelOptions effort dropdown', () => {
     // Model-option rows keep the sr-only label — no visible "Effort" text.
     expect(wrapper.querySelector('label')!.classList.contains('sr-only')).toBe(true);
 
-    await fireEvent.click(wrapper.querySelector('button')!);
-    expect(screen.getByText('low')).toBeTruthy();
-    await fireEvent.click(screen.getByText('high'));
+    const trigger = wrapper.querySelector('button')!;
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(screen.getByRole('option', { name: 'low' })).toBeTruthy();
+    await fireEvent.keyDown(trigger, { key: 'h' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     expect(onCommit).toHaveBeenCalledWith([
       { model: EFFORT_MODEL, hint: 'deep', reasoningEffort: 'high' },

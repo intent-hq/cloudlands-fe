@@ -60,7 +60,7 @@
   let titleInputRef: HTMLInputElement | null = $state(null);
   let isEditingStatusMessage = $state(false);
   let editedStatusMessage = $state('');
-  let statusInputRef: HTMLInputElement | null = $state(null);
+  let statusInputRef: HTMLTextAreaElement | null = $state(null);
   let isSavingStatusMessage = $state(false);
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
@@ -188,7 +188,7 @@
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       saveStatusMessage();
     } else if (e.key === 'Escape') {
@@ -475,21 +475,21 @@
 
     <!-- status message -->
     {#if isEditingStatusMessage}
-      <input
+      <textarea
         bind:this={statusInputRef}
-        type="text"
         bind:value={editedStatusMessage}
         onblur={saveStatusMessage}
         onkeydown={handleStatusMessageKeydown}
         disabled={isSavingStatusMessage}
         maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
         aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-        class="type-body w-full rounded bg-none py-0.5 text-foreground
+        rows={1}
+        class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded bg-none py-0.5 text-foreground
                outline-none leading-snug
                focus:ring-none! focus:outline-none!
                transition-all duration-150 disabled:opacity-50"
-        placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
-      />
+        style="field-sizing: content;"
+        placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
     {:else if workspace}
       <button
         class="type-body cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground

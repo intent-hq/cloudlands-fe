@@ -24,6 +24,8 @@ describe('ChiefStarterPrompts', () => {
     expect(screen.getByRole('button', { name: /analyze my workspaces/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /prepare my daily brief/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /switch me to a random theme/i })).toBeTruthy();
+    expect(screen.queryByText(/Chief of Staff/i)).toBeNull();
+    expect(screen.queryByText('⌃1')).toBeNull();
   });
 
   it('sends the full prompt represented by a concise starter label', async () => {
@@ -35,5 +37,15 @@ describe('ChiefStarterPrompts', () => {
     expect(onSelect).toHaveBeenCalledWith(
       expect.stringContaining('Propose specialist changes, AGENTS.md updates'),
     );
+  });
+
+  it('sends the daily brief prompt without obsolete Chief of Staff wording', async () => {
+    const onSelect = vi.fn();
+    render(ChiefStarterPrompts, { props: { onSelect } });
+
+    await fireEvent.click(screen.getByRole('button', { name: /prepare my daily brief/i }));
+
+    expect(onSelect).toHaveBeenCalledWith(expect.stringContaining('Give me a concise daily brief'));
+    expect(onSelect).toHaveBeenCalledWith(expect.not.stringContaining('Chief of Staff'));
   });
 });

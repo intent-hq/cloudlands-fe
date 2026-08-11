@@ -82,7 +82,7 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('let openLauncherHoverKey = $state<string | null>(null)');
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
     expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');
-    expect(sidebar).toContain('grid-cols-[repeat(3,1.25rem)] gap-0');
-    expect(sidebar).not.toContain('grid-cols-[repeat(3,1.25rem)] gap-0.5');
+    expect(sidebar).toContain('grid-cols-[repeat(3,1.75rem)] gap-0');
+    expect(sidebar).not.toContain('grid-cols-[repeat(3,1.75rem)] gap-0.5');
   });
 });

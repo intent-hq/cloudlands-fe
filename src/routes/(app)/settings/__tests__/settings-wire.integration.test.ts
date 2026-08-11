@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAppClient } from '$lib/client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { ReduxStoreContext } from '$store/renderer/types';
+import { initAppStore, store as appStore } from '$store/renderer/store';
 import {
   SETTINGS_PROTOCOL_FIXTURES,
   SHIPPED_WEBSOCKET_SETTING_FIXTURES,
@@ -25,8 +27,10 @@ type BackendStep = { request: unknown; response: unknown };
 describe('Settings deterministic mock-BE contracts', () => {
   const originalInvoke = window.electronAPI!.invoke;
   const client = new LiveAppClient();
+  let storeContext: ReduxStoreContext | undefined;
 
   beforeEach(() => {
+    storeContext = initAppStore(appStore);
     resetMockIpcRouter();
     window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
       mockInvoke(channel, payload),
@@ -34,6 +38,8 @@ describe('Settings deterministic mock-BE contracts', () => {
   });
 
   afterEach(() => {
+    storeContext?.dispose();
+    storeContext = undefined;
     cleanup();
     window.electronAPI!.invoke = originalInvoke;
     resetMockIpcRouter();

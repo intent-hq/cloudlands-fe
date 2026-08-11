@@ -54,9 +54,7 @@
   class="ov-banner"
   class:ov-no-motion={!motion}
   style:--banner-in-delay={motion ? `${bannerDelay(needsPan, index)}s` : '0s'}
-  style:--banner-out-delay={motion
-    ? `${bannerOutDelay(needsPan, index, dwellMs, scrollS)}s`
-    : '0s'}
+  style:--banner-out-delay={motion ? `${bannerOutDelay(needsPan, index, dwellMs, scrollS)}s` : '0s'}
   data-testid="hud-takeover-banner"
 >
   <span class="ov-banner-chip" class:ov-anim-blink={motion} style:border-color={color} style:color>
@@ -145,7 +143,9 @@
     border: 1px solid;
     padding: 4px 11px;
     margin-bottom: 10px;
-    font: 600 10px 'JetBrains Mono', monospace;
+    font:
+      600 10px 'JetBrains Mono',
+      monospace;
     letter-spacing: 0.16em;
     text-transform: uppercase;
   }
@@ -153,7 +153,10 @@
     animation: hudblink 1.6s step-end infinite;
   }
   .ov-banner-big {
-    font: 700 42px 'Doto', 'JetBrains Mono', monospace;
+    font:
+      700 42px 'Doto',
+      'JetBrains Mono',
+      monospace;
     letter-spacing: 0.08em;
     line-height: 1.05;
     white-space: nowrap;
@@ -181,14 +184,18 @@
   }
   .ov-banner-sub {
     margin-top: 6px;
-    font: 500 11.5px 'JetBrains Mono', monospace;
+    font:
+      500 11.5px 'JetBrains Mono',
+      monospace;
     letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-banner-status {
     margin-top: 8px;
-    font: 500 14px 'JetBrains Mono', monospace;
+    font:
+      500 14px 'JetBrains Mono',
+      monospace;
     line-height: 1.4;
     color: hsl(var(--muted-foreground));
     overflow: hidden;

@@ -34,10 +34,11 @@
 
   interface Props {
     onActiveTabBoundsChange?: (bounds: { left: number; width: number } | null) => void;
+    onActiveTabTrackingChange?: (tracking: boolean) => void;
     activeWorkspaceId?: string | null;
   }
 
-  let { onActiveTabBoundsChange, activeWorkspaceId }: Props = $props();
+  let { onActiveTabBoundsChange, onActiveTabTrackingChange, activeWorkspaceId }: Props = $props();
 
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
@@ -59,10 +60,43 @@
   let activeStreamsVersion = $state(0);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
+  // Active tab bounds drive the parent border mask that hides the sidebar
+  // border under the active tab. Svelte's animate:flip moves tabs via CSS
+  // transform, which ResizeObserver does not fire on, so during the flip the
+  // mask stays put while the tab slides. Poll via rAF for the flip window
+  // whenever tab order changes so the mask tracks the moving tab.
+  const activeTabBoundsPollers = new Set<() => void>();
+  const FLIP_ANIMATION_FRAMES = 14;
 
   onMount(() => {
     activeStreamsTracker.startPolling();
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+  });
+
+  $effect(() => {
+    void visibleTabIds;
+    if (activeTabBoundsPollers.size === 0) return;
+    onActiveTabTrackingChange?.(true);
+    let framesLeft = FLIP_ANIMATION_FRAMES;
+    let frame: number | null = null;
+    let cancelled = false;
+    const tick = () => {
+      frame = null;
+      if (cancelled) return;
+      activeTabBoundsPollers.forEach((poll) => poll());
+      framesLeft -= 1;
+      if (framesLeft > 0) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        onActiveTabTrackingChange?.(false);
+      }
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      onActiveTabTrackingChange?.(false);
+    };
   });
 
   function handlePreviewOpen(workspaceId: string, open: boolean) {
@@ -120,6 +154,7 @@
     resizeObserver.observe(node);
     window.addEventListener('resize', scheduleReport);
     strip?.addEventListener('scroll', scheduleReport);
+    activeTabBoundsPollers.add(report);
     scheduleReport();
 
     return {
@@ -131,6 +166,7 @@
       },
       destroy() {
         if (frameId !== null) cancelAnimationFrame(frameId);
+        activeTabBoundsPollers.delete(report);
         resizeObserver.disconnect();
         window.removeEventListener('resize', scheduleReport);
         strip?.removeEventListener('scroll', scheduleReport);
@@ -344,7 +380,7 @@
               class={cn(
                 'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
                 isCurrent
-                  ? 'rounded-md border-border border-b-transparent bg-sidebar text-foreground'
+                  ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
                   : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
                 draggedWorkspaceId === workspaceId && 'scale-[0.98] opacity-45',
                 dragOverWorkspaceId === workspaceId &&
@@ -369,6 +405,38 @@
               ondrop={(event) => handleDrop(event, workspaceId)}
               ondragend={handleDragEnd}
             >
+              {#if isCurrent}
+                <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
+                     so the active tab appears to flow into the panel below (Chrome-tab style).
+                     Left flare: filled square minus a quarter-circle carved from the top-right
+                     (the corner that meets the tab's bottom-left). -->
+                <svg
+                  class="pointer-events-none absolute -left-2 bottom-0 size-2 overflow-visible text-sidebar"
+                  viewBox="0 0 8 8"
+                  aria-hidden="true"
+                >
+                  <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
+                  <path
+                    class="stroke-border"
+                    d="M 8 0 A 8 8 0 0 1 0 8"
+                    fill="none"
+                    stroke-width="1"
+                  />
+                </svg>
+                <svg
+                  class="pointer-events-none absolute -right-2 bottom-0 size-2 overflow-visible text-sidebar"
+                  viewBox="0 0 8 8"
+                  aria-hidden="true"
+                >
+                  <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
+                  <path
+                    class="stroke-border"
+                    d="M 0 0 A 8 8 0 0 0 8 8"
+                    fill="none"
+                    stroke-width="1"
+                  />
+                </svg>
+              {/if}
               {#if dragOverWorkspaceId === workspaceId && isWorkspaceStackPlacement(dragOverPlacement)}
                 <span
                   class={cn(
@@ -414,7 +482,7 @@
             class={cn(
               'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
               isCurrent
-                ? 'rounded-md border-border border-b-transparent bg-sidebar text-foreground'
+                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
                 : 'rounded-md border-transparent text-muted-foreground',
             )}
             data-workspace-tab={workspaceId}
@@ -426,6 +494,34 @@
             use:reportActiveTabBounds={isCurrent}
             role="presentation"
           >
+            {#if isCurrent}
+              <svg
+                class="pointer-events-none absolute -left-2 bottom-0 size-2 overflow-visible text-sidebar"
+                viewBox="0 0 8 8"
+                aria-hidden="true"
+              >
+                <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 8 0 A 8 8 0 0 1 0 8"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
+              <svg
+                class="pointer-events-none absolute -right-2 bottom-0 size-2 overflow-visible text-sidebar"
+                viewBox="0 0 8 8"
+                aria-hidden="true"
+              >
+                <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 0 0 A 8 8 0 0 0 8 8"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
+            {/if}
             <button
               type="button"
               use:registerTabButton={workspaceId}

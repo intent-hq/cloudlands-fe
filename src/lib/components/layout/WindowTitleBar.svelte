@@ -50,6 +50,7 @@
 
   let { workspaceId, overlayWorkspaceColumns = false }: Props = $props();
   let activeTabBounds = $state<{ left: number; width: number } | null>(null);
+  let activeTabTracking = $state(false);
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -87,6 +88,10 @@
 
   function handleActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
     activeTabBounds = bounds ? { left: bounds.left - panelOffset, width: bounds.width } : null;
+  }
+
+  function handleActiveTabTrackingChange(tracking: boolean) {
+    activeTabTracking = tracking;
   }
 
   // Zoom selectors
@@ -313,6 +318,7 @@
         {#if $workspaceViewMode$ === 'single'}
           <WorkspaceTabStrip
             onActiveTabBoundsChange={handleActiveTabBoundsChange}
+            onActiveTabTrackingChange={handleActiveTabTrackingChange}
             activeWorkspaceId={routedWorkspaceId}
           />
           <WorkspaceRepoLauncher />
@@ -335,9 +341,12 @@
     {/if}
     {#if activeTabBounds && $workspaceViewMode$ === 'single'}
       <div
-        class="pointer-events-none absolute -bottom-px z-[60] h-0.5 bg-sidebar transition-[left] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left + panelOffset + 1}px`}
-        style:width={`${Math.max(0, activeTabBounds.width - 2)}px`}
+        class="pointer-events-none absolute -bottom-px z-[60] h-0.5 bg-sidebar motion-reduce:transition-none"
+        style:left={`${activeTabBounds.left + panelOffset - 7}px`}
+        style:width={`${Math.max(0, activeTabBounds.width + 14)}px`}
+        style:transition={activeTabTracking
+          ? 'none'
+          : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}
         data-active-tab-border-mask
         aria-hidden="true"
       ></div>

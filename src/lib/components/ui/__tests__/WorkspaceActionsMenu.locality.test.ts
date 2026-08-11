@@ -5,17 +5,8 @@
  * editors block (editor list + "Choose app") must disappear when the daemon
  * is remote, while locality-safe copy actions stay.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -91,7 +82,9 @@ function makeState(
 }
 
 async function renderMenu() {
-  const WorkspaceActionsMenu = (await import('../WorkspaceActionsMenu.svelte')).default;
+  const WorkspaceActionsMenu = (
+    await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
+  ).default;
   const { container } = render(WorkspaceActionsMenu, {
     props: { filePath: '/tmp/project', showFileActions: true },
   });
@@ -105,7 +98,7 @@ async function renderMenu() {
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
-warmImport(() => import('../WorkspaceActionsMenu.svelte'));
+warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
 
 describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
   beforeEach(() => {

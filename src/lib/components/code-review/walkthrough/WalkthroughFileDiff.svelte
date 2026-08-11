@@ -10,17 +10,13 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import {
-  faChevronDown,
-  faChevronRight,
-  faEllipsisH,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronRight, faEllipsisH } from '@fortawesome/free-solid-svg-icons';
   import hljs from 'highlight.js';
   import {
-  parsePatch,
-  type DiffLine,
-  type Hunk,
-} from '$lib/components/code-walkthrough/patch-utils';
+    parsePatch,
+    type DiffLine,
+    type Hunk,
+  } from '$lib/components/code-walkthrough/patch-utils';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughInlineComment from './WalkthroughInlineComment.svelte';
@@ -85,7 +81,12 @@
     const lineMap = new Map<string, string>();
 
     // Only apply highlighting if we have a detected language
-    if (!language || language === 'text' || language === 'plaintext' || !hljs.getLanguage(language)) {
+    if (
+      !language ||
+      language === 'text' ||
+      language === 'plaintext' ||
+      !hljs.getLanguage(language)
+    ) {
       return lineMap;
     }
 
@@ -146,7 +147,7 @@
   });
 
   // Lines that have annotations (should always be visible)
-  const annotatedLines = $derived(new Set(annotations.map(a => a.line)));
+  const annotatedLines = $derived(new Set(annotations.map((a) => a.line)));
 
   // Get annotations for a specific line
   // Only show annotations on new lines (additions or unchanged), not on deletions
@@ -174,7 +175,11 @@
     if (!hunk) return false;
 
     // Show if within contextLines of a changed line
-    for (let i = Math.max(0, lineIndex - contextLines); i <= Math.min(hunk.lines.length - 1, lineIndex + contextLines); i++) {
+    for (
+      let i = Math.max(0, lineIndex - contextLines);
+      i <= Math.min(hunk.lines.length - 1, lineIndex + contextLines);
+      i++
+    ) {
       const nearbyLine = hunk.lines[i];
       if (nearbyLine.type === 'addition' || nearbyLine.type === 'deletion') return true;
 
@@ -193,7 +198,9 @@
   }
 
   // Find gaps (hidden line ranges) in a hunk
-  function findGapsInHunk(hunkIndex: number): Array<{ startIndex: number; endIndex: number; count: number }> {
+  function findGapsInHunk(
+    hunkIndex: number,
+  ): Array<{ startIndex: number; endIndex: number; count: number }> {
     const hunk = hunks[hunkIndex];
     if (!hunk) return [];
 
@@ -213,7 +220,11 @@
 
     // Handle gap at end
     if (gapStart !== null) {
-      gaps.push({ startIndex: gapStart, endIndex: hunk.lines.length - 1, count: hunk.lines.length - gapStart });
+      gaps.push({
+        startIndex: gapStart,
+        endIndex: hunk.lines.length - 1,
+        count: hunk.lines.length - gapStart,
+      });
     }
 
     return gaps;
@@ -251,10 +262,7 @@
   }
 
   function escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   // Get line background class (very subtle)
@@ -284,9 +292,12 @@
   // Get the prefix character
   function getPrefix(line: DiffLine): string {
     switch (line.type) {
-      case 'addition': return '+';
-      case 'deletion': return '-';
-      default: return ' ';
+      case 'addition':
+        return '+';
+      case 'deletion':
+        return '-';
+      default:
+        return ' ';
     }
   }
 
@@ -394,11 +405,16 @@
       class="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors text-left group"
       onclick={toggleFileCollapsed}
     >
-      <Fa icon={isFileCollapsed ? faChevronRight : faChevronDown} class="h-3 w-3 text-ghost shrink-0" />
+      <Fa
+        icon={isFileCollapsed ? faChevronRight : faChevronDown}
+        class="h-3 w-3 text-ghost shrink-0"
+      />
 
       <!-- File icon -->
       <svg class="h-4 w-4 text-ghost shrink-0" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12zm2 0v12h6v-12H5.5z"/>
+        <path
+          d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12zm2 0v12h6v-12H5.5z"
+        />
       </svg>
 
       <!-- File name and path -->
@@ -410,7 +426,9 @@
       <!-- Stats (additions only for cleaner look) -->
       <div class="flex items-center gap-1 text-xs shrink-0">
         {#if additions > 0 || deletions > 0}
-          <span class="text-emerald-600 dark:text-emerald-400 font-medium">+{additions + deletions}</span>
+          <span class="text-emerald-600 dark:text-emerald-400 font-medium"
+            >+{additions + deletions}</span
+          >
         {/if}
       </div>
     </button>
@@ -429,11 +447,21 @@
       <div class="font-mono text-xs leading-relaxed opacity-60">
         {#each previewLines as { line, hunkIndex, lineIndex } (`preview-${hunkIndex}-${lineIndex}`)}
           <div class="flex {getLineBgClass(line)}">
-            <div class="w-12 shrink-0 flex select-none {getGutterClass(line)} border-r border-border/30">
-              <span class="w-12 px-2 text-right text-ui text-subtle tabular-nums">{line.newNum ?? line.oldNum ?? ''}</span>
+            <div
+              class="w-12 shrink-0 flex select-none {getGutterClass(
+                line,
+              )} border-r border-border/30"
+            >
+              <span class="w-12 px-2 text-right text-ui text-subtle tabular-nums"
+                >{line.newNum ?? line.oldNum ?? ''}</span
+              >
             </div>
-            <span class="w-5 shrink-0 text-center select-none {getPrefixClass(line)}">{getPrefix(line)}</span>
-            <pre class="flex-1 px-1 whitespace-pre overflow-hidden text-ellipsis"><code class="hljs">{@html getHighlightedContent(line)}</code></pre>
+            <span class="w-5 shrink-0 text-center select-none {getPrefixClass(line)}"
+              >{getPrefix(line)}</span
+            >
+            <pre class="flex-1 px-1 whitespace-pre overflow-hidden text-ellipsis"><code class="hljs"
+                >{@html getHighlightedContent(line)}</code
+              ></pre>
           </div>
         {/each}
         {#if totalChangedLines > previewLines.length}
@@ -442,7 +470,9 @@
             class="w-full py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors text-center"
             onclick={toggleFileCollapsed}
           >
-            {m.codeReview_fileDiff_moreLines_label({ count: totalChangedLines - previewLines.length })}
+            {m.codeReview_fileDiff_moreLines_label({
+              count: totalChangedLines - previewLines.length,
+            })}
           </button>
         {/if}
       </div>
@@ -454,7 +484,9 @@
     <div class="relative" transition:slide={{ duration: 150 }}>
       <!-- Toolbar when there are hidden lines -->
       {#if hasHiddenLines}
-        <div class="flex items-center justify-end gap-2 px-3 py-1.5 bg-muted/20 border-b border-border text-xs">
+        <div
+          class="flex items-center justify-end gap-2 px-3 py-1.5 bg-muted/20 border-b border-border text-xs"
+        >
           <button
             type="button"
             class="text-muted-foreground hover:text-foreground transition-colors"
@@ -479,7 +511,7 @@
         <div class="font-mono text-xs leading-relaxed min-w-full">
           {#each hunks as hunk, hunkIndex (hunkIndex)}
             {@const gaps = findGapsInHunk(hunkIndex)}
-            {@const gapAtStart = gaps.find(g => g.startIndex === 0)}
+            {@const gapAtStart = gaps.find((g) => g.startIndex === 0)}
 
             <!-- Gap indicator at start of hunk -->
             {#if gapAtStart}
@@ -499,23 +531,35 @@
               {@const lineAnnotations = getAnnotationsForLine(line)}
               {@const isCommentOpen = activeCommentLine === lineKey}
               {@const isVisible = shouldShowLine(hunkIndex, lineIndex, line)}
-              {@const gapAfter = gaps.find(g => g.startIndex === lineIndex + 1)}
+              {@const gapAfter = gaps.find((g) => g.startIndex === lineIndex + 1)}
 
               {#if isVisible}
                 <!-- Diff line -->
                 <div class="group flex {getLineBgClass(line)} hover:bg-accent/30 transition-colors">
                   <!-- Line numbers gutter -->
-                  <div class="w-20 shrink-0 flex select-none {getGutterClass(line)} border-r border-border/30">
-                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums">{line.oldNum ?? ''}</span>
-                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums">{line.newNum ?? ''}</span>
+                  <div
+                    class="w-20 shrink-0 flex select-none {getGutterClass(
+                      line,
+                    )} border-r border-border/30"
+                  >
+                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums"
+                      >{line.oldNum ?? ''}</span
+                    >
+                    <span class="w-10 px-2 text-right text-ui text-subtle tabular-nums"
+                      >{line.newNum ?? ''}</span
+                    >
                   </div>
 
                   <!-- +/- prefix -->
-                  <span class="w-5 shrink-0 text-center select-none {getPrefixClass(line)}">{getPrefix(line)}</span>
+                  <span class="w-5 shrink-0 text-center select-none {getPrefixClass(line)}"
+                    >{getPrefix(line)}</span
+                  >
 
                   <!-- Line content -->
                   <div class="flex-1 flex items-center min-w-0 pr-2">
-                    <pre class="flex-1 px-1 whitespace-pre overflow-x-auto"><code class="hljs">{@html getHighlightedContent(line)}</code></pre>
+                    <pre class="flex-1 px-1 whitespace-pre overflow-x-auto"><code class="hljs"
+                        >{@html getHighlightedContent(line)}</code
+                      ></pre>
 
                     <!-- Comment button (show on hover) -->
                     {#if onSendMessage}
@@ -551,7 +595,7 @@
                     <div class="p-3">
                       <WalkthroughInlineComment
                         lineNumber={line.newNum ?? line.oldNum ?? 0}
-                        fileName={fileName}
+                        {fileName}
                         onSend={handleSendMessage}
                         onClose={handleCloseComment}
                         {isSending}

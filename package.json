@@ -348,7 +348,6 @@
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
       "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch",
       "svelte-sonner@1.1.1": "patches/svelte-sonner@1.1.1.patch"
-    },
-    "overrides[brace-expansion@>": "3.0.0 <5.0.8]=^5.0.8"
+    }
   }
 }

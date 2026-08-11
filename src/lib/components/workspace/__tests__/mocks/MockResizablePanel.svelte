@@ -11,6 +11,7 @@
     growWithDefaultWidth,
     resizeWithDefaultWidth,
     syncWithDefaultWidth,
+    doSkipResize,
     showHandleIndicator,
     resizeScrollContainer,
     onWidthChange,
@@ -26,6 +27,7 @@
     growWithDefaultWidth?: boolean;
     resizeWithDefaultWidth?: boolean;
     syncWithDefaultWidth?: boolean;
+    doSkipResize?: boolean;
     showHandleIndicator?: boolean;
     resizeScrollContainer?: HTMLElement | null;
     onWidthChange?: (width: number) => void;
@@ -45,6 +47,7 @@
   data-grow-with-default-width={growWithDefaultWidth}
   data-resize-with-default-width={resizeWithDefaultWidth}
   data-sync-with-default-width={syncWithDefaultWidth}
+  data-skip-resize={doSkipResize}
   data-show-handle-indicator={showHandleIndicator}
   data-resize-scroll-container={resizeScrollContainer ? 'true' : 'false'}
 >
@@ -54,9 +57,6 @@
     data-mock-resize-handle
     onclick={() => onResizeEnd?.(1320, 1440)}
   ></button>
-  <button
-    aria-label="Report mock width"
-    data-mock-width-change
-    onclick={() => onWidthChange?.(720)}
+  <button aria-label="Report mock width" data-mock-width-change onclick={() => onWidthChange?.(720)}
   ></button>
 </div>

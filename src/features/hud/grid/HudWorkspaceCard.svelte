@@ -27,9 +27,7 @@
   const color = $derived(cardStateColor(card.stateKey));
   const blinking = $derived($takeoverBlinkTarget === card.workspaceId);
   const isFailed = $derived(card.stateKey === 'failed');
-  const isAttention = $derived(
-    card.stateKey === 'wait' || card.stateKey === 'blocked' || isFailed,
-  );
+  const isAttention = $derived(card.stateKey === 'wait' || card.stateKey === 'blocked' || isFailed);
 
   /** Mock `taskSegs`: completed → in-progress → remaining segment colors. */
   const segments = $derived.by(() => {

@@ -1116,7 +1116,7 @@
   class={cn(
     'relative rich-input-container flex flex-col overflow-hidden text-card-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
     edgeDocked
-      ? 'rounded-none border-x-0 border-b-0 border-t border-border bg-card shadow-none'
+      ? 'rounded-none border-x-0 border-b-0 border-t border-border bg-transparent shadow-none'
       : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
     {
       'border-primary border-dashed': isDragging,

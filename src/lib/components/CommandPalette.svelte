@@ -999,7 +999,9 @@
                 >
               </button>
             {:else}
-              <p class="text-[13px] text-subtle px-3">{m.lib_commandPalette_invalidLine_message()}</p>
+              <p class="text-[13px] text-subtle px-3">
+                {m.lib_commandPalette_invalidLine_message()}
+              </p>
             {/if}
           </div>
         </div>
@@ -1140,7 +1142,9 @@
         </div>
       {:else if searchQuery && !isLoadingFiles && !isLoadingMessages}
         <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-subtle">{m.lib_commandPalette_noResults_message({ query: searchQuery })}</p>
+          <p class="text-[13px] text-subtle">
+            {m.lib_commandPalette_noResults_message({ query: searchQuery })}
+          </p>
         </div>
       {:else if !searchQuery}
         <div class="px-3 py-6 text-center">

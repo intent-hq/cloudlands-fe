@@ -1,25 +1,25 @@
 <script lang="ts">
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
-  import {
-  onDestroy,
-  onMount,
-} from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
-  startGitHubAuth,
-  cancelGitHubAuth,
-  clearGitHubAuthError,
-} from '$store/renderer/slices/github-auth/github-auth-slice';
+    startGitHubAuth,
+    cancelGitHubAuth,
+    clearGitHubAuthError,
+  } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
-  selectGitHubAuthIsAuthenticated,
-  selectGitHubAuthIsAuthenticating,
-  selectGitHubAuthDeviceFlow,
-  selectGitHubAuthError,
-  selectGitHubAuthRequiresDaemonAuth,
-} from '$store/renderer/slices/github-auth/github-auth-selectors';
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+    selectGitHubAuthDeviceFlow,
+    selectGitHubAuthError,
+    selectGitHubAuthRequiresDaemonAuth,
+  } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
+
+  // i18n-ignore (shell command)
+  const GITHUB_LOGIN_COMMAND = 'auggie login';
 
   interface Props {
     open?: boolean;
@@ -122,8 +122,9 @@
               {m.lib_githubAuth_daemonAuthIntegration_message()}
             </p>
             <p class="text-subtle text-sm mt-2">
-              <!-- i18n-ignore (shell command) -->
-              {m.lib_githubAuth_run_before()} <code class="bg-muted px-2 py-1 rounded">auggie login</code> {m.lib_githubAuth_inYourTerminal_after()}
+              {m.lib_githubAuth_run_before()}
+              <code class="bg-muted px-2 py-1 rounded">{GITHUB_LOGIN_COMMAND}</code>
+              {m.lib_githubAuth_inYourTerminal_after()}
             </p>
           </div>
         {:else if $deviceFlow$}

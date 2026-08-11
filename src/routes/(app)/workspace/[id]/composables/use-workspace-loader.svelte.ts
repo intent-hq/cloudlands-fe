@@ -302,7 +302,10 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
         worktreePath: ws.worktreePath,
       });
     } else {
-      const errorMsg = !openResult.ok && 'error' in openResult ? openResult.error : m.ui_workspaceActions_unknown_error();
+      const errorMsg =
+        !openResult.ok && 'error' in openResult
+          ? openResult.error
+          : m.ui_workspaceActions_unknown_error();
       logger.error('Failed to open workspace', { workspaceId, error: errorMsg });
       if (!ws) {
         throw new Error(m.workspace_loader_openFailed_error({ error: errorMsg }));

@@ -115,15 +115,15 @@ function applyOne(change: AppliedSettingChange): void {
  * re-runs the migration (accepted edge; users re-pick via the explicit
  * "Provider default"-aware picker).
  */
-const LEGACY_BACKGROUND_MODEL = "haiku4.5";
-export const BG_MODEL_MIGRATION_MARKER_KEY = "bg-model-haiku45-migrated";
+const LEGACY_BACKGROUND_MODEL = 'haiku4.5';
+export const BG_MODEL_MIGRATION_MARKER_KEY = 'bg-model-haiku45-migrated';
 
 function migrateLegacyBackgroundModel(
   defaultModel: string,
   typeOverrides: Record<BackgroundAgentType, string>,
 ): { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> } {
   try {
-    if (localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY) === "1") {
+    if (localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY) === '1') {
       return { defaultModel, typeOverrides };
     }
   } catch {
@@ -131,7 +131,7 @@ function migrateLegacyBackgroundModel(
     // (and clobbering a deliberate re-pick) on every boot.
     return { defaultModel, typeOverrides };
   }
-  const strip = (value: string): string => (value === LEGACY_BACKGROUND_MODEL ? "" : value);
+  const strip = (value: string): string => (value === LEGACY_BACKGROUND_MODEL ? '' : value);
   const migrated = {
     defaultModel: strip(defaultModel),
     typeOverrides: {
@@ -147,18 +147,16 @@ function migrateLegacyBackgroundModel(
       (type) => migrated.typeOverrides[type] !== typeOverrides[type],
     );
   if (changed) {
-    logger.info("migrating legacy haiku4.5 background-model settings to provider default");
+    logger.info('migrating legacy haiku4.5 background-model settings to provider default');
     void appClient.settings
       .update([
-        { path: "quickActions.defaultModel", value: migrated.defaultModel },
-        { path: "quickActions.typeOverrides", value: migrated.typeOverrides },
+        { path: 'quickActions.defaultModel', value: migrated.defaultModel },
+        { path: 'quickActions.typeOverrides', value: migrated.typeOverrides },
       ])
-      .catch((error) =>
-        logger.error("failed to persist legacy background-model migration", error),
-      );
+      .catch((error) => logger.error('failed to persist legacy background-model migration', error));
   }
   try {
-    localStorage.setItem(BG_MODEL_MIGRATION_MARKER_KEY, "1");
+    localStorage.setItem(BG_MODEL_MIGRATION_MARKER_KEY, '1');
   } catch {
     // Marker write failed; the migration may re-run next boot (harmless for
     // legacy values, same accepted edge as a cleared localStorage).
@@ -176,10 +174,11 @@ function migrateLegacyBackgroundModel(
  * persisted an entry for their default provider (the special case covered
  * it), so after upgrading it resolves disabled until manually re-enabled.
  * When `providers.enabled` hydrates without an entry for the effective
- * default provider (the global default-model's provider prefix when it is a
- * known catalog row, else `providers.active` — mirroring
- * `selectEffectiveDefaultProviderId`), seed it to `true` and persist the map
- * back so the daemon's stored settings are migrated too. An explicit
+ * default provider (the active provider's model prefix when it is a known
+ * catalog row, else `providers.active`), seed it to `true` and persist the map
+ * back so the daemon's stored settings are migrated too. When legacy state has
+ * no active provider but exactly one persisted `model.providerDefaults` key,
+ * that sole key is the only unambiguous migration candidate. An explicit
  * persisted entry (e.g. a deliberate `false`) always wins — the seed only
  * fills the unset case, which also makes the migration naturally idempotent
  * (no run-once marker: after the first seed the explicit entry
@@ -192,29 +191,39 @@ function migrateLegacyBackgroundModel(
  */
 let enablementSeedInFlight = false;
 
+function resolveDefaultProviderCandidate(
+  activeProviderId: string,
+  providerModels: Record<string, string>,
+  knownProviderIds?: readonly string[],
+): string {
+  const providerModelIds = Object.keys(providerModels);
+  const persistedProviderId =
+    activeProviderId || (providerModelIds.length === 1 ? providerModelIds[0] : '');
+  const model = persistedProviderId ? providerModels[persistedProviderId] : undefined;
+  const prefix = model?.includes(':') ? splitCompoundModelId(model).providerId : undefined;
+  if (prefix && (!knownProviderIds || knownProviderIds.includes(prefix))) return prefix;
+  return persistedProviderId;
+}
+
 function seedDefaultProviderEnablement(): void {
   const { activeProviderId, enabledProviders } = appStore.state.providerSettings;
-  const globalModel = activeProviderId
-    ? appStore.state.model?.providerModels?.[activeProviderId]
-    : undefined;
-  const prefixProviderId = globalModel?.includes(':')
-    ? splitCompoundModelId(globalModel).providerId
-    : undefined;
+  const providerModels = appStore.state.model?.providerModels ?? {};
+  const candidate = resolveDefaultProviderCandidate(activeProviderId, providerModels);
   // Cheap sync gate: only hit the wire when some default-provider candidate
   // actually lacks an entry. The async body re-resolves against the catalog.
-  const candidates = [prefixProviderId, activeProviderId].filter((id): id is string => !!id);
-  if (!candidates.some((id) => enabledProviders[id] === undefined)) return;
+  if (!candidate || enabledProviders[candidate] !== undefined) return;
   if (enablementSeedInFlight) return;
   enablementSeedInFlight = true;
   void (async () => {
     try {
       const catalog = await appClient.providers.catalog();
       const settings = appStore.state.providerSettings;
-      const active = settings.activeProviderId;
-      const model = active ? appStore.state.model?.providerModels?.[active] : undefined;
-      const prefix = model?.includes(':') ? splitCompoundModelId(model).providerId : undefined;
       const row = (id: string) => catalog.providers.find((entry) => entry.id === id);
-      const defaultProviderId = prefix && row(prefix) ? prefix : active;
+      const defaultProviderId = resolveDefaultProviderCandidate(
+        settings.activeProviderId,
+        appStore.state.model?.providerModels ?? {},
+        catalog.providers.map((entry) => entry.id),
+      );
       if (!defaultProviderId) return;
       const entry = row(defaultProviderId);
       if (!entry || entry.canBeDisabled === false) return;
@@ -253,11 +262,10 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
   const defaultModel =
-    (byPath.get('quickActions.defaultModel') as string | undefined) ??
-    currentState.defaultModel;
+    (byPath.get('quickActions.defaultModel') as string | undefined) ?? currentState.defaultModel;
   const typeOverrides =
-    (byPath.get('quickActions.typeOverrides') as
-      Record<BackgroundAgentType, string> | undefined) ?? currentState.typeOverrides;
+    (byPath.get('quickActions.typeOverrides') as Record<BackgroundAgentType, string> | undefined) ??
+    currentState.typeOverrides;
 
   // Always dispatch when defaultModel is a string (even if empty) so typeOverrides can hydrate.
   // An empty defaultModel means "provider default" (no explicit model configured).

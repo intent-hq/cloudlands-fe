@@ -120,20 +120,20 @@ describe('AuggieAvatar Thinking selector ownership', () => {
     expect(getRandomColorsWithSeedMock).not.toHaveBeenCalled();
   });
 
-  it('uses the theme foreground for a backgroundless auggie mark in dark mode', () => {
+  it('keeps the dark auggie mark over the muted fallback in dark mode', () => {
     darkThemeState.current = true;
     const { container } = render(AuggieAvatar, { props: { size: 20 } });
 
-    const logo = container.querySelector('svg[viewBox="0 1 20 12.3"]');
-    expect(logo?.classList.contains('text-foreground')).toBe(true);
-    expect(logo?.classList.contains('text-gray-900')).toBe(false);
+    const logo = querySvgByViewBox(container, '0 1 20 12.3');
+    expect(logo?.classList.contains('text-gray-900')).toBe(true);
+    expect(logo?.classList.contains('text-foreground')).toBe(false);
   });
 
   it('keeps the dark auggie mark when the avatar has a background color in dark mode', () => {
     darkThemeState.current = true;
     const { container } = render(AuggieAvatar, { props: { seed: 'colored-avatar', size: 20 } });
 
-    const logo = container.querySelector('svg[viewBox="0 1 20 12.3"]');
+    const logo = querySvgByViewBox(container, '0 1 20 12.3');
     expect(logo?.classList.contains('text-gray-900')).toBe(true);
     expect(logo?.classList.contains('text-foreground')).toBe(false);
   });

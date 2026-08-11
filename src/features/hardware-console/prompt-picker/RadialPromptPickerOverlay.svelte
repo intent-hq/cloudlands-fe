@@ -36,9 +36,7 @@
 
   const cancelSector = $derived(radialCancelSector($radial$.prompts.length));
   const cancelPosition = positionAt(0.5);
-  const cancelHighlighted = $derived(
-    $radial$.sector === null || $radial$.sector === cancelSector,
-  );
+  const cancelHighlighted = $derived($radial$.sector === null || $radial$.sector === cancelSector);
 
   function truncate(text: string): string {
     return text.length > MAX_LABEL_CHARS ? `${text.slice(0, MAX_LABEL_CHARS - 1)}…` : text;
@@ -54,7 +52,9 @@
   >
     <div class="absolute inset-0 flex items-center justify-center">
       <div class="relative" transition:scale={{ duration: 140, start: 0.9 }}>
-        <div class="radial-hub absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full px-4 py-2 text-xs">
+        <div
+          class="radial-hub absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full px-4 py-2 text-xs"
+        >
           {#if cancelHighlighted}
             {m.hardwareConsole_radialPromptPicker_releaseToCancel_label()}
           {:else}

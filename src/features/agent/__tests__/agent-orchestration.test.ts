@@ -9,14 +9,7 @@
  * - Interruption handling
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 // workspace-event-bus was deleted; event delivery is now handled by Redux sagas
 
@@ -29,22 +22,8 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
-// Mock the Redux store bridge for agent-subscription-ops
-import {
-  agentSubscriptionsReducer,
-  initialState as sliceInitialState,
-} from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
-let _state = { agentSubscriptions: { ...sliceInitialState } } as any;
 vi.mock('../../../store/main/redux-store-bridge', () => ({
-  getMainState: () => _state,
-  mainDispatch: (action: any) => {
-    // Apply the reducer to keep state consistent
-    _state = {
-      ..._state,
-      agentSubscriptions: agentSubscriptionsReducer(_state.agentSubscriptions, action),
-    };
-    return action;
-  },
+  mainDispatch: vi.fn((action: unknown) => action),
 }));
 
 // Import after mocks
@@ -57,19 +36,18 @@ import {
 } from '$features/events/main/agent-subscription-ops';
 
 import {
-  selectDelegationGroup,
-  selectAgentStatus,
-  selectDelegationGroupsForParent,
-} from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
-import { getMainState } from '../../../store/main/redux-store-bridge';
+  getAgentSubscriptionStatus,
+  getDelegationGroupsForParent,
+  getWorkspaceSubscriptionState,
+  resetAgentSubscriptionState,
+} from '$features/events/main/agent-subscription-state.service';
 
 describe('Agent Orchestration', () => {
   const workspaceId = 'test-workspace';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset Redux state between tests
-    _state = { agentSubscriptions: { ...sliceInitialState } };
+    resetAgentSubscriptionState();
   });
 
   afterEach(() => {
@@ -84,7 +62,7 @@ describe('Agent Orchestration', () => {
 
       agentSubscribeToGroup(workspaceId, parentAgentId, 'Parent', groupId, delegatedAgentId);
 
-      const group = selectDelegationGroup.select(getMainState(), workspaceId, groupId);
+      const group = getWorkspaceSubscriptionState(workspaceId).delegationGroups[groupId];
       expect(group).not.toBeUndefined();
       expect(group?.expectedAgentIds).toHaveLength(1);
       expect(group?.completedAgentIds).toHaveLength(0);
@@ -98,7 +76,7 @@ describe('Agent Orchestration', () => {
       agentSubscribeToGroup(workspaceId, parentAgentId, 'Parent', groupId, 'child-2');
       agentSubscribeToGroup(workspaceId, parentAgentId, 'Parent', groupId, 'child-3');
 
-      const group = selectDelegationGroup.select(getMainState(), workspaceId, groupId);
+      const group = getWorkspaceSubscriptionState(workspaceId).delegationGroups[groupId];
       expect(group?.expectedAgentIds).toHaveLength(3);
       expect(group?.completedAgentIds).toHaveLength(0);
     });
@@ -112,7 +90,7 @@ describe('Agent Orchestration', () => {
       agentSubscribeToGroup(workspaceId, parentAgentId, 'Parent', 'group-1', 'child-2');
       agentSubscribeToGroup(workspaceId, parentAgentId, 'Parent', 'group-2', 'child-3');
 
-      const groups = selectDelegationGroupsForParent.select(getMainState(), workspaceId, parentAgentId);
+      const groups = getDelegationGroupsForParent(workspaceId, parentAgentId);
 
       expect(groups).toHaveLength(2);
       expect(groups.map((g) => g.groupId)).toContain('group-1');
@@ -124,9 +102,15 @@ describe('Agent Orchestration', () => {
     it('should correctly unsubscribe all subscriptions for an agent', () => {
       const agentId = 'test-agent';
 
-      const sub1 = agentSubscribe(workspaceId, agentId, 'Test Agent', { eventTypes: ['agent:idle'] });
-      const sub2 = agentSubscribe(workspaceId, agentId, 'Test Agent', { eventTypes: ['agent:created'] });
-      const sub3 = agentSubscribe(workspaceId, agentId, 'Test Agent', { eventTypes: ['agent:failed'] });
+      const sub1 = agentSubscribe(workspaceId, agentId, 'Test Agent', {
+        eventTypes: ['agent:idle'],
+      });
+      const sub2 = agentSubscribe(workspaceId, agentId, 'Test Agent', {
+        eventTypes: ['agent:created'],
+      });
+      const sub3 = agentSubscribe(workspaceId, agentId, 'Test Agent', {
+        eventTypes: ['agent:failed'],
+      });
 
       expect(sub1).toBeDefined();
       expect(sub2).toBeDefined();
@@ -146,7 +130,7 @@ describe('Agent Orchestration', () => {
     it('should update agent status via Redux', () => {
       updateAgentStatus(workspaceId, 'agent-1', 'responding');
 
-      const status = selectAgentStatus.select(getMainState(), workspaceId, 'agent-1');
+      const status = getAgentSubscriptionStatus(workspaceId, 'agent-1');
       expect(status).toBe('responding');
     });
 

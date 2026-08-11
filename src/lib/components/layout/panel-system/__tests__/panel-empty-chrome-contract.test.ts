@@ -18,9 +18,10 @@ describe('empty panel chrome', () => {
   it('uses a balanced two-by-two creation grid with explicit pointer affordances', () => {
     const emptyState = source('../PanelEmptyState.svelte');
 
-    expect(emptyState).toContain('grid grid-cols-2 gap-2 sm:grid-cols-6');
-    expect(emptyState).toContain('sm:col-span-3');
-    expect(emptyState).toContain('min-h-24 cursor-pointer flex-col');
+    expect(emptyState).toContain('creation-grid grid gap-1.5');
+    expect(emptyState).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(emptyState).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))');
+    expect(emptyState).toContain('min-h-16 cursor-pointer');
     expect(emptyState).not.toContain('border-t border-border');
   });
 

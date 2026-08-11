@@ -3,13 +3,7 @@
  *
  * Focused on startup cache initialization and D1(B) coding-agent resolution.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { SpecialistFilesResult } from '../../../shared/specialist-file-types';
 
 const loadBundledSpecialistFiles = vi.fn<() => Promise<SpecialistFilesResult>>();
@@ -119,9 +113,8 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
         errors: [],
       });
 
-      const { refreshSpecialistsFromFiles, getEffectiveSpecialist } = await import(
-        './specialists.service'
-      );
+      const { refreshSpecialistsFromFiles, getEffectiveSpecialist } =
+        await import('./specialists.service');
       await refreshSpecialistsFromFiles();
 
       const result = getEffectiveSpecialist('custom-spec', 'claude-code');
@@ -143,14 +136,11 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
         errors: [],
       });
 
-      const { refreshSpecialistsFromFiles, getEffectiveSpecialist } = await import(
-        './specialists.service'
-      );
+      const { refreshSpecialistsFromFiles, getEffectiveSpecialist } =
+        await import('./specialists.service');
       await refreshSpecialistsFromFiles();
 
-      expect(getEffectiveSpecialist('custom-spec', 'claude-code')?.codingAgent).toBe(
-        'claude-code',
-      );
+      expect(getEffectiveSpecialist('custom-spec', 'claude-code')?.codingAgent).toBe('claude-code');
       expect(getEffectiveSpecialist('custom-spec')?.codingAgent).toBe('');
     });
   });

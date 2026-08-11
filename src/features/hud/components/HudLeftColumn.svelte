@@ -108,9 +108,7 @@
   <HudPanel title={m.hud_system_title()}>
     {#snippet meta()}
       <span class="hud-system-meta">
-        {$workspaceBars$.attention > 0 ||
-        $workspaceBars$.failed > 0 ||
-        $agentCounts$.failed > 0
+        {$workspaceBars$.attention > 0 || $workspaceBars$.failed > 0 || $agentCounts$.failed > 0
           ? m.hud_system_fail_label()
           : m.hud_system_pass_label()}
       </span>

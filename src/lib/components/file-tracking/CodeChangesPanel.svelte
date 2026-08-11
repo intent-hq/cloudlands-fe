@@ -189,7 +189,8 @@
   const commitHistory = $derived.by(() =>
     $ftCommits$.map((commit) => ({
       hash: commit.hash,
-      message: commit.message || commit.hash?.slice(0, 7) || m.fileTracking_codeChanges_unknown_fallback(),
+      message:
+        commit.message || commit.hash?.slice(0, 7) || m.fileTracking_codeChanges_unknown_fallback(),
       author: commit.author || m.fileTracking_codeChanges_unknown_fallback(),
       timestamp: commit.timestamp,
       files: commit.files,
@@ -393,10 +394,18 @@
     </Tooltip>
 
     <ToggleGroup.Root bind:value={viewMode} size="xs" variant="default">
-      <ToggleGroup.Item value="list" size="xs" tooltip={m.fileTracking_codeChanges_listView_tooltip()}>
+      <ToggleGroup.Item
+        value="list"
+        size="xs"
+        tooltip={m.fileTracking_codeChanges_listView_tooltip()}
+      >
         <Fa icon={faList} size="xs" />
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="tree" size="xs" tooltip={m.fileTracking_codeChanges_treeView_tooltip()}>
+      <ToggleGroup.Item
+        value="tree"
+        size="xs"
+        tooltip={m.fileTracking_codeChanges_treeView_tooltip()}
+      >
         <Fa icon={faFolderTree} size="xs" />
       </ToggleGroup.Item>
     </ToggleGroup.Root>

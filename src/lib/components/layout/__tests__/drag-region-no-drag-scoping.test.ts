@@ -5,7 +5,7 @@
  * `-webkit-app-region: no-drag` rule on all interactive elements let chat
  * content scrolled under the titlebar carve holes in the titlebar drag region.
  *
- * The rule in src/routes/+layout.svelte must therefore be scoped to
+ * The rule in src/routes/(app)/app-layout.css must therefore be scoped to
  * interactive elements INSIDE drag regions (`.app-drag-region` descendants) —
  * never app-wide. jsdom does not compute webkitAppRegion, so this suite
  * asserts the selector/structure invariant instead: the extracted no-drag
@@ -20,7 +20,8 @@ import { fileURLToPath } from 'url';
 const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const read = (relativeToSrc: string) => readFileSync(resolve(srcDir, relativeToSrc), 'utf8');
 
-const layoutSource = read('routes/+layout.svelte');
+const appLayoutSource = read('routes/(app)/+layout.svelte');
+const layoutCss = read('routes/(app)/app-layout.css');
 
 /** Selectors of the no-drag rule in +layout.svelte, unwrapped from :global(). */
 function extractNoDragSelectors(source: string): string[] {
@@ -39,7 +40,9 @@ function extractNoDragSelectors(source: string): string[] {
   return selectors;
 }
 
-const noDragSelectors = extractNoDragSelectors(layoutSource);
+const noDragSelectors = extractNoDragSelectors(`<style>${layoutCss}</style>`).filter(
+  (selector) => selector !== '.app-no-drag',
+);
 const matchesNoDragRule = (el: Element) => noDragSelectors.some((sel) => el.matches(sel));
 
 describe('no-drag rule scoping (+layout.svelte)', () => {
@@ -108,7 +111,8 @@ describe('drag surfaces carry the .app-drag-region scope class', () => {
     // It sits over the titlebar drag strip but outside any .app-drag-region
     // subtree, so it opts into no-drag inline (tooltip hover would otherwise
     // be swallowed by the drag region).
-    const wrapper = layoutSource.match(/<div[^>]*>\s*<UpdateDownloadIndicator \/>/)?.[0] ?? '';
-    expect(wrapper).toContain('-webkit-app-region: no-drag');
+    const wrapper = appLayoutSource.match(/<div[^>]*>\s*<UpdateDownloadIndicator \/>/)?.[0] ?? '';
+    expect(wrapper).toContain('app-no-drag');
+    expect(layoutCss).toMatch(/\.app-no-drag\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
   });
 });

@@ -89,12 +89,7 @@
     onCloseWorkspace?: (event: MouseEvent) => void;
   }
 
-  let {
-    workspaceId,
-    onOpenNote: _onOpenNote,
-    onAcceptChanges,
-    onCloseWorkspace,
-  }: Props = $props();
+  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges, onCloseWorkspace }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -505,7 +500,7 @@
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       saveStatusMessage();
     } else if (e.key === 'Escape') {
@@ -877,113 +872,163 @@
 {/snippet}
 
 <div class="flex w-full flex-col" data-workspace-title-section>
-    <!-- Workspace Header -->
-    <div class="flex w-full flex-col pb-1">
-      <div class="flex items-center justify-between group">
-        <div class="flex-1 flex flex-col min-w-0">
-          {#if isEditingTitle}
-            <input
-              bind:this={titleInputRef}
-              type="text"
-              bind:value={editedTitle}
-              onblur={saveTitle}
-              onkeydown={handleTitleKeydown}
-              oninput={(e) => {
-                const target = e.currentTarget;
-                target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
-              }}
-              class="text-xl font-semibold text-foreground bg-none
+  <!-- Workspace Header -->
+  <div class="flex w-full flex-col pb-1">
+    <div class="flex items-center justify-between group">
+      <div class="flex-1 flex flex-col min-w-0">
+        {#if isEditingTitle}
+          <input
+            bind:this={titleInputRef}
+            type="text"
+            bind:value={editedTitle}
+            onblur={saveTitle}
+            onkeydown={handleTitleKeydown}
+            oninput={(e) => {
+              const target = e.currentTarget;
+              target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
+            }}
+            class="text-xl font-semibold text-foreground bg-none
                py-0.5 rounded
                outline-none min-w-20 w-full leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
-              placeholder={m.workspace_links_untitled_label()}
-            />
-          {:else}
-            <button
-              class="text-xl font-semibold text-foreground bg-transparent
+            placeholder={m.workspace_links_untitled_label()}
+          />
+        {:else}
+          <button
+            class="text-xl font-semibold text-foreground bg-transparent
                border-none py-0.5 pr-1 rounded cursor-pointer text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                transition-all duration-150 leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
-              class:opacity-50={!$workspace?.title}
-              onclick={startEditingTitle}
-              title={m.workspace_sidebarHeader_editTitle_tooltip()}
-              disabled={!$workspace}
-            >
-              {#if $workspace}
-                {$workspace.title || m.workspace_links_untitled_label()}
-              {/if}
-            </button>
-          {/if}
-        </div>
+            class:opacity-50={!$workspace?.title}
+            onclick={startEditingTitle}
+            title={m.workspace_sidebarHeader_editTitle_tooltip()}
+            disabled={!$workspace}
+          >
+            {#if $workspace}
+              {$workspace.title || m.workspace_links_untitled_label()}
+            {/if}
+          </button>
+        {/if}
+      </div>
 
-        <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
-          <DropdownMenu bind:open={dropdownOpen}>
-            {#snippet trigger({ toggle }: { toggle: () => void })}
-              <Button
-                variant="ghost-light"
-                size="icon-sm"
-                aria-label="Workspace actions"
-                class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-                onclick={toggle}
-                disabled={isDeleting}
-              >
-                {#if isDeleting}
-                  <div
-                    class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                  ></div>
-                {:else}
-                  <Fa icon={faEllipsisV} size="sm" />
-                {/if}
-              </Button>
-            {/snippet}
-
-            {#snippet content()}
-              <div class="w-48">
-                <WorkspaceActionsMenu
-                  filePath={$workspace?.worktreePath ||
-                    $workspace?.repositoryPath ||
-                    $workspace?.path ||
-                    ''}
-                  workspaceId={$workspace?.id || workspaceId || ''}
-                  isDirectory={true}
-                  isWorkspaceRoot={true}
-                  onDelete={handleDelete}
-                  onArchive={handleArchive}
-                  onUnarchive={handleUnarchive}
-                  {isArchived}
-                  onClose={handleDropdownClose}
-                  showDeleteOption={true}
-                  showArchiveOption={true}
-                  showFileNameCopy={false}
-                  showFileActions={true}
-                  additionalActions={[sidebarToggleAction, sidebarSideAction]}
-                />
-              </div>
-            {/snippet}
-          </DropdownMenu>
-          {#if onCloseWorkspace}
+      <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
+        <DropdownMenu bind:open={dropdownOpen}>
+          {#snippet trigger({ toggle }: { toggle: () => void })}
             <Button
               variant="ghost-light"
               size="icon-sm"
-              aria-label={`Close workspace ${workspaceId}`}
-              data-workspace-close
+              aria-label="Workspace actions"
               class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-              onpointerdown={(event) => event.stopPropagation()}
-              onclick={onCloseWorkspace}
+              onclick={toggle}
+              disabled={isDeleting}
             >
-              <Fa icon={faXmark} size="sm" />
+              {#if isDeleting}
+                <div
+                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+                ></div>
+              {:else}
+                <Fa icon={faEllipsisV} size="sm" />
+              {/if}
             </Button>
-          {/if}
-        </div>
+          {/snippet}
+
+          {#snippet content()}
+            <div class="w-48">
+              <WorkspaceActionsMenu
+                filePath={$workspace?.worktreePath ||
+                  $workspace?.repositoryPath ||
+                  $workspace?.path ||
+                  ''}
+                workspaceId={$workspace?.id || workspaceId || ''}
+                isDirectory={true}
+                isWorkspaceRoot={true}
+                onDelete={handleDelete}
+                onArchive={handleArchive}
+                onUnarchive={handleUnarchive}
+                {isArchived}
+                onClose={handleDropdownClose}
+                showDeleteOption={true}
+                showArchiveOption={true}
+                showFileNameCopy={false}
+                showFileActions={true}
+                additionalActions={[sidebarToggleAction, sidebarSideAction]}
+              />
+            </div>
+          {/snippet}
+        </DropdownMenu>
+        {#if onCloseWorkspace}
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            aria-label={`Close workspace ${workspaceId}`}
+            data-workspace-close
+            class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+            onpointerdown={(event) => event.stopPropagation()}
+            onclick={onCloseWorkspace}
+          >
+            <Fa icon={faXmark} size="sm" />
+          </Button>
+        {/if}
       </div>
-      <!-- repository and branch metadata -->
-      <div
-        class="type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
-        data-sidebar-repository-branch-metadata
+    </div>
+    <!-- repository and branch metadata -->
+    <div
+      class="type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
+      data-sidebar-repository-branch-metadata
+    >
+      <TooltipRich
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        delayDuration={300}
+        maxWidth="16rem"
+        contentClass="border-0!"
+        contentContainerClass="p-0! space-y-0!"
+        showArrow={false}
+        class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
+        bind:open={repoTooltipOpen}
+        onOpenChange={handleRepoTooltipOpenChange}
+        disableCloseOnTriggerClick
+        onclick={copyRepoPath}
       >
+        {#snippet trigger()}
+          <span
+            class="block min-w-0 truncate"
+            data-sidebar-repository-control
+            data-sidebar-repository-label
+          >
+            {repositoryLabel}
+          </span>
+        {/snippet}
+        {#snippet content()}
+          <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
+            <div class="flex min-w-0 items-center gap-2">
+              <p
+                class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
+                title={repositoryLabel}
+              >
+                {repositoryLabel}
+              </p>
+              {#if copiedRepoPath}
+                <span class="flex shrink-0 items-center gap-1 text-xs text-success">
+                  <Fa icon={faCheck} size="xs" />
+                  Copied
+                </span>
+              {/if}
+            </div>
+            <p class="mt-1 truncate text-xs text-muted-foreground" title={workspacePath}>
+              {workspacePath}
+            </p>
+            <p class="mt-1 text-xs text-subtle">
+              {$workspace?.skipWorktree ? 'Direct checkout' : 'Worktree'}
+            </p>
+          </div>
+        {/snippet}
+      </TooltipRich>
+      {#if $workspace?.branch}
         <TooltipRich
           side="bottom"
           align="start"
@@ -993,149 +1038,100 @@
           contentClass="border-0!"
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
-          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
-          bind:open={repoTooltipOpen}
-          onOpenChange={handleRepoTooltipOpenChange}
+          class="h-5 min-w-0 shrink cursor-copy items-center justify-start gap-0.5 overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+          bind:open={branchTooltipOpen}
+          onOpenChange={handleBranchTooltipOpenChange}
           disableCloseOnTriggerClick
-          onclick={copyRepoPath}
+          onclick={copyBranchName}
         >
           {#snippet trigger()}
             <span
-              class="block min-w-0 truncate"
-              data-sidebar-repository-control
-              data-sidebar-repository-label
+              class="grid size-4 shrink-0 place-items-center text-muted-foreground"
+              data-sidebar-branch-icon
+              data-sidebar-branch-control
+              aria-hidden="true"
             >
-              {repositoryLabel}
+              <GitBranchIcon size={14} class="block size-3.5" />
+            </span>
+            <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
+              {$workspace.branch}
             </span>
           {/snippet}
           {#snippet content()}
-            <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
+            <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
               <div class="flex min-w-0 items-center gap-2">
                 <p
                   class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                  title={repositoryLabel}
+                  title={$workspace.branch}
                 >
-                  {repositoryLabel}
+                  {$workspace.branch}
                 </p>
-                {#if copiedRepoPath}
+                {#if copiedBranchName}
                   <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                     <Fa icon={faCheck} size="xs" />
                     Copied
                   </span>
                 {/if}
               </div>
-              <p class="mt-1 truncate text-xs text-muted-foreground" title={workspacePath}>
-                {workspacePath}
-              </p>
-              <p class="mt-1 text-xs text-subtle">
-                {$workspace?.skipWorktree ? 'Direct checkout' : 'Worktree'}
-              </p>
+              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                {#if $workspace.baseRef}
+                  <span class="min-w-0 truncate">Base {$workspace.baseRef}</span>
+                  <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
+                {/if}
+                <span class="shrink-0">
+                  {$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
+                </span>
+              </div>
             </div>
           {/snippet}
         </TooltipRich>
-        {#if $workspace?.branch}
-          <TooltipRich
-            side="bottom"
-            align="start"
-            sideOffset={6}
-            delayDuration={300}
-            maxWidth="16rem"
-            contentClass="border-0!"
-            contentContainerClass="p-0! space-y-0!"
-            showArrow={false}
-            class="h-5 min-w-0 shrink cursor-copy items-center justify-start gap-0.5 overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
-            bind:open={branchTooltipOpen}
-            onOpenChange={handleBranchTooltipOpenChange}
-            disableCloseOnTriggerClick
-            onclick={copyBranchName}
-          >
-            {#snippet trigger()}
-              <span
-                class="grid size-4 shrink-0 place-items-center text-muted-foreground"
-                data-sidebar-branch-icon
-                data-sidebar-branch-control
-                aria-hidden="true"
-              >
-                <GitBranchIcon size={14} class="block size-3.5" />
-              </span>
-              <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
-                {$workspace.branch}
-              </span>
-            {/snippet}
-            {#snippet content()}
-              <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
-                <div class="flex min-w-0 items-center gap-2">
-                  <p
-                    class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
-                    title={$workspace.branch}
-                  >
-                    {$workspace.branch}
-                  </p>
-                  {#if copiedBranchName}
-                    <span class="flex shrink-0 items-center gap-1 text-xs text-success">
-                      <Fa icon={faCheck} size="xs" />
-                      Copied
-                    </span>
-                  {/if}
-                </div>
-                <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                  {#if $workspace.baseRef}
-                    <span class="min-w-0 truncate">Base {$workspace.baseRef}</span>
-                    <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
-                  {/if}
-                  <span class="shrink-0">
-                    {$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
-                  </span>
-                </div>
-              </div>
-            {/snippet}
-          </TooltipRich>
-        {/if}
-        {#if $workspace?.checkoutMode}
-          <CheckoutModePill workspace={$workspace} />
-        {/if}
-      </div>
-    </div>
-
-    <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
-      {#if showFlameGraph}
-        <!-- Keep the task progress placeholder visible while canonical tasks load. -->
-        <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
-          <FlameGraph
-            notes={$notes}
-            onTaskClick={_onOpenNote}
-            progress={completionRatio}
-            animationKey={workspaceId}
-          />
-        </div>
       {/if}
-      <!-- Workflow action button (styled like AI-assisted action prompts) -->
-      {#if displayAction}
-        {@const action = displayAction}
-        <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-          {#if action}
-            <div class="mt-1">
-              <Tooltip
-                content={action?.tooltip}
-                side="bottom"
-                align="start"
-                disabled={!action?.tooltip}
-              >
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="w-full text-left justify-start px-0! -mb-1"
-                  onclick={() => runProgressAction(action)}
-                >
-                  <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
-                  <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
-                </Button>
-              </Tooltip>
-            </div>
-          {/if}
+      {#if $workspace?.checkoutMode}
+        <CheckoutModePill workspace={$workspace} />
+      {/if}
+    </div>
+  </div>
 
-          <!-- Contextual Action Prompts (AI-assisted actions) -->
-          <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
+  <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
+    {#if showFlameGraph}
+      <!-- Keep the task progress placeholder visible while canonical tasks load. -->
+      <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
+        <FlameGraph
+          notes={$notes}
+          onTaskClick={_onOpenNote}
+          progress={completionRatio}
+          loading={$tasksLoading$}
+          animationKey={workspaceId}
+        />
+      </div>
+    {/if}
+    <!-- Workflow action button (styled like AI-assisted action prompts) -->
+    {#if displayAction}
+      {@const action = displayAction}
+      <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+        {#if action}
+          <div class="mt-1">
+            <Tooltip
+              content={action?.tooltip}
+              side="bottom"
+              align="start"
+              disabled={!action?.tooltip}
+            >
+              <Button
+                variant="ghost-light"
+                size="xs"
+                class="w-full text-left justify-start px-0! -mb-1"
+                onclick={() => runProgressAction(action)}
+              >
+                <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+                <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+              </Button>
+            </Tooltip>
+          </div>
+        {/if}
+
+        <!-- Contextual Action Prompts (AI-assisted actions) -->
+        <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
           <div class="mt-1">
             {#if hasContentNoTasks}
               <Tooltip
@@ -1182,84 +1178,84 @@
             {/if}
           </div>
         {/if} -->
-        </div>
-      {/if}
+      </div>
+    {/if}
 
-      <!-- Token usage row (renders nothing until data is available) -->
-      {#if workspaceId}
-        <WorkspaceTokenUsage {workspaceId} />
-      {/if}
+    <!-- Token usage row (renders nothing until data is available) -->
+    {#if workspaceId}
+      <WorkspaceTokenUsage {workspaceId} />
+    {/if}
 
-      <!-- Status follows identity and progress so it reads as the current update. -->
-      {#if isEditingStatusMessage || currentStatusMessage}
-        <div class="pt-1">
-          {#if isEditingStatusMessage}
-            <textarea
-              bind:this={statusInputRef}
-              bind:value={editedStatusMessage}
-              onblur={saveStatusMessage}
-              onkeydown={handleStatusMessageKeydown}
-              disabled={isSavingStatusMessage}
-              maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
-              rows={1}
-              aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="type-body min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-none py-0.5 text-foreground outline-none leading-snug
+    <!-- Status follows identity and progress so it reads as the current update. -->
+    {#if isEditingStatusMessage || currentStatusMessage}
+      <div class="pt-1">
+        {#if isEditingStatusMessage}
+          <textarea
+            bind:this={statusInputRef}
+            bind:value={editedStatusMessage}
+            onblur={saveStatusMessage}
+            onkeydown={handleStatusMessageKeydown}
+            disabled={isSavingStatusMessage}
+            maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+            rows={1}
+            aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
+            class="type-body min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-none py-0.5 text-foreground outline-none leading-snug
                    focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
-              style="field-sizing: content;"
-              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
-          {:else if $workspace && currentStatusMessage}
-            <button
-              class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+            style="field-sizing: content;"
+            placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+        {:else if $workspace && currentStatusMessage}
+          <button
+            class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                    transition-all duration-150 leading-snug hover:text-foreground
                    focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                    disabled:cursor-default disabled:opacity-50"
-              onclick={startEditingStatusMessage}
-              title={currentStatusMessage
-                ? m.workspace_sidebarHeader_editStatus_tooltip()
-                : m.workspace_sidebarHeader_addStatus_tooltip()}
-              aria-label={currentStatusMessage
-                ? m.workspace_sidebarHeader_editStatus_ariaLabel()
-                : m.workspace_sidebarHeader_addStatus_ariaLabel()}
-              disabled={!$workspace}
-            >
-              {currentStatusMessage}
-            </button>
-          {/if}
-        </div>
-      {/if}
+            onclick={startEditingStatusMessage}
+            title={currentStatusMessage
+              ? m.workspace_sidebarHeader_editStatus_tooltip()
+              : m.workspace_sidebarHeader_addStatus_tooltip()}
+            aria-label={currentStatusMessage
+              ? m.workspace_sidebarHeader_editStatus_ariaLabel()
+              : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+            disabled={!$workspace}
+          >
+            {currentStatusMessage}
+          </button>
+        {/if}
+      </div>
+    {/if}
 
-      <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
-      {#if showStatusImage}
-        <div class="py-1">
-          <button
-            bind:this={statusImageButtonRef}
-            type="button"
-            class="block w-full cursor-zoom-in bg-transparent border-none p-0
+    <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
+    {#if showStatusImage}
+      <div class="py-1">
+        <button
+          bind:this={statusImageButtonRef}
+          type="button"
+          class="block w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-primary/50 focus-visible:outline-offset-1"
-            onclick={() => (statusImageLightboxOpen = true)}
-            title={m.workspace_progressCard_statusImage_title()}
-            aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
-          >
-            <img
-              src={statusImageUrl}
-              alt={m.workspace_progressCard_statusImage_alt()}
-              class="w-full max-h-48 object-contain rounded-md border border-border"
-              onerror={(e) =>
-                (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
-            />
-          </button>
-        </div>
-        <ImageLightbox
-          bind:open={statusImageLightboxOpen}
-          imageUrl={statusImageUrl}
-          imageName="Workspace status screenshot"
-          openerElement={statusImageButtonRef}
-        />
-      {/if}
+          onclick={() => (statusImageLightboxOpen = true)}
+          title={m.workspace_progressCard_statusImage_title()}
+          aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
+        >
+          <img
+            src={statusImageUrl}
+            alt={m.workspace_progressCard_statusImage_alt()}
+            class="w-full max-h-48 object-contain rounded-md border border-border"
+            onerror={(e) =>
+              (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
+          />
+        </button>
+      </div>
+      <ImageLightbox
+        bind:open={statusImageLightboxOpen}
+        imageUrl={statusImageUrl}
+        imageName="Workspace status screenshot"
+        openerElement={statusImageButtonRef}
+      />
+    {/if}
 
-      <!-- Ready Tasks Section (excludes spec from display) -->
-      <!-- {#if isLoadingReadyTasks}
+    <!-- Ready Tasks Section (excludes spec from display) -->
+    <!-- {#if isLoadingReadyTasks}
     <div
       class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
       transition:slide={{ axis: 'y', duration: 200 }}
@@ -1310,5 +1306,5 @@
       Error: {readyTasksError}
     </div>
   {/if} -->
-    </div>
   </div>
+</div>

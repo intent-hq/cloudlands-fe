@@ -186,9 +186,7 @@ describe('theme color contract', () => {
       }
     }
     expect(hslChannels(light.background)[2]).toBe(100);
-    expect(hslChannels(light.card)[2]).toBeGreaterThanOrEqual(
-      hslChannels(light.background)[2],
-    );
+    expect(hslChannels(light.card)[2]).toBeGreaterThanOrEqual(hslChannels(light.background)[2]);
     expect(hslChannels(light.background)[2]).toBeGreaterThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(light.accent)[2]).toBeLessThan(hslChannels(light.sidebar)[2]);
     expect(hslChannels(dark.popover)[2]).toBeGreaterThan(hslChannels(dark.card)[2]);

@@ -125,7 +125,7 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 
 import { store as appStore } from '$store/renderer/store';
 import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
-import Layout from '../+layout.svelte';
+import Layout from '../(app)/+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="unmount-cancel-children">content</div>',

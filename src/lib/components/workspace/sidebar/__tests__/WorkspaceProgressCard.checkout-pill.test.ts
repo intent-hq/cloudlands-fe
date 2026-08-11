@@ -7,13 +7,7 @@
  * direct workspaces (`checkoutMode` absent). It must sit outside the
  * copy-on-click repo button so the copy affordance is preserved.
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
@@ -49,7 +43,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -69,6 +64,7 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasksLoading: mocks.selector(() => false),
   selectWorkspaceTaskProgress: mocks.selector(() => ({
     total: 0,
     completed: 0,
@@ -235,24 +231,24 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
     expect(repoButton.contains(pill)).toBe(false);
   });
 
-  it('renders a "·" separator immediately before the pill (full mode)', async () => {
+  it('renders the checkout pill directly after the branch metadata (full mode)', async () => {
     await renderProgressCard({ checkoutMode: 'cow' });
 
     const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.textContent).toBe('·');
+    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
   });
 
-  it('renders a "·" separator immediately before the pill (compact mode)', async () => {
+  it('renders the checkout pill directly after the branch metadata (compact mode)', async () => {
     await renderProgressCard({ checkoutMode: 'cow' }, { compact: true });
 
     const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.textContent).toBe('·');
+    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
   });
 
-  it('renders "Worktree" when checkoutMode is worktree (full mode)', async () => {
+  it('renders an accessible Worktree icon pill when checkoutMode is worktree (full mode)', async () => {
     await renderProgressCard({ checkoutMode: 'worktree' });
 
-    expect(screen.getByText('Worktree')).toBeTruthy();
+    expect(screen.getByLabelText('Checkout mode: Worktree')).toBeTruthy();
   });
 
   it('renders no pill when checkoutMode is undefined (full mode)', async () => {
@@ -310,10 +306,10 @@ describe('WorkspaceProgressCard disk-usage tooltip on pill', () => {
     expect(screen.queryByText('2.17Gi')).toBeNull();
   });
 
-  it('keeps the "·" separator before the pill when diskUsage is present', async () => {
+  it('keeps the pill directly after branch metadata when diskUsage is present', async () => {
     await renderProgressCard({ checkoutMode: 'cow', diskUsage });
 
     const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.textContent).toBe('·');
+    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
   });
 });
