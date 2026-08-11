@@ -20,15 +20,15 @@
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
 import { findExistingHudWindow, isHudWindow } from '../../../main/hud-window';
 
 const logger = new Logger('HardwareConsoleOwner');
 
-// i18n-ignore (wire/IPC constants)
-export const GET_OWNER_STATUS_CHANNEL = 'hardware-console:get-owner-status';
-// i18n-ignore (wire/IPC constants)
-export const OWNER_CHANGED_CHANNEL = 'hardware-console:owner-changed';
+// Derived from the shared registry so a rename can't split main and renderer.
+export const GET_OWNER_STATUS_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.GET_OWNER_STATUS;
+export const OWNER_CHANGED_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.OWNER_CHANGED;
 
 /** Structural subset of Electron's BrowserWindow used by the tracker. */
 export interface ConsoleOwnerWindow {

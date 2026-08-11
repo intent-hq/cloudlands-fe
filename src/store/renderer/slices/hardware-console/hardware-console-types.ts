@@ -30,7 +30,10 @@ export interface HardwareConsoleState {
    * hardware input. Hydrated from `hardware-console:get-owner-status` at
    * saga start and updated by `hardware-console:owner-changed` pushes;
    * defaults to `true` so the web build (no Electron bridge) — where a
-   * single page is always the owner — keeps its behavior.
+   * single page is always the owner — keeps its behavior. Electron windows
+   * never act on this optimistic default: the device saga flips it to
+   * `false` and settles the initial query before installing any device
+   * handlers or starting the manager.
    */
   isConsoleOwner: boolean;
   /** True once the persisted enabled flag was read from the daemon settings bag. */

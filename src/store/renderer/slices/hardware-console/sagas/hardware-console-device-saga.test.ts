@@ -268,6 +268,31 @@ describe('hardwareConsoleDeviceSaga', () => {
     await task.toPromise();
   });
 
+  it('applies an owner-changed push that lands while the initial query is pending', async () => {
+    const bridge = makeFakeOwnerBridge(true);
+    let resolveQuery!: (value: { isOwner: boolean }) => void;
+    bridge.invoke.mockImplementation(
+      () =>
+        new Promise<{ isOwner: boolean }>((resolve) => {
+          resolveQuery = resolve;
+        }),
+    );
+    mocks.ownerBridge.current = bridge;
+    const { task, getState } = createHarness();
+
+    // Push arrives mid-query: ownership moved away after main computed the
+    // (stale) query response. The buffered push must win over the result.
+    await vi.waitFor(() => expect(bridge.invoke).toHaveBeenCalledTimes(1));
+    bridge.pushOwnerChanged(false);
+    resolveQuery({ isOwner: true });
+
+    await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(getState().hardwareConsole.isConsoleOwner).toBe(false));
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('hydrates owner status from the invoke channel and applies owner-changed pushes', async () => {
     const bridge = makeFakeOwnerBridge(false);
     mocks.ownerBridge.current = bridge;

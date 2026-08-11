@@ -126,7 +126,7 @@ export function installHardwareConsoleEncoder(
   manager: HardwareConsoleManager,
   deps: EncoderDeps = {},
 ): () => void {
-  const { dispatch } = resolveDeps(deps);
+  const { dispatch, isOwner } = resolveDeps(deps);
   let detachDecoder: (() => void) | null = null;
 
   const teardownDecoder = (): void => {
@@ -134,8 +134,6 @@ export function installHardwareConsoleEncoder(
     detachDecoder = null;
     dispatch(encoderHudHidden());
   };
-
-  const isOwner = deps.isOwner ?? isConsoleOwner;
 
   const setupDecoder = (): void => {
     detachDecoder?.();
