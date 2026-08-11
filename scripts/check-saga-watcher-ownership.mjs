@@ -152,23 +152,80 @@ function actionFactoryForExpression(expression, imports, namespaces) {
   );
 }
 
-function actionExportsFor(source) {
-  const imports = importsFor(source);
-  const namespaces = effectNamespacesFor(source);
-  const actions = new Set();
-  for (const statement of source.statements) {
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
+function createActionExportResolver(sources) {
+  const memo = new Map();
+  const resolving = new Set();
+  const resolve = (filePath, exportName) => {
+    const key = `${filePath}#${exportName}`;
+    if (memo.has(key)) return memo.get(key);
+    if (resolving.has(key)) return false;
+    resolving.add(key);
+    const source = sources.get(filePath);
+    const imports = source ? importsFor(source) : new Map();
+    const namespaces = source ? effectNamespacesFor(source) : new Map();
+    let proven = false;
+    const proveLocal = (localName) => {
+      const binding = imports.get(localName);
+      if (binding) {
+        const target = resolvedModulePath(sources, filePath, binding.specifier);
+        if (target && resolve(target, binding.imported)) return true;
+      }
+      for (const statement of source?.statements ?? []) {
+        if (!ts.isVariableStatement(statement)) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (
+            ts.isIdentifier(declaration.name) &&
+            declaration.name.text === localName &&
+            declaration.initializer &&
+            ts.isCallExpression(declaration.initializer) &&
+            actionFactoryForExpression(declaration.initializer.expression, imports, namespaces)
+          )
+            return true;
+        }
+      }
+      return false;
+    };
+    for (const statement of source?.statements ?? []) {
       if (
-        ts.isIdentifier(declaration.name) &&
-        declaration.initializer &&
-        ts.isCallExpression(declaration.initializer) &&
-        actionFactoryForExpression(declaration.initializer.expression, imports, namespaces)
-      )
-        actions.add(declaration.name.text);
+        ts.isVariableStatement(statement) &&
+        statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+        statement.declarationList.declarations.some(
+          (declaration) =>
+            ts.isIdentifier(declaration.name) &&
+            declaration.name.text === exportName &&
+            declaration.initializer &&
+            ts.isCallExpression(declaration.initializer) &&
+            actionFactoryForExpression(declaration.initializer.expression, imports, namespaces),
+        )
+      ) {
+        proven = true;
+        break;
+      }
+      if (!ts.isExportDeclaration(statement)) continue;
+      const target =
+        statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+          ? resolvedModulePath(sources, filePath, statement.moduleSpecifier.text)
+          : undefined;
+      if (!statement.exportClause && target && resolve(target, exportName)) {
+        proven = true;
+        break;
+      }
+      if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue;
+      const item = statement.exportClause.elements.find(
+        (element) => element.name.text === exportName,
+      );
+      if (!item) continue;
+      const imported = item.propertyName?.text ?? item.name.text;
+      if ((target && resolve(target, imported)) || (!target && proveLocal(imported))) {
+        proven = true;
+        break;
+      }
     }
-  }
-  return actions;
+    resolving.delete(key);
+    memo.set(key, proven);
+    return proven;
+  };
+  return resolve;
 }
 
 function isImportedReduxPattern(
@@ -178,7 +235,7 @@ function isImportedReduxPattern(
   namespaces,
   sources,
   filePath,
-  actionExports,
+  isActionExport,
 ) {
   const patterns = actions.length > 0 ? actions : [pattern];
   return patterns.some((candidate) => {
@@ -186,7 +243,7 @@ function isImportedReduxPattern(
     const binding = importBindingForPattern(candidate, imports, namespaces);
     if (!binding) return false;
     const target = resolvedModulePath(sources, filePath, binding.specifier);
-    return target ? actionExports.get(target)?.has(binding.imported) : false;
+    return target ? isActionExport(target, binding.imported) : false;
   });
 }
 
@@ -345,9 +402,7 @@ export function inspectSagaWatcherOwnership(files) {
       }),
   );
   const violations = [];
-  const actionExports = new Map(
-    [...sources].map(([filePath, source]) => [filePath, actionExportsFor(source)]),
-  );
+  const isActionExport = createActionExportResolver(sources);
   const audited = new Set([
     ROOT_SAGAS,
     ...[...sources.keys()].filter((filePath) => SAGA_SOURCE.test(filePath)),
@@ -500,7 +555,7 @@ export function inspectSagaWatcherOwnership(files) {
             effectNamespaces,
             sources,
             filePath,
-            actionExports,
+            isActionExport,
           )
         )
           violations.push(

@@ -126,16 +126,32 @@ describe('saga watcher ownership guard', () => {
     const result = inspectSagaWatcherOwnership([
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
-      actionOwner('src/store/renderer/slices/bad/actions.ts', ['openChannel']),
-      actionOwner('src/store/renderer/slices/bad/channels.ts', ['refreshRequested']),
+      {
+        path: 'src/store/renderer/slices/bad/actions.ts',
+        content: "export { launchChannel as openChannel } from './canonical-actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/bad/channels.ts',
+        content: "export { refreshRequested } from './canonical-actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/bad/canonical-actions.ts',
+        content: [
+          "import * as factory from '@augmentcode/themis/utils/store/create-action';",
+          "import { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "export const launchChannel = factory.createAction('test/openChannel');",
+          "const refreshRequested = defineAction('test/refreshRequested');",
+          'export { refreshRequested };',
+        ].join('\n'),
+      },
       {
         path: 'src/store/renderer/slices/bad/transport.ts',
         content: 'export const eventBus = {}; export const events = {};',
       },
     ]);
     expect(result.violations).toEqual([
-      expect.stringContaining('manual Redux watcher loop'),
-      expect.stringContaining('manual Redux watcher loop'),
+      expect.stringContaining('bad-saga.ts:14: manual Redux watcher loop'),
+      expect.stringContaining('bad-saga.ts:16: manual Redux watcher loop'),
     ]);
   });
 
