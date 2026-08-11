@@ -35,6 +35,7 @@ const closedRadialPrompt: RadialPromptPickerState = { open: false, prompts: [], 
 export const initialState: HardwareConsoleState = {
   enabled: true,
   enabledHydrated: false,
+  isConsoleOwner: true,
   keyPins: new Array<string | null>(AGENT_KEY_COUNT).fill(null),
   hydrated: false,
   excludedWorkspaceIds: [],
@@ -71,6 +72,13 @@ export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean]>(
 /** Enable/disable the hardware-console integration (device panel toggle). */
 export const setHardwareConsoleEnabled = createAction<[enabled: boolean]>(
   "hardwareConsole/setEnabled",
+);
+/**
+ * This window's console ownership changed (initial query result or an
+ * `owner-changed` push from main, intent-hq/monorepo#1928).
+ */
+export const consoleOwnerChanged = createAction<[isOwner: boolean]>(
+  "hardwareConsole/consoleOwnerChanged",
 );
 /** Set the radial picker's top-N surface (device panel setting; clamped 1–12). */
 export const setPromptPickerLimit = createAction<[limit: number]>(
@@ -202,6 +210,10 @@ hardwareConsoleReducer.with(hydrateHardwareConsoleEnabled, (state, { payload: [e
 hardwareConsoleReducer.with(setHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
     if (state.enabled === enabled) return state;
     return { ...state, enabled };
+  });
+hardwareConsoleReducer.with(consoleOwnerChanged, (state, { payload: [isOwner] }) => {
+    if (state.isConsoleOwner === isOwner) return state;
+    return { ...state, isConsoleOwner: isOwner };
   });
 hardwareConsoleReducer.with(setPromptPickerLimit, (state, { payload: [limit] }) => {
     const promptPickerLimit = clampPromptPickerLimit(limit);

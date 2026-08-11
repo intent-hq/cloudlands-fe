@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
+import { m } from '$shared/paraglide/messages.js';
 import {
   openWorkspaceActivityChanges,
   openWorkspaceBrowser,
@@ -13,6 +14,7 @@ import {
   openWorkspaceFile,
   openWorkspaceLocalChanges,
   openWorkspaceNote,
+  type JsonValue,
 } from '../workspace-navigation-slice';
 import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
 
@@ -313,7 +315,90 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('ignores commit, file, note, and diff requests without resolvable identities', async () => {
+  it('opens a chat-changes tab carrying changes and the messageId dedup key', async () => {
+    const changes: JsonValue[] = [
+      { file: 'src/a.ts', additions: 2, deletions: 1 },
+      { file: 'src/b.ts', additions: 5, deletions: 0 },
+    ];
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, '2 files changed', {
+        messageId: 'msg-1',
+        isAggregate: true,
+        agentId: 'agent-1',
+        turnNumber: 4,
+      }),
+    );
+    await settle();
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      type: 'panelLayout/openTab',
+      payload: {
+        wsId: 'ws-1',
+        force: true,
+        tab: {
+          type: 'chat-changes',
+          title: '2 files changed',
+          workspaceId: 'ws-1',
+          closable: true,
+          data: {
+            changes,
+            title: '2 files changed',
+            messageId: 'msg-1',
+            isAggregate: true,
+            agentId: 'agent-1',
+            turnNumber: 4,
+          },
+        },
+      },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens a chat-changes tab without options, keeping changes and title on data', async () => {
+    const changes: JsonValue[] = [{ file: 'src/a.ts' }];
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    channel.put(openWorkspaceChatChanges('ws-1', changes, '1 file changed'));
+    await settle();
+    const payload = dispatch.mock.calls[0]?.[0]?.payload as {
+      tab: { data: Record<string, unknown> };
+    };
+    expect(payload.tab.data.changes).toBe(changes);
+    expect(payload.tab.data.title).toBe('1 file changed');
+    expect(payload.tab.data.messageId).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('opens the singleton local-changes tab with the i18n title', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    channel.put(openWorkspaceLocalChanges('ws-1'));
+    await settle();
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      type: 'panelLayout/openTab',
+      payload: {
+        wsId: 'ws-1',
+        force: true,
+        tab: {
+          type: 'local-changes',
+          title: m.layout_presetExecutor_allChanges_title(),
+          workspaceId: 'ws-1',
+          closable: true,
+        },
+      },
+    });
+    expect(dispatch.mock.calls[0]?.[0]?.payload?.tab?.data).toBeUndefined();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('ignores commit, file, note, diff, chat-changes, and local-changes requests without resolvable identities', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
@@ -324,6 +409,12 @@ describe('workspaceNavigationTabSaga', () => {
     channel.put(openWorkspaceNote('ws-1', ''));
     await settle();
     channel.put(openWorkspaceDiff('ws-1', undefined as never));
+    await settle();
+    channel.put(openWorkspaceChatChanges('ws-1', [], 'title'));
+    await settle();
+    channel.put(openWorkspaceChatChanges('', [{ file: 'a.ts' }], 'title'));
+    await settle();
+    channel.put(openWorkspaceLocalChanges(''));
     await settle();
     expect(dispatch).not.toHaveBeenCalled();
     task.cancel();

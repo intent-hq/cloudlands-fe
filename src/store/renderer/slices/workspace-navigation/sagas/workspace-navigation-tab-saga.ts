@@ -156,7 +156,7 @@ function* openLocalChanges(
     workspaceId,
     {
       type: 'local-changes',
-      title: m.layout_tabTypes_localChanges_title(),
+      title: m.layout_presetExecutor_allChanges_title(),
       workspaceId,
       closable: true,
     },
@@ -168,18 +168,20 @@ function* openChatChanges(
   action: ReturnType<typeof openWorkspaceChatChanges>,
 ): SagaGenerator<void> {
   const [workspaceId, changes, title, options] = action.payload;
-  if (!workspaceId) return;
+  if (!workspaceId || !changes?.length) return;
+  const tabTitle = title || m.layout_tabTypes_chatChanges_title();
   yield* openWorkspaceTab(
     workspaceId,
     {
       type: 'chat-changes',
-      title: title || m.layout_tabTypes_chatChanges_title(),
+      title: tabTitle,
       workspaceId,
       closable: true,
       data: {
         changes,
-        isAggregate: options?.isAggregate ?? false,
+        title: tabTitle,
         ...(options?.messageId ? { messageId: options.messageId } : {}),
+        ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
         ...(options?.agentId ? { agentId: options.agentId } : {}),
         ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
       },

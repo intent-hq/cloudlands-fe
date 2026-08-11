@@ -4,7 +4,11 @@ import { select } from 'typed-redux-saga';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 
 const mockState = {
-  hardwareConsole: { promptUsage: [] as unknown[], promptPickerLimit: 8 },
+  hardwareConsole: {
+    promptUsage: [] as unknown[],
+    promptPickerLimit: 8,
+    isConsoleOwner: true,
+  },
 };
 
 const storeDispatched: { type: string; payload?: unknown }[] = [];
@@ -113,7 +117,7 @@ const PROMPTS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
 
 beforeEach(() => {
   storeDispatched.length = 0;
-  mockState.hardwareConsole = { promptUsage: [], promptPickerLimit: 8 };
+  mockState.hardwareConsole = { promptUsage: [], promptPickerLimit: 8, isConsoleOwner: true };
   vi.clearAllMocks();
   (appClient.settings.update as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
