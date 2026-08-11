@@ -107,6 +107,77 @@ describe('tool-result-parser', () => {
       expect(result.content).toBe('file1.txt\nfile2.txt');
       expect(result.exitCode).toBeUndefined();
     });
+
+    describe('command-shaped ACP prose titles (#1992)', () => {
+      const xmlResult = (output: string) =>
+        `Here are the results from executing the command.\n<return-code>\n0\n</return-code>\n<output>\n${output}\n</output>`;
+
+      it('routes a prose title containing "view" to the terminal parser', () => {
+        const command =
+          'gh pr view 1091 --repo intent-hq/intentd --json headRefOid ; gh run list --limit 3';
+        const result = parseToolResult(
+          `Run ${command}`,
+          { command, wait: true, max_wait_seconds: 60, cwd: '/tmp/repo' },
+          xmlResult('abc123'),
+        );
+
+        expect(result.type).toBe('terminal');
+        expect(result.command).toBe(command);
+        expect(result.content).toBe('abc123');
+        expect(result.exitCode).toBe(0);
+      });
+
+      it('routes a prose title containing "edit" to the terminal parser', () => {
+        const command = 'gh pr edit 42 --add-label bug';
+        const result = parseToolResult(
+          `Run ${command}`,
+          { command, wait: true, max_wait_seconds: 30, cwd: '/tmp/repo' },
+          xmlResult('done'),
+        );
+
+        expect(result.type).toBe('terminal');
+        expect(result.command).toBe(command);
+        expect(result.content).toBe('done');
+        expect(result.exitCode).toBe(0);
+      });
+
+      it('routes a prose title containing "search" to the terminal parser', () => {
+        const command = 'gh search issues "panel focus" --repo intent-hq/monorepo';
+        const result = parseToolResult(
+          `Run ${command}`,
+          { command, wait: true, max_wait_seconds: 60, cwd: '/tmp/repo' },
+          xmlResult('#123 fix panel focus'),
+        );
+
+        expect(result.type).toBe('terminal');
+        expect(result.command).toBe(command);
+        expect(result.content).toBe('#123 fix panel focus');
+        expect(result.exitCode).toBe(0);
+      });
+
+      it('routes a prose title containing "save" to the terminal parser', () => {
+        const command = 'git stash save wip';
+        const result = parseToolResult(
+          `Run ${command}`,
+          { command, wait: true, cwd: '/tmp/repo' },
+          xmlResult('Saved working directory'),
+        );
+
+        expect(result.type).toBe('terminal');
+        expect(result.command).toBe(command);
+        expect(result.content).toBe('Saved working directory');
+      });
+
+      it('still routes a genuine view tool to file-view', () => {
+        const result = parseToolResult(
+          'view',
+          { path: 'src/index.ts' },
+          "Here's the result of running `cat -n` on src/index.ts:\n     1\tconst a = 1;\nTotal lines in file: 1",
+        );
+
+        expect(result.type).toBe('file-view');
+      });
+    });
   });
 
   describe('glob/find result parsing', () => {
