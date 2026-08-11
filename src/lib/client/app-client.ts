@@ -753,6 +753,16 @@ export interface ChatTranscript {
   truncated: boolean;
   totalMessages: number;
   isStreaming: boolean;
+  /**
+   * Resume disposition (PROTOCOL §7.1 `sinceMessageId`), stamped ONLY on the
+   * emit produced by the seq-0 snapshot of a registration that requested a
+   * resume: `true` — the snapshot was a delta from the requested anchor,
+   * merged onto the retained baseline; `false` — the daemon did not honor
+   * the resume (unknown/pruned id) and replied with the standard newest-page
+   * snapshot, so the subscriber must fully rehydrate older history. Absent
+   * on every other emit (delta emits, non-resume snapshots).
+   */
+  resumed?: boolean;
 }
 
 /**
@@ -793,12 +803,27 @@ export interface ChatClient {
    * are buffered pre-ack. Returns the disposer (sends `chat.unsubscribe`).
    * Optional `onPhase` observes the stream's lifecycle phase transitions
    * (deduped; purely observational — it never alters subscription behavior).
+   * Optional `options.sinceMessageId` requests a resume (§7.1): the seq-0
+   * snapshot then carries only messages after that id with `resumed: true`,
+   * or falls back to the standard newest-page snapshot with `resumed: false`
+   * when the daemon no longer knows the id (see `ChatTranscript.resumed`).
    */
   subscribe(
     agentId: string,
     handler: (transcript: ChatTranscript) => void,
     onPhase?: (phase: ChatLiveStreamPhase) => void,
+    options?: ChatSubscribeOptions,
   ): Unsubscribe;
+}
+
+/** Options for `ChatClient.subscribe` (PROTOCOL §7.1 resume). */
+export interface ChatSubscribeOptions {
+  /**
+   * Resume anchor: the last known (fully persisted) message id. The daemon
+   * replies with a delta snapshot (`resumed: true`) when it knows the id,
+   * or the full newest page (`resumed: false`) when it does not.
+   */
+  sinceMessageId?: string;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */

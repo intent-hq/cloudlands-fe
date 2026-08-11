@@ -70,12 +70,15 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
+import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
 import {
   chatLiveStreamPhaseChanged,
   initializeChatRequested,
+  refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   clearAllSessions,
   removeSession,
@@ -92,7 +95,10 @@ import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import {
+  selectAgentMessages,
+  selectAgentSession,
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
 
 const logger = createLogger('ChatSubscribeSaga');
@@ -201,9 +207,65 @@ function* handleSubscriptionEvent(
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     yield* applyTranscript(event.agentId, entry, event.transcript);
+    // §7.1 resume fallback: the daemon did not honor the requested
+    // `sinceMessageId` (unknown/pruned anchor) and served the standard
+    // newest page instead — the retained older history may be stale, so
+    // trigger a full rehydration through the chat-read saga.
+    if (event.transcript.resumed === false) {
+      const session = yield* selectAgentSession.effect(event.agentId);
+      const wsId = entry.wsId ?? session?.workspaceId;
+      if (wsId) yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
+    }
   } catch (error) {
     logger.error('Failed to process chat subscription event', error);
   }
+}
+
+/**
+ * Resume anchors captured at subscription close (§7.1 `sinceMessageId`),
+ * keyed by agentId. Captured BEFORE `clearStaleStreamingMessageFlags`
+ * normalizes the store rows: after normalization a formerly-partial
+ * assistant row is indistinguishable from a complete one, and anchoring past
+ * a partial row would freeze its stale content (the resumed delta snapshot
+ * carries only messages AFTER the anchor). `""` records "close happened but
+ * nothing was anchorable" (every row still streaming) so the reopen falls
+ * back to the full snapshot instead of scanning the normalized rows.
+ * Transient saga-lifecycle state (like pending-agent-deletions), never
+ * Redux; dropped on session teardown and root-saga cancel.
+ */
+const resumeAnchors = new Map<string, string>();
+
+/** The newest fully-persisted message id, or undefined when none exists. */
+function newestPersistedMessageId(messages: AgentMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.isStreaming === true || message.streamingComplete === false) continue;
+    if (typeof message.id === 'string' && message.id.length > 0) return message.id;
+  }
+  return undefined;
+}
+
+/**
+ * Resume anchor for a (re)opened subscription (§7.1 `sinceMessageId`), or
+ * `undefined` when the standard full snapshot is wanted. `undefined` until
+ * the transcript has hydrated (first open). A close-captured anchor wins
+ * when its row is still in the transcript; a captured `""` (nothing was
+ * anchorable at close) forces the full snapshot. Otherwise — no close
+ * happened, or the transcript was replaced since — the current rows carry
+ * accurate streaming flags, so the newest fully-persisted id is scanned
+ * directly. A client-minted optimistic row the daemon does not know simply
+ * resolves as `resumed: false` (full-rehydration fallback) — safe either way.
+ */
+function* resolveResumeAnchor(agentId: string): SagaGenerator<string | undefined> {
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (hydration !== 'settled') return undefined;
+  const messages = yield* selectAgentMessages.effect(agentId);
+  const captured = resumeAnchors.get(agentId);
+  if (captured === '') return undefined;
+  if (captured !== undefined && messages.some((message) => message.id === captured)) {
+    return captured;
+  }
+  return newestPersistedMessageId(messages);
 }
 
 function* openSubscription(
@@ -222,11 +284,13 @@ function* openSubscription(
     else pending.push(event);
   };
   try {
+    const sinceMessageId = yield* resolveResumeAnchor(agentId);
     const unsubscribe = yield* call(
       [appClient.chat, appClient.chat.subscribe],
       agentId,
       (transcript: ChatTranscript) => emit({ kind: 'transcript', agentId, token, transcript }),
       (phase: ChatLiveStreamPhase) => emit({ kind: 'phase', agentId, token, phase }),
+      sinceMessageId === undefined ? undefined : { sinceMessageId },
     );
     subscriptions.set(agentId, {
       unsubscribe,
@@ -255,6 +319,14 @@ function* closeSubscription(
     logger.error('Failed to close chat subscription', error);
   }
   try {
+    // Capture the resume anchor BEFORE the streaming flags are normalized
+    // below — afterwards a partial row can no longer be told apart.
+    const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
+    resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+  } catch (error) {
+    logger.error('Failed to capture chat resume anchor', error);
+  }
+  try {
     yield* put(chatLiveStreamPhaseChanged(agentId, null));
   } catch (error) {
     logger.error('Failed to reset live stream phase', error);
@@ -279,7 +351,12 @@ function* closeWorkspaceSubscriptions(
   wsId: string,
 ): SagaGenerator<void> {
   for (const [agentId, entry] of [...subscriptions.entries()]) {
-    if (entry.wsId === wsId) yield* closeSubscription(subscriptions, agentId);
+    if (entry.wsId === wsId) {
+      yield* closeSubscription(subscriptions, agentId);
+      // Workspace-scoped teardown removes the sessions too — a captured
+      // anchor must not resume a future unrelated stream.
+      resumeAnchors.delete(agentId);
+    }
   }
 }
 
@@ -378,7 +455,11 @@ function* handleRemoveSession(
   subscriptions: Map<string, SubscriptionEntry>,
   action: ReturnType<typeof removeSession>,
 ): SagaGenerator<void> {
-  yield* closeSubscription(subscriptions, action.payload[0]);
+  const [agentId] = action.payload;
+  yield* closeSubscription(subscriptions, agentId);
+  // The session is gone (deletion soft-hide): its close-captured anchor must
+  // not resume a future unrelated stream.
+  resumeAnchors.delete(agentId);
 }
 
 function* handleRemoveWorkspaceSessions(
@@ -396,6 +477,7 @@ function* handleWorkspaceDeleted(
   yield* closeWorkspaceSubscriptions(subscriptions, wsId);
   for (const agentId of agentIds) {
     yield* closeSubscription(subscriptions, agentId);
+    resumeAnchors.delete(agentId);
   }
 }
 
@@ -407,6 +489,8 @@ function* handleClearAll(
     yield* closeAllSubscriptions(subscriptions);
   } catch (error) {
     logger.error('chat-subscribe saga action failed', error);
+  } finally {
+    resumeAnchors.clear();
   }
 }
 
@@ -491,5 +575,6 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     events.close();
     yield* closeAllSubscriptions(subscriptions);
     subscriptions.clear();
+    resumeAnchors.clear();
   }
 }

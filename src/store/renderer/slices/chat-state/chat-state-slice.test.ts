@@ -43,6 +43,7 @@ import {
   selectChatError,
   selectChatLastMessageTime,
   selectChatLiveStreamPhase,
+  selectTranscriptHydratedOnce,
   selectTranscriptHydration,
 } from './chat-state-selectors';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -1094,6 +1095,24 @@ describe('chatState selectors', () => {
 
   it('selectTranscriptHydration returns undefined by default', () => {
     expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
+  });
+
+  // First-hydration latch (transcriptHydratedOnce)
+  it('selectTranscriptHydratedOnce is false by default and while the first hydration loads', () => {
+    expect(selectTranscriptHydratedOnce.select(asStoreState(initialState), AGENT)).toBe(false);
+    const loading = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    expect(selectTranscriptHydratedOnce.select(asStoreState(loading), AGENT)).toBe(false);
+  });
+
+  it('transcriptHydrationSettled latches transcriptHydratedOnce across later re-hydrations', () => {
+    let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
+    expect(selectTranscriptHydratedOnce.select(asStoreState(state), AGENT)).toBe(true);
+
+    // A refresh re-hydration flips status back to loading, but the latch holds.
+    state = chatStateReducer(state, transcriptHydrationStarted(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('loading');
+    expect(selectTranscriptHydratedOnce.select(asStoreState(state), AGENT)).toBe(true);
   });
 
   // Live stream phase tests

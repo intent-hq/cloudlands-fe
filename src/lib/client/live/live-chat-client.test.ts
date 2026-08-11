@@ -1611,3 +1611,151 @@ describe("LiveChatClient.subscribe self-heal retry (intent-hq/monorepo#1394)", (
     off();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Resume via sinceMessageId (PROTOCOL §7.1): the registration carries the
+// anchor, the seq-0 snapshot's `resumed` disposition rides the emit, and
+// internal re-registrations after the first snapshot drop the anchor.
+// ---------------------------------------------------------------------------
+
+describe("LiveChatClient.subscribe resume (sinceMessageId, §7.1)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    reset();
+  });
+
+  it("sends sinceMessageId on chat.subscribe and stamps resumed: true on the seq-0 emit", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[]; resumed?: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t), undefined, {
+      sinceMessageId: "0190a1b2-user",
+    });
+    await flush();
+
+    expect(mockedRequest).toHaveBeenCalledWith("chat.subscribe", {
+      agentId: "agent-1",
+      sinceMessageId: "0190a1b2-user",
+    });
+
+    // Resumed delta snapshot: only the post-anchor message, resumed: true.
+    snapshotPush("sub-1", 0, {
+      agentId: "agent-1",
+      messages: [
+        {
+          id: "0190a200-asst",
+          agentId: "agent-1",
+          seq: 1,
+          role: "assistant",
+          contentBlocks: [{ type: "text", id: "0190a200-asst:0", text: "Done." }],
+          timestamp: "2026-06-27T01:00:01.000Z",
+        },
+      ],
+      truncated: false,
+      totalMessages: 2,
+      nextToken: null,
+      resumed: true,
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].resumed).toBe(true);
+    expect(seen[0].messages.map((m) => (m as { id: string }).id)).toEqual(["0190a200-asst"]);
+
+    // Subsequent delta emits carry NO resumed field.
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:1", text: "More." },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    expect(seen).toHaveLength(2);
+    expect("resumed" in (seen[1] as object)).toBe(false);
+    off();
+  });
+
+  it("stamps resumed: false when the daemon falls back to the full newest page", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ resumed?: boolean; messages: unknown[] }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t), undefined, {
+      sinceMessageId: "pruned-anchor-id",
+    });
+    await flush();
+
+    snapshotPush("sub-1", 0, { ...SEEDED_SNAPSHOT, resumed: false });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].resumed).toBe(false);
+    // The fallback snapshot is the standard newest page, applied as a rebuild.
+    expect(seen[0].messages.map((m) => (m as { id: string }).id)).toEqual(["0190a1b2-user"]);
+    off();
+  });
+
+  it("omits sinceMessageId entirely when no resume is requested", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ resumed?: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+
+    expect(mockedRequest).toHaveBeenCalledWith("chat.subscribe", { agentId: "agent-1" });
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    expect(seen).toHaveLength(1);
+    expect("resumed" in (seen[0] as object)).toBe(false);
+    off();
+  });
+
+  it("drops the anchor after the first snapshot: a gap resnapshot re-registers WITHOUT sinceMessageId", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {}, undefined, {
+      sinceMessageId: "0190a1b2-user",
+    });
+    await flush();
+    snapshotPush("sub-1", 0, { ...SEEDED_SNAPSHOT, resumed: true });
+
+    // seq gap → resnapshot: the recovery registration must take the FULL
+    // newest page (the reconciler holds daemon-served state, not the anchor's
+    // baseline), so no sinceMessageId rides the re-register.
+    deltaPush("sub-1", 3, { added: [], updated: [], removedIds: [] });
+    await flush();
+
+    const subscribes = mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe");
+    expect(subscribes).toHaveLength(2);
+    expect(subscribes[1][1]).toEqual({ agentId: "agent-1" });
+    off();
+  });
+
+  it("keeps the anchor for a retry when the FIRST registration is rejected pre-snapshot", async () => {
+    vi.useFakeTimers();
+    let failures = 1;
+    let n = 0;
+    mockedRequest.mockImplementation(async (method: string) => {
+      if (method === "chat.subscribe") {
+        n += 1;
+        if (failures-- > 0) throw new Error("transport down");
+        return { subscriptionId: `sub-${n}` };
+      }
+      return {};
+    });
+    const client = new LiveChatClient();
+    const off = client.subscribe("agent-1", () => {}, undefined, {
+      sinceMessageId: "0190a1b2-user",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // No snapshot has applied yet — the backoff retry still wants the delta.
+    await vi.advanceTimersByTimeAsync(1_000);
+    const subscribes = mockedRequest.mock.calls.filter(([m]) => m === "chat.subscribe");
+    expect(subscribes).toHaveLength(2);
+    expect(subscribes[1][1]).toEqual({ agentId: "agent-1", sinceMessageId: "0190a1b2-user" });
+    vi.useRealTimers();
+    off();
+  });
+});
