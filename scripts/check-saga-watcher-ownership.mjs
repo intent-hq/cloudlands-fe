@@ -5,7 +5,12 @@ import ts from 'typescript';
 
 const ROOT_SAGAS = 'src/store/renderer/sagas.ts';
 const SAGA_SOURCE = /^src\/store\/renderer\/slices\/.+\/sagas\/.+\.ts$/;
-const GENERIC_CONTEXT_WATCHERS = new Set(['takeLatestInContext', 'takeLeadingInContext']);
+const GENERIC_CONTEXT_WATCHERS = new Set([
+  'takeEveryByContextFIFO',
+  'takeLatestInContext',
+  'takeLeadingInContext',
+  'takeSingleFlightInContext',
+]);
 const DOMAIN_CONTEXT_WATCHERS = new Set([
   'takeLatestByWorkspace',
   'takeLeadingByWorkspace',
@@ -630,7 +635,7 @@ export function inspectSagaWatcherOwnership(files) {
                 ).length;
               }
             });
-            if (routedBranches > 1)
+            if (effect !== 'takeEveryByContextFIFO' && routedBranches > 1)
               violations.push(
                 `${filePath}:${lineFor(source, declaration)}: shared action.type execution dispatcher`,
               );

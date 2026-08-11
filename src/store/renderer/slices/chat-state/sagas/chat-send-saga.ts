@@ -1,10 +1,7 @@
-import { buffers, channel, type Channel } from 'redux-saga';
 import {
-  actionChannel,
   call,
   cancelled,
   delay,
-  flush,
   fork,
   put,
   race,
@@ -19,6 +16,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
@@ -429,44 +427,12 @@ function* runChatCommand(action: ChatCommand): SagaGenerator<void> {
   }
 }
 
-function* consumeAgentCommands(queue: Channel<ChatCommand>): SagaGenerator<void> {
-  while (true) {
-    const action = yield* take(queue);
-    yield* call(runChatCommand, action);
-  }
+function* discardPendingCommand(action: ChatCommand): SagaGenerator<void> {
+  yield* call(rejectCommand, action, new Error(CANCELLED_ERROR));
 }
 
 export function* chatSendSaga(): SagaGenerator<void> {
-  const incoming = yield* actionChannel<ChatCommand>(
-    CHAT_COMMANDS,
-    buffers.expanding<ChatCommand>(),
-  );
-  const queues = new Map<string, Channel<ChatCommand>>();
-  try {
-    while (true) {
-      const action: ChatCommand = yield* take(incoming);
-      const agentId = getCommandAgentId(action);
-      let queue = queues.get(agentId);
-      if (!queue) {
-        queue = channel<ChatCommand>(buffers.expanding());
-        queues.set(agentId, queue);
-        yield* fork(consumeAgentCommands, queue);
-      }
-      yield* put(queue, action);
-    }
-  } finally {
-    const unrouted = yield* flush(incoming);
-    incoming.close();
-    for (const action of unrouted) {
-      yield* call(rejectCommand, action, new Error(CANCELLED_ERROR));
-    }
-    for (const queue of queues.values()) {
-      const pending = yield* flush(queue);
-      queue.close();
-      for (const action of pending) {
-        yield* call(rejectCommand, action, new Error(CANCELLED_ERROR));
-      }
-    }
-    queues.clear();
-  }
+  yield* takeEveryByContextFIFO(CHAT_COMMANDS, getCommandAgentId, runChatCommand, {
+    onDiscardPending: discardPendingCommand,
+  });
 }

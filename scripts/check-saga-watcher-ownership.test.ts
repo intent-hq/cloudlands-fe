@@ -284,11 +284,12 @@ describe('saga watcher ownership guard', () => {
 
   it('recognizes contextual watcher aliases for ownership and wildcard checks', () => {
     const source = [
-      "import { takeLatestInContext, takeLeadingInContext as leading, takeSingleFlightInContext as singleFlight } from '$store/renderer/utils/context-saga-effects';",
-      "import { load, start } from '../slice';",
+      "import { takeEveryByContextFIFO as fifo, takeLatestInContext, takeLeadingInContext as leading, takeSingleFlightInContext as singleFlight } from '$store/renderer/utils/context-saga-effects';",
+      "import { load, queue, start } from '../slice';",
       'export function* badSaga() {',
       '  yield* takeLatestInContext(load, getContext, loadWorker);',
       '  yield* singleFlight(start, getContext, startWorker);',
+      '  yield* fifo(queue, getContext, queueWorker, {});',
       "  yield* leading('*', getContext, startWorker);",
       '}',
     ].join('\n');
@@ -296,8 +297,29 @@ describe('saga watcher ownership guard', () => {
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
     ]);
-    expect(result.watcherCount).toBe(2);
+    expect(result.watcherCount).toBe(3);
     expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
+  });
+
+  it('allows a contextual FIFO watcher to route all actions in its owned command set', () => {
+    const source = [
+      "import { takeEveryByContextFIFO } from '$store/renderer/utils/context-saga-effects';",
+      "import { start, stop } from '../slice';",
+      'const commands = [start, stop];',
+      'function* route(action) {',
+      '  if (action.type === start.type) yield* call(run);',
+      '  else if (action.type === stop.type) yield* call(stopRun);',
+      '}',
+      'export function* goodSaga() {',
+      '  yield* takeEveryByContextFIFO(commands, getContext, route, {});',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['goodSaga'], ["import { goodSaga } from './slices/good/sagas/good-saga';"]),
+      { path: 'src/store/renderer/slices/good/sagas/good-saga.ts', content: source },
+    ]);
+    expect(result.watcherCount).toBe(2);
+    expect(result.violations).toEqual([]);
   });
 
   it('recognizes workspace and agent contextual delegates as watcher owners', () => {
