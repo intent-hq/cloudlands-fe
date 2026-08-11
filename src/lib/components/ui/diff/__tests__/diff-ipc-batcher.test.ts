@@ -347,6 +347,26 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 
+  it('dedupedShowFile marks the typed -32602 not-a-file rejection with notAFile (#1739)', async () => {
+    // PROTOCOL-shaped gitlink rejection: BackendError with the daemon's
+    // `data = { code: "not-a-file", path, mode }` threaded through.
+    const error = Object.assign(
+      new Error('invalid params: path is not a file at this ref: packages/intentd (mode 160000)'),
+      {
+        code: 'not-a-file',
+        rpcCode: -32602,
+        data: { code: 'not-a-file', path: 'packages/intentd', mode: '160000' },
+      },
+    );
+    mockedRequest.mockRejectedValueOnce(error);
+
+    await expect(dedupedShowFile('ws-8', 'HEAD', 'packages/intentd')).resolves.toEqual({
+      success: false,
+      error: 'invalid params: path is not a file at this ref: packages/intentd (mode 160000)',
+      notAFile: true,
+    });
+  });
+
   describe('worktree-root path normalization', () => {
     it('normalizes an absolute path under the worktree root into the batch paths (narrowed read only)', async () => {
       storeState.workspaces = [{ id: 'ws-n1', worktreePath: '/root/ws' }];

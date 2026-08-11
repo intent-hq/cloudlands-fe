@@ -88,6 +88,37 @@ describe("LiveGitClient reads (fake transport)", () => {
     });
   });
 
+  it("status carries gitlink mode/oldSha/newSha on submodule entries and omits them elsewhere (#1739)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ...GIT_STATUS_FIXTURE,
+      hasUncommittedChanges: true,
+      files: [
+        {
+          path: "packages/intentd",
+          status: "M",
+          staged: false,
+          mode: "160000",
+          oldSha: "a".repeat(40),
+          newSha: "b".repeat(40),
+        },
+        { path: "src/plain.ts", status: "M", staged: false },
+      ],
+    });
+    const client = new LiveGitClient();
+
+    const status = await client.status("ws-1");
+
+    expect(status?.files[0]).toEqual({
+      path: "packages/intentd",
+      status: "M",
+      staged: false,
+      mode: "160000",
+      oldSha: "a".repeat(40),
+      newSha: "b".repeat(40),
+    });
+    expect(status?.files[1]).toEqual({ path: "src/plain.ts", status: "M", staged: false });
+  });
+
   it("prStatus forwards pr.status and maps prNumber/url/state", async () => {
     mockedRequest.mockResolvedValueOnce({
       prNumber: 42,

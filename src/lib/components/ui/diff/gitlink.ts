@@ -49,6 +49,26 @@ export function isGitlinkDiffChunk(chunk: { chunks?: unknown[] }): boolean {
 }
 
 /**
+ * Compose the two pseudo-content sides of a submodule pin change from the
+ * old/new pin SHAs that `git.status` carries on mode-160000 entries
+ * (intent-hq/monorepo#1739). Mirrors the daemon's synthesized
+ * `Subproject commit <sha>` hunk lines for entries whose diff chunk did not
+ * structurally classify (or returned no hunks). A missing side (added or
+ * deleted submodule) yields an empty string.
+ */
+export function gitlinkSidesFromShas(gitlink: { oldSha?: string; newSha?: string }): {
+  oldContent: string;
+  newContent: string;
+} {
+  return {
+    // i18n-ignore (git wire-format pseudo-content, not UI copy)
+    oldContent: gitlink.oldSha ? `Subproject commit ${gitlink.oldSha}\n` : '',
+    // i18n-ignore (git wire-format pseudo-content, not UI copy)
+    newContent: gitlink.newSha ? `Subproject commit ${gitlink.newSha}\n` : '',
+  };
+}
+
+/**
  * Compose the full-content sides of a gitlink chunk from its hunk lines
  * (Deletion → old, Addition → new), mirroring what `git.showFile` would have
  * returned had gitlinks carried blob content. An added (removed) submodule

@@ -54,6 +54,16 @@ export function reconcileGitStatusChanges(
       relativePath: file.path,
       stage,
       status: displayStatus(file.status),
+      // Submodule (gitlink) marking from git.status (mode 160000) — #1739.
+      ...(file.mode !== undefined
+        ? {
+            gitlink: {
+              mode: file.mode,
+              ...(file.oldSha !== undefined ? { oldSha: file.oldSha } : {}),
+              ...(file.newSha !== undefined ? { newSha: file.newSha } : {}),
+            },
+          }
+        : {}),
     };
   });
 }

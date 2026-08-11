@@ -71,6 +71,21 @@ interface ShowFileResponse {
   success: boolean;
   data?: string;
   error?: string;
+  /**
+   * True when the daemon rejected the read with the typed `not-a-file` error
+   * (`-32602`, `data.code: "not-a-file"`): the path resolves to a non-blob
+   * tree entry — a gitlink (mode 160000) or a directory — so no file content
+   * exists at any ref (intent-hq/monorepo#1739). Callers route these to the
+   * submodule presentation instead of logging an error.
+   */
+  notAFile?: boolean;
+}
+
+/** Duck-typed check for the daemon's typed `not-a-file` error payload. */
+function isNotAFileError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, data } = error as { code?: unknown; data?: { code?: unknown } };
+  return code === 'not-a-file' || data?.code === 'not-a-file';
 }
 
 interface PendingDiff {
@@ -240,14 +255,28 @@ async function enrichChunkContents(
       : readWorkingTreeContent(workspaceId, chunk.file),
   ]);
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';
-  else logger.warn('git.showFile failed for old diff side', {
+  else if (oldRes.notAFile) {
+    // Typed not-a-file rejection (#1739): a gitlink/directory entry whose
+    // hunks didn't structurally classify above — expected, not a failure.
+    logger.debug('git.showFile old side is not a file (gitlink/directory)', {
+      workspaceId,
+      filePath: chunk.file,
+      staged,
+    });
+  } else logger.warn('git.showFile failed for old diff side', {
     workspaceId,
     filePath: chunk.file,
     staged,
     error: oldRes.error,
   });
   if (newRes.success) chunk.newContent = newRes.data ?? '';
-  else logger.warn('content read failed for new diff side', {
+  else if (newRes.notAFile) {
+    logger.debug('git.showFile new side is not a file (gitlink/directory)', {
+      workspaceId,
+      filePath: chunk.file,
+      staged,
+    });
+  } else logger.warn('content read failed for new diff side', {
     workspaceId,
     filePath: chunk.file,
     staged,
@@ -506,7 +535,10 @@ function showKey(workspaceId: string, ref: string, filePath: string): string {
  * revision, index ref ':0' supported; a path missing at the ref folds to ''
  * on the daemon side). Concurrent callers for the same `(workspace, ref,
  * path)` share a single in-flight request. Daemon/transport errors fold into
- * `{ success: false, error }`, preserving the legacy handler's envelope.
+ * `{ success: false, error }`, preserving the legacy handler's envelope; the
+ * typed `not-a-file` rejection (gitlink/directory entry, #1739) additionally
+ * sets `notAFile: true` so callers can route it instead of treating it as a
+ * failure.
  */
 export function dedupedShowFile(
   workspaceId: string,
@@ -532,6 +564,7 @@ export function dedupedShowFile(
       (error): ShowFileResponse => ({
         success: false,
         error: error instanceof Error ? error.message : String(error),
+        ...(isNotAFileError(error) ? { notAFile: true } : {}),
       }),
     )
     .finally(() => {
