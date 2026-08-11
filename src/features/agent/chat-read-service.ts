@@ -1,6 +1,6 @@
 /**
- * Reusable on-demand transcript read seam used by the chat read saga and event
- * router. `loadChatTranscript(agentId)` fetches
+ * Reusable on-demand transcript read seam used by the daemon event router
+ * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
  * the session (`appClient.agents.get`) AND the FULL transcript by paging through
  * `agent.getConversation` (PROTOCOL §5.5, up to 200 messages per page, looping
  * on `nextToken` until the complete conversation is assembled). The daemon's
@@ -38,7 +38,6 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { createLogger } from '$lib/utils/client-logger';
-import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 
 const logger = createLogger('ChatReadService');
@@ -138,9 +137,6 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
 
       // Fetch the FULL transcript by paging through agent.getConversation.
       // Request 200 messages per page (daemon max) and loop on nextToken.
-      // This fixes the flicker/truncation bug where chat.subscribeSnapshot
-      // (which returns only the newest ~50 messages) was used for initial
-      // load, causing transcripts with > 50 messages to be truncated.
       const allMessages: AgentMessage[] = [];
       let nextToken: string | null = null;
       const pageLimit = 200;
@@ -157,47 +153,17 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         nextToken = page.nextToken;
       } while (nextToken !== null);
 
-      // REJOIN-STREAM FIX: chat.subscribe snapshot merges the live-turn slot
-      // (CS-0 D5), while agent.getConversation returns persisted-only. Fetch
-      // the snapshot and merge any in-flight assistant message into the hydrated
-      // transcript so reopening a mid-turn chat shows the partial response
-      // immediately instead of waiting for the next chunk/tool-call.
-      const snapshot = await appClient.chat.subscribeSnapshot(agentId);
-
       // Final re-check before any side effects: the deletion may have become
-      // pending during transcript paging / snapshot fetch above. This guards
-      // both the store upserts below and seedStreamFromSnapshot (the bridge
-      // accumulator must not be seeded for a deleted agent).
+      // pending during transcript paging above.
       if (isAgentDeletionPending(agentId)) return;
 
-      const inFlightMessage = snapshot.messages.find(
-        (m) =>
-          m.role === 'assistant' && typeof m.isStreaming === 'boolean' && m.isStreaming === true,
-      );
-
-      // Merge in-flight message when present: dedup by message id, persisted
-      // copy wins (the snapshot's in-flight entry may carry stale metadata
-      // but fresher content blocks). If the persisted set already contains
-      // the same message id, skip the snapshot's copy to preserve finalized
-      // metadata.
-      let finalMessages = allMessages;
-      if (inFlightMessage && typeof inFlightMessage.id === 'string') {
-        const persistedIds = new Set(
-          allMessages.map((m) => (typeof m.id === 'string' ? m.id : null)).filter(Boolean),
-        );
-        if (!persistedIds.has(inFlightMessage.id)) {
-          // Append in-flight message (allMessages is oldest-first after the
-          // unshift-per-page accumulation, so the newest in-flight assistant
-          // goes at the end).
-          finalMessages = [...allMessages, inFlightMessage];
-          // Seed the bridge stream accumulator so subsequent agent:stream:chunk
-          // events build on the hydrated prefix instead of starting empty
-          // (which would fail the regression guard until the candidate outgrows
-          // the partial). The snapshot's in-flight assistant carries the full
-          // content-blocks array built by chat_snapshot's CS-0 D5 merge.
-          seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
-        }
-      }
+      // NOTE: no in-flight assistant merge here — the standing
+      // `chat.subscribe` subscription (chat-subscribe saga) is the sole
+      // source of the live-turn slot: its seq-0 snapshot carries the CS-0 D5
+      // merged in-flight message, it seeds the bridge stream accumulator,
+      // and its transcriptHydrationSettled re-apply restores the in-flight
+      // row immediately after this hydration settles.
+      const finalMessages = allMessages;
 
       // STALE-HYDRATION MERGE GUARD (monorepo#1019): a store message absent
       // from the fetched set AND from the pre-read baseline was appended by

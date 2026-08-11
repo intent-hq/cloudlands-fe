@@ -74,6 +74,7 @@ import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
 import {
   chatLiveStreamPhaseChanged,
+  chatTranscriptSnapshotApplied,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
@@ -95,6 +96,7 @@ import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
 import {
   selectAgentMessages,
   selectAgentSession,
@@ -207,14 +209,36 @@ function* handleSubscriptionEvent(
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     yield* applyTranscript(event.agentId, entry, event.transcript);
-    // §7.1 resume fallback: the daemon did not honor the requested
-    // `sinceMessageId` (unknown/pruned anchor) and served the standard
-    // newest page instead — the retained older history may be stale, so
-    // trigger a full rehydration through the chat-read saga.
-    if (event.transcript.resumed === false) {
+    // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
+    // stream accumulator with the snapshot's in-flight assistant message so
+    // subsequent agent:stream:chunk events pass the regression guard, then
+    // record the snapshot metadata for the chat-read saga (it settles
+    // hydration on it and anchors the background older-history fetch).
+    if (event.transcript.fromSnapshot === true) {
       const session = yield* selectAgentSession.effect(event.agentId);
       const wsId = entry.wsId ?? session?.workspaceId;
-      if (wsId) yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
+      const inFlight = event.transcript.messages.find((message) => message.isStreaming === true);
+      if (inFlight && wsId) {
+        yield* call(seedStreamFromSnapshot, event.agentId, inFlight, wsId);
+      }
+      const oldest = event.transcript.messages.find(
+        (message) => typeof message.id === 'string' && message.id.length > 0,
+      );
+      yield* put(
+        chatTranscriptSnapshotApplied(event.agentId, {
+          truncated: event.transcript.truncated,
+          totalMessages: event.transcript.totalMessages,
+          ...(oldest ? { oldestMessageId: oldest.id } : {}),
+          ...(event.transcript.resumed === undefined ? {} : { resumed: event.transcript.resumed }),
+        }),
+      );
+      // §7.1 resume fallback: the daemon did not honor the requested
+      // `sinceMessageId` (unknown/pruned anchor) and served the standard
+      // newest page instead — the retained older history may be stale, so
+      // trigger a full rehydration through the chat-read saga.
+      if (event.transcript.resumed === false && wsId) {
+        yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
+      }
     }
   } catch (error) {
     logger.error('Failed to process chat subscription event', error);

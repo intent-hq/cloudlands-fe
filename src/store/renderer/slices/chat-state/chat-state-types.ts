@@ -80,6 +80,26 @@ export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 export type TranscriptHydrationStatus = 'loading' | 'settled';
 
 /**
+ * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
+ * subscription applied to the store (single-transfer hydration). Written by
+ * the chat-subscribe saga on every `fromSnapshot` transcript emit; consumed
+ * by the chat-read saga to settle hydration and anchor the background
+ * older-history fetch without a second conversation transfer.
+ */
+export interface TranscriptSnapshotMeta {
+  /** Daemon `truncated` flag: older history exists beyond the snapshot page. */
+  truncated: boolean;
+  /** Daemon `totalMessages` count at snapshot time. */
+  totalMessages: number;
+  /** Id of the oldest message in the snapshot page (undefined when empty). */
+  oldestMessageId?: string;
+  /** §7.1 resume disposition when the registration requested one. */
+  resumed?: boolean;
+  /** Monotonic per-agent counter so waiters can detect a NEW snapshot. */
+  seq: number;
+}
+
+/**
  * Lifecycle phase of the agent's standing `chat.subscribe` stream, mirrored
  * from the live client's observational phase reports (see ChatLiveStreamPhase
  * in app-client.ts). Drives the pre-live hydration indicator in ChatPanel.
@@ -149,6 +169,12 @@ export interface ChatAgentState {
    * chat-subscribe saga from the live client's onPhase reports.
    */
   liveStreamPhase: LiveStreamPhase | null;
+  /**
+   * Metadata of the last applied seq-0 snapshot from the standing
+   * subscription, or undefined when none has arrived yet. See
+   * TranscriptSnapshotMeta.
+   */
+  transcriptSnapshot?: TranscriptSnapshotMeta;
 }
 
 /**

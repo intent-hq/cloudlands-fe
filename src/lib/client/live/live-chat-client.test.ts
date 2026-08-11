@@ -48,113 +48,6 @@ const reset = (transport as unknown as { __reset: () => void }).__reset;
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe("LiveChatClient (fake transport)", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-    reset();
-  });
-
-  it("subscribeSnapshot sends chat.subscribe with agentId and returns the seq-0 messages", async () => {
-    // Daemon fast-path resolves with the subscriptionId, then broadcasts the
-    // seq-0 snapshot push on `subscription.push` (PROTOCOL §7.1).
-    mockedRequest.mockImplementation(async (method: string) => {
-      if (method === "chat.subscribe") {
-        // Schedule the push after the subscribe resolves so we exercise the
-        // "arrives after we know the subscriptionId" path.
-        queueMicrotask(() =>
-          emit({
-            method: "subscription.push",
-            params: {
-              subscriptionId: "sub-chat-1",
-              kind: "snapshot",
-              seq: 0,
-              snapshot: {
-                agentId: "agent-1",
-                messages: [
-                  {
-                    id: "0190a1b2-user",
-                    agentId: "agent-1",
-                    seq: 0,
-                    role: "user",
-                    contentBlocks: [
-                      { type: "text", id: "0190a1b2-user:0", text: "Run the tests" },
-                    ],
-                    timestamp: "2026-06-27T01:00:00.000Z",
-                  },
-                ],
-                truncated: false,
-                totalMessages: 1,
-                nextToken: null,
-              },
-            },
-          }),
-        );
-        return { subscriptionId: "sub-chat-1" };
-      }
-      return {};
-    });
-
-    const client = new LiveChatClient();
-    const result = await client.subscribeSnapshot("agent-1");
-
-    expect(mockedRequest).toHaveBeenCalledWith("chat.subscribe", { agentId: "agent-1" });
-    expect(mockedRequest).toHaveBeenCalledWith("chat.unsubscribe", { subscriptionId: "sub-chat-1" });
-    expect(result.messages.map((m) => m.id)).toEqual(["0190a1b2-user"]);
-    expect(result.truncated).toBe(false);
-    expect(result.totalMessages).toBe(1);
-  });
-
-  it("subscribeSnapshot surfaces the synthetic in-flight assistant message (CS-0 D5)", async () => {
-    // When a turn is streaming, the daemon appends `{ isStreaming: true }` to
-    // the snapshot's `messages`. That flag must ride through to the caller so
-    // the reducer can render the partial (this is the whole point of the
-    // hydration switch).
-    mockedRequest.mockImplementation(async (method: string) => {
-      if (method === "chat.subscribe") {
-        queueMicrotask(() =>
-          emit({
-            method: "subscription.push",
-            params: {
-              subscriptionId: "sub-chat-2",
-              kind: "snapshot",
-              seq: 0,
-              snapshot: {
-                agentId: "agent-2",
-                messages: [
-                  {
-                    id: "0190a200-asst",
-                    agentId: "agent-2",
-                    seq: 1,
-                    role: "assistant",
-                    isStreaming: true,
-                    contentBlocks: [
-                      { type: "text", id: "0190a200-asst:0", text: "Let me check" },
-                    ],
-                    timestamp: "2026-06-27T01:00:00.500Z",
-                  },
-                ],
-                truncated: false,
-                totalMessages: 2,
-                nextToken: null,
-              },
-            },
-          }),
-        );
-        return { subscriptionId: "sub-chat-2" };
-      }
-      return {};
-    });
-
-    const client = new LiveChatClient();
-    const result = await client.subscribeSnapshot("agent-2");
-
-    expect(result.messages).toHaveLength(1);
-    const inFlight = result.messages[0] as { isStreaming?: boolean; role: string };
-    expect(inFlight.role).toBe("assistant");
-    expect(inFlight.isStreaming).toBe(true);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Standing subscription: chat.subscribe stays open and the block-granularity
 // delta stream (PROTOCOL §7.1) is reduced onto the seq-0 message page.
@@ -223,6 +116,33 @@ describe("LiveChatClient.subscribe (standing §7.1 subscription)", () => {
 
     off();
     expect(mockedRequest).toHaveBeenCalledWith("chat.unsubscribe", { subscriptionId: "sub-1" });
+  });
+
+  it("stamps fromSnapshot: true on snapshot emits and omits it on delta emits", async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ fromSnapshot?: boolean }> = [];
+    const off = client.subscribe("agent-1", (t) => seen.push(t));
+    await flush();
+
+    snapshotPush("sub-1", 0, SEEDED_SNAPSHOT);
+    deltaPush("sub-1", 1, {
+      added: [
+        {
+          agentId: "agent-1",
+          messageId: "0190a200-asst",
+          role: "assistant",
+          block: { type: "text", id: "0190a200-asst:0", text: "Hi" },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0].fromSnapshot).toBe(true);
+    expect("fromSnapshot" in seen[1]).toBe(false);
+    off();
   });
 
   it("derives isStreaming from the snapshot's in-flight message and activity flags", async () => {

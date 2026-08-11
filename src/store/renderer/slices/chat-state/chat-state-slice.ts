@@ -11,6 +11,7 @@ import type {
   SendMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
+  TranscriptSnapshotMeta,
 } from './chat-state-types';
 import { MAX_QUEUED_RETRY_RECORDS } from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
@@ -666,6 +667,17 @@ export const transcriptHydrationSettled = createAction<[agentId: string]>(
   'chatState/transcriptHydrationSettled',
 );
 
+/**
+ * A seq-0 snapshot from the standing `chat.subscribe` subscription was applied
+ * to the store (single-transfer hydration). Dispatched by the chat-subscribe
+ * saga with the snapshot's page metadata; the reducer stamps a per-agent
+ * monotonic `seq` so waiters can both read the latest snapshot from state and
+ * `take` this action for the arrival signal.
+ */
+export const chatTranscriptSnapshotApplied = createAction<
+  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq'>]
+>('chatState/transcriptSnapshotApplied');
+
 /** Standing chat.subscribe lifecycle phase reported by the live client. */
 export const chatLiveStreamPhaseChanged = createAction<
 	[agentId: string, phase: LiveStreamPhase | null]
@@ -898,6 +910,13 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
     transcriptHydratedOnce: true,
   }),
 );
+chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
+  const agent = getAgent(state, agentId);
+  return updateAgent(state, agentId, {
+    agentId,
+    transcriptSnapshot: { ...meta, seq: (agent.transcriptSnapshot?.seq ?? 0) + 1 },
+  });
+});
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
 	if (phase === null && !state.byAgentId[agentId]) return state;
 	return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });

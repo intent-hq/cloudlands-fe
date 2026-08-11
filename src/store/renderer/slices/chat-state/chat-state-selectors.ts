@@ -8,6 +8,7 @@ import type {
   LiveStreamPhase,
   ModelUnavailableInfo,
   TranscriptHydrationStatus,
+  TranscriptSnapshotMeta,
 } from './chat-state-types';
 
 // ============================================================================
@@ -139,6 +140,16 @@ export const selectTranscriptHydratedOnce = store.createSelector(
 export const selectChatLiveStreamPhase = store.createSelector(
   (state, agentId: string): LiveStreamPhase | null =>
     getAgentChatState(state, agentId).liveStreamPhase ?? null,
+);
+
+/**
+ * Select the metadata of the last applied seq-0 snapshot from the standing
+ * subscription, or undefined when none has arrived yet (single-transfer
+ * hydration; consumed by the chat-read saga).
+ */
+export const selectTranscriptSnapshotMeta = store.createSelector(
+  (state, agentId: string): TranscriptSnapshotMeta | undefined =>
+    getAgentChatState(state, agentId).transcriptSnapshot,
 );
 
 

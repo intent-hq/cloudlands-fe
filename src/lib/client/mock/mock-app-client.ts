@@ -54,9 +54,14 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient["chat"] = {
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
     // safe default since fixtures don't model turn-granular AgentMessage lists.
-    subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
     subscribe: (_agentId, handler) =>
-      emitOnce(handler, { messages: [], truncated: false, totalMessages: 0, isStreaming: false }),
+      emitOnce(handler, {
+        messages: [],
+        truncated: false,
+        totalMessages: 0,
+        isStreaming: false,
+        fromSnapshot: true,
+      }),
   };
 
   readonly terminals: AppClient["terminals"] = {
