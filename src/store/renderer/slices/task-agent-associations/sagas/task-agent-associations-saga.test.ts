@@ -33,7 +33,10 @@ const deferred = () => {
 
 type AssociationAction = Parameters<typeof taskAgentAssociationsReducer>[1];
 
-function harness(byNoteId: Parameters<typeof hydrateTaskAgentAssociations>[1] = {}) {
+function harness(
+  byNoteId: Parameters<typeof hydrateTaskAgentAssociations>[1] = {},
+  onMutationQueueCountChange?: (count: number) => void,
+) {
   let associations = taskAgentAssociationsReducer(
     initialTaskAgentAssociationsState,
     hydrateTaskAgentAssociations('ws-1', byNoteId),
@@ -42,6 +45,7 @@ function harness(byNoteId: Parameters<typeof hydrateTaskAgentAssociations>[1] = 
   const task = runSaga(
     { channel, dispatch: vi.fn(), getState: () => ({ taskAgentAssociations: associations }) },
     taskAgentAssociationsSaga,
+    { onMutationQueueCountChange },
   );
   const send = (action: AssociationAction) => {
     associations = taskAgentAssociationsReducer(associations, action);
@@ -184,6 +188,74 @@ describe('taskAgentAssociationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('retires an idle queue and recreates the same authoritative key later', async () => {
+    mocks.linkAgent.mockResolvedValue(undefined);
+    const queueCounts: number[] = [];
+    const run = harness({}, (count) => queueCounts.push(count));
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    await vi.waitFor(() => expect(queueCounts.at(-1)).toBe(0));
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', second));
+    await vi.waitFor(() => expect(queueCounts).toEqual([1, 0, 1, 0]));
+
+    expect(mocks.linkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', first],
+      ['ws-1', 'note-1', second],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not retain idle queues after many-key churn', async () => {
+    mocks.linkAgent.mockResolvedValue(undefined);
+    const queueCounts: number[] = [];
+    const run = harness({}, (count) => queueCounts.push(count));
+
+    for (let index = 0; index < 100; index += 1) {
+      run.send(
+        addTaskAgentAssociation('ws-1', `note-${index}`, {
+          taskKey: `task-${index}`,
+          taskText: `Task ${index}`,
+          agentId: `agent-${index}`,
+        }),
+      );
+    }
+
+    await vi.waitFor(() => expect(queueCounts.at(-1)).toBe(0));
+    expect(mocks.linkAgent).toHaveBeenCalledTimes(100);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not lose a same-key action dispatched at the retirement boundary', async () => {
+    mocks.linkAgent.mockResolvedValue(undefined);
+    const queueCounts: number[] = [];
+    const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
+    const second = { ...first, agentId: 'agent-2' };
+    let sentRacingAction = false;
+    const racing = { send: undefined as ReturnType<typeof harness>['send'] | undefined };
+    const run = harness({}, (count) => {
+      queueCounts.push(count);
+      if (count === 0 && !sentRacingAction) {
+        sentRacingAction = true;
+        racing.send?.(addTaskAgentAssociation('ws-1', 'note-1', second));
+      }
+    });
+    racing.send = run.send;
+
+    run.send(addTaskAgentAssociation('ws-1', 'note-1', first));
+    await vi.waitFor(() => expect(queueCounts).toEqual([1, 0, 1, 0]));
+
+    expect(mocks.linkAgent.mock.calls).toEqual([
+      ['ws-1', 'note-1', first],
+      ['ws-1', 'note-1', second],
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('runs different composite task keys concurrently', async () => {
     const firstCall = deferred();
     mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
@@ -253,7 +325,8 @@ describe('taskAgentAssociationsSaga', () => {
     const firstCall = deferred();
     mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
     mocks.unlinkAgent.mockResolvedValue(undefined);
-    const run = harness();
+    const queueCounts: number[] = [];
+    const run = harness({}, (count) => queueCounts.push(count));
     await settle();
     const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
@@ -262,6 +335,7 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     run.send(workspaceUnmounted('ws-1'));
     await settle();
+    expect(queueCounts.at(-1)).toBe(0);
     firstCall.resolve();
     await settle();
     expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);
@@ -278,7 +352,8 @@ describe('taskAgentAssociationsSaga', () => {
   it('drops queued mutations when the root saga is cancelled', async () => {
     const firstCall = deferred();
     mocks.linkAgent.mockImplementationOnce(() => firstCall.promise).mockResolvedValue(undefined);
-    const run = harness();
+    const queueCounts: number[] = [];
+    const run = harness({}, (count) => queueCounts.push(count));
     await settle();
     const first = { taskKey: 'same', taskText: 'Same', agentId: 'agent-1' };
     const second = { ...first, agentId: 'agent-2' };
@@ -287,6 +362,7 @@ describe('taskAgentAssociationsSaga', () => {
     await settle();
     run.task.cancel();
     await run.task.toPromise();
+    expect(queueCounts.at(-1)).toBe(0);
     firstCall.resolve();
     await settle();
     expect(mocks.linkAgent.mock.calls).toEqual([['ws-1', 'note-1', first]]);

@@ -47,11 +47,13 @@ type AssociationMutation =
   | { kind: 'unlink'; workspaceId: string; noteId: string; taskKey: string };
 type AssociationMutationQueue = {
   channel: Channel<AssociationMutation>;
+  pending: number;
   task?: Task;
 };
 type AssociationSnapshotTracker = {
   snapshots: Map<string, TaskAgentAssociationsByTaskKey>;
   mutationQueues: Map<string, AssociationMutationQueue>;
+  onMutationQueueCountChange?: (count: number) => void;
 };
 type ObservedAssociationAction =
   | ReturnType<typeof addTaskAgentAssociation>
@@ -107,6 +109,17 @@ function clearWorkspaceSnapshots(tracker: AssociationSnapshotTracker, workspaceI
   }
 }
 
+function retireMutationQueue(
+  tracker: AssociationSnapshotTracker,
+  key: string,
+  queue: AssociationMutationQueue,
+): boolean {
+  if (tracker.mutationQueues.get(key) !== queue) return false;
+  tracker.mutationQueues.delete(key);
+  tracker.onMutationQueueCountChange?.(tracker.mutationQueues.size);
+  return true;
+}
+
 function* runAssociationMutation(mutation: AssociationMutation): SagaGenerator<void> {
   if (mutation.kind === 'link') {
     const { workspaceId, noteId, association } = mutation;
@@ -129,16 +142,18 @@ function* runAssociationMutation(mutation: AssociationMutation): SagaGenerator<v
 function* consumeAssociationMutations(
   tracker: AssociationSnapshotTracker,
   key: string,
-  queue: Channel<AssociationMutation>,
+  queue: AssociationMutationQueue,
 ): SagaGenerator<void> {
   try {
     while (true) {
-      const mutation = yield* take(queue);
+      const mutation = yield* take(queue.channel);
       yield* call(runAssociationMutation, mutation);
+      queue.pending -= 1;
+      if (queue.pending === 0 && retireMutationQueue(tracker, key, queue)) return;
     }
   } finally {
-    queue.close();
-    if (tracker.mutationQueues.get(key)?.channel === queue) tracker.mutationQueues.delete(key);
+    queue.channel.close();
+    retireMutationQueue(tracker, key, queue);
   }
 }
 
@@ -151,10 +166,12 @@ function* enqueueAssociationMutation(
   const key = mutationKey(mutation.workspaceId, mutation.noteId, taskKey);
   let queue = tracker.mutationQueues.get(key);
   if (!queue) {
-    queue = { channel: channel<AssociationMutation>(buffers.expanding()) };
+    queue = { channel: channel<AssociationMutation>(buffers.expanding()), pending: 0 };
     tracker.mutationQueues.set(key, queue);
-    queue.task = yield* fork(consumeAssociationMutations, tracker, key, queue.channel);
+    tracker.onMutationQueueCountChange?.(tracker.mutationQueues.size);
+    queue.task = yield* fork(consumeAssociationMutations, tracker, key, queue);
   }
+  queue.pending += 1;
   yield* put(queue.channel, mutation);
 }
 
@@ -228,7 +245,7 @@ function* removeWorkspaceSnapshots(
   const prefix = `${workspaceId}\u0000`;
   for (const [key, queue] of tracker.mutationQueues) {
     if (!key.startsWith(prefix)) continue;
-    tracker.mutationQueues.delete(key);
+    retireMutationQueue(tracker, key, queue);
     queue.channel.close();
     if (queue.task?.isRunning()) yield* cancel(queue.task);
   }
@@ -254,11 +271,14 @@ function* consumeAssociationActions(
   }
 }
 
-export function* taskAgentAssociationsSaga(): SagaGenerator<void> {
+export function* taskAgentAssociationsSaga(
+  options: { onMutationQueueCountChange?: (count: number) => void } = {},
+): SagaGenerator<void> {
   const initial = yield* selectAllTaskAgentAssociationWorkspaces.effect();
   const tracker: AssociationSnapshotTracker = {
     snapshots: new Map(),
     mutationQueues: new Map(),
+    onMutationQueueCountChange: options.onMutationQueueCountChange,
   };
   for (const [workspaceId, workspace] of Object.entries(initial)) {
     for (const [noteId, associations] of Object.entries(workspace.byNoteId)) {
@@ -283,7 +303,9 @@ export function* taskAgentAssociationsSaga(): SagaGenerator<void> {
   } finally {
     actions.close();
     for (const queue of tracker.mutationQueues.values()) queue.channel.close();
+    const hadMutationQueues = tracker.mutationQueues.size > 0;
     tracker.mutationQueues.clear();
+    if (hadMutationQueues) tracker.onMutationQueueCountChange?.(0);
     tracker.snapshots.clear();
   }
 }
