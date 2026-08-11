@@ -8,6 +8,13 @@
   export function getInlineImages() {
     return [];
   }
+  // Records mention insertions on a window-scoped array so tests can assert
+  // path-reference chips (e.g. the oversized-attachment placement flow).
+  export function insertMention(attrs: Record<string, unknown>): boolean {
+    const target = window as unknown as { __tiptapInsertMentionCalls?: unknown[] };
+    (target.__tiptapInsertMentionCalls ??= []).push(attrs);
+    return true;
+  }
 </script>
 
 <textarea

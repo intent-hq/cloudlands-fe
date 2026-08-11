@@ -2,8 +2,9 @@
  * Gitlink (submodule) diff-chunk helpers (intent-hq/monorepo#1739).
  *
  * A submodule entry in a git tree (mode 160000) has no blob content, so
- * `git.showFile` fails for it (`-32603`) and `file.read` fails too (the path
- * is a directory in the worktree). libgit2 renders a gitlink delta as
+ * `git.showFile` rejects it with the typed `-32602` `not-a-file` error and
+ * `file.read` fails too (the path is a directory in the worktree). libgit2
+ * renders a gitlink delta as
  * pseudo-content lines of the form `Subproject commit <sha>` (with an
  * optional `-dirty` suffix), which the daemon's `git.diffs` hunks carry
  * verbatim. These helpers let the diff pipeline recognize such chunks from
@@ -46,6 +47,26 @@ export function isGitlinkDiffChunk(chunk: { chunks?: unknown[] }): boolean {
     if (typeof content !== 'string' || !GITLINK_LINE_RE.test(content)) return false;
   }
   return true;
+}
+
+/**
+ * Compose the two pseudo-content sides of a submodule pin change from the
+ * old/new pin SHAs that `git.status` carries on mode-160000 entries
+ * (intent-hq/monorepo#1739). Mirrors the daemon's synthesized
+ * `Subproject commit <sha>` hunk lines for entries whose diff chunk did not
+ * structurally classify (or returned no hunks). A missing side (added or
+ * deleted submodule) yields an empty string.
+ */
+export function gitlinkSidesFromShas(gitlink: { oldSha?: string; newSha?: string }): {
+  oldContent: string;
+  newContent: string;
+} {
+  return {
+    // i18n-ignore (git wire-format pseudo-content, not UI copy)
+    oldContent: gitlink.oldSha ? `Subproject commit ${gitlink.oldSha}\n` : '',
+    // i18n-ignore (git wire-format pseudo-content, not UI copy)
+    newContent: gitlink.newSha ? `Subproject commit ${gitlink.newSha}\n` : '',
+  };
 }
 
 /**

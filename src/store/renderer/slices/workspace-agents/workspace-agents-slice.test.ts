@@ -406,6 +406,82 @@ describe('workspace-agents selectors', () => {
     ]);
   });
 
+  describe('selectInitialAgentId metadata fallback', () => {
+    const initialFlaggedAgent = (id: string): AgentSession => ({
+      ...mockAgent(id),
+      metadata: { isInitialAgent: true } as AgentSession['metadata'],
+    });
+
+    it('falls back to the agent flagged metadata.isInitialAgent when the in-memory id is unset', () => {
+      const plainAgent = mockAgent('agent-1');
+      const flaggedAgent = initialFlaggedAgent('agent-2');
+      const workspaceAgents = workspaceAgentsReducer(
+        initialState,
+        setAgents(WS_1, [plainAgent, flaggedAgent]),
+      );
+      const state = mockState(workspaceAgents, [plainAgent, flaggedAgent]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBe('agent-2');
+    });
+
+    it('prefers the explicitly set in-memory initialAgentId over the metadata flag', () => {
+      const plainAgent = mockAgent('agent-1');
+      const flaggedAgent = initialFlaggedAgent('agent-2');
+      let workspaceAgents = workspaceAgentsReducer(
+        initialState,
+        setAgents(WS_1, [plainAgent, flaggedAgent]),
+      );
+      workspaceAgents = workspaceAgentsReducer(workspaceAgents, setInitialAgentId(WS_1, 'agent-1'));
+      const state = mockState(workspaceAgents, [plainAgent, flaggedAgent]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBe('agent-1');
+    });
+
+    it('stays null when no agent carries the metadata flag (older daemons)', () => {
+      const plainAgent = mockAgent('agent-1');
+      const otherAgent = mockAgent('agent-2');
+      const workspaceAgents = workspaceAgentsReducer(
+        initialState,
+        setAgents(WS_1, [plainAgent, otherAgent]),
+      );
+      const state = mockState(workspaceAgents, [plainAgent, otherAgent]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
+    });
+
+    it('ignores non-true metadata values and agents from other workspaces', () => {
+      const falseFlagged = {
+        ...mockAgent('agent-1'),
+        metadata: { isInitialAgent: false } as AgentSession['metadata'],
+      } satisfies AgentSession;
+      const otherWorkspaceFlagged = {
+        ...initialFlaggedAgent('agent-2'),
+        workspaceId: WS_2,
+      } satisfies AgentSession;
+      let workspaceAgents = workspaceAgentsReducer(initialState, setAgents(WS_1, [falseFlagged]));
+      workspaceAgents = workspaceAgentsReducer(
+        workspaceAgents,
+        setAgents(WS_2, [otherWorkspaceFlagged]),
+      );
+      const state = mockState(workspaceAgents, [falseFlagged, otherWorkspaceFlagged]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
+      expect(selectInitialAgentId.select(state, WS_2)).toBe('agent-2');
+    });
+
+    it('resolves the first flagged agent in agentIds order when multiple carry the flag', () => {
+      const firstFlagged = initialFlaggedAgent('agent-1');
+      const secondFlagged = initialFlaggedAgent('agent-2');
+      const workspaceAgents = workspaceAgentsReducer(
+        initialState,
+        setAgents(WS_1, [firstFlagged, secondFlagged]),
+      );
+      const state = mockState(workspaceAgents, [firstFlagged, secondFlagged]);
+
+      expect(selectInitialAgentId.select(state, WS_1)).toBe('agent-1');
+    });
+  });
+
   // -----------------------------------------------------------------------
   // New actions for unified-state-store migration
   // -----------------------------------------------------------------------

@@ -66,7 +66,17 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
 });
 
 export const selectInitialAgentId = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).initialAgentId;
+  const workspaceState = getWorkspaceAgentState(state, wsId);
+  if (workspaceState.initialAgentId) return workspaceState.initialAgentId;
+  // The in-memory flag is only dispatched by the creating session. After a
+  // reload (or in another window) fall back to the daemon-persisted
+  // `metadata.isInitialAgent` flag on the hydrated agent sessions; older
+  // daemons that don't surface the field simply never match.
+  for (const id of workspaceState.agentIds) {
+    const session = selectAgentSession.select(state, id);
+    if (session?.metadata?.isInitialAgent === true) return id;
+  }
+  return null;
 });
 
 /**

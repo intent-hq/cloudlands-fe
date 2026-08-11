@@ -90,6 +90,46 @@ describe('installHardwareConsoleLedStatus', () => {
     teardown();
   });
 
+  it('does not attach the engine when the window is not the console owner', () => {
+    const manager = makeFakeManager('connected');
+    const source = makeStateSource();
+    const engine = new HardwareLedEngine({ minSendIntervalMs: 0 });
+    const teardown = installHardwareConsoleLedStatus(manager as unknown as HardwareConsoleManager, {
+      engine,
+      getState: source.getState,
+      subscribe: source.subscribe,
+      isOwner: () => false,
+    });
+    // Snapshot is still fed to the (detached) engine, but no frames go out.
+    expect(manager.calls).toHaveLength(0);
+
+    manager.setStatus('disconnected');
+    manager.setStatus('connected');
+    expect(manager.calls).toHaveLength(0);
+    teardown();
+  });
+
+  it('attach on connect follows the isOwner gate at event time', () => {
+    const manager = makeFakeManager('disconnected');
+    const source = makeStateSource();
+    const engine = new HardwareLedEngine({ minSendIntervalMs: 0 });
+    let owner = false;
+    const teardown = installHardwareConsoleLedStatus(manager as unknown as HardwareConsoleManager, {
+      engine,
+      getState: source.getState,
+      subscribe: source.subscribe,
+      isOwner: () => owner,
+    });
+    manager.setStatus('connected');
+    expect(manager.calls).toHaveLength(0);
+
+    owner = true;
+    manager.setStatus('disconnected');
+    manager.setStatus('connected');
+    expect(manager.calls.map((entry) => entry.method)).toEqual(['v.oai.thstatus', 'v.oai.rgbcfg']);
+    teardown();
+  });
+
   it('teardown detaches and unsubscribes', () => {
     const manager = makeFakeManager('connected');
     const source = makeStateSource();

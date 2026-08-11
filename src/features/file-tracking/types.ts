@@ -62,6 +62,19 @@ export interface TrackedChange {
   };
   commitHash?: string;
   prNumber?: number;
+  /**
+   * Submodule (gitlink) metadata from `git.status` (mode 160000 entries) —
+   * lets consumers route the entry to the submodule presentation without
+   * probing file reads that can only fail (intent-hq/monorepo#1739).
+   */
+  gitlink?: {
+    /** Octal tree-entry mode string (`"160000"`). */
+    mode: string;
+    /** Pre-change submodule pin SHA (absent for a newly added submodule). */
+    oldSha?: string;
+    /** Post-change submodule pin SHA (absent for a deleted submodule). */
+    newSha?: string;
+  };
   content?: {
     oldContent?: string;
     newContent?: string;

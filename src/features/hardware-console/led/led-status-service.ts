@@ -5,6 +5,11 @@
  * connect/disconnect so lighting replays after a reconnect. The app-owned
  * device saga feeds snapshots to the engine through a selector channel.
  *
+ * Console-owner gate (intent-hq/monorepo#1928): only the owner window's
+ * engine attaches — non-owner windows keep feeding snapshots to a detached
+ * engine (no frames written), so an ownership flip can replay the current
+ * snapshot instantly via a fresh attach (owned by the device saga).
+ *
  * Dependency-light device service per src/store/renderer/AGENTS.md: no
  * selector imports — state is read via the pure snapshot derivation.
  */
@@ -19,6 +24,11 @@ export interface LedStatusDeps {
   getState?: () => LedSnapshotState;
   /** Optional change notifications for isolated service consumers/tests. */
   subscribe?: (listener: () => void) => () => void;
+  /**
+   * Console-owner gate (#1928): only the owner window's engine attaches and
+   * writes frames. Defaults to always-owner (single window / web build).
+   */
+  isOwner?: () => boolean;
 }
 
 /**
@@ -30,6 +40,7 @@ export function installHardwareConsoleLedStatus(
   deps: LedStatusDeps = {},
 ): () => void {
   const engine = deps.engine ?? new HardwareLedEngine();
+  const isOwner = deps.isOwner ?? (() => true);
 
   const refresh = (): void => {
     if (deps.getState) engine.update(buildHardwareLedSnapshot(deps.getState()));
@@ -38,7 +49,7 @@ export function installHardwareConsoleLedStatus(
   const offStatus = manager.onStatusChange((status) => {
     if (status === 'connected' && manager.client) {
       refresh();
-      engine.attach(manager.client);
+      if (isOwner()) engine.attach(manager.client);
     } else if (status === 'disconnected' || status === 'unavailable') {
       engine.detach();
     }
@@ -48,7 +59,7 @@ export function installHardwareConsoleLedStatus(
 
   if (manager.status === 'connected' && manager.client) {
     refresh();
-    engine.attach(manager.client);
+    if (isOwner()) engine.attach(manager.client);
   }
 
   return () => {

@@ -251,10 +251,9 @@ export const THRESHOLDS = {
 // PATHS & FILES
 // ============================================================================
 
+// The workspace base directory is daemon-owned (PROTOCOL.md §5.1) and must be
+// resolved via WorkspacePathService — never hardcoded here.
 export const PATHS = {
-  /** Workspace base directory */
-  WORKSPACE_BASE: '~/intent',
-
   /** Workspace metadata directory */
   WORKSPACE_META: '.workspace',
 
@@ -457,58 +456,6 @@ export function isAtWarningThreshold(activeCount: number): boolean {
  */
 export function isSessionTooLarge(sizeInBytes: number): boolean {
   return sizeInBytes > LIMITS.MAX_SESSION_SIZE;
-}
-
-/**
- * Expand tilde in paths to home directory
- */
-export function expandPath(path: string): string {
-  if (typeof window !== 'undefined') {
-    // Frontend - return as-is, backend will handle expansion
-    return path;
-  }
-
-  // Backend Node.js environment
-  if (path.startsWith('~/')) {
-    // Use process.env.HOME, USERPROFILE, or os.homedir() for Windows compatibility
-    const homeDir = process.env.HOME || process.env.USERPROFILE || require('os').homedir() || '';
-    return path.replace('~', homeDir);
-  }
-  return path;
-}
-
-/**
- * Get the full path for an agent session file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
- *   e.g. via WorkspacePathService). Falls back to expanding PATHS.WORKSPACE_BASE when
- *   not provided (browser / test usage).
- */
-export function getSessionPath(
-  workspaceId: string,
-  agentId: string,
-  resolvedBasePath?: string,
-): string {
-  const basePath = resolvedBasePath ?? expandPath(PATHS.WORKSPACE_BASE);
-  // Ensure agentId has the 'agent-' prefix for consistency with how files are saved
-  const prefixedAgentId = agentId.startsWith('agent-') ? agentId : `agent-${agentId}`;
-  return `${basePath}/${workspaceId}/${PATHS.WORKSPACE_META}/${PATHS.AGENTS_DIR}/${prefixedAgentId}${FILE_EXTENSIONS.SESSION}`;
-}
-
-/**
- * Get the full path for a recovery file.
- * @param resolvedBasePath - Optional pre-resolved workspace base path (daemon-reported,
- *   e.g. via WorkspacePathService). Falls back to expanding PATHS.WORKSPACE_BASE when
- *   not provided (browser / test usage).
- */
-export function getRecoveryPath(
-  workspaceId: string,
-  agentId: string,
-  resolvedBasePath?: string,
-): string {
-  const basePath = resolvedBasePath ?? expandPath(PATHS.WORKSPACE_BASE);
-  // Ensure agentId has the 'agent-' prefix for consistency with how files are saved
-  const prefixedAgentId = agentId.startsWith('agent-') ? agentId : `agent-${agentId}`;
-  return `${basePath}/${workspaceId}/${PATHS.WORKSPACE_META}/${PATHS.RECOVERY_DIR}/${prefixedAgentId}${FILE_EXTENSIONS.RECOVERY}`;
 }
 
 // ============================================================================

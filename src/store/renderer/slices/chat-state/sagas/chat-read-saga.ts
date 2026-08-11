@@ -56,6 +56,10 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<boolean
       agentId,
     );
     if (!session || String(session.workspaceId) !== wsId) return started;
+    // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
+    // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
+    // window/client (or before an FE restart) is not in the local registry.
+    if (session.pendingDeleteAt) return started;
     if (yield* call(isAgentDeletionPending, agentId)) return started;
 
     const messages: AgentMessage[] = [];

@@ -216,7 +216,7 @@ async function hydrateHudWorkspaceAgents(workspaceId: string): Promise<void> {
   try {
     const listed = await appClient.agents.list(workspaceId);
     const agents = listed
-      .filter((agent) => !isAgentDeletionPending(String(agent.id)))
+      .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
       .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
     appStore.dispatch(setAgentsLoaded(workspaceId, true));
     if (agents.length === 0) return;

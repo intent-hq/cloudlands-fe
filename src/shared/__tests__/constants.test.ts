@@ -21,8 +21,6 @@ import {
   isValidModelId,
   isAtWarningThreshold,
   isSessionTooLarge,
-  getSessionPath,
-  getRecoveryPath,
 } from '../constants';
 
 describe('Constants Module', () => {
@@ -133,24 +131,6 @@ describe('Constants Module', () => {
       it('should detect oversized sessions', () => {
         expect(isSessionTooLarge(LIMITS.MAX_SESSION_SIZE + 1)).toBe(true);
         expect(isSessionTooLarge(LIMITS.MAX_SESSION_SIZE - 1)).toBe(false);
-      });
-    });
-
-    describe('getSessionPath', () => {
-      it('should generate valid session paths', () => {
-        const path = getSessionPath('workspace-123', 'agent-456');
-        expect(path).toContain('workspace-123');
-        expect(path).toContain('agent-456');
-        expect(path).toContain('.json');
-      });
-    });
-
-    describe('getRecoveryPath', () => {
-      it('should generate valid recovery paths', () => {
-        const path = getRecoveryPath('workspace-123', 'agent-456');
-        expect(path).toContain('workspace-123');
-        expect(path).toContain('agent-456');
-        expect(path).toContain('.recovery');
       });
     });
   });

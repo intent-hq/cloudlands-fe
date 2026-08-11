@@ -198,6 +198,74 @@ describe('TrackedChangeDiffViewer content loading regressions', () => {
     );
   });
 
+  it('renders a status-marked gitlink from git.status pin SHAs when hunks do not classify (#1739)', async () => {
+    // Diff chunk exists but its hunks are empty (e.g. dirty submodule
+    // worktree): the git.status gitlink metadata must still route to the pin
+    // presentation instead of the show-file/file:read fallbacks.
+    testState.batchedGitDiffMock.mockResolvedValue({
+      file: 'packages/intentd',
+      chunks: [],
+    });
+
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({
+          file: 'packages/intentd',
+          relativePath: 'packages/intentd',
+          gitlink: { mode: '160000', oldSha: 'a'.repeat(40), newSha: 'b'.repeat(40) },
+        }),
+        workspaceId: 'ws-1',
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('new-content').textContent).toBe(
+        `Subproject commit ${'b'.repeat(40)}\n`,
+      ),
+    );
+
+    expect(screen.getByTestId('old-content').textContent).toBe(
+      `Subproject commit ${'a'.repeat(40)}\n`,
+    );
+    expect(testState.dedupedShowFileMock).not.toHaveBeenCalled();
+    expect(testState.invokeMock).not.toHaveBeenCalledWith(
+      'file:read',
+      expect.objectContaining({ path: '/repo/packages/intentd' }),
+    );
+    expect(testState.dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+    );
+  });
+
+  it('renders a status-marked gitlink pin change when git:diff has no chunk at either stage (#1739)', async () => {
+    testState.batchedGitDiffMock.mockResolvedValue(undefined);
+
+    render(TrackedChangeDiffViewer, {
+      props: {
+        change: createChange({
+          file: 'packages/intentd',
+          relativePath: 'packages/intentd',
+          gitlink: { mode: '160000', oldSha: 'a'.repeat(40), newSha: 'b'.repeat(40) },
+        }),
+        workspaceId: 'ws-1',
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('new-content').textContent).toBe(
+        `Subproject commit ${'b'.repeat(40)}\n`,
+      ),
+    );
+
+    expect(screen.getByTestId('old-content').textContent).toBe(
+      `Subproject commit ${'a'.repeat(40)}\n`,
+    );
+    expect(testState.dedupedShowFileMock).not.toHaveBeenCalled();
+    expect(testState.dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/loadFileContentRequested' }),
+    );
+  });
+
   it('falls back to disk-backed working-tree content instead of unsaved Redux content', async () => {
     testState.originalContentStore.set('unsaved editor buffer');
     testState.batchedGitDiffMock.mockResolvedValue({

@@ -113,9 +113,14 @@ beforeEach(() => {
   hardware.reset();
   settingsGet.mockResolvedValue({ path: 'hardwareConsole.state', value: settingsBag } as never);
   settingsUpdate.mockResolvedValue([]);
-  const invoke = vi.fn().mockResolvedValue({
-    ok: true,
-    result: { text: 'Transcribed composition prompt', provider: 'elevenlabs', durationMs: 900 },
+  const invoke = vi.fn(async (channel: string) => {
+    // Owner-status query (#1928): with a bridge present the saga flips
+    // pessimistically to non-owner until main answers — answer as owner.
+    if (channel === 'hardware-console:get-owner-status') return { isOwner: true };
+    return {
+      ok: true,
+      result: { text: 'Transcribed composition prompt', provider: 'elevenlabs', durationMs: 900 },
+    };
   });
   const bridge = {
     invoke,
@@ -141,6 +146,7 @@ describe('hardware-console production composition', () => {
     });
 
     await vi.waitFor(() => expect(hardware.manager.start).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(appStore.state.hardwareConsole.isConsoleOwner).toBe(true));
     await vi.waitFor(() => expect(appStore.state.hardwareConsole.promptsHydrated).toBe(true));
     await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
     await vi.waitFor(() =>

@@ -308,6 +308,29 @@ export interface WorkspaceDiskUsageResult {
   refreshing: boolean;
 }
 
+/**
+ * `workspace.delete` outcome (§5.1). When the request carried
+ * `undoDelayMs > 0` the daemon registers an in-memory pending deletion
+ * (protocol 6.7+ delete grace window) and returns
+ * `{ success: true, scheduled: true, deleteAt }` — `deleteAt` is the ISO
+ * commit deadline. An immediate delete (no `undoDelayMs`) keeps the plain
+ * `{ success: true }` shape, so both fields are additive and optional.
+ */
+export interface WorkspaceDeleteResult extends MutationResult {
+  scheduled?: boolean;
+  deleteAt?: string;
+}
+
+/**
+ * `workspace.cancelDelete` outcome (§5.1, delete grace window). The daemon
+ * returns `{ cancelled: bool }` — `false` when nothing is pending (already
+ * committed, or never scheduled): a non-error, race-safe outcome. Folded onto
+ * MutationResult so transport failures surface uniformly via `success`.
+ */
+export interface WorkspaceCancelDeleteResult extends MutationResult {
+  cancelled?: boolean;
+}
+
 export interface WorkspacesClient {
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -332,7 +355,20 @@ export interface WorkspacesClient {
    * without a follow-up `workspace.get`.
    */
   update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
-  delete(id: string): Promise<MutationResult>;
+  /**
+   * Delete a workspace (`workspace.delete`, §5.1). Optional
+   * `options.undoDelayMs > 0` requests the daemon-owned delete grace window
+   * (protocol 6.7+): the daemon schedules the commit at `now + undoDelayMs`
+   * and returns `{ success: true, scheduled: true, deleteAt }`; the FE cancels
+   * it via `cancelDelete`. Omitted/0 keeps the immediate-delete behavior.
+   */
+  delete(id: string, options?: { undoDelayMs?: number }): Promise<WorkspaceDeleteResult>;
+  /**
+   * Cancel a pending grace-window deletion (`workspace.cancelDelete`, §5.1).
+   * `{ cancelled: false }` means nothing was pending (already committed, or
+   * never scheduled) — a non-error, race-safe outcome.
+   */
+  cancelDelete(id: string): Promise<WorkspaceCancelDeleteResult>;
   /** Archive a workspace (`workspace.archive`, §5.1). */
   archive(id: string): Promise<MutationResult>;
   /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
@@ -389,6 +425,29 @@ export interface ImageBlock {
   type: "image";
   data: string;
   mimeType: string;
+}
+
+/**
+ * `agent.delete` outcome (§5.5). When the request carried `undoDelayMs > 0`
+ * the daemon registers an in-memory pending deletion (protocol 6.7+ delete
+ * grace window) and returns `{ success: true, scheduled: true, deleteAt }` —
+ * `deleteAt` is the ISO commit deadline. An immediate delete (no
+ * `undoDelayMs`) keeps the plain `{ success: true }` shape, so both fields
+ * are additive and optional.
+ */
+export interface AgentDeleteResult extends MutationResult {
+  scheduled?: boolean;
+  deleteAt?: string;
+}
+
+/**
+ * `agent.cancelDelete` outcome (§5.5, delete grace window). The daemon
+ * returns `{ cancelled: bool }` — `false` when nothing is pending (already
+ * committed, or never scheduled): a non-error, race-safe outcome. Folded onto
+ * MutationResult so transport failures surface uniformly via `success`.
+ */
+export interface AgentCancelDeleteResult extends MutationResult {
+  cancelled?: boolean;
 }
 
 export interface AgentsClient {
@@ -612,8 +671,24 @@ export interface AgentsClient {
    * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so
    * the reactive `subscribe` refetch reconciles the list. `workspaceId` is
    * optional per the contract; the daemon resolves the workspace itself.
+   * Optional `options.undoDelayMs > 0` requests the daemon-owned delete grace
+   * window (protocol 6.7+): the daemon schedules the commit at
+   * `now + undoDelayMs` and returns `{ success: true, scheduled: true,
+   * deleteAt }`; the FE cancels it via `cancelDelete`. Omitted/0 keeps the
+   * immediate-delete behavior. Scheduling does NOT stop the agent — the
+   * deadline commit runs the ordinary teardown, which does.
    */
-  delete(agentId: string, workspaceId?: string): Promise<MutationResult>;
+  delete(
+    agentId: string,
+    workspaceId?: string,
+    options?: { undoDelayMs?: number },
+  ): Promise<AgentDeleteResult>;
+  /**
+   * Cancel a pending grace-window deletion (`agent.cancelDelete`, §5.5).
+   * `{ cancelled: false }` means nothing was pending (already committed, or
+   * never scheduled) — a non-error, race-safe outcome.
+   */
+  cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
    * status is `error` (after spawn exhaustion); returns `{ ok: false, error }`
@@ -919,7 +994,6 @@ export interface FilesClient {
   listDirectory(workspaceId: string, path: string): Promise<FileNode[]>;
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
-  subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe;
   /** Write file content (`file.write`); create-ish, so the live client attaches an idempotencyKey (§5.6). */
   write(workspaceId: string, path: string, content: string): Promise<MutationResult>;
   /** Delete a file (`file.delete`). */
@@ -1241,6 +1315,19 @@ export interface TaskUpdatePatch {
 export interface MarkAsTaskOptions {
   acceptanceCriteria?: string[] | string;
   effort?: string;
+  /** Seed/replace the task's `dependsOn` relation list (v6.8); omitted keeps existing. */
+  dependsOn?: string[];
+  /** Seed/replace the task's `conflictsWith` relation list (v6.8); omitted keeps existing. */
+  conflictsWith?: string[];
+}
+
+/**
+ * Per-list replace params for `task.setRelations` (PROTOCOL §5.4, v6.8):
+ * an omitted list keeps the existing one, `[]` clears it.
+ */
+export interface SetRelationsParams {
+  dependsOn?: string[];
+  conflictsWith?: string[];
 }
 
 /** Options for creating a prerequisite task dependency (`task.createPrerequisite`). */
@@ -1286,6 +1373,13 @@ export interface TasksClient {
     options?: MarkAsTaskOptions,
     expectedVersion?: number,
   ): Promise<MutationResult>;
+  /**
+   * Replace a task note's relation lists (`task.setRelations`, PROTOCOL §5.4,
+   * v6.8). Replace semantics per list: an omitted param keeps the existing
+   * list, `[]` clears it. The daemon validates ids (same-workspace task notes,
+   * no self-edges) and rejects `dependsOn` cycles naming the cycle path.
+   */
+  setRelations(noteId: string, relations: SetRelationsParams): Promise<MutationResult>;
   /** Assign an existing agent to a task note (`task.assignAgent`). `expectedVersion` is optional (§11.4-D). */
   assignAgent(noteId: string, agentId: string, expectedVersion?: number): Promise<MutationResult>;
   /** Create a prerequisite task dependency (`task.createPrerequisite`); carries an idempotencyKey. */

@@ -847,6 +847,12 @@ export const IPC_CHANNELS = {
     // Renderer → main one-way ack once lighting is cleared (or there was
     // nothing to do).
     CLEAR_LIGHTING_DONE: 'hardware-console:clear-lighting-done',
+    // Renderer → main invoke: does the calling window own the console
+    // (i.e. is it the last-focused non-HUD window)? → { isOwner: boolean }
+    GET_OWNER_STATUS: 'hardware-console:get-owner-status',
+    // Main → renderer push on every ownership change, per-webContents
+    // { isOwner: boolean } payload (also in EVENT_CHANNELS).
+    OWNER_CHANGED: 'hardware-console:owner-changed',
   },
 } as const;
 
@@ -1018,6 +1024,8 @@ export const EVENT_CHANNELS = [
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)
   'hardware-console:clear-lighting',
+  // Hardware console ownership push (main → renderer, per-window { isOwner })
+  'hardware-console:owner-changed',
   // Multi-backend connect (main → renderer): connections list/active changed,
   // a pinned-cert mismatch that must block with a failure modal, and a
   // protocol-version mismatch that warns non-blockingly (connect still proceeds).

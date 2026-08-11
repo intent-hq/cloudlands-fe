@@ -5,17 +5,16 @@ import {
   delay,
   fork,
   put,
-  race,
-  take,
+  spawn,
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import {
   getPendingAgentDeletion,
-  listPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
+  type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -32,10 +31,8 @@ import {
 import { agentSessionDismissQuestionsRequested } from '../agent-session-slice';
 import {
   activateAgentRequested,
-  commitPendingAgentDeletionRequested,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
-  flushPendingAgentDeletionsRequested,
   removeAgent,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
@@ -48,6 +45,13 @@ import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
+/**
+ * How long the pending-registry tombstone outlives the daemon-owned commit
+ * deadline. Stale `agent.list`/`agent.get` responses (background polls, bulk
+ * refetches) computed before the daemon committed the delete can land after
+ * it; the read paths reject tombstoned ids until this grace window ends.
+ */
+export const AGENT_DELETION_TOMBSTONE_TTL_MS = 60_000;
 
 function mutationError(error: unknown, fallback: string): Error {
   if (error instanceof Error) return error;
@@ -292,51 +296,37 @@ function* cancelAgentSubscriptions(
   }
 }
 
-function* commitDeletion(agentId: string): SagaGenerator<void> {
-  const pending = getPendingAgentDeletion(agentId);
-  if (!pending) return;
-  removePendingAgentDeletion(agentId);
-  try {
-    const result = yield* call(
-      [appClient.agents, appClient.agents.delete],
-      pending.agentId,
-      pending.wsId,
-    );
-    if (!result.success) {
-      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
-      yield* call(showError, result.error || m.agent_mutation_deleteFailed_error());
-      return;
-    }
-    yield* put(pruneRecentlyClosed(pending.wsId, { agentId: pending.agentId }));
-  } catch (error) {
-    yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
-    yield* call(showError, mutationError(error, m.agent_mutation_deleteFailed_error()).message);
+/**
+ * Clear a pending-registry entry once the daemon-owned deadline plus a
+ * stale-refetch grace window have passed. The entry doubles as a tombstone:
+ * read paths consult `isAgentDeletionPending` so `agent.list`/`agent.get`
+ * responses computed before the daemon committed cannot resurrect the agent.
+ * Only removes the exact entry it was spawned for, so a later re-delete's
+ * fresh entry is never clobbered.
+ */
+function* clearTombstoneAfterGrace(entry: PendingAgentDeletion): SagaGenerator<void> {
+  yield* delay(UNDO_DURATION_MS + AGENT_DELETION_TOMBSTONE_TTL_MS);
+  if (getPendingAgentDeletion(entry.agentId) === entry) {
+    removePendingAgentDeletion(entry.agentId);
   }
 }
 
-function isDeletionReleaseFor(agentId: string, wsId: string) {
-  return (action: unknown): boolean => {
-    if (!action || typeof action !== 'object' || !('type' in action) || !('payload' in action)) {
-      return false;
-    }
-    const candidate = action as { type: string; payload: unknown };
-    if (!Array.isArray(candidate.payload)) return false;
-    if (candidate.type === flushPendingAgentDeletionsRequested.type) {
-      return candidate.payload[0] === wsId;
-    }
-    return (
-      (candidate.type === undoAgentDeletionRequested.type ||
-        candidate.type === commitPendingAgentDeletionRequested.type) &&
-      candidate.payload[1] === agentId
-    );
-  };
-}
-
+/**
+ * Daemon-owned delete grace window (PROTOCOL §5.5, delete grace window):
+ * `agent.delete { undoDelayMs }` is sent IMMEDIATELY, so the deletion commits
+ * daemon-side at the deadline even if the FE quits or crashes. The FE
+ * soft-hides the session and shows the Undo toast; Undo issues the race-safe
+ * `agent.cancelDelete` (see `undoDeletion`) — `{ cancelled: true }` restores
+ * the session, `{ cancelled: false }` (already committed) surfaces "could not
+ * undo" without resurrecting it.
+ */
 function* deleteWithUndo(
   action: ReturnType<typeof deleteAgentWithUndoRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId, agentName] = action.payload;
   let settled = false;
+  let entry: PendingAgentDeletion | null = null;
+  let clearerSpawned = false;
   try {
     const snapshot = yield* selectAgentSession.effect(agentId);
     if (!snapshot) {
@@ -345,15 +335,37 @@ function* deleteWithUndo(
       return;
     }
     yield* call(softHide, wsId, agentId);
-    setPendingAgentDeletion({ wsId, agentId, snapshot });
+    entry = { wsId, agentId, snapshot };
+    setPendingAgentDeletion(entry);
+    let result;
+    try {
+      result = yield* call([appClient.agents, appClient.agents.delete], agentId, wsId, {
+        undoDelayMs: UNDO_DURATION_MS,
+      });
+    } catch (error) {
+      result = {
+        success: false as const,
+        error: mutationError(error, m.agent_mutation_deleteFailed_error()).message,
+      };
+    }
+    if (!result.success) {
+      removePendingAgentDeletion(agentId);
+      entry = null;
+      yield* call(restoreHiddenSession, wsId, snapshot);
+      const failure = new Error(result.error || m.agent_mutation_deleteFailed_error());
+      yield* call(showError, failure.message);
+      yield* put(action.failure(failure));
+      settled = true;
+      return;
+    }
     yield* fork(showUndoToast, wsId, agentId, agentName);
     yield* put(action.success(snapshot));
     settled = true;
-    const outcome = yield* race({
-      release: take(isDeletionReleaseFor(agentId, wsId)),
-      timeout: delay(UNDO_DURATION_MS),
-    });
-    if (outcome.timeout) yield* call(commitDeletion, agentId);
+    // The daemon commits at the deadline. Keep the registry entry as a
+    // tombstone for a grace window so stale refetch responses cannot
+    // resurrect the deleted agent. Detached so it survives task teardown.
+    yield* spawn(clearTombstoneAfterGrace, entry);
+    clearerSpawned = true;
   } catch (error) {
     yield* put(action.failure(mutationError(error, m.agent_mutation_deleteFailed_error())));
     settled = true;
@@ -362,7 +374,11 @@ function* deleteWithUndo(
     if (!settled && wasCancelled) {
       yield* put(action.failure(new Error(m.agent_mutation_deleteFailed_error())));
     }
-    if (wasCancelled) yield* call(commitDeletion, agentId);
+    // Teardown mid-window: the daemon still owns the commit; just make sure
+    // the tombstone is eventually lifted.
+    if (wasCancelled && entry && !clearerSpawned) {
+      yield* spawn(clearTombstoneAfterGrace, entry);
+    }
   }
 }
 
@@ -373,10 +389,33 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
     const pending = getPendingAgentDeletion(agentId);
     if (!pending) {
       yield* put(action.success(false));
-    } else {
+      settled = true;
+      return;
+    }
+    let cancel;
+    try {
+      cancel = yield* call(
+        [appClient.agents, appClient.agents.cancelDelete],
+        agentId,
+        pending.wsId,
+      );
+    } catch (error) {
+      logger.error('agent.cancelDelete failed', { agentId, error });
+      cancel = { success: false as const };
+    }
+    if (cancel.success && cancel.cancelled) {
       removePendingAgentDeletion(agentId);
-      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+      // This saga always registers entries with a snapshot; the guard covers
+      // the registry's snapshot-less entries (events-bridge-registered).
+      if (pending.snapshot) {
+        yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+      }
       yield* put(action.success(true));
+    } else {
+      // Race-safe non-error: the daemon already committed (or the cancel RPC
+      // failed) — never resurrect the agent locally.
+      yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
+      yield* put(action.success(false));
     }
     settled = true;
   } catch (error) {
@@ -419,32 +458,6 @@ function* deleteImmediately(
   }
 }
 
-function* commitRequested(
-  action: ReturnType<typeof commitPendingAgentDeletionRequested>,
-): SagaGenerator<void> {
-  yield* call(commitDeletion, action.payload[1]);
-}
-
-function* flushDeletions(
-  action: ReturnType<typeof flushPendingAgentDeletionsRequested>,
-): SagaGenerator<void> {
-  const [wsId] = action.payload;
-  let settled = false;
-  try {
-    const pending = listPendingAgentDeletions().filter((entry) => entry.wsId === wsId);
-    yield* all(pending.map((entry) => call(commitDeletion, entry.agentId)));
-    yield* put(action.success(undefined as never));
-    settled = true;
-  } catch (error) {
-    yield* put(action.failure(mutationError(error, m.agent_mutation_flushDeletionsFailed_error())));
-    settled = true;
-  } finally {
-    if (!settled && (yield* cancelled())) {
-      yield* put(action.failure(new Error(m.agent_mutation_flushDeletionsFailed_error())));
-    }
-  }
-}
-
 export function* agentMutationSaga(): SagaGenerator<void> {
   yield* all([
     takeEvery(restoreAgentSessionRequested, restoreAgent),
@@ -457,7 +470,5 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
     takeEvery(undoAgentDeletionRequested, undoDeletion),
     takeEvery(deleteAgentSessionRequested, deleteImmediately),
-    takeEvery(commitPendingAgentDeletionRequested, commitRequested),
-    takeEvery(flushPendingAgentDeletionsRequested, flushDeletions),
   ]);
 }

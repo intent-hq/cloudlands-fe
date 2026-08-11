@@ -246,6 +246,10 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   );
   const fetched = [] as typeof listed;
   for (const agent of listed) {
+    // Drop rows the FE soft-hid (local pending registry) and rows carrying the
+    // daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
+    // v6.7+) — e.g. a deletion scheduled by another window.
+    if (agent.pendingDeleteAt) continue;
     if (!(yield* call(isAgentDeletionPending, String(agent.id)))) fetched.push(agent);
   }
   yield* put(setAgentsLoaded(workspaceId, true));
@@ -492,7 +496,11 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLatest(loadWorkspaceDataRequested, loadChangesWorker),
       takeLeading(loadOlderCommitsRequested, olderCommitsWorker),
       takeLeading(requestAgentLineStats, agentLineStatsWorker),
-      takeLatest(hydrateAgentsRequested, agentsWorker),
+      // Per-workspace latest: the daemon events bridge dispatches this for
+      // whichever workspace an event names (agent:status-changed, agent:idle,
+      // agent:delete-cancelled), so a global takeLatest would let workspace
+      // B's event cancel A's in-flight agents hydrate and discard its result.
+      takeLatestByWorkspace(hydrateAgentsRequested, agentsWorker),
       takeLeading(hydrateTerminalsRequested, terminalsWorker),
       takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),

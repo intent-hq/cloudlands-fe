@@ -32,6 +32,11 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronRight: { iconName: 'chevron-right' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
+  // AttachmentPreview chip icons (rendered for non-image file context items)
+  faFile: { iconName: 'file' },
+  faImage: { iconName: 'image' },
+  faFileCode: { iconName: 'file-code' },
+  faFileAlt: { iconName: 'file-alt' },
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -152,6 +157,13 @@ vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
   return { ...actual, enhancePrompt: enhancePromptMock };
 });
 
+const placeAttachmentMock = vi.hoisted(() => vi.fn());
+
+vi.mock('./context-api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./context-api')>();
+  return { ...actual, placeAttachment: placeAttachmentMock };
+});
+
 // Mock Redux store bridge — the component reads agent sessions from Redux
 const mockReduxState = vi.hoisted(
   (): {
@@ -166,12 +178,16 @@ const mockReduxState = vi.hoisted(
       keyConfigured: Record<string, boolean>;
     };
     providerCatalog?: unknown;
+    daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
     workspaceAgents: { byWorkspaceId: {} },
     // Unset active provider — the §5.31 gate treats this as auggie (default)
     providerSettings: { activeProviderId: '' },
     // The composer mic button subscribes to these hardware-console flags
     hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+    // The oversized-attachment placement flow reads daemon locality to pick
+    // the sourcePath fast path vs. the wire data variant
+    daemonHealth: { hostLocality: null, transport: null },
     // Mic visibility reads the effective voice engine off this slice
     voiceSettings: {
       isLoading: false,
@@ -1173,5 +1189,188 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(hasActiveTranscriptionSession()).toBe(false);
     resetTranscriptionCancellation();
+  });
+});
+
+describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  function makeFile(name: string, type: string, size: number): File {
+    const file = new File(['x'], name, { type });
+    Object.defineProperty(file, 'size', { value: size });
+    return file;
+  }
+
+  async function dropFiles(files: File[]) {
+    const dropZone = screen.getByTestId('message-input');
+    await fireEvent.drop(dropZone, { dataTransfer: { files } });
+  }
+
+  function insertMentionCalls(): Array<Record<string, unknown>> {
+    return ((window as any).__tiptapInsertMentionCalls ?? []) as Array<Record<string, unknown>>;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (window as any).__tiptapInsertMentionCalls = [];
+    mockReduxState.daemonHealth = { hostLocality: null, transport: null };
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    delete (window as any).__tiptapInsertMentionCalls;
+    document.body.innerHTML = '';
+  });
+
+  it('places an oversized non-image file via the daemon sourcePath fast path (local daemon)', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    const getPathForFile = vi.fn(() => '/home/user/Downloads/dump.har');
+    (window as any).electronAPI.getPathForFile = getPathForFile;
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/dump.har',
+      fileName: 'dump.har',
+      size: 12_582_912,
+    });
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('dump.har', 'application/json', 12 * 1024 * 1024)]);
+
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'dump.har', {
+        sourcePath: '/home/user/Downloads/dump.har',
+      });
+    });
+    // The placed file is referenced as a mention chip carrying the
+    // workspace-relative path — never an inline upload.
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
+    const mention = insertMentionCalls()[0];
+    expect(mention.label).toBe('dump.har');
+    expect((mention.meta as Record<string, unknown>).path).toBe('.intent/attachments/dump.har');
+    // fullPath drives the chip click-to-open handler in editor-config.ts.
+    expect((mention.meta as Record<string, unknown>).fullPath).toBe(
+      '.intent/attachments/dump.har',
+    );
+    // No rejection toast — the user gets a confirmation instead.
+    const { toast } = await import('svelte-sonner');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the base64 data variant when the daemon is remote', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/big.log',
+      fileName: 'big.log',
+      size: 11 * 1024 * 1024,
+    });
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
+
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+    });
+    const [wsId, fileName, source] = placeAttachmentMock.mock.calls[0];
+    expect(wsId).toBe('ws-1');
+    expect(fileName).toBe('big.log');
+    expect(source).toHaveProperty('data');
+    expect(source).not.toHaveProperty('sourcePath');
+  });
+
+  it('still rejects oversized images with the too-large toast (inline limit kept)', async () => {
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('huge.png', 'image/png', 12 * 1024 * 1024)]);
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('keeps small non-image files on the inline context-item path', async () => {
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('small.txt', 'text/plain', 1024)]);
+
+    await waitFor(async () => {
+      const { toast } = await import('svelte-sonner');
+      expect(toast.success).toHaveBeenCalledTimes(1);
+    });
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a placement failure without inserting a reference', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    placeAttachmentMock.mockRejectedValueOnce(new Error('daemon down'));
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('rejects a remote file above the wire cap without calling placeAttachment', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('giant.bin', 'application/octet-stream', 26 * 1024 * 1024)]);
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('places an oversized non-image file arriving via clipboard paste', async () => {
+    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/trace.log',
+      fileName: 'trace.log',
+      size: 11 * 1024 * 1024,
+    });
+
+    render(SimpleRichInput, { props: baseProps() });
+    const file = makeFile('trace.log', 'text/plain', 11 * 1024 * 1024);
+    const dropZone = screen.getByTestId('message-input');
+    await fireEvent.paste(dropZone, {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'text/plain', getAsFile: () => file }],
+      },
+    });
+
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+    });
+    const [wsId, fileName] = placeAttachmentMock.mock.calls[0];
+    expect(wsId).toBe('ws-1');
+    expect(fileName).toBe('trace.log');
+    await waitFor(() => {
+      expect(insertMentionCalls()).toHaveLength(1);
+    });
   });
 });

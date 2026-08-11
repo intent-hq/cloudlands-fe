@@ -390,6 +390,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
   'backend:subscribe',
   'backend:unsubscribe',
+  // Console-owner status query (#1928): main-process-owned state (which
+  // window is the last-focused non-HUD window) invoked directly on the real
+  // preload bridge (console-owner-status.ts guards on its presence; without
+  // a bridge the slice default `isConsoleOwner: true` stands and no IPC is
+  // attempted). A mock bridge would shadow the main-process tracker.
+  'hardware-console:get-owner-status',
 ]);
 
 /**

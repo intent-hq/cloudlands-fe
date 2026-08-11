@@ -249,6 +249,21 @@ describe("workspaceReducer", () => {
       expect(getItem(state.workspaces, "ws-1")?.pullRequests).toEqual([pr]);
     });
 
+    it("hides rows carrying pendingDeleteAt from the list (PROTOCOL §5.1 delete grace window)", () => {
+      const existing = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+      state = workspaceReducer(
+        state,
+        replaceWorkspaceList([
+          makeWorkspace({ id: "ws-1", pendingDeleteAt: "2026-08-11T00:00:15.000Z" }),
+          makeWorkspace({ id: "ws-2" }),
+        ])
+      );
+
+      expect(state.workspaces.ids).toEqual(["ws-2"]);
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+    });
+
     it("resets workspace migration state including recency", () => {
       const ws = makeWorkspace({ id: "ws-1" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
@@ -292,6 +307,23 @@ describe("workspaceReducer", () => {
       state = workspaceReducer(state, setWorkspaceEntity(ws2));
       expect(getItem(state.workspaces, "ws-1")).toEqual(ws1);
       expect(getItem(state.workspaces, "ws-2")).toEqual(ws2);
+    });
+
+    it("drops an entity carrying pendingDeleteAt instead of storing it (PROTOCOL §5.1 delete grace window)", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(
+        state,
+        setWorkspaceEntity(makeWorkspace({ id: "ws-1", pendingDeleteAt: "2026-08-11T00:00:15.000Z" }))
+      );
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+
+      // A never-stored pending row stays absent and the state is untouched
+      const next = workspaceReducer(
+        state,
+        setWorkspaceEntity(makeWorkspace({ id: "ws-3", pendingDeleteAt: "2026-08-11T00:00:15.000Z" }))
+      );
+      expect(next).toBe(state);
     });
 
     it("preserves runtime PR fields when re-hydrated with a lite payload that omits them", () => {

@@ -612,12 +612,21 @@ jobs:
             exit 0
           fi
           # The checkout is shallow (fetch-depth 1); the notifier needs the
-          # commit range and both tags to walk it
+          # commit range and both tags to walk it. --force lets the fetch
+          # update tags left stale by earlier runs on this non-ephemeral
+          # runner — without it a rejected tag update ("would clobber
+          # existing tag") makes the fetch exit 1, and --quiet would
+          # suppress the rejection message entirely, so don't pass it
+          # (intent-hq/monorepo#1921).
           if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            git fetch --quiet --unshallow --tags origin
+            UNSHALLOW=(--unshallow)
           else
-            git fetch --quiet --tags origin
+            UNSHALLOW=()
           fi
+          git fetch --force --tags "${UNSHALLOW[@]}" origin || {
+            echo "::error::git fetch --tags failed (exit $?); cannot resolve range v${PREV_STABLE}..v${VERSION} - issue notifications skipped"
+            exit 1
+          }
           # Bundled intentd version from the promoted release's manifest
           # (resolved fail-soft earlier); empty just omits the mention
           ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" stable \

@@ -327,6 +327,12 @@ export interface Workspace {
   environmentConfig?: EnvironmentConfig;
   archived?: boolean;
   archivedAt?: string;
+  /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
+   *  window, v6.7+). Present only while a `workspace.delete { undoDelayMs > 0 }`
+   *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
+   *  a daemon restart (the workspace survives). Rows carrying it are hidden
+   *  from the FE workspace list. */
+  pendingDeleteAt?: string;
   defaultModel?: string; // Default model for new agents in this workspace
   /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
   agentSummary?: WorkspaceAgentIdSummary;
@@ -661,6 +667,15 @@ export interface WorkspaceTask {
    * then omit `expectedVersion` and last-writer-wins applies.
    */
   rev?: number;
+  /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
+  dependsOn?: NoteId[];
+  /** Task-note ids this task may conflict with (advisory); omitted when empty. */
+  conflictsWith?: NoteId[];
+  /**
+   * Daemon-computed: `dependsOn` ids whose task is not yet `complete` (missing
+   * and cancelled deps count as unmet). Omitted when empty (PROTOCOL §5.4).
+   */
+  unmetDependsOn?: NoteId[];
 }
 
 /**
@@ -850,6 +865,10 @@ export interface TaskMetadata {
   completedAt?: string;
   startedAt?: string;
   peerOrder?: number; // Order among sibling tasks with same parentId (uses gaps of 100 for easy insertion)
+  /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
+  dependsOn?: NoteId[];
+  /** Task-note ids this task may conflict with (advisory); omitted when empty. */
+  conflictsWith?: NoteId[];
 }
 
 /**
@@ -1159,6 +1178,16 @@ export interface FileStatus {
   path: string;
   status: GitFileStatus;
   staged: boolean;
+  /**
+   * Octal tree-entry mode string, present only for submodule (gitlink)
+   * entries (`"160000"`) so they can route to a dedicated presentation
+   * without probing `git.showFile` (intent-hq/monorepo#1739).
+   */
+  mode?: string;
+  /** Pre-change submodule pin SHA (absent for a newly added submodule). */
+  oldSha?: string;
+  /** Post-change submodule pin SHA (absent for a deleted submodule). */
+  newSha?: string;
 }
 
 export enum GitFileStatus {

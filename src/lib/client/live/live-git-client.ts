@@ -79,13 +79,18 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
   const rawFiles = Array.isArray(raw.files) ? raw.files : [];
   const files: FileStatus[] = rawFiles.map((f) => {
     const file = f as Record<string, unknown>;
-    return {
+    const entry: FileStatus = {
       path: String(file.path ?? ""),
       status: (typeof file.status === "string"
         ? file.status.trim() || GitFileStatus.Modified
         : GitFileStatus.Modified) as GitFileStatus,
       staged: Boolean(file.staged),
     };
+    // Gitlink (submodule) marking — present only on 160000 entries (#1739).
+    if (typeof file.mode === "string") entry.mode = file.mode;
+    if (typeof file.oldSha === "string") entry.oldSha = file.oldSha;
+    if (typeof file.newSha === "string") entry.newSha = file.newSha;
+    return entry;
   });
   return {
     branch: String(raw.branch ?? ""),

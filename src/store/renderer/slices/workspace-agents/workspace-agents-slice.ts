@@ -303,13 +303,6 @@ export const undoAgentDeletionRequested = createAsyncAction<
   [wsId: string, agentId: string],
   boolean
 >('workspaceAgents/undoAgentDeletion', 'workspaceAgents/undoAgentDeletionRequested');
-export const commitPendingAgentDeletionRequested = createAction<[wsId: string, agentId: string]>(
-  'workspaceAgents/commitPendingAgentDeletionRequested',
-);
-export const flushPendingAgentDeletionsRequested = createAsyncAction<[wsId: string], void>(
-  'workspaceAgents/flushPendingAgentDeletions',
-  'workspaceAgents/flushPendingAgentDeletionsRequested',
-);
 
 // Stream lifecycle actions
 

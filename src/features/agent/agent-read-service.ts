@@ -60,8 +60,11 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
       const session = await appClient.agents.get(agentId);
       // Re-check after the fetch: a deletion may have become pending while
       // `agent.get` was in flight; upserting now would resurrect the
-      // soft-hidden session.
-      if (session && !isAgentDeletionPending(agentId)) {
+      // soft-hidden session. Also drop rows carrying the daemon's
+      // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`, v6.7+)
+      // — a deletion scheduled by another window/client (or before an FE
+      // restart) is not in this window's local registry.
+      if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {
         // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
         // message COUNTS only, not the retained transcript. `normalizeAgent`
         // fills the missing `messages` field with `[]`, so dispatching this
