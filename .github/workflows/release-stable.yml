@@ -615,14 +615,15 @@ jobs:
           # commit range and both tags to walk it. --force lets the fetch
           # update tags left stale by earlier runs on this non-ephemeral
           # runner — without it a rejected tag update ("would clobber
-          # existing tag") makes the fetch exit 1 with no output at all
-          # under --quiet (intent-hq/monorepo#1921).
+          # existing tag") makes the fetch exit 1, and --quiet would
+          # suppress the rejection message entirely, so don't pass it
+          # (intent-hq/monorepo#1921).
           if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
             UNSHALLOW=(--unshallow)
           else
             UNSHALLOW=()
           fi
-          git fetch --quiet --force --tags "${UNSHALLOW[@]}" origin || {
+          git fetch --force --tags "${UNSHALLOW[@]}" origin || {
             echo "::error::git fetch --tags failed (exit $?); cannot resolve range v${PREV_STABLE}..v${VERSION} - issue notifications skipped"
             exit 1
           }
