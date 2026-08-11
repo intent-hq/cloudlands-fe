@@ -17,7 +17,7 @@ overrides:
 
 patchedDependencies:
   bits-ui@2.18.1:
-    hash: 48f70aafa6e080cdfc0b512c00c2db8222d34c94ed99eaf9e0377d50e8fd3641
+    hash: 4c671283c76931ad159f44b54c02e98b32c9ed4fc2b18df1a7b3f81842511bd2
     path: patches/bits-ui@2.18.1.patch
   brace-expansion@5.0.8:
     hash: 1dd6d68223b3644c1125dff1fdb53ca7a3f3939698c438371ac86e2a7ceb8ab7
@@ -363,7 +363,7 @@ importers:
         version: 10.5.4(postcss@8.5.26)
       bits-ui:
         specifier: ^2.15.5
-        version: 2.18.1(patch_hash=48f70aafa6e080cdfc0b512c00c2db8222d34c94ed99eaf9e0377d50e8fd3641)(@internationalized/date@3.12.3)(@sveltejs/kit@2.70.2(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.8(@typescript-eslint/types@8.66.0))(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))(typescript@5.6.3)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))
+        version: 2.18.1(patch_hash=4c671283c76931ad159f44b54c02e98b32c9ed4fc2b18df1a7b3f81842511bd2)(@internationalized/date@3.12.3)(@sveltejs/kit@2.70.2(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.8(@typescript-eslint/types@8.66.0))(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))(typescript@5.6.3)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -7422,7 +7422,7 @@ snapshots:
 
   binary-extensions@2.3.0: {}
 
-  bits-ui@2.18.1(patch_hash=48f70aafa6e080cdfc0b512c00c2db8222d34c94ed99eaf9e0377d50e8fd3641)(@internationalized/date@3.12.3)(@sveltejs/kit@2.70.2(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.8(@typescript-eslint/types@8.66.0))(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))(typescript@5.6.3)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0)):
+  bits-ui@2.18.1(patch_hash=4c671283c76931ad159f44b54c02e98b32c9ed4fc2b18df1a7b3f81842511bd2)(@internationalized/date@3.12.3)(@sveltejs/kit@2.70.2(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.56.8(@typescript-eslint/types@8.66.0))(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0))(typescript@5.6.3)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.10)(yaml@2.9.0)))(svelte@5.56.8(@typescript-eslint/types@8.66.0)):
     dependencies:
       '@floating-ui/core': 1.7.5
       '@floating-ui/dom': 1.7.6

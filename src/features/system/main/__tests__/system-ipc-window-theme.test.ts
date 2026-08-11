@@ -34,7 +34,7 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
-import { MACOS_WINDOW_BACKGROUND } from '../../../../shared/main/window-appearance';
+import { getWindowBackgroundColor } from '../../../../shared/main/window-appearance';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
@@ -59,7 +59,9 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
     const result = await handlerFor(WINDOW_CHANNELS.SET_THEME)({ sender: {} }, { theme: 'dark' });
 
     expect(electronMocks.nativeTheme.themeSource).toBe('dark');
-    expect(window.setBackgroundColor).toHaveBeenCalledWith(MACOS_WINDOW_BACKGROUND);
+    expect(window.setBackgroundColor).toHaveBeenCalledWith(
+      getWindowBackgroundColor(true, process.platform),
+    );
     expect(result).toEqual({ success: true });
   });
 });

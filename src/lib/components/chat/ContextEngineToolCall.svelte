@@ -207,12 +207,12 @@
         if (isExpandable) expanded = !expanded;
       }}
     >
-      <span class="shrink-0 whitespace-nowrap text-muted-foreground/60">
+      <span class="shrink-0 whitespace-nowrap text-muted-foreground">
         {m.chat_contextEngine_search_label({ source: sourceLabel })}
       </span>
       {#if query}
         <span
-          class="min-w-0 truncate whitespace-nowrap text-muted-foreground/60"
+          class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
           data-testid="context-engine-query"
         >
           {query.slice(0, 600)}
@@ -227,7 +227,7 @@
   {#if expanded}
     <div class="mt-1" transition:expand>
       <div
-        class="type-caption px-3 py-1 text-muted-foreground/55"
+        class="type-caption px-3 py-1 text-muted-foreground"
         data-testid="context-engine-brand"
       >
         <!-- i18n-ignore (brand name) -->

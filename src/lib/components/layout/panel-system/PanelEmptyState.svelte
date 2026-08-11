@@ -256,7 +256,7 @@
           title={action.label}
         >
           <span>{action.label}</span>
-          <kbd class="shortcut-key shrink-0 text-muted-foreground/70">
+          <kbd class="shortcut-key shrink-0 text-muted-foreground">
             {formatShortcut(action.key)}
           </kbd>
         </button>

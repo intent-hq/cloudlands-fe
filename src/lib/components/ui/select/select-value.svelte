@@ -9,7 +9,7 @@
 <span
   class="min-w-0 flex-1 truncate text-left {selectContext.value
     ? 'text-foreground'
-    : 'text-muted-foreground/70'}"
+    : 'text-muted-foreground'}"
 >
   {selectContext.displayValue || placeholder}
 </span>

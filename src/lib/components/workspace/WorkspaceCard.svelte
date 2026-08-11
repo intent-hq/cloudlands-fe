@@ -573,7 +573,7 @@
             variant="plain"
             size="icon-xs"
             iconOnly
-            class="text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground"
+            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground"
             onclick={(event) => {
               event.stopPropagation();
               onMarkAsRead?.(event);
@@ -590,7 +590,7 @@
             size="icon-xs"
             iconOnly
             class="transition-all hover:bg-muted/50 hover:text-foreground
-              {isPinned ? 'text-primary/60' : 'text-muted-foreground/60'}"
+              {isPinned ? 'text-primary' : 'text-muted-foreground'}"
             onclick={(event) => {
               event.stopPropagation();
               onTogglePin?.(event);
@@ -649,7 +649,7 @@
       class="shrink-0"
     />
     <span class="font-medium truncate">{phase.label}</span>
-    <span class="shrink-0 text-muted-foreground/60">·</span>
+    <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
     {@render actions?.()}
   </button>
@@ -670,7 +670,7 @@
     {#if _repoName || _branch}
       <div class="flex items-center gap-1 truncate text-xs text-muted-foreground">
         {#if _repoName}<span class="truncate">{_repoName}</span>{/if}
-        {#if _repoName && _branch}<span class="text-muted-foreground/60">·</span>{/if}
+        {#if _repoName && _branch}<span class="text-muted-foreground">·</span>{/if}
         {#if _branch}<span class="truncate">{_branch}</span>{/if}
       </div>
     {/if}

@@ -110,6 +110,7 @@
   const height = selectTerminalOverlayHeight();
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
+  const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -134,7 +135,7 @@
   let editingValue = $state('');
   let isEditingHeaderName = $state(false);
   let headerEditValue = $state('');
-  let selectedScriptId = $state<string | null>(null);
+  const selectedScriptId = $derived($workspaceTerminalState$.selectedScriptId);
   let editingScriptTabId = $state<string | null>(null);
   let editingScriptTabValue = $state('');
 
@@ -146,6 +147,13 @@
   let editedScriptCommand = $state('');
 
   let isDetectingScripts = $state(false);
+
+  function setSelectedScript(scriptId: string | null) {
+    if (!workspaceId) return;
+    appStore.dispatch(
+      scriptId ? selectScript(workspaceId, scriptId) : clearScriptSelection(workspaceId),
+    );
+  }
 
   async function handleDetectScripts() {
     if (!workspaceId) return;
@@ -303,9 +311,6 @@
           .selectedScriptId === scriptId;
       appStore.dispatch(removeScript(mutationWorkspaceId, scriptId));
       if (wasSelected) appStore.dispatch(clearScriptSelection(mutationWorkspaceId));
-      if (workspaceOwnership === ownership && selectedScriptId === scriptId) {
-        selectedScriptId = null;
-      }
     }
   }
 
@@ -723,7 +728,6 @@
       }
       const stale = workspaceId !== createWorkspaceId;
       if (!stale) {
-        selectedScriptId = null;
         appStore.dispatch(
           addTerminal(
             createWorkspaceId,
@@ -769,7 +773,6 @@
     pendingClickTimeout = setTimeout(() => {
       pendingClickTimeout = null;
       const wasShowingScript = selectedScriptId !== null;
-      selectedScriptId = null;
       if (termId === $activeTerminalId && $isOpen && !wasShowingScript) {
         handleClose();
       } else {
@@ -1131,7 +1134,7 @@
                   {workspaceId}
                   class="flex-1"
                   onDelete={() => {
-                    selectedScriptId = null;
+                    setSelectedScript(null);
                   }}
                 />
               {/key}
@@ -1159,9 +1162,8 @@
             <TerminalSidebar
               {workspaceId}
               {selectedScriptId}
-              onSelectScript={(id) => (selectedScriptId = id)}
+              onSelectScript={(id) => setSelectedScript(id)}
               onSelectTerminal={(id) => {
-                selectedScriptId = null;
                 if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
               }}
               onCreateTerminal={createNewTerminal}
@@ -1258,9 +1260,9 @@
               onclick={() => {
                 if (isScriptActive) {
                   handleClose();
-                  selectedScriptId = null;
+                  setSelectedScript(null);
                 } else {
-                  selectedScriptId = script.id;
+                  setSelectedScript(script.id);
                   if (!$isOpen && workspaceId) {
                     appStore.dispatch(openTerminalOverlay(workspaceId));
                   }
@@ -1394,7 +1396,7 @@
                         workspaceId,
                       );
                       if (entries.length > 0 && !selectedScriptId) {
-                        selectedScriptId = entries[0].id;
+                        setSelectedScript(entries[0].id);
                       }
                     }
                   }}
@@ -1425,7 +1427,7 @@
                           subtitleClass="leading-none"
                           active={selectedScriptId === script.id}
                           onclick={() => {
-                            selectedScriptId = script.id;
+                            setSelectedScript(script.id);
                             if (!$isOpen && workspaceId) {
                               appStore.dispatch(openTerminalOverlay(workspaceId));
                             }

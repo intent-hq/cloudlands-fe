@@ -154,15 +154,15 @@
       >
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
-          <span class="shrink-0 whitespace-nowrap text-muted-foreground/60"
+          <span class="shrink-0 whitespace-nowrap text-muted-foreground"
             >{m.chat_toolCall_message_label()}</span
           >
           <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
-          <span class="max-w-[120px] shrink-0 truncate whitespace-nowrap text-foreground/70">
+          <span class="max-w-[120px] shrink-0 truncate whitespace-nowrap text-foreground">
             {targetAgentName}
           </span>
           {#if parsedResult.messageContent}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground/60">
+            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
               "{parsedResult.messageContent.slice(0, 30)}{parsedResult.messageContent.length > 30
                 ? '...'
                 : ''}"
@@ -172,14 +172,14 @@
           <!-- Standard tool display -->
           <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
           {#if toolDisplay.verb}
-            <span class="shrink-0 whitespace-nowrap text-muted-foreground/60">
+            <span class="shrink-0 whitespace-nowrap text-muted-foreground">
               {toolDisplay.verb}
             </span>
           {/if}
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground/60">
+            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
               {toolDisplay.subject}
             </span>
           {/if}
@@ -212,11 +212,11 @@
       {#if toolDisplay.subject && toolDisplay.filePath && !toolDisplay.noteId}
         {#if toolDisplay.isDirectory}
           <span class="flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden text-left">
-            <span class="truncate text-muted-foreground/60" style="flex: 0 0.01 auto;">
+            <span class="truncate text-muted-foreground" style="flex: 0 0.01 auto;">
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground/55">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -242,13 +242,13 @@
             }}
           >
             <span
-              class="truncate text-muted-foreground/65 group-hover/button:underline"
+              class="truncate text-muted-foreground group-hover/button:underline"
               style="flex: 0 0.01 auto;"
             >
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground/55">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -258,7 +258,7 @@
 
       <!-- Path (muted, truncated, takes remaining space) - only when NOT a file link -->
       {#if toolDisplay.path && !toolDisplay.filePath}
-        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground/55">
+        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
           {toolDisplay.path}
         </span>
       {/if}

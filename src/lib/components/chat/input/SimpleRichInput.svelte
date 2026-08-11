@@ -158,7 +158,12 @@
   }
 
   // Import ContextItem from context-api.ts
-  import type { ContextItem } from './context-api';
+  import {
+    placeAttachment,
+    type ContextItem,
+    type PlaceAttachmentResult,
+  } from './context-api';
+  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -888,24 +893,24 @@
     await processImageFiles(Array.from(files));
   }
 
-  // Handle clipboard paste for images
+  // Handle clipboard paste for files (images and non-images alike)
   async function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    const imageFiles: File[] = [];
+    const pastedFiles: File[] = [];
     for (const item of items) {
-      if (item.type.startsWith('image/')) {
+      if (item.kind === 'file') {
         const file = item.getAsFile();
         if (file) {
-          imageFiles.push(file);
+          pastedFiles.push(file);
         }
       }
     }
 
-    if (imageFiles.length > 0) {
-      e.preventDefault(); // Prevent default paste behavior for images
-      await processImageFiles(imageFiles);
+    if (pastedFiles.length > 0) {
+      e.preventDefault(); // Prevent default paste behavior for files
+      await processImageFiles(pastedFiles);
     }
   }
 
@@ -931,7 +936,14 @@
 
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
-        oversizedFiles.push(file.name);
+        // Oversized images stay rejected — the inline limit is what the model
+        // can ingest. Oversized non-image files are placed into the workspace
+        // via the daemon instead (file.placeAttachment, PROTOCOL §5.9).
+        if (file.type.startsWith('image/')) {
+          oversizedFiles.push(file.name);
+        } else {
+          await placeOversizedFile(file);
+        }
         continue;
       }
 
@@ -1011,6 +1023,84 @@
     contextItems = [...contextItems, contextItem];
     oncontextAdd?.(contextItem);
     toast.success(m.chat_richInput_addedFile_toast({ name: fileName }));
+  }
+
+  // Base64 inflates bytes by 4/3 and the daemon caps inbound messages at
+  // 40 MiB (PROTOCOL §1.3), so the wire `data` variant is only safe below
+  // this raw-size ceiling. Larger files need the same-host sourcePath copy.
+  const MAX_WIRE_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+
+  /**
+   * Place an oversized (>10MB) non-image attachment into the workspace via
+   * the daemon (`file.placeAttachment`, PROTOCOL §5.9, v6.5) and reference it
+   * in the message as a file mention instead of an inline upload.
+   */
+  async function placeOversizedFile(file: File) {
+    if (!workspace?.id) {
+      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));
+      return;
+    }
+
+    try {
+      // Same-host fast path: hand the daemon the absolute source path so the
+      // bytes never cross the wire. Only valid when the daemon runs on this
+      // machine; remote daemons get the base64 payload (within the wire cap).
+      const isDaemonLocal = selectIsDaemonLocal.select(appStore.state);
+      const sourcePath = isDaemonLocal
+        ? ((window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
+            .electronAPI?.getPathForFile?.(file) ?? '')
+        : '';
+
+      let result: PlaceAttachmentResult;
+      if (sourcePath) {
+        result = await placeAttachment(workspace.id, file.name, { sourcePath });
+      } else {
+        if (file.size > MAX_WIRE_ATTACHMENT_SIZE) {
+          toast.error(m.chat_richInput_attachmentTooLargeForWire_error({ name: file.name }));
+          return;
+        }
+        const dataUrl = await fileToDataUrl(file);
+        result = await placeAttachment(workspace.id, file.name, { data: dataUrl });
+      }
+
+      // Reference the placed file as a mention chip so the message text
+      // carries the workspace-relative path the agent can read directly.
+      // `fullPath` is what the chip click-to-open handler resolves against.
+      const inserted = tiptap?.insertMention?.({
+        id: `attachment-${result.path}`,
+        label: result.fileName,
+        type: 'file',
+        uri: `devspace://file/${encodeURIComponent(result.path)}`,
+        meta: {
+          path: result.path,
+          fullPath: result.path,
+          name: result.fileName,
+          size: result.size,
+          type: file.type,
+        },
+      });
+
+      logger.debug('Placed oversized attachment in workspace', {
+        fileName: result.fileName,
+        path: result.path,
+        size: result.size,
+        viaSourcePath: !!sourcePath,
+      });
+      if (inserted) {
+        toast.success(
+          m.chat_richInput_attachmentPlaced_toast({ name: result.fileName, path: result.path }),
+        );
+      } else {
+        // The file is placed either way; only the chip failed to land, so
+        // don't claim the message references it.
+        logger.warn('Placed attachment but could not insert its mention chip', {
+          path: result.path,
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to place oversized attachment', { fileName: file.name, error });
+      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));
+    }
   }
 
   // Set up ResizeObserver to track parent panel height

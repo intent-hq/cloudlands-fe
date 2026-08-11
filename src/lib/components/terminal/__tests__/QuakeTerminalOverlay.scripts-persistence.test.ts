@@ -17,34 +17,54 @@ import type { ScriptWithState } from '$features/scripts/types';
 
 vi.mock('$store/renderer/store', async () => {
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
+  const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
+  let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
   let activeWorkspaceId: string | null = null;
+  const subscribers = new Set<() => void>();
   const store: any = {
     get state() {
       return {
         workspace: { activeWorkspaceId },
         scripts: scriptsState,
-        terminals: { height: 30, workspaces: {} },
+        terminals: terminalsState,
       };
     },
     dispatch: (action: any) => {
       scriptsState = scriptsReducer(scriptsState, action);
+      terminalsState = terminalsReducer(terminalsState, action);
+      for (const notify of subscribers) notify();
       return action;
     },
     createSelector: (fn: (state: any, ...args: any[]) => any) =>
       Object.assign(
         (...args: any[]) => ({
           subscribe: (listener: (v: any) => void) => {
-            listener(fn(store.state, ...args));
-            return () => {};
+            const resolvedArgs = [...args];
+            const notify = () => listener(fn(store.state, ...resolvedArgs));
+            const argumentUnsubscribers = args.map((argument, index) => {
+              if (typeof argument?.subscribe !== 'function') return () => {};
+              return argument.subscribe((value: unknown) => {
+                resolvedArgs[index] = value;
+                notify();
+              });
+            });
+            notify();
+            subscribers.add(notify);
+            return () => {
+              subscribers.delete(notify);
+              for (const unsubscribe of argumentUnsubscribers) unsubscribe();
+            };
           },
         }),
         { select: fn },
       ),
     getReadableState: () => ({
       subscribe: (listener: (v: any) => void) => {
-        listener(store.state);
-        return () => {};
+        const notify = () => listener(store.state);
+        notify();
+        subscribers.add(notify);
+        return () => subscribers.delete(notify);
       },
     }),
     __setActiveWorkspace: (id: string | null) => {
@@ -52,7 +72,9 @@ vi.mock('$store/renderer/store', async () => {
     },
     __reset: () => {
       scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
+      terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
       activeWorkspaceId = null;
+      subscribers.clear();
     },
   };
   return { store };
@@ -112,6 +134,10 @@ import {
   setScriptsInitialized,
   appendScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-slice';
+import {
+  openTerminalOverlay,
+  selectScript,
+} from '$store/renderer/slices/terminals/terminals-slice';
 import { warmImport } from '../../../../test/warm-import';
 
 const WS_A = 'ws-a' as WorkspaceId;
@@ -192,5 +218,25 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
       expect(ws.outputBuffers[scriptId].chunks).toHaveLength(1);
       expect(ws.initialized).toBe(true);
     }
+  });
+
+  it('restores each workspace script selection across remounts and switches', async () => {
+    seedWorkspace(WS_A, 'script-a');
+    seedWorkspace(WS_B, 'script-b');
+    appStore.dispatch(selectScript(WS_A, 'script-a'));
+    appStore.dispatch(selectScript(WS_B, 'script-b'));
+    appStore.dispatch(openTerminalOverlay(WS_A));
+    appStore.dispatch(openTerminalOverlay(WS_B));
+
+    const first = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    expect(first.container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
+      'script-script-a',
+    );
+    first.unmount();
+
+    const second = render(QuakeTerminalOverlay, { props: { workspaceId: WS_B } });
+    expect(second.container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
+      'script-script-b',
+    );
   });
 });

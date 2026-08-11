@@ -108,7 +108,7 @@
     <span class="type-body">{label}</span>
 
     {#if formattedShortcut.length > 0}
-      <div class="flex items-center text-muted-foreground/75">
+      <div class="flex items-center text-muted-foreground">
         <!-- a11y-ignore -->
         {#each formattedShortcut as key, i (`key-${i}-${key}`)}
           <kbd class={cn()}>

@@ -35,14 +35,14 @@
 
   .header h1 {
     margin: 0;
-    color: #cccccc;
+    color: var(--foreground);
     font-size: 20px;
     font-weight: 500;
   }
 
   .header p {
     margin: 5px 0 0 0;
-    color: #888;
+    color: var(--muted-foreground);
     font-size: 14px;
   }
 

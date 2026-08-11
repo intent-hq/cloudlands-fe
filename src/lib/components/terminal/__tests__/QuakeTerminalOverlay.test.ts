@@ -46,6 +46,11 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
       scopedReadable(workspaceIdStore, (workspaceId) => workspaceState(workspaceId).activeId),
     selectTerminalsForWorkspace: (workspaceIdStore: any) =>
       scopedReadable(workspaceIdStore, (workspaceId) => workspaceState(workspaceId).terminals),
+    selectWorkspaceTerminalState: Object.assign(
+      (workspaceIdStore: any) =>
+        scopedReadable(workspaceIdStore, () => ({ selectedScriptId: null })),
+      { select: () => ({ selectedScriptId: null }) },
+    ),
   };
 });
 
@@ -53,6 +58,7 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
   openTerminalOverlay: (...payload: any[]) => ({ type: 'terminals/open', payload }),
   closeTerminalOverlay: (...payload: any[]) => ({ type: 'terminals/close', payload }),
   selectTerminal: (...payload: any[]) => ({ type: 'terminals/select', payload }),
+  selectScript: (...payload: any[]) => ({ type: 'terminals/selectScript', payload }),
   addTerminal: (...payload: any[]) => ({ type: 'terminals/add', payload }),
   removeTerminal: (...payload: any[]) => ({ type: 'terminals/remove', payload }),
   setTerminalOverlayHeight: (...payload: any[]) => ({ type: 'terminals/setHeight', payload }),

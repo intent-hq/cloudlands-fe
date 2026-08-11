@@ -229,8 +229,8 @@
          a flex sibling with `truncate` (overflow: hidden) would synthesize its
          baseline from the box edge and sit visibly raised. -->
     <span class="min-w-0 truncate">
-      <span class="text-foreground/65">{name}</span>{#if textSnippet && !isExpanded}<span
-          class="ml-2.5 text-muted-foreground/50">{textSnippet}</span
+      <span class="text-foreground">{name}</span>{#if textSnippet && !isExpanded}<span
+          class="ml-2.5 text-muted-foreground">{textSnippet}</span
         >{/if}
     </span>
     <div class="ml-auto flex shrink-0 items-center gap-1.5 opacity-30">
@@ -254,14 +254,14 @@
             {@render children()}
           {:else if previewBlock?.type === 'tool_use'}
             <div
-              class="type-caption min-w-0 py-0.5 text-muted-foreground/65"
+              class="type-caption min-w-0 py-0.5 text-muted-foreground"
               data-response-group-preview
             >
               <AgentPreviewToolLabel toolUse={previewBlock as ToolUseBlock} animate={isStreaming} />
             </div>
           {:else if previewText}
             <div
-              class="type-caption whitespace-pre-wrap py-0.5 text-muted-foreground/65"
+              class="type-caption whitespace-pre-wrap py-0.5 text-muted-foreground"
               data-response-group-preview
               aria-live={isStreaming ? 'polite' : undefined}
             >
