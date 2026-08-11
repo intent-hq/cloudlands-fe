@@ -84,6 +84,13 @@ characterization test, measurable removal gate, dynamic imports, and catalog fix
 The audit discovers local barrels, direct component imports, legacy deep imports, callers, and
 dynamic imports from source; do not maintain a second prose inventory.
 
+### Compact command menus
+
+Use `Menu.CommandItem` for conventional right-click/dropdown action rows that pair a leading icon
+with an optional trailing keyboard shortcut. Keep labels short and verb-led, group related commands
+with `Menu.Separator`, and use canonical `Menu.Root`, `Menu.Trigger`, and `Menu.Content` rather than
+the deprecated dropdown compatibility wrapper in new callers.
+
 | Family                                           | Verification/migration owner |
 | ------------------------------------------------ | ---------------------------- |
 | Button, ButtonGroup, Badge, Skeleton, feedback   | `007-B1`                     |

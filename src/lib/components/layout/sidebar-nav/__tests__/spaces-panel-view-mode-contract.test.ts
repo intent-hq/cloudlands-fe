@@ -23,8 +23,8 @@ describe('Spaces panel view-mode control', () => {
     expect(panel).toContain("{ value: 'recent', label: m.layout_allCard_recent_label() }");
     expect(panel).toContain("{ value: 'repo', label: m.layout_allCard_repo_label() }");
     expect(panel).toContain("{ value: 'status', label: m.layout_allCard_status_label() }");
-    expect(m.layout_allCard_recent_label()).toBe('Recent activity');
-    expect(m.layout_allCard_repo_label()).toBe('Repository');
+    expect(m.layout_allCard_recent_label()).toBe('Recent');
+    expect(m.layout_allCard_repo_label()).toBe('Repo');
     expect(m.layout_allCard_status_label()).toBe('Status');
   });
 

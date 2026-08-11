@@ -14,6 +14,7 @@ export const checkboxMetadata = {
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+    'src/lib/components/modals/TransferWorkspaceModal.svelte',
     'src/lib/components/settings/HardwareConsoleSettings.svelte',
     'src/lib/components/tiptap/TaskItemNodeView.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',

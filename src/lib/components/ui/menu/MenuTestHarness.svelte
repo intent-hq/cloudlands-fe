@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import * as Menu from './index';
 
   let checked = $state(false);
@@ -14,6 +16,12 @@
     <Menu.Item disabled onSelect={() => (selected = 'disabled')}>Disabled action</Menu.Item>
     <Menu.Item onSelect={() => (selected = 'cherry')}>Cherry</Menu.Item>
     <Menu.Item destructive onSelect={() => (selected = 'delete')}>Delete item</Menu.Item>
+    <Menu.CommandItem
+      icon={faPaperclip}
+      label={m.chat_richInput_attachFiles_label()}
+      shortcut="⇧⌘A"
+      onSelect={() => (selected = 'attach')}
+    />
     <Menu.Separator />
     <Menu.CheckboxItem bind:checked closeOnSelect={false}>Show panel</Menu.CheckboxItem>
     <Menu.RadioGroup bind:value={density}>

@@ -60,6 +60,21 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('can open against an external menu anchor', async () => {
+    const view = render(ContextPickerButton, { props: { panels: [] } });
+    const anchor = document.createElement('button');
+    anchor.getBoundingClientRect = () =>
+      ({ left: 42, top: 100, bottom: 120, right: 62, width: 20, height: 20 }) as DOMRect;
+    document.body.append(anchor);
+
+    await view.component.open(anchor);
+
+    const dialog = await screen.findByRole('dialog', { name: /select context panels/i });
+    expect(dialog.getAttribute('style')).toContain('left: 42px');
+    expect(dialog.getAttribute('style')).toContain('top: 124px');
+    anchor.remove();
+  });
+
   it('stops loading when a newer query supersedes a search that never settles', async () => {
     vi.useFakeTimers();
     searchMock.mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce([]);

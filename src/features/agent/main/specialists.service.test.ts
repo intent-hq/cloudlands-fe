@@ -76,9 +76,9 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
       await refreshGitHubAuthStatus();
 
       expect(mockIsGitHubConfigured).toHaveBeenCalledOnce();
-      expect(getAllEffectiveSpecialists().map(({ id }) => id)).toEqual(
-        expect.arrayContaining(['pr-reviewer', 'pr-shepherd']),
-      );
+      const specialistIds = getAllEffectiveSpecialists().map(({ id }) => id);
+      expect(specialistIds).toContain('pr-reviewer');
+      expect(specialistIds).not.toContain('pr-shepherd');
     });
   });
 

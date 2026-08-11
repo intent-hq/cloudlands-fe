@@ -70,7 +70,16 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).toContain('data-panel-tab-bar');
     expect(tabBar).toContain('data-panel-tabless-header');
     expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('aria-label="Close panel"');
+    expect(tabBar).toContain('m.layout_panelTabBar_closePanel_label()');
+    expect(tabBar).toContain('{#snippet panelActionsDropdown()}');
+    expect(tabBar).toContain('{#snippet panelCloseButton()}');
+    expect(tabBar).toContain('data-testid="panel-close-button"');
+    expect(tabBar).toContain('data-panel-actions-section="display"');
+    expect(tabBar).toContain('data-panel-actions-section="actions"');
+    expect(tabBar).toContain('m.layout_panelTabBar_displaySection_label()');
+    expect(tabBar).toContain('m.layout_panelTabBar_actionsSection_label()');
+    expect(tabBar).toContain('<Menu.Separator />');
+    expect(tabBar).toContain('<Menu.CommandItem');
     expect(tabBar).not.toContain('color-mix');
   });
 
@@ -153,7 +162,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain(
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
-    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 7');
+    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 8');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');

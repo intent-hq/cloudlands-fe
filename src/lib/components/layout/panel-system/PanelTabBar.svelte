@@ -24,6 +24,11 @@
     faCopy,
     faFolderOpen,
     faArrowUpRightFromSquare,
+    faEllipsisVertical,
+    faExpand,
+    faCompress,
+    faTableColumns,
+    faGripLines,
   } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { toast } from '$lib/components/ui/toast';
@@ -32,6 +37,7 @@
   import Fa from 'svelte-fa';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { getContext, tick, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -1156,6 +1162,87 @@
   }
 </script>
 
+{#snippet panelActionsDropdown()}
+  <DropdownMenu align="end" side="bottom" contentClass="w-52">
+    {#snippet trigger({ toggle }: { toggle: () => void })}
+      <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={toggle}
+          aria-label={m.ui_breadcrumb_more_label()}
+          data-testid="panel-actions-trigger"
+        >
+          <Fa icon={faEllipsisVertical} size="xs" />
+        </Button>
+      </Tooltip>
+    {/snippet}
+    {#snippet content({ close }: { close: () => void })}
+      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+        {m.layout_panelTabBar_displaySection_label()}
+      </div>
+      <div data-panel-actions-section="display">
+        <Menu.CommandItem
+          icon={isZoomed ? faCompress : faExpand}
+          label={isZoomed
+            ? m.layout_panelTabBar_unzoomPanel_label()
+            : m.layout_panelTabBar_zoomPanel_label()}
+          shortcut="⇧⌘↵"
+          disabled={!onZoomToggle}
+          onclick={() => {
+            onZoomToggle?.();
+            close();
+          }}
+        />
+      </div>
+
+      <Menu.Separator />
+
+      <div class="type-caption px-2 pb-0.5 pt-1.5 font-medium text-muted-foreground">
+        {m.layout_panelTabBar_actionsSection_label()}
+      </div>
+      <div data-panel-actions-section="actions">
+        <Menu.CommandItem
+          icon={faTableColumns}
+          label={m.layout_panelTabBar_splitRight_label()}
+          shortcut="⌘\"
+          disabled={!onSplitHorizontal}
+          onclick={() => {
+            onSplitHorizontal?.();
+            close();
+          }}
+        />
+        <Menu.CommandItem
+          icon={faGripLines}
+          label={m.layout_panelTabBar_splitDown_label()}
+          shortcut="⇧⌘\"
+          disabled={!onSplitVertical}
+          onclick={() => {
+            onSplitVertical?.();
+            close();
+          }}
+        />
+      </div>
+    {/snippet}
+  </DropdownMenu>
+{/snippet}
+
+{#snippet panelCloseButton()}
+  {#if onClosePanel}
+    <Tooltip content={m.layout_panelTabBar_closePanel_label()} side="bottom" delayDuration={300}>
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        onclick={onClosePanel}
+        aria-label={m.layout_panelTabBar_closePanel_label()}
+        data-testid="panel-close-button"
+      >
+        <Fa icon={faXmark} size="xs" />
+      </Button>
+    </Tooltip>
+  {/if}
+{/snippet}
+
 <svelte:window onkeydown={handlePanelDragKeyDown} />
 
 <!-- Tab bar + Header wrapper -->
@@ -1461,96 +1548,8 @@
       <div
         class="panel-actions flex items-center gap-0.5 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
       >
-        <!-- Split panel buttons -->
-        <Tooltip
-          content={m.layout_panelTabBar_splitRight_tooltip({ shortcut: '⌘\\' })}
-          side="bottom"
-          delayDuration={300}
-        >
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            onclick={() => onSplitHorizontal?.()}
-            aria-label={m.layout_panelTabBar_splitRight_ariaLabel()}
-          >
-            <svg
-              class="text-subtle overflow-visible w-2.5!"
-              viewBox="0 0 1 1"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-            >
-              <rect
-                width="0.5"
-                height="1"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-              <rect
-                x="0.5"
-                width="0.5"
-                height="1"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-            </svg>
-          </Button>
-        </Tooltip>
-        <Tooltip
-          content={m.layout_panelTabBar_splitDown_tooltip({ shortcut: '⌘⇧\\' })}
-          side="bottom"
-          delayDuration={300}
-        >
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            onclick={() => onSplitVertical?.()}
-            aria-label={m.layout_panelTabBar_splitDown_ariaLabel()}
-          >
-            <svg
-              class="text-subtle overflow-visible w-2.5!"
-              viewBox="0 0 1 1"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="0.8"
-            >
-              <rect
-                width="1"
-                height="0.5"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-              <rect
-                y="0.5"
-                width="1"
-                height="0.5"
-                rx="0.03"
-                stroke-width="0.8"
-                vector-effect="non-scaling-stroke"
-              />
-            </svg>
-          </Button>
-        </Tooltip>
-
-        {#if onClosePanel}
-          <Tooltip
-            content={m.layout_panelTabBar_closePanel_tooltip()}
-            side="bottom"
-            delayDuration={300}
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={onClosePanel}
-              aria-label={m.layout_panelTabBar_closePanel_tooltip()}
-            >
-              <Fa icon={faXmark} size="xs" />
-            </Button>
-          </Tooltip>
-        {/if}
+        {@render panelActionsDropdown()}
+        {@render panelCloseButton()}
       </div>
     </div>
   </div>
@@ -1689,7 +1688,7 @@
         <div class="flex-1"></div>
       {/if}
 
-      <!-- Right: Content actions (focus-gated) + always-visible close -->
+      <!-- Right: Content controls (focus-gated) + panel action menu -->
       <div class="flex items-center gap-0.5 shrink-0">
         {#if contentActions}
           <div
@@ -1700,18 +1699,8 @@
             {@render contentActions()}
           </div>
         {/if}
-        {#if onClosePanel}
-          <Tooltip content="Close panel" side="bottom" delayDuration={300}>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={onClosePanel}
-              aria-label="Close panel"
-            >
-              <Fa icon={faXmark} size="xs" />
-            </Button>
-          </Tooltip>
-        {/if}
+        {@render panelActionsDropdown()}
+        {@render panelCloseButton()}
       </div>
     </div>
   {/if}

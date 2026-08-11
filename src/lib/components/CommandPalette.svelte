@@ -15,7 +15,6 @@
   import {
     faSearch,
     faFile,
-    faCog,
     faFolderOpen,
     faTerminal,
     faCommentDots,
@@ -23,7 +22,6 @@
     faCodeBranch,
     faPlus,
     faGlobe,
-    faPlay,
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
@@ -39,6 +37,8 @@
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
+  import { invoke } from '$lib/electron-bridge';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     openWorkspaceBrowser,
     openWorkspaceNote,
@@ -49,7 +49,10 @@
     openTerminalTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
-  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    setShowCreateModal,
+    setStatsOverlayOpen,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     type PaletteFilter,
     type WorkspaceObject,
@@ -71,6 +74,7 @@
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
+  import { COMMAND_PALETTE_COMMANDS as commands } from './command-palette-commands';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
@@ -241,84 +245,6 @@
         )
       : [],
   );
-
-  // Commands available in command mode
-  const commands = [
-    {
-      id: 'new-workspace',
-      get label() {
-        return m.lib_commandPalette_newWorkspace_command();
-      },
-      get pillLabel() {
-        return m.lib_commandPalette_workspace_pill();
-      },
-      icon: faFolderOpen,
-      shortcut: '⌘T',
-    },
-    {
-      id: 'settings',
-      get label() {
-        return m.lib_commandPalette_settings_command();
-      },
-      icon: faCog,
-      shortcut: '⌘,',
-    },
-    {
-      id: 'new-agent',
-      get label() {
-        return m.lib_commandPalette_newAgentChat_command();
-      },
-      get pillLabel() {
-        return m.lib_commandPalette_agentChat_pill();
-      },
-      icon: faCommentDots,
-    },
-    {
-      id: 'new-terminal',
-      get label() {
-        return m.lib_commandPalette_newTerminal_command();
-      },
-      get pillLabel() {
-        return m.lib_commandPalette_terminal_pill();
-      },
-      icon: faTerminal,
-    },
-    {
-      id: 'new-note',
-      get label() {
-        return m.lib_commandPalette_newNote_command();
-      },
-      get pillLabel() {
-        return m.lib_commandPalette_note_pill();
-      },
-      icon: faFileAlt,
-    },
-    {
-      id: 'new-file',
-      get label() {
-        return m.lib_commandPalette_newFile_command();
-      },
-      get pillLabel() {
-        return m.lib_commandPalette_file_pill();
-      },
-      icon: faFile,
-      shortcut: '⌘N',
-    },
-    {
-      id: 'open-url',
-      get label() {
-        return m.lib_commandPalette_openUrl_command();
-      },
-      icon: faGlobe,
-    },
-    {
-      id: 'show-onboarding',
-      get label() {
-        return m.lib_commandPalette_showOnboarding_command();
-      },
-      icon: faPlay,
-    },
-  ];
 
   // Localized "Show N more …" labels per palette item type.
   function showMoreLabel(count: number, itemType: string): string {
@@ -854,6 +780,21 @@
       case 'show-onboarding':
         appStore.dispatch(resetOnboarding());
         goto('/workspace/new');
+        return true;
+      case 'enhance-prompt':
+        dispatchWindowEvent('chat:enhance-prompt');
+        return true;
+      case 'attach-context':
+        dispatchWindowEvent('chat:attach-context');
+        return true;
+      case 'attach-files':
+        dispatchWindowEvent('chat:attach-files');
+        return true;
+      case 'open-hud':
+        void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' });
+        return true;
+      case 'open-usage-stats':
+        appStore.dispatch(setStatsOverlayOpen(true));
         return true;
       default:
         return true;

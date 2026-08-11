@@ -17,6 +17,7 @@ export const menuMetadata = {
     'Portal',
     'Content',
     'Item',
+    'CommandItem',
     'CheckboxGroup',
     'CheckboxItem',
     'RadioGroup',
@@ -33,6 +34,7 @@ export const menuMetadata = {
     'src/features/external-editors/components/OpenComboButton.svelte',
     'src/features/layout/components/ViewSettingsDropdown.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
+    'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/chat/SpecialistDropdown.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',
     'src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte',
@@ -48,7 +50,7 @@ export const menuMetadata = {
   replacement: null,
   characterizationTest: 'src/lib/components/ui/menu/menu.test.ts',
   removalGate:
-    'Retain the compatibility wrapper until all 15 callers migrate and canonical keyboard and focus tests pass.',
+    'Retain the compatibility wrapper until all 16 callers migrate and canonical keyboard and focus tests pass.', // i18n-ignore (design-system catalog metadata)
   dynamicImports: [],
   fixtures: menuFixtures,
 } satisfies UiComponentMetadata;

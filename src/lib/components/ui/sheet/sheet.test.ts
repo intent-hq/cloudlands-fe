@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import SheetHarness from './SheetHarness.svelte';
 import { sheetMetadata } from './sheet.meta';
 
@@ -51,7 +52,7 @@ describe('Sheet', () => {
 
     render(SheetHarness, { props: { closeDisabled: true } });
     await fireEvent.click(screen.getByRole('button', { name: 'Open sheet' }));
-    const close = screen.getByRole('button', { name: 'Close sheet' });
+    const close = screen.getByRole('button', { name: m.ui_sheet_close_label() });
     expect((close as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(close);
     expect(screen.getByRole('dialog')).toBeTruthy();

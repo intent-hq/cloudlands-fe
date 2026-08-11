@@ -32,6 +32,11 @@
     faSpinner,
     faXmark,
     faStop,
+    faEllipsisVertical,
+    faClock,
+    faWandMagicSparkles,
+    faRotateLeft,
+    faAt,
   } from '@fortawesome/free-solid-svg-icons';
   import {
     selectPttRecording,
@@ -55,6 +60,7 @@
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
 
   import {
@@ -158,11 +164,7 @@
   }
 
   // Import ContextItem from context-api.ts
-  import {
-    placeAttachment,
-    type ContextItem,
-    type PlaceAttachmentResult,
-  } from './context-api';
+  import { placeAttachment, type ContextItem, type PlaceAttachmentResult } from './context-api';
   import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
@@ -191,7 +193,7 @@
     autoFocus = false,
     editMode = false,
 
-    panelFocused: _panelFocused = true, // Reserved for future use
+    panelFocused = true,
 
     compactMode: _compactMode = false, // Reserved for future use
     edgeDocked = false,
@@ -234,6 +236,7 @@
     clearFallbackWarning: () => void;
     clearPendingUpdate: () => void;
   } | null = $state(null);
+  let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
@@ -300,36 +303,6 @@
   function handleMicCancelTranscription() {
     cancelActiveTranscription();
   }
-
-  const enhanceHint = $derived(
-    enhanceAvailable &&
-      !disabled &&
-      (isEnhancing || enhancementUndoValue !== null || value.trim().length >= 3)
-      ? isEnhancing
-        ? {
-            kind: 'enhancing' as const,
-            label: m.chat_richInput_enhancing_label(),
-            icon: 'dismiss' as const,
-            ariaLabel: m.chat_richInput_stopEnhancing_label(),
-            onActivate: handleCancelEnhance,
-          }
-        : enhancementUndoValue !== null
-          ? {
-              kind: 'enhanced' as const,
-              label: m.chat_richInput_enhanced_label(),
-              icon: 'undo' as const,
-              ariaLabel: m.chat_richInput_undoEnhance_label(),
-              onActivate: handleUndoEnhance,
-            }
-          : {
-              kind: 'ready' as const,
-              label: '',
-              shortcut: '→',
-              ariaLabel: m.chat_richInput_enhancePrompt_label(),
-              onActivate: handleEnhancePrompt,
-            }
-      : null,
-  );
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
@@ -1047,8 +1020,9 @@
       // machine; remote daemons get the base64 payload (within the wire cap).
       const isDaemonLocal = selectIsDaemonLocal.select(appStore.state);
       const sourcePath = isDaemonLocal
-        ? ((window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-            .electronAPI?.getPathForFile?.(file) ?? '')
+        ? ((
+            window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+          ).electronAPI?.getPathForFile?.(file) ?? '')
         : '';
 
       let result: PlaceAttachmentResult;
@@ -1134,6 +1108,7 @@
     if (typeof window === 'undefined') return;
 
     const handleOpenModelPicker = () => {
+      if (!panelFocused) return;
       modelPickerRef?.open();
     };
 
@@ -1141,6 +1116,30 @@
 
     return () => {
       window.removeEventListener('chat:open-model-picker', handleOpenModelPicker);
+    };
+  });
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleEnhancePromptEvent = () => {
+      if (panelFocused) void handleEnhancePrompt();
+    };
+    const handleAttachContextEvent = () => {
+      if (panelFocused && containerRef) void contextPickerRef?.open(containerRef);
+    };
+    const handleAttachFilesEvent = () => {
+      if (panelFocused) handleFileSelect();
+    };
+
+    window.addEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
+    window.addEventListener('chat:attach-context', handleAttachContextEvent);
+    window.addEventListener('chat:attach-files', handleAttachFilesEvent);
+
+    return () => {
+      window.removeEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
+      window.removeEventListener('chat:attach-context', handleAttachContextEvent);
+      window.removeEventListener('chat:attach-files', handleAttachFilesEvent);
     };
   });
 
@@ -1324,7 +1323,6 @@
       editableWhileDisabled={editableWhileDisabled && !isEnhancing}
       {inputLocked}
       workspace={workspace ?? undefined}
-      trailingHint={enhanceHint}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1434,8 +1432,9 @@
            session's model advertises effort levels. -->
       <EffortPicker {agentId} workspaceId={workspace?.id} {disabled} />
 
-      <!-- Context Picker Button (@ icon with popover) - includes panels and selections -->
+      <!-- Context picker stays mounted for its popover API; its trigger lives in the action menu. -->
       <ContextPickerButton
+        bind:this={contextPickerRef}
         panels={availablePanels}
         selections={availableSelections}
         {workspace}
@@ -1444,20 +1443,72 @@
         onToggle={handleTogglePanel}
         onToggleSelection={handleToggleSelection}
         onInsertMention={(mention) => tiptap?.insertMention(mention)}
+        renderTrigger={false}
       />
 
-      <TooltipShortcut label={m.chat_richInput_attachFiles_label()} side="top">
-        <Button
-          variant="ghost-light"
-          size="icon-sm"
-          {disabled}
-          onclick={handleFileSelect}
-          aria-label={m.chat_richInput_attachFiles_label()}
-        >
-          <Fa icon={faPaperclip} size="sm" />
-        </Button>
-      </TooltipShortcut>
+      <div class="relative inline-block">
+        <Menu.Root>
+          <Menu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                variant="ghost-light"
+                size="icon-xs"
+                {disabled}
+                aria-label={m.ui_breadcrumb_more_label()}
+                data-testid="prompt-actions-trigger"
+              >
+                <Fa icon={faEllipsisVertical} size="sm" />
+              </Button>
+            {/snippet}
+          </Menu.Trigger>
+          <Menu.Content align="start" side="top" class="w-52">
+            <Menu.CommandItem
+              icon={faAt}
+              label={m.chat_contextPicker_addContext_ariaLabel()}
+              shortcut="@"
+              onclick={(event) => {
+                void contextPickerRef?.open(event.currentTarget as HTMLElement);
+              }}
+            />
+            <Menu.CommandItem
+              icon={faPaperclip}
+              label={m.chat_richInput_attachFiles_label()}
+              shortcut="⇧⌘A"
+              onclick={handleFileSelect}
+            />
 
+            {#if enhanceAvailable}
+              <Menu.Separator />
+              {#if isEnhancing}
+                <Menu.CommandItem
+                  icon={faXmark}
+                  label={m.chat_richInput_stopEnhancing_label()}
+                  shortcut="Esc"
+                  onclick={handleCancelEnhance}
+                />
+              {:else if enhancementUndoValue !== null}
+                <Menu.CommandItem
+                  icon={faRotateLeft}
+                  label={m.chat_richInput_undoEnhance_label()}
+                  onclick={handleUndoEnhance}
+                />
+              {:else}
+                <Menu.CommandItem
+                  icon={faWandMagicSparkles}
+                  label={m.chat_richInput_enhancePrompt_label()}
+                  shortcut="⌘/"
+                  disabled={value.trim().length < 3}
+                  onclick={() => void handleEnhancePrompt()}
+                />
+              {/if}
+            {/if}
+          </Menu.Content>
+        </Menu.Root>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       {#if micTranscribing}
         <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
           <Button
@@ -1499,9 +1550,7 @@
           </Button>
         </TooltipShortcut>
       {/if}
-    </div>
 
-    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       {#if showStopButton}
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
@@ -1527,12 +1576,12 @@
             >
               <Button
                 variant="ghost-light"
-                size="xs"
+                size="icon-sm"
                 onclick={handleSubmit}
                 disabled={isEnhancing}
                 aria-label={m.chat_richInput_queueMessage_ariaLabel()}
               >
-                {m.chat_richInput_queue_label()}
+                <Fa icon={faClock} size="sm" />
               </Button>
             </TooltipShortcut>
             <TooltipShortcut
@@ -1542,13 +1591,13 @@
             >
               <Button
                 variant="ghost-light"
-                size="xs"
+                size="icon-sm"
                 onclick={handleForceSubmit}
                 disabled={isEnhancing}
                 aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
                 data-testid="interrupt-btn"
               >
-                {m.chat_richInput_send_label()}
+                <Fa icon={faPaperPlane} size="sm" />
               </Button>
             </TooltipShortcut>
           </div>

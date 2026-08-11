@@ -96,6 +96,15 @@ describe('Menu command state behavior', () => {
     expect(screen.getByTestId('selected').textContent).toBe('delete');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
+
+  it('renders the conventional command row with a leading icon and trailing shortcut', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const command = screen.getByRole('menuitem', { name: 'Attach files' });
+    expect(command.getAttribute('data-slot')).toBe('menu-command-item');
+    expect(command.querySelector('svg')).toBeTruthy();
+    expect(command.querySelector('kbd')?.textContent).toBe('⇧⌘A');
+  });
 });
 
 describe('Menu metadata and compatibility', () => {
@@ -104,8 +113,9 @@ describe('Menu metadata and compatibility', () => {
     expect(menuMetadata.owner).toBe('007-B5');
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
-    expect(menuMetadata.callers).toHaveLength(15);
+    expect(menuMetadata.callers).toHaveLength(16);
     expect(menuMetadata.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
+    expect(menuMetadata.callers).toContain('src/lib/components/chat/input/SimpleRichInput.svelte');
   });
 
   async function verifyLegacyTrigger(stopPropagation: boolean) {

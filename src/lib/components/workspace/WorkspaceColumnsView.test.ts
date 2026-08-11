@@ -248,7 +248,7 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
 
     const track = screen.getByLabelText('Open spaces in columns').firstElementChild;
-    const directory = screen.getByLabelText('Spaces');
+    const directory = screen.getByLabelText('All workspaces');
     const directoryContent = directory.querySelector('[data-workspace-directory-content]');
     const workspaceList = screen.getByTestId('mock-all-workspaces-card');
 

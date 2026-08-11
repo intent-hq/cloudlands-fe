@@ -219,6 +219,10 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faPlay: { iconName: 'play' },
   faRobot: { iconName: 'robot' },
   faUser: { iconName: 'user' },
+  faWandMagicSparkles: { iconName: 'wand-magic-sparkles' },
+  faAt: { iconName: 'at' },
+  faPaperclip: { iconName: 'paperclip' },
+  faChartLine: { iconName: 'chart-line' },
 }));
 
 import CommandPalette from './CommandPalette.svelte';
@@ -226,6 +230,7 @@ import { createAgentRequested } from '$store/renderer/slices/workspace-agents/wo
 import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
 import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
 import { commandPaletteNewFileRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 // Actions that dispatch Redux actions directly (no window event intermediary)
 const reduxActions = [
@@ -280,6 +285,63 @@ describe('CommandPalette new actions', () => {
       await fireEvent.click(button);
       expect(reduxDispatchMock).toHaveBeenCalledWith(action.actionCreator('ws-1'));
     }
+  });
+
+  it('exposes composer commands with their keyboard hints', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+
+    await fireEvent.input(input, { target: { value: 'enhance prompt' } });
+    expect((await screen.findByRole('button', { name: /Enhance prompt/i })).textContent).toContain(
+      '⌘/',
+    );
+
+    await fireEvent.input(input, { target: { value: 'attach context' } });
+    expect((await screen.findByRole('button', { name: /Attach context/i })).textContent).toContain(
+      '@',
+    );
+
+    await fireEvent.input(input, { target: { value: 'attach files' } });
+    expect((await screen.findByRole('button', { name: /Attach files/i })).textContent).toContain(
+      '⇧⌘A',
+    );
+  });
+
+  it('opens HUD through the exact window IPC request and opens usage stats through Redux', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+
+    await fireEvent.input(input, { target: { value: 'HUD' } });
+    const hud = await screen.findByRole('button', { name: /HUD/i });
+    expect(hud.textContent).toContain('⇧⌘H');
+    await fireEvent.click(hud);
+    expect(invokeMock).toHaveBeenCalledWith('window:open-new', { route: '/hud' });
+
+    reduxDispatchMock.mockClear();
+    await fireEvent.input(input, { target: { value: 'usage stats' } });
+    const stats = await screen.findByRole('button', { name: /Usage stats/i });
+    expect(stats.textContent).toContain('⇧⌘U');
+    await fireEvent.click(stats);
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setStatsOverlayOpen(true));
+  });
+
+  it('routes composer palette commands to the focused chat surface', async () => {
+    const events = ['chat:enhance-prompt', 'chat:attach-context', 'chat:attach-files'] as const;
+    const listeners = events.map(() => vi.fn());
+    events.forEach((event, index) => window.addEventListener(event, listeners[index]));
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+
+    for (const [index, query] of ['enhance prompt', 'attach context', 'attach files'].entries()) {
+      await fireEvent.input(input, { target: { value: query } });
+      const action = await screen.findByRole('button', {
+        name: new RegExp(query, 'i'),
+      });
+      await fireEvent.click(action);
+      expect(listeners[index]).toHaveBeenCalledOnce();
+    }
+
+    events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
   });
 });
 

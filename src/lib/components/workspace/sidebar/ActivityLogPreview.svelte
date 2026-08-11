@@ -164,7 +164,7 @@
   <div
     data-activity-preview-item
     class={cn(
-      'group relative flex items-start gap-3 w-full text-left py-1 pl-0 pr-2 rounded-md outline-none',
+      'group relative flex items-center gap-3 w-full text-left py-1 pl-0 pr-2 rounded-md outline-none',
       clickable ? 'cursor-pointer' : 'cursor-default',
     )}
     in:slide={{ duration: 200 }}
@@ -211,7 +211,7 @@
       </span>
 
       {#if time?.show}
-        <span class="text-ui-sm text-subtle shrink-0 mt-0.75" title={time.full}>
+        <span class="text-ui-sm text-subtle shrink-0" title={time.full}>
           {time.label}
         </span>
       {/if}

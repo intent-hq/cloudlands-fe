@@ -62,6 +62,7 @@
       uri: string;
       meta?: Record<string, unknown>;
     }) => void;
+    renderTrigger?: boolean;
     class?: string;
   }
 
@@ -74,11 +75,13 @@
     onToggle,
     onToggleSelection,
     onInsertMention,
+    renderTrigger = true,
     class: className = '',
   }: Props = $props();
 
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
+  let externalAnchor = $state<HTMLElement | null>(null);
   let popoverRef = $state<HTMLDivElement | null>(null);
   let searchInputRef = $state<{ focus: () => void } | null>(null);
   let popoverStyle = $state('');
@@ -181,17 +184,23 @@
     }
   }
 
-  async function toggleOpen() {
+  export async function open(anchor?: HTMLElement) {
     if (disabled) return;
-    isOpen = !isOpen;
+    externalAnchor = anchor ?? null;
+    isOpen = true;
+    updatePosition();
+    await tick();
+    searchInputRef?.focus();
+  }
+
+  async function toggleOpen() {
     if (isOpen) {
-      updatePosition();
-      // Focus search input after popover opens
-      await tick();
-      searchInputRef?.focus();
-    } else {
+      isOpen = false;
+      externalAnchor = null;
       resetSearch();
+      return;
     }
+    await open();
   }
 
   function resetSearch() {
@@ -204,8 +213,9 @@
   }
 
   function updatePosition() {
-    if (!triggerRef) return;
-    const rect = triggerRef.getBoundingClientRect();
+    const anchor = externalAnchor ?? triggerRef;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.top;
     const estimatedHeight = 350;
@@ -223,6 +233,7 @@
     const target = e.target as Node;
     if (triggerRef?.contains(target) || popoverRef?.contains(target)) return;
     isOpen = false;
+    externalAnchor = null;
     resetSearch();
   }
 
@@ -232,6 +243,7 @@
     if (!isOpen) return;
     return pushEscapeLayer(() => {
       isOpen = false;
+      externalAnchor = null;
       resetSearch();
     });
   });
@@ -252,6 +264,7 @@
       });
       // Close popover after inserting mention
       isOpen = false;
+      externalAnchor = null;
       searchQuery = '';
       searchResults = [];
       return;
@@ -340,29 +353,31 @@
   });
 </script>
 
-<TooltipShortcut label={m.chat_contextPicker_fromPanels_label()} shortcut={['@']} side="top">
-  <Button
-    bind:ref={triggerRef}
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={toggleOpen}
-    {disabled}
-    aria-label={m.chat_contextPicker_addContext_ariaLabel()}
-    aria-haspopup="true"
-    aria-expanded={isOpen}
-    class={cn('shrink-0 relative', className)}
-  >
-    <Fa icon={faAt} size="sm" />
-    {#if checkedCount > 0}
-      <span
-        class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
-               rounded-full bg-primary text-primary-foreground flex items-center justify-center"
-      >
-        {checkedCount}
-      </span>
-    {/if}
-  </Button>
-</TooltipShortcut>
+{#if renderTrigger}
+  <TooltipShortcut label={m.chat_contextPicker_fromPanels_label()} shortcut={['@']} side="top">
+    <Button
+      bind:ref={triggerRef}
+      variant="ghost-light"
+      size="icon-xs"
+      onclick={toggleOpen}
+      {disabled}
+      aria-label={m.chat_contextPicker_addContext_ariaLabel()}
+      aria-haspopup="true"
+      aria-expanded={isOpen}
+      class={cn('shrink-0 relative', className)}
+    >
+      <Fa icon={faAt} size="sm" />
+      {#if checkedCount > 0}
+        <span
+          class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
+                 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
+        >
+          {checkedCount}
+        </span>
+      {/if}
+    </Button>
+  </TooltipShortcut>
+{/if}
 
 {#if isOpen}
   <Portal zIndex={60}>

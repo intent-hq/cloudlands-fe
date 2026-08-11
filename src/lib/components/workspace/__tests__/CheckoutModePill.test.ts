@@ -542,7 +542,7 @@ describe('CheckoutModePill', () => {
     await renderPill({ workspace });
     await flushFetch();
 
-    const link = screen.getByRole('button', { name: 'Review cleanup request' });
+    const link = screen.getByRole('button', { name: 'Try to shrink this workspace' });
     await fireEvent.click(link);
 
     expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledOnce();

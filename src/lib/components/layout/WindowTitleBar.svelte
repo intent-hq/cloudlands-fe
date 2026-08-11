@@ -17,6 +17,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
@@ -255,10 +256,12 @@
     <DaemonStatusIndicator />
   {/if}
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      iconOnly
       class={cn(
-        'flex size-7 items-center justify-center rounded-md text-muted-foreground cursor-pointer transition-colors hover:text-foreground',
+        'text-muted-foreground hover:text-foreground',
         page.url.pathname.startsWith('/settings') && 'text-accent-foreground',
       )}
       onclick={handleSettings}
@@ -267,7 +270,7 @@
       data-titlebar-settings
     >
       <Fa icon={faSettings} class="size-3.5!" />
-    </button>
+    </Button>
   </Tooltip>
 {/snippet}
 
@@ -342,8 +345,8 @@
     {#if activeTabBounds && $workspaceViewMode$ === 'single'}
       <div
         class="pointer-events-none absolute -bottom-px z-[60] h-0.5 bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left + panelOffset - 7}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 14)}px`}
+        style:left={`${activeTabBounds.left + panelOffset - 8}px`}
+        style:width={`${Math.max(0, activeTabBounds.width + 16)}px`}
         style:transition={activeTabTracking
           ? 'none'
           : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}

@@ -788,8 +788,8 @@
     }}
     class="relative shrink-0 {isResizing || disableWidthTransition
       ? ''
-      : 'transition-[width,min-width,max-width] mx-auto duration-300 ease-[cubic-bezier(0.33,1,0.68,1)]'} {actualWidth ===
-    0
+      : 'transition-[width,min-width,max-width] mx-auto duration-300 ease-(--ease-emphasized-out)'} {!doSkipResize &&
+    actualWidth === 0
       ? 'overflow-hidden'
       : ''} {className}"
     style={doSkipResize
@@ -798,8 +798,8 @@
   >
     <!-- Panel content slot -->
     <div
-      class="h-full min-h-0 transition-opacity duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] {actualWidth ===
-      0
+      class="h-full min-h-0 transition-opacity duration-300 ease-(--ease-emphasized-out) {!doSkipResize &&
+      actualWidth === 0
         ? 'opacity-0'
         : 'opacity-100'}"
     >

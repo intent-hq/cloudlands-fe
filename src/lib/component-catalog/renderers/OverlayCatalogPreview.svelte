@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import { Input } from '$lib/components/ui/input';
@@ -18,6 +19,7 @@
         <Menu.Trigger>Open catalog menu</Menu.Trigger>
         <Menu.Content preventScroll={false} interactOutsideBehavior="close">
           <Menu.Item>Run command</Menu.Item>
+          <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
           <Menu.Item disabled>Disabled command</Menu.Item>
           <Menu.CheckboxItem bind:checked={menuChecked} closeOnSelect={false}
             >Show panel</Menu.CheckboxItem

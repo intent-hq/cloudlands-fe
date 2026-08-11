@@ -3,6 +3,7 @@ import Root from './menu.svelte';
 import Trigger from './menu-trigger.svelte';
 import Content from './menu-content.svelte';
 import Item from './menu-item.svelte';
+import CommandItem from './menu-command-item.svelte';
 import CheckboxItem from './menu-checkbox-item.svelte';
 import RadioItem from './menu-radio-item.svelte';
 import SubTrigger from './menu-sub-trigger.svelte';
@@ -21,6 +22,7 @@ export {
   Portal,
   Content,
   Item,
+  CommandItem,
   CheckboxGroup,
   CheckboxItem,
   RadioGroup,
@@ -34,6 +36,7 @@ export {
   Portal as MenuPortal,
   Content as MenuContent,
   Item as MenuItem,
+  CommandItem as MenuCommandItem,
   CheckboxGroup as MenuCheckboxGroup,
   CheckboxItem as MenuCheckboxItem,
   RadioGroup as MenuRadioGroup,

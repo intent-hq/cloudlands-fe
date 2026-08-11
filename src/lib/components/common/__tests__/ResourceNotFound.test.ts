@@ -107,7 +107,7 @@ describe('ResourceNotFound', () => {
       },
     });
 
-    const button = screen.getByRole('button', { name: 'Spaces' });
+    const button = screen.getByRole('button', { name: 'All workspaces' });
     await fireEvent.click(button);
 
     expect(onNavigateAway).toHaveBeenCalledTimes(1);

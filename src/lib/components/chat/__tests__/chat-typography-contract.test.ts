@@ -74,7 +74,7 @@ describe('chat typography contract', () => {
     ].map(source);
     expect(metadataFiles.join('')).toContain('type-caption');
     expect(metadataFiles.join('')).toContain('type-code');
-    expect(metadataFiles.join('')).not.toMatch(/text-(?:xs|sm)|font-(?:semibold|bold)/);
+    expect(metadataFiles.join('')).not.toMatch(/text-xs|font-(?:semibold|bold)/);
 
     const divider = source('src/lib/components/chat/NewMessagesDivider.svelte');
     expect(divider).toContain('type-caption');

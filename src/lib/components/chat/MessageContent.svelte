@@ -14,6 +14,7 @@
   import { resolveCard, type ResolvedCard } from './cards/card-registry';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import ToolCall from './ToolCall.svelte';
+  import ThinkingBlock from './ThinkingBlock.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -33,7 +34,6 @@
     parseSuggestedPrompts,
     groupParsedBlocks,
     groupContentBlocks,
-    stripThinkingBlocks,
     filterWorkspaceCardsCoveredByIds,
     type ParsedContent,
     type RenderBlock,
@@ -59,13 +59,10 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-  import { selectShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   const logger = createLogger('MessageContent');
-
-  const showReasoningBlocks$ = selectShowReasoningBlocks();
 
   interface Props {
     content: ContentBlock[];
@@ -120,14 +117,7 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  // Thinking (reasoning) blocks are hidden unless the global
-  // showReasoningBlocks preference is on. This filter runs AFTER grouping
-  // because groupContentBlocks converts legacy <think>…</think> text into
-  // thinking blocks — a pre-grouping filter would miss those.
-  const groupedBlocks = $derived.by(() => {
-    const grouped = groupContentBlocks(blocks, isStreaming);
-    return $showReasoningBlocks$ ? grouped : stripThinkingBlocks(grouped);
-  });
+  const groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
 
   // Build a map of tool results from tool_result blocks, paired by
   // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
@@ -556,18 +546,10 @@
       </div>
     </div>
   {:else if block.type === 'thinking'}
-    <details class="p-2 bg-muted/50 rounded-md">
-      <summary class="type-caption cursor-pointer text-subtle">
-        {m.chat_messageContent_thinking_label()}
-      </summary>
-      <div class="type-caption mt-2 pl-4 opacity-75">
-        <MarkdownViewer
-          content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-          {workspaceId}
-          taskBlockRenderMode="content"
-        />
-      </div>
-    </details>
+    <ThinkingBlock
+      content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+      {workspaceId}
+    />
   {/if}
 {/snippet}
 

@@ -38,7 +38,8 @@
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
-  import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
+  import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
+  import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
@@ -62,6 +63,7 @@
   import { toggleFeatureCodeDialog } from '$store/renderer/slices/feature-codes/feature-codes-slice';
   import { toggleCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import {
     selectCurrentWorkspaceTabId,
@@ -88,15 +90,6 @@
     recordWorkspaceView,
     setActiveWorkspaceId,
   } from '$store/renderer/slices/workspace/workspace-slice';
-  import {
-    closeDeleteWarning,
-    confirmDeleteWorkspace,
-  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-  import {
-    selectRunningAgentNamesForDelete,
-    selectShowDeleteWarning,
-  } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
-
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
@@ -142,8 +135,6 @@
   const releaseNotes$ = selectReleaseNotes();
   const panelItem$ = selectPanelItem();
   const showCreateModal$ = selectShowCreateModal();
-  const showDeleteWarning$ = selectShowDeleteWarning();
-  const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -643,6 +634,38 @@
     // Cmd+B (Mac) / Ctrl+B (Win/Linux) is handled by workspace-specific shortcuts
     // to toggle the left sidebar. Not registered globally.
 
+    register({
+      key: '/',
+      meta: isMac,
+      ctrl: !isMac,
+      description: 'Enhance Prompt', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      action: () => dispatchWindowEvent('chat:enhance-prompt'),
+    });
+    register({
+      key: 'a',
+      meta: isMac,
+      ctrl: !isMac,
+      shift: true,
+      description: 'Attach Files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      action: () => dispatchWindowEvent('chat:attach-files'),
+    });
+    register({
+      key: 'h',
+      meta: isMac,
+      ctrl: !isMac,
+      shift: true,
+      description: 'Open HUD', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      action: () => void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' }),
+    });
+    register({
+      key: 'u',
+      meta: isMac,
+      ctrl: !isMac,
+      shift: true,
+      description: 'Open Usage Stats', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      action: () => appStore.dispatch(setStatsOverlayOpen(true)),
+    });
+
     // Cmd+? (Cmd+Shift+/) (Mac) / Ctrl+? (Ctrl+Shift+/) (Win/Linux) -> toggle keyboard shortcuts cheat sheet
     // Note: On US keyboards, Shift+/ produces '?', so we register both variants
     register({
@@ -1037,13 +1060,11 @@
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
-  <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
-  <DeleteWarningDialog
-    open={$showDeleteWarning$}
-    agentNames={$runningAgentNamesForDelete$}
-    onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
-    onCancel={() => appStore.dispatch(closeDeleteWarning())}
-  />
+  <!-- Redux-owned delete/archive warning hosts (global for all workspace entrypoints) -->
+  <WorkspaceWarningDialogs />
+
+  <!-- Redux-owned Transfer/Download wizard host (global for all workspace entrypoints) -->
+  <TransferWorkspaceModalHost />
 
   <SetupPromptDialog />
 

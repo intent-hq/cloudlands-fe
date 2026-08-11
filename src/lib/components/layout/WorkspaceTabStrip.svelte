@@ -422,7 +422,10 @@
                 <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
                      so the active tab appears to flow into the panel below (Chrome-tab style).
                      Left flare: filled square minus a quarter-circle carved from the top-right
-                     (the corner that meets the tab's bottom-left). -->
+                     (the corner that meets the tab's bottom-left). The stroke arc uses a 7.5
+                     radius (endpoints shifted 0.5px inward) so its 1px stroke sits INSIDE the
+                     filled region — otherwise the outer half of the stroke bleeds past the fill
+                     edge and reads as a dark tick under each tab corner. -->
                 <svg
                   class="pointer-events-none absolute -left-2 bottom-0 size-2 overflow-visible text-sidebar"
                   viewBox="0 0 8 8"
@@ -431,7 +434,7 @@
                   <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
                   <path
                     class="stroke-border"
-                    d="M 8 0 A 8 8 0 0 1 0 8"
+                    d="M 8 0.5 A 7.5 7.5 0 0 1 0.5 8"
                     fill="none"
                     stroke-width="1"
                   />
@@ -444,7 +447,7 @@
                   <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
                   <path
                     class="stroke-border"
-                    d="M 0 0 A 8 8 0 0 0 8 8"
+                    d="M 0 0.5 A 7.5 7.5 0 0 0 7.5 8"
                     fill="none"
                     stroke-width="1"
                   />
@@ -522,7 +525,7 @@
                 <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
                 <path
                   class="stroke-border"
-                  d="M 8 0 A 8 8 0 0 1 0 8"
+                  d="M 8 0.5 A 7.5 7.5 0 0 1 0.5 8"
                   fill="none"
                   stroke-width="1"
                 />
@@ -535,7 +538,7 @@
                 <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
                 <path
                   class="stroke-border"
-                  d="M 0 0 A 8 8 0 0 0 8 8"
+                  d="M 0 0.5 A 7.5 7.5 0 0 0 7.5 8"
                   fill="none"
                   stroke-width="1"
                 />

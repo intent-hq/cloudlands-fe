@@ -19,6 +19,7 @@ export const menuFixtures = [
       'outside-dismiss',
       'focus-return',
       'compact',
+      'icon-shortcut',
       'zoom-200',
     ],
     themes: ['light', 'dark', 'high-contrast'],

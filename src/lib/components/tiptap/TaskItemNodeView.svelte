@@ -30,7 +30,6 @@
   import {
     selectSelectedNoteId,
     selectNoteById,
-    selectNotesVersion,
     selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 
@@ -94,7 +93,6 @@
   });
   const linkedTaskNoteStore = selectNoteById(wsIdStore, linkedTaskNoteIdStore);
   const workspaceNotesStateStore = selectWorkspaceNotesState(wsIdStore);
-  const notesVersion = selectNotesVersion(wsIdStore);
   let linkedTaskNote = $derived($linkedTaskNoteStore ?? null);
 
   let linkedTaskTitle = $derived(

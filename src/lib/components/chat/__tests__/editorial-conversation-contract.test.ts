@@ -202,10 +202,17 @@ describe('editorial conversation presentation contract', () => {
 
   it('keeps tool-call rows compact and dims their leading icon', () => {
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
+    const reasoning = source('src/lib/components/chat/ThinkingBlock.svelte');
+    const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
     expect(toolCall).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
     expect(toolCall).toContain('text-muted-foreground/65');
     expect(toolCall.match(/opacity-30/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(reasoning).toContain('tool-call-container');
+    expect(reasoning).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
+    expect(reasoning).toContain('opacity-30');
+    expect(agentTab).not.toContain('toggleShowReasoningBlocks');
+    expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });
 
   it('lets ChatPanel own the bottom spacing without changing the tab behavior boundary', () => {

@@ -21,8 +21,6 @@
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
-  import { toggleShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { selectShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import {
@@ -30,7 +28,7 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
-  import { faBrain, faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,8 +36,6 @@
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentTabType');
-
-  const showReasoningBlocks = selectShowReasoningBlocks();
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
@@ -189,18 +185,6 @@
     </Button>
   {/if}
   <AgentViewSettingsDropdown />
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleShowReasoningBlocks())}
-    tooltip={$showReasoningBlocks
-      ? m.layout_agentTab_reasoningHide_tooltip()
-      : m.layout_agentTab_reasoningShow_tooltip()}
-    tooltipSide="bottom"
-    class={$showReasoningBlocks ? '' : 'opacity-50'}
-  >
-    <Fa icon={faBrain} size="xs" />
-  </Button>
   <Button
     variant="ghost-light"
     size="icon-xs"

@@ -8,6 +8,7 @@ import {
   toggleHiddenEditor,
   type InstalledEditor,
 } from '$store/renderer/slices/external-editors/external-editors-slice';
+import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => {
   const writable = <T>(initial: T) => {
@@ -97,7 +98,7 @@ describe('OpenInAppsSettings', () => {
 
     renderApps();
 
-    expect(screen.getByText('No compatible apps detected.')).toBeTruthy();
+    expect(screen.getByText(m.settings_openInApps_empty())).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
     expect(mocks.dispatched).toContainEqual(fetchEditors());
   });

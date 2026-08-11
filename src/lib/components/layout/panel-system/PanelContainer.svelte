@@ -383,13 +383,19 @@
     canvasResizeAccumulatedWidth = null;
     canvasResizeStartChildWidths = null;
     if (wasCanvasResize) {
-      // Clear imperative pixel flex overrides so the next render uses the
-      // reactive percentage-based flex derived from the updated node sizes.
-      if (containerRef) {
-        Array.from(
+      // Re-apply the reactive percentage-based flex derived from the updated
+      // node sizes. Clearing to '' is insufficient: Svelte's `style:flex`
+      // directive only re-applies when its tracked value changes, so a
+      // string that matches what Svelte last set would leave the DOM stuck
+      // on the imperative override (or on '' if we cleared it), collapsing
+      // panels to their content-only width in the flex container.
+      if (containerRef && node.type === 'split') {
+        const panelElements = Array.from(
           containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-        ).forEach((el) => {
-          el.style.flex = '';
+        );
+        panelElements.forEach((panelElement, index) => {
+          const child = node.children[index];
+          if (child) panelElement.style.flex = getPanelChildFlex(child, index);
         });
       }
       return;

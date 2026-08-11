@@ -217,6 +217,17 @@
     onFocus?.();
   }
 
+  // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
+  // fires when a focusable descendant receives focus; clicks on non-focusable
+  // content (empty area, static text, non-interactive tab content) would
+  // otherwise leave the panel unfocused. Uses `pointerdown` (capture) so the
+  // panel focuses before nested interactive elements handle the event, and it
+  // stays passive — no preventDefault / stopPropagation.
+  function handlePanelPointerDown() {
+    if (isFocused) return;
+    onFocus?.();
+  }
+
   // Determine which drop zone based on cursor position (relative to content area below tab bar)
   function getDropZone(e: DragEvent): DropZone | null {
     if (!panelRef) return 'center';
@@ -368,6 +379,7 @@
     data-focused={isFocused}
     data-zoomed={isZoomed}
     onfocusin={handlePanelFocus}
+    onpointerdowncapture={handlePanelPointerDown}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}

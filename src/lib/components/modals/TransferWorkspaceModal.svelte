@@ -15,7 +15,7 @@
    */
 
   import { Button } from '$lib/components/ui/button';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import Fa from 'svelte-fa';
   import {
     faCircleCheck,
@@ -233,8 +233,9 @@
             {:else}
               <div class="space-y-1">
                 {#each connections as conn (conn.id)}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="{optionClass} {isSelected({ kind: 'server', connectionId: conn.id })
                       ? 'border-primary bg-primary/10'
                       : 'border-border hover:bg-muted/50'}"
@@ -245,15 +246,16 @@
                   >
                     <Fa icon={faServer} class="text-subtle shrink-0" />
                     <span class="truncate">{formatConnectionLabel(conn)}</span>
-                  </button>
+                  </Button>
                 {/each}
               </div>
             {/if}
           </div>
 
           <div class="space-y-1">
-            <button
+            <Button
               type="button"
+              variant="plain"
               class="{optionClass} {isSelected({ kind: 'download' })
                 ? 'border-primary bg-primary/10'
                 : 'border-border hover:bg-muted/50'}"
@@ -268,7 +270,7 @@
                   {m.workspace_transfer_download_description()}
                 </span>
               </span>
-            </button>
+            </Button>
           </div>
         {:else if step === 'confirm'}
           <p class="text-sm text-subtle">{m.workspace_transfer_confirm_description()}</p>

@@ -1,9 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * Streaming UX for daemon-emitted reasoning (PROTOCOL §7.1 `thinking` blocks,
- * intentd#973): the block auto-expands while the thought streams and collapses
- * once the turn's block is complete, unless the user has toggled it.
+ * Tool-call-style streaming UX for daemon-emitted reasoning (PROTOCOL §7.1
+ * `thinking` blocks, intentd#973).
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +26,17 @@ async function renderBlock(props: { content: string; isStreaming?: boolean }) {
   return render(ThinkingBlock, { props });
 }
 
-describe('ThinkingBlock — Zed streaming UX', () => {
+describe('ThinkingBlock — tool-call presentation', () => {
+  it('uses the compact tool-call row treatment', async () => {
+    await renderBlock({ content: 'Let me check the schema', isStreaming: false });
+
+    const row = screen.getByTestId('reasoning-tool-call');
+    expect(row.className).toContain('tool-call-container');
+    expect(row.className).toContain('type-caption');
+    expect(row.className).not.toContain('bg-muted');
+    expect(row.querySelector('[data-icon="brain"]')?.className).toContain('opacity-30');
+  });
+
   it('auto-expands while the thought is streaming', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: true });
 
