@@ -18,8 +18,14 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: mocks.error }),
 }));
 
+import { BackendError } from '$lib/client/live/backend-transport-types';
+
 import { settingsChangesReceived } from '../settings-events-slice';
-import { hydrateSettingsOnceSaga, settingsHydrationSaga } from './settings-hydration-saga';
+import {
+  SETTINGS_HYDRATION_RETRY_DELAYS_MS,
+  hydrateSettingsOnceSaga,
+  settingsHydrationSaga,
+} from './settings-hydration-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -56,11 +62,41 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
-  it('logs a failed boot read without applying partial settings', async () => {
-    mocks.list.mockRejectedValue(new Error('offline'));
+  it('retries a transport-failed boot read with bounded backoff until it lands (monorepo#1986)', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.list
+        .mockRejectedValueOnce(new Error('connect ENOENT intentd.sock'))
+        .mockRejectedValueOnce(new Error('connect ENOENT intentd.sock'))
+        .mockResolvedValue([
+          { path: 'providers.enabled', value: { 'claude-code': true }, label: '', description: '' },
+        ]);
+      const task = runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+      expect(mocks.apply).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.apply).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[1]);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
+      expect(mocks.apply).toHaveBeenCalledWith([
+        { path: 'providers.enabled', value: { 'claude-code': true } },
+      ]);
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry a structured daemon error response', async () => {
+    mocks.list.mockRejectedValue(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
+    );
     await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.apply).not.toHaveBeenCalled();
-    expect(mocks.error).toHaveBeenCalledWith('settings hydration failed', expect.any(Error));
+    expect(mocks.error).toHaveBeenCalled();
   });
 
   it('does not apply a boot read that settles after cancellation', async () => {

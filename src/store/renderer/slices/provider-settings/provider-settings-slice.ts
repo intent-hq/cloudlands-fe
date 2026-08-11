@@ -12,6 +12,16 @@ export type ProviderSettingsState = {
    * `canBeDisabled: false`.
    */
   nonDisableableProviderIds: string[];
+  /**
+   * Local enablement intent not yet confirmed by the daemon: providerId →
+   * enabled, recorded by `setProviderEnabled` / `toggleProvider` and merged
+   * over every `loadEnabledProvidersFromStorage` hydration so a stale boot
+   * snapshot racing a fresh click cannot clobber the entry (monorepo#1986).
+   * An entry is cleared once a hydration carries the same value (the daemon
+   * confirmed the write); a conflicting hydration keeps the newer local
+   * intent until then.
+   */
+  pendingEnablementOverrides: Record<string, boolean>;
 };
 
 export const ACTIVE_PROVIDER_STORAGE_KEY = "workspaces-active-provider";
@@ -22,6 +32,7 @@ export const initialState: ProviderSettingsState = {
   activeProviderId: "",
   enabledProviders: {},
   nonDisableableProviderIds: [],
+  pendingEnablementOverrides: {},
 };
 
 function canBeDisabled(state: ProviderSettingsState, providerId: string): boolean {
@@ -84,16 +95,22 @@ providerSettingsReducer.with(
       return {
         ...state,
         enabledProviders: { ...state.enabledProviders, [providerId]: enabled },
+        pendingEnablementOverrides: {
+          ...state.pendingEnablementOverrides,
+          [providerId]: enabled,
+        },
       };
     }
   );
 providerSettingsReducer.with(toggleProvider, (state, { payload: [providerId] }) => {
     if (!canBeDisabled(state, providerId)) return state;
+    const enabled = !resolveProviderEnabled(state.enabledProviders, providerId);
     return {
       ...state,
-      enabledProviders: {
-        ...state.enabledProviders,
-        [providerId]: !resolveProviderEnabled(state.enabledProviders, providerId),
+      enabledProviders: { ...state.enabledProviders, [providerId]: enabled },
+      pendingEnablementOverrides: {
+        ...state.pendingEnablementOverrides,
+        [providerId]: enabled,
       },
     };
   });
@@ -106,7 +123,17 @@ providerSettingsReducer.with(ensureEnabledIfUnset, (state, { payload: [providerI
       enabledProviders: { ...state.enabledProviders, [providerId]: true },
     };
   });
-providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => ({
-    ...state,
-    enabledProviders: providers,
-  }));
+providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload: [providers] }) => {
+    // Hydration (boot snapshot or settings:changed) never clobbers newer
+    // local intent: still-pending overrides win over the incoming map, and a
+    // matching incoming value confirms (retires) the override.
+    const pending: Record<string, boolean> = {};
+    for (const [providerId, enabled] of Object.entries(state.pendingEnablementOverrides)) {
+      if (providers[providerId] !== enabled) pending[providerId] = enabled;
+    }
+    return {
+      ...state,
+      enabledProviders: { ...providers, ...pending },
+      pendingEnablementOverrides: pending,
+    };
+  });

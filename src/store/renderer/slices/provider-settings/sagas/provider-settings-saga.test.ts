@@ -10,6 +10,7 @@ import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
   hydrateActiveProvider,
   setActiveProvider,
+  setProviderEnabled,
   toggleProvider,
 } from '../provider-settings-slice';
 import {
@@ -81,6 +82,40 @@ describe('providerSettingsSaga', () => {
     await settle();
 
     expect(mocks.update.mock.calls).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('merges the click intent over the live map at write time after hydration replaced it (monorepo#1986)', async () => {
+    let release!: (value: unknown) => void;
+    mocks.update
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockResolvedValue([]);
+    const current = state();
+    const channel = stdChannel();
+    const task = runSaga(
+      { channel, dispatch: vi.fn(), getState: () => current },
+      providerSettingsSaga,
+    );
+    channel.put(setActiveProvider('codex'));
+    await settle();
+    channel.put(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    await settle();
+    // Boot settings hydration replaces the whole local map while the write is
+    // still queued behind the in-flight active-provider write — the stale
+    // snapshot has no claude-code entry.
+    current.providerSettings.enabledProviders = { auggie: true };
+    release([]);
+    await settle();
+
+    expect(mocks.update.mock.calls).toEqual([
+      [[{ path: 'providers.active', value: 'codex' }]],
+      [[{ path: 'providers.enabled', value: { auggie: true, 'claude-code': true } }]],
+    ]);
     task.cancel();
     await task.toPromise();
   });
