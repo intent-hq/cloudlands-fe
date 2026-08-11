@@ -60,15 +60,7 @@
  * it, preserving the former post-action state-read semantics.
  */
 import { buffers, channel as createChannel, type Channel } from 'redux-saga';
-import {
-  call,
-  join,
-  put,
-  takeEvery,
-  takeLatest,
-  takeLeading,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { actionChannel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
 import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
@@ -102,12 +94,11 @@ import {
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectCurrentlyViewedAgentId } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
-import { takeLatestInContext, takeLeadingByAgent } from '../../../utils/context-saga-effects';
 
 const logger = createLogger('ChatSubscribeSaga');
 
 interface SubscriptionEntry {
-  unsubscribe: () => void;
+  acquisition: SubscriptionAcquisition;
   token: object;
   /** Workspace the chat was opened under (for removeWorkspaceSessions teardown). */
   wsId?: string;
@@ -122,6 +113,158 @@ interface SubscriptionEntry {
 type ChatSubscriptionEvent =
   | { kind: 'transcript'; agentId: string; token: object; transcript: ChatTranscript }
   | { kind: 'phase'; agentId: string; token: object; phase: ChatLiveStreamPhase };
+
+type MaybePromise<T> = T | Promise<T>;
+type AsyncUnsubscribe = () => MaybePromise<void>;
+
+interface SubscriptionAcquisition {
+  wait: () => MaybePromise<AsyncUnsubscribe | undefined>;
+  cancelPending: () => void;
+  dispose: () => MaybePromise<void>;
+}
+
+interface TransitionCompletion {
+  promise: Promise<void>;
+  resolve: () => void;
+  settled: boolean;
+}
+
+type AgentTransition =
+  | {
+      kind: 'open';
+      token: object;
+      wsId?: string;
+      waitFor?: TransitionCompletion[];
+      completion: TransitionCompletion;
+    }
+  | { kind: 'close'; clearResumeAnchor?: boolean; completion: TransitionCompletion }
+  | { kind: 'hydration-settled'; completion: TransitionCompletion };
+
+interface AgentTransitionSlot {
+  channel: Channel<AgentTransition>;
+  pendingCount: number;
+  desiredToken?: object;
+  wsId?: string;
+  acquisition?: SubscriptionAcquisition;
+}
+
+interface SubscriptionCoordinator {
+  subscriptions: Map<string, SubscriptionEntry>;
+  slots: Map<string, AgentTransitionSlot>;
+  events: Channel<ChatSubscriptionEvent>;
+}
+
+function createCompletion(): TransitionCompletion {
+  let settlePromise: () => void = () => undefined;
+  const promise = new Promise<void>((settle) => {
+    settlePromise = settle;
+  });
+  const completion: TransitionCompletion = {
+    promise,
+    settled: false,
+    resolve: () => {
+      if (completion.settled) return;
+      completion.settled = true;
+      settlePromise();
+    },
+  };
+  return completion;
+}
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'then' in value &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
+function createSubscriptionAcquisition(
+  agentId: string,
+  onTranscript: (transcript: ChatTranscript) => void,
+  onPhase: (phase: ChatLiveStreamPhase) => void,
+  options?: { sinceMessageId: string },
+): SubscriptionAcquisition {
+  let unsubscribe: AsyncUnsubscribe | undefined;
+  let disposeRequested = false;
+  let disposed = false;
+  let disposal: MaybePromise<void> | undefined;
+
+  const disposeResolved = (): MaybePromise<void> => {
+    if (disposed || !unsubscribe) return disposal;
+    disposed = true;
+    try {
+      const result = unsubscribe();
+      disposal = isPromiseLike<void>(result)
+        ? Promise.resolve(result).catch((error) => {
+            logger.error('Failed to close chat subscription', error);
+          })
+        : undefined;
+    } catch (error) {
+      logger.error('Failed to close chat subscription', error);
+    }
+    return disposal;
+  };
+
+  const subscribe = appClient.chat.subscribe as unknown as (
+    agentId: string,
+    handler: (transcript: ChatTranscript) => void,
+    onPhase: (phase: ChatLiveStreamPhase) => void,
+    options?: { sinceMessageId: string },
+  ) => MaybePromise<AsyncUnsubscribe>;
+  const raw = options
+    ? subscribe(agentId, onTranscript, onPhase, options)
+    : subscribe(agentId, onTranscript, onPhase);
+
+  if (!isPromiseLike<AsyncUnsubscribe>(raw)) {
+    unsubscribe = raw;
+    return {
+      wait: () => (disposeRequested ? undefined : unsubscribe),
+      cancelPending: () => undefined,
+      dispose: () => {
+        disposeRequested = true;
+        return disposeResolved();
+      },
+    };
+  }
+
+  const pending = Promise.resolve(raw).then((acquired) => {
+    unsubscribe = acquired;
+    if (!disposeRequested) return acquired;
+    return Promise.resolve(disposeResolved()).then(() => undefined);
+  });
+
+  return {
+    wait: () => pending,
+    cancelPending: () => {
+      disposeRequested = true;
+      void pending.catch((error) => {
+        logger.error('Failed to open chat subscription', error);
+      });
+    },
+    dispose: () => {
+      disposeRequested = true;
+      return unsubscribe
+        ? disposeResolved()
+        : pending.then(
+            () => undefined,
+            () => undefined,
+          );
+    },
+  };
+}
+
+function isCurrentSubscription(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  entry: SubscriptionEntry,
+): boolean {
+  return (
+    coordinator.subscriptions.get(agentId) === entry &&
+    coordinator.slots.get(agentId)?.desiredToken === entry.token
+  );
+}
 
 /**
  * Merge one emitted transcript into the agent-session slice. The transcript
@@ -141,12 +284,14 @@ type ChatSubscriptionEvent =
  * row is dropped with them and reappears on its daemon echo.
  */
 function* applyTranscript(
+  coordinator: SubscriptionCoordinator,
   agentId: string,
   entry: SubscriptionEntry,
   transcript: ChatTranscript,
   discardStoreOnly = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
+  if (!isCurrentSubscription(coordinator, agentId, entry)) return;
   if (session) {
     const transcriptIds = new Set<string>();
     for (const message of transcript.messages) {
@@ -164,14 +309,16 @@ function* applyTranscript(
       storeOnly.length === 0
         ? transcript.messages
         : deduplicateAgentMessages([...storeOnly, ...transcript.messages]);
-    yield* put(replaceMessages(agentId, merged));
+    if (isCurrentSubscription(coordinator, agentId, entry)) {
+      yield* put(replaceMessages(agentId, merged));
+    }
   }
 
   // Consume the streaming edge only when the dispatch actually lands — a
   // pre-hydration emit must not swallow the transition, so the next emit
   // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
-  if (session && streamingChanged) {
+  if (session && streamingChanged && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
       updateSession(
@@ -206,17 +353,21 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
 }
 
 function* handleSubscriptionEvent(
-  subscriptions: Map<string, SubscriptionEntry>,
+  coordinator: SubscriptionCoordinator,
   event: ChatSubscriptionEvent,
 ): SagaGenerator<void> {
-  const entry = subscriptions.get(event.agentId);
+  const entry = coordinator.subscriptions.get(event.agentId);
   if (!entry || entry.token !== event.token) return;
+  if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
   try {
     if (event.kind === 'phase') {
-      yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
+      if (isCurrentSubscription(coordinator, event.agentId, entry)) {
+        yield* put(chatLiveStreamPhaseChanged(event.agentId, event.phase));
+      }
       return;
     }
     if (yield* call(isAgentDeletionPending, event.agentId)) return;
+    if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     // §7.1 `resumed: false` snapshot: the retained transcript MUST be
@@ -225,7 +376,7 @@ function* handleSubscriptionEvent(
     // older-history pages fetched after it.
     const discardStoreOnly =
       event.transcript.fromSnapshot === true && event.transcript.resumed === false;
-    yield* applyTranscript(event.agentId, entry, event.transcript, discardStoreOnly);
+    yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
     // subsequent agent:stream:chunk events pass the regression guard, then
@@ -312,60 +463,93 @@ function* resolveResumeAnchor(agentId: string): SagaGenerator<string | undefined
 }
 
 function* openSubscription(
-  subscriptions: Map<string, SubscriptionEntry>,
-  events: Channel<ChatSubscriptionEvent>,
+  coordinator: SubscriptionCoordinator,
+  slot: AgentTransitionSlot,
   agentId: string,
-  wsId?: string,
+  transition: Extract<AgentTransition, { kind: 'open' }>,
 ): SagaGenerator<void> {
-  if (subscriptions.has(agentId)) return;
-  if (yield* call(isAgentDeletionPending, agentId)) return;
-  const token = {};
+  const pendingBarriers = transition.waitFor?.filter((completion) => !completion.settled);
+  if (pendingBarriers?.length) {
+    yield* call(() => Promise.all(pendingBarriers.map(({ promise }) => promise)));
+  }
+  if (slot.desiredToken !== transition.token) return;
+  if (yield* call(isAgentDeletionPending, agentId)) {
+    if (slot.desiredToken === transition.token) {
+      slot.desiredToken = undefined;
+      slot.wsId = undefined;
+    }
+    return;
+  }
+
   const pending: ChatSubscriptionEvent[] = [];
   let ready = false;
   const emit = (event: ChatSubscriptionEvent) => {
-    if (ready) events.put(event);
+    if (slot.desiredToken !== transition.token) return;
+    if (ready) coordinator.events.put(event);
     else pending.push(event);
   };
+
+  let acquisition: SubscriptionAcquisition | undefined;
+  let installed = false;
   try {
     const sinceMessageId = yield* resolveResumeAnchor(agentId);
-    const unsubscribe = yield* call(
-      [appClient.chat, appClient.chat.subscribe],
+    acquisition = yield* call(
+      createSubscriptionAcquisition,
       agentId,
-      (transcript: ChatTranscript) => emit({ kind: 'transcript', agentId, token, transcript }),
-      (phase: ChatLiveStreamPhase) => emit({ kind: 'phase', agentId, token, phase }),
+      (transcript: ChatTranscript) =>
+        emit({ kind: 'transcript', agentId, token: transition.token, transcript }),
+      (phase: ChatLiveStreamPhase) =>
+        emit({ kind: 'phase', agentId, token: transition.token, phase }),
       sinceMessageId === undefined ? undefined : { sinceMessageId },
     );
-    subscriptions.set(agentId, {
-      unsubscribe,
-      token,
-      wsId,
+    slot.acquisition = acquisition;
+    const unsubscribe = yield* call(acquisition.wait);
+    if (!unsubscribe || slot.desiredToken !== transition.token) return;
+
+    coordinator.subscriptions.set(agentId, {
+      acquisition,
+      token: transition.token,
+      wsId: transition.wsId,
       hasEmitted: false,
       wasStreaming: false,
     });
+    installed = true;
     ready = true;
-    for (const event of pending) events.put(event);
+    for (const event of pending) coordinator.events.put(event);
   } catch (error) {
     logger.error('Failed to open chat subscription', error);
+  } finally {
+    if (!installed && acquisition) {
+      void acquisition.dispose();
+      if (slot.acquisition === acquisition) slot.acquisition = undefined;
+    }
+    if (!installed && slot.desiredToken === transition.token) {
+      slot.desiredToken = undefined;
+      slot.wsId = undefined;
+    }
   }
 }
 
 function* closeSubscription(
-  subscriptions: Map<string, SubscriptionEntry>,
+  coordinator: SubscriptionCoordinator,
+  slot: AgentTransitionSlot,
   agentId: string,
+  clearResumeAnchor = false,
 ): SagaGenerator<void> {
-  const entry = subscriptions.get(agentId);
+  const entry = coordinator.subscriptions.get(agentId);
   if (!entry) return;
-  subscriptions.delete(agentId);
-  try {
-    yield* call(entry.unsubscribe);
-  } catch (error) {
-    logger.error('Failed to close chat subscription', error);
-  }
+  coordinator.subscriptions.delete(agentId);
+  yield* call(entry.acquisition.dispose);
+  if (slot.acquisition === entry.acquisition) slot.acquisition = undefined;
   try {
     // Capture the resume anchor BEFORE the streaming flags are normalized
     // below — afterwards a partial row can no longer be told apart.
-    const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
-    resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+    if (clearResumeAnchor) {
+      resumeAnchors.delete(agentId);
+    } else {
+      const messages = (yield* selectAgentSession.effect(agentId))?.messages ?? [];
+      resumeAnchors.set(agentId, newestPersistedMessageId(messages) ?? '');
+    }
   } catch (error) {
     logger.error('Failed to capture chat resume anchor', error);
   }
@@ -381,248 +565,295 @@ function* closeSubscription(
   }
 }
 
-function* closeAllSubscriptions(
-  subscriptions: Map<string, SubscriptionEntry>,
-): SagaGenerator<void> {
-  for (const agentId of [...subscriptions.keys()]) {
-    yield* closeSubscription(subscriptions, agentId);
-  }
-}
-
-function* closeWorkspaceSubscriptions(
-  subscriptions: Map<string, SubscriptionEntry>,
-  wsId: string,
-): SagaGenerator<void> {
-  for (const [agentId, entry] of [...subscriptions.entries()]) {
-    if (entry.wsId === wsId) {
-      yield* closeSubscription(subscriptions, agentId);
-      // Workspace-scoped teardown removes the sessions too — a captured
-      // anchor must not resume a future unrelated stream.
-      resumeAnchors.delete(agentId);
-    }
-  }
-}
-
 /**
  * True when the agent belongs to the chief virtual workspace, per its
  * subscription entry's wsId or (before a subscription exists) its stored
  * session's workspaceId.
  */
 function* isChiefChatAgent(
-  subscriptions: Map<string, SubscriptionEntry>,
+  coordinator: SubscriptionCoordinator,
   agentId: string,
 ): SagaGenerator<boolean> {
-  const workspaceId = subscriptions.get(agentId)?.wsId;
+  const workspaceId =
+    coordinator.slots.get(agentId)?.wsId ?? coordinator.subscriptions.get(agentId)?.wsId;
   if (workspaceId !== undefined) return workspaceId === CHIEF_WORKSPACE_ID;
   const session = yield* selectAgentSession.effect(agentId);
   return session?.workspaceId === CHIEF_WORKSPACE_ID;
 }
 
-/**
- * Close every subscription except the given agent's (agent-switch swap).
- * Realm-scoped (monorepo#1421): chief-workspace and ordinary workspace
- * subscriptions never close each other — the Chief panel stays open (and
- * must keep rendering live) while workspace chats are viewed, and vice
- * versa. Viewing a chief thread still closes other chief threads'.
- */
-function* closeOtherSubscriptions(
-  subscriptions: Map<string, SubscriptionEntry>,
+function* applyHydrationSettled(
+  coordinator: SubscriptionCoordinator,
   agentId: string,
 ): SagaGenerator<void> {
-  const viewedIsChief = yield* isChiefChatAgent(subscriptions, agentId);
-  for (const [otherId, entry] of [...subscriptions.entries()]) {
-    if (otherId === agentId) continue;
-    if ((entry.wsId === CHIEF_WORKSPACE_ID) !== viewedIsChief) continue;
-    yield* closeSubscription(subscriptions, otherId);
+  const entry = coordinator.subscriptions.get(agentId);
+  if (entry?.hasEmitted && entry.lastTranscript) {
+    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript);
   }
+}
+
+function canRetireSlot(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  slot: AgentTransitionSlot,
+): boolean {
+  return (
+    slot.pendingCount === 0 &&
+    !slot.desiredToken &&
+    !slot.acquisition &&
+    !coordinator.subscriptions.has(agentId)
+  );
+}
+
+function* runAgentTransitions(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  slot: AgentTransitionSlot,
+): SagaGenerator<void> {
+  try {
+    while (true) {
+      const transition = yield* take(slot.channel);
+      slot.pendingCount -= 1;
+      try {
+        if (transition.kind === 'open') {
+          yield* openSubscription(coordinator, slot, agentId, transition);
+        } else if (transition.kind === 'close') {
+          yield* closeSubscription(coordinator, slot, agentId, transition.clearResumeAnchor);
+          if (!slot.desiredToken) slot.wsId = undefined;
+        } else {
+          yield* applyHydrationSettled(coordinator, agentId);
+        }
+      } catch (error) {
+        logger.error('chat-subscribe saga action failed', error);
+      } finally {
+        transition.completion.resolve();
+      }
+
+      if (canRetireSlot(coordinator, agentId, slot)) {
+        if (coordinator.slots.get(agentId) === slot) coordinator.slots.delete(agentId);
+        slot.channel.close();
+        return;
+      }
+    }
+  } finally {
+    slot.channel.close();
+    slot.acquisition?.dispose();
+  }
+}
+
+function* ensureSlot(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<AgentTransitionSlot> {
+  const existing = coordinator.slots.get(agentId);
+  if (existing) return existing;
+  const slot: AgentTransitionSlot = {
+    channel: createChannel(buffers.expanding<AgentTransition>()),
+    pendingCount: 0,
+  };
+  coordinator.slots.set(agentId, slot);
+  yield* fork(runAgentTransitions, coordinator, agentId, slot);
+  return slot;
+}
+
+function enqueue(slot: AgentTransitionSlot, transition: AgentTransition): TransitionCompletion {
+  slot.pendingCount += 1;
+  slot.channel.put(transition);
+  return transition.completion;
+}
+
+function resolvedCompletion(): TransitionCompletion {
+  const completion = createCompletion();
+  completion.resolve();
+  return completion;
+}
+
+function* enqueueOpen(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  wsId?: string,
+  waitFor?: TransitionCompletion[],
+): SagaGenerator<TransitionCompletion> {
+  const slot = yield* ensureSlot(coordinator, agentId);
+  if (slot.desiredToken) return resolvedCompletion();
+  const token = {};
+  slot.desiredToken = token;
+  slot.wsId = wsId;
+  const completion = createCompletion();
+  return enqueue(slot, { kind: 'open', token, wsId, waitFor, completion });
+}
+
+function enqueueClose(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  clearResumeAnchor = false,
+): TransitionCompletion {
+  const slot = coordinator.slots.get(agentId);
+  if (!slot) {
+    if (clearResumeAnchor) resumeAnchors.delete(agentId);
+    return resolvedCompletion();
+  }
+  slot.desiredToken = undefined;
+  slot.acquisition?.cancelPending();
+  const completion = createCompletion();
+  return enqueue(slot, { kind: 'close', clearResumeAnchor, completion });
+}
+
+function enqueueHydrationSettled(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): TransitionCompletion {
+  const slot = coordinator.slots.get(agentId);
+  if (!slot) return resolvedCompletion();
+  const completion = createCompletion();
+  return enqueue(slot, { kind: 'hydration-settled', completion });
+}
+
+function closeMatchingSlots(
+  coordinator: SubscriptionCoordinator,
+  predicate: (agentId: string, slot: AgentTransitionSlot) => boolean,
+  clearResumeAnchor = false,
+): TransitionCompletion[] {
+  const completions: TransitionCompletion[] = [];
+  for (const [agentId, slot] of [...coordinator.slots.entries()]) {
+    if (predicate(agentId, slot)) {
+      completions.push(enqueueClose(coordinator, agentId, clearResumeAnchor));
+    }
+  }
+  return completions;
 }
 
 /**
- * Close every non-chief subscription (chat close — the chief panel's
- * lifecycle is independent of the chat area's viewed state).
+ * The viewed-agent swap is global within its realm: all related closes settle
+ * before the newly viewed agent opens. Chief and ordinary workspace realms
+ * remain independent because their standing surfaces intentionally coexist.
  */
-function* closeNonChiefSubscriptions(
-  subscriptions: Map<string, SubscriptionEntry>,
-): SagaGenerator<void> {
-  for (const [agentId, entry] of [...subscriptions.entries()]) {
-    if (entry.wsId !== CHIEF_WORKSPACE_ID) {
-      yield* closeSubscription(subscriptions, agentId);
-    }
-  }
-}
-
-function* handleInitialize(
-  subscriptions: Map<string, SubscriptionEntry>,
-  events: Channel<ChatSubscriptionEvent>,
-  action: ReturnType<typeof initializeChatRequested>,
-): SagaGenerator<void> {
-  const { agentId, wsId } = action.payload;
-  if (agentId) yield* openSubscription(subscriptions, events, agentId, wsId);
-}
-
-function* handleViewed(
-  subscriptions: Map<string, SubscriptionEntry>,
-  events: Channel<ChatSubscriptionEvent>,
-  action: ReturnType<typeof markAgentAsViewed>,
-): SagaGenerator<void> {
-  const [agentId] = action.payload;
-  yield* closeOtherSubscriptions(subscriptions, agentId);
+function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): SagaGenerator<void> {
+  const viewedIsChief = yield* isChiefChatAgent(coordinator, agentId);
+  const closes = closeMatchingSlots(
+    coordinator,
+    (otherId, slot) => otherId !== agentId && (slot.wsId === CHIEF_WORKSPACE_ID) === viewedIsChief,
+  );
   const session = yield* selectAgentSession.effect(agentId);
-  if (session) yield* openSubscription(subscriptions, events, agentId, session.workspaceId);
-}
-
-function* handleHydrationSettled(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof transcriptHydrationSettled>,
-): SagaGenerator<void> {
-  const [agentId] = action.payload;
-  const entry = subscriptions.get(agentId);
-  if (entry?.hasEmitted && entry.lastTranscript) {
-    yield* applyTranscript(agentId, entry, entry.lastTranscript);
+  if (session) {
+    yield* enqueueOpen(
+      coordinator,
+      agentId,
+      session.workspaceId,
+      closes.length > 0 ? closes : undefined,
+    );
   }
 }
 
-function* handleClearViewed(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof clearCurrentlyViewedAgent>,
+type ChatSubscribeAction =
+  | ReturnType<typeof initializeChatRequested>
+  | ReturnType<typeof markAgentAsViewed>
+  | ReturnType<typeof transcriptHydrationSettled>
+  | ReturnType<typeof clearCurrentlyViewedAgent>
+  | ReturnType<typeof removeSession>
+  | ReturnType<typeof removeWorkspaceSessions>
+  | ReturnType<typeof workspaceDeleted>
+  | ReturnType<typeof clearAllSessions>;
+
+function* routeLifecycleAction(
+  coordinator: SubscriptionCoordinator,
+  action: ChatSubscribeAction,
 ): SagaGenerator<void> {
-  const [scopeAgentId] = action.payload;
-  if (scopeAgentId && (yield* isChiefChatAgent(subscriptions, scopeAgentId))) {
-    yield* closeSubscription(subscriptions, scopeAgentId);
-  } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
-    yield* closeNonChiefSubscriptions(subscriptions);
+  if (action.type === initializeChatRequested.type) {
+    const { agentId, wsId } = action.payload as ReturnType<
+      typeof initializeChatRequested
+    >['payload'];
+    if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (action.type === markAgentAsViewed.type) {
+    const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
+    yield* handleViewed(coordinator, agentId);
+  } else if (action.type === transcriptHydrationSettled.type) {
+    const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];
+    enqueueHydrationSettled(coordinator, agentId);
+  } else if (action.type === clearCurrentlyViewedAgent.type) {
+    const [scopeAgentId] = action.payload as ReturnType<
+      typeof clearCurrentlyViewedAgent
+    >['payload'];
+    if (scopeAgentId && (yield* isChiefChatAgent(coordinator, scopeAgentId))) {
+      enqueueClose(coordinator, scopeAgentId);
+    } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
+      closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID);
+    }
+  } else if (action.type === removeSession.type) {
+    const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
+    enqueueClose(coordinator, agentId, true);
+  } else if (action.type === removeWorkspaceSessions.type) {
+    const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
+    closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
+  } else if (action.type === workspaceDeleted.type) {
+    const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
+    closeMatchingSlots(
+      coordinator,
+      (agentId, slot) => slot.wsId === wsId || agentIds.includes(agentId),
+      true,
+    );
+  } else {
+    closeMatchingSlots(coordinator, () => true, true);
   }
 }
 
-function* handleRemoveSession(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof removeSession>,
-): SagaGenerator<void> {
-  const [agentId] = action.payload;
-  yield* closeSubscription(subscriptions, agentId);
-  // The session is gone (deletion soft-hide): its close-captured anchor must
-  // not resume a future unrelated stream.
-  resumeAnchors.delete(agentId);
-}
-
-function* handleRemoveWorkspaceSessions(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof removeWorkspaceSessions>,
-): SagaGenerator<void> {
-  yield* closeWorkspaceSubscriptions(subscriptions, action.payload[0]);
-}
-
-function* handleWorkspaceDeleted(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof workspaceDeleted>,
-): SagaGenerator<void> {
-  const [wsId, agentIds] = action.payload;
-  yield* closeWorkspaceSubscriptions(subscriptions, wsId);
-  for (const agentId of agentIds) {
-    yield* closeSubscription(subscriptions, agentId);
-    resumeAnchors.delete(agentId);
+function* watchSubscriptionEvents(coordinator: SubscriptionCoordinator): SagaGenerator<void> {
+  while (true) {
+    const event = yield* take(coordinator.events);
+    yield* handleSubscriptionEvent(coordinator, event);
   }
 }
 
-function* handleClearAll(
-  subscriptions: Map<string, SubscriptionEntry>,
-  _action: ReturnType<typeof clearAllSessions>,
-): SagaGenerator<void> {
-  try {
-    yield* closeAllSubscriptions(subscriptions);
-  } catch (error) {
-    logger.error('chat-subscribe saga action failed', error);
-  } finally {
-    resumeAnchors.clear();
+function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
+  const agentIds = [...coordinator.subscriptions.keys()];
+  coordinator.events.close();
+  for (const slot of coordinator.slots.values()) {
+    slot.desiredToken = undefined;
+    slot.channel.close();
+    slot.acquisition?.dispose();
   }
-}
-
-function* safely<T extends unknown[]>(
-  worker: (...args: T) => Generator,
-  ...args: T
-): SagaGenerator<void> {
-  try {
-    yield* call(worker, ...args);
-  } catch (error) {
-    logger.error('chat-subscribe saga action failed', error);
-  }
-}
-
-function* watchInitialize(
-  subscriptions: Map<string, SubscriptionEntry>,
-  events: Channel<ChatSubscriptionEvent>,
-  action: ReturnType<typeof initializeChatRequested>,
-): SagaGenerator<void> {
-  yield* safely(handleInitialize, subscriptions, events, action);
-}
-
-function* watchViewed(
-  subscriptions: Map<string, SubscriptionEntry>,
-  events: Channel<ChatSubscriptionEvent>,
-  action: ReturnType<typeof markAgentAsViewed>,
-): SagaGenerator<void> {
-  yield* safely(handleViewed, subscriptions, events, action);
-}
-
-function* watchHydrationSettled(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof transcriptHydrationSettled>,
-): SagaGenerator<void> {
-  yield* safely(handleHydrationSettled, subscriptions, action);
-}
-
-function* watchClearViewed(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof clearCurrentlyViewedAgent>,
-): SagaGenerator<void> {
-  yield* safely(handleClearViewed, subscriptions, action);
-}
-
-function* watchRemoveSession(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof removeSession>,
-): SagaGenerator<void> {
-  yield* safely(handleRemoveSession, subscriptions, action);
-}
-
-function* watchRemoveWorkspaceSessions(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof removeWorkspaceSessions>,
-): SagaGenerator<void> {
-  yield* safely(handleRemoveWorkspaceSessions, subscriptions, action);
-}
-
-function* watchWorkspaceDeleted(
-  subscriptions: Map<string, SubscriptionEntry>,
-  action: ReturnType<typeof workspaceDeleted>,
-): SagaGenerator<void> {
-  yield* safely(handleWorkspaceDeleted, subscriptions, action);
+  for (const entry of coordinator.subscriptions.values()) entry.acquisition.dispose();
+  coordinator.subscriptions.clear();
+  coordinator.slots.clear();
+  return agentIds;
 }
 
 /** Root-owned standing chat subscription lifecycle. */
 export function* chatSubscribeSaga(): SagaGenerator<void> {
-  const subscriptions = new Map<string, SubscriptionEntry>();
-  const events = createChannel(buffers.expanding<ChatSubscriptionEvent>());
-  const eventWatcher = yield* takeLeading(events, handleSubscriptionEvent, subscriptions);
-  yield* takeLeadingByAgent(initializeChatRequested, watchInitialize, subscriptions, events);
-  yield* takeLatest(markAgentAsViewed, watchViewed, subscriptions, events);
-  yield* takeLatestInContext(
-    transcriptHydrationSettled,
-    (action) => action.payload[0],
-    watchHydrationSettled,
-    subscriptions,
+  const coordinator: SubscriptionCoordinator = {
+    subscriptions: new Map(),
+    slots: new Map(),
+    events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
+  };
+  const lifecycleActions = yield* actionChannel(
+    [
+      initializeChatRequested,
+      markAgentAsViewed,
+      transcriptHydrationSettled,
+      clearCurrentlyViewedAgent,
+      removeSession,
+      removeWorkspaceSessions,
+      workspaceDeleted,
+      clearAllSessions,
+    ],
+    buffers.expanding<ChatSubscribeAction>(),
   );
-  yield* takeEvery(clearCurrentlyViewedAgent, watchClearViewed, subscriptions);
-  yield* takeEvery(removeSession, watchRemoveSession, subscriptions);
-  yield* takeEvery(removeWorkspaceSessions, watchRemoveWorkspaceSessions, subscriptions);
-  yield* takeEvery(workspaceDeleted, watchWorkspaceDeleted, subscriptions);
-  yield* takeEvery(clearAllSessions, handleClearAll, subscriptions);
+  yield* fork(watchSubscriptionEvents, coordinator);
   try {
-    yield* join(eventWatcher);
+    while (true) {
+      const action = (yield* take(lifecycleActions)) as ChatSubscribeAction;
+      try {
+        yield* routeLifecycleAction(coordinator, action);
+      } catch (error) {
+        logger.error('chat-subscribe saga action failed', error);
+      }
+    }
   } finally {
-    events.close();
-    yield* closeAllSubscriptions(subscriptions);
-    subscriptions.clear();
+    lifecycleActions.close();
+    const agentIds = disposeCoordinator(coordinator);
+    for (const agentId of agentIds) {
+      yield* put(chatLiveStreamPhaseChanged(agentId, null));
+      yield* clearStaleStreamingMessageFlags(agentId);
+    }
     resumeAnchors.clear();
   }
 }
