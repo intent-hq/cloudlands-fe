@@ -551,8 +551,9 @@
   // Skip isolation toggle (work directly in the repo folder, no isolated checkout)
   let skipIsolation = $state(readSkipIsolation(savedState) ?? false);
 
-  // Git availability state: null = checking, true = found, false = not found
-  let gitAvailable: boolean | null = $state(null);
+  // Git availability state: null = checking, true = found, false = not found,
+  // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
+  let gitAvailable: boolean | 'unknown' | null = $state(null);
 
   // Stay on home page after creation
   let stayOnHomePage = $state(savedState?.stayOnHomePage ?? false);
@@ -779,17 +780,20 @@
             : undefined;
         if (result?.success && result.data) {
           gitAvailable = result.data.available;
-          if (!result.data.available) {
-            logger.warn('Git is not available on this system');
-          } else {
+          if (result.data.available === true) {
             logger.debug('Git available', { version: result.data.version });
+          } else if (result.data.available === 'unknown') {
+            logger.warn('Git availability could not be verified (transport failure)');
+          } else {
+            logger.warn('Git is not available on this system');
           }
         } else {
-          gitAvailable = false;
+          // No probe answer at all — treat as unverifiable, not missing.
+          gitAvailable = 'unknown';
         }
       } catch (err) {
         logger.error('Failed to check git availability', err);
-        gitAvailable = false;
+        gitAvailable = 'unknown';
       }
     })();
 
@@ -1343,8 +1347,10 @@
 
   // Derived validation
   // For GitHub repos, also require successful branch fetch (no auth issues)
+  // `gitAvailable === 'unknown'` (probe couldn't run) does NOT block: only a
+  // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
   const isValid = $derived(
-    gitAvailable === true &&
+    (gitAvailable === true || gitAvailable === 'unknown') &&
       !!repoPath &&
       isValidPath &&
       (isNewRepo || !!branch || repoType === 'remote') &&
@@ -2869,6 +2875,22 @@
               >
                 {m.workspace_compactInitializer_downloadGit_label()}
               </button>
+            </div>
+          </div>
+        </div>
+      {:else if gitAvailable === 'unknown'}
+        <!-- Non-blocking notice: the git probe couldn't run (transport failure) -->
+        <div
+          class="mx-0 mb-3 px-4 py-3 bg-warning/10 border border-warning/30 rounded-md text-sm"
+          transition:slide={{ axis: 'y', duration: 200 }}
+        >
+          <div class="flex items-start gap-3">
+            <Fa icon={faExclamationTriangle} class="text-warning-foreground mt-0.5 shrink-0" />
+            <div>
+              <p class="font-medium text-warning-foreground">{m.workspace_compactInitializer_gitCheckUnknown_label()}</p>
+              <p class="text-subtle mt-1">
+                {m.workspace_compactInitializer_gitCheckUnknown_description()}
+              </p>
             </div>
           </div>
         </div>
