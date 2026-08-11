@@ -223,6 +223,37 @@ describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.r
       'GitHub is not configured.',
     );
   });
+
+  it('forwards a non-empty prefix for server-side filtering (matching-refs)', async () => {
+    mockedRequest.mockResolvedValueOnce({ branches: ['feat/x', 'feat/y'], nextToken: null });
+    const client = new LiveIntegrationsClient();
+
+    const listing = await client.githubBranches('octo', 'intent', 'feat');
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+      owner: 'octo',
+      repo: 'intent',
+      prefix: 'feat',
+    });
+    // Prefix searches skip the github.repos.get leg — the caller discards the
+    // default branch, so a per-keystroke search costs one REST call, not two.
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(listing).toEqual({ branches: ['feat/x', 'feat/y'], defaultBranch: undefined });
+  });
+
+  it('omits prefix from the wire when empty/undefined (unfiltered shape for older daemons)', async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ branches: ['main'], nextToken: null })
+      .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
+    const client = new LiveIntegrationsClient();
+
+    await client.githubBranches('octo', 'intent', '');
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+      owner: 'octo',
+      repo: 'intent',
+    });
+  });
 });
 
 describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCached, §5.27)', () => {
