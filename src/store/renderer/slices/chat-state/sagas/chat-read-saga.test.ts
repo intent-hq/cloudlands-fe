@@ -4,20 +4,13 @@ import { runSaga, stdChannel } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   getConversation: vi.fn(),
-  subscribeSnapshot: vi.fn(),
-  seed: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: { get: mocks.get, getConversation: mocks.getConversation },
-    chat: { subscribeSnapshot: mocks.subscribeSnapshot },
+    chat: {},
   },
 }));
-vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('$features/events/daemon-events-bridge.client')>();
-  return { ...actual, seedStreamFromSnapshot: mocks.seed };
-});
 
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
@@ -25,9 +18,12 @@ import {
   agentSessionReducer,
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
+  replaceMessages,
 } from '../../agent-session/agent-session-slice';
 import {
+  chatLiveStreamPhaseChanged,
   chatStateReducer,
+  chatTranscriptSnapshotApplied,
   initializeChatRequested,
   initialState as chatStateInitialState,
   refreshChatTranscriptRequested,
@@ -70,6 +66,25 @@ function message(id: string, text: string, overrides: Partial<AgentMessage> = {}
   };
 }
 
+function page(
+  messages: AgentMessage[],
+  overrides: Partial<{
+    truncated: boolean;
+    totalMessages: number;
+    nextToken: string | null;
+    prevToken: string | null;
+  }> = {},
+) {
+  return {
+    messages,
+    truncated: false,
+    totalMessages: messages.length,
+    nextToken: null,
+    prevToken: null,
+    ...overrides,
+  };
+}
+
 function harness() {
   const channel = stdChannel();
   let agentSessions = agentSessionInitialState;
@@ -77,6 +92,7 @@ function harness() {
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
     chatState = chatStateReducer(chatState, action);
+    channel.put(action);
   });
   const task = runSaga(
     { channel, dispatch, getState: () => ({ agentSessions, chatState }) },
@@ -85,32 +101,38 @@ function harness() {
   return { channel, dispatch, task, sessions: () => agentSessions, chat: () => chatState };
 }
 
-describe('chatReadSaga', () => {
+/** Simulate the chat-subscribe saga applying a seq-0 snapshot to the store. */
+function applySnapshot(
+  run: ReturnType<typeof harness>,
+  messages: AgentMessage[],
+  meta: { truncated?: boolean; totalMessages?: number } = {},
+) {
+  run.dispatch(bulkUpsertSessions([session({ messages })]));
+  const oldest = messages.find((m) => typeof m.id === 'string' && m.id.length > 0);
+  run.dispatch(
+    chatTranscriptSnapshotApplied(AGENT, {
+      truncated: meta.truncated ?? false,
+      totalMessages: meta.totalMessages ?? messages.length,
+      ...(oldest ? { oldestMessageId: oldest.id } : {}),
+    }),
+  );
+}
+
+describe('chatReadSaga (single-transfer hydration)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('pages getConversation with exact arguments, preserves order, and merges the snapshot stream', async () => {
+  it('settles from the standing subscription snapshot without any conversation fetch', async () => {
     mocks.get.mockResolvedValue(session());
-    mocks.getConversation
-      .mockResolvedValueOnce({ messages: [message('new', 'new')], nextToken: 'older' })
-      .mockResolvedValueOnce({ messages: [message('old', 'old')], nextToken: null });
-    const live = message('live', 'partial', { isStreaming: true });
-    mocks.subscribeSnapshot.mockResolvedValue({ messages: [live] });
     const run = harness();
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
+    applySnapshot(run, [message('m1', 'one'), message('m2', 'two')]);
+    await settle();
 
     expect(mocks.get).toHaveBeenCalledWith(AGENT);
-    expect(mocks.getConversation.mock.calls).toEqual([
-      [AGENT, 200, undefined],
-      [AGENT, 200, 'older'],
-    ]);
-    expect(mocks.subscribeSnapshot).toHaveBeenCalledWith(AGENT);
-    expect(mocks.seed).toHaveBeenCalledWith(AGENT, live, WS);
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
-      'old',
-      'new',
-      'live',
-    ]);
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -127,143 +149,326 @@ describe('chatReadSaga', () => {
 
     expect(mocks.get).toHaveBeenCalledWith(AGENT);
     expect(mocks.getConversation).not.toHaveBeenCalled();
-    expect(mocks.subscribeSnapshot).not.toHaveBeenCalled();
     expect(run.sessions().byAgentId[AGENT]).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('hydrates different agents concurrently and settles both reads', async () => {
-    let resolveFirst!: (value: AgentSession) => void;
-    mocks.get
-      .mockReturnValueOnce(
-        new Promise((done) => {
-          resolveFirst = done;
-        }),
-      )
-      .mockResolvedValue(session({ id: 'agent-other', workspaceId: 'ws-other' }));
-    mocks.getConversation.mockImplementation(async (agentId: string) => ({
-      messages: [message(`${agentId}-message`, 'fresh')],
-      nextToken: null,
-    }));
-    mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
-    const run = harness();
-    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
-    await settle();
-    run.channel.put(refreshChatTranscriptRequested('ws-other', 'agent-other'));
-    await settle();
-    resolveFirst(session());
-    await settle();
-
-    expect(mocks.get).toHaveBeenCalledTimes(2);
-    expect(mocks.getConversation.mock.calls).toEqual([
-      ['agent-other', 200, undefined],
-      [AGENT, 200, undefined],
-    ]);
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
-      `${AGENT}-message`,
-    ]);
-    expect(run.sessions().byAgentId['agent-other']?.messages.map((item) => item.id)).toEqual([
-      'agent-other-message',
-    ]);
-    const settledAgentIds = run.dispatch.mock.calls
-      .map(([action]) => action)
-      .filter((action) => action.type === transcriptHydrationSettled.type)
-      .map((action) => action.payload[0]);
-    expect(settledAgentIds).toEqual(expect.arrayContaining([AGENT, 'agent-other']));
-    expect(settledAgentIds).toHaveLength(2);
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('keeps readiness loading while the latest same-agent read is pending', async () => {
-    let resolveFirst!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
-    let resolveSecond!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
+  it('preserves the pre-existing transcript when the session shell upserts', async () => {
     mocks.get.mockResolvedValue(session());
-    mocks.getConversation
-      .mockReturnValueOnce(
-        new Promise((done) => {
-          resolveFirst = done;
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((done) => {
-          resolveSecond = done;
-        }),
-      );
-    mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
     const run = harness();
-
-    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
-    await settle();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('prior', 'prior')] })]));
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
 
-    expect(mocks.getConversation).toHaveBeenCalledTimes(1);
-    resolveFirst({ messages: [message('stale', 'stale')], nextToken: null });
-    await vi.waitFor(() => expect(mocks.getConversation).toHaveBeenCalledTimes(2));
-
-    const hydrationTransitions = run.dispatch.mock.calls
-      .map(([action]) => action)
-      .filter(
-        (action) =>
-          action.type === transcriptHydrationStarted.type ||
-          action.type === transcriptHydrationSettled.type,
-      )
-      .map((action) => action.type);
-    expect(hydrationTransitions).toEqual([
-      transcriptHydrationStarted.type,
-      transcriptHydrationStarted.type,
-    ]);
-    expect(
-      run.dispatch.mock.calls.filter(([action]) => action.type === transcriptHydrationSettled.type),
-    ).toHaveLength(0);
-    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
-
-    resolveSecond({ messages: [message('fresh', 'fresh')], nextToken: null });
-    await vi.waitFor(() =>
-      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled'),
-    );
-    expect(
-      run.dispatch.mock.calls.filter(([action]) => action.type === transcriptHydrationSettled.type),
-    ).toHaveLength(1);
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['fresh']);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['prior']);
+    applySnapshot(run, [message('prior', 'prior'), message('new', 'new')]);
+    await settle();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('preserves messages appended while paging is in flight', async () => {
-    let resolvePage!: (value: { messages: AgentMessage[]; nextToken: null }) => void;
+  it('fetches older history in the background via aroundMessageId when the snapshot is truncated', async () => {
     mocks.get.mockResolvedValue(session());
-    mocks.getConversation.mockReturnValue(
-      new Promise((done) => {
-        resolvePage = done;
+    mocks.getConversation.mockResolvedValueOnce(
+      page([message('m-old-1', 'old1'), message('m-old-2', 'old2'), message('m-snap-1', 'one')], {
+        prevToken: 'fwd',
       }),
     );
-    mocks.subscribeSnapshot.mockResolvedValue({ messages: [] });
     const run = harness();
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
-    run.dispatch(bulkUpsertSessions([session({ messages: [message('during', 'during')] })]));
-    resolvePage({ messages: [message('persisted', 'persisted')], nextToken: null });
+    applySnapshot(run, [message('m-snap-1', 'one'), message('m-snap-2', 'two')], {
+      truncated: true,
+      totalMessages: 4,
+    });
+    await settle();
     await settle();
 
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual([
-      'persisted',
-      'during',
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200, undefined, 'm-snap-1');
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm-old-1',
+      'm-old-2',
+      'm-snap-1',
+      'm-snap-2',
     ]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('settles a failed read without replacing the prior transcript', async () => {
+  it('anchors the older walk at the snapshot window oldest, healing the retained-history gap (resumed: false)', async () => {
+    // §7.1 resume fallback aftermath: the store holds retained rows BELOW an
+    // interior gap toward the snapshot window ([m-r1] ... GAP(m-gap) ...
+    // [m-snap]). The walk must anchor at the WINDOW's oldest (meta), not the
+    // store's oldest retained row — anchoring at m-r1 would walk strictly
+    // older and never fetch m-gap.
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockResolvedValueOnce(
+        page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+          nextToken: 'older',
+        }),
+      )
+      .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [
+            message('m-r1', 'retained'),
+            message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' }),
+          ],
+        }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 3,
+        oldestMessageId: 'm-snap',
+        resumed: false,
+      }),
+    );
+    await settle();
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm-snap'],
+      [AGENT, 200, 'older'],
+    ]);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm-r1',
+      'm-gap',
+      'm-snap',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('waits for a fresh snapshot on reopen instead of settling off prior-session meta (middle-gap heal)', async () => {
+    // Chat closed with non-truncated meta and retained rows [m1, m2]; the
+    // conversation grew past the snapshot window while closed. On reopen the
+    // hydration must NOT settle off the prior session's meta (teardown
+    // cleared it) — it waits for the new subscription's snapshot. The §7.1
+    // resume fallback (resumed: false) then serves the newest window
+    // [m4, m5]; the window-anchored backward walk fetches the middle gap
+    // (m3) and the retained history, yielding a complete transcript.
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockResolvedValueOnce(
+        page(
+          [
+            message('m3', 'three', { timestamp: '2026-01-01T00:00:03.000Z' }),
+            message('m4', 'four', { timestamp: '2026-01-01T00:00:04.000Z' }),
+          ],
+          { nextToken: 'older' },
+        ),
+      )
+      .mockResolvedValueOnce(
+        page([
+          message('m1', 'one', { timestamp: '2026-01-01T00:00:01.000Z' }),
+          message('m2', 'two', { timestamp: '2026-01-01T00:00:02.000Z' }),
+        ]),
+      );
+    const run = harness();
+
+    // Prior session: retained rows + settled snapshot meta.
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [
+            message('m1', 'one', { timestamp: '2026-01-01T00:00:01.000Z' }),
+            message('m2', 'two', { timestamp: '2026-01-01T00:00:02.000Z' }),
+          ],
+        }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 2,
+        oldestMessageId: 'm1',
+        resumed: true,
+      }),
+    );
+    // Chat closes: subscription teardown clears the snapshot meta.
+    run.dispatch(chatLiveStreamPhaseChanged(AGENT, null));
+
+    // Reopen: hydration must wait, not settle instantly off stale meta.
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+
+    // §7.1 resume fallback: the daemon declines the anchor and serves the
+    // newest truncated window; the subscribe saga discards the retained
+    // store-only rows (resumed: false) and records the fresh meta.
+    run.dispatch(
+      replaceMessages(AGENT, [
+        message('m4', 'four', { timestamp: '2026-01-01T00:00:04.000Z' }),
+        message('m5', 'five', { timestamp: '2026-01-01T00:00:05.000Z' }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 5,
+        oldestMessageId: 'm4',
+        resumed: false,
+      }),
+    );
+    await settle();
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm4'],
+      [AGENT, 200, 'older'],
+    ]);
+    // Complete transcript — no middle gap.
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('walks nextToken backward across multiple older pages', async () => {
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockResolvedValueOnce(page([message('m-old-3', 'o3'), message('m-snap', 's')], { nextToken: 'older' }))
+      .mockResolvedValueOnce(page([message('m-old-1', 'o1'), message('m-old-2', 'o2')]));
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    applySnapshot(run, [message('m-snap', 's')], { truncated: true, totalMessages: 4 });
+    await settle();
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm-snap'],
+      [AGENT, 200, 'older'],
+    ]);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm-old-1',
+      'm-old-2',
+      'm-old-3',
+      'm-snap',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('skips the older fetch entirely when the snapshot is not truncated', async () => {
+    mocks.get.mockResolvedValue(session());
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    applySnapshot(run, [message('only', 'only')], { truncated: false });
+    await settle();
+    await settle();
+
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('falls back to a direct newest-page read when the snapshot never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      mocks.getConversation.mockResolvedValue(page([message('fallback', 'fb')]));
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['fallback']);
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('anchors the fallback-path older walk at the fetched page oldest, not retained rows', async () => {
+    // Same gap class on the degraded path: retained rows below a gap toward
+    // the fallback newest page. The walk anchors at the PAGE's oldest.
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      mocks.getConversation
+        .mockResolvedValueOnce(
+          page([message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+            nextToken: 'older',
+          }),
+        )
+        .mockResolvedValueOnce(
+          page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+            nextToken: 'older-2',
+          }),
+        )
+        .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
+      const run = harness();
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-r1', 'retained')] })]));
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      expect(mocks.getConversation.mock.calls).toEqual([
+        [AGENT, 200],
+        [AGENT, 200, undefined, 'm-page'],
+        [AGENT, 200, 'older-2'],
+      ]);
+      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+        'm-r1',
+        'm-gap',
+        'm-page',
+      ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('settles immediately on refresh when snapshot metadata already exists', async () => {
+    mocks.get.mockResolvedValue(session());
+    const run = harness();
+    run.dispatch(bulkUpsertSessions([session({ messages: [message('m1', 'one')] })]));
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: false,
+        totalMessages: 1,
+        oldestMessageId: 'm1',
+      }),
+    );
+    run.channel.put(refreshChatTranscriptRequested(WS, AGENT));
+    await settle();
+
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+    expect(mocks.getConversation).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles a failed session read without replacing the prior transcript', async () => {
     mocks.get.mockRejectedValue(new Error('read failed'));
     const run = harness();
     run.dispatch(bulkUpsertSessions([session({ messages: [message('prior', 'prior')] })]));
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
     await settle();
 
-    expect(run.sessions().byAgentId[AGENT]?.messages.map((item) => item.id)).toEqual(['prior']);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['prior']);
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
     ).toBe(true);
@@ -290,6 +495,21 @@ describe('chatReadSaga', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
     ).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('marks hydration loading while waiting for the snapshot', async () => {
+    mocks.get.mockResolvedValue(session());
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+
+    const startedCalls = run.dispatch.mock.calls.filter(
+      ([action]) => action.type === transcriptHydrationStarted.type,
+    );
+    expect(startedCalls).toHaveLength(1);
+    expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
     run.task.cancel();
     await run.task.toPromise();
   });

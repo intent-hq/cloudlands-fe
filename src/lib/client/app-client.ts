@@ -763,6 +763,15 @@ export interface ChatTranscript {
    * on every other emit (delta emits, non-resume snapshots).
    */
   resumed?: boolean;
+  /**
+   * Stamped `true` ONLY on the emit produced by applying a seq-0 snapshot
+   * push (fresh registration, gap resnapshot, reconnect re-registration) —
+   * absent on delta emits. Consumers use it to tell "the daemon just served
+   * the authoritative newest page (with the in-flight assistant merged)"
+   * apart from incremental delta reconciliation, e.g. the chat-subscribe
+   * saga signals transcript hydration from it.
+   */
+  fromSnapshot?: boolean;
 }
 
 /**
@@ -782,18 +791,6 @@ export type ChatLiveStreamPhase =
   | "delayed";
 
 export interface ChatClient {
-  /**
-   * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
-   * The daemon's snapshot merges the newest `agent.getConversation` page with
-   * the synthetic in-flight assistant message (`isStreaming: true`) when a turn
-   * is currently streaming, so a client (re)opening the chat mid-turn rehydrates
-   * the interim response instead of clobbering it with persisted-only history.
-   * Subscribes, awaits the initial snapshot push, and unsubscribes — the live
-   * delta stream is still served by the `agent:stream:*` firehose.
-   */
-  subscribeSnapshot(
-    agentId: string,
-  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
   /**
    * Standing per-agent `chat.subscribe` subscription (PROTOCOL §7.1). Keeps
    * the registration open and invokes `handler` with the reconciled

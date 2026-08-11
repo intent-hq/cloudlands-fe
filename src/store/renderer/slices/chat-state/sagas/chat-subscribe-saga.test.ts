@@ -6,9 +6,9 @@ import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
 // records its handler (so tests can push §7.1-shaped reconciled transcripts
 // through the saga-owned event channel)
-// and returns a spy disposer. agents.get/getConversation + subscribeSnapshot
-// keep the sibling chat-read saga (same initializeChatRequested
-// trigger, real store) inert. READ-ONLY: never a mutation.
+// and returns a spy disposer. agents.get/getConversation keep the sibling
+// chat-read saga (same initializeChatRequested trigger, real store) inert.
+// READ-ONLY: never a mutation.
 vi.mock("$lib/client", () => {
   const subscriptions: Array<{
     agentId: string;
@@ -26,9 +26,6 @@ vi.mock("$lib/client", () => {
         ),
       },
       chat: {
-        subscribeSnapshot: vi.fn(() =>
-          Promise.resolve({ messages: [], truncated: false, totalMessages: 0 }),
-        ),
         subscribe: vi.fn(
           (
             agentId: string,
@@ -45,6 +42,15 @@ vi.mock("$lib/client", () => {
     },
     __chatSubscriptions: subscriptions,
   };
+});
+
+// Spy seam for the bridge stream-accumulator seeding (single-transfer
+// hydration: the subscribe saga seeds it from the snapshot's in-flight
+// assistant message).
+vi.mock("$features/events/daemon-events-bridge.client", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("$features/events/daemon-events-bridge.client")>();
+  return { ...actual, seedStreamFromSnapshot: vi.fn() };
 });
 
 import * as clientModule from "$lib/client";
@@ -82,6 +88,8 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from "$features/agent/utils/pending-agent-deletions";
+import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
+import { selectTranscriptSnapshotMeta } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
 
 type FakeSubscription = {
@@ -207,6 +215,116 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(messages[1].contentBlocks?.[0]).toMatchObject({
       text: "Let me check the logs first.",
     });
+  });
+
+  it("records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)", () => {
+    const agentId = "agent-sub-snapmeta";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    sub.handler({
+      ...transcript([makeMessage("m-oldest", "first"), makeMessage("m-newest", "second")]),
+      truncated: true,
+      totalMessages: 7,
+      fromSnapshot: true,
+    });
+
+    const meta = selectTranscriptSnapshotMeta.select(appStore.state, agentId);
+    expect(meta).toMatchObject({
+      truncated: true,
+      totalMessages: 7,
+      oldestMessageId: "m-oldest",
+      seq: 1,
+    });
+
+    // Delta emits do NOT touch the metadata.
+    sub.handler(transcript([makeMessage("m-oldest", "first"), makeMessage("m-newest", "grown")]));
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
+
+    // A later snapshot (gap resnapshot / reconnect) bumps the seq.
+    sub.handler({
+      ...transcript([makeMessage("m-newest", "second")]),
+      fromSnapshot: true,
+    });
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+      truncated: false,
+      oldestMessageId: "m-newest",
+      seq: 2,
+    });
+  });
+
+  it("seeds the stream accumulator from the snapshot's in-flight assistant message", () => {
+    const agentId = "agent-sub-seed";
+    seedSession(agentId);
+    const sub = openChat(agentId);
+
+    const inFlight = makeMessage("m-inflight", "partial...", {
+      isStreaming: true,
+    } as Partial<AgentMessage>);
+    sub.handler({
+      ...transcript([makeMessage("m-done", "done"), inFlight], true),
+      fromSnapshot: true,
+    });
+
+    expect(seedStreamFromSnapshot).toHaveBeenCalledWith(agentId, inFlight, WS);
+
+    // No in-flight message → no seeding.
+    vi.mocked(seedStreamFromSnapshot).mockClear();
+    sub.handler({ ...transcript([makeMessage("m-done", "done")]), fromSnapshot: true });
+    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+
+    // A stray isStreaming flag on a non-assistant row never seeds.
+    sub.handler({
+      ...transcript([
+        makeMessage("m-user-stray", "user text", {
+          role: "user",
+          isStreaming: true,
+        } as Partial<AgentMessage>),
+      ]),
+      fromSnapshot: true,
+    });
+    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("discards retained store-only rows on a resumed: false fallback snapshot (§7.1)", () => {
+    const agentId = "agent-sub-resume-discard";
+    // Retained history from a prior view: rows the daemon may since have
+    // pruned past — they can sit BELOW an interior gap toward the served
+    // newest page.
+    seedSession(agentId, {
+      messages: [makeMessage("m-retained-1", "old1"), makeMessage("m-retained-2", "old2")],
+    });
+    const sub = openChat(agentId);
+
+    sub.handler({
+      ...transcript([makeMessage("m-new-1", "newest page")], false),
+      truncated: true,
+      totalMessages: 9,
+      fromSnapshot: true,
+      resumed: false,
+    });
+
+    // Retained rows are gone — the protocol mandates discarding the cached
+    // transcript; the background walk refetches real history from the
+    // snapshot window's oldest row.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-new-1",
+    ]);
+
+    // A resumed: true snapshot (or plain delta) still preserves store-only rows.
+    seedSession(agentId, {
+      messages: [makeMessage("m-kept", "kept"), makeMessage("m-new-1", "newest page")],
+    });
+    sub.handler({
+      ...transcript([makeMessage("m-new-2", "after anchor")]),
+      fromSnapshot: true,
+      resumed: true,
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-kept",
+      "m-new-1",
+      "m-new-2",
+    ]);
   });
 
   it("dedups the optimistic user row against the canonical copy by appMessageId", () => {
@@ -526,8 +644,13 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
         seedSession(agentId);
         const sub = openChat(agentId);
 
-        // Fallback snapshot: the daemon did not honor the anchor.
-        sub.handler({ ...transcript([makeMessage("m-new", "newest page")]), resumed: false });
+        // Fallback snapshot: the daemon did not honor the anchor. `resumed`
+        // rides only snapshot emits, so `fromSnapshot` is always set with it.
+        sub.handler({
+          ...transcript([makeMessage("m-new", "newest page")]),
+          fromSnapshot: true,
+          resumed: false,
+        });
 
         expect(refreshes).toEqual([[WS, agentId]]);
       } finally {
@@ -548,7 +671,11 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
         seedSession(agentId);
         const sub = openChat(agentId);
 
-        sub.handler({ ...transcript([makeMessage("m-delta", "delta rows")]), resumed: true });
+        sub.handler({
+          ...transcript([makeMessage("m-delta", "delta rows")]),
+          fromSnapshot: true,
+          resumed: true,
+        });
         sub.handler(transcript([makeMessage("m-delta", "delta rows grown")], true));
 
         expect(refreshes).toEqual([]);
