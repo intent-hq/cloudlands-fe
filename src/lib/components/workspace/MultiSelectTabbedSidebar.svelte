@@ -1037,7 +1037,7 @@
                           class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
                           ><!-- i18n-ignore (file path) -->/{$workspace.path
                             .split(/[/\\]/)
-                            .slice(-1)[0]}/.workspace</span
+                            .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
                         >
                       </OpenComboButton></span
                     >.
