@@ -5537,8 +5537,8 @@
   "workspace_progress_viewMonitoredPrCrossRepo_label": "PR ansehen ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Öffnet den überwachten Pull Request {repo}#{number} auf GitHub in Ihrem Browser.",
   "workspace_card_morePrs_label": "+{count}",
-  "workspace_card_morePrs_tooltip_one": "1 weiterer Workspace-PR",
-  "workspace_card_morePrs_tooltip_many": "{count} weitere Workspace-PRs",
+  "workspace_card_morePrs_tooltip_one": "1 weiterer Arbeitsbereich-PR",
+  "workspace_card_morePrs_tooltip_many": "{count} weitere Arbeitsbereich-PRs",
   "bgExecutor_service_generateFailed_error": "Generierung fehlgeschlagen",
   "bgExecutor_service_unavailable_error": "One-Shot-Vervollständigung ist für den aktuellen Anbieter nicht verfügbar",
   "bgExecutor_service_noResult_error": "Kein Ergebnis aus der Modellantwort extrahiert"
