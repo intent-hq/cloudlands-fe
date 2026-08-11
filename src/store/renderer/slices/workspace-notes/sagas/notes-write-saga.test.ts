@@ -347,6 +347,66 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('drops cached unmet ids the conflict note no longer depends on', async () => {
+    const cached = note({
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1'), NoteId('dep-2')],
+          unmetDependsOn: [NoteId('dep-1'), NoteId('dep-2')],
+        },
+      },
+    });
+    const wireCurrent = note({
+      content: 'server body',
+      rev: 8,
+      metadata: { task: { status: 'not_started', dependsOn: [NoteId('dep-2')] } },
+    });
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCurrent },
+    });
+    const run = harness(cached);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.metadata?.task?.unmetDependsOn).toEqual([NoteId('dep-2')]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('clears cached unmet ids when the conflict note removed all dependencies', async () => {
+    const cached = note({
+      metadata: {
+        task: {
+          status: 'not_started',
+          dependsOn: [NoteId('dep-1')],
+          unmetDependsOn: [NoteId('dep-1')],
+        },
+      },
+    });
+    const wireCurrent = note({
+      content: 'server body',
+      rev: 8,
+      metadata: { task: { status: 'not_started' } },
+    });
+    vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({
+      success: false,
+      conflict: { current: wireCurrent },
+    });
+    const run = harness(cached);
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'mine', true));
+    await settle();
+
+    const applied = run.getState().byWorkspaceId[WS]?.notes.map[NOTE];
+    expect(applied?.metadata?.task?.unmetDependsOn).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('rolls an optimistic title back when the daemon rejects it', async () => {
     const updateMetadata = vi.spyOn(appClient.notes, 'updateMetadata').mockResolvedValue({
       success: false,

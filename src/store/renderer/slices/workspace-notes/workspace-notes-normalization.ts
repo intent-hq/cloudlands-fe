@@ -63,18 +63,24 @@ export function normalizeNoteEventContent(payload: unknown): string | undefined 
  * notes (conflict `current`, version-restore `note`) never carry it — so a
  * full-replace upsert from such a payload would transiently clear the
  * projection until the next refetch. A response that explicitly carries the
- * field is authoritative and wins over the cache.
+ * field is authoritative and wins over the cache. `unmetDependsOn` is a
+ * projection of `dependsOn`, and the incoming note's `dependsOn` is
+ * authoritative — the carried-over ids are intersected with it so edges the
+ * mutation removed never survive as stale "Waits on" entries.
  */
 export function withPreservedUnmetDependsOn(incoming: Note, cached: Note | undefined): Note {
   const cachedUnmet = cached?.metadata?.task?.unmetDependsOn;
   if (!cachedUnmet?.length) return incoming;
   const incomingTask = incoming.metadata?.task;
   if (!incomingTask || incomingTask.unmetDependsOn !== undefined) return incoming;
+  const dependsOn = new Set(incomingTask.dependsOn ?? []);
+  const stillUnmet = cachedUnmet.filter((id) => dependsOn.has(id));
+  if (!stillUnmet.length) return incoming;
   return {
     ...incoming,
     metadata: {
       ...incoming.metadata,
-      task: { ...incomingTask, unmetDependsOn: [...cachedUnmet] },
+      task: { ...incomingTask, unmetDependsOn: stillUnmet },
     },
   };
 }
