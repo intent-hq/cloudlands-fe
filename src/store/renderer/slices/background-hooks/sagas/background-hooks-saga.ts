@@ -1,13 +1,5 @@
 import { END, buffers, channel as createChannel, type Channel } from 'redux-saga';
-import {
-  actionChannel,
-  call,
-  put,
-  take,
-  takeEvery,
-  takeLeading,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { call, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   backendSubscribe,
@@ -34,11 +26,16 @@ import {
   cancelBackgroundHookRequested,
   runBackgroundHookRequested,
 } from '../background-hooks-slice';
+import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 
 const logger = createLogger('BackgroundHooksSaga');
 
 type TransportMessage =
   { kind: 'notification'; notification: BackendNotification } | { kind: 'reconnected' };
+
+type RefetchMessage =
+  | { kind: 'refetch'; action: ReturnType<typeof backgroundHooksRefetchRequested> }
+  | { kind: 'cancel'; workspaceId: string };
 
 interface HookEventNotification {
   subscriptionId?: string;
@@ -153,8 +150,10 @@ function* subscribeActiveWorkspace(
 
 function* refetchWorkspace(
   active: Map<string, ActiveWorkspace>,
-  action: ReturnType<typeof backgroundHooksRefetchRequested>,
+  message: RefetchMessage,
 ): SagaGenerator<void> {
+  if (message.kind !== 'refetch') return;
+  const { action } = message;
   const [workspaceId] = action.payload;
   const entry = active.get(workspaceId);
   if (!entry) return;
@@ -170,9 +169,23 @@ function* refetchWorkspace(
   }
 }
 
+function refetchContext(message: RefetchMessage) {
+  return message.kind === 'cancel'
+    ? ({ context: message.workspaceId, cancel: true } as const)
+    : message.action.payload[0];
+}
+
+function* queueRefetch(
+  refetchEvents: Channel<RefetchMessage>,
+  action: ReturnType<typeof backgroundHooksRefetchRequested>,
+): SagaGenerator<void> {
+  yield* put(refetchEvents, { kind: 'refetch', action });
+}
+
 function* closeWorkspace(
   active: Map<string, ActiveWorkspace>,
   transport: TransportRuntime,
+  refetchEvents: Channel<RefetchMessage>,
   workspaceId: string,
 ): SagaGenerator<void> {
   const entry = active.get(workspaceId);
@@ -180,6 +193,7 @@ function* closeWorkspace(
   active.delete(workspaceId);
   entry.generation += 1;
   if (entry.lease) entry.lease.cancelled = true;
+  yield* put(refetchEvents, { kind: 'cancel', workspaceId });
   yield* put(backgroundHooksCleared(workspaceId));
   if (active.size === 0) yield* call(closeTransport, transport);
   if (entry.lease) yield* call(unsubscribeWorkspace, workspaceId, entry.lease);
@@ -206,11 +220,14 @@ function* handleSubscribe(
 function* handleUnsubscribe(
   active: Map<string, ActiveWorkspace>,
   transport: TransportRuntime,
+  refetchEvents: Channel<RefetchMessage>,
   action: ReturnType<typeof backgroundHooksUnsubscribeRequested>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   const entry = active.get(workspaceId);
-  if (entry && --entry.count <= 0) yield* closeWorkspace(active, transport, workspaceId);
+  if (entry && --entry.count <= 0) {
+    yield* closeWorkspace(active, transport, refetchEvents, workspaceId);
+  }
 }
 
 function* handleNotification(
@@ -257,10 +274,7 @@ export function* backgroundHooksSaga(): SagaGenerator<void> {
   const active = new Map<string, ActiveWorkspace>();
   const transport: TransportRuntime = {};
   const transportEvents = createChannel(buffers.expanding<TransportMessage>());
-  const refetchActions = yield* actionChannel(
-    backgroundHooksRefetchRequested,
-    buffers.sliding<ReturnType<typeof backgroundHooksRefetchRequested>>(1),
-  );
+  const refetchEvents = createChannel(buffers.expanding<RefetchMessage>());
   yield* takeEvery(
     backgroundHooksSubscribeRequested,
     handleSubscribe,
@@ -268,8 +282,15 @@ export function* backgroundHooksSaga(): SagaGenerator<void> {
     transport,
     transportEvents,
   );
-  yield* takeEvery(backgroundHooksUnsubscribeRequested, handleUnsubscribe, active, transport);
-  yield* takeLeading(refetchActions, refetchWorkspace, active);
+  yield* takeEvery(
+    backgroundHooksUnsubscribeRequested,
+    handleUnsubscribe,
+    active,
+    transport,
+    refetchEvents,
+  );
+  yield* takeEvery(backgroundHooksRefetchRequested, queueRefetch, refetchEvents);
+  yield* takeSingleFlightInContext(refetchEvents, refetchContext, refetchWorkspace, active);
   yield* takeEvery(runBackgroundHookRequested, runHookWorker);
   yield* takeEvery(cancelBackgroundHookRequested, cancelHookWorker);
   try {
@@ -285,11 +306,11 @@ export function* backgroundHooksSaga(): SagaGenerator<void> {
       }
     }
   } finally {
-    refetchActions.close();
     transportEvents.close();
     for (const workspaceId of [...active.keys()]) {
-      yield* closeWorkspace(active, transport, workspaceId);
+      yield* closeWorkspace(active, transport, refetchEvents, workspaceId);
     }
+    refetchEvents.close();
     closeTransport(transport);
     active.clear();
   }

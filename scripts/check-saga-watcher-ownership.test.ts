@@ -284,10 +284,11 @@ describe('saga watcher ownership guard', () => {
 
   it('recognizes contextual watcher aliases for ownership and wildcard checks', () => {
     const source = [
-      "import { takeLatestInContext, takeLeadingInContext as leading } from '$store/renderer/utils/context-saga-effects';",
+      "import { takeLatestInContext, takeLeadingInContext as leading, takeSingleFlightInContext as singleFlight } from '$store/renderer/utils/context-saga-effects';",
       "import { load, start } from '../slice';",
       'export function* badSaga() {',
       '  yield* takeLatestInContext(load, getContext, loadWorker);',
+      '  yield* singleFlight(start, getContext, startWorker);',
       "  yield* leading('*', getContext, startWorker);",
       '}',
     ].join('\n');
@@ -295,7 +296,7 @@ describe('saga watcher ownership guard', () => {
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
     ]);
-    expect(result.watcherCount).toBe(1);
+    expect(result.watcherCount).toBe(2);
     expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
   });
 
