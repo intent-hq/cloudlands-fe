@@ -6,6 +6,7 @@ import {
   put,
   race,
   take,
+  takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -71,10 +72,9 @@ type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
 type ChatCommand = SendAction | RemoveAction | StopAction | RetryAction | RetryModelAction;
 
-const CHAT_COMMANDS = [
+const ORDINARY_CHAT_COMMANDS = [
   sendMessage,
   removeQueuedMessageRequested,
-  agentSessionStopChatRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
 ];
@@ -432,7 +432,8 @@ function* discardPendingCommand(action: ChatCommand): SagaGenerator<void> {
 }
 
 export function* chatSendSaga(): SagaGenerator<void> {
-  yield* takeEveryByContextFIFO(CHAT_COMMANDS, getCommandAgentId, runChatCommand, {
+  yield* takeEvery(agentSessionStopChatRequested, runChatCommand);
+  yield* takeEveryByContextFIFO(ORDINARY_CHAT_COMMANDS, getCommandAgentId, runChatCommand, {
     onDiscardPending: discardPendingCommand,
   });
 }
