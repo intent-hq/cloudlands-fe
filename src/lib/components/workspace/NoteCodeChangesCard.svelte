@@ -216,6 +216,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }),
         {
           isAggregate: true,
+          scopeId: note.id,
         },
       ),
     );
