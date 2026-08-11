@@ -7,6 +7,7 @@ import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layo
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
+  chatChangesDedupId,
   openWorkspaceActivityChanges,
   openWorkspaceBrowser,
   openWorkspaceChatChanges,
@@ -170,6 +171,7 @@ function* openChatChanges(
   const [workspaceId, changes, title, options] = action.payload;
   if (!workspaceId || !changes?.length) return;
   const tabTitle = title || m.layout_tabTypes_chatChanges_title();
+  const messageId = chatChangesDedupId(options);
   yield* openWorkspaceTab(
     workspaceId,
     {
@@ -180,7 +182,7 @@ function* openChatChanges(
       data: {
         changes,
         title: tabTitle,
-        ...(options?.messageId ? { messageId: options.messageId } : {}),
+        messageId,
         ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
         ...(options?.agentId ? { agentId: options.agentId } : {}),
         ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),

@@ -10,7 +10,9 @@ import {
   type TrackedChange,
 } from "$features/file-tracking/types";
 import {
+  chatChangesDedupId,
   markWorkspaceNavigationInitialized,
+  openWorkspaceChatChanges,
   openWorkspaceDiff,
   openWorkspaceFile,
   updateWorkspaceCodeReview,
@@ -131,6 +133,34 @@ describe("workspaceNavigationReducer", () => {
       type: "code-review",
       result: "Looks good",
       status: "complete",
+    });
+  });
+
+  it("derives scoped chat-changes history entry ids so distinct aggregates do not collide", () => {
+    expect(chatChangesDedupId({ messageId: "msg-1", agentId: "agent-1", scopeId: "note-1" })).toBe("msg-1");
+    expect(chatChangesDedupId({ agentId: "agent-1", scopeId: "note-1" })).toBe("aggregate:agent-1");
+    expect(chatChangesDedupId({ scopeId: "note-1" })).toBe("aggregate:note:note-1");
+    expect(chatChangesDedupId()).toBe("aggregate");
+
+    const changes = [{ file: "src/a.ts" }];
+    const state = workspaceNavigationReducer(
+      baseState,
+      openWorkspaceChatChanges("ws-1", changes, "Changes from Task A", {
+        isAggregate: true,
+        scopeId: "note-1",
+      })
+    );
+    const workspaceState = state.byWorkspaceId["ws-1"]!;
+
+    expect(workspaceState.mainPanel).toMatchObject({
+      type: "chat-changes",
+      chatChanges: changes,
+      chatChangesIsAggregate: true,
+    });
+    expect(workspaceState.navigation.history[0]).toMatchObject({
+      type: "chat-changes",
+      id: "aggregate:note:note-1",
+      label: "Changes from Task A",
     });
   });
 });

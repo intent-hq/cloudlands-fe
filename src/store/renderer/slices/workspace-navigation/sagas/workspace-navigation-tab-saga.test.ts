@@ -4,6 +4,8 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
+import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
   openWorkspaceBrowser,
@@ -357,7 +359,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('opens a chat-changes tab without options, keeping changes and title on data', async () => {
+  it('opens a chat-changes tab without options, deriving the synthetic aggregate dedup id', async () => {
     const changes: JsonValue[] = [{ file: 'src/a.ts' }];
     const channel = stdChannel();
     const dispatch = vi.fn();
@@ -369,7 +371,218 @@ describe('workspaceNavigationTabSaga', () => {
     };
     expect(payload.tab.data.changes).toBe(changes);
     expect(payload.tab.data.title).toBe('1 file changed');
-    expect(payload.tab.data.messageId).toBeUndefined();
+    expect(payload.tab.data.messageId).toBe('aggregate');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('derives per-agent aggregate dedup ids when messageId is absent', async () => {
+    const changes: JsonValue[] = [{ file: 'src/a.ts' }];
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, '1 file changed', {
+        isAggregate: true,
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, '1 file changed', {
+        isAggregate: true,
+        agentId: 'agent-2',
+      }),
+    );
+    await settle();
+    const dataOf = (index: number) =>
+      (dispatch.mock.calls[index]?.[0]?.payload as { tab: { data: Record<string, unknown> } }).tab
+        .data;
+    expect(dataOf(0).messageId).toBe('aggregate:agent-1');
+    expect(dataOf(0).isAggregate).toBe(true);
+    expect(dataOf(0).agentId).toBe('agent-1');
+    expect(dataOf(1).messageId).toBe('aggregate:agent-2');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('derives note-scoped aggregate dedup ids from scopeId, with messageId and agentId taking priority', async () => {
+    const changes: JsonValue[] = [{ file: 'src/a.ts' }];
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, 'Changes from Task A', {
+        isAggregate: true,
+        scopeId: 'note-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, 'Changes from Task B', {
+        isAggregate: true,
+        scopeId: 'note-2',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, '1 file changed', {
+        isAggregate: true,
+        agentId: 'agent-1',
+        scopeId: 'note-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', changes, '1 file changed', {
+        messageId: 'msg-1',
+        agentId: 'agent-1',
+        scopeId: 'note-1',
+      }),
+    );
+    await settle();
+    const dataOf = (index: number) =>
+      (dispatch.mock.calls[index]?.[0]?.payload as { tab: { data: Record<string, unknown> } }).tab
+        .data;
+    expect(dataOf(0).messageId).toBe('aggregate:note:note-1');
+    expect(dataOf(1).messageId).toBe('aggregate:note:note-2');
+    expect(dataOf(2).messageId).toBe('aggregate:agent-1');
+    expect(dataOf(3).messageId).toBe('msg-1');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('dedups and refreshes re-clicks of the same note aggregate while other notes get separate tabs', async () => {
+    let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
+      layoutState = panelLayoutReducer(layoutState, action as never);
+      return action;
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ panelLayout: layoutState }) },
+      workspaceNavigationTabSaga,
+    );
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }], 'Changes from Task A', {
+        isAggregate: true,
+        scopeId: 'note-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/b.ts' }], 'Changes from Task B', {
+        isAggregate: true,
+        scopeId: 'note-2',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }, { file: 'src/c.ts' }], 'Changes from Task A', {
+        isAggregate: true,
+        scopeId: 'note-1',
+      }),
+    );
+    await settle();
+
+    const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
+    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    expect(chatChangesTabs).toHaveLength(2);
+    const note1Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:note:note-1')!;
+    expect(note1Tab.data?.changes).toEqual([{ file: 'src/a.ts' }, { file: 'src/c.ts' }]);
+    const note2Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:note:note-2')!;
+    expect(note2Tab.data?.changes).toEqual([{ file: 'src/b.ts' }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('re-clicking an aggregate summary focuses and refreshes the existing tab; other agents get separate tabs', async () => {
+    let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
+      layoutState = panelLayoutReducer(layoutState, action as never);
+      return action;
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ panelLayout: layoutState }) },
+      workspaceNavigationTabSaga,
+    );
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }], '1 file changed', {
+        isAggregate: true,
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }, { file: 'src/b.ts' }], '2 files changed', {
+        isAggregate: true,
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+
+    const afterReclick = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
+    const mergedTabs = afterReclick.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    expect(mergedTabs).toHaveLength(1);
+    expect(mergedTabs[0]!.data?.messageId).toBe('aggregate:agent-1');
+    expect(mergedTabs[0]!.data?.changes).toEqual([{ file: 'src/a.ts' }, { file: 'src/b.ts' }]);
+    const mergedPanel = afterReclick.find((panel) => panel.tabs.some((tab) => tab.id === mergedTabs[0]!.id))!;
+    expect(mergedPanel.activeTabId).toBe(mergedTabs[0]!.id);
+
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/c.ts' }], '1 file changed', {
+        isAggregate: true,
+        agentId: 'agent-2',
+      }),
+    );
+    await settle();
+
+    const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
+    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    expect(chatChangesTabs).toHaveLength(2);
+    const agent2Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:agent-2')!;
+    expect(agent2Tab.data?.changes).toEqual([{ file: 'src/c.ts' }]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('re-clicking the same per-message summary dedups on the unchanged messageId', async () => {
+    let layoutState: PanelLayoutSliceState = { byWorkspaceId: {} };
+    const channel = stdChannel();
+    const dispatch = vi.fn((action: { type: string; payload: unknown }) => {
+      layoutState = panelLayoutReducer(layoutState, action as never);
+      return action;
+    });
+    const task = runSaga(
+      { channel, dispatch, getState: () => ({ panelLayout: layoutState }) },
+      workspaceNavigationTabSaga,
+    );
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }], '1 file changed', {
+        messageId: 'msg-1',
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }], '1 file changed', {
+        messageId: 'msg-1',
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ file: 'src/b.ts' }], '1 file changed', {
+        messageId: 'msg-2',
+        agentId: 'agent-1',
+      }),
+    );
+    await settle();
+
+    const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
+    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    expect(chatChangesTabs.map((tab) => tab.data?.messageId).sort()).toEqual(['msg-1', 'msg-2']);
     task.cancel();
     await task.toPromise();
   });

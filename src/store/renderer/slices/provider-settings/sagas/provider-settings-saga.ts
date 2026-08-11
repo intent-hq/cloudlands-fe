@@ -4,22 +4,52 @@ import { all, call, delay, put, take, takeEvery } from 'typed-redux-saga';
 import { appClient, type AppSettingChange } from '$lib/client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
+import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectEnabledProviders } from '../provider-settings-selectors';
-import { setActiveProvider, setProviderEnabled, toggleProvider } from '../provider-settings-slice';
+import {
+  enablementPersistRejected,
+  setActiveProvider,
+  setProviderEnabled,
+  toggleProvider,
+} from '../provider-settings-slice';
 
 const logger = createLogger('ProviderSettingsSaga');
 
-type ProviderSettingsUpdate = Parameters<typeof appClient.settings.setProviderSettings>[0];
+type ProviderSettingsUpdate = {
+  activeProviderId?: string;
+  /**
+   * Enablement is queued as the click's `{providerId, enabled}` delta, not a
+   * map snapshot: `providers.enabled` is written as a full map, so the delta
+   * is merged over the live map at write time. A boot settings hydration that
+   * replaces the map between dispatch and write therefore cannot drop the
+   * click's entry from the persisted value (monorepo#1986).
+   *
+   * This closes the single-window hydration race only. Because the wire value
+   * is still a full map, cross-writer last-writer-wins races remain (and
+   * predate this delta): two windows toggling different providers
+   * concurrently can each persist a map missing the other's entry, and a
+   * delta queued behind a slow prior write can re-impose an older click over
+   * a newer remote change for the same provider once its override was retired
+   * by a confirming hydration. Resolving those needs a per-key wire write,
+   * not a client-side change.
+   */
+  enabledProviderDelta?: { providerId: string; enabled: boolean };
+};
 
 /** Map a queued partial update to its §5.12 wire changes (PROTOCOL paths). */
-function changesFor(update: ProviderSettingsUpdate): AppSettingChange[] {
+function* changesFor(update: ProviderSettingsUpdate) {
   const changes: AppSettingChange[] = [];
   if (update.activeProviderId !== undefined) {
     changes.push({ path: 'providers.active', value: update.activeProviderId });
   }
-  if (update.enabledProviders !== undefined) {
-    changes.push({ path: 'providers.enabled', value: update.enabledProviders });
+  if (update.enabledProviderDelta !== undefined) {
+    const { providerId, enabled } = update.enabledProviderDelta;
+    const enabledProviders = yield* selectEnabledProviders.effect();
+    changes.push({
+      path: 'providers.enabled',
+      value: { ...enabledProviders, [providerId]: enabled },
+    });
   }
   return changes;
 }
@@ -32,25 +62,37 @@ function* queueActiveProviderWorker(
   if (providerId) yield* put(updates, { activeProviderId: providerId });
 }
 
-function* queueEnabledProviders(updates: Channel<ProviderSettingsUpdate>, providerId: string) {
+function* queueEnabledProviders(
+  updates: Channel<ProviderSettingsUpdate>,
+  providerId: string,
+  enabled: boolean,
+) {
   const provider = yield* selectProviderCatalogEntry.effect(providerId);
   if (provider && !provider.canBeDisabled) return;
-  const enabledProviders = yield* selectEnabledProviders.effect();
-  yield* put(updates, { enabledProviders: { ...enabledProviders } });
+  yield* put(updates, { enabledProviderDelta: { providerId, enabled } });
 }
 
 function* queueToggleProviderWorker(
   updates: Channel<ProviderSettingsUpdate>,
   action: ReturnType<typeof toggleProvider>,
 ) {
-  yield* call(queueEnabledProviders, updates, action.payload[0]);
+  const providerId = action.payload[0];
+  // The toggle's intent is the post-reducer resolved value.
+  const enabledProviders = yield* selectEnabledProviders.effect();
+  yield* call(
+    queueEnabledProviders,
+    updates,
+    providerId,
+    resolveProviderEnabled(enabledProviders, providerId),
+  );
 }
 
 function* queueSetProviderEnabledWorker(
   updates: Channel<ProviderSettingsUpdate>,
   action: ReturnType<typeof setProviderEnabled>,
 ) {
-  yield* call(queueEnabledProviders, updates, action.payload[0].providerId);
+  const { providerId, enabled } = action.payload[0];
+  yield* call(queueEnabledProviders, updates, providerId, enabled);
 }
 
 /**
@@ -75,7 +117,7 @@ export const PROVIDER_SETTINGS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const
 function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
   while (true) {
     const update = yield* take(updates);
-    const changes = changesFor(update);
+    const changes = yield* call(changesFor, update);
     if (changes.length === 0) continue;
     let attempt = 0;
     while (true) {
@@ -85,6 +127,12 @@ function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>)
       } catch (error) {
         if (isDaemonErrorResponse(error)) {
           logger.warn('Daemon rejected provider settings write:', error);
+          if (update.enabledProviderDelta !== undefined) {
+            // Retire the click's pending override: a rejected write must not
+            // keep masking later daemon-originated hydrations for the
+            // provider (the override would otherwise never be confirmed).
+            yield* put(enablementPersistRejected(update.enabledProviderDelta.providerId));
+          }
           break;
         }
         logger.error('Failed to persist provider settings:', error);

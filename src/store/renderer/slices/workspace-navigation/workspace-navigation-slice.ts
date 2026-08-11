@@ -416,11 +416,24 @@ export const openWorkspaceChatChanges = createAction<
       messageId?: string;
       isAggregate?: boolean;
       agentId?: string;
+      scopeId?: string;
       turnNumber?: number;
       sourcePanelId?: string;
     },
   ]
 >('workspaceNavigation/openWorkspaceChatChanges');
+
+/** Stable dedup id for message, agent, note, or workspace aggregate change summaries. */
+export function chatChangesDedupId(options?: {
+  messageId?: string;
+  agentId?: string;
+  scopeId?: string;
+}): string {
+  if (options?.messageId) return options.messageId;
+  if (options?.agentId) return `aggregate:${options.agentId}`;
+  if (options?.scopeId) return `aggregate:note:${options.scopeId}`;
+  return 'aggregate';
+}
 
 export const openWorkspaceLocalChanges = createAction<[wsId: string]>(
   'workspaceNavigation/openWorkspaceLocalChanges',
@@ -783,7 +796,7 @@ workspaceNavigationReducer.with(
         }),
         {
           type: 'chat-changes',
-          id: options?.messageId || 'aggregate',
+          id: chatChangesDedupId(options),
           label: title,
           chatChanges: changes,
           chatChangesTitle: title,
