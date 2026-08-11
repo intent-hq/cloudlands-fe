@@ -107,7 +107,6 @@ describe('specialists selectors', () => {
       );
 
       expect(ids).not.toContain('pr-reviewer');
-      expect(ids).not.toContain('pr-shepherd');
     });
 
     it('should keep GitHub-dependent specialists when GitHub is authenticated', () => {
@@ -116,7 +115,6 @@ describe('specialists selectors', () => {
       );
 
       expect(ids).toContain('pr-reviewer');
-      expect(ids).toContain('pr-shepherd');
     });
 
     it('filterSpecialistsByGitHubAuth should keep hidden specialists (Settings surface)', () => {
@@ -139,7 +137,6 @@ describe('specialists selectors', () => {
 
       expect(ids).not.toContain('chief-of-staff');
       expect(ids).not.toContain('pr-reviewer');
-      expect(ids).not.toContain('pr-shepherd');
     });
 
     it('filterPickableSpecialists should drop file specialists flagged hidden', () => {

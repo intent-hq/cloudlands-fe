@@ -26,7 +26,7 @@ export interface GenerateFindingLinkOptions {
   branch: string;
   /** The single finding to fix */
   finding: Finding;
-  /** Agent specialist to use (e.g. "pr-shepherd") */
+  /** Agent specialist to use (e.g. "implementor") */
   specialist?: string;
 }
 

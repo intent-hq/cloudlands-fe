@@ -5153,8 +5153,6 @@
   "specialists_builtin_verifier_description": "Relit le travail et vérifie l'exhaustivité",
   "specialists_builtin_prReviewer_name": "Relecteur de PR",
   "specialists_builtin_prReviewer_description": "Relit les pull requests avec des retours fiables et exploitables",
-  "specialists_builtin_prShepherd_name": "Berger de PR",
-  "specialists_builtin_prShepherd_description": "Accompagne une PR jusqu'à l'état prêt à fusionner en coordonnant correctifs, CI et revues",
   "specialists_builtin_uiDesigner_name": "Designer d'interface",
   "specialists_builtin_uiDesigner_description": "Crée des interfaces utilisateur élégantes, accessibles et prêtes pour la production",
   "specialists_builtin_developer_name": "Développeur",

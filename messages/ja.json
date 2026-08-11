@@ -5153,8 +5153,6 @@
   "specialists_builtin_verifier_description": "作業をレビューし、完全性を検証します",
   "specialists_builtin_prReviewer_name": "PR レビュアー",
   "specialists_builtin_prReviewer_description": "確度の高い実用的なフィードバックでプルリクエストをレビューします",
-  "specialists_builtin_prShepherd_name": "PR シェパード",
-  "specialists_builtin_prShepherd_description": "修正、CI、レビューを調整して PR をマージ可能な状態まで導きます",
   "specialists_builtin_uiDesigner_name": "UI デザイナー",
   "specialists_builtin_uiDesigner_description": "エレガントでアクセシブルな、本番環境に対応したユーザーインターフェースを作成します",
   "specialists_builtin_developer_name": "開発者",

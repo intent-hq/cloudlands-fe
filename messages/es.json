@@ -5153,8 +5153,6 @@
   "specialists_builtin_verifier_description": "Revisa el trabajo y verifica que esté completo",
   "specialists_builtin_prReviewer_name": "Revisor de PR",
   "specialists_builtin_prReviewer_description": "Revisa pull requests con comentarios fiables y accionables",
-  "specialists_builtin_prShepherd_name": "Pastor de PR",
-  "specialists_builtin_prShepherd_description": "Guía una PR hasta estar lista para fusionar coordinando correcciones, CI y revisiones",
   "specialists_builtin_uiDesigner_name": "Diseñador de UI",
   "specialists_builtin_uiDesigner_description": "Crea interfaces de usuario elegantes, accesibles y listas para producción",
   "specialists_builtin_developer_name": "Desarrollador",

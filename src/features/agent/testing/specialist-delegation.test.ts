@@ -27,13 +27,12 @@ describe('Specialist Prompts', () => {
   describe('Prompt Loading', () => {
     it('should load all specialist prompts', () => {
       const specialists = getSpecialists();
-      expect(specialists).toHaveLength(9);
+      expect(specialists).toHaveLength(8);
       expect(specialists.map((s) => s.id)).toEqual([
         'spec-writer',
         'implementor',
         'verifier',
         'pr-reviewer',
-        'pr-shepherd',
         'ui-designer',
         'developer',
         'chief-of-staff',

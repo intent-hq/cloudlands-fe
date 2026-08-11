@@ -91,13 +91,6 @@ const SPECIALIST_BEHAVIORS: SpecialistBehavior[] = [
     delegationExpected: false,
     implementationExpected: true,
   },
-  {
-    id: 'pr-shepherd',
-    expectedActions: ['ws.pr.status', 'ws.pr.listReviewComments', 'ws.pr.replyToReviewComment', 'ws.pr.resolveThread', 'ws.pr.listComments', 'ws.pr.postComment', 'ws.pr.updateBranch', 'ws.agent.delegate', 'ws.agent.create', 'github-api', 'launch-process', 'ws.note.read', 'ws.note.add', 'report_to_parent'],
-    forbiddenActions: ['str_replace_editor', 'write_file', 'save_file', 'edit_file'],
-    delegationExpected: true,
-    implementationExpected: false,
-  },
 ];
 
 /**

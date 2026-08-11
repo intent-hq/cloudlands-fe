@@ -70,11 +70,11 @@ describe('generateFindingLink', () => {
       repo: '/repo',
       branch: 'main',
       finding: baseFinding,
-      specialist: 'pr-shepherd',
+      specialist: 'implementor',
     });
 
     const params = new URLSearchParams(url.replace('intent://create?', ''));
-    expect(params.get('specialist')).toBe('pr-shepherd');
+    expect(params.get('specialist')).toBe('implementor');
   });
 
   it('includes suggestion in prompt when present', () => {
