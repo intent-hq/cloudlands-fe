@@ -7386,12 +7386,21 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
     seedSession({ status: AgentStatus.Error });
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    clearAgentFailureRegistry();
 
-    appStore.dispatch(chatSendFailed(AGENT, 'previous turn failed'));
+    // Parentless failure: inline banner + failure-registry entry (toast).
+    handler(
+      notification('agent:failed', { agentId: AGENT, error: 'previous turn failed', status: 'error' }),
+    );
+    expect(readChatAgent()?.error).toBe('previous turn failed');
+    expect(listAgentFailureEntries()).toHaveLength(1);
 
     handler(notification('agent:status-changed', { agentId: AGENT, isActive: true }));
 
     expect(readChatAgent()?.error).toBeNull();
+    // The registry entry drops on the same edge — grouped toast and inline
+    // banner never diverge on a status-less isActive:true redrive.
+    expect(listAgentFailureEntries()).toHaveLength(0);
   });
 
   it('agent:status-changed error→idle (no new turn) keeps the banner', async () => {

@@ -2868,18 +2868,20 @@ export function routeDaemonEventsNotification(
   // Failure-registry lifecycle: drop an agent from the failure aggregation
   // registry when its status leaves error/failed (recovered or retried) or
   // when it is deleted, so the grouped-failure toast reflects live failures
-  // only. Side effects, never early returns — both events fall through to the
-  // timeline dispatch below.
+  // only. A status-less payload with `isActive: true` counts as leaving the
+  // error state too — the same edge the stale-banner clear below accepts —
+  // so the grouped toast and the inline banner never diverge on it. Side
+  // effects, never early returns — both events fall through to the timeline
+  // dispatch below.
   if (type === 'agent:status-changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     const status = data?.status;
-    if (
-      typeof agentId === 'string' &&
-      typeof status === 'string' &&
-      status !== 'error' &&
-      status !== 'failed'
-    ) {
+    const leavesError =
+      typeof status === 'string'
+        ? status !== 'error' && status !== 'failed'
+        : data?.isActive === true;
+    if (typeof agentId === 'string' && leavesError) {
       removeAgentFailure(agentId);
     }
   }
