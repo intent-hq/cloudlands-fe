@@ -8,7 +8,7 @@
 
 import * as os from 'os';
 import * as path from 'path';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict, getCommonNpmPaths } from '../../../shared/main/find-binary';
 
 /**
  * Pinned Codex CLI version for the npx MCP-server fallback. Bumping it is a
@@ -118,14 +118,15 @@ async function findNpxPath(): Promise<string | null> {
 }
 
 /**
- * Find the codex CLI executable path
+ * Find the codex CLI executable path. `strict` keeps probe failures distinct
+ * from "not found" (the lookup rejects instead of resolving null).
  */
-async function findCodexCliPath(): Promise<string | null> {
+async function findCodexCliPath(strict = false): Promise<string | null> {
   if (cachedCodexCliPath) {
     return cachedCodexCliPath;
   }
 
-  const result = await findBinary('codex', {
+  const result = await (strict ? findBinaryStrict : findBinary)('codex', {
     commonPaths: [...CODEX_CLI_PATHS, ...getCommonNpmPaths('codex')],
     timeout: 3000,
     useEnhancedPath: false,
@@ -164,9 +165,11 @@ async function findCodexMcpServerPath(): Promise<string | null> {
 /**
  * Check if codex is directly installed (not via npx fallback).
  * Used for accurate status detection in the provider status panel.
+ * Rejects when the probe itself fails (daemon RPC error) — a failed probe
+ * proves nothing about availability, so callers must not fold it to false.
  */
 export async function isCodexInstalled(): Promise<boolean> {
-  const codexPath = await findCodexCliPath();
+  const codexPath = await findCodexCliPath(true);
   return codexPath !== null;
 }
 

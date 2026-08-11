@@ -33,6 +33,7 @@ vi.mock('../../logger', () => ({
 
 import {
   findBinary,
+  findBinaryStrict,
   getCachedHostEnv,
   getCommonNpmPaths,
   getCommonNpxPaths,
@@ -131,6 +132,46 @@ describe('findBinary (host.findBinary wire contract)', () => {
     expect(first).toBeNull();
     expect(second).toBe('/usr/local/bin/foo');
     expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('findBinaryStrict (strict probe semantics)', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+    loggerSpies.warn.mockReset();
+  });
+
+  it('sends the same host.findBinary request and returns the resolved path', async () => {
+    mockRequest.mockResolvedValue({ available: true, path: '/usr/local/bin/foo' });
+
+    const result = await findBinaryStrict('foo', { commonPaths: ['/custom/foo'] });
+
+    expect(result).toBe('/usr/local/bin/foo');
+    expect(mockRequest).toHaveBeenCalledWith('host.findBinary', {
+      name: 'foo',
+      commonPaths: ['/custom/foo'],
+    });
+  });
+
+  it('returns null when the daemon authoritatively reports the binary unavailable', async () => {
+    mockRequest.mockResolvedValue({ available: false });
+
+    expect(await findBinaryStrict('foo')).toBeNull();
+  });
+
+  it('propagates a daemon RPC failure instead of folding it to null', async () => {
+    // A rejected probe proves nothing about availability — strict callers
+    // (availability checks) must be able to distinguish it from "not found".
+    mockRequest.mockRejectedValue(new Error('transport down'));
+
+    await expect(findBinaryStrict('foo')).rejects.toThrow('transport down');
+  });
+
+  it('still rejects unsafe binary names locally with null (deterministic, not a probe failure)', async () => {
+    const result = await findBinaryStrict('foo; rm -rf /');
+
+    expect(result).toBeNull();
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 });
 

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { Logger } from '../../../shared/logger';
 import {
   findBinary,
+  findBinaryStrict,
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
 
@@ -44,14 +45,15 @@ export function clearCortexCache(): void {
 }
 
 /**
- * Find the cortex executable path
+ * Find the cortex executable path. `strict` keeps probe failures distinct
+ * from "not found" (the lookup rejects instead of resolving null).
  */
-async function findCortexPath(): Promise<string | null> {
+async function findCortexPath(strict = false): Promise<string | null> {
   if (cachedCortexPath) {
     return cachedCortexPath;
   }
 
-  const result = await findBinary('cortex', {
+  const result = await (strict ? findBinaryStrict : findBinary)('cortex', {
     commonPaths: [...CORTEX_PATHS, ...getCommonNpmPaths('cortex')],
     timeout: 3000,
     useEnhancedPath: false,
@@ -68,9 +70,11 @@ async function findCortexPath(): Promise<string | null> {
 /**
  * Check if cortex is directly installed.
  * Used for accurate status detection in the provider status panel.
+ * Rejects when the probe itself fails (daemon RPC error) — a failed probe
+ * proves nothing about availability, so callers must not fold it to false.
  */
 export async function isCortexInstalled(): Promise<boolean> {
-  const cortexPath = await findCortexPath();
+  const cortexPath = await findCortexPath(true);
   return cortexPath !== null;
 }
 

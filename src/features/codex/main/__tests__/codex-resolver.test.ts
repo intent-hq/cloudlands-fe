@@ -8,10 +8,11 @@ import {
 
 vi.mock('../../../../shared/main/find-binary', () => ({
   findBinary: vi.fn(),
+  findBinaryStrict: vi.fn(),
   getCommonNpmPaths: vi.fn(() => []),
 }));
 
-import { findBinary } from '../../../../shared/main/find-binary';
+import { findBinary, findBinaryStrict } from '../../../../shared/main/find-binary';
 import {
   clearCodexCache,
   CODEX_CLI_NPX_PACKAGE,
@@ -25,10 +26,14 @@ describe('codex-resolver', () => {
     vi.clearAllMocks();
     clearCodexCache();
     vi.mocked(findBinary).mockResolvedValue(null);
+    vi.mocked(findBinaryStrict).mockResolvedValue(null);
   });
 
   it('reports codex installed from the daemon-resolved codex CLI path', async () => {
     vi.mocked(findBinary).mockImplementation(async (name) =>
+      name === 'codex' ? '/opt/homebrew/bin/codex' : null,
+    );
+    vi.mocked(findBinaryStrict).mockImplementation(async (name) =>
       name === 'codex' ? '/opt/homebrew/bin/codex' : null,
     );
 
@@ -39,6 +44,23 @@ describe('codex-resolver', () => {
   it('reports codex uninstalled when the codex CLI does not resolve', async () => {
     expect(await isCodexInstalled()).toBe(false);
     expect(await getCodexPath()).toBeNull();
+  });
+
+  it('isCodexInstalled propagates a probe failure instead of reporting uninstalled', async () => {
+    // A failed daemon RPC proves nothing about availability — the caller
+    // (provider availability check) must see the failure, not available:false.
+    vi.mocked(findBinaryStrict).mockRejectedValue(new Error('transport down'));
+
+    await expect(isCodexInstalled()).rejects.toThrow('transport down');
+    expect(findBinaryStrict).toHaveBeenCalledWith('codex', expect.any(Object));
+  });
+
+  it('getCodexPath stays lenient: a probe failure resolves to null', async () => {
+    // Lenient consumers (spawn-path lookups) keep the fold-to-null contract.
+    vi.mocked(findBinary).mockResolvedValue(null);
+
+    expect(await getCodexPath()).toBeNull();
+    expect(findBinary).toHaveBeenCalledWith('codex', expect.any(Object));
   });
 
   it('caches the resolved codex CLI path until the cache is cleared', async () => {

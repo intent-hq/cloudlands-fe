@@ -28,27 +28,39 @@ export function getEnhancedPath(): string {
 }
 
 /**
+ * Strict variant of `findAuggiePathAsync`: resolves the auggie binary via
+ * `host.checkAuggie` with probe failures kept distinct from authoritative
+ * unavailability. Returns the path, `null` when the daemon authoritatively
+ * reports auggie unavailable, and REJECTS when the RPC itself fails (daemon
+ * unreachable, timeout). Availability checks use this so a transient probe
+ * failure never masquerades as "not installed".
+ */
+export async function findAuggiePathStrict(): Promise<string | null> {
+  const result = await getBackendClient().request<{
+    available: boolean;
+    path?: string;
+  }>('host.checkAuggie');
+  if (result?.available && typeof result.path === 'string' && result.path.trim()) {
+    return result.path.trim();
+  }
+  logger.debug('host.checkAuggie reported auggie unavailable');
+  return null;
+}
+
+/**
  * Resolve the auggie binary path by delegating to the daemon host
  * (`host.checkAuggie`). The BE applies the settings precedence
  * (`context.auggiePath` → `providers.paths.auggie`) and falls back to the
  * canonical discovery (Intent-managed binary at `~/.augment/bin/auggie`,
  * then a scan of the enhanced PATH including nvm/fnm/volta/asdf/homebrew).
  *
- * Return contract is unchanged (`string | null`) so existing consumers in
- * `provider-availability.service.ts` and the spawn
- * helpers in `execute-auggie-command.ts` keep working without changes.
+ * Return contract is unchanged (`string | null`) so the spawn helpers in
+ * `execute-auggie-command.ts` keep working without changes; availability
+ * checks use `findAuggiePathStrict` to keep probe failures distinct.
  */
 export async function findAuggiePathAsync(): Promise<string | null> {
   try {
-    const result = await getBackendClient().request<{
-      available: boolean;
-      path?: string;
-    }>('host.checkAuggie');
-    if (result?.available && typeof result.path === 'string' && result.path.trim()) {
-      return result.path.trim();
-    }
-    logger.debug('host.checkAuggie reported auggie unavailable');
-    return null;
+    return await findAuggiePathStrict();
   } catch (error) {
     logger.warn('host.checkAuggie failed', {
       error: error instanceof Error ? error.message : String(error),

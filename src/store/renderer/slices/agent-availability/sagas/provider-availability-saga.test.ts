@@ -77,6 +77,41 @@ describe('providerAvailabilitySaga', () => {
     ]);
   });
 
+  it('preserves the last-known status when a recheck lands a probe-failure envelope', async () => {
+    // Transient probe failure regression: the main process reports a daemon
+    // RPC failure as success:false (never success:true with a fabricated
+    // available:false), and the failure action must keep the previously
+    // known available:true while settling the loading flag.
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      providerId: 'codex',
+      error: 'transport down',
+    });
+    let sliceState = {
+      ...initialState,
+      providerStatusMap: { codex: { available: true, authenticated: true } },
+    };
+    const dispatch = vi.fn((action) => {
+      sliceState = agentAvailabilityReducer(sliceState, action);
+      return action;
+    });
+    sliceState = agentAvailabilityReducer(sliceState, checkSingleProviderRequested('codex'));
+    await runSaga(
+      { dispatch, getState: () => ({ agentAvailability: sliceState }) },
+      checkSingleProviderWorker,
+      'codex',
+    ).toPromise();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      { type: 'agentAvailability/checkSingleProviderFailure', payload: ['codex', 1] },
+    ]);
+    expect(sliceState.providerStatusMap['codex']).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    expect(sliceState.providerLoadingMap['codex']).toBe(false);
+  });
+
   it('fans out in parallel and forwards each provider as soon as its probe settles', async () => {
     const ids = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
     const resolvers = new Map<string, (value: unknown) => void>();

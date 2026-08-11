@@ -195,14 +195,15 @@ export function getCommonNpxPaths(): string[] {
 }
 
 /**
- * Resolve a binary path via `host.findBinary`. The daemon performs the actual
- * `which`/`where` + OS-common-dirs walk on the host where workspaces run; the
- * FE never probes the local machine and never caches results — every call
- * issues a fresh wire request so a newly installed binary is picked up
- * without an app restart. Returns the resolved path string or `null` when
- * the daemon reports `available:false` or the request fails.
+ * Strict variant of `findBinary`: resolve a binary path via `host.findBinary`
+ * with probe failures kept distinct from authoritative unavailability.
+ * Returns the resolved path string, `null` when the daemon authoritatively
+ * reports `available:false` (or the name is invalid — a deterministic local
+ * verdict, not a probe failure), and REJECTS when the RPC itself fails
+ * (daemon unreachable, timeout). Availability checks must use this so a
+ * transient probe failure never masquerades as "not installed".
  */
-export async function findBinary(
+export async function findBinaryStrict(
   name: string,
   options: FindBinaryOptions = {},
 ): Promise<string | null> {
@@ -218,14 +219,31 @@ export async function findBinary(
     params.commonPaths = commonPaths;
   }
 
+  const result = await getBackendClient().request<HostFindBinaryResult>(
+    'host.findBinary',
+    params,
+  );
+  return result?.available && typeof result.path === 'string' && result.path.length > 0
+    ? result.path
+    : null;
+}
+
+/**
+ * Resolve a binary path via `host.findBinary`. The daemon performs the actual
+ * `which`/`where` + OS-common-dirs walk on the host where workspaces run; the
+ * FE never probes the local machine and never caches results — every call
+ * issues a fresh wire request so a newly installed binary is picked up
+ * without an app restart. Returns the resolved path string or `null` when
+ * the daemon reports `available:false` or the request fails. Callers that
+ * must distinguish a failed probe from authoritative unavailability use
+ * `findBinaryStrict` instead.
+ */
+export async function findBinary(
+  name: string,
+  options: FindBinaryOptions = {},
+): Promise<string | null> {
   try {
-    const result = await getBackendClient().request<HostFindBinaryResult>(
-      'host.findBinary',
-      params,
-    );
-    return result?.available && typeof result.path === 'string' && result.path.length > 0
-      ? result.path
-      : null;
+    return await findBinaryStrict(name, options);
   } catch (error) {
     logger.debug('host.findBinary request failed', {
       name,
