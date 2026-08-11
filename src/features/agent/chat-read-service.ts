@@ -162,7 +162,12 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // source of the live-turn slot: its seq-0 snapshot carries the CS-0 D5
       // merged in-flight message, it seeds the bridge stream accumulator,
       // and its transcriptHydrationSettled re-apply restores the in-flight
-      // row immediately after this hydration settles.
+      // row immediately after this hydration settles. Event-router callers
+      // (agent:message self-heal, reconnect refresh) don't dispatch that
+      // action, so a mid-stream refetch on those paths can drop the
+      // in-flight partial until the next delta emit re-applies it — an
+      // ACCEPTED flicker window bounded by chunk cadence (and the reconnect
+      // path re-registers the subscription, serving a fresh snapshot).
       const finalMessages = allMessages;
 
       // STALE-HYDRATION MERGE GUARD (monorepo#1019): a store message absent

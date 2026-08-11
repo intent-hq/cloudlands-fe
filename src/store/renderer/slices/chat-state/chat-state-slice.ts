@@ -919,6 +919,17 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
 });
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
 	if (phase === null && !state.byAgentId[agentId]) return state;
+	// Phase null = subscription closed (teardown reset): the snapshot metadata
+	// belongs to that subscription, so drop it — a reopen's hydration must wait
+	// for the NEW subscription's snapshot, not settle on the stale one (whose
+	// truncated flag may no longer describe the conversation).
+	if (phase === null) {
+		return updateAgent(state, agentId, {
+			agentId,
+			liveStreamPhase: null,
+			transcriptSnapshot: undefined,
+		});
+	}
 	return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
 });
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {

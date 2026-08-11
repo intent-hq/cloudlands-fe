@@ -196,6 +196,57 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await run.task.toPromise();
   });
 
+  it('anchors the older walk at the snapshot window oldest, healing the retained-history gap (resumed: false)', async () => {
+    // §7.1 resume fallback aftermath: the store holds retained rows BELOW an
+    // interior gap toward the snapshot window ([m-r1] ... GAP(m-gap) ...
+    // [m-snap]). The walk must anchor at the WINDOW's oldest (meta), not the
+    // store's oldest retained row — anchoring at m-r1 would walk strictly
+    // older and never fetch m-gap.
+    mocks.get.mockResolvedValue(session());
+    mocks.getConversation
+      .mockResolvedValueOnce(
+        page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+          nextToken: 'older',
+        }),
+      )
+      .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
+    const run = harness();
+    run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+    await settle();
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [
+            message('m-r1', 'retained'),
+            message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' }),
+          ],
+        }),
+      ]),
+    );
+    run.dispatch(
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 3,
+        oldestMessageId: 'm-snap',
+        resumed: false,
+      }),
+    );
+    await settle();
+    await settle();
+
+    expect(mocks.getConversation.mock.calls).toEqual([
+      [AGENT, 200, undefined, 'm-snap'],
+      [AGENT, 200, 'older'],
+    ]);
+    expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+      'm-r1',
+      'm-gap',
+      'm-snap',
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('walks nextToken backward across multiple older pages', async () => {
     mocks.get.mockResolvedValue(session());
     mocks.getConversation
@@ -249,6 +300,46 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
       expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['fallback']);
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('anchors the fallback-path older walk at the fetched page oldest, not retained rows', async () => {
+    // Same gap class on the degraded path: retained rows below a gap toward
+    // the fallback newest page. The walk anchors at the PAGE's oldest.
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      mocks.getConversation
+        .mockResolvedValueOnce(
+          page([message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+            nextToken: 'older',
+          }),
+        )
+        .mockResolvedValueOnce(
+          page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
+            nextToken: 'older-2',
+          }),
+        )
+        .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
+      const run = harness();
+      run.dispatch(bulkUpsertSessions([session({ messages: [message('m-r1', 'retained')] })]));
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      expect(mocks.getConversation.mock.calls).toEqual([
+        [AGENT, 200],
+        [AGENT, 200, undefined, 'm-page'],
+        [AGENT, 200, 'older-2'],
+      ]);
+      expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual([
+        'm-r1',
+        'm-gap',
+        'm-page',
+      ]);
       run.task.cancel();
       await run.task.toPromise();
     } finally {

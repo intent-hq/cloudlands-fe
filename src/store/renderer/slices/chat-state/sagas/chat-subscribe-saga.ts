@@ -131,11 +131,19 @@ type ChatSubscriptionEvent =
  * copy win identity in the appMessageId merge (canonical row replaces the
  * optimistic one). No-op while the session has not hydrated yet — the next
  * delta emit retries against the hydrated session.
+ *
+ * `discardStoreOnly` (§7.1 `resumed: false` fallback snapshot only): the
+ * daemon declined the resume anchor, so retained rows are unanchored — they
+ * may be stale and can sit below an interior gap toward the served window.
+ * The protocol mandates discarding the cached transcript and rehydrating
+ * from this snapshot as if freshly subscribed; a not-yet-echoed optimistic
+ * row is dropped with them and reappears on its daemon echo.
  */
 function* applyTranscript(
   agentId: string,
   entry: SubscriptionEntry,
   transcript: ChatTranscript,
+  discardStoreOnly = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
   if (session) {
@@ -144,11 +152,13 @@ function* applyTranscript(
       if (typeof message.id === 'string') transcriptIds.add(message.id);
       if (typeof message.appMessageId === 'string') transcriptIds.add(message.appMessageId);
     }
-    const storeOnly = (session.messages ?? []).filter(
-      (message) =>
-        !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
-        !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
-    );
+    const storeOnly = discardStoreOnly
+      ? []
+      : (session.messages ?? []).filter(
+          (message) =>
+            !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
+            !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
+        );
     const merged =
       storeOnly.length === 0
         ? transcript.messages
@@ -208,7 +218,13 @@ function* handleSubscriptionEvent(
     if (yield* call(isAgentDeletionPending, event.agentId)) return;
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
-    yield* applyTranscript(event.agentId, entry, event.transcript);
+    // §7.1 `resumed: false` snapshot: the retained transcript MUST be
+    // discarded (see applyTranscript). Snapshot emits only — the settled
+    // re-apply of the same transcript must not wipe the background
+    // older-history pages fetched after it.
+    const discardStoreOnly =
+      event.transcript.fromSnapshot === true && event.transcript.resumed === false;
+    yield* applyTranscript(event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
     // subsequent agent:stream:chunk events pass the regression guard, then
@@ -217,7 +233,9 @@ function* handleSubscriptionEvent(
     if (event.transcript.fromSnapshot === true) {
       const session = yield* selectAgentSession.effect(event.agentId);
       const wsId = entry.wsId ?? session?.workspaceId;
-      const inFlight = event.transcript.messages.find((message) => message.isStreaming === true);
+      const inFlight = event.transcript.messages.find(
+        (message) => message.role === 'assistant' && message.isStreaming === true,
+      );
       if (inFlight && wsId) {
         yield* call(seedStreamFromSnapshot, event.agentId, inFlight, wsId);
       }

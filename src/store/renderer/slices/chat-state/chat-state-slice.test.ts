@@ -31,6 +31,7 @@ import {
   chatQueuedRetryRecordUpdated,
   chatQueuedRetryRecordsCleared,
   chatLiveStreamPhaseChanged,
+  chatTranscriptSnapshotApplied,
 } from './chat-state-slice';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
@@ -1151,6 +1152,34 @@ describe('chatState selectors', () => {
     const state = chatStateReducer(initialState, chatLiveStreamPhaseChanged(AGENT, null));
     expect(state.byAgentId[AGENT]).toBeUndefined();
     expect(state).toBe(initialState);
+  });
+
+  it('chatTranscriptSnapshotApplied records meta and bumps seq; teardown clears it', () => {
+    let state = chatStateReducer(
+      initialState,
+      chatTranscriptSnapshotApplied(AGENT, {
+        truncated: true,
+        totalMessages: 7,
+        oldestMessageId: 'm-old',
+      }),
+    );
+    expect(state.byAgentId[AGENT]?.transcriptSnapshot).toMatchObject({
+      truncated: true,
+      totalMessages: 7,
+      oldestMessageId: 'm-old',
+      seq: 1,
+    });
+
+    state = chatStateReducer(
+      state,
+      chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 2 }),
+    );
+    expect(state.byAgentId[AGENT]?.transcriptSnapshot?.seq).toBe(2);
+
+    // Subscription teardown (phase null) drops the metadata: it belongs to
+    // the closed subscription, and a reopen must wait for a fresh snapshot.
+    state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
+    expect(state.byAgentId[AGENT]?.transcriptSnapshot).toBeUndefined();
   });
 
 });

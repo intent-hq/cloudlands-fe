@@ -272,6 +272,59 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     vi.mocked(seedStreamFromSnapshot).mockClear();
     sub.handler({ ...transcript([makeMessage("m-done", "done")]), fromSnapshot: true });
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+
+    // A stray isStreaming flag on a non-assistant row never seeds.
+    sub.handler({
+      ...transcript([
+        makeMessage("m-user-stray", "user text", {
+          role: "user",
+          isStreaming: true,
+        } as Partial<AgentMessage>),
+      ]),
+      fromSnapshot: true,
+    });
+    expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("discards retained store-only rows on a resumed: false fallback snapshot (§7.1)", () => {
+    const agentId = "agent-sub-resume-discard";
+    // Retained history from a prior view: rows the daemon may since have
+    // pruned past — they can sit BELOW an interior gap toward the served
+    // newest page.
+    seedSession(agentId, {
+      messages: [makeMessage("m-retained-1", "old1"), makeMessage("m-retained-2", "old2")],
+    });
+    const sub = openChat(agentId);
+
+    sub.handler({
+      ...transcript([makeMessage("m-new-1", "newest page")], false),
+      truncated: true,
+      totalMessages: 9,
+      fromSnapshot: true,
+      resumed: false,
+    });
+
+    // Retained rows are gone — the protocol mandates discarding the cached
+    // transcript; the background walk refetches real history from the
+    // snapshot window's oldest row.
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-new-1",
+    ]);
+
+    // A resumed: true snapshot (or plain delta) still preserves store-only rows.
+    seedSession(agentId, {
+      messages: [makeMessage("m-kept", "kept"), makeMessage("m-new-1", "newest page")],
+    });
+    sub.handler({
+      ...transcript([makeMessage("m-new-2", "after anchor")]),
+      fromSnapshot: true,
+      resumed: true,
+    });
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      "m-kept",
+      "m-new-1",
+      "m-new-2",
+    ]);
   });
 
   it("dedups the optimistic user row against the canonical copy by appMessageId", () => {

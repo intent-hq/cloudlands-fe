@@ -15,10 +15,17 @@
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
- *     `aroundMessageId` seek anchored at the store's oldest row, walking
- *     `nextToken` backward. Merged with current-wins dedup; stops early when
- *     a page contributes nothing new or the store's 500-message prune cap is
- *     reached (fetching beyond it would be discarded anyway).
+ *     `aroundMessageId` seek anchored at the AUTHORITATIVE window's oldest
+ *     row — the snapshot page's oldest (`TranscriptSnapshotMeta.
+ *     oldestMessageId`) or the fallback read's oldest — NOT the store's
+ *     oldest retained row: retained history can sit BELOW an interior gap
+ *     (§7.1 `resumed: false` fallback, degraded direct read), and anchoring
+ *     below the gap would walk strictly older and never fill it. Walking
+ *     backward from the window's oldest traverses the gap first and the
+ *     nothing-new stop condition halts on already-retained pages. Merged
+ *     with current-wins dedup; stops early when a page contributes nothing
+ *     new or the store's 500-message prune cap is reached (fetching beyond
+ *     it would be discarded anyway).
  */
 import {
   actionChannel,
@@ -66,7 +73,12 @@ const MAX_STORE_MESSAGES = 500;
 
 type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
-type HydrateResult = { started: boolean; fetchOlder: boolean };
+type HydrateResult = {
+  started: boolean;
+  fetchOlder: boolean;
+  /** Older-walk seek anchor: the authoritative window's oldest row id. */
+  anchor?: string;
+};
 
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
@@ -96,15 +108,18 @@ function* hydrateAfterPrevious(
  * Degraded-path direct read: the subscription's snapshot never arrived, so
  * fetch the newest `agent.getConversation` page and merge it (fetched copies
  * win for shared ids; store-only rows — optimistic sends, prior history —
- * are preserved). Returns whether older history remains beyond the page.
+ * are preserved). Returns whether older history remains beyond the page and
+ * the page's oldest row id (the older-walk anchor).
  */
-function* fallbackNewestPageRead(agentId: string): SagaGenerator<boolean> {
+function* fallbackNewestPageRead(
+  agentId: string,
+): SagaGenerator<{ fetchOlder: boolean; anchor?: string }> {
   const page: Awaited<ReturnType<typeof appClient.agents.getConversation>> = yield* call(
     [appClient.agents, appClient.agents.getConversation],
     agentId,
     PAGE_LIMIT,
   );
-  if (yield* call(isAgentDeletionPending, agentId)) return false;
+  if (yield* call(isAgentDeletionPending, agentId)) return { fetchOlder: false };
   const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
   const pageIds = identitySet(page.messages);
   const storeOnly = current.filter(
@@ -117,7 +132,7 @@ function* fallbackNewestPageRead(agentId: string): SagaGenerator<boolean> {
       ? page.messages
       : deduplicateAgentMessages([...page.messages, ...storeOnly]);
   yield* put(replaceMessages(agentId, merged));
-  return page.nextToken !== null;
+  return { fetchOlder: page.nextToken !== null, anchor: oldestMessageId(page.messages) };
 }
 
 function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<HydrateResult> {
@@ -125,6 +140,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   if (yield* call(isAgentDeletionPending, agentId)) return { started: false, fetchOlder: false };
   let started = false;
   let fetchOlder = false;
+  let anchor: string | undefined;
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
@@ -169,10 +185,11 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       }
       if (meta) {
         fetchOlder = meta.truncated === true;
+        anchor = meta.oldestMessageId;
       } else {
         // Snapshot never arrived (subscription rejected/looping): direct read
         // so the panel still settles with the newest page.
-        fetchOlder = yield* call(fallbackNewestPageRead, agentId);
+        ({ fetchOlder, anchor } = yield* call(fallbackNewestPageRead, agentId));
       }
     } finally {
       yield* flush(snapshotChannel);
@@ -181,26 +198,31 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   } catch (error) {
     logger.error('Failed to hydrate chat transcript', error);
   }
-  return { started, fetchOlder };
+  return { started, fetchOlder, anchor };
 }
 
 /**
  * Background older-history fetch (OFF the hydration critical path). Anchors a
- * §5.5 `aroundMessageId` seek at the store's current oldest row — the true
- * frontier whether the snapshot was fresh or a resume onto retained history —
- * then walks `nextToken` backward, accumulating strictly-older rows. Each
- * page merges as `[...older, ...current]` with current-wins dedup so live
- * rows that arrived meanwhile are never clobbered. Stops when: no token
- * remains, a page contributes nothing new (already-present history), or the
- * store's prune cap is reached. Errors are swallowed — the snapshot window
- * already rendered.
+ * §5.5 `aroundMessageId` seek at the AUTHORITATIVE window's oldest row (the
+ * snapshot page's / fallback page's oldest — falling back to the store's
+ * oldest when none was recorded), then walks `nextToken` backward,
+ * accumulating rows the store does not hold. Anchoring at the window rather
+ * than the store's oldest retained row matters when retained history sits
+ * BELOW an interior gap (§7.1 `resumed: false` fallback, degraded direct
+ * read): the backward walk traverses the gap first, and the nothing-new stop
+ * condition halts once it reaches already-retained pages. Each page merges
+ * as `[...older, ...current]` with current-wins dedup so live rows that
+ * arrived meanwhile are never clobbered. Stops when: no token remains, a
+ * page contributes nothing new (already-present history), or the store's
+ * prune cap is reached. Errors are swallowed — the snapshot window already
+ * rendered.
  */
-function* fetchOlderHistorySaga(request: ChatRequest): SagaGenerator<void> {
+function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): SagaGenerator<void> {
   const { agentId } = request;
   try {
     if (yield* call(isAgentDeletionPending, agentId)) return;
     const current: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-    const anchor = oldestMessageId(current);
+    const anchor = windowAnchor ?? oldestMessageId(current);
     if (!anchor || current.length >= MAX_STORE_MESSAGES) return;
 
     const older: AgentMessage[] = [];
@@ -299,7 +321,7 @@ function* hydrateChatWorker(
       yield* put(transcriptHydrationSettled(request.agentId));
       if (read.fetchOlder) {
         yield* race({
-          fetch: call(fetchOlderHistorySaga, request),
+          fetch: call(fetchOlderHistorySaga, request, read.anchor),
           cleanup: take(matchesChatCleanup(request)),
         });
       }
