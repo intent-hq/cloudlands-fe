@@ -5260,6 +5260,140 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     expect(getPendingAgentDeletion(PENDING_AGENT)?.snapshot).toBeUndefined();
   });
 
+  it('agent:delete-scheduled with an existing registry entry is a no-op (originating window)', async () => {
+    const { setPendingAgentDeletion, getPendingAgentDeletion } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const snapshot: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-own',
+      workspaceId: PENDING_WS,
+      name: 'Own window',
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    const sagaEntry = { wsId: PENDING_WS, agentId: PENDING_AGENT, snapshot };
+    setPendingAgentDeletion(sagaEntry);
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-own',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+
+    // The saga's entry (with its own lifecycle) stays authoritative.
+    expect(getPendingAgentDeletion(PENDING_AGENT)).toBe(sagaEntry);
+  });
+
+  it('bridge tombstones self-lift at deleteAt + grace, sparing a newer entry', async () => {
+    const { isAgentDeletionPending, setPendingAgentDeletion, getPendingAgentDeletion } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      const deleteAt = new Date(Date.now() + 15_000).toISOString();
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-agent-del-scheduled-lift',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'agent:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt },
+          },
+        },
+      });
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-ws-del-scheduled-lift',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'workspace:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: { workspaceId: PENDING_WS, deleteAt },
+          },
+        },
+      });
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+
+      // A newer entry (e.g. a re-delete's own saga registration) replaces the
+      // bridge's — the armed timer must leave it alone when it fires.
+      const newerEntry = { wsId: PENDING_WS, agentId: PENDING_AGENT };
+      setPendingAgentDeletion(newerEntry);
+
+      // deleteAt (15s) + tombstone TTL (60s).
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+
+      expect(getPendingAgentDeletion(PENDING_AGENT)).toBe(newerEntry);
+      const state = appStore.state as {
+        workspace: { pendingDeletions: Record<string, boolean> };
+      };
+      expect(state.workspace.pendingDeletions[PENDING_WS]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disposeDaemonEventsRoutingState clears armed tombstone timers', async () => {
+    const { isAgentDeletionPending } = await import(
+      '$features/agent/utils/pending-agent-deletions'
+    );
+    const { disposeDaemonEventsRoutingState } = await import(
+      '$features/events/daemon-events-bridge.client'
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    try {
+      handler({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-agent-del-scheduled-dispose',
+            workspaceId: PENDING_WS,
+            timestamp: new Date().toISOString(),
+            type: 'agent:delete-scheduled',
+            actor: { type: 'user', id: 'u1' },
+            data: {
+              agentId: PENDING_AGENT,
+              workspaceId: PENDING_WS,
+              deleteAt: new Date(Date.now() + 15_000).toISOString(),
+            },
+          },
+        },
+      });
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+
+      disposeDaemonEventsRoutingState();
+
+      // The cancelled timer never fires; the registry entry is left for the
+      // owning window's lifecycle (dispose only tears down bridge-owned state).
+      vi.advanceTimersByTime(15_000 + 60_000 + 1);
+      expect(isAgentDeletionPending(PENDING_AGENT)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('agent:delete-cancelled restores the snapshot and refetches the canonical list', async () => {
     const { setPendingAgentDeletion } = await import(
       '$features/agent/utils/pending-agent-deletions'

@@ -2141,8 +2141,15 @@ function tombstoneClearDelayMs(deleteAt: unknown): number {
  * NOT purged: a cancel must restore instantly, and the commit's
  * `workspace:deleted` performs the purge. The tombstone is cleared on
  * `workspace:delete-cancelled`, on `workspace:created` (recycled ID), or by
- * the timer at deleteAt + grace (covers a missed cancel event so the row is
- * never hidden forever).
+ * the timer at deleteAt + grace — the timer only lifts the tombstone (nothing
+ * refetches here), so after a missed cancel event the row converges back on
+ * the next workspace-list refetch rather than instantly.
+ *
+ * Late-delivery race: if the originating window's undo completes before this
+ * event is delivered (slow delivery / reconnect replay), the row is
+ * transiently re-hidden — but `delete-scheduled`/`delete-cancelled` are
+ * ordered on the stream, so the cancelled event that must follow lifts the
+ * tombstone and its refetch restores the row.
  */
 function handleWorkspaceDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2184,12 +2191,18 @@ function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
  * mutation saga already soft-hid the session and registered the pending entry
  * (before the RPC resolved, so before this event can arrive) — skip so the
  * saga's own snapshot/tombstone lifecycle stays authoritative. In OTHER
- * windows, mirror the saga's soft-hide and register a registry entry (with
- * snapshot when the session is hydrated locally) so read paths drop the agent
- * and a later cancel can restore it instantly. The bridge timer lifts the
- * entry at deleteAt + grace — after the commit's `agent:deleted` the entry is
- * exactly the stale-refetch tombstone, and if a cancel event was missed the
- * agent converges back on the next refetch once the entry lifts.
+ * windows, mirror the saga's soft-hide and ALWAYS register a registry entry —
+ * with a snapshot when the session is hydrated locally (instant restore on
+ * cancel), and without one otherwise, so the id is still tombstoned against a
+ * stale `agent.get`/`list` begun before the schedule (no `pendingDeleteAt` on
+ * the row) that resolves after it; a snapshot-less entry restores via the
+ * cancel handler's reconcile refetch. The bridge timer lifts the entry at
+ * deleteAt + grace — after the commit's `agent:deleted` the entry is exactly
+ * the stale-refetch tombstone, and if a cancel event was missed the agent
+ * converges back on the next refetch once the entry lifts. Same
+ * late-delivery race note as the workspace handler above: an undo completing
+ * before this event lands transiently re-hides, and the ordered cancelled
+ * event restores.
  */
 function handleAgentDeleteScheduledEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
