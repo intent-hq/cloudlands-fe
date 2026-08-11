@@ -102,7 +102,13 @@ describe('regression guard: no legacy workspace-root probing', () => {
         // The browser-side WorkspaceConfig.WORKSPACE_ROOT getter (deleted
         // config-browser.ts, monorepo#1883) returned a hardcoded '~/intent'.
         /WorkspaceConfig\.WORKSPACE_ROOT/.test(source) ||
-        /from\s+['"][^'"]*config-browser['"]/.test(source)
+        /from\s+['"][^'"]*config-browser['"]/.test(source) ||
+        // WORKSPACE_BASE-style hardcoded roots (deleted from constants.ts and
+        // constants/agent-services.ts, monorepo#1906): no constant may carry
+        // the workspace base, and the '~/intent' literal (quoted or template)
+        // must not reappear.
+        /\bWORKSPACE_BASE\b/.test(source) ||
+        /['"`]~\/intent['"`]/.test(source)
       ) {
         offenders.push(path.relative(SRC_ROOT, file));
       }
