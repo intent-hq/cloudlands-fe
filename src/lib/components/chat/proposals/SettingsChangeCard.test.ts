@@ -11,14 +11,17 @@ const selectorState = vi.hoisted(() => ({
   error: null as string | null,
 }));
 
-vi.mock('$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors', () => ({
-  selectProposalAppliedState: vi.fn(() => ({
-    subscribe: (run: (value: typeof selectorState.applied) => void) => {
-      run(selectorState.applied);
-      return () => {};
-    },
-  })),
-}));
+vi.mock(
+  '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors',
+  () => ({
+    selectProposalAppliedState: vi.fn(() => ({
+      subscribe: (run: (value: typeof selectorState.applied) => void) => {
+        run(selectorState.applied);
+        return () => {};
+      },
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors', () => ({
   selectProposalStatus: vi.fn(() => ({
@@ -88,6 +91,13 @@ describe('SettingsChangeCard', () => {
     expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy();
     expect(container.textContent).not.toContain('app-settings.proposal.json');
+    const card = container.querySelector('[data-proposal-kind="settings-change"]');
+    expect(card?.className).toContain('rounded-(--radius-medium)');
+    expect(card?.className).toContain('bg-card');
+    expect(screen.getByRole('heading', { name: 'Theme preset: Dracula' }).className).toContain(
+      'type-body',
+    );
+    expect(container.innerHTML).not.toContain('text-subtle');
   });
 
   it('renders nullable enum default labels and applies null edits', async () => {

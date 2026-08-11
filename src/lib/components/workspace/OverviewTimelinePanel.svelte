@@ -4,33 +4,28 @@
   import { shell } from '$lib/electron-bridge';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
-  import {
-  getNoteIcon,
-  getNoteTitle,
-  getNoteIconClass,
-  getNoteDepth,
-} from './sidebar/utils';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
-  faArrowRight,
-  faCheck,
-  faCodeBranch,
-  faCodeCommit,
-  faCodePullRequest,
-  faPencil,
-  faPlus,
-  faSitemap,
-  faFolder,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowRight,
+    faCheck,
+    faCodeBranch,
+    faCodeCommit,
+    faCodePullRequest,
+    faPencil,
+    faPlus,
+    faSitemap,
+    faFolder,
+  } from '@fortawesome/free-solid-svg-icons';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import { ListItem } from '$lib/components/ui/list';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -247,7 +242,9 @@
   {#if agentsLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_agentsTab_label()}</h3>
+        <h3 class="text-sm font-semibold text-foreground">
+          {m.workspace_multiSelectSidebar_agentsTab_label()}
+        </h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           {m.workspace_multiSelectSidebar_agentsTab_description()}
         </p>
@@ -271,7 +268,9 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_agentOrchestration_label()}</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">
+            {m.workspace_multiSelectSidebar_agentOrchestration_label()}
+          </h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
@@ -376,7 +375,9 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('agents')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_agentsTab_label()}</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">
+            {m.workspace_multiSelectSidebar_agentsTab_label()}
+          </h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
@@ -421,7 +422,9 @@
   {#if notesLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_contextTab_label()}</h3>
+        <h3 class="text-sm font-semibold text-foreground">
+          {m.workspace_multiSelectSidebar_contextTab_label()}
+        </h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           {m.workspace_multiSelectSidebar_contextTab_description()}
         </p>
@@ -448,7 +451,9 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('context')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_contextTab_label()}</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">
+            {m.workspace_multiSelectSidebar_contextTab_label()}
+          </h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
@@ -513,7 +518,9 @@
             onclick={() => onSwitchTab?.('context')}
           >
             <Fa icon={faPlus} size="xs" class="ml-0.75 -mt-px mr-0.75 opacity-50" />
-            {m.workspace_overviewTimeline_moreNotes_label({ count: formatInteger(moreContextCount) })}
+            {m.workspace_overviewTimeline_moreNotes_label({
+              count: formatInteger(moreContextCount),
+            })}
           </button>
         {/if}
       </div>
@@ -526,7 +533,9 @@
   {#if changesLoading}
     <section class="bg-background/50 rounded-lg overflow-hidden">
       <div class="px-4 pt-3 pb-1">
-        <h3 class="text-sm font-semibold text-foreground">{m.workspace_multiSelectSidebar_changesTab_label()}</h3>
+        <h3 class="text-sm font-semibold text-foreground">
+          {m.workspace_multiSelectSidebar_changesTab_label()}
+        </h3>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
           {m.workspace_multiSelectSidebar_changesTab_description()}
         </p>
@@ -556,7 +565,9 @@
           class="flex items-center gap-1 w-full text-left cursor-pointer"
           onclick={() => onSwitchTab?.('changes')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_changesTab_label()}</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">
+            {m.workspace_multiSelectSidebar_changesTab_label()}
+          </h3>
           <Fa icon={faArrowRight} size="xs" class="ml-auto text-ghost shrink-0" />
         </button>
         <p class="text-ui text-subtle mt-0.5 leading-tight mb-2">
@@ -596,7 +607,8 @@
               {#if workspace.baseRef}
                 <Fa icon={faArrowRight} size="xs" class="text-ghost" />
                 <Tooltip side="top" disableCloseOnTriggerClick bind:open={trunkBranchTooltipOpen}>
-                  {#snippet content()}<span>{m.workspace_overviewTimeline_trunkBranch_tooltip()}</span
+                  {#snippet content()}<span
+                      >{m.workspace_overviewTimeline_trunkBranch_tooltip()}</span
                     >{#if copiedTrunkBranch}<span
                         class="text-green-500 ml-1.5 inline-flex items-center gap-1"
                         ><Fa icon={faCheck} size="xs" /></span
@@ -765,7 +777,9 @@
           class="flex items-center gap-1 text-left cursor-pointer"
           onclick={() => onSwitchTab?.('files')}
         >
-          <h3 class="text-sm font-semibold text-foreground hover:underline">{m.workspace_multiSelectSidebar_filesTab_label()}</h3>
+          <h3 class="text-sm font-semibold text-foreground hover:underline">
+            {m.workspace_multiSelectSidebar_filesTab_label()}
+          </h3>
         </button>
         {#if workspace?.worktreePath}
           <div class="ml-auto -my-1">
@@ -792,7 +806,10 @@
               class="inline-flex"
             >
               <span class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                ><!-- i18n-ignore (file path) -->/{workspace.worktreePath.split('/').slice(-2).join('/')}</span
+                ><!-- i18n-ignore (file path) -->/{workspace.worktreePath
+                  .split('/')
+                  .slice(-2)
+                  .join('/')}</span
               >
             </OpenComboButton></span
           >.

@@ -17,12 +17,12 @@
 
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
-  import { faGaugeHigh } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import Button from '$lib/components/ui/button/button.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { Slider } from '$lib/components/ui/slider';
+  import EffortGauge from './EffortGauge.svelte';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import { applyReasoningEffort } from '$features/agent/reasoning-effort';
@@ -84,7 +84,12 @@
   const currentValue = $derived(
     $reasoningEffort$ && levels.includes($reasoningEffort$) ? $reasoningEffort$ : null,
   );
-  const currentIndex = $derived(Math.max(0, steps.findIndex((step) => step.value === currentValue)));
+  const currentIndex = $derived(
+    Math.max(
+      0,
+      steps.findIndex((step) => step.value === currentValue),
+    ),
+  );
   const currentLabel = $derived(steps[currentIndex]?.label ?? '');
 
   let isOpen = $state(false);
@@ -92,6 +97,13 @@
   let popoverRef = $state<HTMLDivElement | null>(null);
   let popoverStyle = $state('');
   let sliderIndex = $state(0);
+  let labelDirection = $state<'up' | 'down'>('up');
+
+  function preview(index: number) {
+    if (index === sliderIndex) return;
+    labelDirection = index > sliderIndex ? 'up' : 'down';
+    sliderIndex = index;
+  }
 
   function updatePosition() {
     if (!triggerRef) return;
@@ -105,6 +117,7 @@
     isOpen = !isOpen;
     if (isOpen) {
       sliderIndex = currentIndex;
+      labelDirection = 'up';
       updatePosition();
     }
   }
@@ -158,8 +171,11 @@
       class={cn('shrink-0', className)}
       data-testid="effort-picker-trigger"
     >
-      <Fa icon={faGaugeHigh} size="sm" />
-      <span class="truncate">{currentLabel}</span>
+      <EffortGauge
+        value={Math.max(0, (isOpen ? sliderIndex : currentIndex) - 1)}
+        max={levels.length - 1}
+        centered={(isOpen ? steps[sliderIndex]?.value : currentValue) === null}
+      />
     </Button>
   </TooltipShortcut>
 
@@ -175,40 +191,102 @@
         role="dialog"
         aria-label={m.chat_effortPicker_popover_ariaLabel()}
       >
-        <div class="font-medium text-sm">{m.chat_effortPicker_title_label()}</div>
-        <div class="text-xs text-subtle">{m.chat_effortPicker_nextSend_description()}</div>
+        <div class="flex items-center justify-between gap-3">
+          <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
+          <span
+            class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
+            data-testid="effort-current-value"
+          >
+            {#key sliderIndex}
+              <span
+                class="effort-value-label block truncate"
+                data-motion-direction={labelDirection}
+              >
+                {steps[sliderIndex]?.label}
+              </span>
+            {/key}
+          </span>
+        </div>
+        <div class="type-caption mt-0.5 text-subtle">
+          {m.chat_effortPicker_nextSend_description()}
+        </div>
 
-        <input
-          type="range"
-          min="0"
-          max={steps.length - 1}
-          step="1"
-          value={sliderIndex}
-          class="w-full mt-2.5 h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
-          aria-label={m.chat_effortPicker_slider_ariaLabel()}
-          aria-valuetext={steps[sliderIndex]?.label}
-          oninput={(event) => {
-            sliderIndex = Number((event.currentTarget as HTMLInputElement).value);
-          }}
-          onchange={(event) => {
-            void commit(Number((event.currentTarget as HTMLInputElement).value));
-          }}
-        />
-
-        <div class="flex justify-between gap-1 mt-1">
-          {#each steps as step, index (step.value ?? 'default')}
-            <span
-              class={cn(
-                'text-xs',
-                index === sliderIndex ? 'text-foreground font-medium' : 'text-subtle',
-              )}
-              data-testid="effort-step-label"
-            >
-              {step.label}
-            </span>
-          {/each}
+        <div class="relative mt-2.5">
+          <Slider
+            min="0"
+            max={steps.length - 1}
+            step="1"
+            value={sliderIndex}
+            aria-label={m.chat_effortPicker_slider_ariaLabel()}
+            aria-valuetext={steps[sliderIndex]?.label}
+            onValueChange={(value) => {
+              preview(value);
+            }}
+            onchange={(event) => {
+              const index = Number((event.currentTarget as HTMLInputElement).value);
+              preview(index);
+              void commit(index);
+            }}
+          />
+          <div
+            class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
+            aria-hidden="true"
+          >
+            {#each steps as step (step.value ?? 'default')}
+              <span
+                class="flex h-3 w-px items-center justify-center"
+                data-testid="effort-slider-tick"
+                data-effort-level={step.value ?? 'default'}
+              >
+                <span
+                  class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"
+                  data-testid="effort-slider-tick-marker"
+                ></span>
+              </span>
+            {/each}
+          </div>
         </div>
       </div>
     </Portal>
   {/if}
 {/if}
+
+<style>
+  .effort-value-label {
+    animation: effort-value-enter var(--motion-slow) var(--ease-emphasized-out);
+  }
+
+  .effort-value-label[data-motion-direction='up'] {
+    --effort-value-offset: 120%;
+    --effort-bounce: -12%;
+  }
+
+  .effort-value-label[data-motion-direction='down'] {
+    --effort-value-offset: -120%;
+    --effort-bounce: 12%;
+  }
+
+  @keyframes effort-value-enter {
+    0% {
+      opacity: 0;
+      transform: translateY(var(--effort-value-offset)) scale(0.75);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(var(--effort-bounce)) scale(1.08);
+    }
+    75% {
+      transform: translateY(calc(var(--effort-bounce) * -0.3)) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .effort-value-label {
+      animation: none;
+    }
+  }
+</style>

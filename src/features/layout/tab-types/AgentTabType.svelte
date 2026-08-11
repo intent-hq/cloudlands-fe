@@ -20,28 +20,17 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Button } from '$lib/components/ui/button';
-  import {
-  cycleFontStyle,
-  toggleShowReasoningBlocks,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import {
-  selectAgentFontStyleLabel,
-  selectIsAgentMonospace,
-  selectShowReasoningBlocks,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
+  import { toggleShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { selectShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import {
-  selectSpecialistName,
-  selectSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialistName,
+    selectSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import Fa from 'svelte-fa';
-  import {
-  faBrain,
-  faCheck,
-  faCopy,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faBrain, faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { m } from '$shared/paraglide/messages.js';
@@ -50,8 +39,6 @@
 
   const logger = createLogger('AgentTabType');
 
-  const fontStyleLabel = selectAgentFontStyleLabel();
-  const isMonospace = selectIsAgentMonospace();
   const showReasoningBlocks = selectShowReasoningBlocks();
 
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
@@ -179,7 +166,8 @@
     if (!headerContext || !isActive) return;
     const subtitleParts: string[] = [];
     if (agentSpecialistName) subtitleParts.push(agentSpecialistName);
-    if (delegatedByName) subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
+    if (delegatedByName)
+      subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
       headerContext.registerActions(agentActions);
@@ -200,17 +188,7 @@
       <Fa icon={faNote} size="xs" />
     </Button>
   {/if}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(cycleFontStyle())}
-    tooltip={m.layout_agentTab_font_tooltip({ font: $fontStyleLabel })}
-    tooltipSide="bottom"
-  >
-    <span class="text-xs font-semibold tracking-tight" class:font-mono={$isMonospace}
-      >{m.layout_agentTab_fontSample_label()}</span
-    >
-  </Button>
+  <AgentViewSettingsDropdown />
   <Button
     variant="ghost-light"
     size="icon-xs"
@@ -250,7 +228,7 @@
 {#if tab.agentId}
   {#if $workspace}
     {#key tab.agentId}
-      <div class="w-full h-full flex-1 flex pb-1.5">
+      <div class="flex h-full min-h-0 w-full flex-1">
         <ChatPanel
           workspace={$workspace}
           agentId={tab.agentId}

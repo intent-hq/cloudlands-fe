@@ -12,12 +12,9 @@
    * - Simplified shader with fewer blobs (5 instead of 10)
    * - Respects prefers-reduced-motion
    */
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { colors } from '$lib/components/ui/auggie-avatar/avatar-constants';
+  import { colors } from '$features/agent/components/auggie-avatar/avatar-constants';
   import { stringToSeededRandom } from '$lib/utils/hash';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
 
@@ -59,7 +56,11 @@
   } | null = null;
 
   // Cached RGB color values (recomputed only when agentId or dark mode changes)
-  let cachedRgbColors: { rgb1: [number, number, number]; rgb2: [number, number, number]; rgb3: [number, number, number] } | null = null;
+  let cachedRgbColors: {
+    rgb1: [number, number, number];
+    rgb2: [number, number, number];
+    rgb3: [number, number, number];
+  } | null = null;
   let cachedColorKey = '';
 
   // Cached device pixel ratio (updated on resize, not every frame)
@@ -513,9 +514,24 @@
       cachedColorKey = colorKey;
     }
     if (cachedRgbColors) {
-      gl.uniform3f(uniformLocations.color1, cachedRgbColors.rgb1[0], cachedRgbColors.rgb1[1], cachedRgbColors.rgb1[2]);
-      gl.uniform3f(uniformLocations.color2, cachedRgbColors.rgb2[0], cachedRgbColors.rgb2[1], cachedRgbColors.rgb2[2]);
-      gl.uniform3f(uniformLocations.color3, cachedRgbColors.rgb3[0], cachedRgbColors.rgb3[1], cachedRgbColors.rgb3[2]);
+      gl.uniform3f(
+        uniformLocations.color1,
+        cachedRgbColors.rgb1[0],
+        cachedRgbColors.rgb1[1],
+        cachedRgbColors.rgb1[2],
+      );
+      gl.uniform3f(
+        uniformLocations.color2,
+        cachedRgbColors.rgb2[0],
+        cachedRgbColors.rgb2[1],
+        cachedRgbColors.rgb2[2],
+      );
+      gl.uniform3f(
+        uniformLocations.color3,
+        cachedRgbColors.rgb3[0],
+        cachedRgbColors.rgb3[1],
+        cachedRgbColors.rgb3[2],
+      );
     }
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

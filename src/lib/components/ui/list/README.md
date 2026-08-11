@@ -69,20 +69,12 @@ An empty state component for when there are no items.
 
 ```svelte
 <ListContainer spacing="compact">
-  <ListItem
-    icon={faStickyNote}
-    title="Note 1"
-    onclick={() => console.log('clicked')}
-  />
-  <ListItem
-    icon={faStickyNote}
-    title="Note 2"
-    selected={true}
-  />
+  <ListItem icon={faStickyNote} title="Note 1" onclick={() => console.log('clicked')} />
+  <ListItem icon={faStickyNote} title="Note 2" selected={true} />
   <ListItem
     icon={faStickyNote}
     title="Note 3"
-    active={true}  // Currently open/active note
+    active={true} // Currently open/active note
   />
 </ListContainer>
 ```
@@ -120,7 +112,7 @@ An empty state component for when there are no items.
 
 ```svelte
 {#if items.length === 0}
-  <ListEmpty message="No notes yet" icon={faStickyNote} />
+  <ListEmpty message="No notes yet" />
 {:else}
   <ListContainer>
     <!-- items -->

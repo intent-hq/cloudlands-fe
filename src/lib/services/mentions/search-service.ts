@@ -49,18 +49,42 @@ export class DebouncedSearchService {
     }
 
     // Create new abort controller
-    this.currentAbortController = new AbortController();
-    const signal = this.currentAbortController.signal;
+    const controller = new AbortController();
+    this.currentAbortController = controller;
+    const signal = controller.signal;
 
     return new Promise((resolve, reject) => {
       this.isSearching = true;
+      let settled = false;
+
+      const finish = () => {
+        signal.removeEventListener('abort', handleAbort);
+        if (this.currentAbortController === controller) {
+          this.currentAbortController = null;
+          this.searchDebounceTimer = null;
+          this.isSearching = false;
+        }
+      };
+      const resolveSearch = (results: MentionCandidate[]) => {
+        if (settled) return;
+        settled = true;
+        finish();
+        resolve(results);
+      };
+      const rejectSearch = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        finish();
+        reject(error);
+      };
+      const handleAbort = () => rejectSearch(new Error('Search cancelled'));
+      signal.addEventListener('abort', handleAbort, { once: true });
 
       const executeSearch = async () => {
         try {
           // Check if cancelled
           if (signal.aborted) {
-            this.isSearching = false;
-            reject(new Error('Search cancelled'));
+            rejectSearch(new Error('Search cancelled'));
             return;
           }
 
@@ -74,6 +98,7 @@ export class DebouncedSearchService {
           const results = await Promise.all(
             providers.map((provider) => this.searchWithProvider(provider, query, context, signal)),
           );
+          if (signal.aborted) return;
 
           // Combine and deduplicate results
           const combined = this.combineResults(results.flat());
@@ -97,15 +122,13 @@ export class DebouncedSearchService {
           });
 
           logger.debug(`[SearchService] Found ${limited.length} results`);
-          this.isSearching = false;
-          resolve(limited);
+          resolveSearch(limited);
         } catch (error) {
-          this.isSearching = false;
-          if ((error as Error).name === 'AbortError') {
-            reject(new Error('Search cancelled'));
+          if (signal.aborted || (error as Error).name === 'AbortError') {
+            rejectSearch(new Error('Search cancelled'));
           } else {
             logger.error('[SearchService] Search error:', error);
-            reject(error);
+            rejectSearch(error instanceof Error ? error : new Error(String(error)));
           }
         }
       };

@@ -5,7 +5,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { IconDefinition } from "@fortawesome/fontawesome-common-types";
+import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 
 // ============================================================================
 // Core Panel Types
@@ -13,21 +13,21 @@ import type { IconDefinition } from "@fortawesome/fontawesome-common-types";
 
 /** Types of content that can be displayed in a panel tab */
 export type PanelTabType =
-  | "note"
-  | "file"
-  | "diff"
-  | "changes"
-  | "local-changes"
-  | "chat-changes"
-  | "agent"
-  | "terminal"
-  | "settings"
-  | "overview"
-  | "browser"
-  | "activity"
-  | "activity-changes"
-  | "code-review"
-  | "agent-overview";
+  | 'note'
+  | 'file'
+  | 'diff'
+  | 'changes'
+  | 'local-changes'
+  | 'chat-changes'
+  | 'agent'
+  | 'terminal'
+  | 'settings'
+  | 'overview'
+  | 'browser'
+  | 'activity'
+  | 'activity-changes'
+  | 'code-review'
+  | 'agent-overview';
 
 /** A single tab within a panel */
 export interface PanelTab {
@@ -62,10 +62,10 @@ export interface PanelState {
 
 /** Node in the panel layout tree - either a panel or a split container */
 export type PanelLayoutNode =
-  | { type: "panel"; panelId: string }
+  | { type: 'panel'; panelId: string }
   | {
-      type: "split";
-      direction: "horizontal" | "vertical";
+      type: 'split';
+      direction: 'horizontal' | 'vertical';
       children: PanelLayoutNode[];
       /** Percentage sizes of children (should sum to 100) */
       sizes: number[];
@@ -89,7 +89,7 @@ export interface WorkspacePanelLayout {
   >;
 }
 
-export type PanelLayoutRestoreStatus = "idle" | "pending" | "restored" | "empty" | "invalid";
+export type PanelLayoutRestoreStatus = 'idle' | 'pending' | 'restored' | 'empty' | 'invalid';
 
 // ============================================================================
 // Internal State Types
@@ -132,6 +132,8 @@ export interface WorkspacePanelLayoutState {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /** Current horizontal panel canvas width in pixels; null uses the default column width. */
+  canvasWidth: number | null;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   recentlyClosed: RecentlyClosedTab[];
@@ -145,6 +147,11 @@ export interface WorkspacePanelLayoutState {
   deferSpecTab: boolean;
 }
 
+export type PanelDragLayoutSnapshot = Pick<
+  WorkspacePanelLayoutState,
+  'root' | 'focusedPanelId' | 'layoutHistory' | 'historyIndex'
+>;
+
 /** Top-level panel layout slice state */
 export type PanelLayoutSliceState = {
   byWorkspaceId: Record<string, WorkspacePanelLayoutState>;
@@ -154,10 +161,9 @@ export type PanelLayoutSliceState = {
 // Constants
 // ============================================================================
 
-export const PANEL_LAYOUT_STORAGE_KEY_PREFIX = "panel-layout-";
+export const PANEL_LAYOUT_STORAGE_KEY_PREFIX = 'panel-layout-';
 export const MAX_RECENTLY_CLOSED = 20;
 export const MAX_LAYOUT_HISTORY = 50;
 export const MAX_FOCUS_HISTORY = 100;
 export const HISTORY_PERSIST_DEBOUNCE_MS = 2000;
 export const EXPANDED_SHARE = 80;
-

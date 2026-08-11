@@ -12,7 +12,7 @@
  * When a workspace is provided, opening the tooltip fetches the footprint
  * on demand via `appClient.workspaces.diskUsage` (`workspace.diskUsage`,
  * PROTOCOL §5.1) — list/get rows no longer carry it (monorepo#1396). While a
- * walk is in flight with no value yet a spinner shows; once a value exists
+ * walk is in flight with no value yet a skeleton shows; once a value exists
  * the tooltip renders total size + file count, the physical-space/scope
  * notes, the per-directory breakdown, and the shrink link. Older daemons
  * without the method (`diskUsage()` → null) fall back to the legacy row
@@ -244,9 +244,13 @@ describe('CheckoutModePill', () => {
     expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
   });
 
-  it('renders "Worktree" when checkoutMode is worktree', async () => {
-    await renderPill({ checkoutMode: 'worktree' });
-    expect(screen.getByText('Worktree')).toBeTruthy();
+  it('renders an accessible icon instead of Worktree text', async () => {
+    const { container } = await renderPill({ checkoutMode: 'worktree' });
+    const pill = screen.getByLabelText('Checkout mode: Worktree');
+
+    expect(pill.getAttribute('data-checkout-mode')).toBe('worktree');
+    expect(pill.textContent?.trim()).toBe('');
+    expect(container.querySelector('svg')).not.toBeNull();
   });
 
   it('renders "Direct" when checkoutMode is direct (cache-hydrated local clone)', async () => {
@@ -311,11 +315,13 @@ describe('CheckoutModePill', () => {
     expect(tooltip.textContent).toContain('1.86Gi');
     expect(tooltip.textContent).toContain('tool-output');
     expect(tooltip.textContent).toContain('315Mi');
-    // Fetch settled with refreshing:false — no spinner remains.
+    expect(tooltip.textContent).toContain('Nothing runs until you review and send it');
+    expect(tooltip.querySelector('.font-mono')).toBeNull();
+    // Fetch settled with refreshing:false — no loading state remains.
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('shows the loading spinner while the first walk is in flight (no value yet)', async () => {
+  it('shows a skeleton while the first walk is in flight (no value yet)', async () => {
     mocks.diskUsage.mockResolvedValue({ refreshing: true });
     await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
@@ -325,7 +331,38 @@ describe('CheckoutModePill', () => {
     const tooltip = screen.getByTestId('tooltip-content');
     expect(tooltip.textContent).toContain('Checkout mode: CoW');
     expect(tooltip.textContent).not.toContain('Total size');
-    expect(screen.getByRole('status', { name: 'Loading disk usage' })).toBeTruthy();
+    const loading = screen.getByRole('status', { name: 'Loading disk usage' });
+    expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+  });
+
+  it('keeps polling an in-progress first walk and replaces the skeleton with data', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.diskUsage
+        .mockResolvedValueOnce({ refreshing: true })
+        .mockResolvedValueOnce({ diskUsage, refreshing: false });
+
+      await renderPill({
+        workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+      });
+      await tick();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mocks.diskUsage).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('status', { name: 'Loading disk usage' })).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await tick();
+
+      expect(mocks.diskUsage).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('tooltip-content').textContent).toContain(
+        'Total size: 2.17Gi',
+      );
+      expect(screen.queryByRole('status', { name: 'Loading disk usage' })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows the value plus a subtle refreshing indicator during a background refresh', async () => {
@@ -492,7 +529,7 @@ describe('CheckoutModePill', () => {
     await renderPill({ workspace });
     await flushFetch();
 
-    const link = screen.getByRole('button', { name: 'Try to shrink this workspace' });
+    const link = screen.getByRole('button', { name: 'Review cleanup request' });
     await fireEvent.click(link);
 
     expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledOnce();

@@ -2,7 +2,7 @@
  * Regression test for intent-hq/monorepo#1727: the layout's interrupted-agents
  * resume/abandon handlers must go through `resolveInterruptedAgents()` so the
  * service's cross-window watcher is stopped (pre-#584 behaviour). Mounts the
- * real root `+layout.svelte` with a probe standing in for
+ * real grouped app `+layout.svelte` with a probe standing in for
  * `InterruptedAgentsModal` that publishes the handler props the layout wires
  * up, stubbing the same heavy children/side effects as the HUD gating suite.
  */
@@ -126,7 +126,7 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
-import Layout from '../+layout.svelte';
+import Layout from '../(app)/+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="interrupted-children">content</div>',

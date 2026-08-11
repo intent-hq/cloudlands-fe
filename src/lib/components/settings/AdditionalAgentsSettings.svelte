@@ -1,7 +1,7 @@
 <script lang="ts">
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';

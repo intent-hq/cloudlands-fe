@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Wire-contract tests for the arbitrary-execution handlers in
@@ -62,6 +55,20 @@ const { hostExecMock, hostExecStreamMock, spawnMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../../../../shared/logger', () => ({
+  Logger: class MockLogger {
+    info = vi.fn();
+    debug = vi.fn();
+    warn = loggerMocks.warn;
+    error = loggerMocks.error;
+  },
+}));
+
 vi.mock(import('child_process'), async (importOriginal) => {
   const actual = await importOriginal();
   const patched = { ...actual, spawn: spawnMock };
@@ -108,6 +115,8 @@ beforeEach(() => {
   electronMocks.handle.mockReset();
   hostExecMock.mockReset();
   hostExecStreamMock.mockReset();
+  loggerMocks.warn.mockReset();
+  loggerMocks.error.mockReset();
   setupSystemIPC();
 });
 
@@ -138,6 +147,42 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md
     expect(result.success).toBe(true);
     expect(result.data?.stdout).toBe('main\n');
     expect(result.data?.code).toBe(0);
+  });
+
+  it('logs exact command metadata without retaining command or cwd text', async () => {
+    const command = 'x'.repeat(47);
+    const cwd = `/tmp/${'y'.repeat(23)}`;
+    hostExecMock.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    await handler({}, { command, cwd, workspaceId: 'amber-forest' });
+
+    expect(loggerMocks.warn).toHaveBeenCalledWith('Executing command - ensure input is trusted', {
+      commandLength: 47,
+      hasCwd: true,
+    });
+    expect(JSON.stringify(loggerMocks.warn.mock.calls)).not.toContain(command);
+    expect(JSON.stringify(loggerMocks.warn.mock.calls)).not.toContain(cwd);
+  });
+
+  it('logs exact failure metadata without retaining command, cwd, or thrown details', async () => {
+    const command = 'x'.repeat(53);
+    const cwd = `/tmp/${'y'.repeat(29)}`;
+    const failureDetail = 'z'.repeat(31);
+    hostExecMock.mockRejectedValue(new TypeError(failureDetail));
+
+    const handler = handlerFor(SYSTEM_CHANNELS.EXECUTE_COMMAND);
+    await handler({}, { command, cwd, workspaceId: 'amber-forest' });
+
+    expect(loggerMocks.error).toHaveBeenCalledWith('Command execution failed', {
+      commandLength: 53,
+      hasCwd: true,
+      errorType: 'TypeError',
+    });
+    const capturedLogs = JSON.stringify(loggerMocks.error.mock.calls);
+    expect(capturedLogs).not.toContain(command);
+    expect(capturedLogs).not.toContain(cwd);
+    expect(capturedLogs).not.toContain(failureDetail);
   });
 
   it('forwards workspaceId alongside cwd so the daemon containment guard runs (monorepo#537)', async () => {
@@ -259,14 +304,19 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     const donePromise = new Promise<{ ok: boolean; exitCode?: number }>((r) => {
       resolveDone = r;
     });
-    hostExecStreamMock.mockImplementation((_cmd: string, opts: {
-      onStdout?: (chunk: Buffer) => void;
-      onStderr?: (chunk: Buffer) => void;
-    }) => {
-      capturedOnStdout = opts.onStdout;
-      capturedOnStderr = opts.onStderr;
-      return Promise.resolve({ requestId: 'req-1', done: donePromise });
-    });
+    hostExecStreamMock.mockImplementation(
+      (
+        _cmd: string,
+        opts: {
+          onStdout?: (chunk: Buffer) => void;
+          onStderr?: (chunk: Buffer) => void;
+        },
+      ) => {
+        capturedOnStdout = opts.onStdout;
+        capturedOnStderr = opts.onStderr;
+        return Promise.resolve({ requestId: 'req-1', done: donePromise });
+      },
+    );
 
     const send = vi.fn();
     const event = { sender: { send } };
@@ -280,12 +330,15 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     })) as { success: boolean };
 
     expect(result.success).toBe(true);
-    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
-      args: [SHELL_FLAG, 'echo hello'],
-      cwd: '/ws/repo',
-      workspaceId: 'amber-forest',
-      stdin: 'ignored-payload',
-    }));
+    expect(hostExecStreamMock).toHaveBeenCalledWith(
+      SHELL_CMD,
+      expect.objectContaining({
+        args: [SHELL_FLAG, 'echo hello'],
+        cwd: '/ws/repo',
+        workspaceId: 'amber-forest',
+        stdin: 'ignored-payload',
+      }),
+    );
 
     capturedOnStdout?.(Buffer.from('out', 'utf8'));
     capturedOnStderr?.(Buffer.from('err', 'utf8'));
@@ -351,11 +404,14 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     })) as { success: boolean };
 
     expect(result.success).toBe(true);
-    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
-      args: [SHELL_FLAG, 'echo hi'],
-      cwd: undefined,
-      workspaceId: undefined,
-    }));
+    expect(hostExecStreamMock).toHaveBeenCalledWith(
+      SHELL_CMD,
+      expect.objectContaining({
+        args: [SHELL_FLAG, 'echo hi'],
+        cwd: undefined,
+        workspaceId: undefined,
+      }),
+    );
   });
 
   it('treats an empty-string cwd as absent — passes validation without workspaceId', async () => {
@@ -375,11 +431,14 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     // blank-as-absent semantics as the non-streaming schema): validation
     // passes and hostExecStream drops the empty cwd off the wire.
     expect(result.success).toBe(true);
-    expect(hostExecStreamMock).toHaveBeenCalledWith(SHELL_CMD, expect.objectContaining({
-      args: [SHELL_FLAG, 'echo hi'],
-      cwd: '',
-      workspaceId: undefined,
-    }));
+    expect(hostExecStreamMock).toHaveBeenCalledWith(
+      SHELL_CMD,
+      expect.objectContaining({
+        args: [SHELL_FLAG, 'echo hi'],
+        cwd: '',
+        workspaceId: undefined,
+      }),
+    );
   });
 
   it('surfaces host.execStream rejection as a stderr + null-code close frame', async () => {
@@ -406,7 +465,6 @@ describe('SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING → host.execStream (shell s
     });
   });
 });
-
 
 describe('installIntentCli osascript fallback → host.execStream (monorepo#585)', () => {
   const spies: Array<{ mockRestore: () => void }> = [];
@@ -447,7 +505,6 @@ describe('installIntentCli osascript fallback → host.execStream (monorepo#585)
     expect(result.success).toBe(true);
   });
 });
-
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
 

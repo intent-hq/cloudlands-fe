@@ -2,33 +2,25 @@
   import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { Button } from '$lib/components/ui/button';
-  import {
-  faCheck,
-  faRotateRight,
-  faSpinner,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  onDestroy,
-  onMount,
-} from 'svelte';
+  import { faCheck, faRotateRight, faSpinner, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
-  initializeGitHubAuth,
-  startGitHubAuth,
-  cancelGitHubAuth,
-  clearGitHubAuthError,
-} from '$store/renderer/slices/github-auth/github-auth-slice';
+    initializeGitHubAuth,
+    startGitHubAuth,
+    cancelGitHubAuth,
+    clearGitHubAuthError,
+  } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
-  selectGitHubAuthIsAuthenticated,
-  selectGitHubAuthIsAuthenticating,
-  selectGitHubAuthDeviceFlow,
-  selectGitHubAuthError,
-  selectGitHubAuthRequiresDaemonAuth,
-} from '$store/renderer/slices/github-auth/github-auth-selectors';
+    selectGitHubAuthIsAuthenticated,
+    selectGitHubAuthIsAuthenticating,
+    selectGitHubAuthDeviceFlow,
+    selectGitHubAuthError,
+    selectGitHubAuthRequiresDaemonAuth,
+  } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
 
@@ -199,7 +191,13 @@
     <div class="py-1.5 px-3 space-y-2" transition:slide={{ axis: 'y', duration: 200 }}>
       <div class="flex items-center justify-between gap-2">
         <p class="text-xs text-subtle">{m.lib_githubAuth_enterCode_label()}</p>
-        <Button variant="ghost-light" size="icon-xs -mt-2 -mr-2" onclick={handleCancel}>
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          class="-mt-2 -mr-2"
+          onclick={handleCancel}
+          aria-label={m.lib_githubAuth_closeModal_ariaLabel()}
+        >
           <Fa icon={faXmark} size="xs" />
         </Button>
       </div>

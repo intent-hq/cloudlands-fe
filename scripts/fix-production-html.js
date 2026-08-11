@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { injectParaglideBundle } from './fix-production-html-utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +29,10 @@ if (fs.existsSync(indexPath)) {
 
   // Remove any references to .ts files in the HTML
   html = html.replace(/\.ts"/g, '.js"');
+
+  // The production app imports a tiny facade backed by this prebuilt catalog.
+  // Inject it before the app bootstrap so localized module constants are ready.
+  html = injectParaglideBundle(html);
 
   // Collect inline script hashes so we can remove unsafe-inline/unsafe-eval in production
   const scriptTagRegex = /<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi;

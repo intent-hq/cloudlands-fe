@@ -45,11 +45,33 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
  * the live `window.electronAPI` state, matching the legacy module behavior.
  */
 export function createElectronIpcBackendTransport(): BackendTransport {
+  // Notification fan-out: all onNotification subscribers share ONE underlying
+  // `backend:notification` IPC listener while retaining independent disposal.
+  const notificationHandlers = new Set<(notification: BackendNotification) => void>();
+  let notificationListener: {
+    api: NonNullable<Window["electronAPI"]>;
+    id: string;
+  } | null = null;
+
   // Reconnect fan-out: all onReconnected subscribers share ONE underlying
   // `backend:status` IPC listener, so the preload-bridge listener count stays
   // constant no matter how many modules subscribe (intent-hq/monorepo#1424).
   const reconnectedHandlers = new Set<() => void>();
   let statusListener: { api: NonNullable<Window["electronAPI"]>; id: string } | null = null;
+
+  function ensureNotificationListener(api: NonNullable<Window["electronAPI"]>): void {
+    if (notificationListener) return;
+    const id = api.on(BACKEND.NOTIFICATION, (payload: BackendNotification) => {
+      for (const handler of [...notificationHandlers]) {
+        try {
+          handler(payload);
+        } catch (error) {
+          console.warn("[electron-ipc-transport] onNotification handler threw", error);
+        }
+      }
+    });
+    notificationListener = { api, id };
+  }
 
   function ensureStatusListener(api: NonNullable<Window["electronAPI"]>): void {
     if (statusListener) return;
@@ -112,10 +134,19 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     onNotification(handler: (notification: BackendNotification) => void): () => void {
       const api = electronAPI();
       if (!api) return () => {};
-      const listenerId = api.on(BACKEND.NOTIFICATION, (payload: BackendNotification) =>
-        handler(payload),
-      );
-      return () => api.offById(BACKEND.NOTIFICATION, listenerId);
+      ensureNotificationListener(api);
+      const entry = (notification: BackendNotification) => handler(notification);
+      notificationHandlers.add(entry);
+      let disposed = false;
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        notificationHandlers.delete(entry);
+        if (notificationHandlers.size === 0 && notificationListener) {
+          notificationListener.api.offById(BACKEND.NOTIFICATION, notificationListener.id);
+          notificationListener = null;
+        }
+      };
     },
 
     /**

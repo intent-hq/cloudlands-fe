@@ -4,13 +4,7 @@
    * Can be opened from anywhere in the app (Cmd+N, sidebar, overlay, etc.)
    * without navigating away from the current page.
    */
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import {
-  fade,
-  fly,
-} from 'svelte/transition';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
@@ -30,6 +24,10 @@
     onClose?.();
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) close();
+  }
+
   // Escape layer: works even when inputs are focused, and only the topmost
   // overlay (e.g. a lightbox opened above this modal) handles Escape
   $effect(() => {
@@ -39,61 +37,46 @@
 
   // Focus the form when the modal opens
   $effect(() => {
-    if (open) {
-      isExpanded = true;
-      // Apply any prefill data from sessionStorage before focusing
-      // This ensures repo quick-starts and draft prompts land in the modal form
-      initializerRef?.applyPrefill();
-      // Wait for the CompactWorkspaceInitializer and its RichTextarea to fully mount
-      setTimeout(() => {
-        initializerRef?.focusAndSelectAll();
-      }, 150);
-    }
+    if (!open) return;
+    isExpanded = true;
+    initializerRef?.applyPrefill();
+    const focusTimer = setTimeout(() => initializerRef?.focusAndSelectAll(), 150);
+    return () => clearTimeout(focusTimer);
   });
 </script>
 
-{#if open}
-  <div
-    class="absolute inset-0 bg-background/50 backdrop-blur cursor-pointer z-50"
-    onclick={close}
-    transition:fade={{ duration: 150 }}
-  />
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div
-    class="fixed inset-0 z-60 flex items-start justify-center overflow-y-auto pointer-events-none"
-    role="presentation"
-    aria-hidden="true"
-    transition:fly={{ y: 20, duration: 200 }}
+<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+  <Dialog.Content
+    data-new-space-modal
+    showCloseButton={true}
+    closeLabel={m.ui_updateToast_close_ariaLabel()}
+    escapeKeydownBehavior="ignore"
+    class="max-w-4xl gap-0 overflow-hidden rounded-lg border border-border bg-popover p-0"
   >
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="relative w-full max-w-4xl flex flex-col py-[12vh] px-4 z-20 pointer-events-auto"
-      onclick={(e) => e.stopPropagation()}
-      role="dialog"
-      tabindex="-1"
-      transition:fly={{ y: -8, duration: 180 }}
-    >
-      <!-- Header -->
-      <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-        <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">{m.modals_newSpace_title()}</h2>
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          class="text-muted-foreground hover:text-foreground"
-          onclick={close}
-        >
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
-
-      <!-- Form -->
-      <div class="bg-sidebar border border-border shadow-xs px-12 py-8">
-        <CompactWorkspaceInitializer
-          bind:this={initializerRef}
-          bind:isExpanded
-          oncreate={close}
-        />
-      </div>
+    <div class="flex shrink-0 items-center border-b border-border px-6 py-4 pr-12">
+      <Dialog.Title class="type-title text-foreground">{m.modals_newSpace_title()}</Dialog.Title>
+      <Dialog.Description class="sr-only">
+        {m.workspace_repoSelector_whichRepo_description()}
+      </Dialog.Description>
     </div>
-  </div>
-{/if}
+
+    <div class="bg-card px-6 py-6 sm:px-8">
+      <CompactWorkspaceInitializer bind:this={initializerRef} bind:isExpanded oncreate={close} />
+    </div>
+  </Dialog.Content>
+</Dialog.Root>
+
+<style>
+  :global(body:has([data-new-space-modal]) [data-slot='select-content']),
+  :global(body:has([data-new-space-modal]) [data-slot='menu-content']) {
+    z-index: var(--layer-tooltip);
+  }
+
+  :global(body:has([data-new-space-modal]) [data-slot='dialog-overlay']) {
+    z-index: calc(var(--layer-tooltip) - 1);
+  }
+
+  :global(body:has([data-new-space-modal]) [data-slot='dialog-content']) {
+    z-index: var(--layer-tooltip);
+  }
+</style>

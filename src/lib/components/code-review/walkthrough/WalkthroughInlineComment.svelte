@@ -9,7 +9,7 @@
   faArrowRight,
   faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Line number for the comment */

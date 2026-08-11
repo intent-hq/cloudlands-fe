@@ -415,9 +415,9 @@
   }
 </script>
 
-<div class={cn('pb-3', className)}>
+<div class={cn('flex h-full min-h-0 flex-col pb-3', className)}>
   {#if $fileExplorerWorkspacePath}
-    <div class="overflow-y-auto">
+    <div class="min-h-0 flex-1 overflow-hidden">
       <FileTreeView
         bind:this={fileTreeRef}
         {workspaceId}

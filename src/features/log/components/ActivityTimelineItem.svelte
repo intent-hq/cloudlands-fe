@@ -13,13 +13,9 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-  import {
-  faCheckCircle,
-  faXmarkCircle,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheckCircle, faXmarkCircle, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { slide } from 'svelte/transition';
   import type { Snippet } from 'svelte';
 

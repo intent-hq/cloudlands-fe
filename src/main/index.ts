@@ -38,17 +38,17 @@ app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
 // dev apps (e.g. the reference Intent build's "dev-instance-N" scheme) on the
 // SingletonLock, yielding intent-cloudlands/cloudlands-dev[-PORT] in dev. This must
 // run before setupConsoleLogCapture() so logs go to the correct userData directory.
+import { createAuthorizedIpcHandler } from './ipc-authorization.js';
 const devUserDataSegment = resolveDevUserDataDirName();
 if (devUserDataSegment) {
   const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
   app.setPath('userData', uniqueUserData);
 }
 
-// EARLY: Default the dev daemon's data directory to a per-DEV_PORT dir so a dev instance
-// never adopts the installed app's intentd (and its workspace catalog) on the global
-// socket. This only supplies a default: an inherited INTENTD_DATA_DIR (e.g. the monorepo
-// `make dev` seat) and explicit INTENTD_SOCKET/INTENTD_WS_URL/INTENTD_TCP transports all
-// win and suppress it. Packaged builds are untouched.
+// EARLY: When dev explicitly opts into sidecar spawning, default that daemon's data
+// directory to a per-DEV_PORT dir so parallel instances stay isolated. Connect-only
+// `pnpm run dev` keeps the global socket; otherwise it would target an isolated socket
+// that no process creates. Inherited data dirs and explicit transports still win.
 // Gated on !app.isPackaged — the same signal backend.ipc.ts uses to pick a transport, so
 // isolation and socket resolution cannot disagree (NODE_ENV would: an unpackaged launch
 // without it still resolves a dev UDS socket). Must run before the sidecar spawn and the
@@ -86,9 +86,10 @@ const originalHandle = ipcMain.handle.bind(ipcMain);
 Object.defineProperty(ipcMain, 'handle', {
   value(channel: string, handler: any) {
     __registeredHandlers.add(channel);
-    __ipcHandlerFunctions.set(channel, handler);
+    const authorizedHandler = createAuthorizedIpcHandler(channel, handler);
+    __ipcHandlerFunctions.set(channel, authorizedHandler);
     // Silent - no per-handler logging to reduce noise
-    return originalHandle(channel, handler);
+    return originalHandle(channel, authorizedHandler);
   },
   writable: false,
   configurable: true,
@@ -309,15 +310,19 @@ import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-
 import { setupWorkspaceIPC } from '../features/workspace/main/workspace.ipc';
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
-import { CdpMcpBridge } from './cdp-mcp-bridge';
+import type { CdpMcpBridge } from './cdp-mcp-bridge';
 import { setMainLanguagePreference, getMainLanguagePreference } from './main-locale';
+import { isCdpMcpBridgeEnabled } from './utils/cdp-debug';
 import { confirmQuitWithRunningAgents } from './quit-confirmation';
 import { m } from '../shared/paraglide/messages.js';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
-import { initSpecialistsService } from '../features/agent/main/specialists.service';
+import {
+  initSpecialistsService,
+  refreshGitHubAuthStatus,
+} from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
 import { workspaceService } from '../features/workspace/main/workspace.service';
 
@@ -1547,7 +1552,7 @@ app.whenReady().then(async () => {
     const { initializeAutoUpdater, markAutoUpdaterNotInitialized } =
       await import('../features/auto-update/main/auto-update.ipc');
     const mainWindow = getMainWindow();
-    if (process.env.NODE_ENV !== 'development') {
+    if (process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true') {
       // Initialize regardless of whether a window exists yet
       // (intent-hq/monorepo#1848): this setImmediate task can run before
       // window creation — the outer flow awaits getActiveId() first, which
@@ -1642,6 +1647,12 @@ app.whenReady().then(async () => {
     startupMetrics.end('createWindow');
   }
 
+  // GitHub-dependent specialist filtering is noncritical for first paint. Start
+  // its daemon-backed refresh only after backend handlers and the first window
+  // are available; the service conservatively hides those specialists until it
+  // completes. Do not await this on the first-window startup path.
+  void refreshGitHubAuthStatus();
+
   // Register intent:// protocol handler with the OS.
   // In production, electron-builder registers the scheme statically (Info.plist / registry),
   // but we also call setAsDefaultProtocolClient at runtime as a belt-and-suspenders measure
@@ -1698,10 +1709,12 @@ app.whenReady().then(async () => {
       logger.warn('Failed to end postWindowIPC metric:', error);
     }
 
-    // Start CDP MCP Server (dev-only)
-    if (process.env.NODE_ENV === 'development' && process.env.ENABLE_CDP_DEBUG) {
+    // The legacy self-connecting bridge is opt-in because connecting Electron to
+    // its own CDP endpoint can trigger a native SIGTRAP. External CDP remains enabled.
+    if (isCdpMcpBridgeEnabled(process.env)) {
       startupMetrics.start('cdpMcpServer');
       try {
+        const { CdpMcpBridge } = await import('./cdp-mcp-bridge');
         cdpMcpServer = new CdpMcpBridge();
         await cdpMcpServer.start();
         logger.info('CDP MCP Server started for debugging');

@@ -60,7 +60,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
@@ -213,9 +213,7 @@ describe('ChatWorkspaceCard overflow menu', () => {
 
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
-    await waitFor(() =>
-      expect(mocks.openWorkspaceInNewWindow).toHaveBeenCalledWith('ws-1'),
-    );
+    await waitFor(() => expect(mocks.openWorkspaceInNewWindow).toHaveBeenCalledWith('ws-1'));
   });
 
   it('dispatches existing archive and delete Redux actions from the menu', async () => {

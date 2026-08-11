@@ -32,8 +32,10 @@ import {
   focusPanel,
   splitPanel,
   closePanel,
+  movePanel,
   updateSizes,
   updateSplitSizes,
+  resizePanelLayoutAtHorizontalPanel,
   toggleExpandPanel,
   resetLayout,
   goBack,
@@ -104,18 +106,25 @@ export class PanelLayoutAdapter {
   }
 
   // --- Tab operations ---
-  openTab(tab: Omit<PanelTab, 'id'>, panelId?: string) { this.dispatch(openTab(this.workspaceId, tab, panelId)); }
+  openTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
+    if (panelId) {
+      this.dispatch(openTab(this.workspaceId, tab, panelId));
+      return;
+    }
+    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab));
+  }
   openTabInAdjacentOrSplit(tab: Omit<PanelTab, 'id'>, sourcePanelId?: string, options?: { animated?: boolean }) {
     this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, sourcePanelId, options));
   }
-  openBrowserPanel(url?: string, contextItemId?: string): void {
-    this.openTab({
+  openBrowserPanel(url?: string, contextItemId?: string, sourcePanelId?: string): void {
+    const tab: Omit<PanelTab, 'id'> = {
       type: 'browser',
       title: m.layout_tabTypes_browser_title(),
       browserUrl: url ?? 'https://google.com',
       contextItemId,
       closable: true,
-    });
+    };
+    this.openTabInAdjacentOrSplit(tab, sourcePanelId);
   }
   closeTab(tabId: string, panelId?: string) { this.dispatch(closeTab(this.workspaceId, tabId, panelId)); }
   closeActiveTab(panelId?: string) { this.dispatch(closeActiveTab(this.workspaceId, panelId)); }
@@ -154,8 +163,16 @@ export class PanelLayoutAdapter {
     this.dispatch(splitPanel(this.workspaceId, panelId, direction, options));
   }
   closePanel(panelId: string) { this.dispatch(closePanel(this.workspaceId, panelId)); }
+  movePanel(panelId: string, targetPanelId: string, position: 'before' | 'after' | 'above' | 'below') {
+    this.dispatch(movePanel(this.workspaceId, panelId, targetPanelId, position));
+  }
   updateSizes(nodePath: number[], sizes: number[]) { this.dispatch(updateSizes(this.workspaceId, nodePath, sizes)); }
   updateSplitSizes(sizes: number[], splitPath?: number[]) { this.dispatch(updateSplitSizes(this.workspaceId, sizes, splitPath)); }
+  growCanvasAtHorizontalPanel(previousWidth: number, nextWidth: number, panelIndex: number) {
+    this.dispatch(
+      resizePanelLayoutAtHorizontalPanel(this.workspaceId, previousWidth, nextWidth, panelIndex),
+    );
+  }
   toggleExpandPanel(panelId: string) { this.dispatch(toggleExpandPanel(this.workspaceId, panelId)); }
   resetLayout() { this.dispatch(resetLayout(this.workspaceId)); }
   applyPreset(preset: 'single' | 'split-horizontal' | 'split-vertical' | 'three-column') {

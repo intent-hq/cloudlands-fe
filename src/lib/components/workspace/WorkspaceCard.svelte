@@ -13,14 +13,13 @@
   import { onDestroy } from 'svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
   import type { WorkspacePhaseInfo, WorkspacePhaseStats, WorkspacePhase } from './workspace-phase';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type {
     SidebarMenuEntry,
@@ -32,17 +31,8 @@
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import type { Workspace } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
-  import {
-    getWorkspaceAgentDisplayInfos,
-    type WorkspaceAgentDisplayInfo,
-  } from './utils/workspace-agent-display';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSession,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import {
@@ -87,10 +77,6 @@
     isUnread?: boolean;
     isPinned?: boolean;
     streamingAgentIds?: string[];
-    /** Unread agent IDs for this workspace (used to filter which agents to show) */
-    unreadAgentIds?: string[];
-    /** Whether to hide the repo avatar (e.g. when already grouped by repo) */
-    hideRepoAvatar?: boolean;
     /** Whether the spec note has content */
     hasSpec?: boolean;
     /** Whether the coordinator/initial agent is actively running */
@@ -131,8 +117,6 @@
     isUnread = false,
     isPinned = false,
     streamingAgentIds = [],
-    unreadAgentIds = [],
-    hideRepoAvatar = false,
     hasSpec = false,
     isAgentRunning = false,
     agentDigest,
@@ -168,12 +152,6 @@
   // status connected — not mere presence).
   const microConnected$ = microConnectedReadable();
   const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
-
-  // Whether the second (repo) row renders its owner/repo text; when it
-  // doesn't, the micro-key badge moves inline into the title row.
-  const showRepoLine = $derived(
-    !hideRepoAvatar && Boolean(workspace?.repositoryOwner && workspace?.repositoryName),
-  );
 
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
@@ -249,28 +227,6 @@
       workspace.repositoryName,
     );
   });
-
-  const agentInfos = $derived.by(() => {
-    const reduxState = appStore.state;
-    return getWorkspaceAgentDisplayInfos({
-      memberAgentIds: workspace?.agentSummary?.agentIds ?? [],
-      unreadAgentIds,
-      workspaceActivity: workspace?.activity,
-      getAgentSnapshot: (agentId) => {
-        const loadedSession = selectAgentSession.select(reduxState, agentId);
-        return {
-          hasLoadedSession: !!loadedSession,
-          isWaiting: loadedSession ? selectAgentIsWaiting.select(reduxState, agentId) : false,
-          isResponding: loadedSession ? selectAgentIsResponding.select(reduxState, agentId) : false,
-          isStreamingFallback: loadedSession ? false : streamingAgentIds.includes(agentId),
-          sessionStatus: loadedSession?.status as string | undefined,
-          specialist: (loadedSession?.metadata?.specialist ??
-            null) as WorkspaceAgentDisplayInfo['specialist'],
-        };
-      },
-    });
-  });
-
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') onClick?.(e);
   }
@@ -454,40 +410,58 @@
   });
 
   const phasePillStyles: Record<WorkspacePhase, string> = {
-    planning: 'bg-muted/20 text-subtle',
-    building: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-    reviewing: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
+    planning: 'bg-muted/20 text-muted-foreground',
+    building: 'bg-info/15 text-info',
+    reviewing: 'bg-primary/15 text-primary',
     shipped: 'bg-foreground/10 text-foreground',
   };
 </script>
 
 {#if workspace}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- The sibling Button owns keyboard activation; the wrapper delegates pointer hover/context behavior. -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     bind:this={rowElement}
     class={cn(
-      'wc-root group relative flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left',
+      'wc-root group relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
       isCurrent
-        ? 'bg-background'
+        ? 'bg-background/60'
         : highlighted
-          ? 'bg-sidebar'
-          : !suppressHover && 'hover:bg-sidebar',
+          ? 'bg-background/50'
+          : !suppressHover && 'hover:bg-background/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
     )}
-    role="button"
-    tabindex="0"
+    role="group"
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
     onclick={(e) => onClick?.(e)}
-    onkeydown={handleKeydown}
+    onkeydown={(event) => {
+      if (event.target === event.currentTarget) handleKeydown(event);
+    }}
     oncontextmenu={handleContextMenu}
     onmouseenter={handleMouseEnter}
     onmouseleave={handleMouseLeave}
     style:anchor-name="--workspace-list-{workspace.id}"
+    data-workspace-card-row
   >
-    <div class="flex items-center gap-1.5 shrink-0 mt-[3px]">
-      <div class="shrink-0 relative">
+    <Button
+      variant="plain"
+      class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+      aria-label={workspace.title || m.workspace_links_untitled_label()}
+      aria-current={isCurrent ? 'page' : undefined}
+      data-workspace-card-trigger
+      onclick={(event) => {
+        event.stopPropagation();
+        onClick?.(event);
+      }}
+    ></Button>
+
+    <div class="relative z-10 flex shrink-0 items-center gap-1.5">
+      {#if $microConnected$ && $workspaceKeySlot$ !== null}
+        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+      {/if}
+      <div class="shrink-0 relative flex items-center">
         <WorkspacePhaseIndicator
           phase={workspacePhaseInfo?.phase ?? 'planning'}
           progress={workspaceBuildProgress}
@@ -495,137 +469,98 @@
         />
         {#if isRunning}
           <div
-            class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-green-500 animate-pulse"
+            class="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success"
+            aria-hidden="true"
           ></div>
         {:else if isUnread}
-          <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-blue-500"></div>
+          <div
+            class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-info"
+            aria-hidden="true"
+          ></div>
         {/if}
       </div>
     </div>
 
-    <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-      <div class="flex items-center gap-1.5">
-        <span
-          class="wc-title truncate text-[13px] flex-1 min-w-0
-          {isCurrent
-            ? 'font-medium text-foreground'
-            : workspace.title
-              ? 'text-foreground'
-              : 'text-subtle'}"
+    <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
+      <span
+        class="wc-title type-body min-w-0 flex-1 truncate font-normal!
+        {isCurrent
+          ? 'text-foreground'
+          : workspace.title
+            ? 'text-foreground'
+            : 'text-muted-foreground'}"
+        data-workspace-card-title
+      >
+        {workspace.title || m.workspace_links_untitled_label()}
+      </span>
+
+      {#if prStatus}
+        {@const statusColor =
+          prStatus === PullRequestStatus.Merged
+            ? 'bg-success/10 text-success'
+            : prStatus === PullRequestStatus.Open
+              ? isPRMergeable
+                ? 'bg-success/10 text-success'
+                : 'bg-warning/10 text-warning'
+              : prStatus === PullRequestStatus.Draft
+                ? 'bg-muted text-muted-foreground'
+                : 'bg-destructive/10 text-destructive-foreground'}
+        <Tooltip
+          content={prTooltipContent}
+          side="bottom"
+          sideOffset={4}
+          disabled={!prTooltipContent}
         >
-          {workspace.title || m.workspace_links_untitled_label()}
-        </span>
-
-        {#if isRunning && streamingAgentIds.length > 0 && workspace?.activity !== 'idle'}
-          <div class="wc-secondary flex items-center -space-x-1.5 shrink-0">
-            {#each streamingAgentIds.slice(0, 3) as agentId (agentId)}
-              <AugieAvatarWithState {agentId} size={14} state="running" />
-            {/each}
-            {#if streamingAgentIds.length > 3}
-              <div class="ml-1 text-ui text-subtle font-medium">
-                +{streamingAgentIds.length - 3}
-              </div>
-            {/if}
-          </div>
-        {:else if agentInfos.length > 0}
-          <div class="wc-secondary flex items-center -space-x-1.5 shrink-0">
-            {#each agentInfos.slice(0, 3) as agent (agent.id)}
-              <AugieAvatarWithState
-                agentId={agent.id}
-                size={14}
-                state={agent.state}
-                specialist={agent.specialist}
-              />
-            {/each}
-            {#if agentInfos.length > 3}
-              <div class="ml-1 text-ui text-subtle font-medium">+{agentInfos.length - 3}</div>
-            {/if}
-          </div>
-        {/if}
-
-        {#if $microConnected$ && $workspaceKeySlot$ !== null && !showRepoLine}
-          <span class="wc-secondary shrink-0 flex items-center">
-            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
-          </span>
-        {/if}
-
-        {#if prStatus}
-          {@const statusColor =
-            prStatus === PullRequestStatus.Merged
-              ? 'bg-purple-500/10 text-purple-500'
-              : prStatus === PullRequestStatus.Open
-                ? isPRMergeable
-                  ? 'bg-emerald-500/10 text-emerald-500'
-                  : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-                : prStatus === PullRequestStatus.Draft
-                  ? 'bg-muted-foreground/10 text-muted-foreground'
-                  : 'bg-red-500/10 text-red-500'}
-          <Tooltip
-            content={prTooltipContent}
-            side="bottom"
-            sideOffset={4}
-            disabled={!prTooltipContent}
+          <span
+            class="wc-secondary type-caption shrink-0 rounded-sm px-1.5 font-normal tabular-nums {statusColor}"
           >
-            <span
-              class="wc-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 {statusColor}"
-            >
-              {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
-            </span>
-          </Tooltip>
-          {#if otherMonitoredPrCount > 0}
-            <Tooltip
-              content={otherMonitoredPrCount === 1
-                ? m.workspace_card_morePrs_tooltip_one()
-                : m.workspace_card_morePrs_tooltip_many({
-                    count: formatInteger(otherMonitoredPrCount),
-                  })}
-              side="bottom"
-              sideOffset={4}
-            >
-              <span
-                class="wc-secondary text-ui font-medium px-1.5 py-0 rounded-full shrink-0 bg-muted-foreground/10 text-muted-foreground"
-                data-testid="workspace-card-more-prs"
-              >
-                {m.workspace_card_morePrs_label({ count: formatInteger(otherMonitoredPrCount) })}
-              </span>
-            </Tooltip>
-          {/if}
-        {/if}
-
-        <span
-          class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
-            ? highlighted
-              ? 'opacity-0'
-              : suppressHover
-                ? ''
-                : 'group-hover:opacity-0 group-hover/message:opacity-0'
-            : ''}"
-        >
-          {#if getWorkspaceActivityDisplayTime(workspace) > 0}
-            <RelativeTime
-              date={getWorkspaceActivityDisplayTime(workspace)}
-              class="text-ui text-subtle whitespace-nowrap"
-              compact
-            />
-          {/if}
-        </span>
-      </div>
-
-      {#if showRepoLine}
-        <div class="wc-repo flex items-center gap-1.5 min-w-0">
-          {#if $microConnected$ && $workspaceKeySlot$ !== null}
-            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
-          {/if}
-          <span class="min-w-0 truncate text-ui text-subtle">
-            {workspace.repositoryOwner}/{workspace.repositoryName}
+            {m.workspace_card_prBadge_label({ number: prNumber ? ` #${prNumber}` : '' })}
           </span>
-        </div>
+        </Tooltip>
       {/if}
+
+      {#if otherMonitoredPrCount > 0}
+        <Tooltip
+          content={otherMonitoredPrCount === 1
+            ? m.workspace_card_morePrs_tooltip_one()
+            : m.workspace_card_morePrs_tooltip_many({
+                count: formatInteger(otherMonitoredPrCount),
+              })}
+          side="bottom"
+          sideOffset={4}
+        >
+          <span
+            class="wc-secondary type-caption shrink-0 rounded-sm bg-muted-foreground/10 px-1.5 font-normal text-muted-foreground tabular-nums"
+            data-testid="workspace-card-more-prs"
+          >
+            {m.workspace_card_morePrs_label({ count: formatInteger(otherMonitoredPrCount) })}
+          </span>
+        </Tooltip>
+      {/if}
+
+      <span
+        class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
+          ? highlighted
+            ? 'opacity-0'
+            : suppressHover
+              ? ''
+              : 'group-hover:opacity-0 group-hover/message:opacity-0'
+          : ''}"
+        data-workspace-card-time
+      >
+        {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+          <RelativeTime
+            date={getWorkspaceActivityDisplayTime(workspace)}
+            class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
+            compact
+          />
+        {/if}
+      </span>
     </div>
 
     {#if actions || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-0 top-1.5 px-2 flex items-center gap-0.5
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
           {highlighted
           ? 'opacity-100'
           : suppressHover
@@ -634,27 +569,39 @@
       >
         {@render actions?.()}
         {#if isUnread && onMarkAsRead}
-          <button
-            class="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ghost transition-all hover:bg-muted/50 hover:text-foreground"
-            onclick={onMarkAsRead}
+          <Button
+            variant="plain"
+            size="icon-xs"
+            iconOnly
+            class="text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground"
+            onclick={(event) => {
+              event.stopPropagation();
+              onMarkAsRead?.(event);
+            }}
             aria-label={m.workspace_card_markAsRead_label()}
             title={m.workspace_card_markAsRead_label()}
           >
             <Fa icon={faCheck} size="xs" />
-          </button>
+          </Button>
         {/if}
         {#if onTogglePin}
-          <button
-            class="flex h-5 w-5 -my-1 cursor-pointer items-center justify-center rounded transition-all hover:bg-muted/50 hover:text-foreground
-              {isPinned ? 'text-primary/60' : 'text-ghost'}"
-            onclick={onTogglePin}
+          <Button
+            variant="plain"
+            size="icon-xs"
+            iconOnly
+            class="transition-all hover:bg-muted/50 hover:text-foreground
+              {isPinned ? 'text-primary/60' : 'text-muted-foreground/60'}"
+            onclick={(event) => {
+              event.stopPropagation();
+              onTogglePin?.(event);
+            }}
             aria-label={isPinned
               ? m.workspace_card_unpin_ariaLabel()
               : m.workspace_card_pin_ariaLabel()}
             title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
             <Fa icon={faThumbtack} size="xs" />
-          </button>
+          </Button>
         {/if}
       </div>
     {/if}
@@ -665,7 +612,7 @@
       anchor="--workspace-list-{workspace.id}"
       position="right"
       anchorElement={rowElement}
-      class="w-auto border-0 bg-transparent shadow-xl"
+      class="w-auto border-0 bg-transparent"
     >
       <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
     </HoverCard>
@@ -702,8 +649,8 @@
       class="shrink-0"
     />
     <span class="font-medium truncate">{phase.label}</span>
-    <span class="text-ghost shrink-0">·</span>
-    <span class="text-subtle truncate text-xs">{statusSubtitle}</span>
+    <span class="shrink-0 text-muted-foreground/60">·</span>
+    <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
     {@render actions?.()}
   </button>
 {:else if phase && stats && variant === 'header'}
@@ -721,9 +668,9 @@
       <div class="text-sm font-semibold truncate">{_title}</div>
     {/if}
     {#if _repoName || _branch}
-      <div class="flex items-center gap-1 text-xs text-subtle truncate">
+      <div class="flex items-center gap-1 truncate text-xs text-muted-foreground">
         {#if _repoName}<span class="truncate">{_repoName}</span>{/if}
-        {#if _repoName && _branch}<span class="text-ghost">·</span>{/if}
+        {#if _repoName && _branch}<span class="text-muted-foreground/60">·</span>{/if}
         {#if _branch}<span class="truncate">{_branch}</span>{/if}
       </div>
     {/if}
@@ -734,7 +681,7 @@
         size={12}
         class="shrink-0"
       />
-      <span class="text-subtle truncate">{statusSubtitle}</span>
+      <span class="truncate text-muted-foreground">{statusSubtitle}</span>
       <span
         class={cn(
           'inline-flex items-center px-1.5 py-px rounded-full text-ui font-medium shrink-0 ml-auto',
@@ -748,8 +695,8 @@
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border/50 bg-background text-left w-full',
-      onClick && 'cursor-pointer hover:bg-background/80 transition-colors',
+      'rounded-lg border border-border/50 bg-sidebar text-left w-full',
+      onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
       highlighted && 'ring-1 ring-primary/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
@@ -770,7 +717,9 @@
       />
       <div class="flex-1 min-w-0">
         <div class="text-sm font-medium">{phase.label}</div>
-        <div class="text-xs text-subtle mt-0.5 leading-snug line-clamp-2">{statusSubtitle}</div>
+        <div class="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
+          {statusSubtitle}
+        </div>
       </div>
     </div>
 
@@ -779,25 +728,25 @@
         {#if stats.tasks.total > 0}
           <div class="flex items-center gap-2">
             <TaskProgressBar stats={stats.tasks} barWidth="3px" barHeight="14px" class="flex-1" />
-            <span class="text-ui text-subtle shrink-0 tabular-nums">
+            <span class="text-ui shrink-0 tabular-nums text-muted-foreground">
               {stats.tasks.completed}/{stats.tasks.total}
             </span>
           </div>
         {/if}
         {#if stats.files.changed > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle"
+            <span class="text-muted-foreground"
               >{m.workspace_card_files_label({ count: formatInteger(stats.files.changed) })}</span
             >
             <span class="tabular-nums">
-              <span class="text-green-500/70">+{stats.files.additions}</span>
-              <span class="text-red-500/70 ml-1">-{stats.files.deletions}</span>
+              <span class="text-success">+{stats.files.additions}</span>
+              <span class="ml-1 text-destructive-foreground">-{stats.files.deletions}</span>
             </span>
           </div>
         {/if}
         {#if stats.commits.total > 0}
           <div class="flex items-center justify-between text-ui">
-            <span class="text-subtle"
+            <span class="text-muted-foreground"
               >{m.workspace_card_commits_label({ count: formatInteger(stats.commits.total) })}</span
             >
           </div>
@@ -807,7 +756,7 @@
             <span
               class={cn(
                 'inline-flex items-center gap-1',
-                stats.pr.hasMerged ? 'text-purple-500/70' : 'text-green-500/70',
+                stats.pr.hasMerged ? 'text-primary' : 'text-success',
               )}>{statusPrLabel}</span
             >
           </div>
@@ -831,7 +780,7 @@
           }}>{statusActions.primary.label}</Button
         >
         <Button
-          class="h-7 text-xs text-subtle"
+          class="h-7 text-xs text-muted-foreground"
           variant="ghost"
           size="sm"
           onclick={(e) => {
@@ -847,9 +796,6 @@
 <style>
   @container (max-width: 220px) {
     .wc-secondary {
-      display: none;
-    }
-    .wc-repo {
       display: none;
     }
   }

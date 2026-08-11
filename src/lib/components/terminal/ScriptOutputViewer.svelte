@@ -35,6 +35,7 @@
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
+  import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -186,10 +187,13 @@
     resizeObserver = null;
     themeManager?.dispose();
     themeManager = null;
-    xterm?.dispose();
+    const terminalToDispose = xterm;
     xterm = null;
     fitAddon = null;
     writtenChunkCount = 0;
+    if (terminalToDispose) {
+      disposeXtermAfterViewportSync(terminalToDispose);
+    }
   }
 
   // ---- Real-time streaming via $effect ----
@@ -270,7 +274,7 @@
   // Reset xterm when transitioning back to empty state
   $effect(() => {
     const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
-    if (isEmptyState && xterm) {
+    if (isEmptyState) {
       disposeXterm();
     }
   });

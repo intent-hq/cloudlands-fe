@@ -142,6 +142,7 @@ const VSCODE_TO_CSS_MAP: [string, string][] = [
   ['editor.foreground', '--foreground'],
   ['sideBar.background', '--sidebar'],
   ['sideBar.foreground', '--sidebar-foreground'],
+  ['sideBar.border', '--sidebar-border'],
   ['editorWidget.background', '--card'],
   ['editorWidget.foreground', '--card-foreground'],
   ['dropdown.background', '--popover'],
@@ -215,6 +216,52 @@ function contrastRatio(rgb1: [number, number, number], rgb2: [number, number, nu
   const lighter = Math.max(l1, l2);
   const darker = Math.min(l1, l2);
   return (lighter + 0.05) / (darker + 0.05);
+}
+
+function hslToRGB(value: string): [number, number, number] {
+  const match = value.match(/^([\d.]+)\s+([\d.]+)%\s+([\d.]+)%$/);
+  if (!match) return [0, 0, 0];
+  const hue = Number(match[1]);
+  const saturation = Number(match[2]) / 100;
+  const lightness = Number(match[3]) / 100;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const offset = lightness - chroma / 2;
+  const channels =
+    hue < 60
+      ? [chroma, x, 0]
+      : hue < 120
+        ? [x, chroma, 0]
+        : hue < 180
+          ? [0, chroma, x]
+          : hue < 240
+            ? [0, x, chroma]
+            : hue < 300
+              ? [x, 0, chroma]
+              : [chroma, 0, x];
+  return channels.map((channel) => Math.round((channel + offset) * 255)) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+function ensureContrast(foreground: string, background: string): string {
+  const foregroundRGB = hslToRGB(foreground);
+  const backgroundRGB = hslToRGB(background);
+  if (contrastRatio(foregroundRGB, backgroundRGB) >= 4.55) return foreground;
+  const black: [number, number, number] = [0, 0, 0];
+  const white: [number, number, number] = [255, 255, 255];
+  const target =
+    contrastRatio(black, backgroundRGB) > contrastRatio(white, backgroundRGB) ? black : white;
+  for (let step = 1; step <= 20; step++) {
+    const amount = step / 20;
+    const candidate = foregroundRGB.map(
+      (channel, index) => channel * (1 - amount) + target[index] * amount,
+    ) as [number, number, number];
+    if (contrastRatio(candidate, backgroundRGB) >= 4.55) return hexToHSL(rgbToHex(...candidate));
+  }
+  return hexToHSL(rgbToHex(...target));
 }
 
 /**
@@ -320,30 +367,51 @@ function deriveMutedBackground(mutedHex: string, bgHex: string, isDark: boolean)
   return hexToHSL(rgbToHex(...candidate));
 }
 
+/** Derive a quiet decorative hairline from the surface it borders. */
+function deriveDecorativeBoundaryColor(surfaceHex: string): string {
+  const surfaceRGB = hexToRGB(surfaceHex);
+  const target: [number, number, number] = isHexDark(surfaceHex) ? [255, 255, 255] : [0, 0, 0];
+  const MIN_RATIO = 1.2;
+  const MAX_STEPS = 20;
+
+  let candidate: [number, number, number] = [...surfaceRGB];
+  for (let step = 1; step <= MAX_STEPS; step++) {
+    const t = step / MAX_STEPS;
+    candidate = [
+      surfaceRGB[0] * (1 - t) + target[0] * t,
+      surfaceRGB[1] * (1 - t) + target[1] * t,
+      surfaceRGB[2] * (1 - t) + target[2] * t,
+    ];
+    if (contrastRatio(candidate, surfaceRGB) >= MIN_RATIO) break;
+  }
+
+  return hexToHSL(rgbToHex(...candidate));
+}
+
 /**
- * Ensure a border color is perceptibly different from the background.
+ * Ensure a control boundary is perceptibly different from every surface it can touch.
  *
- * Borders need enough contrast to be visible but less than text.
- * If the theme's border color is too close to the background, nudge it
- * away (lighter for dark themes, darker for light themes) until it reaches
- * a minimum luminance contrast ratio of 1.5.
+ * Boundaries need at least 3:1 contrast against every surface they can touch.
+ * If a theme color is too close, nudge it away while preserving its hue direction.
  */
-function deriveBorderColor(borderHex: string, bgHex: string, isDark: boolean): string {
+function deriveControlBoundaryColor(
+  borderHex: string,
+  surfaceHexes: string[],
+  isDark: boolean,
+): string {
   const borderRGB = hexToRGB(borderHex);
-  const bgRGB = hexToRGB(bgHex);
+  const surfaceRGBs = surfaceHexes.map(hexToRGB);
 
-  const borderL = relativeLuminance(...borderRGB);
-  const bgL = relativeLuminance(...bgRGB);
+  const MIN_RATIO = 3.1;
+  const minimumRatio = (candidate: [number, number, number]) =>
+    Math.min(...surfaceRGBs.map((surface) => contrastRatio(candidate, surface)));
 
-  const MIN_RATIO = 1.3;
-  const ratio = (Math.max(borderL, bgL) + 0.05) / (Math.min(borderL, bgL) + 0.05);
-
-  if (ratio >= MIN_RATIO) {
+  if (minimumRatio(borderRGB) >= MIN_RATIO) {
     return hexToHSL(borderHex);
   }
 
-  // Push border away from background: lighter in dark themes, darker in light themes
-  const goLighter = borderL > bgL || (borderL === bgL && isDark);
+  // A theme-relative direction guarantees enough contrast at the luminance extremes.
+  const goLighter = isDark;
   const target: [number, number, number] = goLighter ? [255, 255, 255] : [0, 0, 0];
   const MAX_STEPS = 20;
 
@@ -355,9 +423,7 @@ function deriveBorderColor(borderHex: string, bgHex: string, isDark: boolean): s
       borderRGB[1] * (1 - t) + target[1] * t,
       borderRGB[2] * (1 - t) + target[2] * t,
     ];
-    const candL = relativeLuminance(...candidate);
-    const candRatio = (Math.max(candL, bgL) + 0.05) / (Math.min(candL, bgL) + 0.05);
-    if (candRatio >= MIN_RATIO) break;
+    if (minimumRatio(candidate) >= MIN_RATIO) break;
   }
 
   return hexToHSL(rgbToHex(...candidate));
@@ -428,7 +494,10 @@ function deriveAccentColors(
  * Returns Record<string, string> where keys are CSS variable names (e.g. "--background")
  * and values are HSL strings (e.g. "210 50% 40%").
  */
-function buildCSSVariables(colors: Record<string, string>): Record<string, string> {
+function buildCSSVariables(
+  colors: Record<string, string>,
+  isDark: boolean,
+): Record<string, string> {
   const result: Record<string, string> = {};
 
   for (const [vsKey, cssVar] of VSCODE_TO_CSS_MAP) {
@@ -468,11 +537,18 @@ function buildCSSVariables(colors: Record<string, string>): Record<string, strin
     const isDark = isHexDark(bg);
     result['--muted'] = deriveMutedBackground(mutedSource, bg, isDark);
 
-    // Ensure --border has enough contrast against --background to be visible.
+    // Preserve decorative borders from the source theme; normalize only controls and focus.
+    const boundarySurfaces = [
+      bg,
+      colors['editorWidget.background'],
+      colors['dropdown.background'],
+      colors['sideBar.background'],
+    ].filter((color): color is string => Boolean(color));
     const borderSource = colors['panel.border'] ?? colors['editorGroup.border'];
-    if (borderSource) {
-      result['--border'] = deriveBorderColor(borderSource, bg, isDark);
-    }
+    const inputSource = colors['input.border'] ?? colors['input.background'] ?? borderSource ?? bg;
+    result['--input'] = deriveControlBoundaryColor(inputSource, boundarySurfaces, isDark);
+    const ringSource = colors['focusBorder'] ?? colors['button.background'] ?? borderSource ?? bg;
+    result['--ring'] = deriveControlBoundaryColor(ringSource, boundarySurfaces, isDark);
 
     // Derive --text-subtle and --text-ghost from the theme's fg/bg.
     // --text-subtle: readable secondary text between muted-foreground and foreground (≥4.5:1 contrast).
@@ -527,6 +603,122 @@ function buildCSSVariables(colors: Record<string, string>): Record<string, strin
     result['--muted-foreground'] = hexToHSL(colors['descriptionForeground']);
   }
 
+  if (bg) {
+    result['--border'] ??= deriveDecorativeBoundaryColor(bg);
+    result['--sidebar-border'] ??= deriveDecorativeBoundaryColor(
+      colors['sideBar.background'] ?? bg,
+    );
+  }
+
+  const defaults = isDark
+    ? {
+        background: '#1f1f24',
+        foreground: '#f7f7f7',
+        primary: '#009966',
+        primaryForeground: '#171717',
+        secondary: '#1c1c1c',
+        secondaryForeground: '#f7f7f7',
+        muted: '#121217',
+        mutedForeground: '#b8b5c2',
+        accent: '#182c25',
+        accentForeground: '#7de3bd',
+        destructive: '#361010',
+        destructiveForeground: '#f38b8b',
+        border: '#4d4a52',
+        input: '#121217',
+        ring: '#6eddb4',
+        info: '#72d2fa',
+        infoForeground: '#171717',
+        success: '#22c55e',
+        successForeground: '#171717',
+        warning: '#facc15',
+        warningForeground: '#171717',
+        sidebar: '#0d0d10',
+        sidebarForeground: '#f7f7f7',
+        sidebarAccent: '#242424',
+        sidebarBorder: '#4d4a52',
+      }
+    : {
+        background: '#ffffff',
+        foreground: '#171717',
+        primary: '#007a4d',
+        primaryForeground: '#ffffff',
+        secondary: '#f5f5f5',
+        secondaryForeground: '#171717',
+        muted: '#e8e8e8',
+        mutedForeground: '#474747',
+        accent: '#e7f3ee',
+        accentForeground: '#00663f',
+        destructive: '#fde7e7',
+        destructiveForeground: '#930b0b',
+        border: '#d9d9d9',
+        input: '#e6e6e6',
+        ring: '#006ac2',
+        info: '#006ac2',
+        infoForeground: '#ffffff',
+        success: '#117a37',
+        successForeground: '#ffffff',
+        warning: '#dc9400',
+        warningForeground: '#171717',
+        sidebar: '#f7f7f8',
+        sidebarForeground: '#171717',
+        sidebarAccent: '#e8e8e8',
+        sidebarBorder: '#d9d9d9',
+      };
+  const value = (name: keyof typeof defaults) => hexToHSL(defaults[name]);
+  result['--background'] ??= value('background');
+  result['--foreground'] ??= value('foreground');
+  result['--card'] ??= result['--background'];
+  result['--card-foreground'] ??= result['--foreground'];
+  result['--popover'] ??= result['--card'];
+  result['--popover-foreground'] ??= result['--card-foreground'];
+  result['--primary'] ??= value('primary');
+  result['--primary-foreground'] ??= value('primaryForeground');
+  result['--secondary'] ??= value('secondary');
+  result['--secondary-foreground'] ??= value('secondaryForeground');
+  result['--muted'] ??= value('muted');
+  result['--muted-foreground'] ??= value('mutedForeground');
+  result['--accent'] ??= value('accent');
+  result['--accent-foreground'] ??= value('accentForeground');
+  result['--destructive'] ??= value('destructive');
+  result['--destructive-foreground'] ??= value('destructiveForeground');
+  result['--border'] ??= value('border');
+  result['--input'] ??= value('input');
+  result['--ring'] ??= value('ring');
+  result['--info'] = hexToHSL(colors['editorInfo.foreground'] ?? defaults.info);
+  result['--info-foreground'] = value('infoForeground');
+  result['--success'] = hexToHSL(
+    colors['testing.iconPassed'] ??
+      colors['gitDecoration.addedResourceForeground'] ??
+      defaults.success,
+  );
+  result['--success-foreground'] = value('successForeground');
+  result['--warning'] = hexToHSL(colors['editorWarning.foreground'] ?? defaults.warning);
+  result['--warning-foreground'] = value('warningForeground');
+  result['--sidebar'] ??= value('sidebar');
+  result['--sidebar-foreground'] ??= value('sidebarForeground');
+  result['--sidebar-accent'] = result['--secondary'] ?? value('sidebarAccent');
+  result['--sidebar-accent-foreground'] = result['--sidebar-foreground'];
+  result['--sidebar-border'] ??= value('sidebarBorder');
+
+  const pairs = [
+    ['--foreground', '--background'],
+    ['--card-foreground', '--card'],
+    ['--popover-foreground', '--popover'],
+    ['--primary-foreground', '--primary'],
+    ['--secondary-foreground', '--secondary'],
+    ['--accent-foreground', '--accent'],
+    ['--muted-foreground', '--muted'],
+    ['--destructive-foreground', '--destructive'],
+    ['--info-foreground', '--info'],
+    ['--success-foreground', '--success'],
+    ['--warning-foreground', '--warning'],
+    ['--sidebar-foreground', '--sidebar'],
+    ['--sidebar-accent-foreground', '--sidebar-accent'],
+  ] as const;
+  for (const [foreground, background] of pairs) {
+    result[foreground] = ensureContrast(result[foreground], result[background]);
+  }
   return result;
 }
 
@@ -742,7 +934,7 @@ export function parseVSCodeTheme(json: unknown): ParsedVSCodeTheme {
   return {
     name,
     type: isDark ? 'dark' : 'light',
-    cssVariables: buildCSSVariables(colors),
+    cssVariables: buildCSSVariables(colors, isDark),
     monacoTheme: buildMonacoTheme(themeJSON, isDark),
     terminalColors: buildTerminalColors(colors),
     rawColors: { ...colors },

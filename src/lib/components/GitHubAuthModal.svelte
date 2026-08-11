@@ -92,12 +92,11 @@
     role="button"
     tabindex="0"
     aria-label={m.lib_githubAuth_closeModal_ariaLabel()}
-    onclick={handleCancel}
+    onclick={(event) => event.target === event.currentTarget && handleCancel()}
     onkeydown={(e) => e.key === 'Escape' && handleCancel()}
   >
     <div
       class="bg-background rounded-lg w-[420px] max-w-[90vw] shadow-lg border border-border text-foreground"
-      onclick={(event) => event.stopPropagation()}
     >
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>

@@ -25,6 +25,7 @@ import {
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
+import { disposeXtermAfterViewportSync } from './utils/xterm-lifecycle';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
 import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
@@ -2008,15 +2009,10 @@ export class TerminalAdapter {
       logger.error('Error disposing state machine:', error);
     }
 
-    // Finally dispose XTerm and its renderer
-    try {
-      // Clear the terminal first
-      this.xterm.clear();
-
-      // Dispose the terminal (this will also dispose the renderer)
-      this.xterm.dispose();
-    } catch (error) {
+    // xterm 5.x leaves a viewport sync timer queued by open()/fit(). Dispose on
+    // the next task so that callback cannot read an already-cleared renderer.
+    disposeXtermAfterViewportSync(this.xterm, (error) => {
       logger.error('Error disposing xterm:', error);
-    }
+    });
   }
 }

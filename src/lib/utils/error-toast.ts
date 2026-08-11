@@ -115,9 +115,9 @@ async function attemptRecovery(error: AppError): Promise<void> {
 function getWrapperBorderClass(type: string): string {
   switch (type) {
     case 'warning':
-      return '!border-amber-500/50';
+      return '!border-warning/50';
     case 'info':
-      return '!border-blue-500/50';
+      return '!border-info/50';
     default:
       return '!border-destructive/50';
   }

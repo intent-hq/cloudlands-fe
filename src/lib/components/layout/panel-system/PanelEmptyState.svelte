@@ -5,34 +5,32 @@
    * Shows quick action buttons, keyboard shortcuts, and recently closed items.
    */
 
+  import Fa from 'svelte-fa';
   import { getContext } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
-  import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
-  import Fa from 'svelte-fa';
   import {
-  faPlus,
-  faTerminal,
-  faGlobe,
-  faFile,
-  faRobot,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowRotateLeft,
+    faFile,
+    faGlobe,
+    faRobot,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
+  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+  import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
   import { faNote } from '$lib/icons/faNote';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
-  import {
-  SHORTCUTS,
-  formatShortcut,
-} from '$lib/utils/shortcuts';
+  import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
   import { openPalette } from '$store/renderer/slices/palette/palette-slice';
+  import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
-  selectRecentlyClosed,
-  selectFocusedPanelId,
-} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+    selectRecentlyClosed,
+    selectFocusedPanelId,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 
-  import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -125,149 +123,180 @@
     layoutManager?.reopenClosedTab();
   }
 
-  // Quick action buttons (agent handled separately when specialist picker is available).
-  // The browser action is only shown when a handler is provided — PanelLayout
-  // omits it when the embedded browser panel capability is unavailable (web).
-  const nonAgentQuickActions = $derived([
-    { id: 'note', label: m.layout_panelEmptyState_note_label(), icon: faNote, action: () => onCreateNote?.() },
-    { id: 'terminal', label: m.layout_panelEmptyState_terminal_label(), icon: faTerminal, action: () => onCreateTerminal?.() },
-    ...(onOpenBrowser
-      ? [{ id: 'browser', label: m.layout_panelEmptyState_browser_label(), icon: faGlobe, action: () => onOpenBrowser?.() }]
-      : []),
-  ]);
-  const agentQuickAction = { id: 'agent', label: m.layout_panelEmptyState_agent_label(), icon: faRobot, action: () => onCreateAgent?.() };
+  function handleCreateAgent() {
+    if (onCreateAgent) {
+      onCreateAgent();
+      return;
+    }
+    onCreateAgentWithSpecialist?.(null);
+  }
 
-  // Keyboard shortcuts to display with their actions
-  const keyboardShortcuts = [
+  function handleCreatePanel() {
+    const panelId = selectFocusedPanelId.select(appStore.state, _workspaceId);
+    if (panelId) {
+      layoutManager?.splitPanel(panelId, 'horizontal');
+    }
+  }
+
+  type CreationAction = {
+    id: string;
+    label: string;
+    icon: IconDefinition;
+    action: () => void;
+  };
+
+  // Browser is capability-gated by PanelLayout, so its card only appears when
+  // the host provides a working handler.
+  const creationActions = $derived<CreationAction[]>([
     {
-      key: SHORTCUTS.REOPEN_TAB.key,
-      label: SHORTCUTS.REOPEN_TAB.label,
-      action: () => layoutManager?.reopenClosedTab(),
+      id: 'agent',
+      label: m.layout_panelEmptyState_agent_label(),
+      icon: faRobot,
+      action: handleCreateAgent,
     },
     {
-      key: SHORTCUTS.COMMAND_PALETTE.key,
-      label: SHORTCUTS.COMMAND_PALETTE.label,
+      id: 'note',
+      label: m.layout_panelEmptyState_note_label(),
+      icon: faNote,
+      action: () => onCreateNote?.(),
+    },
+    {
+      id: 'terminal',
+      label: m.layout_panelEmptyState_terminal_label(),
+      icon: faTerminal,
+      action: () => onCreateTerminal?.(),
+    },
+    ...(onOpenBrowser
+      ? [
+          {
+            id: 'browser',
+            label: m.layout_panelEmptyState_browser_label(),
+            icon: faGlobe,
+            action: () => onOpenBrowser?.(),
+          },
+        ]
+      : []),
+  ]);
+  const utilityActions = [
+    {
+      key: SHORTCUTS.NEW_TAB.key,
+      label: m.layout_panelEmptyState_newPanel_label(),
+      action: handleCreatePanel,
+    },
+    {
+      key: 'mod+k',
+      label: m.layout_panelEmptyState_commandPalette_label(),
       action: () => appStore.dispatch(openPalette()),
     },
     {
-      key: 'mod+shift+]',
-      label: m.layout_panelEmptyState_cyclePanels_label(),
+      key: SHORTCUTS.REOPEN_TAB.key,
+      label: m.layout_panelEmptyState_reopenClosed_label(),
+      action: handleReopenItem,
     },
     {
-      key: SHORTCUTS.NEW_AGENT.key,
-      label: SHORTCUTS.NEW_AGENT.label,
-      action: () => onCreateAgent?.(),
-    },
-    {
-      key: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key,
-      label: SHORTCUTS.SPLIT_PANEL_HORIZONTAL.label,
-      action: () => {
-        const panelId = selectFocusedPanelId.select(appStore.state, _workspaceId);
-        if (panelId) {
-          layoutManager?.splitPanel(panelId, 'horizontal');
-        }
-      },
+      key: 'mod+b',
+      label: m.layout_panelEmptyState_toggleSidebar_label(),
+      action: () => appStore.dispatch(toggleSidebar()),
     },
     {
       key: 'mod+?',
-      label: m.layout_panelEmptyState_keyboardShortcuts_label(),
+      label: m.layout_panelEmptyState_allShortcuts_label(),
       action: () => appStore.dispatch(openCheatSheet('global')),
     },
   ];
 </script>
 
-<div
-  class="empty-state flex flex-col items-center justify-center h-full px-6 -mt-3 overflow-y-auto"
->
-  <div class="w-full max-w-[27rem] space-y-6">
-    <!-- Quick action buttons row -->
-    <div class="flex items-center justify-center gap-1 flex-wrap">
-      <!-- Agent action: use specialist picker when available -->
-      {#if onCreateAgentWithSpecialist}
-        <CreateAgentSection
-          onCreate={onCreateAgent}
-          onCreateWithSpecialist={onCreateAgentWithSpecialist}
-          compact
-        />
-      {:else}
+<div class="empty-state flex h-full items-center justify-center overflow-y-auto px-6 py-10">
+  <section class="empty-state-content w-full max-w-[36rem]" aria-label="Create in empty panel">
+    <div class="creation-grid grid gap-1.5">
+      {#each creationActions as action (action.id)}
         <button
-          class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-          onclick={agentQuickAction.action}
-          title={m.layout_panelEmptyState_newItem_tooltip({ label: agentQuickAction.label })}
-        >
-          <Fa icon={faPlus} class="w-2.5 h-2.5 opacity-50" />
-          <Fa icon={faRobot} class="w-3 h-3" />
-          <span class="font-medium">{agentQuickAction.label}</span>
-        </button>
-      {/if}
-      {#each nonAgentQuickActions as action (action.id)}
-        <button
-          class="quick-action flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
           onclick={action.action}
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+          aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          <Fa icon={faPlus} class="w-2.5 h-2.5 opacity-50" />
-          <Fa icon={action.icon} class="w-3 h-3" />
-          <span class="font-medium">{action.label}</span>
+          <span
+            class="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+          >
+            <Fa icon={action.icon} class="size-3.5" />
+          </span>
+          <span class="min-w-0 truncate font-medium">
+            {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+          </span>
         </button>
       {/each}
     </div>
 
-    <!-- Recently closed items -->
     {#if recentItems.length > 0}
-      <div class="space-y-0.5">
+      <div class="mt-4 pt-3">
+        <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
+          <Fa icon={faArrowRotateLeft} class="size-3" />
+          <span>Recently closed</span>
+        </div>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
           <button
-            class="recent-item w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+            class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
             onclick={handleReopenItem}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
-            <Fa icon={getTabIcon(item.tab.type)} class="w-3 h-3 flex-shrink-0 opacity-60" />
-            <span class="truncate flex-1">{item.tab.title}</span>
-            <span class="text-ui text-subtle flex-shrink-0"
-              >{formatTime(item.closedAt)}</span
-            >
+            <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            <span class="flex-1 truncate">{item.tab.title}</span>
+            <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
           </button>
         {/each}
       </div>
     {/if}
 
-    <!-- Keyboard shortcuts grid -->
-    <div class="grid grid-cols-2 gap-x-6 gap-y-1">
-      {#each keyboardShortcuts as shortcut (shortcut.key)}
+    <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
+      {#each utilityActions as action (action.key)}
         <button
-          class="shortcut-item flex items-center justify-between gap-2 px-2 py-1 text-xs rounded {shortcut.action
-            ? 'hover:bg-muted/40 transition-colors cursor-pointer'
-            : ''}"
-          onclick={shortcut.action}
-          title={shortcut.label}
+          class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+          onclick={action.action}
+          title={action.label}
         >
-          <span class="text-subtle truncate">{shortcut.label}</span>
-          <div
-            class="shortcut-key flex-shrink-0 px-1.5 py-0.5 rounded bg-muted/50 text-ui text-subtle"
-          >
-            {formatShortcut(shortcut.key)}
-          </div>
+          <span>{action.label}</span>
+          <kbd class="shortcut-key shrink-0 text-muted-foreground/70">
+            {formatShortcut(action.key)}
+          </kbd>
         </button>
       {/each}
     </div>
-  </div>
+  </section>
 </div>
 
 <style>
-  .empty-state {
-    opacity: 0.85;
+  .empty-state-content {
+    container-type: inline-size;
   }
 
-  .quick-action:active {
+  .creation-grid,
+  .shortcut-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @container (min-width: 32rem) {
+    .creation-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .shortcut-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .shortcut-key {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1rem;
+  }
+
+  .creation-card:active,
+  .shortcut-item:active {
     transform: scale(0.98);
   }
 
   .recent-item:active {
-    transform: scale(0.99);
-  }
-
-  .shortcut-item:active {
     transform: scale(0.99);
   }
 </style>

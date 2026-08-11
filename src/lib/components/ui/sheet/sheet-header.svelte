@@ -1,9 +1,6 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements';
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
 
   let {
     ref = $bindable(null),
@@ -16,7 +13,7 @@
 <div
   bind:this={ref}
   data-slot="sheet-header"
-  class={cn('flex flex-col gap-1.5 p-4', className)}
+  class={cn('flex min-w-0 flex-col gap-1 border-b border-border px-4 py-3 pr-12', className)}
   {...restProps}
 >
   {@render children?.()}

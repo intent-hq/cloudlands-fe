@@ -5,7 +5,7 @@
    * A compact badge that shows which agent made a change.
    * Clicking opens the agent drawer and scrolls to the relevant turn.
    */
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import type { AgentAttribution } from '$features/file-tracking/types';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -13,7 +13,6 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   const logger = createLogger('AgentAttributionBadge');
 

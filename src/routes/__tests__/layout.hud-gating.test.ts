@@ -1,11 +1,7 @@
 /**
- * Regression test for the /hud chrome-less gating restored after e10980e5
- * (#584) dropped it. Mounts the real root `+layout.svelte` with the `/hud`
- * route mocked via `$app/stores`, stubbing every heavy child component and
- * module-level side effect (sagas, root-store lifecycle, tab-type
- * registration, splash gate, interrupted-agents service, Monaco/diff
- * preloaders, LiveAppClient) so the isHudRoute branch itself is what's
- * under test.
+ * Regression test for the /hud chrome-less behavior restored after e10980e5.
+ * The route group now enforces the boundary structurally: the root owns global
+ * lifecycle and ActionKeyHud, while `(app)` owns product chrome and overlays.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
@@ -57,7 +53,7 @@ vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }))
 // labeled marker; every other heavy child gets the generic marker.
 vi.mock('$lib/components/layout/sidebar-nav', async () => ({
   SidebarNav: (await import('./mocks/SidebarNavMarker.svelte')).default,
-  SidebarPanel: (await import('./mocks/Marker.svelte')).default,
+  SidebarPanel: (await import('./mocks/SidebarNavMarker.svelte')).default,
 }));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('./mocks/WindowTitleBarMarker.svelte')).default,
@@ -130,7 +126,8 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
-import Layout from '../+layout.svelte';
+import AppLayout from '../(app)/+layout.svelte';
+import RootLayout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="hud-gating-children">content</div>',
@@ -149,7 +146,7 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
   it('suppresses app chrome and renders HudChromelessMain on /hud', () => {
     mockPage.pathname = '/hud';
 
-    render(Layout, { props: { children: childrenSnippet } });
+    render(RootLayout, { props: { children: childrenSnippet } });
 
     expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
     expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
@@ -165,7 +162,7 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
   it('suppresses app chrome on nested /hud/* routes, matching isHudWindow/isHudWindowRenderer prefix semantics', () => {
     mockPage.pathname = '/hud/settings';
 
-    render(Layout, { props: { children: childrenSnippet } });
+    render(RootLayout, { props: { children: childrenSnippet } });
 
     expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
     expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
@@ -178,14 +175,13 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
   it('renders full chrome on non-HUD routes', () => {
     mockPage.pathname = '/';
 
-    render(Layout, { props: { children: childrenSnippet } });
+    render(AppLayout, { props: { children: childrenSnippet } });
 
     expect(screen.getAllByTestId('window-title-bar-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('sidebar-nav-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 });

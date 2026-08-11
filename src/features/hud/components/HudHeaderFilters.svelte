@@ -190,7 +190,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.2em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-header-filter-sep {
@@ -226,7 +226,7 @@
     font:
       500 8px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-header-menu {
     position: absolute;
@@ -235,7 +235,7 @@
     min-width: 270px;
     background: hsl(var(--card));
     border: 1px solid hsl(var(--border));
-    box-shadow: 0 8px 24px hsl(var(--app-background) / 0.6);
+    box-shadow: 0 8px 24px hsl(var(--background) / 0.6);
     z-index: 40;
     padding: 4px;
     display: flex;
@@ -276,7 +276,7 @@
   }
   .hud-header-menu-avatar-all {
     border: 1px dashed hsl(var(--border));
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-header-menu-check {
     width: 13px;
@@ -316,6 +316,6 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
 </style>

@@ -9,17 +9,11 @@
    * in Monaco diff mode. The diff shows all changes merged together.
    */
 
-  import {
-  ChangeStage,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { ChangePart } from './types';
-  import {
-  mergeChangeParts,
-  buildContentFromMergedHunks,
-} from './unified-diff-merger';
-  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
+  import { mergeChangeParts, buildContentFromMergedHunks } from './unified-diff-merger';
+  import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { m } from '$shared/paraglide/messages.js';
 

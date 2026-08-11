@@ -38,18 +38,38 @@ export default {
           DEFAULT: 'hsl(var(--card) / <alpha-value>)',
           foreground: 'hsl(var(--card-foreground) / <alpha-value>)',
         },
+        info: {
+          DEFAULT: 'hsl(var(--info) / <alpha-value>)',
+          foreground: 'hsl(var(--info-foreground) / <alpha-value>)',
+        },
+        success: {
+          DEFAULT: 'hsl(var(--success) / <alpha-value>)',
+          foreground: 'hsl(var(--success-foreground) / <alpha-value>)',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning) / <alpha-value>)',
+          foreground: 'hsl(var(--warning-foreground) / <alpha-value>)',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar) / <alpha-value>)',
+          foreground: 'hsl(var(--sidebar-foreground) / <alpha-value>)',
+          accent: 'hsl(var(--sidebar-accent) / <alpha-value>)',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground) / <alpha-value>)',
+          border: 'hsl(var(--sidebar-border) / <alpha-value>)',
+        },
       },
       borderColor: {
         DEFAULT: 'hsl(var(--border) / <alpha-value>)',
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+        lg: 'var(--radius-large)',
+        md: 'var(--radius-medium)',
+        sm: 'var(--radius-small)',
+        full: 'var(--radius-full)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['var(--font-ui)'],
+        mono: ['var(--font-code)'],
       },
       keyframes: {
         'accordion-down': {
@@ -78,11 +98,11 @@ export default {
         },
       },
       animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-        'fade-in': 'fade-in 0.1s ease-out',
+        'accordion-down': 'accordion-down var(--motion-slow) var(--ease-emphasized-out)',
+        'accordion-up': 'accordion-up var(--motion-slow) var(--ease-emphasized-out)',
+        'fade-in': 'fade-in var(--motion-fast) var(--ease-standard)',
         shimmer: 'shimmer 2s infinite',
-        'subtle-fade-in': 'subtle-fade-in 0.3s ease-out',
+        'subtle-fade-in': 'subtle-fade-in var(--motion-slow) var(--ease-standard)',
         'bounce-dot': 'bounce-dot 1.4s infinite ease-in-out both',
       },
     },

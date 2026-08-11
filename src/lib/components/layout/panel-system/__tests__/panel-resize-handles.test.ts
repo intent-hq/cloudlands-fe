@@ -1,0 +1,112 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
+
+vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectIsDragging: () => readable(false),
+}));
+vi.mock('$store/renderer/slices/tab-state/tab-state-slice', () => ({
+  setActiveHandleDrop: (value: unknown) => ({ type: 'tab-state/set-active-handle-drop', value }),
+}));
+
+import PanelCornerHandle from '../PanelCornerHandle.svelte';
+import PanelSplitHandle from '../PanelSplitHandle.svelte';
+
+afterEach(() => {
+  document.body.classList.remove('panel-resizing');
+  vi.clearAllMocks();
+});
+
+describe('editorial panel resize handles', () => {
+  it('uses one neutral visual contract across resize implementations', () => {
+    const sharedStyles = fs.readFileSync(
+      path.resolve(__dirname, '../../../../styles/resize-handles.css'),
+      'utf8',
+    );
+    const implementationPaths = [
+      '../../ResizablePanel.svelte',
+      '../../ResizablePanelGroup.svelte',
+      '../PanelSplitHandle.svelte',
+      '../PanelCornerHandle.svelte',
+      '../../sidebar-nav/SidebarPanel.svelte',
+      '../../../workspace/VSCodeResizablePanels.svelte',
+      '../../../terminal/QuakeTerminalOverlay.svelte',
+      '../../../terminal/RootQuakeTerminalOverlay.svelte',
+      '../../../terminal/TerminalSidebar.svelte',
+      '../../../terminal/SetupScriptBanner.svelte',
+      '../../../chat/input/SimpleRichInput.svelte',
+    ];
+
+    expect(sharedStyles).toContain('.app-resize-handle');
+    expect(sharedStyles).toContain('--resize-handle-idle: hsl(var(--border))');
+    expect(sharedStyles).toContain('--resize-handle-active: hsl(var(--muted-foreground) / 0.55)');
+    expect(sharedStyles).toContain('opacity: 0');
+    expect(sharedStyles).toContain(
+      ".app-resize-handle[data-resize-indicator='short']::before {\n  opacity: 0.45;",
+    );
+    expect(sharedStyles).not.toContain('var(--primary)');
+    expect(sharedStyles).not.toContain('var(--ring)');
+    implementationPaths.forEach((implementationPath) => {
+      expect(fs.readFileSync(path.resolve(__dirname, implementationPath), 'utf8')).toContain(
+        'app-resize-handle',
+      );
+    });
+    expect(
+      fs.readFileSync(path.resolve(__dirname, '../../sidebar-nav/SidebarPanel.svelte'), 'utf8'),
+    ).toContain('data-combined-panel-divider-border');
+  });
+
+  it('keeps a vertical 16px resize target while reporting horizontal drag deltas', async () => {
+    const onResize = vi.fn();
+    const onResizeEnd = vi.fn();
+    render(PanelSplitHandle, {
+      props: { direction: 'horizontal', onResize, onResizeEnd },
+    });
+
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+    expect(handle.classList).toContain('app-resize-handle');
+    expect(handle.getAttribute('data-resize-axis')).toBe('x');
+
+    await fireEvent.mouseDown(handle, { clientX: 20 });
+    expect(document.body.classList.contains('panel-resizing')).toBe(true);
+    await fireEvent.mouseMove(window, { clientX: 29 });
+    expect(onResize).toHaveBeenCalledWith(9);
+    await fireEvent.mouseUp(window);
+    expect(onResizeEnd).toHaveBeenCalledOnce();
+    expect(document.body.classList.contains('panel-resizing')).toBe(false);
+  });
+
+  it('reports vertical drag deltas from a horizontal resize target', async () => {
+    const onResize = vi.fn();
+    render(PanelSplitHandle, { props: { direction: 'vertical', onResize } });
+
+    const handle = screen.getByRole('button', { name: 'Resize panel' });
+    await fireEvent.mouseDown(handle, { clientY: 12 });
+    await fireEvent.mouseMove(window, { clientY: 19 });
+    expect(onResize).toHaveBeenCalledWith(7);
+    await fireEvent.mouseUp(window);
+  });
+
+  it('preserves two-axis corner resizing and cleanup', async () => {
+    const onResize = vi.fn();
+    const onResizeEnd = vi.fn();
+    render(PanelCornerHandle, { props: { onResize, onResizeEnd } });
+
+    const handle = screen.getByRole('button', { name: 'Resize panel corner' });
+    expect(handle.classList).toContain('app-resize-handle');
+    expect(handle.getAttribute('data-resize-axis')).toBe('both');
+    await fireEvent.mouseDown(handle, { clientX: 10, clientY: 15 });
+    expect(document.body.classList.contains('panel-resizing')).toBe(true);
+    await fireEvent.mouseMove(window, { clientX: 16, clientY: 24 });
+    expect(onResize).toHaveBeenCalledWith(6, 9);
+    await fireEvent.mouseUp(window);
+    expect(onResizeEnd).toHaveBeenCalledOnce();
+    expect(document.body.classList.contains('panel-resizing')).toBe(false);
+  });
+});

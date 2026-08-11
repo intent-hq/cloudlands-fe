@@ -1,19 +1,16 @@
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
-/* eslint-disable max-lines */
-  import {
-  onMount,
-  tick,
-} from 'svelte';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  /* eslint-disable max-lines */
+  import { onMount, tick } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  selectEffectiveDefaultProviderId,
-  selectNormalizedProviderId,
-  selectProviderDisplayName,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectEffectiveDefaultProviderId,
+    selectNormalizedProviderId,
+    selectProviderDisplayName,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     enhancePrompt,
     EnhancePromptUnavailableError,
@@ -29,24 +26,22 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from 'svelte-fa';
   import {
-  faMagicWandSparkles,
-  faMicrophone,
-  faPaperclip,
-  faPaperPlane,
-  faSpinner,
-  faXmark,
-  faLayerGroup,
-  faStop,
-} from '@fortawesome/free-solid-svg-icons';
+    faMicrophone,
+    faPaperclip,
+    faPaperPlane,
+    faSpinner,
+    faXmark,
+    faStop,
+  } from '@fortawesome/free-solid-svg-icons';
   import {
-  selectPttRecording,
-  selectVoiceTranscribing,
-} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+    selectPttRecording,
+    selectVoiceTranscribing,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import {
-  cancelComposerMicRecording,
-  isComposerMicRecording,
-  toggleComposerMicRecording,
-} from '$features/hardware-console/voice/composer-mic-controller';
+    cancelComposerMicRecording,
+    isComposerMicRecording,
+    toggleComposerMicRecording,
+  } from '$features/hardware-console/voice/composer-mic-controller';
   import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
@@ -60,16 +55,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import AttachmentPreview from '../AttachmentPreview.svelte';
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
-
+  import { parseImageDataUrl } from './image-data-url';
 
   import {
-  togglePanel as togglePanelAction,
-  toggleSelection as toggleSelectionAction,
-} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
+    togglePanel as togglePanelAction,
+    toggleSelection as toggleSelectionAction,
+  } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
-  selectPanels,
-  selectSelections,
-} from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
+    selectPanels,
+    selectSelections,
+  } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { slide } from 'svelte/transition';
 
@@ -140,8 +135,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
+    /** Dock to a panel edge with only a top divider. */
+    edgeDocked?: boolean;
     /** Padding/spacing class applied to the rich text editor content. */
     editorClassName?: string;
+    /** Override the horizontal inset applied to context rows and the action bar. */
+    contentInsetClassName?: string;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -151,6 +150,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     oncontextAdd?: (item: ContextItem) => void;
     oncontextRemove?: (id: string) => void;
     onmodelChange?: (modelId: string) => void;
+    onvaluechange?: (value: string) => void;
     /** Callback to get previous history item (up arrow) - returns null if at start of history */
     onHistoryPrev?: () => string | null;
     /** Callback to get next history item (down arrow) - returns null if at end of history */
@@ -189,7 +189,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     panelFocused: _panelFocused = true, // Reserved for future use
 
     compactMode: _compactMode = false, // Reserved for future use
+    edgeDocked = false,
     editorClassName = 'px-2!',
+    contentInsetClassName = undefined,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -198,24 +200,38 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     oncontextAdd,
     oncontextRemove,
     onmodelChange,
+    onvaluechange,
     onHistoryPrev,
     onHistoryNext,
   }: Props = $props();
+
+  function updateValue(nextValue: string) {
+    value = nextValue;
+    onvaluechange?.(nextValue);
+  }
 
   // §5.31 gate — enhance is auggie-only; gated on the settings-derived
   // effective provider, matching the daemon's derivation.
   const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
+  const contentInsetClasses = $derived(
+    contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2'),
+  );
+
   // Track if enhancement is in progress
   let isEnhancing = $state(false);
-  let enhanceRequestId = $state(0); // Increment for each request
-  let cancelledRequestId = $state(-1); // Track which request was cancelled
+  let enhanceRequestId = $state(0); // Monotonic generation; cancellation advances it
+  let enhancementUndoValue = $state<string | null>(null);
+  let enhancedPromptValue = $state<string | null>(null);
   let tiptap: any = $state(null);
-  let modelPickerRef: { open: () => void; clearFallbackWarning: () => void; clearPendingUpdate: () => void } | null =
-    $state(null);
-  // svelte-ignore state_referenced_locally -- previous-value tracker seeded once; the effects below keep it in sync.
+  let modelPickerRef: {
+    open: () => void;
+    clearFallbackWarning: () => void;
+    clearPendingUpdate: () => void;
+  } | null = $state(null);
+  // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
-  // svelte-ignore state_referenced_locally -- previous-value tracker seeded once; the effects below keep it in sync.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
@@ -230,17 +246,19 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     contextItems.filter(
       (item) =>
         item.type === 'file' &&
-        ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
-    )
+        ((item.imageData && item.imageMimeType) ||
+          (item.file && item.file.type?.startsWith('image/'))),
+    ),
   );
   const nonImageItems = $derived(
     contextItems.filter(
       (item) =>
         !(
           item.type === 'file' &&
-          ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
-        )
-    )
+          ((item.imageData && item.imageMimeType) ||
+            (item.file && item.file.type?.startsWith('image/')))
+        ),
+    ),
   );
 
   // The Stop affordance mirrors the Thinking indicator: visible for the entire
@@ -250,32 +268,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   // no turn to stop while a parent is idle-waiting, and that affordance lives
   // on sidebar/list surfaces (IDLE-1).
   let showStopButton = $derived(isStreaming || isResponding);
-
-  // Mic latch button: "recording" renders only for the session THIS button
-  // started (ownership via the controller's session token) — a live hardware
-  // PTT session leaves the button idle-looking, and a click then hints
-  // instead of hijacking it. `$pttRecording$` drives re-evaluation (it flips
-  // exactly when a session starts/ends); transcribing disables the button
-  // with a spinner while `voice.transcribe` is in flight.
   const micRecording = $derived($pttRecording$ && isComposerMicRecording());
   const micTranscribing = $derived($voiceTranscribing$);
 
-  /** Dispatch + hint context for the shared PTT session API. */
   const micContext: PttContext = {
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     showHint: (message) => toast.info(message),
   };
 
   function handleMicClick() {
-    // The button is hidden while the effective engine is 'unavailable'
-    // (no engine can transcribe at all — non-mac or helper-missing mac
-    // with no cloud key), so this gate only catches the render race where
-    // a click lands before the template reacts to a settings change. A
-    // live recording is never gated — its stop-click must always land.
-    if (
-      !micRecording &&
-      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
-    ) {
+    if (!micRecording && selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable') {
       showVoiceSetupToast();
       return;
     }
@@ -290,12 +292,39 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
   }
 
-  // Cancel-while-transcribing: abandon the in-flight session so a hung or
-  // slow transcribe can never insert a late result — the transcribing state
-  // clears immediately and a new recording can start right away.
   function handleMicCancelTranscription() {
     cancelActiveTranscription();
   }
+
+  const enhanceHint = $derived(
+    enhanceAvailable &&
+      !disabled &&
+      (isEnhancing || enhancementUndoValue !== null || value.trim().length >= 3)
+      ? isEnhancing
+        ? {
+            kind: 'enhancing' as const,
+            label: m.chat_richInput_enhancing_label(),
+            icon: 'dismiss' as const,
+            ariaLabel: m.chat_richInput_stopEnhancing_label(),
+            onActivate: handleCancelEnhance,
+          }
+        : enhancementUndoValue !== null
+          ? {
+              kind: 'enhanced' as const,
+              label: m.chat_richInput_enhanced_label(),
+              icon: 'undo' as const,
+              ariaLabel: m.chat_richInput_undoEnhance_label(),
+              onActivate: handleUndoEnhance,
+            }
+          : {
+              kind: 'ready' as const,
+              label: '',
+              shortcut: '→',
+              ariaLabel: m.chat_richInput_enhancePrompt_label(),
+              onActivate: handleEnhancePrompt,
+            }
+      : null,
+  );
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
@@ -351,13 +380,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (tiptap?.clear) {
       tiptap.clear();
     }
-    value = '';
+    updateValue('');
     contextItems = [];
   }
 
   // Export setContent method for parent components (e.g., suggested prompts)
   export async function setContent(text: string) {
-    value = text;
+    updateValue(text);
     if (tiptap?.setContent) {
       await tiptap.setContent(text);
     }
@@ -393,9 +422,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           });
           return null;
         }
-        const base64Marker = ';base64,';
-        const markerIndex = src.indexOf(base64Marker);
-        if (markerIndex === -1) {
+        const parsed = parseImageDataUrl(src);
+        if (!parsed) {
           logger.warn('SimpleRichInput: Failed to parse image data URL', {
             index,
             alt: img.alt,
@@ -403,17 +431,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           });
           return null;
         }
-        const mimeType = src.substring(5, markerIndex); // 5 = 'data:'.length
-        const base64Data = src.substring(markerIndex + base64Marker.length);
-        if (!mimeType || !base64Data) {
-          logger.warn('SimpleRichInput: Empty mimeType or base64Data in image data URL', {
-            index,
-            alt: img.alt,
-            mimeType,
-            hasData: base64Data.length > 0,
-          });
-          return null;
-        }
+        const { mimeType, data: base64Data } = parsed;
         logger.info('SimpleRichInput: Parsed inline image', {
           index,
           mimeType,
@@ -490,7 +508,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Height constraints for auto-expand
   const MIN_HEIGHT = 65;
-  const COMPACT_PANEL_THRESHOLD = 450; // Panel height below which we use compact input
+  const COMPACT_PANEL_THRESHOLD = 640; // Keep the composer compact in short and stacked panels
   const MAX_HEIGHT_PERCENTAGE = 0.8; // Max 80% of parent panel
   const MAX_HEIGHT_ABSOLUTE = 800; // Absolute max in pixels
   const FALLBACK_MAX_HEIGHT = 300;
@@ -518,11 +536,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let isAutoExpand = $derived(containerHeight === null);
 
   // Model selection
-  // svelte-ignore state_referenced_locally -- local editable copy seeded from the prop; the effect below mirrors prop changes.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; later prop changes sync below.
   let selectedModel = $state<string | null | undefined>(propSelectedModel);
 
   // Track the last notified model to prevent infinite loops
-  // svelte-ignore state_referenced_locally -- non-reactive tracker seeded once; updated by the effects below.
+  // svelte-ignore state_referenced_locally -- tracks the initial notification baseline.
   let lastNotifiedModel: string | null | undefined = propSelectedModel;
 
   // Track if user has made a local change that should take precedence over props
@@ -558,9 +576,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       return $defaultProviderId$;
     }
 
-    const session = workspace?.id
-      ? selectAgentSession.select(appStore.state, agentId)
-      : undefined;
+    const session = workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
     const provider = session ? getAgentProvider(session, $defaultProviderId$) : undefined;
     return provider ? normalizeProviderId(provider) : undefined;
   });
@@ -648,9 +664,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!agentId || !workspace?.id) return;
     if (isChangingProvider) return; // prevent re-entry during in-flight switch
 
-    const previousSession = agentId && workspace?.id
-      ? selectAgentSession.select(appStore.state, agentId)
-      : undefined;
+    const previousSession =
+      agentId && workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
     const previousProvider = selectedProviderId;
     const previousModel = selectedModel;
 
@@ -660,14 +675,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     selectedModel = newModel;
     lastNotifiedModel = newModel;
 
-    appStore.dispatch(updateAgentSessionFields(agentId, {
-      provider: newProvider,
-      model: newModel,
-      metadata: {
-        ...(previousSession?.metadata || {}),
+    appStore.dispatch(
+      updateAgentSessionFields(agentId, {
         provider: newProvider,
-      },
-    }));
+        model: newModel,
+        metadata: {
+          ...(previousSession?.metadata || {}),
+          provider: newProvider,
+        },
+      }),
+    );
 
     try {
       // Pass the target provider explicitly so the daemon resolves a bare
@@ -678,22 +695,31 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       }
       onmodelChange?.(newModel);
     } catch (error) {
-      logger.error('Failed to switch agent provider via model change', { error, agentId, newProvider });
+      logger.error('Failed to switch agent provider via model change', {
+        error,
+        agentId,
+        newProvider,
+      });
       localProviderId = previousProvider === hydratedPropProviderId ? undefined : previousProvider;
       selectedModel = previousModel;
       lastNotifiedModel = previousModel;
       userChangedModel = false;
-      const rollbackProvider = previousProvider ?? previousSession?.provider ?? previousSession?.metadata?.provider as string | undefined;
+      const rollbackProvider =
+        previousProvider ??
+        previousSession?.provider ??
+        (previousSession?.metadata?.provider as string | undefined);
       const rollbackModel = previousModel ?? previousSession?.model;
       if (rollbackProvider && rollbackModel) {
-        appStore.dispatch(updateAgentSessionFields(agentId, {
-          provider: rollbackProvider,
-          model: rollbackModel,
-          metadata: {
-            ...(previousSession?.metadata || {}),
+        appStore.dispatch(
+          updateAgentSessionFields(agentId, {
             provider: rollbackProvider,
-          },
-        }));
+            model: rollbackModel,
+            metadata: {
+              ...(previousSession?.metadata || {}),
+              provider: rollbackProvider,
+            },
+          }),
+        );
       }
       toast.error(
         error instanceof Error
@@ -717,6 +743,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
+    handleCancelEnhance();
     // Clear any model fallback warning since user is sending a message with the new model
     modelPickerRef?.clearFallbackWarning();
     // Allow submission even if processing - the parent will handle stopping the current message
@@ -727,14 +754,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     if (!canSend || disabled || inputLocked || isEnhancing) {
       return;
     }
+    handleCancelEnhance();
     // Force submit interrupts streaming and sends immediately
     onforcesubmit?.(value);
   }
 
   async function handleEnhancePrompt() {
-    if (!enhanceAvailable) return;
+    if (!enhanceAvailable || disabled) return;
     if (!value.trim() || isEnhancing) return;
 
+    const originalPrompt = value;
+    enhancementUndoValue = null;
+    enhancedPromptValue = null;
     isEnhancing = true;
     const currentRequestId = ++enhanceRequestId;
 
@@ -746,17 +777,19 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         // No handler provided: enhance through the daemon (agent.enhancePrompt, PROTOCOL §5.31)
         const result = await enhancePrompt(value, { model: selectedModel ?? undefined });
 
-        // Check if THIS request was cancelled before applying result
-        if (currentRequestId === cancelledRequestId) {
+        // Only the latest, still-active request may update the prompt.
+        if (currentRequestId !== enhanceRequestId) {
           return;
         }
 
-        value = result.enhanced;
+        enhancementUndoValue = originalPrompt;
+        enhancedPromptValue = result.enhanced;
+        updateValue(result.enhanced);
         toast.success(m.chat_richInput_promptEnhanced_toast());
       }
     } catch (error) {
-      // Don't show error if it was cancelled
-      if (currentRequestId === cancelledRequestId) {
+      // Ignore errors from requests invalidated by cancellation or a newer request.
+      if (currentRequestId !== enhanceRequestId) {
         return;
       }
       logger.error('Failed to enhance prompt:', error);
@@ -768,9 +801,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             : m.chat_richInput_enhanceFailed_error(),
       );
     } finally {
-      // Only reset isEnhancing if this request wasn't cancelled
-      // (cancelled requests already set isEnhancing = false)
-      if (currentRequestId !== cancelledRequestId) {
+      if (currentRequestId === enhanceRequestId) {
         isEnhancing = false;
       }
     }
@@ -778,9 +809,20 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   function handleCancelEnhance() {
     if (isEnhancing) {
-      cancelledRequestId = enhanceRequestId;
+      enhanceRequestId += 1;
       isEnhancing = false;
+      enhancementUndoValue = null;
+      enhancedPromptValue = null;
     }
+  }
+
+  function handleUndoEnhance() {
+    if (enhancementUndoValue === null) return;
+    const originalPrompt = enhancementUndoValue;
+    enhancementUndoValue = null;
+    enhancedPromptValue = null;
+    updateValue(originalPrompt);
+    void tick().then(() => focus());
   }
 
   function handleFileSelect() {
@@ -902,11 +944,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       try {
         const dataUrl = await fileToDataUrl(file);
         // Extract base64 data from data URL (remove "data:image/...;base64," prefix)
-        const base64Match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (!base64Match) {
+        const parsed = parseImageDataUrl(dataUrl);
+        if (!parsed) {
           throw new Error('Invalid data URL format');
         }
-        const [, mimeType, base64Data] = base64Match;
+        const { mimeType, data: base64Data } = parsed;
 
         // Add image to context items (attachment flow) instead of inserting inline
         const timestamp = Date.now();
@@ -917,7 +959,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           label: fileName,
           description: `${mimeType} • ${formatFileSize(file.size)}`,
           path: fileName,
-          file: file,
+          file,
           imageData: base64Data,
           imageMimeType: mimeType,
         };
@@ -971,7 +1013,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     toast.success(m.chat_richInput_addedFile_toast({ name: fileName }));
   }
 
-
   // Set up ResizeObserver to track parent panel height
   $effect(() => {
     if (!containerRef) return;
@@ -996,21 +1037,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   onMount(() => {
     // Note: Selection changes from editors (CodeEditor/Monaco) are synced to the
     // multi-panel-context Redux store via ChatPanel which watches editor:selection-change events.
-  });
-
-  // Listen for global enhance prompt shortcut (Cmd+/)
-  $effect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleEnhancePromptEvent = () => {
-      handleEnhancePrompt();
-    };
-
-    window.addEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
-
-    return () => {
-      window.removeEventListener('chat:enhance-prompt', handleEnhancePromptEvent);
-    };
   });
 
   // Listen for global model picker shortcut (Cmd+Alt+.)
@@ -1083,18 +1109,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
 </script>
 
-<!-- Esc cancels an in-progress composer mic recording (discard, no
-     transcription). Capture phase so the editor's own Escape handling
-     never wins while dictation is live; a no-op unless this instance owns
-     the recording session. -->
 <svelte:window onkeydowncapture={handleMicEscape} />
 
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col group-[.focused]/panel:bg-sidebar bg-sidebar rounded transition-colors',
+    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) motion-reduce:transition-none',
+    edgeDocked
+      ? 'rounded-none border-x-0 border-b-0 border-t border-border bg-card shadow-none'
+      : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
     {
-      'border-border': !isDragging,
       'border-primary border-dashed': isDragging,
     },
   )}
@@ -1124,25 +1148,22 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   <!-- Resize Handle - at bottom when in edit mode, top otherwise. Double-click to reset to auto-expand -->
   <button
-    class="resize-handle absolute left-1/2 -translate-x-1/2 w-12 h-1 cursor-ns-resize group z-10 bg-transparent border-0 p-0 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto {editMode
+    class="app-resize-handle resize-handle absolute left-1/2 z-10 h-4 w-12 -translate-x-1/2 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto {editMode
       ? 'bottom-[-0.5px] translate-y-1/2'
       : 'top-[-0.5px] -translate-y-1/2'}"
+    data-resize-axis="y"
+    data-resize-indicator="short"
+    data-resizing={isResizing}
     onmousedown={startResize}
     ondblclick={handleResizeDoubleClick}
     aria-label={m.chat_richInput_resize_ariaLabel()}
     tabindex="-1"
-  >
-    <div class="resize-handle-bar w-full h-full flex items-center justify-center">
-      <div
-        class="w-8 h-0.75 bg-border rounded-full group-hover:bg-muted-foreground transition-colors"
-      ></div>
-    </div>
-  </button>
+  ></button>
 
   <!-- Non-image context items and selections - shown above editor when present -->
   {#if nonImageItems.length > 0}
     <div
-      class="flex items-center gap-1 px-1 py-0.5 min-w-0 overflow-x-auto scrollbar-none"
+      class="flex min-w-0 items-center gap-1 overflow-x-auto pt-1 scrollbar-none {contentInsetClasses}"
       style="-ms-overflow-style: none; scrollbar-width: none;"
     >
       {#each nonImageItems as item (item.id)}
@@ -1201,38 +1222,54 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     onclick={() => tiptap?.focus()}
   >
     <TipTapEditor
-        bind:this={tiptap}
-        class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
-        {editorClassName}
-        minHeight={20}
-        maxHeight={isAutoExpand ? 9999 : 9999}
-        {autoFocus}
-        {value}
-        {placeholder}
-        disabled={disabled || isEnhancing}
-        editableWhileDisabled={editableWhileDisabled && !isEnhancing}
-        {inputLocked}
-        workspace={workspace ?? undefined}
-        onUpdate={(text) => {
-          value = text;
-          // Update inline images state for send button reactivity
-          hasInlineImages = (tiptap?.getInlineImages?.() ?? []).length > 0;
-        }}
-        onSubmit={handleSubmit}
-        onForceSubmit={handleForceSubmit}
-        onEscape={editMode ? oncancel : showStopButton ? onstop : undefined}
-        {onHistoryPrev}
-        {onHistoryNext}
-        onSelectionChange={(selectedText) => (editorSelection = selectedText)}
-        onMentionSelect={(item) => {
-          // Mentions are already rendered as chips in the editor
-          // Don't add them to the context header - that's only for:
-          // - Currently open file/note in main panel
-          // - Selected text
-          // Just log for debugging
-          logger.debug('Mention selected:', item);
-        }}
-      />
+      bind:this={tiptap}
+      class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
+      {editorClassName}
+      minHeight={20}
+      maxHeight={isAutoExpand ? 9999 : 9999}
+      {autoFocus}
+      {value}
+      {placeholder}
+      disabled={disabled || isEnhancing}
+      editableWhileDisabled={editableWhileDisabled && !isEnhancing}
+      {inputLocked}
+      workspace={workspace ?? undefined}
+      trailingHint={enhanceHint}
+      onUpdate={(text) => {
+        handleCancelEnhance();
+        if (
+          enhancementUndoValue !== null &&
+          enhancedPromptValue !== null &&
+          text !== enhancedPromptValue
+        ) {
+          enhancementUndoValue = null;
+          enhancedPromptValue = null;
+        }
+        updateValue(text);
+        // Update inline images state for send button reactivity
+        hasInlineImages = (tiptap?.getInlineImages?.() ?? []).length > 0;
+      }}
+      onSubmit={handleSubmit}
+      onForceSubmit={handleForceSubmit}
+      onEscape={isEnhancing
+        ? handleCancelEnhance
+        : editMode
+          ? oncancel
+          : showStopButton
+            ? onstop
+            : undefined}
+      {onHistoryPrev}
+      {onHistoryNext}
+      onSelectionChange={(selectedText) => (editorSelection = selectedText)}
+      onMentionSelect={(item) => {
+        // Mentions are already rendered as chips in the editor
+        // Don't add them to the context header - that's only for:
+        // - Currently open file/note in main panel
+        // - Selected text
+        // Just log for debugging
+        logger.debug('Mention selected:', item);
+      }}
+    />
 
     {#if isEnhancing}
       <div class="shimmer-overlay-wrapper">
@@ -1244,7 +1281,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   <!-- Image attachments - shown below editor in Slack-style thumbnail row -->
   {#if imageAttachments.length > 0}
     <div
-      class="flex items-center gap-2 px-1 py-1 min-w-0 overflow-x-auto scrollbar-none"
+      class="flex min-w-0 items-center gap-2 overflow-x-auto py-1 scrollbar-none {contentInsetClasses}"
       style="-ms-overflow-style: none; scrollbar-width: none;"
     >
       {#each imageAttachments as item (item.id)}
@@ -1267,14 +1304,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-end justify-between px-1 pt-0 pb-0.5 transition-opacity duration-150"
+    class="action-bar flex items-center justify-between pb-1.5 pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
+    data-chat-input-action-bar
   >
-    <div class="flex items-center gap-1 min-w-0 mb-0.5">
+    <div class="flex items-center gap-1 min-w-0" data-chat-input-primary-actions>
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
         variant="ghost-light"
         size="xs"
+        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
         isLocked={isModelLocked}
         confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
@@ -1316,9 +1355,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         onToggleSelection={handleToggleSelection}
         onInsertMention={(mention) => tiptap?.insertMention(mention)}
       />
-    </div>
 
-    <div class="flex items-end gap-px min-w-0 shrink-0 -mb-0.5">
       <TooltipShortcut label={m.chat_richInput_attachFiles_label()} side="top">
         <Button
           variant="ghost-light"
@@ -1331,16 +1368,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         </Button>
       </TooltipShortcut>
 
-      <!-- Mic latch button: click starts dictation, click again (Esc cancels)
-           stops and transcribes into the composer at the caret. Hidden when
-           no engine can transcribe at all ('unavailable': Windows/Linux or
-           helper-missing mac with no cloud key — see effective-voice-engine);
-           on macOS the button stays visible pre-authorization and the click
-           proceeds down the OS path so the permission prompt can fire. -->
       {#if micTranscribing}
-        <!-- Clickable while transcribing: cancel abandons the in-flight
-             session (a hung provider's late result is discarded) and
-             returns the button to idle immediately. -->
         <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
           <Button
             variant="ghost-light"
@@ -1381,95 +1409,58 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           </Button>
         </TooltipShortcut>
       {/if}
+    </div>
 
-      {#if enhanceAvailable}
-        {#if isEnhancing}
-          <TooltipShortcut label={m.chat_richInput_stopEnhancing_label()} side="top">
-            <Button
-              variant="ghost-light"
-              size="icon-sm"
-              onclick={handleCancelEnhance}
-              aria-label={m.chat_richInput_stopEnhancing_label()}
-              class="text-destructive-foreground"
-            >
-              <Fa icon={faStop} size="sm" />
-            </Button>
-          </TooltipShortcut>
-        {:else}
-          <TooltipShortcut label={m.chat_richInput_enhancePrompt_label()} shortcut="cmd+/" side="top">
-            <Button
-              variant="ghost-light"
-              size="icon-sm"
-              onclick={handleEnhancePrompt}
-              disabled={disabled || !value.trim()}
-              aria-label={m.chat_richInput_enhancePrompt_label()}
-            >
-              <Fa icon={faMagicWandSparkles} size="sm" />
-            </Button>
-          </TooltipShortcut>
-        {/if}
-      {/if}
-
+    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       {#if showStopButton}
         <!-- Stop button — visible whenever the agent is responding/running,
              mirroring the Thinking indicator so users can interrupt across
              the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
         <TooltipShortcut label={m.chat_richInput_stop_label()} shortcut="Escape" side="top">
           <Button
-            variant="ghost"
+            variant="ghost-light"
             size="icon-sm"
             onclick={() => onstop?.()}
             aria-label={m.chat_richInput_stopStreaming_ariaLabel()}
-            class="text-destructive-foreground"
+            class="text-muted-foreground"
           >
             <Fa icon={faStop} size="sm" />
           </Button>
         </TooltipShortcut>
 
         {#if value.trim()}
-          <!-- Split button when streaming with text: Queue | Interrupt -->
-          <div
-            class="flex items-stretch bg-sidebar border border-border rounded-md"
-            transition:slide={{ axis: 'x', duration: 200 }}
-          >
-            <!-- Queue button -->
-            <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-primary not-disabled:hover:bg-background overflow-visible"
-              onclick={handleSubmit}
-              disabled={inputLocked || isEnhancing}
-              aria-label={m.chat_richInput_queueMessage_ariaLabel()}
+          <div class="flex items-center gap-1" transition:slide={{ axis: 'x', duration: 200 }}>
+            <TooltipShortcut
+              label={m.chat_richInput_queueMessage_ariaLabel()}
+              shortcut="Enter"
+              side="top"
             >
-              <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
-                <span
-                  class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >{m.chat_richInput_queue_label()}</span
-                >
-                <div class="text-subtle text-[0.6rem]">↵</div>
-              </div>
-
-              <Fa icon={faLayerGroup} size="12" />
-            </button>
-
-            <!-- Divider -->
-            <div class="w-px bg-border"></div>
-
-            <!-- Interrupt button (stop + send immediately) -->
-            <button
-              class="relative flex-1 flex flex-col items-center justify-center gap-1 px-2 py-2.5 min-w-9 bg-transparent border-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 transition-colors text-destructive-foreground not-disabled:hover:bg-background"
-              onclick={handleForceSubmit}
-              disabled={inputLocked || isEnhancing}
-              aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
-              data-testid="interrupt-btn"
+              <Button
+                variant="ghost-light"
+                size="xs"
+                onclick={handleSubmit}
+                disabled={isEnhancing}
+                aria-label={m.chat_richInput_queueMessage_ariaLabel()}
+              >
+                {m.chat_richInput_queue_label()}
+              </Button>
+            </TooltipShortcut>
+            <TooltipShortcut
+              label={m.chat_richInput_interruptAndSend_ariaLabel()}
+              shortcut="cmd+Enter"
+              side="top"
             >
-              <div class="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full">
-                <span
-                  class="text-[0.66rem] leading-none whitespace-nowrap text-subtle flex flex-col"
-                  >{m.chat_richInput_send_label()}</span
-                >
-                <div class="text-subtle text-[0.6rem]">⌘↵</div>
-              </div>
-              <Fa icon={faPaperPlane} size="11" />
-            </button>
+              <Button
+                variant="ghost-light"
+                size="xs"
+                onclick={handleForceSubmit}
+                disabled={isEnhancing}
+                aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
+                data-testid="interrupt-btn"
+              >
+                {m.chat_richInput_send_label()}
+              </Button>
+            </TooltipShortcut>
           </div>
         {/if}
       {:else if editMode}
@@ -1477,12 +1468,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         <div class="flex items-center gap-1">
           <div class="absolute top-0.5 right-0.5">
             <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
-              <Button
-                variant="ghost"
-                size="xs"
-                onclick={() => oncancel?.()}
-                class="text-subtle"
-              >
+              <Button variant="ghost-light" size="xs" onclick={() => oncancel?.()}>
                 <Fa icon={faXmark} class="mr-1" size="sm" />
               </Button>
             </TooltipShortcut>
@@ -1493,9 +1479,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             side="top"
           >
             <Button
-              variant="ghost"
+              variant="ghost-light"
               size="icon-sm"
-              class="text-primary disabled:text-subtle"
+              aria-label="Save and resend"
               onclick={handleSubmit}
               disabled={disabled || inputLocked || !canSend || isEnhancing}
             >
@@ -1506,9 +1492,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       {:else}
         <TooltipShortcut label={m.chat_richInput_send_label()} shortcut="Enter" side="top">
           <Button
-            variant="ghost"
+            variant="ghost-light"
             size="icon-sm"
-            class="text-primary disabled:text-subtle"
             onclick={handleSubmit}
             disabled={disabled || inputLocked || !canSend || isEnhancing}
             aria-label={m.chat_richInput_sendMessage_ariaLabel()}
@@ -1546,6 +1531,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     right: 0;
     bottom: 0;
     overflow: hidden;
+    pointer-events: none;
   }
   .shimmer-overlay {
     position: absolute;
@@ -1556,7 +1542,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     background: linear-gradient(
       90deg,
       transparent,
-      color-mix(in srgb, var(--color-background) 80%, transparent),
+      color-mix(in srgb, var(--color-card) 80%, transparent),
       transparent
     );
     background-size: 200% 100%;
@@ -1564,16 +1550,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     pointer-events: none;
     overflow: hidden;
     z-index: 1;
-  }
-
-  :global(.panel.focused) .shimmer-overlay {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--color-sidebar) 80%, transparent),
-      transparent
-    );
-    background-size: 200% 100%;
   }
 
   @keyframes shimmer {
@@ -1585,8 +1561,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
   }
 
-  :global(.panel:not(.focused) .rich-input-container) {
-    background-color: color-mix(in srgb, var(--color-background) 60%, var(--color-sidebar) 40%);
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer-overlay {
+      animation: none;
+      opacity: 0.5;
+      transform: none;
+    }
   }
 
   /* Hide placeholder when panel is not focused */

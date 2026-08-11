@@ -9,17 +9,16 @@
    */
 
   import {
-  faChevronDown,
-  faRobot,
-  faFileLines,
-  faCodeBranch,
-  faColumns,
-  faGripLines,
-  faTableColumns,
-  faCheck,
-  faWandMagicSparkles,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faRobot,
+    faFileLines,
+    faCodeBranch,
+    faColumns,
+    faGripLines,
+    faCheck,
+    faWandMagicSparkles,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
@@ -59,7 +58,6 @@
   }
 
   let {
-
     workspaceId: _workspaceId,
     currentPreset,
     onApplyPreset,
@@ -130,14 +128,6 @@
       group: 'structure',
     },
     {
-      id: 'split-vertical' as const,
-      label: () => m.layout_presets_stacked_label(),
-      description: () => m.layout_presets_stacked_description(),
-      icon: faTableColumns,
-      iconClass: 'transform rotate-90',
-      group: 'structure',
-    },
-    {
       id: 'three-column' as const,
       label: () => m.layout_presets_threeColumns_label(),
       description: () => m.layout_presets_threeColumns_description(),
@@ -185,18 +175,16 @@
           <Button
             variant="ghost"
             size="icon-xs"
+            aria-label="Go back"
             class={cn(
               'relative flex-1 px-3 justify-start',
-              canGoBack
-                ? 'text-muted-foreground hover:text-foreground'
-                : 'text-ghost',
+              canGoBack ? 'text-muted-foreground hover:text-foreground' : 'text-ghost',
             )}
             onclick={onGoBack}
             disabled={!canGoBack}
           >
             <ArrowLeftIcon class="size-3" />
-            <span
-              class="absolute top-1/2 right-2 transform -translate-y-1/2 text-ui text-subtle"
+            <span class="absolute top-1/2 right-2 transform -translate-y-1/2 text-ui text-subtle"
               >⌘[</span
             >
           </Button>
@@ -204,18 +192,16 @@
           <Button
             variant="ghost"
             size="icon-xs"
+            aria-label="Go forward"
             class={cn(
               'relative flex-1 px-3 justify-end',
-              canGoForward
-                ? 'text-muted-foreground hover:text-foreground'
-                : 'text-ghost',
+              canGoForward ? 'text-muted-foreground hover:text-foreground' : 'text-ghost',
             )}
             onclick={onGoForward}
             disabled={!canGoForward}
           >
             <ArrowLeftIcon class="size-3 rotate-180" />
-            <span
-              class="absolute top-1/2 left-2 transform -translate-y-1/2 text-ui text-subtle"
+            <span class="absolute top-1/2 left-2 transform -translate-y-1/2 text-ui text-subtle"
               >⌘]</span
             >
           </Button>
@@ -229,10 +215,7 @@
             class="w-full flex gap-2.5 px-3 py-1.5 text-left hover:bg-muted transition-colors rounded-sm cursor-pointer"
             onclick={() => handlePresetClick(preset.id, close)}
           >
-            <Fa
-              icon={preset.icon}
-              class={cn('size-2.5 text-ghost', preset.iconClass || '')}
-            />
+            <Fa icon={preset.icon} class={cn('size-2.5 text-ghost', preset.iconClass || '')} />
             <div class="flex-1 min-w-0">
               <div class="text-xs font-medium truncate">{preset.label()}</div>
               <div class="text-xs text-subtle truncate">{preset.description()}</div>
@@ -257,7 +240,9 @@
               type="text"
               placeholder={m.layout_presets_describeLayout_placeholder()}
               disabled={isGenerating}
-              class={cn('flex-1 pl-3 pr-0! pt-0.5! pb-0.75! h-auto text-xs border-0 bg-transparent')}
+              class={cn(
+                'flex-1 pl-3 pr-0! pt-0.5! pb-0.75! h-auto text-xs border-0 bg-transparent',
+              )}
             />
             <Button
               variant="ghost"

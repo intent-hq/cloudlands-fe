@@ -17,7 +17,6 @@
     type ChatFileChangeSummary,
   } from '$lib/utils/get-file-changes-from-messages';
 
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     openWorkspaceChatChanges,
     type JsonValue,
@@ -25,6 +24,8 @@
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
+    /** Workspace that owns this conversation */
+    workspaceId: string;
     /** Single message to show changes for (per-turn mode) */
     message?: AgentMessage;
     /** All messages to show aggregate changes (aggregate mode) */
@@ -42,6 +43,7 @@
   }
 
   let {
+    workspaceId,
     message,
     messages,
     suffix,
@@ -91,30 +93,37 @@
     `${summary.totalFiles} file${summary.totalFiles !== 1 ? 's' : ''} changed${suffix ? ` ${suffix}` : ''}`,
   );
 
-  function handleClick() {
+  function handleClick(event: MouseEvent) {
     // Navigate to chat changes view
     // Pass message reference for reactive updates during streaming
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
-    if (!wsId) return;
+    const sourcePanelId = (event.currentTarget as HTMLElement)
+      .closest<HTMLElement>('[data-panel-id]')
+      ?.getAttribute('data-panel-id');
     appStore.dispatch(
-      openWorkspaceChatChanges(wsId, summary.changes as unknown as JsonValue[], displayLabel, {
-        messageId: message?.id,
-        isAggregate,
-        agentId,
-        turnNumber,
-      }),
+      openWorkspaceChatChanges(
+        workspaceId,
+        summary.changes as unknown as JsonValue[],
+        displayLabel,
+        {
+          messageId: message?.id,
+          isAggregate,
+          agentId,
+          turnNumber,
+          ...(sourcePanelId ? { sourcePanelId } : {}),
+        },
+      ),
     );
   }
 </script>
 
 {#if hasChanges}
-  <div class="w-full {isAggregate ? 'mb-1' : ''}">
+  <div class="mt-4 w-full {isAggregate ? 'mb-1' : ''}" data-testid="file-changes-surface">
     <button
       onclick={handleClick}
-      class="w-full flex items-center gap-2 px-2 py-1.5 text-muted-foreground hover:text-foreground rounded-lg transition-colors group cursor-pointer min-w-0"
+      class="type-caption group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 py-1 text-muted-foreground transition-colors duration-[var(--motion-fast)] hover:bg-muted/30 hover:text-foreground"
     >
-      <div class="flex items-center gap-2 flex-1 min-w-0">
-        <Fa icon={faFile} class="opacity-30" size="xs" />
+      <div class="flex min-w-0 flex-1 items-center gap-2">
+        <Fa icon={faFile} class="w-4 shrink-0 opacity-40" size="xs" />
         <span class="truncate min-w-0 text-left flex-1">
           {displayLabel}
         </span>

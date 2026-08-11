@@ -1,9 +1,6 @@
 <script lang="ts">
   import * as Sheet from '$lib/components/ui/sheet/index.js';
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
   import type { HTMLAttributes } from 'svelte/elements';
   import { SIDEBAR_WIDTH_MOBILE } from './constants.js';
   import { useSidebar } from './context.svelte.js';
@@ -70,7 +67,7 @@
     <div
       data-slot="sidebar-gap"
       class={cn(
-        'w-(--sidebar-width) relative bg-transparent transition-[width] duration-200 ease-linear',
+        'w-(--sidebar-width) relative bg-transparent transition-[width] duration-200 ease-linear motion-reduce:transition-none',
         'group-data-[collapsible=offcanvas]:w-0',
         'group-data-[side=right]:rotate-180',
         variant === 'floating' || variant === 'inset'
@@ -81,7 +78,7 @@
     <div
       data-slot="sidebar-container"
       class={cn(
-        'w-(--sidebar-width) fixed inset-y-0 z-10 hidden h-svh transition-[left,right,width] duration-200 ease-linear md:flex',
+        'w-(--sidebar-width) fixed inset-y-0 z-10 hidden h-svh transition-[left,right,width] duration-200 ease-linear motion-reduce:transition-none md:flex',
         side === 'left'
           ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
           : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
@@ -96,7 +93,7 @@
       <div
         data-sidebar="sidebar"
         data-slot="sidebar-inner"
-        class="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
+        class="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-md group-data-[variant=floating]:border group-data-[variant=floating]:shadow-(--elevation-raised)"
       >
         {@render children?.()}
       </div>

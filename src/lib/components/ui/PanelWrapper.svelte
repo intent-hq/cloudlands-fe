@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
-  import { ContentHeader } from './content-header';
-  import type { BreadcrumbItem } from './content-header/types';
+  import { ContentHeader } from '$features/layout/components/content-header';
+  import type { BreadcrumbItem } from '$features/layout/components/content-header/types';
   import { fly } from 'svelte/transition';
 
   interface Props {

@@ -202,6 +202,7 @@ const mockAgentSession$ = writable<
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviderIds: () => enabledProviderIds$,
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -880,6 +881,26 @@ describe('ModelPicker availability gating', () => {
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
+  it('loads enabled provider models while the availability check is still pending', async () => {
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByText('Sonnet 4.6')).toBeTruthy();
+    expect(screen.queryByText('No models available')).toBeNull();
+  });
+
   it('shows a failure notice and fires a toast when no provider is available', async () => {
     const { toast } = await import('svelte-sonner');
     availableProviderOverride$.set([]);
@@ -978,6 +999,23 @@ describe('ModelPicker availability gating', () => {
       expect(vi.mocked(toast.error)).toHaveBeenCalled();
     });
     expect(screen.getByText('No provider available')).toBeTruthy();
+  });
+
+  it('suppresses the no-provider notice and toast while daemon heartbeat health is degraded', async () => {
+    const { toast } = await import('svelte-sonner');
+    daemonHealth$.set('degraded');
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await screen.findByRole('button');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
   it('does not show the no-provider failure notice or toast when a provider is available', async () => {
@@ -1151,6 +1189,27 @@ describe('ModelPicker selected-model loading state', () => {
     });
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
     expect(trigger.textContent).toContain('Sonnet 4.6');
+  });
+
+  it('treats a bare selected model as available when its provider catalog uses a compound id', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:gpt5.6-sol', label: 'GPT 5.6', description: 'Smart' }],
+    });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'gpt5.6-sol', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
   it('shows the warning once the selected model provider has settled without the model', async () => {

@@ -13,23 +13,20 @@
    * - "this terminal" → focuses the setup terminal
    * - Specialist name → rich tooltip with description, prompt preview, settings link
    */
-  import {
-  slide,
-  blur,
-} from 'svelte/transition';
+  import { slide, blur } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-  faFolderOpen,
-  faCodeBranch,
-  faTerminal,
-  faRobot,
-  faCopy,
-} from '@fortawesome/free-solid-svg-icons';
+    faFolderOpen,
+    faCodeBranch,
+    faTerminal,
+    faRobot,
+    faCopy,
+  } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { getSpecialistById } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';

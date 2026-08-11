@@ -67,7 +67,9 @@
 
 <button
   type="button"
-  class={cn('panel-corner-handle', isDragging && 'dragging')}
+  class={cn('app-resize-handle panel-corner-handle', isDragging && 'dragging')}
+  data-resize-axis="both"
+  data-resizing={isDragging}
   aria-label={m.layout_panelCornerHandle_resize_ariaLabel()}
   {style}
   onmousedown={handleMouseDown}
@@ -76,27 +78,10 @@
 <style>
   .panel-corner-handle {
     position: absolute;
-    width: 20px;
-    height: 20px;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    appearance: none;
-    cursor: move;
+    width: 16px;
+    height: 16px;
     z-index: 36;
     /* Center on the corner intersection */
     transform: translate(-50%, -50%);
-  }
-
-  .panel-corner-handle:after {
-    content: '';
-    position: absolute;
-    inset: 6px;
-    background: transparent;
-    border-radius: 2px;
-  }
-  .panel-corner-handle:hover:after,
-  .panel-corner-handle.dragging:after {
-    background-color: hsl(var(--primary));
   }
 </style>

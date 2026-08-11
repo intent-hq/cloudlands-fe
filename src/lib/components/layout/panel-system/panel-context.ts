@@ -10,10 +10,7 @@
  * - In child components: const ctx = getContext<PanelContext>(PANEL_CONTEXT_KEY)
  */
 
-import {
-  getContext,
-  setContext,
-} from 'svelte';
+import { getContext, setContext } from 'svelte';
 
 export const PANEL_CONTEXT_KEY = Symbol('panel-context');
 
@@ -60,8 +57,9 @@ export function getPanelIdFromEvent(event: MouseEvent): string | undefined {
 }
 
 /**
- * Helper to create navigation detail with panel context
- * Use this in click handlers to properly set sourcePanelId and openInAdjacentPanel
+ * Helper to create navigation detail with panel context. Navigation originating
+ * inside a panel always opens adjacent; modifier-click retains that behavior for
+ * callers outside a panel.
  *
  * @param event - The mouse click event
  * @param panelContext - Optional Svelte panel context (from getPanelContext())
@@ -71,10 +69,9 @@ export function getNavigationContext(
   event: MouseEvent,
   panelContext?: PanelContext,
 ): { sourcePanelId?: string; openInAdjacentPanel: boolean } {
-  const openInAdjacentPanel = event.metaKey || event.ctrlKey;
-
   // Try Svelte context first (most reliable), then DOM traversal
   const sourcePanelId = panelContext?.panelId ?? getPanelIdFromEvent(event);
+  const openInAdjacentPanel = sourcePanelId !== undefined || event.metaKey || event.ctrlKey;
 
   return { sourcePanelId, openInAdjacentPanel };
 }

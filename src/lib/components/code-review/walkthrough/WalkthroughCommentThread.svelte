@@ -28,7 +28,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import type { WalkthroughAnnotation } from './types';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface ThreadMessage {
     id: string;

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import CDP from 'chrome-remote-interface';
+import { pathToFileURL } from 'url';
 
 const DEFAULT_PORT = Number(process.env.CDP_PORT || 9223);
 const DEFAULT_HOST = process.env.CDP_HOST || '127.0.0.1';
@@ -46,7 +47,8 @@ function parseArgs(argv) {
     else if (arg === '--help' || arg === '-h') options.help = true;
     else if (arg === '--host') options.host = readValue() || options.host;
     else if (arg === '--port') options.port = Number(readValue() || options.port);
-    else if (arg === '--count' || arg === '-n') options.count = Number(readValue() || options.count);
+    else if (arg === '--count' || arg === '-n')
+      options.count = Number(readValue() || options.count);
     else if (arg === '--interval') options.interval = Number(readValue() || options.interval);
     else if (arg === '--follow' || arg === '-f') options.follow = true;
     else if (arg === '--list-targets') options.listTargets = true;
@@ -56,7 +58,8 @@ function parseArgs(argv) {
 
   if (!Number.isFinite(options.port) || options.port <= 0) throw new Error('Invalid --port');
   if (!Number.isFinite(options.count) || options.count <= 0) throw new Error('Invalid --count');
-  if (!Number.isFinite(options.interval) || options.interval <= 0) throw new Error('Invalid --interval');
+  if (!Number.isFinite(options.interval) || options.interval <= 0)
+    throw new Error('Invalid --interval');
   return options;
 }
 
@@ -84,32 +87,38 @@ function mb(value) {
   return value == null ? undefined : Number((value / 1024 / 1024).toFixed(2));
 }
 
-async function sampleTarget(options, target) {
+async function sampleTarget(client, target) {
+  const [performance, heapUsage] = await Promise.all([
+    client.Performance.getMetrics(),
+    client.Runtime.getHeapUsage().catch(() => null),
+  ]);
+  const metrics = performance.metrics || [];
+  return {
+    ts: new Date().toISOString(),
+    targetId: target.id,
+    targetType: target.type,
+    title: target.title,
+    url: target.url,
+    jsHeapUsedMB: mb(metricValue(metrics, 'JSHeapUsedSize')),
+    jsHeapTotalMB: mb(metricValue(metrics, 'JSHeapTotalSize')),
+    runtimeUsedMB: mb(heapUsage?.usedSize),
+    runtimeTotalMB: mb(heapUsage?.totalSize),
+    nodes: metricValue(metrics, 'Nodes'),
+    documents: metricValue(metrics, 'Documents'),
+    listeners: metricValue(metrics, 'JSEventListeners'),
+  };
+}
+
+export async function observeTarget(options, target, onSample = printSample) {
   const client = await CDP({ host: options.host, port: options.port, target: target.id });
   try {
-    await Promise.all([
-      client.Performance.enable(),
-      client.Runtime.enable().catch(() => null),
-    ]);
-    const [performance, heapUsage] = await Promise.all([
-      client.Performance.getMetrics(),
-      client.Runtime.getHeapUsage().catch(() => null),
-    ]);
-    const metrics = performance.metrics || [];
-    return {
-      ts: new Date().toISOString(),
-      targetId: target.id,
-      targetType: target.type,
-      title: target.title,
-      url: target.url,
-      jsHeapUsedMB: mb(metricValue(metrics, 'JSHeapUsedSize')),
-      jsHeapTotalMB: mb(metricValue(metrics, 'JSHeapTotalSize')),
-      runtimeUsedMB: mb(heapUsage?.usedSize),
-      runtimeTotalMB: mb(heapUsage?.totalSize),
-      nodes: metricValue(metrics, 'Nodes'),
-      documents: metricValue(metrics, 'Documents'),
-      listeners: metricValue(metrics, 'JSEventListeners'),
-    };
+    await Promise.all([client.Performance.enable(), client.Runtime.enable().catch(() => null)]);
+
+    const limit = options.follow ? Number.POSITIVE_INFINITY : options.count;
+    for (let i = 0; i < limit; i++) {
+      onSample(await sampleTarget(client, target), options.json);
+      if (i + 1 < limit) await new Promise((resolve) => setTimeout(resolve, options.interval));
+    }
   } finally {
     await client.close();
   }
@@ -146,15 +155,15 @@ async function main() {
   const target = pickRendererTarget(targets);
   if (!target) throw new Error('No CDP targets found. Start the app with `pnpm dev:cdp`.');
 
-  const limit = options.follow ? Number.POSITIVE_INFINITY : options.count;
-  for (let i = 0; i < limit; i++) {
-    printSample(await sampleTarget(options, target), options.json);
-    if (i + 1 < limit) await new Promise((resolve) => setTimeout(resolve, options.interval));
-  }
+  await observeTarget(options, target);
 }
 
-main().catch((error) => {
-  console.error(`observe:memory failed: ${error.message}`);
-  console.error(`Start CDP with \`pnpm dev:cdp\`, then retry with \`pnpm observe:memory -- --port ${DEFAULT_PORT}\`.`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`observe:memory failed: ${error.message}`);
+    console.error(
+      `Start CDP with \`pnpm dev:cdp\`, then retry with \`pnpm observe:memory -- --port ${DEFAULT_PORT}\`.`,
+    );
+    process.exit(1);
+  });
+}

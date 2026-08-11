@@ -77,7 +77,9 @@ describe('TipTapEditor inputLocked', () => {
 
   it('stays editable when neither disabled nor locked', async () => {
     const { container } = await mountEditor({});
-    expect(editorEl(container).getAttribute('contenteditable')).toBe('true');
+    const editor = editorEl(container);
+    expect(editor.getAttribute('contenteditable')).toBe('true');
+    expect(editor.getAttribute('autocomplete')).toBe('off');
     expect(placeholderSuppressed(container)).toBe(false);
   });
 

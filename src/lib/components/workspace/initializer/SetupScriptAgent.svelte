@@ -1,17 +1,11 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import { appClient } from '$lib/client';
-  import {
-  faTimes,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faTimes, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -82,10 +76,14 @@
 
       generatedScript = {
         name: setupScript.projectType
-          ? m.workspace_setupScriptAgent_projectTypeSetup_label({ projectType: setupScript.projectType })
+          ? m.workspace_setupScriptAgent_projectTypeSetup_label({
+              projectType: setupScript.projectType,
+            })
           : m.workspace_setupScriptAgent_generatedSetup_label(),
         description: setupScript.projectType
-          ? m.workspace_setupScriptAgent_generatedForProject_description({ projectType: setupScript.projectType })
+          ? m.workspace_setupScriptAgent_generatedForProject_description({
+              projectType: setupScript.projectType,
+            })
           : m.workspace_setupScriptAgent_generatedFromAnalysis_description(),
         content: setupScript.script,
       };
@@ -93,7 +91,8 @@
     } catch (err) {
       logger.error('Failed to generate setup script', err);
       if (!isComponentMounted) return;
-      error = err instanceof Error ? err.message : m.workspace_setupScriptAgent_generateFailed_error();
+      error =
+        err instanceof Error ? err.message : m.workspace_setupScriptAgent_generateFailed_error();
       isGenerating = false;
     }
   }

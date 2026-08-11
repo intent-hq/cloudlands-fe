@@ -87,6 +87,23 @@ describe('AgentCard live preview precedence', () => {
     expect(preview.textContent).not.toContain('stale persisted text');
   });
 
+  it('places the timestamp at the right edge of the standard preview row', async () => {
+    seedSession({
+      status: AgentStatus.Idle,
+      messages: [assistantMessage('second-row preview text')],
+    });
+
+    const { container } = render(AgentCard, { props: { agentId } });
+
+    const preview = await screen.findByTestId('agent-card-preview');
+    const previewRow = container.querySelector('[data-agent-card-preview-row]');
+    const timestamp = container.querySelector('.agent-card-preview-time');
+    expect(previewRow).not.toBeNull();
+    expect(previewRow?.contains(preview)).toBe(true);
+    expect(previewRow?.contains(timestamp)).toBe(true);
+    expect(container.querySelector('.agent-card-header')?.contains(timestamp)).toBe(false);
+  });
+
   it('lets the viewed-agent chat.subscribe streaming buffer win over lastAgentResponse', async () => {
     // Viewed agent: the standing chat.subscribe stream grows a live
     // (isStreaming) assistant message — that buffer stays authoritative.

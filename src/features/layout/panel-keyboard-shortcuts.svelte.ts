@@ -32,7 +32,8 @@ import {
   selectPanelIds,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import type { PanelLayoutManager } from './panel-layout-adapter';
-  import { store as appStore } from '$store/renderer/store';
+import type { PanelCycleDirection } from './panel-cycle-navigation';
+import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('PanelKeyboardShortcuts');
 
@@ -70,7 +71,10 @@ interface KeyboardShortcutsState {
   showPanelNumbers: boolean;
 }
 
-export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayoutManager) {
+export function createPanelKeyboardShortcuts(
+  getLayoutManager: () => PanelLayoutManager,
+  onCyclePanel?: (direction: PanelCycleDirection) => void,
+) {
   const state = $state<KeyboardShortcutsState>({
     leaderActive: false,
     leaderTimeout: null,
@@ -129,11 +133,13 @@ export function createPanelKeyboardShortcuts(getLayoutManager: () => PanelLayout
         break;
 
       case 'navigate-next':
-        cyclePanel(layoutManager, 'next');
+        if (onCyclePanel) onCyclePanel('next');
+        else cyclePanel(layoutManager, 'next');
         break;
 
       case 'navigate-prev':
-        cyclePanel(layoutManager, 'prev');
+        if (onCyclePanel) onCyclePanel('prev');
+        else cyclePanel(layoutManager, 'prev');
         break;
 
       case 'split-right': {

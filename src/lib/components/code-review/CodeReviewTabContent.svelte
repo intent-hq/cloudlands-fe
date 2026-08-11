@@ -32,7 +32,7 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from 'svelte/transition';
   import { store as appStore } from '$store/renderer/store';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
 
   interface Props {

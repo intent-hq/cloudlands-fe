@@ -6,7 +6,7 @@
    * ShadCN/Vercel-inspired design.
    */
   import { formatTime as formatClockTime } from '$lib/i18n/format';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     currentTime: string;

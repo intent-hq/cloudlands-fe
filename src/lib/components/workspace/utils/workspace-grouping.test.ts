@@ -1,13 +1,10 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import {
   buildRepoPathLookup,
   getGroupKey,
+  groupWorkspacesByRepository,
   type RepoGithubInfo,
 } from './workspace-grouping';
 
@@ -152,6 +149,19 @@ describe('getGroupKey', () => {
     });
   });
 
+  it('uses path identity when an ownerless workspace has both path and name', () => {
+    const ws = makeWorkspace({
+      repositoryPath: '/repos/local-repo',
+      repositoryName: 'local-repo',
+    });
+
+    expect(getGroupKey(ws, emptyLookup)).toEqual({
+      key: '/repos/local-repo',
+      label: 'local-repo',
+      isGithub: false,
+    });
+  });
+
   it('resolves path-only workspace via lookup (PR #439 regression)', () => {
     const lookup = new Map<string, RepoGithubInfo>([
       ['/home/user/intent', { owner: 'example-org', name: 'example-repo' }],
@@ -225,6 +235,125 @@ describe('getGroupKey', () => {
 // Integration: buildRepoPathLookup + getGroupKey working together
 // ---------------------------------------------------------------------------
 describe('workspace grouping integration', () => {
+  it('deduplicates ownerless aureka and craft registry entries with their active workspaces', () => {
+    const knownRepos = [
+      { path: '/repos/aureka', name: 'aureka' },
+      { path: '/repos/craft', name: 'craft' },
+    ];
+    const workspaces = [
+      makeWorkspace({
+        id: 'ws-aureka',
+        repositoryPath: '/repos/aureka',
+        repositoryName: 'aureka',
+      }),
+      makeWorkspace({
+        id: 'ws-craft',
+        repositoryPath: '/repos/craft',
+        repositoryName: 'craft',
+      }),
+    ];
+    const lookup = buildRepoPathLookup(workspaces, knownRepos);
+
+    const groups = groupWorkspacesByRepository({
+      workspaces,
+      knownRepos,
+      repoPathLookup: lookup,
+      includeKnownRepos: true,
+    });
+
+    expect(
+      groups.map(({ key, label, workspaces: grouped }) => ({ key, label, count: grouped.length })),
+    ).toEqual([
+      { key: '/repos/aureka', label: 'aureka', count: 1 },
+      { key: '/repos/craft', label: 'craft', count: 1 },
+    ]);
+    expect(
+      groups.map(({ repoPath, isGithub, owner, name }) => ({
+        repoPath,
+        isGithub,
+        owner,
+        name,
+      })),
+    ).toEqual([
+      {
+        repoPath: '/repos/aureka',
+        isGithub: false,
+        owner: undefined,
+        name: 'aureka',
+      },
+      {
+        repoPath: '/repos/craft',
+        isGithub: false,
+        owner: undefined,
+        name: 'craft',
+      },
+    ]);
+  });
+
+  it('retains known-repo creation metadata when active GitHub metadata upgrades its identity', () => {
+    const knownRepos = [{ path: '/repos/craft', name: 'craft' }];
+    const workspaces = [
+      makeWorkspace({
+        repositoryPath: '/repos/craft',
+        repositoryOwner: 'acme',
+        repositoryName: 'craft',
+      }),
+    ];
+
+    const [group] = groupWorkspacesByRepository({
+      workspaces,
+      knownRepos,
+      repoPathLookup: buildRepoPathLookup(workspaces, knownRepos),
+      includeKnownRepos: true,
+    });
+
+    expect(group).toMatchObject({
+      key: 'acme/craft',
+      label: 'acme/craft',
+      repoPath: '/repos/craft',
+      isGithub: true,
+      owner: 'acme',
+      name: 'craft',
+    });
+    expect(group.workspaces).toEqual(workspaces);
+  });
+
+  it('preserves genuinely distinct empty ownerless repositories with the same label', () => {
+    const knownRepos = [
+      { path: '/clients/one/craft', name: 'craft' },
+      { path: '/clients/two/craft', name: 'craft' },
+    ];
+
+    const groups = groupWorkspacesByRepository({
+      workspaces: [],
+      knownRepos,
+      repoPathLookup: buildRepoPathLookup([], knownRepos),
+      includeKnownRepos: true,
+    });
+
+    expect(
+      groups.map(({ key, label, repoPath, workspaces }) => ({
+        key,
+        label,
+        repoPath,
+        count: workspaces.length,
+      })),
+    ).toEqual([
+      {
+        key: '/clients/one/craft',
+        label: 'craft',
+        repoPath: '/clients/one/craft',
+        count: 0,
+      },
+      {
+        key: '/clients/two/craft',
+        label: 'craft',
+        repoPath: '/clients/two/craft',
+        count: 0,
+      },
+    ]);
+  });
+
   it('PR #439 regression: path-only workspace merges into owner/name group', () => {
     // Workspace A has full info, workspace B only has repositoryPath
     const wsA = makeWorkspace({

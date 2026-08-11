@@ -12,8 +12,8 @@
    * When running, shows thinking/tool call indicator below.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
@@ -100,8 +100,8 @@
         date={$attentionRequest$.timestamp}
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
-          ? 'text-red-500'
-          : 'text-amber-500'}"
+          ? 'text-destructive'
+          : 'text-warning'}"
       />
     </div>
   {/if}

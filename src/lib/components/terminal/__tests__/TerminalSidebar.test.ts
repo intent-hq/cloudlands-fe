@@ -1,16 +1,5 @@
-import {
-  render,
-  fireEvent,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockDetect,
@@ -70,7 +59,7 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
     () => ({
       subscribe: (fn: (value: any) => void) => {
         fn(scriptEntries.value);
-        return () => { };
+        return () => {};
       },
     }),
     { select: () => scriptEntries.value },
@@ -83,7 +72,8 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
   upsertScript: vi.fn((...args: any[]) => ({ type: 'scripts/upsertScript', payload: args })),
 }));
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({
@@ -106,7 +96,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => ({
     subscribe: (fn: (value: any) => void) => {
       fn(activeWorkspaceState.value);
-      return () => { };
+      return () => {};
     },
   }),
 }));
@@ -128,20 +118,48 @@ vi.mock('$lib/hooks/use-background-agent.svelte', () => ({
   },
 }));
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
-  selectExecutorIsRunning: Object.assign(
-    () => ({ subscribe: (fn: any) => { fn(false); return () => { }; } }),
-    { select: () => false },
-  ),
-  selectExecutorAgentId: Object.assign(
-    () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
-    { select: () => null },
-  ),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
+  () => ({
+    selectExecutorIsRunning: Object.assign(
+      () => ({
+        subscribe: (fn: any) => {
+          fn(false);
+          return () => {};
+        },
+      }),
+      { select: () => false },
+    ),
+    selectExecutorAgentId: Object.assign(
+      () => ({
+        subscribe: (fn: any) => {
+          fn(null);
+          return () => {};
+        },
+      }),
+      { select: () => null },
+    ),
+  }),
+);
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
-  selectTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
-  selectUserTerminals: () => ({ subscribe: (fn: any) => { fn([]); return () => { }; } }),
-  selectActiveTerminalId: () => ({ subscribe: (fn: any) => { fn(null); return () => { }; } }),
+  selectTerminals: () => ({
+    subscribe: (fn: any) => {
+      fn([]);
+      return () => {};
+    },
+  }),
+  selectUserTerminals: () => ({
+    subscribe: (fn: any) => {
+      fn([]);
+      return () => {};
+    },
+  }),
+  selectActiveTerminalId: () => ({
+    subscribe: (fn: any) => {
+      fn(null);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/terminals/terminals-slice')>()),
@@ -153,7 +171,7 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa, Fa: MockFa };
 });
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatarWithState.svelte', async () => {
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => {
   const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default;
   return { default: MockSimple };
@@ -360,7 +378,6 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
     expect(toast.success).toHaveBeenCalled();
   });
 });
-
 
 describe('TerminalSidebar context menu Escape handling', () => {
   beforeEach(() => {

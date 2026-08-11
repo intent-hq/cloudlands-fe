@@ -2,7 +2,7 @@
   import { NodeViewWrapper } from 'svelte-tiptap';
   import type { NodeViewProps } from '@tiptap/core';
   import type { PatchPrimitive } from '$shared/types/notes-primitives';
-  import { PatchBlockContent } from '$lib/components/ui/diff';
+  import { PatchBlockContent } from '$features/file-tracking/components/diff';
   import { m } from '$shared/paraglide/messages.js';
 
   // TipTap NodeViewProps

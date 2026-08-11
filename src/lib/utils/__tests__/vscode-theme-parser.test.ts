@@ -2,17 +2,8 @@
  * Tests for VS Code theme parser
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  hexToHSL,
-  isHexDark,
-  parseVSCodeTheme,
-  stripJSONC,
-} from '../vscode-theme-parser';
+import { describe, it, expect } from 'vitest';
+import { hexToHSL, isHexDark, parseVSCodeTheme, stripJSONC } from '../vscode-theme-parser';
 
 // ── hexToHSL ───────────────────────────────────────────────────────────────
 
@@ -107,15 +98,15 @@ describe('parseVSCodeTheme', () => {
       'sideBar.foreground': '#cdd6f4',
       'button.background': '#89b4fa',
       'button.foreground': '#1e1e2e',
-      'focusBorder': '#89b4fa',
+      focusBorder: '#89b4fa',
       'input.background': '#313244',
       'panel.border': '#45475a',
       'badge.background': '#f5c2e7',
       'list.activeSelectionBackground': '#45475a',
       'list.activeSelectionForeground': '#cdd6f4',
       'tab.inactiveBackground': '#181825',
-      'descriptionForeground': '#a6adc8',
-      'errorForeground': '#f38ba8',
+      descriptionForeground: '#a6adc8',
+      errorForeground: '#f38ba8',
       'terminal.background': '#1e1e2e',
       'terminal.foreground': '#cdd6f4',
       'terminal.ansiBlack': '#45475a',
@@ -150,7 +141,6 @@ describe('parseVSCodeTheme', () => {
       },
     ],
   };
-
 
   // ── Validation ─────────────────────────────────────────────────────────
 
@@ -208,7 +198,6 @@ describe('parseVSCodeTheme', () => {
   });
 
   it('falls back to editor.background heuristic when type is missing', () => {
-
     const { type: _type, ...noType } = MINIMAL_DARK_THEME;
     const result = parseVSCodeTheme(noType);
     expect(result.type).toBe('dark');
@@ -281,14 +270,48 @@ describe('parseVSCodeTheme', () => {
     expect(result.cssVariables['--border']).toBe(hexToHSL('#aaaaaa'));
   });
 
-  it('skips CSS variables when VS Code key is missing', () => {
+  it('fills approved semantic variables when VS Code keys are missing', () => {
     const result = parseVSCodeTheme({
       type: 'dark',
       colors: { 'editor.background': '#1e1e2e' },
     });
-    // Only --background should be set
-    expect(result.cssVariables['--background']).toBeDefined();
-    expect(result.cssVariables['--foreground']).toBeUndefined();
+    expect(result.cssVariables['--background']).toBe(hexToHSL('#1e1e2e'));
+    expect(result.cssVariables['--foreground']).toBeDefined();
+    expect(result.cssVariables['--success']).toBeDefined();
+    expect(result.cssVariables['--warning']).toBeDefined();
+  });
+
+  it('preserves decorative borders while normalizing input and focus boundaries', () => {
+    const colors = {
+      'editor.background': '#1e1e2e',
+      'editor.foreground': '#cdd6f4',
+      'editorWidget.background': '#252536',
+      'dropdown.background': '#252536',
+      'panel.border': '#202030',
+      'sideBar.border': '#303040',
+      'input.background': '#181825',
+      focusBorder: '#202030',
+    };
+    const result = parseVSCodeTheme({ type: 'dark', colors });
+    expect(result.cssVariables['--border']).toBe(hexToHSL(colors['panel.border']));
+    expect(result.cssVariables['--sidebar-border']).toBe(hexToHSL(colors['sideBar.border']));
+    expect(result.cssVariables['--input']).not.toBe(hexToHSL(colors['input.background']));
+    expect(result.cssVariables['--ring']).not.toBe(hexToHSL(colors.focusBorder));
+    expect(result.rawColors).toEqual(colors);
+  });
+
+  it('derives separate quiet decorative borders from their relevant surfaces', () => {
+    const result = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#111111',
+        'sideBar.background': '#000000',
+      },
+    });
+    expect(result.cssVariables['--border']).toBe(hexToHSL('#e6e6e6'));
+    expect(result.cssVariables['--sidebar-border']).toBe(hexToHSL('#1a1a1a'));
+    expect(result.cssVariables['--border']).not.toBe(result.cssVariables['--sidebar-border']);
   });
 
   // ── Monaco theme ───────────────────────────────────────────────────────

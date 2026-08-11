@@ -168,11 +168,16 @@ describe("uiLayoutReducer", () => {
   });
 
   describe("sidebar layout", () => {
+    it("uses a compact 360px workspace sidebar by default", () => {
+      expect(DEFAULT_WIDTH).toBe(360);
+      expect(MIN_WIDTH).toBe(280);
+    });
+
     it("should set width clamped to min/max", () => {
       expect(uiLayoutReducer(initialState, setWidth(400)).sidebarWidth).toBe(400);
       expect(uiLayoutReducer(initialState, setWidth(50)).sidebarWidth).toBe(MIN_WIDTH);
       expect(uiLayoutReducer(initialState, setWidth(1200)).sidebarWidth).toBe(MAX_WIDTH);
-      expect(uiLayoutReducer(initialState, setWidth(350.7)).sidebarWidth).toBe(351);
+      expect(uiLayoutReducer(initialState, setWidth(360.7)).sidebarWidth).toBe(361);
     });
 
     it("should not update sidebarWidthBeforeCollapse while collapsed", () => {

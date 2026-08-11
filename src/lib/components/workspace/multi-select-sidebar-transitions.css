@@ -1,0 +1,24 @@
+.sidebar-locate-highlight {
+  animation: sidebar-locate-pulse 1.5s ease-out;
+}
+
+.sidebar-expanded-content {
+  opacity: var(--sidebar-card-content-opacity, 1);
+  transform: translateY(var(--sidebar-card-content-y, 0));
+}
+
+@keyframes sidebar-locate-pulse {
+  0% {
+    background-color: hsl(var(--primary) / 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-expanded-content {
+    opacity: 1;
+    transform: none;
+  }
+}

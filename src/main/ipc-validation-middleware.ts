@@ -22,6 +22,23 @@ import type { IpcMainInvokeEvent } from 'electron';
 
 const logger = new Logger('IPCValidationMiddleware');
 
+function summarizeImageBlocks(value: unknown) {
+  const imageBlocks = Array.isArray(value) ? value : [];
+  return {
+    hasImageBlocks: imageBlocks.length > 0,
+    imageBlocksCount: imageBlocks.length,
+    imageBlocksType: Array.isArray(value) ? 'array' : typeof value,
+    imageBlocksDataLength: imageBlocks.reduce(
+      (total, block) =>
+        total +
+        (block && typeof block === 'object' && typeof (block as { data?: unknown }).data === 'string'
+          ? (block as { data: string }).data.length
+          : 0),
+      0,
+    ),
+  };
+}
+
 /**
  * Validation error with detailed information
  */
@@ -67,7 +84,6 @@ export function createValidatedHandler<T>(
       if (error instanceof z.ZodError) {
         logger.error('IPC validation failed', {
           errors: error.errors,
-          input: data,
         });
 
         // Track validation error
@@ -104,11 +120,7 @@ export function createSafeValidatedHandler<T>(
       const dataObj = data as any;
       logger.info('IPC Handler: Received STREAM_MESSAGE request', {
         channelName,
-        hasImageBlocks: !!dataObj.imageBlocks,
-        imageBlocksCount: dataObj.imageBlocks?.length || 0,
-        imageBlocksType: typeof dataObj.imageBlocks,
-        dataKeys: Object.keys(dataObj),
-        imageBlocksValue: dataObj.imageBlocks,
+        ...summarizeImageBlocks(dataObj.imageBlocks),
       });
     }
 
@@ -124,9 +136,7 @@ export function createSafeValidatedHandler<T>(
         const validatedObj = validated as any;
         logger.info('IPC Handler: After validation STREAM_MESSAGE request', {
           channelName,
-          hasImageBlocks: !!validatedObj.imageBlocks,
-          imageBlocksCount: validatedObj.imageBlocks?.length || 0,
-          validatedKeys: Object.keys(validatedObj),
+          ...summarizeImageBlocks(validatedObj.imageBlocks),
         });
       }
 

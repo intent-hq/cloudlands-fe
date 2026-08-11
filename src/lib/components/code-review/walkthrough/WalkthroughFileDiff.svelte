@@ -25,7 +25,7 @@
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughInlineComment from './WalkthroughInlineComment.svelte';
   import WalkthroughCommentThread from './WalkthroughCommentThread.svelte';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
   import '$lib/styles/syntax-highlighting.css';
 
   /** Message in a comment thread */

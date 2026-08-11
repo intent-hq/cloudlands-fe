@@ -8,6 +8,10 @@
   let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<nav aria-label={m.ui_breadcrumb_nav_ariaLabel()} class={cn('', className)} {...restProps}>
+<nav
+  aria-label={m.ui_breadcrumb_nav_ariaLabel()}
+  class={cn('w-full min-w-0 overflow-hidden', className)}
+  {...restProps}
+>
   {@render children?.()}
 </nav>

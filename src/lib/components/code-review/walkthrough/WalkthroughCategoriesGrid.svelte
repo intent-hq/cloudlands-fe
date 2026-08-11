@@ -7,7 +7,7 @@
    * Clicking a card scrolls to that category section.
    */
   import type { WalkthroughCategory } from './types';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Categories to display */

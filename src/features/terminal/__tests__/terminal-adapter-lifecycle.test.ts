@@ -115,6 +115,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
   beforeEach(() => {
     xtermMock.instances.length = 0;
     vi.clearAllMocks();
+    document.documentElement.classList.remove('dark', 'light');
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
@@ -136,6 +137,21 @@ describe('TerminalAdapter lifecycle cleanup', () => {
       on: vi.fn(() => 'listener-id'),
       offById: vi.fn(),
     };
+  });
+
+  it('paints the terminal host with the current theme before xterm opens', () => {
+    document.documentElement.classList.add('light');
+    const container = document.createElement('div');
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+
+    expect(container.style.backgroundColor).toBe('rgb(247, 247, 248)');
+
+    adapter.detach();
   });
 
   it('does not register a container-level paste listener (xterm owns paste natively)', () => {
@@ -189,7 +205,23 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect(terminals.kill).toHaveBeenCalledWith('term-1');
   });
 
-  it('dispose({ killPty: false }) releases renderer resources without killing an exited PTY', () => {
+  it('defers xterm renderer disposal until queued viewport work has drained', async () => {
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container: document.createElement('div'),
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    const xterm = (adapter as any).xterm;
+
+    adapter.dispose();
+
+    expect(xterm.dispose).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(xterm.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('dispose({ killPty: false }) releases renderer resources without killing an exited PTY', async () => {
     const container = document.createElement('div');
     const terminals = fakeTerminalsClient();
     const adapter = new TerminalAdapter({
@@ -202,6 +234,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     adapter.dispose({ killPty: false });
 
     expect(terminals.kill).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect((adapter as any).xterm.dispose).toHaveBeenCalled();
   });
 

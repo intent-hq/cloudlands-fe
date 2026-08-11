@@ -1,11 +1,7 @@
 /**
  * Specialists Service Tests
  *
- * Focused on D1(B) coding-agent resolution: `resolveSpecialistCodingAgent`
- * (via the exported `getEffectiveSpecialist` / `resolveSpecialistForAgent`)
- * must never fall back to the hardcoded default provider
- * (`getDefaultProviderId()` = Auggie) when no explicit/fallback coding agent
- * is available.
+ * Focused on startup cache initialization and D1(B) coding-agent resolution.
  */
 import {
   describe,
@@ -19,6 +15,7 @@ import type { SpecialistFilesResult } from '../../../shared/specialist-file-type
 const loadBundledSpecialistFiles = vi.fn<() => Promise<SpecialistFilesResult>>();
 const loadSpecialistFiles = vi.fn<() => Promise<SpecialistFilesResult>>();
 const loadProjectSpecialistFiles = vi.fn<() => Promise<SpecialistFilesResult>>();
+const mockIsGitHubConfigured = vi.fn<() => Promise<boolean>>();
 
 vi.mock('../../specialists/main/specialist-file-loader', () => ({
   loadBundledSpecialistFiles: (...args: unknown[]) => loadBundledSpecialistFiles(...(args as [])),
@@ -27,7 +24,7 @@ vi.mock('../../specialists/main/specialist-file-loader', () => ({
 }));
 
 vi.mock('../../../main/utils/github-auth-status', () => ({
-  isGitHubConfigured: vi.fn().mockResolvedValue(false),
+  isGitHubConfigured: () => mockIsGitHubConfigured(),
 }));
 
 vi.mock('$shared/logger', () => ({
@@ -47,6 +44,48 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
     loadBundledSpecialistFiles.mockReset().mockResolvedValue(emptyResult);
     loadSpecialistFiles.mockReset().mockResolvedValue(emptyResult);
     loadProjectSpecialistFiles.mockReset().mockResolvedValue(emptyResult);
+    mockIsGitHubConfigured.mockReset().mockResolvedValue(false);
+  });
+
+  describe('startup initialization', () => {
+    it('primes the file cache without waiting for GitHub authentication', async () => {
+      loadBundledSpecialistFiles.mockResolvedValue({
+        specialists: [
+          {
+            id: 'startup-specialist',
+            filePath: '/bundled/startup-specialist.md',
+            frontmatter: { name: 'Startup', description: 'ready' },
+            behaviorPrompt: 'prompt',
+            rawContent: '',
+            source: 'bundled' as const,
+          },
+        ],
+        errors: [],
+      });
+
+      const { getEffectiveSpecialist, initSpecialistsService } =
+        await import('./specialists.service');
+      await initSpecialistsService();
+
+      expect(mockIsGitHubConfigured).not.toHaveBeenCalled();
+      expect(getEffectiveSpecialist('startup-specialist')?.name).toBe('Startup');
+    });
+
+    it('keeps GitHub specialists hidden until the deferred refresh updates the cache', async () => {
+      mockIsGitHubConfigured.mockResolvedValue(true);
+      const { getAllEffectiveSpecialists, initSpecialistsService, refreshGitHubAuthStatus } =
+        await import('./specialists.service');
+
+      await initSpecialistsService();
+      expect(getAllEffectiveSpecialists().map(({ id }) => id)).not.toContain('pr-reviewer');
+
+      await refreshGitHubAuthStatus();
+
+      expect(mockIsGitHubConfigured).toHaveBeenCalledOnce();
+      expect(getAllEffectiveSpecialists().map(({ id }) => id)).toEqual(
+        expect.arrayContaining(['pr-reviewer', 'pr-shepherd']),
+      );
+    });
   });
 
   describe('hardcoded fallback specialists (no file override)', () => {

@@ -2,16 +2,8 @@
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
-  import {
-  faCircle,
-  faCheck,
-  faCloudArrowUp,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  fade,
-  scale,
-} from 'svelte/transition';
+  import { faCircle, faCheck, faCloudArrowUp, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { fade, scale } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -50,7 +42,7 @@
         return {
           icon: faSpinner,
           tooltip: m.ui_saveIndicator_saving_tooltip(),
-          class: 'animate-spin text-blue-500',
+          class: 'animate-spin text-info',
         };
       case 'auto-saving':
         return {
@@ -62,14 +54,14 @@
         return {
           icon: faCircle,
           tooltip: m.ui_saveIndicator_clickToSave_tooltip(),
-          class: 'text-yellow-500',
+          class: 'text-warning',
         };
       case 'saved':
       default:
         return {
           icon: faCheck,
           tooltip: m.ui_saveIndicator_saved_tooltip(),
-          class: 'text-green-500',
+          class: 'text-success',
         };
     }
   });
@@ -104,10 +96,8 @@
           {#if state === 'unsaved'}
             <!-- Unsaved: Show a dot that pulses subtly -->
             <div class="relative">
-              <div class={`${config.dot} rounded-full bg-yellow-500 animate-pulse`}></div>
-              <div
-                class="absolute inset-0 rounded-full bg-yellow-500 opacity-30 animate-ping"
-              ></div>
+              <div class={`${config.dot} rounded-full bg-warning animate-pulse`}></div>
+              <div class="absolute inset-0 rounded-full bg-warning opacity-30 animate-ping"></div>
             </div>
           {:else}
             <!-- Other states: Show the icon -->

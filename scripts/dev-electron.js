@@ -29,13 +29,15 @@ console.log(
 // build:main:dev / build:preload:dev only after their compile completes, so a
 // stale dist/main/index.js left over from a previous (incremental) build can
 // never trigger a premature Electron launch.
+// Probe the TCP listener rather than HTTP `/`: the app intentionally has no
+// root page, so a healthy Vite server returns 404 there.
 // Use 127.0.0.1 to avoid IPv6 binding issues on Linux.
 const isWindows = process.platform === 'win32';
 const waitOn = spawn(
   'npx',
   [
     'wait-on',
-    `http://127.0.0.1:${devPort}`,
+    `tcp:127.0.0.1:${devPort}`,
     join(rootDir, 'dist/.dev-ready-main'),
     join(rootDir, 'dist/.dev-ready-preload'),
   ],
@@ -81,7 +83,12 @@ waitOn.on('exit', (code) => {
   const isWindows = process.platform === 'win32';
   const electron = spawn(
     'electron',
-    [join(rootDir, 'dist/main/index.js'), `--inspect=${devInspectPort}`, '--no-sandbox', ...extraArgs],
+    [
+      join(rootDir, 'dist/main/index.js'),
+      `--inspect=${devInspectPort}`,
+      '--no-sandbox',
+      ...extraArgs,
+    ],
     {
       cwd: rootDir,
       env,
@@ -95,8 +102,12 @@ waitOn.on('exit', (code) => {
     process.exit(1);
   });
 
-  electron.on('exit', (code) => {
-    process.exit(code ?? 0);
+  electron.on('exit', (code, signal) => {
+    if (signal) {
+      console.error(`Electron terminated by signal ${signal}`);
+      process.exit(1);
+    }
+    process.exit(code ?? 1);
   });
 
   // Forward signals to Electron
@@ -106,4 +117,3 @@ waitOn.on('exit', (code) => {
     });
   });
 });
-

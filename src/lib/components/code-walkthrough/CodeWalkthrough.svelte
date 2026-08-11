@@ -14,7 +14,7 @@
   import type { WalkthroughData, WalkthroughAnnotation } from './types';
   import WalkthroughSection from './WalkthroughSection.svelte';
   import { splitDiffByFile } from './patch-utils';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The walkthrough data from the agent */

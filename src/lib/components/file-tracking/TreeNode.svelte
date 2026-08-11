@@ -2,20 +2,20 @@
   import type { TrackedChange } from '$features/file-tracking/types';
   import Fa from 'svelte-fa';
   import {
-  faChevronDown,
-  faChevronRight,
-  faFolder,
-  faFolderOpen,
-  faFileCode,
-  faExpand,
-  faPlus,
-  faMinus,
-  faRotateLeft,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faChevronRight,
+    faFolder,
+    faFolderOpen,
+    faFileCode,
+    faExpand,
+    faPlus,
+    faMinus,
+    faRotateLeft,
+  } from '@fortawesome/free-solid-svg-icons';
   import { ListItem } from '$lib/components/ui/list';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import TreeNode from './TreeNode.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -170,11 +170,7 @@
         class="absolute left-0 flex items-center"
         style="padding-left: {indent + 4}px; top: 50%; transform: translateY(-50%)"
       >
-        <Fa
-          icon={expanded ? faChevronDown : faChevronRight}
-          size="10"
-          class="text-subtle"
-        />
+        <Fa icon={expanded ? faChevronDown : faChevronRight} size="10" class="text-subtle" />
       </div>
       <ListItem
         icon={expanded ? faFolderOpen : faFolder}

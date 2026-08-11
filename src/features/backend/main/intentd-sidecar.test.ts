@@ -395,6 +395,16 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     vi.clearAllMocks();
   });
 
+  it('starts current intentd with its always-on UDS listener', async () => {
+    await startWithFakeProc();
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      '/fake/intentd',
+      ['serve'],
+      expect.objectContaining({ detached: false }),
+    );
+  });
+
   it('reports available:false with null fields before any run', () => {
     expect(getSidecarRunLog()).toEqual({
       available: false,

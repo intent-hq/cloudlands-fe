@@ -8,6 +8,7 @@
  * This server only runs when:
  * - NODE_ENV=development
  * - ENABLE_CDP_DEBUG=true
+ * - ENABLE_CDP_MCP_BRIDGE=true
  */
 
 import express, { Request, Response } from 'express';

@@ -22,14 +22,14 @@ export default defineConfig({
     fileParallelism: false, // Run files sequentially for shared integration fixtures
     reporters: ['default', 'json', 'html'],
     outputFile: {
-      json: '../../test-reports/integration-results.json',
-      html: '../../test-reports/integration-results.html',
+      json: path.resolve(rootDir, 'test-reports/integration-results.json'),
+      html: path.resolve(rootDir, 'test-reports/integration-results.html'),
     },
     coverage: {
       enabled: coverageEnabled,
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      reportsDirectory: '../../test-reports/coverage',
+      reportsDirectory: path.resolve(rootDir, 'test-reports/coverage'),
       include: [
         'src/features/agent/**/*.ts',
         'src/features/workspace/**/*.ts',
@@ -45,7 +45,7 @@ export default defineConfig({
     },
     benchmark: {
       include: ['**/performance.test.ts'],
-      outputFile: '../../test-reports/benchmark.json',
+      outputFile: path.resolve(rootDir, 'test-reports/benchmark.json'),
     },
   },
   resolve: {

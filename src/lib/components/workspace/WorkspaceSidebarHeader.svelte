@@ -3,27 +3,29 @@
   import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
+  import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
-  faEllipsisV,
-  faKeyboard,
-  faTableColumns,
-} from '@fortawesome/free-solid-svg-icons';
+    faBars,
+    faEllipsisV,
+    faKeyboard,
+    faTableColumns,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
-  } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
+  } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
-  import {
-  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
-  type Workspace,
-} from '$shared/types';
+  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type Workspace } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
-  import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import {
+    toggleSidebar,
+    toggleSidebarSide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -40,7 +42,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-
+  import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
 
   interface Props {
     workspace: Workspace | null;
@@ -53,11 +55,12 @@
 
   let isDeleting = $state(false);
   let isEditingTitle = $state(false);
+  let isSavingTitle = false;
   let editedTitle = $state('');
   let titleInputRef: HTMLInputElement | null = $state(null);
   let isEditingStatusMessage = $state(false);
   let editedStatusMessage = $state('');
-  let statusInputRef: HTMLTextAreaElement | null = $state(null);
+  let statusInputRef: HTMLInputElement | null = $state(null);
   let isSavingStatusMessage = $state(false);
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
@@ -69,6 +72,11 @@
   let isSavingBranch = $state(false);
 
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
+  const repositoryLabel = $derived(
+    workspace?.repositoryOwner && workspace?.repositoryName
+      ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+      : (workspace?.repositoryPath?.split('/').pop() ?? ''),
+  );
 
   async function handleDelete() {
     if (isDeleting || !workspace) return;
@@ -96,16 +104,19 @@
   }
 
   async function saveTitle() {
-    if (!workspace || !editedTitle.trim()) {
+    if (isSavingTitle || !workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
     }
 
     const newTitle = editedTitle.trim();
     if (newTitle !== workspace.title) {
-      const result = await workspaceClient.update({ id: workspace.id, title: newTitle });
-      if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
+      isSavingTitle = true;
+      isEditingTitle = false;
+      try {
+        await renameWorkspaceTitle(workspace, newTitle);
+      } finally {
+        isSavingTitle = false;
       }
     }
     isEditingTitle = false;
@@ -121,13 +132,6 @@
     }
   }
 
-  // Grow the status textarea to fit its wrapped content so no scrollbar appears.
-  function autoResizeStatusInput() {
-    if (!statusInputRef) return;
-    statusInputRef.style.height = 'auto';
-    statusInputRef.style.height = `${statusInputRef.scrollHeight}px`;
-  }
-
   function startEditingStatusMessage() {
     if (!workspace) return;
     skipNextStatusBlurSave = false;
@@ -137,7 +141,6 @@
       if (statusInputRef) {
         statusInputRef.focus();
         statusInputRef.select();
-        autoResizeStatusInput();
       }
     });
   }
@@ -185,7 +188,7 @@
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter') {
       e.preventDefault();
       saveStatusMessage();
     } else if (e.key === 'Escape') {
@@ -206,6 +209,23 @@
         branchInputRef.select();
       }
     });
+  }
+
+  async function handleBranchClick(event: MouseEvent) {
+    if (!workspace) return;
+    if (!event.shiftKey || !workspace.branch) {
+      startEditingBranch();
+      return;
+    }
+
+    const { toast } = await import('svelte-sonner');
+    try {
+      await navigator.clipboard.writeText(workspace.branch);
+      toast.success('Branch name copied to clipboard');
+    } catch (error) {
+      logger.error('Failed to copy branch name:', error);
+      toast.error('Failed to copy branch name');
+    }
   }
 
   async function saveBranch() {
@@ -323,13 +343,22 @@
     return undefined;
   }
 
+  const sidebarToggleAction: MenuAction = {
+    label: m.ui_sidebar_toggle_label(),
+    icon: faBars,
+    dividerBefore: true,
+    shortcut: 'mod+b',
+    onClick: () => {
+      appStore.dispatch(toggleSidebar());
+    },
+  };
+
   const sidebarSideAction: MenuAction = $derived({
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
         : m.workspace_sidebarHeader_moveSidebarLeft_label(),
     icon: faTableColumns,
-    dividerBefore: true,
     onClick: () => {
       appStore.dispatch(toggleSidebarSide());
     },
@@ -404,8 +433,8 @@
   });
 </script>
 
-<div class="flex items-center justify-between group h-full">
-  <div class="flex-1 flex flex-col min-w-0">
+<div class="group flex h-full items-start justify-between gap-2">
+  <div class="flex min-w-0 flex-1 flex-col gap-1">
     {#if isEditingTitle}
       <input
         bind:this={titleInputRef}
@@ -418,9 +447,8 @@
           // Auto-resize input based on content
           target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
         }}
-        class="text-sm font-medium text-foreground bg-none
-               px-1.5 py-0.5 rounded
-               outline-none min-w-[80px] max-w-[200px] leading-normal
+        class="type-title min-w-[80px] max-w-full rounded bg-none py-0.5 text-foreground
+               outline-none leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
         placeholder={m.ui_editableName_placeholder()}
@@ -428,12 +456,11 @@
       />
     {:else}
       <button
-        class="text-sm font-medium text-foreground bg-transparent
-               border-none px-1.5 py-0.5 rounded cursor-pointer text-left
+        class="type-title cursor-pointer rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                transition-all duration-150 leading-normal line-clamp-3
               focus-visible:outline focus-visible:outline-1
-               focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+               focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
         class:opacity-50={!workspace?.title}
         onclick={startEditingTitle}
@@ -448,33 +475,29 @@
 
     <!-- status message -->
     {#if isEditingStatusMessage}
-      <textarea
+      <input
         bind:this={statusInputRef}
-        rows="1"
+        type="text"
         bind:value={editedStatusMessage}
-        oninput={autoResizeStatusInput}
         onblur={saveStatusMessage}
         onkeydown={handleStatusMessageKeydown}
         disabled={isSavingStatusMessage}
         maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
         aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-        class="text-xs text-foreground bg-none
-               px-1.5 py-0.5 rounded
-               outline-none w-full max-w-[240px] leading-normal
-               resize-none overflow-hidden break-words whitespace-pre-wrap
+        class="type-body w-full rounded bg-none py-0.5 text-foreground
+               outline-none leading-snug
                focus:ring-none! focus:outline-none!
                transition-all duration-150 disabled:opacity-50"
         placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
-      ></textarea>
+      />
     {:else if workspace}
       <button
-        class="text-xs text-subtle bg-transparent
-               border-none px-1.5 py-0.5 rounded cursor-pointer text-left
+        class="type-body cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
                transition-all duration-150 leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
-               focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+               focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
         class:italic={!currentStatusMessage}
         class:text-ghost={!currentStatusMessage}
@@ -491,55 +514,93 @@
       </button>
     {/if}
 
-    <!-- repo -->
-    <div class="text-subtle text-xs truncate pl-1.5 -mt-1">
-      {#if workspace?.repositoryOwner && workspace?.repositoryName}
-        {workspace.repositoryOwner}/{workspace.repositoryName}
-      {:else if workspace?.repositoryPath}
-        {workspace.repositoryPath.split('/').pop()}
-      {/if}
-    </div>
-
-    <!-- branch -->
-    <div class="flex items-center gap-1.5 text-subtle text-xs pl-1.5 -mt-1">
-      <GitBranchIcon size={12} class="flex-shrink-0" />
-      {#if isEditingBranch}
-        <input
-          bind:this={branchInputRef}
-          type="text"
-          bind:value={editedBranch}
-          onblur={saveBranch}
-          onkeydown={handleBranchKeydown}
-          disabled={isSavingBranch}
-          class="text-xs text-foreground bg-none
-                 px-1 py-0.5 rounded
-                 outline-none min-w-[60px] max-w-[150px] leading-normal
-                 focus:ring-none! focus:outline-none!
-                 transition-all duration-150 disabled:opacity-50"
-          placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
-          style="width: {Math.max(60, Math.min(150, (editedBranch || '').length * 6 + 20))}px"
-        />
-      {:else}
-        <button
-          class="text-xs text-subtle bg-transparent
-                 border-none px-1 py-0.5 rounded cursor-pointer text-left
-                 max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal
-                 hover:text-foreground hover:opacity-80
-                 focus-visible:outline focus-visible:outline-1
-                 focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
-                 disabled:cursor-default disabled:opacity-50"
-          onclick={startEditingBranch}
-          title={m.workspace_sidebarHeader_editBranch_tooltip()}
-          disabled={!workspace || isSavingBranch}
+    <!-- repository and branch metadata -->
+    <div
+      class="type-caption flex h-5 w-full min-w-0 items-center gap-1.5 overflow-hidden leading-5 text-muted-foreground"
+      data-sidebar-workspace-metadata
+    >
+      {#if repositoryLabel}
+        <span
+          class="flex h-5 min-w-0 max-w-[45%] shrink items-center truncate leading-5"
+          title={repositoryLabel}
+          data-sidebar-repository
         >
-          {#if workspace}
-            {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+          {repositoryLabel}
+        </span>
+        <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
+      {/if}
+      {#if workspace}
+        <div
+          class="flex h-5 min-w-0 flex-1 items-center gap-1.5 leading-5"
+          data-sidebar-branch-metadata
+        >
+          <span
+            class="grid size-4 shrink-0 place-items-center text-muted-foreground"
+            data-sidebar-branch-icon
+            aria-hidden="true"
+          >
+            <GitBranchIcon size={14} class="block size-3.5" />
+          </span>
+          {#if isEditingBranch}
+            <input
+              bind:this={branchInputRef}
+              type="text"
+              bind:value={editedBranch}
+              onblur={saveBranch}
+              onkeydown={handleBranchKeydown}
+              disabled={isSavingBranch}
+              class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-none px-1 py-0 leading-5 text-foreground
+                     outline-none focus:ring-none! focus:outline-none!
+                     transition-all duration-150 disabled:opacity-50"
+              placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
+            />
+          {:else}
+            <TooltipRich
+              side="bottom"
+              align="start"
+              sideOffset={6}
+              delayDuration={300}
+              maxWidth="16rem"
+              contentClass="border-0!"
+              contentContainerClass="p-0! space-y-0!"
+              showArrow={false}
+              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-pointer items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left leading-5 text-muted-foreground
+                     transition-all duration-150 hover:text-foreground
+                     focus-visible:outline focus-visible:outline-1
+                     focus-visible:outline-ring focus-visible:outline-offset-[-1px]
+                     disabled:cursor-default disabled:opacity-50"
+              onclick={handleBranchClick}
+              disabled={isSavingBranch}
+            >
+              {#snippet trigger()}
+                <span class="min-w-0 flex-1 truncate">
+                  {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+                </span>
+              {/snippet}
+              {#snippet content()}
+                <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+                  <p
+                    class="truncate text-sm font-medium text-popover-foreground"
+                    title={workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+                  >
+                    {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
+                  </p>
+                  <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    {#if workspace.baseRef}
+                      <span class="min-w-0 truncate">Base {workspace.baseRef}</span>
+                      <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
+                    {/if}
+                    <span class="shrink-0">
+                      {workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
+                    </span>
+                  </div>
+                </div>
+              {/snippet}
+            </TooltipRich>
           {/if}
-        </button>
+        </div>
       {/if}
     </div>
-
   </div>
 
   <DropdownMenu bind:open={dropdownOpen} align="end">
@@ -547,6 +608,7 @@
       <Button
         variant="ghost-light"
         size="icon-sm"
+        aria-label="Workspace actions"
         class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
         onclick={toggle}
         disabled={isDeleting}
@@ -572,7 +634,9 @@
           onClose={handleClose}
           showDeleteOption={true}
           showFileNameCopy={false}
-          additionalActions={microKeyAction ? [microKeyAction, sidebarSideAction] : [sidebarSideAction]}
+          additionalActions={microKeyAction
+            ? [sidebarToggleAction, microKeyAction, sidebarSideAction]
+            : [sidebarToggleAction, sidebarSideAction]}
         />
       </div>
     {/snippet}

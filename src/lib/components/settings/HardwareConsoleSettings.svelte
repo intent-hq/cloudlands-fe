@@ -357,7 +357,7 @@
           {agentKeysInteractive}
           {agentKeyStatusLabel}
         />
-        <div class="w-full sm:w-[240px] shrink-0">
+        <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
             <p class="text-xs font-medium text-muted-foreground mb-2">
               {selectedKeyLabel}
@@ -366,7 +366,7 @@
               <Select.Trigger>
                 <span class="truncate">{selectedActionLabel}</span>
               </Select.Trigger>
-              <Select.Content portal class="max-h-[300px]">
+              <Select.Content portal class="max-h-75">
                 {#each ACTION_KEY_REGISTRY as entry (entry.id)}
                   <Select.Item value={entry.id}>
                     <span class="inline-flex items-center gap-2">
@@ -445,12 +445,12 @@
             {m.settings_hardware_promptLimit_description()}
           </p>
         </div>
-        <div class="w-[90px] flex-shrink-0">
+        <div class="w-22.5 flex-shrink-0">
           <Select.Root value={String($promptPickerLimit$)} onchange={handleLimitChange}>
             <Select.Trigger>
               <span>{$promptPickerLimit$}</span>
             </Select.Trigger>
-            <Select.Content portal class="max-h-[300px] w-[90px]">
+            <Select.Content portal class="max-h-75 w-22.5">
               {#each promptLimitOptions as option (option)}
                 <Select.Item value={String(option)}>{option}</Select.Item>
               {/each}

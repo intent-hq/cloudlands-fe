@@ -1,4 +1,4 @@
-import { call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
+import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   namespaceBackendKey,
@@ -13,6 +13,7 @@ import { connectionsListReceived } from '../../connections/connections-slice';
 import {
   selectAllSpacesViewMode,
   selectChiefActiveAgentId,
+  selectCombinedPanelSplit,
   selectIsCardPinned,
   selectMultiSelectSidebarTabOrder,
   selectPanelItem,
@@ -22,10 +23,12 @@ import {
 import {
   CARD_PINNED_KEY,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  COMBINED_PANEL_SPLIT_KEY,
   closeAll,
   closeHoverCards,
   closePanel,
   hydrateSidebarNav,
+  LEGACY_HOME_PANEL_SPLIT_KEY,
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
   openPanel,
   PANEL_ITEM_KEY,
@@ -35,6 +38,7 @@ import {
   setAllSpacesViewMode,
   setCardPinned,
   setChiefActiveAgentId,
+  setCombinedPanelSplit,
   setMultiSelectSidebarTabOrder,
   setPanelWidth,
   setPinnedWorkspaceIds,
@@ -91,7 +95,7 @@ function parseViewMode(raw: string | null): {
     : { legacy };
 }
 
-function panelItem(value: unknown): SidebarNavItem | null | undefined {
+function panelItem(value: unknown): SidebarNavItem | 'home' | null | undefined {
   if (value === null) return null;
   const validItems: readonly string[] = [
     'home',
@@ -102,7 +106,7 @@ function panelItem(value: unknown): SidebarNavItem | null | undefined {
     'settings',
   ];
   return typeof value === 'string' && validItems.includes(value)
-    ? (value as SidebarNavItem)
+    ? (value as SidebarNavItem | 'home')
     : undefined;
 }
 
@@ -123,6 +127,17 @@ export function* hydrateSidebarNavState(): SagaGenerator<void> {
 
     const width = yield* call(getLocalStorageJSON<unknown>, PANEL_WIDTH_KEY);
     if (typeof width === 'number' && Number.isFinite(width)) data.panelWidth = width;
+
+    const combinedSplit = yield* call(getLocalStorageJSON<unknown>, COMBINED_PANEL_SPLIT_KEY);
+    if (typeof combinedSplit === 'number' && Number.isFinite(combinedSplit)) {
+      data.combinedPanelSplit = combinedSplit;
+    } else {
+      const legacySplit = yield* call(getLocalStorageJSON<unknown>, LEGACY_HOME_PANEL_SPLIT_KEY);
+      if (typeof legacySplit === 'number' && Number.isFinite(legacySplit)) {
+        data.combinedPanelSplit = legacySplit;
+        yield* call(setLocalStorageJSON, COMBINED_PANEL_SPLIT_KEY, legacySplit);
+      }
+    }
 
     const item = panelItem(yield* call(getLocalStorageJSON<unknown>, PANEL_ITEM_KEY));
     if (item !== undefined) data.panelItem = item;
@@ -177,6 +192,18 @@ function* persistPanelWidth(): SagaGenerator<void> {
   }
 }
 
+function* persistCombinedPanelSplit(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      COMBINED_PANEL_SPLIT_KEY,
+      yield* selectCombinedPanelSplit.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
 function* persistPanelAndCardState(): SagaGenerator<void> {
   try {
     yield* call(setLocalStorageJSON, PANEL_ITEM_KEY, yield* selectPanelItem.effect());
@@ -224,42 +251,45 @@ function* persistMultiSelectTabOrder(): SagaGenerator<void> {
  * backend's namespace, resetting to empty where it has none so the previous
  * backend's pins/tab order don't linger.
  */
-function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
-  const backendId = yield* selectActiveBackendId();
-  if (backendId === lastBackend.id) return;
-  lastBackend.id = backendId;
-  try {
-    const pinned = stringArray(
-      yield* call(getLocalStorageJSON<unknown>, pinnedWorkspacesKey(backendId)),
-    );
-    const chiefAgentId = yield* call(
-      getLocalStorageJSON<unknown>,
-      chiefActiveAgentIdKey(backendId),
-    );
-    const tabOrder = stringArray(
-      yield* call(getLocalStorageJSON<unknown>, multiSelectTabOrderKey(backendId)),
-    );
-    yield* put(
-      hydrateSidebarNav({
-        pinnedWorkspaceIds: pinned ?? [],
-        chiefActiveAgentId: typeof chiefAgentId === 'string' ? chiefAgentId : null,
-        multiSelectTabOrder: tabOrder ?? [],
-      }),
-    );
-  } catch {
-    // Backend-specific hydration is best-effort.
+export function* watchBackendSwitch(): SagaGenerator<void> {
+  let lastBackendId = yield* selectActiveBackendId();
+  while (true) {
+    yield* take(connectionsListReceived);
+    const backendId = yield* selectActiveBackendId();
+    if (backendId === lastBackendId) continue;
+    lastBackendId = backendId;
+    try {
+      const pinned = stringArray(
+        yield* call(getLocalStorageJSON<unknown>, pinnedWorkspacesKey(backendId)),
+      );
+      const chiefAgentId = yield* call(
+        getLocalStorageJSON<unknown>,
+        chiefActiveAgentIdKey(backendId),
+      );
+      const tabOrder = stringArray(
+        yield* call(getLocalStorageJSON<unknown>, multiSelectTabOrderKey(backendId)),
+      );
+      yield* put(
+        hydrateSidebarNav({
+          pinnedWorkspaceIds: pinned ?? [],
+          chiefActiveAgentId: typeof chiefAgentId === 'string' ? chiefAgentId : null,
+          multiSelectTabOrder: tabOrder ?? [],
+        }),
+      );
+    } catch {
+      // Backend-specific hydration is best-effort; keep watching future switches.
+    }
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* call(hydrateSidebarNavState);
-  yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
-    id: yield* selectActiveBackendId(),
-  });
+  yield* fork(watchBackendSwitch);
   yield* takeEvery(PINNED_ACTIONS, persistPinnedWorkspaces);
   yield* takeEvery(setAllSpacesViewMode, persistViewMode);
   yield* takeEvery(setPanelWidth, persistPanelWidth);
+  yield* takeEvery(setCombinedPanelSplit, persistCombinedPanelSplit);
   yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);
   yield* takeEvery(CARD_PINNED_ACTIONS, persistCardPinned);
   yield* takeEvery(setChiefActiveAgentId, persistChiefActiveAgentId);

@@ -16,7 +16,7 @@
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';

@@ -11,7 +11,6 @@
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Modal from '$lib/components/modals/Modal.svelte';
-  import TabBar from '$lib/components/ui/TabBar.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
@@ -26,9 +25,8 @@
 
   let { workspaceId, hookId, onClose }: Props = $props();
 
-  // Writable store mirrors the prop so the Redux selector re-evaluates when
-  // workspaceId changes (selector readables are init-time only).
-  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effect below mirrors prop changes.
+  // Capture the initial prop in a store; the effect below keeps later changes in sync.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -59,12 +57,21 @@
   {onClose}
 >
   <div class="flex min-h-0 flex-col gap-3" data-testid="hook-script-modal">
-    <TabBar
-      {tabs}
-      {activeTab}
-      onTabChange={(tabId) => (activeTab = tabId)}
-      class="shrink-0 border-b border-border"
-    />
+    <div class="flex shrink-0 border-b border-border" role="tablist">
+      {#each tabs as tab (tab.id)}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === tab.id}
+          class="border-b-2 px-3 py-1.5 text-sm transition-colors {activeTab === tab.id
+            ? 'border-primary text-primary'
+            : 'border-transparent text-subtle hover:text-primary'}"
+          onclick={() => (activeTab = tab.id)}
+        >
+          {tab.label}
+        </button>
+      {/each}
+    </div>
     {#if activeTab === 'script'}
       <div class="min-h-0 max-h-[60vh] overflow-y-auto" data-testid="hook-script-modal-script">
         <CodeBlock code={hook?.code ?? ''} language="javascript" noMargin />

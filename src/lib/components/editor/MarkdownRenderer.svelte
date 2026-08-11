@@ -1,12 +1,9 @@
 <script lang="ts">
-  import {
-  marked,
-  type Tokens,
-} from 'marked';
+  import { marked, type Tokens } from 'marked';
   import CodeBlock from './CodeBlock.svelte';
   import AugmentCodeSnippet from './AugmentCodeSnippet.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
-  import { DiffViewer } from '$lib/components/ui/diff';
+  import { DiffViewer } from '$features/file-tracking/components/diff';
   import { createLogger } from '$lib/utils/client-logger';
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
@@ -22,7 +19,6 @@
   }
 
   let { content = '', className = '', onOpenFile }: Props = $props();
-
 
   interface RenderedBlock {
     type: 'html' | 'code' | 'augment-snippet' | 'mermaid' | 'diff';
@@ -277,7 +273,11 @@
     {:else if block.type === 'mermaid'}
       <MermaidRenderer code={block.content} />
     {:else if block.type === 'diff'}
-      <DiffViewer patch={withSyntheticDiffHeaders(block.content)} fileName="diff.patch" showHeader={false} />
+      <DiffViewer
+        patch={withSyntheticDiffHeaders(block.content)}
+        fileName="diff.patch"
+        showHeader={false}
+      />
     {:else if block.type === 'code'}
       <CodeBlock code={block.content} language={block.language || 'plaintext'} />
     {:else}

@@ -53,6 +53,12 @@ describe('tool-result-parser', () => {
       expect(result.content).toBeUndefined();
     });
 
+    it('should handle undefined input without crashing', () => {
+      expect(() =>
+        parseToolResult('workspace_api', undefined as unknown as Record<string, any>, 'ok'),
+      ).not.toThrow();
+    });
+
     it('should handle launch-process tool', () => {
       const result = parseToolResult('launch-process', { command: 'npm run build' }, 'Build complete');
 
@@ -146,6 +152,26 @@ describe('tool-result-parser', () => {
   });
 
   describe('search result parsing with fallbacks', () => {
+    it('parses paths from an object-wrapped output payload', () => {
+      const result = parseToolResult(
+        'codebase-retrieval',
+        { information_request: 'Find the chat panel' },
+        {
+          output:
+            'The following code sections were retrieved:\nPath: src/lib/components/chat/ChatPanel.svelte\n  10 | assistant response',
+        },
+      );
+
+      expect(result.type).toBe('code-search');
+      expect(result.snippets).toEqual([
+        {
+          path: 'src/lib/components/chat/ChatPanel.svelte',
+          content: '10 | assistant response',
+        },
+      ]);
+      expect(result.content).toBeUndefined();
+    });
+
     it('should add query to content when search has no results', () => {
       const result = parseToolResult('grep', { query: 'error handling' }, '');
 

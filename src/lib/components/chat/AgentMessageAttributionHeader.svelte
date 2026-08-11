@@ -6,7 +6,7 @@
    * sender agent name + "sent a message". Clicking opens the sender agent's
    * tab (same click-through pattern as AgentAttributionBadge).
    */
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import type { AgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -45,7 +45,7 @@
 
 <button
   type="button"
-  class="flex items-center gap-1.5 rounded-md text-xs cursor-pointer transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring {className}"
+  class="type-caption flex cursor-pointer items-center gap-1.5 rounded-md transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring {className}"
   onclick={handleClick}
   ondblclick={(e) => e.stopPropagation()}
   title={m.chat_msgAttribution_openAgent_title({ name: attribution.displayName })}

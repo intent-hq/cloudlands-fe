@@ -1,5 +1,5 @@
-import { store } from "../../store";
-import { serializeWorkspaceTabsState } from "./tab-state-slice";
+import { store } from '../../store';
+import { serializeWorkspaceTabsState } from './tab-state-slice';
 
 export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
@@ -12,7 +12,7 @@ export const selectActiveHandleDrop = store.createSelector((state) => {
 export const selectScrollPosition = store.createSelector(
   (state, tabId: string): number | undefined => {
     return state.tabState.scrollPositions[tabId];
-  }
+  },
 );
 
 export const selectAllScrollPositions = store.createSelector((state) => {
@@ -24,12 +24,33 @@ export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
 });
 
 export const selectWorkspaceTabOrder = store.createSelector((state) => {
-  return state.tabState.tabOrder;
+  return state.tabState.workspaceStacks.flatMap((stack) => stack);
+});
+
+export const selectWorkspaceStacks = store.createSelector((state) => {
+  return state.tabState.workspaceStacks;
+});
+
+export const selectWorkspaceViewMode = store.createSelector((state) => {
+  return state.tabState.viewMode;
 });
 
 export const selectIsWorkspaceTabOpen = store.createSelector((state, workspaceId: string) => {
   return state.tabState.openTabs[workspaceId] === true;
 });
+
+export const selectLastClosedWorkspaceTab = store.createSelector(
+  (state): { workspaceId: string; closedAt: number } | null => {
+    const { recentlyClosedTabIds, recentlyClosedTabAt, openTabs } = state.tabState;
+    for (let index = recentlyClosedTabIds.length - 1; index >= 0; index--) {
+      const workspaceId = recentlyClosedTabIds[index];
+      if (!openTabs[workspaceId]) {
+        return { workspaceId, closedAt: recentlyClosedTabAt[workspaceId] ?? 0 };
+      }
+    }
+    return null;
+  },
+);
 
 export const selectPersistedWorkspaceTabsState = store.createSelector((state) => {
   return serializeWorkspaceTabsState(state.tabState);

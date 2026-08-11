@@ -50,10 +50,6 @@ vi.mock('../repo-registry', () => ({
   clearRepos: vi.fn(),
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({ mainDispatch: vi.fn() }));
-vi.mock('../../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice', () => ({
-  workspaceFileChanges: vi.fn((payload) => ({ type: 'workspace/fileChanges', payload })),
-}));
 vi.mock('../../../../store/main/slices/agent-events/agent-events-slice', () => ({
   agentSessionUpdated: vi.fn((payload) => ({ type: 'agent/sessionUpdated', payload })),
 }));

@@ -98,6 +98,22 @@ describe('AgentBackendSettings', () => {
     });
   });
 
+  it('saves valid positive integer on Enter', async () => {
+    mockSettings({ maxConcurrent: 0 });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'agents.maxConcurrent', value: 8 }]);
+    render(AgentBackendSettings);
+    const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
+
+    await fireEvent.input(input, { target: { value: '8' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agents.maxConcurrent', value: 8 },
+      ]);
+    });
+  });
+
   it('saves 0 when input is empty', async () => {
     mockSettings({ maxConcurrent: 12 });
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'agents.maxConcurrent', value: 0 }]);

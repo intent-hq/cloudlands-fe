@@ -14,6 +14,7 @@
     headerClass?: string;
     contentClass?: string;
     scrollAreaClass?: string;
+    scrollContent?: boolean;
     showAction?: boolean;
     actionIcon?: any;
     actionLabel?: string;
@@ -37,6 +38,7 @@
     headerClass = '',
     contentClass = '',
     scrollAreaClass = '',
+    scrollContent = true,
     showAction = false,
     actionIcon = undefined,
     actionLabel = '',
@@ -74,12 +76,20 @@
         {@render beforeScroll()}
       </div>
     {/if}
-    <ScrollArea class="h-full w-full flex flex-col flex-1 min-h-0 {scrollAreaClass}">
-      <div class="pb-1 flex flex-col flex-1 min-h-0 {contentClass}">
+    {#if scrollContent}
+      <ScrollArea class="h-full w-full flex flex-col flex-1 min-h-0 {scrollAreaClass}">
+        <div class="pb-1 flex flex-col flex-1 min-h-0 {contentClass}">
+          {#if children}
+            {@render children()}
+          {/if}
+        </div>
+      </ScrollArea>
+    {:else}
+      <div class="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden pb-1 {contentClass}">
         {#if children}
           {@render children()}
         {/if}
       </div>
-    </ScrollArea>
+    {/if}
   </div>
 </VSCodePanel>

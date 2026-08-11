@@ -251,7 +251,7 @@ vi.mock('$lib/components/ui/SaveIndicator.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockSaveIndicator.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/OpenComboButton.svelte', async () => ({
+vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockOpenComboButton.svelte')).default,
 }));
 
@@ -295,6 +295,30 @@ describe('FileTabType Redux integration', () => {
     });
   }
 
+  it('groups editor presentation toggles into one view settings menu', async () => {
+    renderFileTab();
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'View settings' }));
+
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' })).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: m.layout_diffHeader_wrappingOn_tooltip() }),
+    ).toBeNull();
+
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' }));
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'uiLayout/toggleLineWrapping',
+      payload: [],
+    });
+
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' }));
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'uiLayout/toggleDiffIndicators',
+      payload: [],
+    });
+  });
+
   it.each([
     ['src/main.js', 'main.js', 'javascript'],
     ['src/App.jsx', 'App.jsx', 'javascript'],
@@ -330,6 +354,28 @@ describe('FileTabType Redux integration', () => {
       expect(editor.getAttribute('data-language')).toBe(expectedLanguage);
     },
   );
+
+  it('loads a relative file before the workspace root has hydrated', async () => {
+    mockReduxState.workspace = {
+      id: 'other-workspace',
+      worktreePath: '/other-repo',
+      repositoryPath: '/other-repo',
+    };
+
+    renderFileTab();
+
+    await waitFor(() =>
+      expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+        'ws-1',
+        'src/main.ts',
+        'src/main.ts',
+      ),
+    );
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'files/loadFileContentRequested',
+      payload: ['ws-1', 'src/main.ts', 'src/main.ts'],
+    });
+  });
 
   it('keeps markdown files in the markdown preview instead of CodeEditor by default', async () => {
     mockReduxState.files['README.md'] = {

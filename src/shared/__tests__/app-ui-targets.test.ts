@@ -98,11 +98,12 @@ describe('app UI targets registry', () => {
   it('falls back to the raw hash when no registry target exists for a route', () => {
     expect(getHighlightIdFromRoute('/settings#custom-target')).toBe('custom-target');
   });
+
 });
 
 describe('isResolvableNavTarget', () => {
-  it('accepts the home route', () => {
-    expect(isResolvableNavTarget('/')).toBe(true);
+  it('rejects the removed home route', () => {
+    expect(isResolvableNavTarget('/')).toBe(false);
   });
 
   it('accepts a registered settings path with no hash', () => {

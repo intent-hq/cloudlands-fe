@@ -6,12 +6,10 @@
    * confirm before the edit is sent. Cancelling returns to edit mode with the
    * draft intact.
    *
-   * Portaled to the document body (same pattern as DeleteWarningDialog) so the
-   * fixed-position overlay escapes ChatMessage's overflow/stacking contexts —
-   * rendered inline it gets clipped inside the message edit box.
+   * BulkActionConfirmDialog uses the canonical portaled dialog primitive, so
+   * the confirmation escapes ChatMessage's overflow/stacking contexts.
    */
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
-  import Portal from '$lib/components/ui/Portal.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -23,16 +21,12 @@
   let { open = false, onConfirm, onCancel }: Props = $props();
 </script>
 
-{#if open}
-  <Portal target="body" zIndex={100}>
-    <BulkActionConfirmDialog
-      {open}
-      title={m.chat_editRegenerate_confirm_title()}
-      description={m.chat_editRegenerate_confirm_description()}
-      confirmText={m.chat_editRegenerate_confirm_button()}
-      variant="destructive"
-      {onConfirm}
-      {onCancel}
-    />
-  </Portal>
-{/if}
+<BulkActionConfirmDialog
+  {open}
+  title={m.chat_editRegenerate_confirm_title()}
+  description={m.chat_editRegenerate_confirm_description()}
+  confirmText={m.chat_editRegenerate_confirm_button()}
+  variant="destructive"
+  {onConfirm}
+  {onCancel}
+/>

@@ -32,7 +32,10 @@ const initialState: TabState = {
   pinnedTabs: {},
   unsavedTabs: {},
   optimisticTabs: {},
-  tabOrder: [],
+  workspaceStacks: [],
+  recentlyClosedTabIds: [],
+  recentlyClosedTabAt: {},
+  viewMode: 'single',
   version: 0,
 };
 
@@ -42,7 +45,7 @@ const makeState = (overrides: Partial<TabState> = {}): TabState => ({
 });
 
 describe("optimistic workspace tab: temp→real ID migration", () => {
-  it("migrates optimistic ID to real ID in openTabs, tabOrder, and currentTabId", () => {
+  it("migrates optimistic ID to real ID in openTabs, workspaceStacks, and currentTabId", () => {
     let state = makeState();
     state = tabStateReducer(state, openWorkspaceTab("temp-ws-1"));
     state = tabStateReducer(state, markWorkspaceTabOptimistic("temp-ws-1"));
@@ -56,8 +59,8 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     expect(state.openTabs["temp-ws-1"]).toBeUndefined();
     expect(state.openTabs["real-ws-1"]).toBe(true);
     expect(state.currentTabId).toBe("real-ws-1");
-    expect(state.tabOrder).toContain("real-ws-1");
-    expect(state.tabOrder).not.toContain("temp-ws-1");
+    expect(state.workspaceStacks.flat()).toContain("real-ws-1");
+    expect(state.workspaceStacks.flat()).not.toContain("temp-ws-1");
     expect(state.optimisticTabs["temp-ws-1"]).toBeUndefined();
   });
 
@@ -65,7 +68,7 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     const state = makeState({
       openTabs: { "ws-existing": true, "temp-ws-1": true },
       currentTabId: "temp-ws-1",
-      tabOrder: ["ws-existing", "temp-ws-1"],
+      workspaceStacks: [["ws-existing"], ["temp-ws-1"]],
       optimisticTabs: { "temp-ws-1": true },
       version: 5,
     });
@@ -76,14 +79,14 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     );
 
     expect(migrated.openTabs["ws-existing"]).toBe(true);
-    expect(migrated.tabOrder).toEqual(["ws-existing", "real-ws-1"]);
+    expect(migrated.workspaceStacks).toEqual([["ws-existing"], ["real-ws-1"]]);
   });
 
   it("handles migration when optimistic tab is not the current tab", () => {
     const state = makeState({
       openTabs: { "ws-1": true, "temp-ws-2": true },
       currentTabId: "ws-1",
-      tabOrder: ["ws-1", "temp-ws-2"],
+      workspaceStacks: [["ws-1"], ["temp-ws-2"]],
       optimisticTabs: { "temp-ws-2": true },
       version: 3,
     });
@@ -101,7 +104,7 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     const state = makeState({
       openTabs: { "ws-1": true },
       currentTabId: "ws-1",
-      tabOrder: ["ws-1"],
+      workspaceStacks: [["ws-1"]],
       version: 2,
     });
 
@@ -117,7 +120,7 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     let state = makeState({
       openTabs: { "temp-1": true, "temp-2": true },
       currentTabId: "temp-1",
-      tabOrder: ["temp-1", "temp-2"],
+      workspaceStacks: [["temp-1"], ["temp-2"]],
       optimisticTabs: { "temp-1": true, "temp-2": true },
       version: 1,
     });
@@ -126,7 +129,7 @@ describe("optimistic workspace tab: temp→real ID migration", () => {
     state = tabStateReducer(state, handleOptimisticWorkspaceTabTransition("temp-2", "real-2"));
 
     expect(state.openTabs).toEqual({ "real-1": true, "real-2": true });
-    expect(state.tabOrder).toEqual(["real-1", "real-2"]);
+    expect(state.workspaceStacks).toEqual([["real-1"], ["real-2"]]);
     expect(state.optimisticTabs).toEqual({});
     expect(state.currentTabId).toBe("real-1");
   });
@@ -137,7 +140,7 @@ describe("optimistic workspace tab: timeout-based cleanup", () => {
     const state = makeState({
       openTabs: { "ws-valid": true, "ws-stale": true, "temp-optimistic": true },
       currentTabId: "ws-stale",
-      tabOrder: ["ws-valid", "ws-stale", "temp-optimistic"],
+      workspaceStacks: [["ws-valid"], ["ws-stale"], ["temp-optimistic"]],
       optimisticTabs: { "temp-optimistic": true },
       version: 10,
     });
@@ -147,14 +150,14 @@ describe("optimistic workspace tab: timeout-based cleanup", () => {
     expect(cleaned.openTabs["ws-valid"]).toBe(true);
     expect(cleaned.openTabs["temp-optimistic"]).toBe(true);
     expect(cleaned.openTabs["ws-stale"]).toBeUndefined();
-    expect(cleaned.tabOrder).toEqual(["ws-valid", "temp-optimistic"]);
+    expect(cleaned.workspaceStacks).toEqual([["ws-valid"], ["temp-optimistic"]]);
   });
 
   it("unmarkWorkspaceTabOptimistic then cleanup removes the stale tab", () => {
     let state = makeState({
       openTabs: { "temp-1": true },
       currentTabId: "temp-1",
-      tabOrder: ["temp-1"],
+      workspaceStacks: [["temp-1"]],
       optimisticTabs: { "temp-1": true },
       version: 1,
     });
@@ -165,7 +168,7 @@ describe("optimistic workspace tab: timeout-based cleanup", () => {
     state = tabStateReducer(state, cleanupInvalidWorkspaceTabs([]));
 
     expect(state.openTabs["temp-1"]).toBeUndefined();
-    expect(state.tabOrder).toEqual([]);
+    expect(state.workspaceStacks).toEqual([]);
     expect(state.currentTabId).toBeNull();
   });
 });

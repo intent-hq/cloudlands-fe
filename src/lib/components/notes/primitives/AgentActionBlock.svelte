@@ -5,19 +5,18 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faRobot,
-  faPlay,
-  faSpinner,
-  faArrowUpRightFromSquare,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faRobot,
+    faPlay,
+    faSpinner,
+    faArrowUpRightFromSquare,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
 
-
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -157,9 +156,7 @@
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       if (workspaceId) {
-        appStore.dispatch(
-          openAgentTabRequested(workspaceId, { agentId, sourcePanelId }),
-        );
+        appStore.dispatch(openAgentTabRequested(workspaceId, { agentId, sourcePanelId }));
       }
     } else {
       runAction();
@@ -186,27 +183,29 @@
 <NodeViewWrapper>
   {#if primitive}
     {@const linkedAgentId = agentId || primitive.createdByAgentId}
-    <div class="my-1.5 flex items-center gap-2">
+    <div
+      class="ws-block-widget type-body my-2 flex min-h-9 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-foreground shadow-(--elevation-raised)"
+    >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
         <button
           type="button"
-          class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
+          class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
           <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
       {:else}
-        <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
+        <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}
-      <span class="text-sm text-subtle flex-1 min-w-0 truncate">
+      <span class="min-w-0 flex-1 truncate">
         {primitive.goal}
       </span>
       <Button
         variant="ghost-light"
         size="sm"
-        class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
+        class="type-caption shrink-0"
         onclick={handleButtonClick}
         disabled={running}
       >
@@ -215,6 +214,8 @@
       </Button>
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">{m.notes_agentActionBlock_invalid_error()}</div>
+    <div class="ws-block-widget type-caption my-2 text-muted-foreground">
+      {m.notes_agentActionBlock_invalid_error()}
+    </div>
   {/if}
 </NodeViewWrapper>

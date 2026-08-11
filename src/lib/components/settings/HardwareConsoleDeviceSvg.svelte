@@ -63,7 +63,7 @@
    */
   import { formatInteger } from '$lib/i18n/format';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
-  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
+  import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
 
   /** Resolved assignment of one agent-key slot. */
   interface AgentKeySlot {
@@ -298,7 +298,7 @@
 
 <svelte:window onkeydown={handleWindowKeydown} onpointerdown={handleWindowPointerdown} />
 
-<div class="relative w-full max-w-[360px]">
+<div class="relative w-full max-w-90">
   <svg
     viewBox="0 0 292 292"
     role="group"
@@ -401,7 +401,7 @@
               <MicroKeySlotSquare {slot} />
             {:else}
               <span
-                class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border/40 bg-muted/30 text-[10px] font-medium leading-none text-subtle/60 a11y-ignore"
+                class="type-caption flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border/40 bg-muted/30 font-medium leading-none text-subtle/60 a11y-ignore"
                 aria-hidden="true"
               >
                 {formatInteger(slot + 1)}
@@ -508,7 +508,7 @@
       id="hardware-console-{openExplainer}-explainer"
       role="dialog"
       aria-label={explainerLabel}
-      class="absolute top-2 z-20 w-[260px] rounded-lg border border-border bg-popover p-3 shadow-lg {openExplainer ===
+      class="absolute top-2 z-20 w-65 rounded-lg border border-border bg-popover p-3 shadow-lg {openExplainer ===
       'knob'
         ? 'left-2'
         : 'right-2'}"
@@ -545,7 +545,7 @@
         number: formatInteger(openAgentKeySlot + 1),
       })}
       style={agentKeyPopoverStyle}
-      class="absolute z-20 w-[200px] rounded-lg border border-border bg-popover p-3 shadow-lg"
+      class="absolute z-20 w-50 rounded-lg border border-border bg-popover p-3 shadow-lg"
     >
       <p class="text-xs font-medium text-foreground truncate">{agentKeyPopoverName}</p>
       {#if agentKeyPopoverStatus}

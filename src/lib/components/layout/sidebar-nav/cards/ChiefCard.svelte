@@ -1,14 +1,13 @@
+<script lang="ts" module>
+  // The Chief chat can render in two sidebar hosts at once (the hover card and
+  // combined workspace panel). The chief virtual workspace is shared, so
+  // mount/unmount is refcounted: only the last live instance unmounts it.
+  let chiefMountCount = 0;
+</script>
+
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import {
-    faChevronDown,
-    faPlus,
-    faSpinner,
-    faThumbtack,
-    faTrash,
-    faXmark,
-    faWandMagicSparkles,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { toast } from 'svelte-sonner';
@@ -18,19 +17,17 @@
     type DropdownItemProps,
     type DropdownOption,
   } from '$lib/components/ui/dropdown';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import { store as appStore } from '$store/renderer/store';
   import {
     setChiefActiveAgentId,
-    closePanel,
     openPanel,
-    toggleCardPinned,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
+    selectCurrentChiefThread,
     selectChiefThreadPreview,
     selectChiefThreads,
-    selectIsCardPinned,
+    selectReusableChiefThread,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -42,27 +39,36 @@
     deleteAgentWithUndoRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import {
+    buildChiefBehaviorPrompt,
+    CHIEF_PROMPT_VERSION,
+    CHIEF_SPECIALIST_ID,
+  } from '$shared/chief-agent-config';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { formatChiefThreadName } from './chief-thread-name';
+  import { ensureChiefThreadCreation } from './chief-thread-creation';
   import {
     selectEffectiveBehaviorPrompt,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
 
-  const CHIEF_SPECIALIST_ID = 'chief-of-staff';
-
   const chiefPreview$ = selectChiefThreadPreview();
   const chiefThreads$ = selectChiefThreads();
-  const isCardPinned$ = selectIsCardPinned();
+  const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
+  const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
 
   interface Props {
     expanded?: boolean;
+    /** Rendered inside the combined Home panel: the panel owns the close
+        button and height, so hide the close X and don't force a min height. */
+    embedded?: boolean;
   }
 
-  let { expanded = false }: Props = $props();
+  let { expanded = false, embedded = false }: Props = $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -110,14 +116,15 @@
   );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
   const title = $derived(currentPreview?.title ?? m.layout_chiefCard_startThread_label());
-  const preview = $derived(
-    currentPreview?.preview ?? m.layout_chiefCard_preview_description(),
-  );
+  const preview = $derived(currentPreview?.preview ?? m.layout_chiefCard_preview_description());
 
   function ensureChiefWorkspaceRegistered() {
     if (isWorkspaceRegistered) return;
     appStore.dispatch(setWorkspaceEntity(chiefWorkspace));
-    appStore.dispatch(workspaceMounted(CHIEF_WORKSPACE_ID));
+    if (chiefMountCount === 0) {
+      appStore.dispatch(workspaceMounted(CHIEF_WORKSPACE_ID));
+    }
+    chiefMountCount++;
     isWorkspaceRegistered = true;
   }
 
@@ -139,18 +146,33 @@
     if (
       !expanded ||
       !isWorkspaceRegistered ||
-      $chiefThreads$.length > 0 ||
+      !$chiefAgentsLoaded$ ||
       isCreatingThread ||
       hasAutoStartedRef
     ) {
       return;
     }
     hasAutoStartedRef = true;
+
+    // Existing conversations keep the system prompt they were created with.
+    // Migrate the visible selection to a current-identity thread, or create
+    // one when this installation only has legacy generic-agent threads.
+    if ($currentChiefThread$) {
+      const agentId = $currentChiefThread$.agentId;
+      selectedAgentId = agentId;
+      appStore.dispatch(setChiefActiveAgentId(agentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+      return;
+    }
     void createNewThread();
   });
 
   onDestroy(() => {
-    appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+    if (!isWorkspaceRegistered) return;
+    chiefMountCount = Math.max(0, chiefMountCount - 1);
+    if (chiefMountCount === 0) {
+      appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+    }
   });
 
   function openChiefPanel() {
@@ -175,8 +197,12 @@
     if (isCreatingThread) return;
     ensureChiefWorkspaceRegistered();
 
-    // Reuse an existing empty thread instead of stacking up blank ones.
-    const emptyThread = $chiefThreads$.find((thread) => thread.messageCount === 0);
+    const reduxState = appStore.state;
+
+    // Reuse only blank threads created with the current Chief identity contract.
+    // A system prompt is fixed at agent creation, so selecting an older blank
+    // thread would silently preserve its stale generic-agent identity.
+    const emptyThread = selectReusableChiefThread.select(reduxState);
     if (emptyThread) {
       selectedAgentId = emptyThread.agentId;
       appStore.dispatch(setChiefActiveAgentId(emptyThread.agentId));
@@ -185,44 +211,51 @@
     }
 
     isCreatingThread = true;
-
-    const reduxState = appStore.state;
-    const chiefSpecialist = selectSpecialists
-      .select(reduxState)
-      .find((s) => s.id === CHIEF_SPECIALIST_ID);
-    const chiefBehaviorPrompt = chiefSpecialist
-      ? selectEffectiveBehaviorPrompt.select(reduxState, CHIEF_SPECIALIST_ID)
-      : undefined;
-
-    const action = agentSessionLaunchAgentRequested(
-      CHIEF_WORKSPACE_ID,
-      {
-        name: formatChiefThreadName(new Date()),
-        // Generated timestamp name — keep the session self-renameable.
-        nameExplicitlySet: false,
-        agentType: createAgentTypeId('workspace'),
-        source: 'chief-card',
-        behaviorPrompt: chiefBehaviorPrompt,
-        metadata: {
+    let ownsCreation = false;
+    const creation = ensureChiefThreadCreation(() => {
+      ownsCreation = true;
+      const chiefSpecialist = selectSpecialists
+        .select(reduxState)
+        .find((s) => s.id === CHIEF_SPECIALIST_ID);
+      const chiefBehaviorPrompt = buildChiefBehaviorPrompt(
+        selectEffectiveBehaviorPrompt.select(reduxState, CHIEF_SPECIALIST_ID),
+      );
+      const action = agentSessionLaunchAgentRequested(
+        CHIEF_WORKSPACE_ID,
+        {
+          name: formatChiefThreadName(new Date()),
+          // Generated timestamp name — keep the session self-renameable.
+          nameExplicitlySet: false,
+          agentType: createAgentTypeId('workspace'),
           source: 'chief-card',
-          chiefWorkspace: true,
-          specialist: CHIEF_SPECIALIST_ID,
-          specialistName: chiefSpecialist?.name ?? m.layout_chiefCard_title(),
           behaviorPrompt: chiefBehaviorPrompt,
+          metadata: {
+            source: 'chief-card',
+            chiefWorkspace: true,
+            chiefPromptVersion: CHIEF_PROMPT_VERSION,
+            specialist: CHIEF_SPECIALIST_ID,
+            specialistName: chiefSpecialist?.name ?? m.layout_chiefCard_title(),
+            roleReminder: chiefSpecialist?.roleReminder,
+            behaviorPrompt: chiefBehaviorPrompt,
+          },
         },
-      },
-      { openAgent: false },
-    );
+        { openAgent: false },
+      );
 
-    appStore.dispatch(action);
+      appStore.dispatch(action);
+      return action.promise.then((session) => String(session.id));
+    });
+
     try {
-      const session = await action.promise;
-      selectedAgentId = session.id;
-      appStore.dispatch(setChiefActiveAgentId(session.id));
-      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, session.id));
+      const agentId = await creation;
+      selectedAgentId = agentId;
+      appStore.dispatch(setChiefActiveAgentId(agentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(m.layout_chiefCard_startFailed_error({ message }));
+      if (ownsCreation) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(m.layout_chiefCard_startFailed_error({ message }));
+      }
     } finally {
       isCreatingThread = false;
     }
@@ -237,12 +270,12 @@
       onclick={openChiefPanel}
       aria-label={m.layout_chiefCard_open_ariaLabel()}
     >
-      <p class="truncate text-sm font-semibold text-foreground">{title}</p>
-      <p class="mt-1 text-xs leading-snug text-muted-foreground line-clamp-3">{preview}</p>
+      <p class="type-body truncate font-medium text-foreground">{title}</p>
+      <p class="type-caption mt-1 text-muted-foreground line-clamp-3">{preview}</p>
     </button>
   </div>
 {:else}
-  <div class="flex h-full min-h-[460px] flex-col">
+  <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
     <div class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2">
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <Dropdown
@@ -258,7 +291,7 @@
           contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
         >
           {#snippet trigger({ open }: { open: boolean; value: string | string[] | undefined })}
-            <span class="min-w-0 flex-1 truncate text-left text-sm font-semibold">
+            <span class="type-caption min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
             <Fa
@@ -272,7 +305,9 @@
             {@const thread = $chiefThreads$.find((candidate) => candidate.agentId === option.value)}
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
               {#if thread?.isActive}
-                <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                <span
+                  class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
+                  aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
                 ></span>
               {:else}
                 <span class="h-1.5 w-1.5 shrink-0"></span>
@@ -296,7 +331,9 @@
           {/snippet}
 
           {#snippet empty()}
-            <div class="px-3 py-4 text-center text-sm text-subtle">{m.layout_chiefCard_noThreads_label()}</div>
+            <div class="type-caption px-3 py-4 text-center text-subtle">
+              {m.layout_chiefCard_noThreads_label()}
+            </div>
           {/snippet}
         </Dropdown>
       </div>
@@ -314,33 +351,10 @@
             class={isCreatingThread ? 'animate-spin' : ''}
           />
         </button>
-        <Tooltip
-          content={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()}
-          side="bottom"
-          sideOffset={4}
-        >
-          <button
-            class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors
-              {$isCardPinned$
-              ? 'rotate-0 text-foreground'
-              : 'rotate-45 text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-            onclick={() => appStore.dispatch(toggleCardPinned())}
-            aria-label={$isCardPinned$ ? m.layout_sidebarPanel_unpin_tooltip() : m.layout_sidebarPanel_pin_tooltip()}
-          >
-            <Fa icon={faThumbtack} size="xs" />
-          </button>
-        </Tooltip>
-        <button
-          class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-          onclick={() => appStore.dispatch(closePanel())}
-          aria-label={m.layout_sidebarPanel_close_ariaLabel()}
-        >
-          <Fa icon={faXmark} size="xs" />
-        </button>
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 px-2 pb-4 pt-0">
+    <div class="min-h-0 flex-1 px-2 pt-0">
       <section class="flex h-full min-h-0 flex-col overflow-hidden">
         {#if activeThread}
           {#key activeThread.agentId}
@@ -354,32 +368,6 @@
               />
             </div>
           {/key}
-        {:else}
-          <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-            <div
-              class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"
-            >
-              <Fa icon={faWandMagicSparkles} size="sm" />
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-foreground">{m.layout_chiefCard_startThread_label()}</p>
-              <p class="mt-1 text-xs text-subtle">
-                {m.layout_chiefCard_startThreadHint_description()}
-              </p>
-            </div>
-            <button
-              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
-              onclick={createNewThread}
-              disabled={isCreatingThread}
-            >
-              <Fa
-                icon={isCreatingThread ? faSpinner : faPlus}
-                size="xs"
-                class={isCreatingThread ? 'animate-spin' : ''}
-              />
-              {m.layout_chiefCard_newThread_label()}
-            </button>
-          </div>
         {/if}
       </section>
     </div>

@@ -21,12 +21,11 @@
   import { cn } from '$lib/utils';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
-  setActiveHandleDrop,
-  type HandleDropZoneType,
-  type SerializableRect,
-} from '$store/renderer/slices/tab-state/tab-state-slice';
+    setActiveHandleDrop,
+    type HandleDropZoneType,
+    type SerializableRect,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
-
 
   /** Position relative to the split for container-level insertion */
   export type HandleDropZone = 'before' | 'after';
@@ -85,6 +84,7 @@
     e.preventDefault();
     isDragging = true;
     startPos = direction === 'horizontal' ? e.clientX : e.clientY;
+    pendingResizeDelta = 0;
     onResizeStart?.();
 
     // Add class to body to disable pointer events on iframes during drag
@@ -95,6 +95,16 @@
     window.addEventListener('mouseup', handleMouseUp);
   }
 
+  let pendingResizeDelta = 0;
+  let resizeFrame: number | null = null;
+
+  function flushPendingResize() {
+    resizeFrame = null;
+    const delta = pendingResizeDelta;
+    pendingResizeDelta = 0;
+    if (delta !== 0) onResize?.(delta);
+  }
+
   function handleMouseMove(e: MouseEvent) {
     if (!isDragging) return;
 
@@ -102,13 +112,18 @@
     const delta = currentPos - startPos;
 
     if (delta !== 0) {
-      onResize?.(delta);
+      pendingResizeDelta += delta;
       startPos = currentPos;
+      resizeFrame ??= requestAnimationFrame(flushPendingResize);
     }
   }
 
   function handleMouseUp() {
     isDragging = false;
+    if (resizeFrame !== null) {
+      cancelAnimationFrame(resizeFrame);
+      flushPendingResize();
+    }
     if (typeof onResizeEnd === 'function') {
       onResizeEnd();
     }
@@ -307,11 +322,13 @@
   type="button"
   bind:this={handleRef}
   class={cn(
-    'panel-split-handle',
+    'app-resize-handle panel-split-handle',
     direction === 'horizontal' ? 'horizontal' : 'vertical',
     isDragging && 'dragging',
     isTabDragOver && 'tab-drag-over',
   )}
+  data-resize-axis={direction === 'horizontal' ? 'x' : 'y'}
+  data-resizing={isDragging}
   aria-label={m.layout_panelSplitHandle_resize_ariaLabel()}
   onmousedown={handleMouseDown}
   ondragover={handleTabDragOver}
@@ -323,64 +340,19 @@
   .panel-split-handle {
     position: relative;
     flex-shrink: 0;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    appearance: none;
     z-index: 35;
   }
 
   /* 8px gap, handle is 16px wide, so margin = -(16 - 8) / 2 = -4px each side */
   .panel-split-handle.horizontal {
     width: 16px;
-    cursor: col-resize;
     margin: 0 -4px;
-  }
-
-  .panel-split-handle.horizontal::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 2px;
-    height: 100%;
-    border-radius: 1px;
-    background: hsl(var(--primary));
-    opacity: 0;
-    transition: opacity 0.15s ease;
   }
 
   .panel-split-handle.vertical {
     height: 16px;
     width: 100%;
-    cursor: row-resize;
     margin: -4px 0;
-  }
-
-  .panel-split-handle.vertical::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    transform: translateY(-50%);
-    width: 100%;
-    height: 2px;
-    border-radius: 1px;
-    background: hsl(var(--primary));
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-
-  .panel-split-handle:hover::before,
-  .panel-split-handle.dragging::before {
-    opacity: 1;
-  }
-
-  .panel-split-handle:focus-visible {
-    outline: 2px solid hsl(var(--primary));
-    outline-offset: -1px;
   }
 
   /* Tab drag drop zone styles */

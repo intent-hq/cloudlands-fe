@@ -1416,7 +1416,13 @@
               class="flex-1 border-0 bg-sidebar"
               noFocusStyle
             />
-            <Button onclick={handleRefresh} variant="ghost-light" size="icon" disabled={isLoading}>
+            <Button
+              onclick={handleRefresh}
+              variant="ghost-light"
+              size="icon"
+              disabled={isLoading}
+              aria-label="Refresh branches"
+            >
               <Fa icon={faRotate} class={isLoading ? 'animate-spin' : ''} />
             </Button>
           </div>

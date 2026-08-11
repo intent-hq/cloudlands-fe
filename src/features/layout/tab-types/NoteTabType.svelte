@@ -1,6 +1,6 @@
 <script lang="ts">
-import { onDestroy } from 'svelte';
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { onDestroy } from 'svelte';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * Note Tab Type Component
    *
@@ -15,17 +15,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-  selectIsInitialSpecWriteInProgress,
-  selectInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+    selectIsInitialSpecWriteInProgress,
+    selectInitialAgentId,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import {
-  createNote,
-  deleteNote,
-} from '$features/notes/notes-write-service';
-  import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
-  import { toggleRawNoteView } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { createNote, deleteNote } from '$features/notes/notes-write-service';
   import { isSpecNote } from '$shared/constants/notes';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
@@ -34,21 +29,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { Button } from '$lib/components/ui/button';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import NoteFontStyleButton from '$lib/components/notes/NoteFontStyleButton.svelte';
-  import { selectSpellcheckEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { toggleSpellcheck } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
+  import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
-  import {
-  faCheck,
-  faCode,
-  faCopy,
-  faSpellCheck,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -61,20 +48,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  const spellcheckEnabled = selectSpellcheckEnabled();
-  // svelte-ignore state_referenced_locally
   const scrollPosition = selectScrollPosition(tab.id);
 
   // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
-  // svelte-ignore state_referenced_locally
-  const rawNoteViewEnabled = selectIsRawNoteViewEnabled(workspaceId, tab.noteId ?? '');
-  const headerToggleActiveClass =
-    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
-  const headerToggleInactiveClass = 'text-subtle';
-  const rawNoteToggleLabel = $derived(
-    $rawNoteViewEnabled ? m.layout_noteTab_showRichView_label() : m.layout_noteTab_showRawView_label(),
-  );
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -220,11 +197,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
   }
 
-  function handleToggleRawNoteView() {
-    if (!tab.noteId) return;
-    appStore.dispatch(toggleRawNoteView(workspaceId, tab.noteId));
-  }
-
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
@@ -248,19 +220,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     {/if}
   </Button>
   {#if tab.noteId}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={handleToggleRawNoteView}
-      tooltip={rawNoteToggleLabel}
-      tooltipSide="bottom"
-      aria-label={rawNoteToggleLabel}
-      aria-pressed={$rawNoteViewEnabled}
-      class={$rawNoteViewEnabled ? headerToggleActiveClass : headerToggleInactiveClass}
-      data-testid="note-raw-view-toggle"
-    >
-      <Fa icon={faCode} size="xs" />
-    </Button>
+    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} />
   {/if}
   <!-- Version history toggle hidden for now -->
   <!-- <Button
@@ -275,20 +235,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   >
     <Fa icon={faClockRotateLeft} size="xs" />
   </Button> -->
-  <NoteFontStyleButton />
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleSpellcheck())}
-    tooltip={$spellcheckEnabled
-      ? m.layout_noteTab_spellcheckOn_tooltip()
-      : m.layout_noteTab_spellcheckOff_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$spellcheckEnabled}
-    class={$spellcheckEnabled ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faSpellCheck} size="xs" />
-  </Button>
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} isDirectory={false} compact />
   {/if}
@@ -306,40 +252,43 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   {/if}
 {/snippet}
 
-{#if tab.noteId}
-  {#if !$note}
-    <div class="flex flex-col h-full">
-      <div class="flex-1 p-4 space-y-4">
-        <Skeleton class="h-8 w-3/4" />
-        <Skeleton class="h-4 w-full" />
-        <Skeleton class="h-4 w-5/6" />
-        <Skeleton class="h-4 w-4/5" />
-        <Skeleton class="h-4 w-full" />
+<div class="h-full bg-background text-foreground" data-note-tab-surface>
+  {#if tab.noteId}
+    {#if !$note}
+      <div class="flex flex-col h-full">
+        <div class="flex-1 p-4 space-y-4">
+          <Skeleton class="h-8 w-3/4" />
+          <Skeleton class="h-4 w-full" />
+          <Skeleton class="h-4 w-5/6" />
+          <Skeleton class="h-4 w-4/5" />
+          <Skeleton class="h-4 w-full" />
+        </div>
       </div>
+    {:else if showVersionHistory && $workspace}
+      <NoteVersionHistory
+        workspace={$workspace}
+        noteId={tab.noteId}
+        currentContent={$note?.content || ''}
+        onRestore={() => (showVersionHistory = false)}
+      />
+    {:else if showSpecOnboarding}
+      <!-- Show onboarding when coordinator is writing initial spec -->
+      <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+    {:else if $workspace}
+      <NoteWithComments
+        workspace={$workspace}
+        noteId={tab.noteId}
+        editable={noteEditable}
+        {isPanelFocused}
+        initialScrollPosition={$scrollPosition}
+        onScrollPositionSave={(scrollTop: number) =>
+          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+      />
+    {/if}
+  {:else}
+    <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+      <Fa icon={faNote} class="text-4xl opacity-50" />
+      <p>{m.layout_noteTab_noNoteSelected_label()}</p>
     </div>
-  {:else if showVersionHistory && $workspace}
-    <NoteVersionHistory
-      workspace={$workspace}
-      noteId={tab.noteId}
-      currentContent={$note?.content || ''}
-      onRestore={() => (showVersionHistory = false)}
-    />
-  {:else if showSpecOnboarding}
-    <!-- Show onboarding when coordinator is writing initial spec -->
-    <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
-  {:else if $workspace}
-    <NoteWithComments
-      workspace={$workspace}
-      noteId={tab.noteId}
-      editable={noteEditable}
-      {isPanelFocused}
-      initialScrollPosition={$scrollPosition}
-      onScrollPositionSave={(scrollTop: number) => appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
-    />
   {/if}
-{:else}
-  <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-    <Fa icon={faNote} class="text-4xl opacity-50" />
-    <p>{m.layout_noteTab_noNoteSelected_label()}</p>
-  </div>
-{/if}
+</div>

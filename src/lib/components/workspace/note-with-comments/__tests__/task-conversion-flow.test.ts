@@ -1,24 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  render,
-  waitFor,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { Note } from '$shared/types';
-import {
-  ContentType,
-  NoteVisibility,
-} from '$shared/types';
+import { ContentType, NoteVisibility } from '$shared/types';
 
 const {
   mockInvoke,
@@ -30,6 +17,12 @@ const {
   replaceNotes,
   getNoteById,
   mockSelectorStore,
+  mockProcessMarkdownToHTML,
+  mockApplyExternalUpdateHtml,
+  mockMaybeCreateCommentManagerV2,
+  deferMarkdownConversion,
+  takeDeferredMarkdownConversion,
+  resetDeferredMarkdownConversions,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -38,6 +31,32 @@ const {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+  };
+  const mockProcessMarkdownToHTML = vi.fn();
+  const mockApplyExternalUpdateHtml = vi.fn();
+  const mockMaybeCreateCommentManagerV2 = vi.fn(async () => null);
+  const deferredMarkdownConversions = new Map<
+    string,
+    Array<{ promise: Promise<string>; resolve: (html: string) => void }>
+  >();
+
+  const deferMarkdownConversion = (markdown: string) => {
+    let resolve!: (html: string) => void;
+    const promise = new Promise<string>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    const pending = { promise, resolve };
+    const queue = deferredMarkdownConversions.get(markdown) ?? [];
+    queue.push(pending);
+    deferredMarkdownConversions.set(markdown, queue);
+    return pending;
+  };
+
+  const takeDeferredMarkdownConversion = (markdown: string) => {
+    const queue = deferredMarkdownConversions.get(markdown);
+    const pending = queue?.shift();
+    if (queue?.length === 0) deferredMarkdownConversions.delete(markdown);
+    return pending;
   };
 
   const state = {
@@ -117,6 +136,14 @@ const {
       return state.notesById[noteId];
     },
     mockSelectorStore,
+    mockProcessMarkdownToHTML,
+    mockApplyExternalUpdateHtml,
+    mockMaybeCreateCommentManagerV2,
+    deferMarkdownConversion,
+    takeDeferredMarkdownConversion,
+    resetDeferredMarkdownConversions() {
+      deferredMarkdownConversions.clear();
+    },
   };
 });
 
@@ -339,6 +366,19 @@ vi.mock('$lib/utils/editor-listeners', () => ({
   setupEditorListeners: () => () => {},
 }));
 
+vi.mock('$lib/utils/markdown-processor', async () => {
+  const actual = await vi.importActual<typeof import('$lib/utils/markdown-processor')>(
+    '$lib/utils/markdown-processor',
+  );
+  mockProcessMarkdownToHTML.mockImplementation((markdown: string, options: any) => {
+    return (
+      takeDeferredMarkdownConversion(markdown)?.promise ??
+      actual.processMarkdownToHTML(markdown, options)
+    );
+  });
+  return { ...actual, processMarkdownToHTML: mockProcessMarkdownToHTML };
+});
+
 vi.mock('$lib/components/tiptap/CommentDecorations', () => ({
   updateCommentDecorations: vi.fn(),
 }));
@@ -380,9 +420,22 @@ vi.mock('../note-scroll-handlers', () => ({
 }));
 
 vi.mock('../comment-manager-lifecycle', () => ({
-  maybeCreateCommentManagerV2: vi.fn(async () => null),
+  maybeCreateCommentManagerV2: mockMaybeCreateCommentManagerV2,
   destroyAndClearCommentManagerV2: vi.fn(() => null),
 }));
+
+vi.mock('../external-update-editor', async () => {
+  const actual = await vi.importActual<typeof import('../external-update-editor')>(
+    '../external-update-editor',
+  );
+  mockApplyExternalUpdateHtml.mockImplementation(
+    actual.applyExternalUpdateHtmlToEditorPreservingCursor,
+  );
+  return {
+    ...actual,
+    applyExternalUpdateHtmlToEditorPreservingCursor: mockApplyExternalUpdateHtml,
+  };
+});
 
 vi.mock('../comment-manager-content-change-handlers', () => ({
   createOnCommentManagerContentChangedAfterAnchorInsertion: vi.fn(() => vi.fn()),
@@ -454,6 +507,7 @@ describe('NoteWithComments task conversion regression', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetNotes();
+    resetDeferredMarkdownConversions();
 
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -471,7 +525,112 @@ describe('NoteWithComments task conversion regression', () => {
     cleanup();
     resetNotes();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     document.body.innerHTML = '';
+  });
+
+  async function renderInitializedNote(noteId = 'baseline', content = 'Baseline content') {
+    const view = render(NoteWithComments, {
+      props: {
+        workspace: {
+          id: WORKSPACE_ID,
+          name: 'Workspace',
+          path: '/tmp/workspace',
+          createdAt: '2026-04-14T00:00:00.000Z',
+        } as any,
+        noteId,
+        content,
+        editable: true,
+        showSuggestions: false,
+        showComments: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(view.container.querySelector('.ProseMirror')).toBeTruthy();
+    });
+
+    return view;
+  }
+
+  async function flushConversionCompletion() {
+    await Promise.resolve();
+    await Promise.resolve();
+    await tick();
+  }
+
+  it('keeps the newest note when conversions complete in reverse order', async () => {
+    const view = await renderInitializedNote();
+    const editorElement = view.container.querySelector('.ProseMirror') as HTMLElement;
+    editorElement.focus();
+    mockApplyExternalUpdateHtml.mockClear();
+    mockMaybeCreateCommentManagerV2.mockClear();
+    vi.useFakeTimers();
+
+    const noteAConversion = deferMarkdownConversion('Note A content');
+    const noteBConversion = deferMarkdownConversion('Note B content');
+
+    await view.rerender({
+      workspace: { id: WORKSPACE_ID } as any,
+      noteId: 'note-a',
+      content: 'Note A content',
+      editable: true,
+      showSuggestions: false,
+      showComments: true,
+    });
+    await tick();
+
+    await view.rerender({
+      workspace: { id: WORKSPACE_ID } as any,
+      noteId: 'note-b',
+      content: 'Note B content',
+      editable: true,
+      showSuggestions: false,
+      showComments: true,
+    });
+    await tick();
+
+    noteBConversion.resolve('<p>Note B converted</p>');
+    await flushConversionCompletion();
+    expect(editorElement.innerHTML).toContain('Note B converted');
+    expect(document.activeElement).toBe(editorElement);
+
+    noteAConversion.resolve('<p>Note A converted</p>');
+    await flushConversionCompletion();
+
+    expect(editorElement.innerHTML).toContain('Note B converted');
+    expect(editorElement.innerHTML).not.toContain('Note A converted');
+    expect(document.activeElement).toBe(editorElement);
+    expect(mockApplyExternalUpdateHtml).toHaveBeenCalledTimes(1);
+    expect(mockMaybeCreateCommentManagerV2).toHaveBeenCalledTimes(1);
+    expect(mockMaybeCreateCommentManagerV2).toHaveBeenCalledWith(
+      expect.objectContaining({ noteId: 'note-b' }),
+    );
+  });
+
+  it('does not apply a pending note conversion after unmount', async () => {
+    const view = await renderInitializedNote();
+    mockApplyExternalUpdateHtml.mockClear();
+    mockMaybeCreateCommentManagerV2.mockClear();
+    vi.useFakeTimers();
+
+    const pendingConversion = deferMarkdownConversion('Unmounted note content');
+    await view.rerender({
+      workspace: { id: WORKSPACE_ID } as any,
+      noteId: 'unmounted-note',
+      content: 'Unmounted note content',
+      editable: true,
+      showSuggestions: false,
+      showComments: true,
+    });
+    await tick();
+
+    view.unmount();
+    pendingConversion.resolve('<p>Must not be applied</p>');
+    await flushConversionCompletion();
+
+    expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
+    expect(mockMaybeCreateCommentManagerV2).not.toHaveBeenCalled();
   });
 
   it('renders converted linked tasks when converted note content arrives after mount without the CustomEvent path', async () => {

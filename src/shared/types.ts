@@ -447,10 +447,7 @@ export interface FirstVisitState {
 
 // FileChange is now defined in shared/types/change-detector.types.ts
 // Re-export for convenience
-import type {
-  FileChange,
-  FileChangeAction,
-} from './types/change-detector.types';
+import type { FileChange, FileChangeAction } from './types/change-detector.types';
 export type { FileChange, FileChangeAction };
 
 export interface ChangeSet {
@@ -1127,10 +1124,7 @@ export interface ToolResultBlock {
   /** Addressable block id (PROTOCOL §7.1) */
   id?: string;
   tool_use_id: string;
-  /** Tool result payload (PROTOCOL §7.1) */
-  output?: unknown;
-  /** Legacy payload field — superseded by `output` */
-  content?: string;
+  output: unknown;
   is_error?: boolean;
 }
 

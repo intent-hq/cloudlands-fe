@@ -8,43 +8,39 @@
    * - Loading indicator
    * - Error handling
    */
-  import {
-  onMount,
-  tick,
-} from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$shared/generated/ipc-client';
-  import {
-  BROWSER_PANEL_PARTITION,
-  BROWSER_PROTOCOLS,
-} from '../../../shared/constants';
+  import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
 
   import {
-  addRecentUrl,
-  clearBrowserTabZoomRequest,
-  updateUrlMetadata,
-} from '$store/renderer/slices/browser/browser-slice';
+    addRecentUrl,
+    clearBrowserTabZoomRequest,
+    updateUrlMetadata,
+  } from '$store/renderer/slices/browser/browser-slice';
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import {
-  createEmbeddedBrowserNavigationSyncState,
-  reconcileEmbeddedBrowserUrlProp,
-  recordEmbeddedBrowserNavigation,
-} from './embedded-browser-navigation-sync';
+    createEmbeddedBrowserNavigationSyncState,
+    navigateEmbeddedBrowserWebview,
+    reconcileEmbeddedBrowserLoadCompletion,
+    reconcileEmbeddedBrowserUrlProp,
+    recordEmbeddedBrowserNavigation,
+  } from './embedded-browser-navigation-sync';
   import Fa from 'svelte-fa';
   import {
-  faArrowLeft,
-  faArrowRight,
-  faRefresh,
-  faExternalLinkAlt,
-  faLock,
-  faExclamationTriangle,
-  faTimes,
-  faCode,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowLeft,
+    faArrowRight,
+    faRefresh,
+    faExternalLinkAlt,
+    faLock,
+    faExclamationTriangle,
+    faTimes,
+    faCode,
+  } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -118,7 +114,6 @@
     focusUrlBarOnMount = false,
     isFocused = false,
   }: Props = $props();
-
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
   // menu zoom sagas. The selector form (called at component init) returns a
@@ -512,6 +507,8 @@
 
     addWebviewListener('did-stop-loading', () => {
       isLoading = false;
+      webviewReady = true;
+      syncCompletedWebviewNavigation(displayUrl);
       updateNavigationState();
     });
 
@@ -631,6 +628,18 @@
     }
   }
 
+  function syncCompletedWebviewNavigation(requestedUrl: string) {
+    const completedUrl = reconcileEmbeddedBrowserLoadCompletion(
+      navigationSync,
+      requestedUrl,
+      webviewRef?.getURL?.(),
+    );
+    if (!completedUrl) return;
+    displayUrl = completedUrl;
+    isSecure = completedUrl.startsWith('https://');
+    onNavigate?.(completedUrl);
+  }
+
   async function loadUrl(targetUrl: string) {
     if (!targetUrl) return;
 
@@ -667,13 +676,22 @@
         webviewReady,
       });
 
-      // If webview is ready, navigate directly to preserve history (back/forward)
-      // Only recreate webview on initial load or when webview isn't ready
-      if (webviewRef && webviewReady) {
+      // An attached webview must navigate through loadURL so Electron emits
+      // did-navigate and the owning panel can persist the new URL. dom-ready
+      // can fire before our listener is installed, so webviewReady is not a
+      // reliable gate for choosing this path.
+      if (webviewRef) {
         // Navigate within the existing webview to preserve navigation history
-        logger.info('loadUrl: setting webviewRef.src', { targetUrl });
-        webviewRef.src = targetUrl;
-        currentWebviewUrl = targetUrl;
+        logger.info('loadUrl: calling webviewRef.loadURL', { targetUrl });
+        const currentWebview = webviewRef;
+        void navigateEmbeddedBrowserWebview(currentWebview, targetUrl)
+          .then(() => {
+            syncCompletedWebviewNavigation(targetUrl);
+            updateNavigationState();
+          })
+          .catch((error) => {
+            logger.warn('Webview navigation failed', { targetUrl, error });
+          });
       } else {
         // Initial load or webview not ready - recreate the webview
         // This is needed for the first URL or when recovering from errors
@@ -789,7 +807,9 @@
       }
       logger.info('Loading URL from form', { urlToLoad });
       loadUrl(urlToLoad);
-      appStore.dispatch(addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()));
+      appStore.dispatch(
+        addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()),
+      );
       // Blur the input to indicate the action was taken
       urlInputRef?.blur();
     }

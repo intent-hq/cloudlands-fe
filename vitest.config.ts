@@ -45,6 +45,7 @@ export default defineConfig(async () => {
         // vitest doesn't double-collect their test files alongside the primary tree.
         '**/.wt-*/**',
         'test/**', // Exclude Playwright tests directory (package-root only; do not swallow src/test/**)
+        'tests/integration/**', // Dedicated Node integration config owns this suite.
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/remote-env.test.ts', // Exclude remote env tests - requires real environment
         '**/remote-git.test.ts', // Exclude remote git tests - requires real environment
@@ -76,7 +77,6 @@ export default defineConfig(async () => {
         '**/agent-providers/__tests__/acp-provider-mcp-config.test.ts',
         // Integration tests with various pre-existing issues
         '**/tests/event-integration.test.ts',
-        '**/tests/integration/notes-primitives-integration.test.ts',
 
         '**/features/file-tracking/__tests__/file-tracking-integration.test.ts',
         '**/features/workspace/__tests__/remote-change-detector.test.ts',
@@ -88,7 +88,7 @@ export default defineConfig(async () => {
         '**/features/notes/__tests__/notes-primitives-roundtrip.test.ts',
         '**/features/agent/main/__tests__/persistence-ipc.test.ts',
         '**/tests/unit/edge-cases.test.ts',
-        '**/tests/integration/workspace-operations.test.ts',
+        '**/lib/utils/__tests__/markdown-processor.test.ts',
         // Pre-existing test-fixture bug newly surfaced by the `**/test/**` →
         // `test/**` exclude narrowing (unrelated to the scripted-transport
         // fixture): the faker workspace-name assertion expects "Workspace"

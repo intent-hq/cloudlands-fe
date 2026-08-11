@@ -73,12 +73,11 @@
     role="button"
     tabindex="0"
     aria-label={m.lib_gitCredentials_closeModal_ariaLabel()}
-    onclick={handleClose}
+    onclick={(event) => event.target === event.currentTarget && handleClose()}
     onkeydown={(e) => e.key === 'Escape' && handleClose()}
   >
     <div
       class="bg-background rounded-lg w-[520px] max-w-[90vw] max-h-[80vh] overflow-y-auto shadow-lg border border-border text-foreground"
-      onclick={(event) => event.stopPropagation()}
     >
       <!-- Header -->
       <div class="flex justify-between items-center p-4 border-b border-border">

@@ -214,7 +214,7 @@
   .hud-attention-src {
     flex: none;
     border: 1px solid hsl(var(--border));
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     padding: 0 5px;
     font-size: 8.5px;
     letter-spacing: 0.08em;
@@ -244,14 +244,14 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     flex: none;
   }
   .hud-attention-msg {
     font:
       500 10.5px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

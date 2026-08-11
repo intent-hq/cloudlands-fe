@@ -10,6 +10,7 @@ import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { getWindowAppearanceOptions } from '../shared/main/window-appearance';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -109,7 +110,7 @@ function buildWindowOptions(opts: {
       tabbingIdentifier: 'intent',
     }),
     title: opts.title,
-    backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
+    ...getWindowAppearanceOptions(isDarkMode),
     ...(opts.iconPath && { icon: opts.iconPath }),
   };
 }
@@ -160,7 +161,9 @@ export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void
 /**
  * Build the URL to load in a window (dev server or production app:// protocol).
  */
-function buildLoadUrl(route: string = '/'): string {
+const DEFAULT_WINDOW_ROUTE = '/workspace/new';
+
+function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
   if (process.env.NODE_ENV === 'development') {
     const devPort = process.env.DEV_PORT || '5190';
     return `http://127.0.0.1:${devPort}${route}`;
@@ -243,19 +246,19 @@ function buildSessionsFromOpenWindows(): WindowSession[] {
     .map((w: BrowserWindowType) => {
       const bounds = w.getBounds();
       const url = w.webContents.getURL();
-      let route = '/';
+      let route = DEFAULT_WINDOW_ROUTE;
       try {
         const parsed = new URL(url);
         if (parsed.protocol === 'file:') {
           // Windows created via WINDOW_CHANNELS.CREATE use file:// with ?initialRoute=
           const initialRoute = parsed.searchParams.get('initialRoute');
-          route = initialRoute || '/';
+          route = initialRoute || DEFAULT_WINDOW_ROUTE;
         } else {
           // For dev (http:) and production (app:): pathname is the route
           route = parsed.pathname;
         }
       } catch {
-        // Fall back to home
+        // Fall back to the workspace bootstrap route.
       }
       return { route, bounds };
     });
@@ -399,7 +402,8 @@ export function createWindowForSession(session: WindowSession, setAsMain: boolea
       );
   }
 
-  window.loadURL(buildLoadUrl(session.route));
+  const route = session.route === '/' ? DEFAULT_WINDOW_ROUTE : session.route;
+  window.loadURL(buildLoadUrl(route));
 
   // Save bounds on resize/move (updates the main window bounds file for backward compat)
   let saveBoundsTimeout: NodeJS.Timeout | null = null;
@@ -648,7 +652,7 @@ export async function createWindowForDeepLink(
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));
-  newWindow.loadURL(buildLoadUrl(`/?deepLink=${encodedAction}`));
+  newWindow.loadURL(buildLoadUrl(`${DEFAULT_WINDOW_ROUTE}?deepLink=${encodedAction}`));
   newWindow.focus();
 
   logger.info('New window created for deep link:', { action: action.type });

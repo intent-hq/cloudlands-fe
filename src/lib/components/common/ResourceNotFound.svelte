@@ -4,7 +4,7 @@
    *
    * Presentation-only: renders a "not found" or "failed to load" panel for a
    * resource (Workspace / Agent / Note) with an optional detail message and a
-   * "Go to Home" action. Navigation is delegated to the `onGoHome` callback so
+   * navigation action. Navigation is delegated to the `onNavigateAway` callback so
    * the component stays reusable across routes.
    */
 
@@ -25,10 +25,10 @@
     /** Heading level for the title; defaults to 1 since this typically renders as full-page content. */
     headingLevel?: 1 | 2 | 3 | 4 | 5 | 6;
     /** Invoked when the user clicks "Go to Home". */
-    onGoHome: () => void;
+    onNavigateAway: () => void;
   }
 
-  let { kind, resourceLabel, resourceId, detail, headingLevel = 1, onGoHome }: Props = $props();
+  let { kind, resourceLabel, resourceId, detail, headingLevel = 1, onNavigateAway }: Props = $props();
 
   const title = $derived(
     kind === 'not_found'
@@ -62,7 +62,9 @@
         {/if}
       </div>
 
-      <Button variant="default" size="default" onclick={onGoHome}>{m.common_resourceNotFound_goHome_label()}</Button>
+      <Button variant="default" size="default" onclick={onNavigateAway}
+        >{m.layout_sidebarNav_allWorkspaces_title()}</Button
+      >
     </div>
   </div>
 </div>

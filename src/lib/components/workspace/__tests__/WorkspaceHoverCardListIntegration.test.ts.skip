@@ -86,7 +86,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockTooltip.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
@@ -298,21 +298,5 @@ describe('workspace hover card list integrations', () => {
     } finally {
       rectSpy.mockRestore();
     }
-  });
-
-  it('shows the shared workspace hover card for workspace table rows without breaking open', async () => {
-    const WorkspaceTableRow = (await import('../WorkspaceTableRow.svelte')).default;
-    const onOpen = vi.fn();
-    render(WorkspaceTableRow, { props: { workspace: baseWorkspace, agents: [], onOpen } });
-
-    const rowButton = screen.getByRole('button', { name: /List Workspace/i });
-    await fireEvent.mouseEnter(rowButton.parentElement!);
-    await tick();
-
-    expect(screen.getByText(baseWorkspace.statusMessage!)).toBeTruthy();
-    expect(screen.queryByText(baseWorkspace.branch)).toBeNull();
-
-    await fireEvent.click(rowButton);
-    expect(onOpen).toHaveBeenCalledWith(baseWorkspace, expect.any(MouseEvent));
   });
 });

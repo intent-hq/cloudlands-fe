@@ -15,11 +15,11 @@
   import AgentHierarchyCard, { CARD_WIDTH, CARD_HEIGHT } from './AgentHierarchyCard.svelte';
   import BackgroundAgentCard, { BG_CARD_SIZE } from './BackgroundAgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { formatRelativeTime } from '$lib/utils/timeFormatting';
   import Fa from 'svelte-fa';
   import { faGear } from '@fortawesome/free-solid-svg-icons';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     agents: AgentNode[];
@@ -71,7 +71,7 @@
 
   // Get the hovered agent data
   const hoveredAgent = $derived(
-    hoveredAgentId ? agents.find(a => a.agentId === hoveredAgentId) : null
+    hoveredAgentId ? agents.find((a) => a.agentId === hoveredAgentId) : null,
   );
 
   // Zoom constants
@@ -109,7 +109,11 @@
     // Left click (on canvas background), middle button, or shift+left click for panning
     // Check if we're clicking on the canvas itself, not on a card
     const target = e.target as HTMLElement;
-    const isOnCanvas = target.closest('.agent-hierarchy-graph') && !target.closest('.agent-card') && !target.closest('.bg-agent-card') && !target.closest('.zoom-controls');
+    const isOnCanvas =
+      target.closest('.agent-hierarchy-graph') &&
+      !target.closest('.agent-card') &&
+      !target.closest('.bg-agent-card') &&
+      !target.closest('.zoom-controls');
 
     if (e.button === 1 || (e.button === 0 && (e.shiftKey || isOnCanvas))) {
       isPanning = true;
@@ -268,9 +272,7 @@
   });
 
   // All utility agent types for filtering
-  const UTILITY_AGENT_TYPES = new Set<string>(
-    UTILITY_AGENT_GROUPS.flatMap(g => [...g.types])
-  );
+  const UTILITY_AGENT_TYPES = new Set<string>(UTILITY_AGENT_GROUPS.flatMap((g) => [...g.types]));
 
   // Group utility agents by their group
   const utilityAgentGroups = $derived.by(() => {
@@ -278,9 +280,7 @@
 
     for (const group of UTILITY_AGENT_GROUPS) {
       const typeSet = new Set<string>(group.types);
-      const groupAgents = agents.filter(a =>
-        a.agentType && typeSet.has(a.agentType)
-      );
+      const groupAgents = agents.filter((a) => a.agentType && typeSet.has(a.agentType));
       if (groupAgents.length > 0) {
         groups.push({
           id: group.id,
@@ -295,7 +295,7 @@
 
   // Filter out utility agents from main hierarchy
   const mainAgents = $derived(
-    agents.filter(a => !a.agentType || !UTILITY_AGENT_TYPES.has(a.agentType))
+    agents.filter((a) => !a.agentType || !UTILITY_AGENT_TYPES.has(a.agentType)),
   );
 
   const hierarchy = $derived.by(() => {
@@ -313,7 +313,7 @@
     }
 
     // Find active files/notes from edges
-    const activeEdges = edges.filter(e => e.isActive);
+    const activeEdges = edges.filter((e) => e.isActive);
     for (const edge of activeEdges) {
       const sourceAgentId = edge.sourceId.replace('agent-', '');
       const hierarchyAgent = agentMap.get(sourceAgentId);
@@ -355,12 +355,15 @@
 {#snippet agentTree(node: HierarchyAgent, depth: number = 0)}
   {@const isBackground = node.agent.isBackground}
   {@const hasChildren = node.children.length > 0}
-  {@const childCardWidth = hasChildren && node.children[0]?.agent.isBackground ? BG_CARD_SIZE : CARD_WIDTH}
+  {@const childCardWidth =
+    hasChildren && node.children[0]?.agent.isBackground ? BG_CARD_SIZE : CARD_WIDTH}
   {@const curveRadius = 16}
   {@const connectorHeight = 60}
 
   <!-- Group children into layout items (singles and batch boxes), then chunk into rows -->
-  {@const layoutItems = hasChildren ? groupChildrenIntoLayoutItems(node.children, childCardWidth, GAPX) : []}
+  {@const layoutItems = hasChildren
+    ? groupChildrenIntoLayoutItems(node.children, childCardWidth, GAPX)
+    : []}
   <!-- i18n-ignore (scanner false positive: multi-line const expression) -->
   {@const layoutRows = (() => {
     const rows: LayoutItem[][] = [];
@@ -369,7 +372,9 @@
     }
     return rows;
   })()}
-  {@const rowWidths = layoutRows.map(row => row.reduce((sum, item) => sum + item.width, 0) + Math.max(0, row.length - 1) * GAPX)}
+  {@const rowWidths = layoutRows.map(
+    (row) => row.reduce((sum, item) => sum + item.width, 0) + Math.max(0, row.length - 1) * GAPX,
+  )}
   {@const maxRowWidth = Math.max(...rowWidths, 0)}
 
   <div class="agent-tree-node flex flex-col items-center">
@@ -400,7 +405,8 @@
       <!-- `waiting` graph status is selector-derived by selectGraphState and only
         used here to keep waiting-for-other-agents connectors visually distinct
         without adding waiting fields to AgentNode transport. -->
-      {@const parentWaitingFor = node.agent.status === 'waiting' ? node.agent.waitingForAgentIds || [] : []}
+      {@const parentWaitingFor =
+        node.agent.status === 'waiting' ? node.agent.waitingForAgentIds || [] : []}
       {@const hasAnyWaiting = parentWaitingFor.length > 0}
       {@const horizontalY = connectorHeight / 2}
 
@@ -410,7 +416,7 @@
           {@const rowOffsetX = (maxRowWidth - rowWidth) / 2}
           {@const rowItemCenters = (() => {
             let x = 0;
-            return row.map(item => {
+            return row.map((item) => {
               const center = x + item.width / 2;
               x += item.width + GAPX;
               return center;
@@ -448,13 +454,15 @@
             {#each row as item, i}
               {@const itemCenterX = rowOffsetX + rowItemCenters[i]}
               {@const branchX = maxRowWidth / 2}
-              {@const isWaitingForItem = item.type === 'batch'
-                ? item.children.some(c => parentWaitingFor.includes(c.agent.agentId))
-                : parentWaitingFor.includes(item.child.agent.agentId)}
+              {@const isWaitingForItem =
+                item.type === 'batch'
+                  ? item.children.some((c) => parentWaitingFor.includes(c.agent.agentId))
+                  : parentWaitingFor.includes(item.child.agent.agentId)}
               {@const lineStroke = isWaitingForItem ? 'var(--color-primary)' : 'currentColor'}
               {@const lineClass = isWaitingForItem ? '' : 'text-border'}
               {@const lineWidth = isWaitingForItem ? 2 : 1}
-              {@const endY = item.type === 'batch' ? connectorHeight - BOX_PADDING : connectorHeight}
+              {@const endY =
+                item.type === 'batch' ? connectorHeight - BOX_PADDING : connectorHeight}
               {@const hDist = Math.abs(itemCenterX - branchX)}
               {@const r = Math.min(curveRadius, hDist / 2)}
 
@@ -499,7 +507,10 @@
           </svg>
 
           <!-- Children items for this row -->
-          <div class="children-items-row flex items-start justify-center" style="gap: {GAPX}px; width: {maxRowWidth}px;">
+          <div
+            class="children-items-row flex items-start justify-center"
+            style="gap: {GAPX}px; width: {maxRowWidth}px;"
+          >
             {#each row as item}
               {#if item.type === 'batch'}
                 <div
@@ -549,7 +560,9 @@
         {#if utilityAgentGroups.length > 0}
           <div class="utility-corrals flex flex-col gap-4">
             {#each utilityAgentGroups as group (group.id)}
-              <div class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20">
+              <div
+                class="utility-corral border border-dashed border-border/50 rounded-lg p-3 min-w-20"
+              >
                 <div class="corral-label text-xs text-subtle font-medium mb-2 text-center">
                   {group.label}
                 </div>
@@ -592,7 +605,9 @@
               <div class="flex-1 min-w-0">
                 <div class="font-medium text-sm truncate">{hoveredAgent.name}</div>
                 {#if hoveredAgent.specialist}
-                  <div class="text-xs text-subtle capitalize">{hoveredAgent.specialist.replace('-', ' ')}</div>
+                  <div class="text-xs text-subtle capitalize">
+                    {hoveredAgent.specialist.replace('-', ' ')}
+                  </div>
                 {/if}
               </div>
               {#if hoveredAgent.isBackground}
@@ -644,7 +659,9 @@
     </div>
 
     <!-- Zoom controls - Figma style (bottom right) -->
-    <div class="zoom-controls absolute bottom-4 right-4 flex items-center gap-1 bg-card border border-border rounded-lg shadow-sm p-1">
+    <div
+      class="zoom-controls absolute bottom-4 right-4 flex items-center gap-1 bg-card border border-border rounded-lg shadow-sm p-1"
+    >
       <button
         type="button"
         class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"

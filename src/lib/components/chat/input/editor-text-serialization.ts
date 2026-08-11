@@ -30,6 +30,12 @@ function groupLinesIntoParagraphs(lines: string[]): string[][] {
   return paragraphs.filter((p) => p.length > 0);
 }
 
+function preserveCollapsibleSpaces(text: string): string {
+  return text
+    .replace(/^ +| +$/g, (spaces) => '\u00A0'.repeat(spaces.length))
+    .replace(/ {2,}/g, (spaces) => ` ${'\u00A0'.repeat(spaces.length - 1)}`);
+}
+
 /**
  * Convert plain text to simple paragraph HTML for the TipTap editor.
  * Unlike processMarkdownToHTML (which runs marked.parse and converts markdown
@@ -52,19 +58,16 @@ export function plainTextToEditorHTML(text: string): string {
     return text;
   }
 
-  // Process line-by-line to escape HTML and preserve leading whitespace
+  // Process line-by-line to escape HTML and preserve whitespace that HTML
+  // parsing would otherwise collapse. A single internal space stays breakable.
   const lines = text.split('\n');
   const processedLines = lines.map((line) => {
     if (line === '') return ''; // empty-line marker for paragraph splitting
 
     // Escape HTML entities so user text is safe
-    let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // Preserve leading spaces as &nbsp; so indentation is visible in HTML
-    // (browsers collapse leading whitespace in normal flow)
-    escaped = escaped.replace(/^ +/, (spaces) => '&nbsp;'.repeat(spaces.length));
-
-    return escaped;
+    return preserveCollapsibleSpaces(escaped);
   });
 
   // Build HTML: each paragraph group → <p>, lines within joined by <br>
@@ -79,7 +82,7 @@ export function plainTextToEditorHTML(text: string): string {
 /**
  * Serialize the editor document to plain text, inverting
  * plainTextToEditorHTML: hardBreak → "\n", paragraph boundary → "\n\n",
- * leading &nbsp; indentation → regular spaces.
+ * preserved non-breaking whitespace → regular spaces.
  */
 export function serializeEditorText(editor: Editor | null | undefined): string {
   const raw =
@@ -88,11 +91,8 @@ export function serializeEditorText(editor: Editor | null | undefined): string {
       textSerializers: { hardBreak: () => '\n' },
     }) ?? '';
 
-  // Invert the leading-space → &nbsp; escaping from plainTextToEditorHTML
-  return raw
-    .split('\n')
-    .map((line) => line.replace(/^\u00A0+/, (nbsp) => ' '.repeat(nbsp.length)))
-    .join('\n');
+  // Invert the whitespace preservation from plainTextToEditorHTML.
+  return raw.replace(/\u00A0/g, ' ');
 }
 
 /**

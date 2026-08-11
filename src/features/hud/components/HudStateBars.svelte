@@ -60,7 +60,7 @@
   }
   .hud-state-bar-label {
     min-width: 64px;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .hud-state-bar-track {
     flex: 1;

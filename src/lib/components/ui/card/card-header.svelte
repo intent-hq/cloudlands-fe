@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
   import type { HTMLAttributes } from 'svelte/elements';
 
   let {
@@ -17,7 +14,7 @@
   bind:this={ref}
   data-slot="card-header"
   class={cn(
-    '@container/card-header has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6 grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4',
+    '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 gap-y-1 border-b border-border px-4 py-3 has-data-[slot=card-action]:grid-cols-[minmax(0,1fr)_auto]',
     className,
   )}
   {...restProps}

@@ -8,8 +8,18 @@ import {
   bulkUpsertSessions,
   initialState as agentSessionInitialState,
 } from '../agent-session/agent-session-slice';
-import { selectChiefThreadPreview, selectChiefThreads } from './sidebar-nav-selectors';
+import {
+  selectCurrentChiefThread,
+  selectChiefThreadPreview,
+  selectChiefThreads,
+  selectReusableChiefThread,
+} from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
+import {
+  CHIEF_PROMPT_V2_INTRODUCED_AT,
+  CHIEF_PROMPT_VERSION,
+  CHIEF_SPECIALIST_ID,
+} from '$shared/chief-agent-config';
 
 function message(
   id: string,
@@ -30,7 +40,7 @@ function session(
   workspaceId: string,
   messages: AgentMessage[],
   updatedAt: string,
-  flags: Partial<Pick<AgentSession, 'isStreaming' | 'isProcessing' | 'isResponding'>> = {},
+  overrides: Partial<AgentSession> = {},
 ): AgentSession {
   return {
     id: createAgentId(id),
@@ -42,7 +52,7 @@ function session(
     createdAt: updatedAt,
     updatedAt,
     lastActivity: updatedAt,
-    ...flags,
+    ...overrides,
   } as AgentSession;
 }
 
@@ -189,5 +199,74 @@ describe('sidebar nav Chief selectors', () => {
         messageCount: 0,
       }),
     ]);
+  });
+
+  it('reuses only blank threads created with the current Chief prompt contract', () => {
+    const stale = session('agent-chief-stale', CHIEF_WORKSPACE_ID, [], '2026-01-01T16:00:00.000Z', {
+      metadata: { specialist: CHIEF_SPECIALIST_ID },
+    });
+    const current = session(
+      'agent-chief-current',
+      CHIEF_WORKSPACE_ID,
+      [],
+      '2026-01-01T15:00:00.000Z',
+      {
+        metadata: {
+          specialist: CHIEF_SPECIALIST_ID,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        },
+      },
+    );
+
+    expect(selectReusableChiefThread.select(stateWithSessions([stale, current]))).toMatchObject({
+      agentId: current.id,
+      messageCount: 0,
+    });
+  });
+
+  it('finds a current Chief thread even when a newer legacy thread has messages', () => {
+    const stale = session(
+      'agent-chief-stale-active',
+      CHIEF_WORKSPACE_ID,
+      [message('m9', 'user', 'Legacy conversation', '2026-01-01T17:00:00.000Z')],
+      '2026-01-01T17:00:00.000Z',
+      { metadata: { specialist: CHIEF_SPECIALIST_ID } },
+    );
+    const current = session(
+      'agent-chief-current-active',
+      CHIEF_WORKSPACE_ID,
+      [message('m10', 'user', 'Current conversation', '2026-01-01T16:00:00.000Z')],
+      '2026-01-01T16:00:00.000Z',
+      {
+        metadata: {
+          specialist: CHIEF_SPECIALIST_ID,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        },
+      },
+    );
+
+    expect(selectCurrentChiefThread.select(stateWithSessions([stale, current]))).toMatchObject({
+      agentId: current.id,
+      messageCount: 1,
+    });
+  });
+
+  it('recognizes a post-rollout Chief after AgentLite drops custom metadata', () => {
+    const rehydrated = session(
+      'agent-chief-rehydrated',
+      CHIEF_WORKSPACE_ID,
+      [],
+      CHIEF_PROMPT_V2_INTRODUCED_AT,
+      {
+        metadata: { specialist: CHIEF_SPECIALIST_ID },
+      },
+    );
+
+    expect(selectCurrentChiefThread.select(stateWithSessions([rehydrated]))).toMatchObject({
+      agentId: rehydrated.id,
+    });
+    expect(selectReusableChiefThread.select(stateWithSessions([rehydrated]))).toMatchObject({
+      agentId: rehydrated.id,
+    });
   });
 });

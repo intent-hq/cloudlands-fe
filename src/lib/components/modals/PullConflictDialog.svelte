@@ -5,20 +5,20 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-  faXmark,
-  faTerminal,
-  faCode,
-  faCodeBranch,
-  faExclamationTriangle,
-  faChevronDown,
-  faArrowUpRightFromSquare,
-  faFolder,
-} from '@fortawesome/free-solid-svg-icons';
+    faXmark,
+    faTerminal,
+    faCode,
+    faCodeBranch,
+    faExclamationTriangle,
+    faChevronDown,
+    faArrowUpRightFromSquare,
+    faFolder,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import {
-  fetchEditors,
-  type InstalledEditor,
-} from '$store/renderer/slices/external-editors/external-editors-slice';
+    fetchEditors,
+    type InstalledEditor,
+  } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
@@ -217,7 +217,12 @@
               {/if}
             </div>
           </div>
-          <Button variant="ghost" size="icon" onclick={close}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onclick={close}
+            aria-label="Close pull conflict dialog"
+          >
             <Fa icon={faXmark} />
           </Button>
         </div>

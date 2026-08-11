@@ -164,7 +164,7 @@
       600 10px 'JetBrains Mono',
       monospace;
     letter-spacing: 0.15em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-header-theme-btn:hover {

@@ -26,10 +26,7 @@
 
 <script lang="ts">
   import { shell } from '$lib/electron-bridge';
-  import {
-  faCircleNotch,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCircleNotch, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { cn } from '$lib/utils';
@@ -71,14 +68,17 @@
 {#if shouldRender}
   <div
     class={cn(
-      'max-w-[360px] rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground',
+      'type-caption max-w-[360px] rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-foreground',
       className,
     )}
     role="status"
   >
     <div class="flex items-start gap-2">
       {#if variant === 'progress'}
-        <Fa icon={faCircleNotch} class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0 animate-spin" />
+        <Fa
+          icon={faCircleNotch}
+          class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0 animate-spin"
+        />
       {:else}
         <Fa
           icon={faTriangleExclamation}

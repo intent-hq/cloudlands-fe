@@ -4,9 +4,14 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import {
+  openWorkspaceActivityChanges,
+  openWorkspaceBrowser,
+  openWorkspaceChatChanges,
+  openWorkspaceCodeReview,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from '../workspace-navigation-slice';
 import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
@@ -17,6 +22,120 @@ const settle = async () => {
 };
 
 describe('workspaceNavigationTabSaga', () => {
+  it('opens the sidebar all-changes request as a local-changes panel tab', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+
+    channel.put(openWorkspaceLocalChanges('ws-1'));
+    await settle();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panelLayout/openTab',
+        payload: expect.objectContaining({
+          wsId: 'ws-1',
+          force: true,
+          tab: expect.objectContaining({
+            type: 'local-changes',
+            workspaceId: 'ws-1',
+            closable: true,
+          }),
+        }),
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes other panel-backed workspace navigation actions through the panel layout', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+    const event = { id: 'event-1', type: 'file:changed', timestamp: 42 } as never;
+
+    channel.put(openWorkspaceBrowser('ws-1', 'https://example.com'));
+    channel.put(
+      openWorkspaceChatChanges('ws-1', [{ filePath: 'src/a.ts' }], '1 file changed', {
+        sourcePanelId: 'panel-agent',
+        messageId: 'message-1',
+        agentId: 'agent-1',
+        turnNumber: 2,
+      }),
+    );
+    channel.put(openWorkspaceActivityChanges('ws-1', event));
+    channel.put(openWorkspaceCodeReview('ws-1', { status: 'completed', result: 'Looks good' }));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/openTab',
+      'panelLayout/openTabInAdjacentOrSplit',
+      'panelLayout/openTab',
+      'panelLayout/openTab',
+    ]);
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      payload: {
+        tab: { type: 'browser', browserUrl: 'https://example.com' },
+      },
+    });
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      payload: {
+        sourcePanelId: 'panel-agent',
+        tab: {
+          type: 'chat-changes',
+          data: {
+            changes: [{ filePath: 'src/a.ts' }],
+            messageId: 'message-1',
+            agentId: 'agent-1',
+            turnNumber: 2,
+          },
+        },
+      },
+    });
+    expect(dispatch.mock.calls[2]?.[0]).toMatchObject({
+      payload: { tab: { type: 'activity-changes', data: { event } } },
+    });
+    expect(dispatch.mock.calls[3]?.[0]).toMatchObject({
+      payload: {
+        tab: { type: 'code-review', data: { status: 'completed', result: 'Looks good' } },
+      },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('requests a fresh split for note links that must not reuse an existing neighbor', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      workspaceNotes: {
+        byWorkspaceId: {
+          'ws-1': { notes: createCollection('id', [{ id: 'note-1', title: 'Plan' }]) },
+        },
+      },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
+    channel.put(
+      openWorkspaceNote('ws-1', 'note-1', {
+        sourcePanelId: 'panel-note',
+        openInAdjacentPanel: true,
+        openInNewAdjacentPanel: true,
+      }),
+    );
+    await settle();
+
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      type: 'panelLayout/openTabInAdjacentOrSplit',
+      payload: {
+        sourcePanelId: 'panel-note',
+        alwaysSplit: true,
+        tab: { type: 'note', noteId: 'note-1' },
+      },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('forces note adjacency beside an agent and preserves file jump metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     const channel = stdChannel();

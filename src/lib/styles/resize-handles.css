@@ -1,0 +1,88 @@
+/* Shared resize affordance: a forgiving target with one quiet semantic indicator. */
+.app-resize-handle {
+  --resize-handle-idle: hsl(var(--border));
+  --resize-handle-active: hsl(var(--muted-foreground) / 0.55);
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.app-resize-handle::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: var(--resize-handle-idle);
+  opacity: 0;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+/* Explicit indicators remain discoverable before the pointer reaches their hit area. */
+.app-resize-handle[data-resize-indicator='short']::before {
+  opacity: 0.45;
+}
+
+.app-resize-handle[data-resize-axis='x'] {
+  cursor: col-resize;
+}
+
+.app-resize-handle[data-resize-axis='x']::before {
+  inset-block: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.app-resize-handle[data-resize-axis='y'] {
+  cursor: row-resize;
+}
+
+.app-resize-handle[data-resize-axis='y']::before {
+  inset-inline: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.app-resize-handle[data-resize-axis='both'] {
+  cursor: nwse-resize;
+}
+
+.app-resize-handle[data-resize-axis='both']::before {
+  inset: 5px;
+}
+
+.app-resize-handle[data-resize-indicator='short'][data-resize-axis='x']::before {
+  top: 50%;
+  bottom: auto;
+  height: 2.5rem;
+  transform: translate(-50%, -50%);
+}
+
+.app-resize-handle[data-resize-indicator='short'][data-resize-axis='y']::before {
+  right: auto;
+  left: 50%;
+  width: 2.5rem;
+  transform: translate(-50%, -50%);
+}
+
+.app-resize-handle:hover::before,
+.app-resize-handle:focus-visible::before,
+.app-resize-handle:active::before,
+.app-resize-handle[data-resizing='true']::before {
+  background: var(--resize-handle-active);
+  opacity: 1;
+}
+
+.app-resize-handle:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-resize-handle::before {
+    transition: none;
+  }
+}

@@ -1,6 +1,6 @@
 /**
  * One-shot dictation insertion target for non-agent prompt surfaces (the
- * workspace-creation prompts: New Space modal and the home page prompt).
+ * workspace-creation prompt in the New Space modal).
  *
  * The default dictation flow inserts the transcript into the active agent's
  * chat composer (transcription-service resolves the target agent from store

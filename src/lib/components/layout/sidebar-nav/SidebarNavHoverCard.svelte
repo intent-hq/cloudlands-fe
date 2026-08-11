@@ -12,7 +12,6 @@
   import { tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import NewWorkspaceCard from './cards/NewWorkspaceCard.svelte';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
   import ChiefCard from './cards/ChiefCard.svelte';
@@ -22,19 +21,19 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
 
   import {
-  selectActiveCard,
-  selectExpandedItem,
-  selectIsCardPinned,
-  selectContextMenuOpen,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+    selectActiveCard,
+    selectExpandedItem,
+    selectIsCardPinned,
+    selectContextMenuOpen,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
-  closeHoverCards,
-  setHoveredItem,
-  setExpandedItem,
-  toggleCardPinned,
-  setDeferredLeave,
-  clearDeferredLeave,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+    closeHoverCards,
+    setHoveredItem,
+    setExpandedItem,
+    toggleCardPinned,
+    setDeferredLeave,
+    clearDeferredLeave,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const activeCard$ = selectActiveCard();
@@ -43,7 +42,6 @@
   const contextMenuOpen$ = selectContextMenuOpen();
 
   const cardMeta: Partial<Record<SidebarNavItem, { title: () => string; description: string }>> = {
-    'new-workspace': { title: () => m.layout_sidebarNav_newWorkspace_title(), description: '' },
     active: { title: () => m.layout_sidebarNav_activeWorkspaces_title(), description: '' },
     'all-workspaces': { title: () => m.layout_sidebarNav_allWorkspaces_title(), description: '' },
   };
@@ -154,20 +152,12 @@
   const cardStyle = $derived.by(() => {
     if (!$activeCard$) return '';
     const ref = iconRefs[$activeCard$];
-    if (!ref) return 'top: 48px; left: 60px;';
+    if (!ref) return 'top: 38px; left: 8px;';
 
     const rect = ref.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
     const padding = 8;
-
-    // If the button is in the bottom half, anchor card bottom to button bottom
-    if (rect.bottom > viewportHeight / 2) {
-      return `bottom: ${viewportHeight - rect.bottom - padding}px; left: 60px;`;
-    }
-
-    // Otherwise align top of card with top of icon
-    const top = Math.max(padding, rect.top - padding);
-    return `top: ${top}px; left: 60px;`;
+    const left = Math.max(padding, Math.min(rect.left, window.innerWidth - 328));
+    return `top: ${rect.bottom + 4}px; left: ${left}px;`;
   });
 </script>
 
@@ -180,13 +170,11 @@
     onmouseenter={handleCardMouseEnter}
     onmouseleave={handleCardMouseLeave}
     onkeydown={handleCardKeydown}
-    transition:fly={{ x: -8, duration: 150 }}
+    transition:fly={{ y: -6, duration: 150 }}
   >
-    <!-- Invisible bridge element: extends the hover hit-area leftward to cover the
-         gap between the nav rail and the card, so the pointer doesn't leave/re-enter -->
-    <div class="absolute top-0 bottom-0 -left-4 w-4" aria-hidden="true"></div>
+    <div class="absolute -top-2 left-0 h-2 w-full" aria-hidden="true"></div>
     <div
-      class="bg-popover border border-border shadow-lg overflow-hidden flex flex-col
+      class="bg-popover border border-border shadow overflow-hidden flex flex-col
         {isExpanded ? 'w-80 max-h-[70vh]' : 'w-72 max-h-[50vh]'}"
     >
       <!-- Header -->
@@ -220,7 +208,7 @@
       <!-- Content -->
       <div class="flex-1 min-h-0 overflow-y-auto" bind:this={contentEl}>
         {#if $activeCard$ === 'new-workspace'}
-          <NewWorkspaceCard expanded={isExpanded} />
+          <AllWorkspacesCard recentsOnly />
         {:else if $activeCard$ === 'active'}
           <ActiveWorkspacesCard expanded={isExpanded} />
         {:else if $activeCard$ === 'chief'}

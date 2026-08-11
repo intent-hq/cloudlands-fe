@@ -7,14 +7,7 @@
  * `metadata.specialist`, so metadata-only would never persist).
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // FAKE transport only: creation routes factory → appClient.agents.create →
 // LiveAgentsClient → backend-transport, so mocking the transport lets these
@@ -35,7 +28,8 @@ vi.mock('$lib/electron-bridge', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
@@ -43,12 +37,15 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-import {
-  UnifiedAgentFactory,
-  agentFactory,
-} from '../agent-factory';
+import { UnifiedAgentFactory, agentFactory } from '../agent-factory';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
+import { createAgentTypeId } from '$shared/types/agent.types';
+import {
+  buildChiefBehaviorPrompt,
+  CHIEF_PROMPT_VERSION,
+  CHIEF_SPECIALIST_ID,
+} from '$shared/chief-agent-config';
 
 describe('Specialist Metadata', () => {
   let factory: UnifiedAgentFactory;
@@ -73,8 +70,7 @@ describe('Specialist Metadata', () => {
           model: p.model,
           provider: p.provider,
           status: 'pending',
-          metadata:
-            typeof p.specialistId === 'string' ? { specialist: p.specialistId } : {},
+          metadata: typeof p.specialistId === 'string' ? { specialist: p.specialistId } : {},
           createdAt: '2026-07-22T00:00:00.000Z',
           updatedAt: '2026-07-22T00:00:00.000Z',
         },
@@ -144,6 +140,38 @@ describe('Specialist Metadata', () => {
 
     expect(result.success).toBe(true);
     expect(lastCreateParams()).not.toHaveProperty('specialistId');
+  });
+
+  it('sends the Chief identity, specialist, type, and prompt version on agent.create', async () => {
+    const workspace = createMockWorkspace('__chief__');
+    const behaviorPrompt = buildChiefBehaviorPrompt('Configured Chief instructions.');
+
+    await factory.createAgent(workspace, {
+      name: 'New chat with Intent',
+      nameExplicitlySet: false,
+      workspaceId: workspace.id,
+      agentType: createAgentTypeId('workspace'),
+      behaviorPrompt,
+      metadata: {
+        chiefWorkspace: true,
+        chiefPromptVersion: CHIEF_PROMPT_VERSION,
+        specialist: CHIEF_SPECIALIST_ID,
+      },
+    });
+
+    expect(lastCreateParams()).toEqual(
+      expect.objectContaining({
+        workspaceId: '__chief__',
+        specialistId: CHIEF_SPECIALIST_ID,
+        agentType: 'workspace',
+        behaviorPrompt,
+        metadata: expect.objectContaining({
+          chiefWorkspace: true,
+          chiefPromptVersion: CHIEF_PROMPT_VERSION,
+          specialist: CHIEF_SPECIALIST_ID,
+        }),
+      }),
+    );
   });
 
   it('should handle verifier specialist', async () => {

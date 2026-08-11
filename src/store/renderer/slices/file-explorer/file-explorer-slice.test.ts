@@ -14,6 +14,8 @@ import {
   removeAgentFileEditsEntries,
   removeGitStatusEntries,
   setChildrenAtPathAction,
+  setFileExplorerError,
+  setFileExplorerLoading,
   setFileExplorerWorkspacePath,
   setGitStatusMap,
   setRootNode,
@@ -27,6 +29,20 @@ const WS_PATH = "/a/repo";
 const MODIFIED: FileGitStatus = { status: " M", additions: 2, deletions: 1 };
 const MODIFIED_SAME_SHAPE: FileGitStatus = { status: " M", additions: 2, deletions: 1 };
 const ADDED: FileGitStatus = { status: "A ", additions: 5, deletions: 0 };
+
+describe("fileExplorerReducer — initialization error", () => {
+  it("stores a serializable error and clears it when retry loading starts", () => {
+    const failed = fileExplorerReducer(
+      initialState,
+      setFileExplorerError(WS_ID, "Unable to load files."),
+    );
+    expect(failed.byWorkspaceId[WS_ID].error).toBe("Unable to load files.");
+
+    const retrying = fileExplorerReducer(failed, setFileExplorerLoading(WS_ID, true));
+    expect(retrying.byWorkspaceId[WS_ID].error).toBeNull();
+    expect(retrying.byWorkspaceId[WS_ID].isLoading).toBe(true);
+  });
+});
 
 function directory(path: string, children?: FileNode[]): FileNode {
   return {

@@ -23,7 +23,7 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   captureFingerprint,
-  DEFAULT_DEV_WS_URL,
+  createBackendSocket,
   defaultSocketPath,
   describeBackendConfig,
   normalizeFingerprint,
@@ -33,7 +33,6 @@ import {
   WebSocketDuplex,
 } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
-import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
 
@@ -82,9 +81,9 @@ describe('resolveBackendConfig precedence', () => {
     expect(config.tls).toBe(false);
   });
 
-  it('defaults dev builds without sidecar to the loopback WebSocket URL', () => {
+  it('defaults dev builds without sidecar to the installed daemon UDS', () => {
     const config = resolveBackendConfig({}, { isDev: true });
-    expect(config).toEqual({ transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL });
+    expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath({}) });
   });
 
   it('defaults dev+sidecar (INTENTD_SIDECAR=1) to the UDS transport', () => {
@@ -100,9 +99,9 @@ describe('resolveBackendConfig precedence', () => {
     expect(config).toEqual({ transport: 'uds', socketPath: '/tmp/dev-seat/intentd.sock' });
   });
 
-  it('dev+INTENTD_SIDECAR=0 stays on the loopback WebSocket default', () => {
+  it('dev+INTENTD_SIDECAR=0 still adopts the default UDS without a transport override', () => {
     const config = resolveBackendConfig({ INTENTD_SIDECAR: '0' }, { isDev: true });
-    expect(config).toEqual({ transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL });
+    expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath({}) });
   });
 
   it('defaults packaged builds to the dev UDS path (backward compatible)', () => {
@@ -201,12 +200,9 @@ describe('win32 named-pipe derivation (pipe-name contract)', () => {
   });
 });
 
-describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
-  // These two functions must not be able to disagree on whether the dev
-  // build is talking to a sidecar-spawned intentd over UDS or to an external
-  // dev-daemon over the loopback WebSocket. If a future change to
-  // `shouldSpawnSidecar` widens/narrows the spawn set, this test fails until
-  // `resolveBackendConfig` is updated to match.
+describe('resolveBackendConfig build/spawn posture', () => {
+  // Spawn policy decides whether Electron launches intentd, not how the local
+  // client addresses it. Every zero-config posture adopts the canonical UDS.
   const matrix: Array<{ name: string; env: NodeJS.ProcessEnv }> = [
     { name: 'no env', env: {} },
     { name: 'INTENTD_SIDECAR=1', env: { INTENTD_SIDECAR: '1' } },
@@ -218,16 +214,9 @@ describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
   ];
 
   for (const { name, env } of matrix) {
-    it(`dev+${name}: transport matches spawn policy`, () => {
+    it(`dev+${name}: uses the canonical UDS`, () => {
       const config = resolveBackendConfig(env, { isDev: true });
-      const decision = shouldSpawnSidecar(env, /* isPackaged */ false);
-      if (decision.shouldSpawn) {
-        expect(config.transport).toBe('uds');
-        expect(config.socketPath).toBe(defaultSocketPath(env));
-      } else {
-        expect(config.transport).toBe('ws');
-        expect(config.wsUrl).toBe(DEFAULT_DEV_WS_URL);
-      }
+      expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath(env) });
     });
   }
 
@@ -259,7 +248,6 @@ describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
   ];
   for (const { name, env, expectTransport } of overrides) {
     it(`dev+${name} override: sidecar suppressed AND transport is the override`, () => {
-      expect(shouldSpawnSidecar(env, false).shouldSpawn).toBe(false);
       expect(resolveBackendConfig(env, { isDev: true }).transport).toBe(expectTransport);
     });
   }
@@ -281,6 +269,15 @@ describe('dev intentd data-dir isolation × resolveBackendConfig', () => {
     }
     return next;
   }
+
+  it('connect-only dev uses the existing global daemon socket', () => {
+    const env = applyDevIsolation({ DEV_PORT: '5190' }, true);
+    expect(env.INTENTD_DATA_DIR).toBeUndefined();
+    expect(resolveBackendConfig(env, { isDev: true })).toEqual({
+      transport: 'uds',
+      socketPath: defaultSocketPath({}),
+    });
+  });
 
   it('dev+sidecar with no INTENTD_* env resolves the per-port UDS socket', () => {
     const env = applyDevIsolation({ INTENTD_SIDECAR: '1', DEV_PORT: '5190' }, true);
@@ -380,6 +377,18 @@ describe('describeBackendConfig', () => {
         fingerprint: 'AB:CD',
       }),
     ).toBe('wss:10.0.0.9:5181');
+  });
+});
+
+describe('createBackendSocket security boundary', () => {
+  it('fails closed for the unfinished legacy TCP/TLS transport', () => {
+    expect(() =>
+      createBackendSocket({ transport: 'tcp', host: 'remote.example', port: 6000, tls: true }),
+    ).toThrow('Legacy INTENTD_TCP transport is disabled');
+
+    expect(() =>
+      createBackendSocket({ transport: 'tcp', host: 'remote.example', port: 6000, tls: false }),
+    ).toThrow('Legacy INTENTD_TCP transport is disabled');
   });
 });
 

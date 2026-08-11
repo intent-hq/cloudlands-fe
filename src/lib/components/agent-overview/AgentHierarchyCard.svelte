@@ -12,8 +12,8 @@
    * Fixed width for consistent layout and connector line alignment.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
@@ -33,7 +33,7 @@
   faCommentDots,
   faCircleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     agent: AgentNode;

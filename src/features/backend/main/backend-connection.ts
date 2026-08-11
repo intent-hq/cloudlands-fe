@@ -2,24 +2,15 @@
  * Connection-target resolution and the default socket factory for the live
  * backend transport.
  *
- * Local dev normally talks to intentd over a plain WebSocket on loopback; the
- * packaged app stays on the Unix Domain Socket. The target is configurable via
- * environment variables so the same client works in every posture:
+ * Local dev and packaged builds talk to intentd over its Unix Domain Socket by
+ * default. The target is configurable via environment variables so the same
+ * client works in every posture:
  *   - `INTENTD_SOCKET=/path/to.sock` → force UDS (highest precedence).
  *   - `INTENTD_WS_URL=ws://host:port[/ws]` → plain WebSocket to that URL.
  *   - `INTENTD_TCP=host:port` → legacy TCP (optionally TLS) stub, unchanged.
- *   - dev build (see [[ResolveBackendConfigOptions.isDev]]) with the sidecar
- *     spawn policy in effect (INTENTD_SIDECAR=1, no transport override) →
- *     UDS at `defaultSocketPath(env)` (honors `INTENTD_DATA_DIR`), matching
- *     the socket the sidecar spawns intentd on.
- *   - dev build with no sidecar and no env override → `ws://127.0.0.1:5181/ws`
- *     (loopback, no TLS, no token) — the two-terminal `dev-daemon + run-fe`
- *     flow.
- *   - packaged build with no env override → the default dev UDS path.
- *
- * The dev+sidecar branch reuses [[shouldSpawnSidecar]] rather than duplicating
- * env-string logic so the resolver and the spawn policy can never diverge on
- * whether to connect over UDS or the loopback WebSocket.
+ *   - no transport override → UDS at `defaultSocketPath(env)` (honors
+ *     `INTENTD_DATA_DIR`), whether intentd is an adopted installed daemon, an
+ *     explicitly spawned dev sidecar, or the packaged sidecar.
  *
  * The daemon's WebSocket endpoint at `/ws` frames JSON-RPC as one message per
  * text frame (`intent-transport/src/ws.rs::connection_loop`). The
@@ -37,7 +28,6 @@ import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
 import { Logger } from '$shared/logger';
-import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { defaultWindowsSocketPath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 
 const raceLogger = new Logger('BackendConnection');
@@ -88,9 +78,8 @@ export interface BackendConnectionConfig {
 /** Options for [[resolveBackendConfig]]. */
 export interface ResolveBackendConfigOptions {
   /**
-   * `true` when running an unpackaged/dev Electron build. When no env override
-   * is present and this flag is set, the resolver picks the loopback dev
-   * WebSocket default (`ws://127.0.0.1:5181/ws`).
+   * Retained for call-site compatibility. Build posture does not change the
+   * zero-config UDS target; WebSocket transport requires `INTENTD_WS_URL`.
    */
   isDev?: boolean;
   /** Platform override for tests; defaults to `process.platform`. */
@@ -124,10 +113,7 @@ export function defaultSocketPath(
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 
-/** Default dev WebSocket URL (loopback, no TLS, no token). */
-export const DEFAULT_DEV_WS_URL = 'ws://127.0.0.1:5181/ws';
-
-/** Resolve the connection target from environment variables (with dev default). */
+/** Resolve the connection target from environment variables (with UDS default). */
 export function resolveBackendConfig(
   env: NodeJS.ProcessEnv = process.env,
   opts: ResolveBackendConfigOptions = {},
@@ -149,20 +135,6 @@ export function resolveBackendConfig(
     const host = lastColon > 0 ? tcp.slice(0, lastColon) : '127.0.0.1';
     const port = Number(lastColon > 0 ? tcp.slice(lastColon + 1) : tcp);
     return { transport: 'tcp', host, port, tls: env.INTENTD_TCP_INSECURE !== '1' };
-  }
-  if (opts.isDev) {
-    // Dev builds default to the loopback WebSocket for the two-terminal flow
-    // (`make dev-daemon` + `make run-fe`). When the sidecar spawn policy is
-    // in effect (`INTENTD_SIDECAR=1`, no transport override — the one-command
-    // `make dev` flow) intentd runs as our sidecar on its UDS socket, so we
-    // must connect there instead of ECONNREFUSEing 127.0.0.1:5181. Deriving
-    // the decision from `shouldSpawnSidecar` keeps the resolver and the
-    // spawn-policy in lockstep (see the pinning test in
-    // `backend-connection.test.ts`).
-    if (shouldSpawnSidecar(env, /* isPackaged */ false).shouldSpawn) {
-      return { transport: 'uds', socketPath: defaultSocketPath(env, platform) };
-    }
-    return { transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL };
   }
   return { transport: 'uds', socketPath: defaultSocketPath(env, platform) };
 }
@@ -189,10 +161,9 @@ function normalizeWsUrl(raw: string): string {
  *
  * UDS, the loopback `ws://` transport, and the pinned `wss://` remote transport
  * (self-signed-cert fingerprint pinning + bearer token, see
- * {@link createWssSocket}) are fully supported. The legacy TCP/TLS branch
- * remains a remote-transport stub: it opens a (optionally TLS) socket but does
- * NOT implement the `/ws` handshake, so remote framing beyond a raw
- * newline-delimited stream is out of scope.
+ * {@link createWssSocket}) are fully supported. The legacy TCP configuration is
+ * retained for diagnostics only and fails closed until authenticated transport
+ * and compatible framing are implemented.
  */
 export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   if (config.transport === 'uds') {
@@ -210,18 +181,9 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     }
     return createWssSocket(config);
   }
-  if (!config.host || !config.port) {
-    throw new Error('TCP transport requires host and port');
-  }
-  // Remote transport stub: TLS-with-pinning and the WSS handshake are deferred.
-  // Certificate validation stays at the Node default (rejectUnauthorized: true).
-  if (config.tls) {
-    return tls.connect({
-      host: config.host,
-      port: config.port,
-    });
-  }
-  return net.connect({ host: config.host, port: config.port });
+  throw new Error(
+    'Legacy INTENTD_TCP transport is disabled because authenticated remote transport is not implemented; use INTENTD_SOCKET or INTENTD_WS_URL',
+  );
 }
 
 /** Human-readable description of a connection target (for logs). */

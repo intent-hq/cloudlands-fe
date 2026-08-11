@@ -15,8 +15,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
-  import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';

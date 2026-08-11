@@ -3,21 +3,14 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import Label from '$lib/components/ui/label/label.svelte';
   import Fa from 'svelte-fa';
-  import {
-  faXmark,
-  faServer,
-  faKey,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  fade,
-  scale,
-} from 'svelte/transition';
+  import { faXmark, faServer, faKey } from '@fortawesome/free-solid-svg-icons';
+  import { fade, scale } from 'svelte/transition';
   import { scaleConfig } from '$lib/utils/animations';
   import { createLogger } from '$lib/utils/client-logger';
   import { portal } from '$lib/actions/portal';
   import { m } from '$shared/paraglide/messages.js';
 
-interface Props {
+  interface Props {
     isOpen: boolean;
     onclose: () => void;
     onsave: (setup: RemoteSetup) => void;
@@ -140,7 +133,12 @@ interface Props {
           <Fa icon={faServer} class="text-ghost" />
           {m.workspace_addRemoteSetupModal_title()}
         </h2>
-        <Button onclick={handleClose} variant="ghost" size="icon">
+        <Button
+          onclick={handleClose}
+          variant="ghost"
+          size="icon"
+          aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
+        >
           <Fa icon={faXmark} />
         </Button>
       </div>
@@ -159,13 +157,16 @@ interface Props {
 
         <!-- Connection Details -->
         <div class="space-y-3">
-          <h3 class="text-sm font-medium">{m.workspace_addRemoteSetupModal_connectionDetails_label()}</h3>
+          <h3 class="text-sm font-medium">
+            {m.workspace_addRemoteSetupModal_connectionDetails_label()}
+          </h3>
 
           <!-- Transport type selector -->
           <div class="flex gap-2">
             <button
               type="button"
-              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport === 'ssh'
+              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
+              'ssh'
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
               onclick={() => {
@@ -180,7 +181,8 @@ interface Props {
             </button>
             <button
               type="button"
-              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport === 'websocket'
+              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
+              'websocket'
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
               onclick={() => {
@@ -204,20 +206,19 @@ interface Props {
               </div>
               <div>
                 <Label for="port">{m.workspace_addRemoteSetupModal_port_label()}</Label>
-                <Input
-                  id="port"
-                  type="number"
-                  bind:value={port}
-                  placeholder="22"
-                  class="mt-1"
-                />
+                <Input id="port" type="number" bind:value={port} placeholder="22" class="mt-1" />
               </div>
             </div>
           {:else}
             <div>
               <Label for="wsUrl">{m.workspace_addRemoteSetupModal_wsUrl_label()}</Label>
               <!-- i18n-ignore (example URL placeholder) -->
-              <Input id="wsUrl" bind:value={wsUrl} placeholder="wss://dev.example.com/ws" class="mt-1" />
+              <Input
+                id="wsUrl"
+                bind:value={wsUrl}
+                placeholder="wss://dev.example.com/ws"
+                class="mt-1"
+              />
             </div>
           {/if}
 
@@ -231,13 +232,16 @@ interface Props {
         <!-- Authentication (SSH only) -->
         {#if transport === 'ssh'}
           <div class="space-y-3">
-            <h3 class="text-sm font-medium">{m.workspace_addRemoteSetupModal_authentication_label()}</h3>
+            <h3 class="text-sm font-medium">
+              {m.workspace_addRemoteSetupModal_authentication_label()}
+            </h3>
 
             <!-- Auth mode radio buttons -->
             <div class="space-y-2">
               <!-- SSH Agent option -->
               <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode === 'agent'
+                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
+                'agent'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
               >
@@ -254,14 +258,17 @@ interface Props {
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
                     <Fa icon={faKey} class="text-ghost text-xs" />
-                    <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_sshAgent_label()}</span>
+                    <span class="text-sm font-medium"
+                      >{m.workspace_addRemoteSetupModal_sshAgent_label()}</span
+                    >
                   </div>
                 </div>
               </label>
 
               <!-- Key file option -->
               <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode === 'keyfile'
+                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
+                'keyfile'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
               >
@@ -276,7 +283,9 @@ interface Props {
                   class="mt-1"
                 />
                 <div class="flex-1">
-                  <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_keyFile_label()}</span>
+                  <span class="text-sm font-medium"
+                    >{m.workspace_addRemoteSetupModal_keyFile_label()}</span
+                  >
                   {#if authMode === 'keyfile'}
                     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                     <!-- stopPropagation prevents clicks on interactive elements from bubbling
@@ -291,7 +300,8 @@ interface Props {
 
               <!-- Password option -->
               <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode === 'password'
+                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
+                'password'
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:bg-muted/50'}"
               >
@@ -306,7 +316,9 @@ interface Props {
                   class="mt-1"
                 />
                 <div class="flex-1">
-                  <span class="text-sm font-medium">{m.workspace_addRemoteSetupModal_password_label()}</span>
+                  <span class="text-sm font-medium"
+                    >{m.workspace_addRemoteSetupModal_password_label()}</span
+                  >
                   {#if authMode === 'password'}
                     <div class="mt-1">
                       <Input
@@ -334,7 +346,12 @@ interface Props {
         <div>
           <Label for="workspacePath">{m.workspace_addRemoteSetupModal_repoPath_label()}</Label>
           <!-- i18n-ignore (example path placeholder) -->
-          <Input id="workspacePath" bind:value={workspacePath} placeholder="/home/user/myrepo" class="mt-1" />
+          <Input
+            id="workspacePath"
+            bind:value={workspacePath}
+            placeholder="/home/user/myrepo"
+            class="mt-1"
+          />
           <p class="text-xs text-subtle mt-1">
             {m.workspace_addRemoteSetupModal_repoPath_description()}
           </p>
@@ -357,8 +374,12 @@ interface Props {
 
       <!-- Footer -->
       <div class="flex justify-end gap-2 mt-6">
-        <Button onclick={handleClose} variant="outline">{m.workspace_addRemoteSetupModal_cancel_label()}</Button>
-        <Button onclick={handleSave} disabled={!isFormValid}>{m.workspace_addRemoteSetupModal_addSetup_label()}</Button>
+        <Button onclick={handleClose} variant="outline"
+          >{m.workspace_addRemoteSetupModal_cancel_label()}</Button
+        >
+        <Button onclick={handleSave} disabled={!isFormValid}
+          >{m.workspace_addRemoteSetupModal_addSetup_label()}</Button
+        >
       </div>
     </div>
   </div>

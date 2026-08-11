@@ -570,9 +570,6 @@
   "layout_aiLayout_note_fallback": [
     "fr"
   ],
-  "layout_allCard_repo_label": [
-    "de"
-  ],
   "layout_allCard_status_label": [
     "de"
   ],
@@ -961,11 +958,8 @@
     "ja",
     "ko"
   ],
-  "settings_tab_agents": [
+  "settings_tab_notifications": [
     "fr"
-  ],
-  "settings_tab_general": [
-    "es"
   ],
   "settings_theme_label": [
     "de"

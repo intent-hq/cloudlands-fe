@@ -9,39 +9,32 @@
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-  selectFileTrackingBoundarySha,
-  selectFileTrackingChanges,
-  selectFileTrackingCommits,
-  selectFileTrackingLoading,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectFileTrackingBoundarySha,
+    selectFileTrackingChanges,
+    selectFileTrackingCommits,
+    selectFileTrackingLoading,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import {
-  discardFiles as discardFilesViaSeam,
-  stageFiles as stageFilesViaSeam,
-  unstageFiles as unstageFilesViaSeam,
-} from '$features/git/git-write-service';
+    discardFiles as discardFilesViaSeam,
+    stageFiles as stageFilesViaSeam,
+    unstageFiles as unstageFilesViaSeam,
+  } from '$features/git/git-write-service';
   import { toast } from '$lib/components/ui/toast';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
-  import { Button } from '$lib/components/ui/button';
+  import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
   import {
-  selectLineWrapping,
-  selectFoldUnchanged,
-  selectDiffSideBySide,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectLineWrapping,
+    selectFoldUnchanged,
+    selectDiffSideBySide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-  toggleLineWrapping,
-  toggleFoldUnchanged,
-  toggleDiffSideBySide,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    toggleLineWrapping,
+    toggleFoldUnchanged,
+    toggleDiffSideBySide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import Fa from 'svelte-fa';
-  import {
-  faTextWidth,
-  faMap,
-  faColumns,
-  faCompressAlt,
-} from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { isAbsolutePath, normalizePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
@@ -49,10 +42,6 @@
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
-  const headerToggleActiveClass =
-    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
-  const headerToggleInactiveClass = 'text-subtle';
-
   let { workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
@@ -193,62 +182,21 @@
 </script>
 
 {#snippet changesActions()}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => {
+  <ViewSettingsDropdown
+    showExpand
+    expanded={changesAllExpanded}
+    onToggleExpand={() => {
       changesAllExpanded = !changesAllExpanded;
       if (changesAllExpanded) changesPanelRef?.expandAll();
       else changesPanelRef?.collapseAll();
     }}
-    tooltip={changesAllExpanded
-      ? m.layout_diffHeader_collapseAllFiles_tooltip()
-      : m.layout_diffHeader_expandAllFiles_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={changesAllExpanded}
-    class={changesAllExpanded ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faCompressAlt} size="xs" class={changesAllExpanded ? '' : 'rotate-180'} />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping
-      ? m.layout_diffHeader_wrappingOn_tooltip()
-      : m.layout_diffHeader_wrapLines_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$lineWrapping}
-    class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faTextWidth} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
-    tooltip={$foldUnchanged
-      ? m.layout_diffHeader_foldingOn_tooltip()
-      : m.layout_diffHeader_foldLines_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$foldUnchanged}
-    class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faMap} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide
-      ? m.layout_diffHeader_unifiedView_tooltip()
-      : m.layout_diffHeader_splitView_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$diffSideBySide}
-    class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faColumns} size="xs" />
-  </Button>
+    foldEnabled={$foldUnchanged}
+    onToggleFold={() => appStore.dispatch(toggleFoldUnchanged())}
+    wrapEnabled={$lineWrapping}
+    onToggleWrap={() => appStore.dispatch(toggleLineWrapping())}
+    splitEnabled={$diffSideBySide}
+    onToggleSplit={() => appStore.dispatch(toggleDiffSideBySide())}
+  />
 {/snippet}
 
 <ChatChangesPanel

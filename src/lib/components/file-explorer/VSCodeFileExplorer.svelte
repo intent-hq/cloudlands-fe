@@ -39,6 +39,7 @@
   {onCollapse}
   storageKey={collapsed === undefined ? 'workspace-files-collapsed' : undefined}
   class="h-full {className}"
+  scrollContent={false}
 >
   {#snippet headerActions()}
     <TooltipShortcut
@@ -49,6 +50,7 @@
     >
       <Button
         size="icon-xs"
+        aria-label={showOnlyChanged ? 'Show all files' : 'Show only changed files'}
         variant={showOnlyChanged ? 'default' : 'ghost'}
         onclick={() => (showOnlyChanged = !showOnlyChanged)}
         class="opacity-60 hover:opacity-100 {showOnlyChanged ? 'bg-primary/20 text-primary' : ''}"

@@ -74,19 +74,19 @@
   // Size configurations
   const sizeConfig = {
     sm: {
-      padding: 'py-1 px-2',
+      padding: 'min-h-7 px-2 py-0.5',
       basePaddingX: 0, // px value for inline style
       iconSize: '12',
-      titleSize: 'text-sm',
-      subtitleSize: 'text-sm',
+      titleSize: 'type-body',
+      subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
     md: {
-      padding: 'py-1 px-2',
+      padding: 'min-h-8 px-2 py-1.5',
       basePaddingX: 0, // px value for inline style
       iconSize: '14',
-      titleSize: 'text-sm',
-      subtitleSize: 'text-sm',
+      titleSize: 'type-body',
+      subtitleSize: 'type-caption',
       gap: 'gap-2',
     },
   };
@@ -96,29 +96,29 @@
   // Variant styles with active and selected states
   const variantStyles = $derived({
     default: cn(
-      'hover:bg-background/50',
-      selected && 'bg-background text-foreground',
-      active && 'bg-background text-foreground border-border shadow-xs',
+      'hover:bg-accent/60 hover:text-accent-foreground',
+      selected && 'bg-accent text-accent-foreground',
+      active && 'border-input bg-card text-foreground',
     ),
     ghost: cn(
-      'hover:bg-background hover:text-foreground',
-      selected && 'bg-background text-foreground',
-      active && 'bg-background text-foreground border-border shadow-xs',
+      'hover:bg-accent/60 hover:text-accent-foreground',
+      selected && 'bg-accent text-accent-foreground',
+      active && 'border-input bg-card text-foreground',
     ),
     subtle: cn(
-      'hover:bg-muted/50',
-      selected && 'bg-muted',
-      active && 'bg-background text-foreground border-border shadow-xs',
+      'hover:bg-muted',
+      selected && 'bg-accent text-accent-foreground',
+      active && 'border-input bg-card text-foreground',
     ),
   });
 
   // Badge variant styles
   const badgeVariantStyles = {
     default: 'bg-muted text-subtle',
-    success: 'bg-green-500/20 text-green-600 dark:text-green-400',
-    warning: 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
-    error: 'bg-red-500/20 text-red-600 dark:text-red-400',
-    info: 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
+    success: 'bg-success/20 text-success',
+    warning: 'bg-warning/20 text-warning',
+    error: 'bg-destructive/10 text-destructive',
+    info: 'bg-info/20 text-info',
   };
 
   let leftIndent = $derived(
@@ -127,10 +127,15 @@
 </script>
 
 <button
+  data-slot="list-item"
+  data-selected={selected || undefined}
+  data-active={active || undefined}
+  aria-current={active ? 'true' : undefined}
   class={cn(
     // Base styles
-    'relative w-full min-w-0 flex items-center text-left transition-colors duration-100',
-    'border border-transparent bg-transparent text-subtle cursor-pointer font-inherit',
+    'relative flex w-full min-w-0 cursor-pointer items-center rounded-md border border-transparent bg-transparent text-left font-inherit text-foreground outline-none transition-colors',
+    'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40',
+    'motion-reduce:transition-none',
     'group',
 
     // Size styles
@@ -160,7 +165,11 @@
     {:else if icon || IconComponent}
       <div class={cn('shrink-0 flex items-center justify-center', iconClass)}>
         {#if loading && icon}
-          <Fa {icon} size={config.iconSize} class="animate-spin opacity-60 w-3.5" />
+          <Fa
+            {icon}
+            size={config.iconSize}
+            class="w-3.5 animate-spin opacity-60 motion-reduce:animate-none"
+          />
         {:else if IconComponent}
           <IconComponent {...iconProps} />
         {:else if icon}
@@ -179,7 +188,7 @@
         <div
           class={cn(
             config.titleSize,
-            'leading-tight truncate max-w-full shrink-0',
+            'max-w-full min-w-0 shrink truncate font-medium leading-5',
             selected || active,
             titleClass,
           )}
@@ -192,7 +201,7 @@
         <div
           class={cn(
             config.subtitleSize,
-            'flex-1 text-subtle truncate opacity-60',
+            'min-w-0 flex-1 truncate text-muted-foreground',
             subtitleClass,
           )}
         >
@@ -212,7 +221,7 @@
         class={cn(
           'shrink-0 flex items-center gap-1',
           actionsVisible === 'hover' && 'opacity-0 group-hover:opacity-100',
-          'transition-opacity',
+          'transition-opacity motion-reduce:transition-none',
           actionsClass,
         )}
       >
@@ -222,8 +231,7 @@
               role="button"
               tabindex={0}
               class={cn(
-                'p-1 hover:bg-background/50 transition-colors cursor-pointer',
-                'text-muted-foreground hover:text-foreground',
+                'cursor-pointer rounded-sm border border-transparent p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none',
                 action.className,
               )}
               onclick={(e: MouseEvent) => {
@@ -250,9 +258,9 @@
       <div
         class={cn(
           'shrink-0',
-          'text-ui px-1.5 py-0.5 rounded',
+          'type-caption rounded-sm px-1.5 py-0.5',
           badgeVariantStyles[badgeVariant],
-          badgeVariant === 'default' && 'group-hover:bg-background',
+          badgeVariant === 'default' && 'group-hover:bg-muted',
           badgeClass,
         )}
       >
@@ -261,3 +269,14 @@
     {/if}
   </div>
 </button>
+
+<style>
+  [data-slot='list-item'],
+  [role='button'] {
+    transition-duration: var(--motion-fast);
+  }
+
+  [data-slot='list-item'][data-active] {
+    box-shadow: var(--elevation-raised);
+  }
+</style>

@@ -576,7 +576,7 @@
   .ov-backdrop {
     position: absolute;
     inset: 0;
-    background: hsl(var(--app-background) / 0.55);
+    background: hsl(var(--background) / 0.55);
     backdrop-filter: blur(3px);
     animation: ovf 0.3s ease both;
   }
@@ -594,7 +594,7 @@
     position: absolute;
     inset: 0;
     background: hsl(var(--card) / 0.98);
-    box-shadow: 0 24px 80px hsl(var(--app-background) / 0.8);
+    box-shadow: 0 24px 80px hsl(var(--background) / 0.8);
     animation: ovf 0.25s ease 0.12s both;
   }
   .ov-edge-h {
@@ -727,7 +727,7 @@
   }
   .ov-ws-repo {
     font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .ov-divider {
     width: 1px;
@@ -744,7 +744,7 @@
     display: flex;
     justify-content: space-between;
     font: 500 9px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-progress-segs {
     display: flex;
@@ -759,7 +759,7 @@
   }
   .ov-return {
     font: 500 12px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-dismiss {
     cursor: pointer;
@@ -768,7 +768,7 @@
     padding: 6px 12px;
     font: 600 10px 'JetBrains Mono', monospace;
     letter-spacing: 0.12em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-dismiss:hover {
@@ -802,11 +802,11 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     flex: none;
   }
   .ov-status-text {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -879,7 +879,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.3em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .ov-spec-title {
     font:
@@ -897,7 +897,7 @@
   }
   .ov-spec-prog {
     font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-cell-task {
     display: flex;
@@ -1016,7 +1016,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-panel-rule {
@@ -1026,7 +1026,7 @@
   }
   .ov-panel-count {
     font: 500 9px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-panel-body {
     display: flex;
@@ -1043,7 +1043,7 @@
     gap: 8px;
   }
   .ov-change-text {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .ov-agents {
     gap: 10px;
@@ -1071,7 +1071,7 @@
   }
   .ov-agent-elapsed {
     margin-left: auto;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     font-size: 9.5px;
   }
   .ov-agent-state {
@@ -1079,7 +1079,7 @@
   }
   .ov-agent-note {
     font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     padding-left: 13px;
     overflow: hidden;
     display: -webkit-box;
@@ -1092,7 +1092,7 @@
   .ov-side-footer {
     font: 500 9px 'JetBrains Mono', monospace;
     letter-spacing: 0.12em;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     display: flex;
     gap: 14px;
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
+  import { Toggle as TogglePrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
 
   interface Option {
@@ -28,7 +29,7 @@
   }
 
   let {
-    pressed = false,
+    pressed = $bindable(false),
     disabled = false,
     size = 'default',
     class: className,
@@ -44,7 +45,7 @@
     children,
   }: Props = $props();
 
-  function handleClick(e: MouseEvent) {
+  function handleCompatibilityClick(e: MouseEvent) {
     if (!disabled) {
       // Don't mutate pressed directly - let the parent manage state via onclick
       // The parent should update the pressed prop, which will flow back down
@@ -52,6 +53,11 @@
       // Call onChange with the NEW value (opposite of current)
       onChange?.(!pressed);
     }
+  }
+
+  function handlePressedChange(nextPressed: boolean) {
+    pressed = nextPressed;
+    onChange?.(nextPressed);
   }
 
   function handleOptionClick(optionValue: string) {
@@ -62,68 +68,14 @@
   }
 
   const sizeClasses = {
-    default: 'h-10 px-3 text-sm',
-    sm: 'h-8 px-2.5 text-xs',
-    lg: 'h-11 px-4 text-base',
-    xs: 'h-6 px-2 text-xs',
+    default: 'h-(--control-height-medium) px-2.5',
+    sm: 'h-(--control-height-small) px-2',
+    lg: 'h-(--control-height-large) px-3',
+    xs: 'h-(--control-height-small) px-2',
   };
-
-  const groupSizeClasses = {
-    default: 'px-3 py-1.5 text-sm',
-    sm: 'px-2.5 py-1 text-xs',
-    lg: 'px-4 py-2 text-base',
-    xs: 'px-2 py-0.5 text-xs',
-  };
-
-  // Track button refs and dimensions for animated background
-  // Use plain object with action function to avoid Svelte 5 bind:this dynamic key issues
-  const buttonRefs: Record<string, HTMLElement> = {};
-  let selectedIndex = $derived(options?.findIndex((opt) => opt.value === value) ?? 0);
-  let selectedButtonWidth = $state(0);
-  let selectedButtonOffset = $state(0);
-
-  // Action to capture button refs
-  function captureRef(node: HTMLElement, optionValue: string) {
-    buttonRefs[optionValue] = node;
-    // Trigger initial measurement after mounting
-    updateDimensions();
-    return {
-      destroy() {
-        delete buttonRefs[optionValue];
-      },
-    };
-  }
-
-  // Update button dimensions
-  function updateDimensions() {
-    if (options && value && buttonRefs[value]) {
-      const button = buttonRefs[value];
-      selectedButtonWidth = button.offsetWidth;
-
-      // Calculate offset by summing widths of all previous buttons
-      // Start with the padding (0.25rem = 4px at 16px base)
-      let offset = 4;
-      for (let i = 0; i < selectedIndex; i++) {
-        const prevButton = buttonRefs[options[i].value];
-        if (prevButton) {
-          offset += prevButton.offsetWidth;
-        }
-      }
-      selectedButtonOffset = offset;
-    }
-  }
-
-  // Update dimensions when selected value changes
-  $effect(() => {
-    // Track dependencies
-    void value;
-    void selectedIndex;
-    updateDimensions();
-  });
 </script>
 
 {#if variant === 'indicator'}
-  <!-- Indicator Toggle - glowing square indicator with label (skeuomorphic bevel) -->
   <button
     type="button"
     role="switch"
@@ -132,43 +84,23 @@
     data-state={pressed ? 'on' : 'off'}
     {disabled}
     title={title || (pressed ? onLabel : offLabel)}
-    onclick={handleClick}
+    onclick={handleCompatibilityClick}
     class={cn(
-      'group inline-flex items-center gap-1.5 rounded-md font-medium transition-all cursor-pointer',
-      'bg-background',
-      // Beveled border: light top-left, dark bottom-right
-      'border-t border-l border-t-white/10 border-l-white/10',
-      'border-b border-r border-b-black/5 border-r-black/5',
-      // 'hover:bg-muted/80',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1',
-      'disabled:pointer-events-none disabled:opacity-50',
-      size === 'xs'
-        ? 'px-[6px] pt-[3.5px] pb-[3px] text-xs'
-        : size === 'sm'
-          ? 'px-2.5 py-1.5 text-xs'
-          : 'px-3 py-2 text-sm',
-      pressed ? 'text-foreground' : 'text-muted-foreground',
+      'type-body inline-flex cursor-pointer items-center gap-1.5 rounded-(--radius-medium) border border-border font-medium text-muted-foreground transition-[border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+      sizeClasses[size],
+      pressed && 'text-accent-foreground',
       className,
     )}
   >
-    <!-- Glowing square indicator with bevel -->
     <span
       class={cn(
-        'relative rounded-xs transition-all duration-300',
-        size === 'xs' ? 'w-2.5 h-2.5' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4',
-        pressed
-          ? 'bg-primary shadow-[inset_1px_1px_0_rgba(0,0,0,0.15),inset_-1px_-1px_0_rgba(255,255,255,0.3),0_0_6px_1px_hsl(var(--primary)/0.15)]'
-          : 'bg-muted-foreground/15 shadow-[inset_1px_1px_0_rgba(0,0,0,0.05),inset_-1px_-1px_0_rgba(255,255,255,0.15)]',
+        'size-2 rounded-full border transition-[background-color,border-color] duration-[var(--motion-fast)] motion-reduce:transition-none',
+        pressed ? 'border-success bg-success' : 'border-muted-foreground/60 bg-transparent',
       )}
     ></span>
-    <!-- Label -->
-    <span
-      class="transition-colors uppercase tracking-wider text-ui text-muted-foreground font-semibold"
-      >{pressed ? onLabel : offLabel}</span
-    >
+    <span>{pressed ? onLabel : offLabel}</span>
   </button>
 {:else if variant === 'switch'}
-  <!-- Switch Toggle - single button with on/off indicator -->
   <button
     type="button"
     role="switch"
@@ -177,91 +109,68 @@
     data-state={pressed ? 'on' : 'off'}
     {disabled}
     title={title || (pressed ? onLabel : offLabel)}
-    onclick={handleClick}
+    onclick={handleCompatibilityClick}
     class={cn(
-      'group inline-flex items-center gap-1.5 rounded-md font-medium transition-all cursor-pointer',
-      'bg-sidebar hover:bg-sidebar/80',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-      'disabled:pointer-events-none disabled:opacity-50',
-      size === 'xs'
-        ? 'px-2 py-0.5 text-xs'
-        : size === 'sm'
-          ? 'px-2.5 py-1 text-xs'
-          : 'px-3 py-1.5 text-sm',
-      pressed ? 'text-foreground' : 'text-muted-foreground',
+      'type-body inline-flex cursor-pointer items-center gap-1.5 rounded-(--radius-medium) border border-border bg-card font-medium text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+      sizeClasses[size],
+      pressed && 'border-primary/60 text-accent-foreground',
       className,
     )}
   >
-    <!-- Pill indicator -->
     <span
       class={cn(
-        'relative flex items-center justify-center rounded-full transition-all duration-200',
-        size === 'xs' ? 'w-5 h-2.5' : size === 'sm' ? 'w-6 h-3' : 'w-7 h-3.5',
-        pressed ? 'bg-primary' : 'bg-muted-foreground/30',
+        'relative flex h-3.5 w-7 items-center rounded-full transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none',
+        pressed ? 'bg-primary' : 'bg-muted',
       )}
     >
-      <!-- Sliding dot -->
       <span
         class={cn(
-          'absolute rounded-full bg-white shadow-sm transition-all duration-200',
-          size === 'xs' ? 'w-2 h-2' : size === 'sm' ? 'w-2.5 h-2.5' : 'w-3 h-3',
-          pressed
-            ? size === 'xs'
-              ? 'translate-x-1'
-              : size === 'sm'
-                ? 'translate-x-1.5'
-                : 'translate-x-1.5'
-            : size === 'xs'
-              ? '-translate-x-1'
-              : size === 'sm'
-                ? '-translate-x-1.5'
-                : '-translate-x-1.5',
+          'absolute size-3 rounded-full bg-primary-foreground shadow-xs transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none',
+          pressed ? 'translate-x-3.5' : 'translate-x-0.5',
         )}
       ></span>
     </span>
-    <!-- Label -->
-    <span class="transition-colors">{pressed ? onLabel : offLabel}</span>
+    <span class=" text-ui-sm">{pressed ? onLabel : offLabel}</span>
   </button>
 {:else if variant === 'group' && options}
-  <!-- Toggle Group (e.g., inline/side-by-side) -->
-  <div class="relative inline-flex items-center rounded-md bg-sidebar p-1 gap-0">
-    <!-- Animated background indicator -->
-    <div
-      class="absolute top-1 bottom-1 rounded-sm bg-primary transition-all duration-200 ease-out pointer-events-none"
-      style={`left: ${selectedButtonOffset}px; width: ${selectedButtonWidth}px;`}
-    ></div>
-
-    <!-- Option buttons -->
+  <div
+    role="group"
+    aria-label={ariaLabel}
+    class="inline-flex items-center gap-px rounded-(--radius-medium) border border-border bg-card p-0.5 shadow-(--elevation-raised)"
+  >
     {#each options as option (option.value)}
       <button
-        use:captureRef={option.value}
+        type="button"
         onclick={() => handleOptionClick(option.value)}
         title={option.label}
-        class={`relative z-10 font-medium rounded-sm transition-colors whitespace-nowrap cursor-pointer ${groupSizeClasses[size]} ${
-          value === option.value ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-        }`}
+        aria-pressed={value === option.value}
+        {disabled}
+        data-state={value === option.value ? 'on' : 'off'}
+        class={cn(
+          'type-body cursor-pointer whitespace-nowrap rounded-(--radius-small) border border-transparent bg-transparent font-medium text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+          sizeClasses[size],
+          value === option.value &&
+            'border-primary/60 bg-accent text-accent-foreground shadow-(--elevation-raised)',
+        )}
       >
         {option.label}
       </button>
     {/each}
   </div>
 {:else}
-  <!-- Single Toggle Button -->
-  <button
-    type="button"
-    role="switch"
-    aria-checked={pressed}
+  <TogglePrimitive.Root
+    bind:pressed
+    onPressedChange={handlePressedChange}
     aria-label={ariaLabel}
-    data-state={pressed ? 'on' : 'off'}
     {disabled}
     {title}
-    onclick={handleClick}
+    {onclick}
     class={cn(
-      'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+      'type-body inline-flex cursor-pointer items-center justify-center rounded-(--radius-medium) border border-border bg-card font-medium text-muted-foreground shadow-(--elevation-raised) transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-primary/60 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground motion-reduce:transition-none',
       sizeClasses[size],
       className,
     )}
   >
     {@render children?.()}
-  </button>
+  </TogglePrimitive.Root>
 {/if}

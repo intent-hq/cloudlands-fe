@@ -157,16 +157,14 @@
               <h3 class="text-sm font-medium text-foreground">{workspaceName}</h3>
               <div class="space-y-1.5 pl-2">
                 {#each wsAgents as agent (agent.agentId)}
-                  <!-- svelte-ignore a11y_click_events_have_key_keys a11y_no_static_element_interactions -->
-                  <div
+                  <label
                     class="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/40 cursor-pointer"
-                    onclick={() => toggleAgent(agent.agentId)}
                   >
                     <input
                       type="checkbox"
                       checked={checkedAgents.has(agent.agentId)}
                       class="size-4 rounded border-border"
-                      readonly
+                      onchange={() => toggleAgent(agent.agentId)}
                     />
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>
@@ -177,7 +175,7 @@
                         })}
                       </p>
                     </div>
-                  </div>
+                  </label>
                 {/each}
               </div>
             </div>

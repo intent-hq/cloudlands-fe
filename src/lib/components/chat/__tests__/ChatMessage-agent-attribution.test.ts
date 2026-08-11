@@ -12,9 +12,8 @@ const { dispatchMock, handleLinkMock } = vi.hoisted(() => ({
 
 // Mock Redux store and selectors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: dispatchMock,
@@ -70,7 +69,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/AuggieAvatar.svelte')).default,
 }));
 
@@ -82,11 +81,14 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 
 import ChatMessage from '../ChatMessage.svelte';
 
-function userMessage(metadata?: Record<string, unknown>): AgentMessage {
+function userMessage(
+  metadata?: Record<string, unknown>,
+  text = 'hello from another agent',
+): AgentMessage {
   return {
     id: 'msg-1',
     role: 'user',
-    contentBlocks: [{ type: 'text', text: 'hello from another agent' }],
+    contentBlocks: [{ type: 'text', text }],
     timestamp: new Date('2026-01-01T12:00:00Z'),
     ...(metadata ? { metadata } : {}),
   };
@@ -109,8 +111,8 @@ describe('ChatMessage user message text rendering', () => {
 
     // The element(s) applying whitespace-pre-wrap must contain exactly the
     // message text — no template whitespace text nodes rendered under pre-wrap.
-    const preWrapEls = Array.from(container.querySelectorAll('.whitespace-pre-wrap')).filter(
-      (el) => el.textContent?.includes('Q: q1'),
+    const preWrapEls = Array.from(container.querySelectorAll('.whitespace-pre-wrap')).filter((el) =>
+      el.textContent?.includes('Q: q1'),
     );
     expect(preWrapEls.length).toBeGreaterThan(0);
     for (const el of preWrapEls) {
@@ -172,6 +174,66 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(avatar.getAttribute('data-agent-id')).toBe('agent-sender-1');
     // Message body still renders
     expect(screen.getByText('hello from another agent')).toBeTruthy();
+    const surface = screen.getByTestId('user-message-surface');
+    expect(surface.className).toContain('bg-card');
+    expect(surface.className).not.toContain('bg-transparent');
+  });
+
+  it('clamps attributed message previews to two lines without changing plain user messages', () => {
+    const { unmount } = render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'agent-sender-1',
+          fromAgentName: 'Builder',
+        }),
+      },
+    });
+
+    const attributedBody = screen.getByText('hello from another agent').closest('.type-body');
+    expect(attributedBody?.className).toContain('line-clamp-2');
+    expect(attributedBody?.className).not.toContain('line-clamp-6');
+
+    unmount();
+    render(ChatMessage, { props: { message: userMessage() } });
+
+    const plainBody = screen.getByText('hello from another agent').closest('.type-body');
+    expect(plainBody?.className).toContain('line-clamp-6');
+    expect(plainBody?.className).not.toContain('line-clamp-2');
+  });
+
+  it('expands and collapses a long attributed message inline', async () => {
+    const longMessage = 'Long coordinator message '.repeat(12).trim();
+    render(ChatMessage, {
+      props: {
+        message: userMessage(
+          {
+            type: 'agent_message',
+            fromAgentId: 'agent-sender-1',
+            fromAgentName: 'Builder',
+          },
+          longMessage,
+        ),
+      },
+    });
+
+    const body = screen.getByText(longMessage).closest('.type-body');
+    const toggle = screen.getByRole('button', { name: 'Show full message' });
+    expect(body?.className).toContain('line-clamp-2');
+    expect(body?.className).toContain('agent-message-body');
+    expect(body?.getAttribute('data-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(toggle);
+    expect(body?.className).not.toContain('line-clamp-2');
+    expect(body?.getAttribute('data-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Collapse' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
+    expect(body?.className).toContain('line-clamp-2');
+    expect(body?.getAttribute('data-expanded')).toBe('false');
   });
 
   it('dispatches openAgentTabRequested with the sender agent id on click', async () => {
@@ -259,6 +321,45 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     // Edit mode replaces the message body view
     expect(screen.queryByText('hello from another agent')).toBeNull();
+  });
+
+  it('compacts a sticky user message and scrolls it instead of editing', async () => {
+    const onEditSubmit = vi.fn();
+    const onStickyClick = vi.fn();
+    const { rerender } = render(ChatMessage, {
+      props: {
+        message: userMessage(),
+        isSticky: false,
+        onStickyClick,
+        onEditSubmit,
+      },
+    });
+
+    const text = screen.getByText('hello from another agent');
+    const body = text.closest('.type-body');
+    const surface = screen.getByTestId('user-message-surface');
+    expect(body).not.toBeNull();
+    expect(body.className).toContain('line-clamp-6');
+    expect(body.className).not.toContain('line-clamp-2');
+    expect(surface.className).toContain('bg-card');
+    expect(surface.className).not.toContain('bg-transparent');
+
+    await rerender({
+      message: userMessage(),
+      isSticky: true,
+      onStickyClick,
+      onEditSubmit,
+    });
+
+    expect(body.className).toContain('line-clamp-2');
+    expect(body.className).not.toContain('line-clamp-6');
+    expect(surface.className).toContain('bg-card');
+
+    await fireEvent.click(text);
+
+    expect(onStickyClick).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
   });
 });
 

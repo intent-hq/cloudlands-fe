@@ -7,7 +7,7 @@ import type { ContextItem } from '../input/context-api';
  * Regression tests for the suggested-prompt send path (ChatPanel.svelte).
  *
  * Selecting a suggested prompt (SuggestedPrompts click, Ctrl/Alt+number
- * shortcut, or ChiefChatEmptyState selection) must send the prompt BARE and
+ * shortcut or prompt selection) must send the prompt BARE and
  * leave the composer draft fully intact: no composer context items or
  * workspace context folded into the payload, no input clearing, and no
  * backend draft clear. The normal composer send keeps clearing everything.

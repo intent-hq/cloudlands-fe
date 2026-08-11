@@ -66,7 +66,7 @@ describe("LiveEventsClient (PROTOCOL §5.10 event.query, fake transport)", () =>
 
     expect(mockedRequest).toHaveBeenCalledWith("event.query", {
       workspaceId: "ws-1",
-      limit: 100,
+      limit: 300,
     });
     expect(events.map((e) => e.id)).toEqual(["evt-1", "evt-2"]);
   });

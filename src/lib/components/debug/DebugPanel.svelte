@@ -55,10 +55,9 @@
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 
-  // Check if we're on the creation page (home page with create param, or just home)
+  // Check if we're on the workspace creation page.
   $effect(() => {
-    isOnCreationPage =
-      window.location.pathname === '/' && window.location.search.includes('create=true');
+    isOnCreationPage = window.location.pathname === '/workspace/new';
 
     // Load simulation state from sessionStorage
     const savedSimulation = sessionStorage.getItem('debug-simulation-state');

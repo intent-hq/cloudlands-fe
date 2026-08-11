@@ -22,15 +22,30 @@ const { store, mockStageFiles, mockDispatch, makeSelector } = vi.hoisted(() => {
     staged: [] as any[],
     unstaged: [] as any[],
     currentWsId: 'ws-1' as string | null,
+    autoCommitByWorkspace: {} as Record<string, boolean>,
+    acceptChangesStateByWorkspace: {} as Record<string, any>,
+    emptyAcceptChangesState: { backgroundOperation: null },
   };
-  const makeSelector = <T>(getter: () => T) => {
-    const fn = (..._a: any[]) => ({
+  const makeSelector = <T>(getter: (...args: any[]) => T) => {
+    const fn = (...args: any[]) => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const [arg] = args;
+        if (!arg || typeof arg.subscribe !== 'function') {
+          run(getter(...args));
+          return () => {};
+        }
+        let hasLatest = false;
+        let latest: T;
+        return arg.subscribe((value: unknown) => {
+          const next = getter(value);
+          if (hasLatest && next === latest) return;
+          hasLatest = true;
+          latest = next;
+          run(next);
+        });
       },
     });
-    (fn as any).select = () => getter();
+    (fn as any).select = (_state: unknown, ...args: any[]) => getter(...args);
     (fn as any).effect = () => {};
     (fn as any).withStore = () => fn;
     return fn;
@@ -63,7 +78,10 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentCommits: makeSelector(() => []),
   selectCurrentLoading: makeSelector(() => false),
   selectMainPanelView: makeSelector(() => null),
-  selectAcceptChangesState: makeSelector(() => ({ backgroundOperation: null })),
+  selectAcceptChangesState: makeSelector(
+    (workspaceId: string) =>
+      store.acceptChangesStateByWorkspace[workspaceId] ?? store.emptyAcceptChangesState,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
@@ -78,7 +96,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors', () => ({
-  selectAutoCommitEnabled: makeSelector(() => false),
+  selectAutoCommitEnabled: makeSelector(
+    (workspaceId: string) => store.autoCommitByWorkspace[workspaceId] ?? false,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
@@ -142,6 +162,8 @@ describe('CodeChangesPanel git-write-service routing', () => {
     store.staged = [];
     store.unstaged = [];
     store.currentWsId = 'ws-1';
+    store.autoCommitByWorkspace = {};
+    store.acceptChangesStateByWorkspace = {};
   });
 
   it('routes single-file stage through the git-write-service seam', async () => {
@@ -184,5 +206,32 @@ describe('CodeChangesPanel git-write-service routing', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'changes/revertChangeRequested' }),
     );
+  });
+
+  it('rebinds workspace-scoped state and mutations after an A-to-B rerender', async () => {
+    store.autoCommitByWorkspace = { 'ws-a': true, 'ws-b': false };
+    store.acceptChangesStateByWorkspace = {
+      'ws-a': { backgroundOperation: { type: 'commit', phase: 'syncing' } },
+      'ws-b': { backgroundOperation: { type: 'create-pr', phase: 'generating' } },
+    };
+
+    const { getByRole, container, rerender } = await renderPanel({ workspaceId: 'ws-a' });
+    const autoCommitSwitch = getByRole('switch');
+    expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('true');
+    expect(container.textContent).toContain('Committing');
+
+    await rerender({ workspaceId: 'ws-b' });
+
+    await waitFor(() => {
+      expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('false');
+      expect(container.textContent).toContain('Creating PR');
+    });
+    expect(container.textContent).not.toContain('Committing');
+
+    await fireEvent.click(autoCommitSwitch);
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'ws-settings/setAutoCommitEnabled',
+      payload: ['ws-b', true],
+    });
   });
 });

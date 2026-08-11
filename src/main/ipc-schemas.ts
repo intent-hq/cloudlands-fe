@@ -93,6 +93,7 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'workspace:opened',
   'workspace:closed',
   'workspace:activity',
+  'workspace:displayStatus-changed',
   // Spec/goal events
   'spec:updated',
   'goal:updated',
@@ -1093,6 +1094,7 @@ export const WindowSetFullScreenSchema = z.object({
 
 export const WindowSetBrowserFocusedSchema = z.object({
   browserFocused: z.boolean(),
+  focusOwnerId: z.string().min(1, 'Focus owner ID is required'),
 });
 
 // DIALOG_CHANNELS schemas

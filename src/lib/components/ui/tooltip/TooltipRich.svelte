@@ -3,13 +3,14 @@
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils.js';
   import {
-  faXmark,
-  faInfo,
-  faCircleExclamation,
-  faCircleCheck,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+    faXmark,
+    faInfo,
+    faCircleExclamation,
+    faCircleCheck,
+    faTriangleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
+  import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -23,6 +24,7 @@
     alignOffset?: number;
     delayDuration?: number;
     disableHoverableContent?: boolean;
+    disableCloseOnTriggerClick?: boolean;
     disabled?: boolean;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
@@ -46,6 +48,7 @@
     iconClass?: string;
     footerClass?: string;
     descriptionClass?: string;
+    onclick?: (event: MouseEvent) => void;
   }
 
   let {
@@ -58,6 +61,7 @@
     alignOffset = 0,
     delayDuration = 200,
     disableHoverableContent = false,
+    disableCloseOnTriggerClick = false,
     disabled = false,
     open = $bindable(false),
     onOpenChange,
@@ -78,6 +82,7 @@
     iconClass = '',
     footerClass = '',
     descriptionClass = '',
+    onclick,
   }: Props = $props();
 
   // Variant configurations
@@ -90,32 +95,32 @@
       iconColor: '',
     },
     info: {
-      bg: 'bg-blue-50 dark:bg-blue-950/20',
-      text: 'text-blue-900 dark:text-blue-100',
-      border: 'border border-blue-200 dark:border-blue-800',
+      bg: 'bg-info/10',
+      text: 'text-info',
+      border: 'border border-info/40',
       icon: faInfo,
-      iconColor: 'text-blue-500',
+      iconColor: 'text-info',
     },
     success: {
-      bg: 'bg-green-50 dark:bg-green-950/20',
-      text: 'text-green-900 dark:text-green-100',
-      border: 'border border-green-200 dark:border-green-800',
+      bg: 'bg-success/10',
+      text: 'text-success',
+      border: 'border border-success/40',
       icon: faCircleCheck,
-      iconColor: 'text-green-500',
+      iconColor: 'text-success',
     },
     warning: {
-      bg: 'bg-yellow-50 dark:bg-yellow-950/20',
-      text: 'text-yellow-900 dark:text-yellow-100',
-      border: 'border border-yellow-200 dark:border-yellow-800',
+      bg: 'bg-warning/10',
+      text: 'text-warning',
+      border: 'border border-warning/40',
       icon: faTriangleExclamation,
-      iconColor: 'text-yellow-500',
+      iconColor: 'text-warning',
     },
     error: {
-      bg: 'bg-red-50 dark:bg-red-950/20',
-      text: 'text-red-900 dark:text-red-100',
-      border: 'border border-red-200 dark:border-red-800',
+      bg: 'bg-destructive',
+      text: 'text-destructive-foreground',
+      border: 'border border-destructive-foreground/40',
       icon: faCircleExclamation,
-      iconColor: 'text-red-500',
+      iconColor: 'text-destructive-foreground',
     },
     custom: {
       bg: '',
@@ -133,7 +138,8 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-[200] shadow-lg border border-border',
+      'z-(--layer-tooltip) rounded-md border border-border shadow-(--elevation-overlay)',
+      'motion-reduce:animate-none motion-reduce:transition-none',
       !disableAnimation && [
         'animate-in fade-in-0 zoom-in-95',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
@@ -169,18 +175,29 @@
     onOpenChange={handleOpenChange}
     delayDuration={interactive ? 0 : delayDuration}
     disableHoverableContent={!interactive && disableHoverableContent}
+    {disableCloseOnTriggerClick}
   >
-    <TooltipPrimitive.Trigger class={cn('inline-flex', className)} {disabled} data-tooltip-trigger>
-      {#if trigger}
-        {@render trigger?.()}
-      {:else if children}
-        {@render children?.()}
-      {/if}
+    <TooltipPrimitive.Trigger
+      class={cn('inline-flex', className)}
+      {disabled}
+      {onclick}
+      data-tooltip-trigger
+    >
+      {#snippet child({ props })}
+        <TooltipTriggerWrapper triggerProps={props}>
+          {#if trigger}
+            {@render trigger?.()}
+          {:else if children}
+            {@render children?.()}
+          {/if}
+        </TooltipTriggerWrapper>
+      {/snippet}
     </TooltipPrimitive.Trigger>
 
     {#if !disabled && (title || description || content)}
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
+          role="tooltip"
           {side}
           {align}
           {sideOffset}
@@ -193,7 +210,7 @@
             {#if showClose}
               <button
                 onclick={handleClose}
-                class="absolute -top-1 -right-1 p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                class="absolute -right-1 -top-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                 aria-label={m.ui_tooltipRich_close_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />
@@ -211,17 +228,17 @@
                     />
                   {/if}
                   {#if title}
-                    <h4 class="font-semibold text-sm leading-tight">{title}</h4>
+                    <h4 class="type-body font-medium">{title}</h4>
                   {/if}
                 </div>
               {/if}
 
               {#if description}
-                <p class={cn('text-sm leading-snug opacity-90', descriptionClass)}>{description}</p>
+                <p class={cn('type-body opacity-90', descriptionClass)}>{description}</p>
               {/if}
 
               {#if content}
-                <div class="text-xs">
+                <div class="type-caption">
                   {@render content?.()}
                 </div>
               {/if}

@@ -1,0 +1,27 @@
+diff --git a/dist/toast-state.svelte.js b/dist/toast-state.svelte.js
+index 5923dfcdec11deaf99940bc73a4aa1065f801d59..edbb4e0b3c0fb090223eea51c986927e71e72b12 100644
+--- a/dist/toast-state.svelte.js
++++ b/dist/toast-state.svelte.js
+@@ -152,15 +152,18 @@ class ToastState {
+         return id;
+     };
+     removeHeight = (id) => {
+-        this.heights = this.heights.filter((height) => height.toastId !== id);
++        this.heights = this.heights.filter((height) => height?.toastId !== id);
+     };
+     setHeight = (data) => {
+-        const toastIdx = this.#findToastIdx(data.toastId);
+-        if (toastIdx === null) {
++        const heightIdx = this.heights.findIndex((height) => height?.toastId === data.toastId);
++        if (heightIdx === -1) {
+             this.heights.push(data);
+             return;
+         }
+-        this.heights[toastIdx] = data;
++        const currentHeight = this.heights[heightIdx];
++        if (currentHeight?.height === data.height)
++            return;
++        this.heights[heightIdx] = data;
+     };
+     reset = () => {
+         this.toasts = [];

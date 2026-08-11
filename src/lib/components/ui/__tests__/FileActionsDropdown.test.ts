@@ -1,15 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import TestWrapper from './TestWrapper.svelte';
 
 // Create mock logger outside describe block
@@ -51,7 +41,7 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 // Mock the workspace actions menu
-vi.mock('$lib/components/ui/WorkspaceActionsMenu.svelte', async () => {
+vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => {
   const MockMenu = (await import('./mocks/WorkspaceActionsMenu.svelte')).default;
   return { default: MockMenu };
 });

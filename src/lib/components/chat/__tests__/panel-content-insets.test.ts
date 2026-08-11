@@ -1,0 +1,27 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+function source(relativePath: string) {
+  return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8');
+}
+
+describe('panel content insets', () => {
+  it('aligns the panel header, transcript, and docked composer content', () => {
+    const header = source('src/lib/components/layout/panel-system/PanelTabBar.svelte');
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
+
+    expect(header).toContain('bg-card pl-4 pr-2.5 sm:pl-6');
+    expect(panel.match(/max-w-\[var\(--content-measure-wide\)\]/g)?.length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(panel).toContain(": 'px-4 pt-2 sm:px-6'");
+    expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
+    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain("editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-4! sm:px-6!'}");
+    expect(panel).toContain("contentInsetClassName={isChiefWorkspace ? 'px-1.5' : undefined}");
+    expect(input).toContain("contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2')");
+    expect(input.match(/\{contentInsetClasses\}/g)?.length).toBe(3);
+  });
+});

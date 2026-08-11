@@ -1,19 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceStatus } from '$shared/types';
 
 const {
@@ -123,7 +112,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({
@@ -209,7 +199,7 @@ vi.mock('./ui/skeleton', async () => {
   return { Skeleton: MockSimple };
 });
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => {
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => {
   const MockSimple = (await import('./workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default;
   return { default: MockSimple };

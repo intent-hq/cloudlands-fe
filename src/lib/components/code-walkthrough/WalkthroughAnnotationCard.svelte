@@ -14,7 +14,7 @@
   faStar,
 } from '@fortawesome/free-solid-svg-icons';
   import type { AnnotationCategory, AnnotationImportance } from './types';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     message: string;

@@ -156,7 +156,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-feed-rule {
@@ -184,7 +184,7 @@
     font:
       500 10.5px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     letter-spacing: 0.08em;
   }
   .hud-feed-list {
@@ -218,7 +218,7 @@
     animation: hud-hint-b 2.5s ease-out both;
   }
   .hud-feed-time {
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     flex: none;
     width: 54px;
   }
@@ -230,7 +230,7 @@
   .hud-feed-tag {
     flex: none;
     border: 1px solid hsl(var(--border));
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     padding: 0 5px;
     font-size: 8.5px;
     letter-spacing: 0.08em;
@@ -245,7 +245,7 @@
     text-overflow: ellipsis;
   }
   .hud-feed-text {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;

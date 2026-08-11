@@ -141,6 +141,8 @@
     showEmptyIcon?: boolean;
     showTriggerChevron?: boolean;
     triggerChevronClass?: string;
+    triggerIcon?: any;
+    triggerAriaLabel?: string;
     onClear?: () => void;
   }
 
@@ -157,6 +159,8 @@
     showEmptyIcon = false,
     showTriggerChevron = false,
     triggerChevronClass = 'ml-2 opacity-50',
+    triggerIcon,
+    triggerAriaLabel,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClear,
   }: Props = $props();
@@ -337,7 +341,8 @@
     if (!name || name.trim().length === 0) return undefined; // empty is handled elsewhere
     const t = name.trim();
     if (t.includes('/') || t.includes('\\')) return m.workspace_repoSelector_nameSeparators_error();
-    if (t === '..' || t === '.' || /^\.+$/.test(t)) return m.workspace_repoSelector_nameDots_error();
+    if (t === '..' || t === '.' || /^\.+$/.test(t))
+      return m.workspace_repoSelector_nameDots_error();
     if (t.includes('\0')) return m.workspace_repoSelector_nameNull_error();
     if (/[<>:"|?*]/.test(t)) return m.workspace_repoSelector_nameInvalid_error();
     if (t.length > 255) return m.workspace_repoSelector_nameTooLong_error();
@@ -1374,29 +1379,33 @@
 
 <div class="relative">
   <Select.Root bind:value={selectedValue} bind:open={isOpen}>
-    <Select.Trigger {variant} class={`w-full ${triggerClass}`}>
+    <Select.Trigger {variant} class={`w-full ${triggerClass}`} aria-label={triggerAriaLabel}>
       <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
         <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25" />
         {/if} -->
-        {#if showEmptyIcon && !selectedValue}
+        {#if triggerIcon}
+          <Fa icon={triggerIcon} size="xs" />
+        {:else if showEmptyIcon && !selectedValue}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
         {/if}
-        <span class="flex-1 text-left truncate">
-          {#if selectedValue}
-            <span class={triggerValueClass}>{triggerDisplayValue}</span>
-            {#if isNewRepo && !displayValue}
-              <span class="text-sm text-subtle ml-1">{m.workspace_repoSelector_new_label()}</span>
+        {#if !triggerIcon && (selectedValue || emptyLabel)}
+          <span class="flex-1 text-left truncate">
+            {#if selectedValue}
+              <span class={triggerValueClass}>{triggerDisplayValue}</span>
+              {#if isNewRepo && !displayValue}
+                <span class="text-sm text-subtle ml-1">{m.workspace_repoSelector_new_label()}</span>
+              {/if}
+            {:else}
+              <span class={triggerValueClass}>{emptyLabel}</span>
             {/if}
             {#if triggerSuffix}
               <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
             {/if}
-          {:else}
-            <span class={triggerValueClass}>{emptyLabel}</span>
-          {/if}
-        </span>
+          </span>
+        {/if}
         {#if showTriggerChevron}
           <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
         {/if}
@@ -1408,7 +1417,9 @@
     >
       <!-- Header -->
       <div class="px-4 pt-2 pb-3">
-        <h2 class="text-base font-semibold text-foreground">{m.workspace_repoSelector_whichRepo_label()}</h2>
+        <h2 class="text-base font-semibold text-foreground">
+          {m.workspace_repoSelector_whichRepo_label()}
+        </h2>
         <p class="text-sm text-subtle mt-1">
           {m.workspace_repoSelector_whichRepo_description()}
         </p>
@@ -1416,10 +1427,10 @@
 
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+        {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
           <button
             type="button"
-            class="flex-1 px-3 py-1.5 text-sm rounded-md cursor-pointer transition-all {activeTab ===
+            class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
             tab.id
               ? 'bg-background font-medium text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'}"
@@ -1453,7 +1464,8 @@
             <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
             <!-- i18n-ignore (GitHub path format example placeholder) -->
-            <Input placeholder="owner/repo"
+            <Input
+              placeholder="owner/repo"
               bind:this={inputElement}
               bind:ref={githubInputElement}
               type="text"
@@ -1539,7 +1551,9 @@
               <span class="text-sm text-subtle truncate flex-1">
                 {detectedGitHub.owner}/{detectedGitHub.repo}
               </span>
-              <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0">{m.workspace_repoSelector_select_label()}</Button>
+              <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0"
+                >{m.workspace_repoSelector_select_label()}</Button
+              >
             </div>
           {/if}
         {:else if activeTab === 'new'}
@@ -1549,7 +1563,9 @@
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
           >
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_parentFolder_label()}</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+              >{m.workspace_repoSelector_parentFolder_label()}</span
+            >
             <span
               class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
                 ? 'text-foreground'
@@ -1562,9 +1578,12 @@
             </span>
           </button>
           <div class="flex items-center gap-3">
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1">{m.workspace_repoSelector_folderName_label()}</span>
+            <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+              >{m.workspace_repoSelector_folderName_label()}</span
+            >
             <!-- i18n-ignore (example folder name placeholder) -->
-            <Input placeholder="new-project"
+            <Input
+              placeholder="new-project"
               type="text"
               bind:value={newRepoProjectName}
               onkeydown={(e) => {
@@ -1602,12 +1621,16 @@
                   <span class="text-sm text-subtle">
                     {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
                   </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">{m.workspace_repoSelector_select_label()}</Button>
+                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                    >{m.workspace_repoSelector_select_label()}</Button
+                  >
                 </div>
               {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
                 <!-- Existing folder but not a git repo -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-amber-500"> {m.workspace_repoSelector_folderNotGitRepo_label()} </span>
+                  <span class="text-sm text-amber-500">
+                    {m.workspace_repoSelector_folderNotGitRepo_label()}
+                  </span>
                   <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0" disabled
                     >{m.workspace_repoSelector_create_label()}</Button
                   >
@@ -1615,8 +1638,12 @@
               {:else}
                 <!-- New folder - will create -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-subtle">{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0">{m.workspace_repoSelector_create_label()}</Button>
+                  <span class="text-sm text-subtle"
+                    >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
+                  >
+                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                    >{m.workspace_repoSelector_create_label()}</Button
+                  >
                 </div>
               {/if}
             </div>
@@ -1661,7 +1688,9 @@
               </div>
             {/each}
             {#if remoteSetups.length === 0}
-              <div class="text-sm text-subtle px-3 py-2">{m.workspace_repoSelector_noRemoteSetups_label()}</div>
+              <div class="text-sm text-subtle px-3 py-2">
+                {m.workspace_repoSelector_noRemoteSetups_label()}
+              </div>
             {/if}
             <button
               type="button"
@@ -1684,7 +1713,9 @@
               <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
                 {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
               </div>
-              <div class="text-sm text-subtle mb-2">{m.workspace_repoSelector_notGitRepository_label()}</div>
+              <div class="text-sm text-subtle mb-2">
+                {m.workspace_repoSelector_notGitRepository_label()}
+              </div>
               <div class="flex gap-2">
                 <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
                   >{m.workspace_repoSelector_initializeGit_label()}</Button
@@ -1723,10 +1754,10 @@
                     : ''}"
                   onclick={() => handleSelectRepo(repo)}
                 >
-                  {#if repo.owner}
+                  {#if label.ownerPrefix}
                     <img
-                      src={getGitHubAvatarUrl(repo.owner, 32)}
-                      alt={repo.owner}
+                      src={getGitHubAvatarUrl(label.ownerPrefix, 32)}
+                      alt={label.ownerPrefix}
                       class="w-4 h-4 rounded-full shrink-0"
                       loading="lazy"
                       onerror={(e) =>

@@ -1,15 +1,15 @@
 <script lang="ts">
   import type { HTMLInputAttributes, HTMLInputTypeAttribute } from 'svelte/elements';
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
 
   type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
 
   type Props = WithElementRef<
     Omit<HTMLInputAttributes, 'type'> &
-      ({ type: 'file'; files?: FileList, noFocusStyle?: boolean } | { type?: InputType; files?: undefined, noFocusStyle?: boolean })
+      (
+        | { type: 'file'; files?: FileList; noFocusStyle?: boolean }
+        | { type?: InputType; files?: undefined; noFocusStyle?: boolean }
+      )
   >;
 
   let {
@@ -46,9 +46,11 @@
     bind:this={ref}
     data-slot={dataSlot}
     class={cn(
-      'selection:bg-primary dark:bg-input/30 selection:text-primary-foreground border-input ring-offset-background placeholder:text-muted-foreground flex h-9 w-full min-w-0 rounded-md border bg-transparent px-3 pt-1.5 text-sm font-medium outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-      'focus:ring-0 focus:outline-0',
-      'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+      'type-body border-border bg-card text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 shadow-none outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input file:mr-3 file:border-0 file:bg-transparent file:font-medium file:text-foreground disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
+      noFocusStyle
+        ? 'focus-visible:outline-none focus-visible:ring-0'
+        : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
+      'aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25',
       className,
     )}
     type="file"
@@ -61,10 +63,11 @@
     bind:this={ref}
     data-slot={dataSlot}
     class={cn(
-      'border-input bg-background selection:bg-primary dark:bg-input/30 selection:text-primary-foreground ring-offset-background placeholder:text-muted-foreground flex h-9 w-full min-w-0 rounded-md border px-3 py-1 text-base outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-      'focus:ring-0 focus:outline-0',
-      noFocusStyle ? 'focus:ring-0! focus:outline-0!' : 'focus:ring-1 focus:ring-ring focus:ring-offset-1',
-      'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+      'type-body border-border bg-card text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground/70 flex h-(--control-height-medium) w-full min-w-0 rounded-(--radius-medium) border px-3 py-1 shadow-none outline-none transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-input read-only:bg-muted/30 read-only:text-muted-foreground read-only:hover:border-border disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60 disabled:hover:border-border motion-reduce:transition-none',
+      noFocusStyle
+        ? 'focus-visible:outline-none focus-visible:ring-0'
+        : 'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-0',
+      'aria-invalid:border-destructive-foreground aria-invalid:ring-1 aria-invalid:ring-destructive-foreground/25',
       className,
     )}
     {type}

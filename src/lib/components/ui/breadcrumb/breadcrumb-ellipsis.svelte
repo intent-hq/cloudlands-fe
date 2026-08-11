@@ -13,7 +13,7 @@
 <span
   role="presentation"
   aria-hidden="true"
-  class={cn('flex h-9 w-9 items-center justify-center', className)}
+  class={cn('flex h-8 w-8 shrink-0 items-center justify-center', className)}
   {...restProps}
 >
   <Fa icon={faEllipsis} size="1x" class="h-4 w-4" />

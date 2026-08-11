@@ -6,28 +6,25 @@
    * This is the app-wide palette, not the inline slash-command suggester used
    * in text inputs.
    */
-  import {
-  onMount,
-  untrack,
-} from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { fly } from 'svelte/transition';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
-  faSearch,
-  faFile,
-  faCog,
-  faFolderOpen,
-  faTerminal,
-  faCommentDots,
-  faFileAlt,
-  faCodeBranch,
-  faPlus,
-  faGlobe,
-  faPlay,
-} from '@fortawesome/free-solid-svg-icons';
+    faSearch,
+    faFile,
+    faCog,
+    faFolderOpen,
+    faTerminal,
+    faCommentDots,
+    faFileAlt,
+    faCodeBranch,
+    faPlus,
+    faGlobe,
+    faPlay,
+  } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
@@ -43,34 +40,34 @@
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-  openWorkspaceBrowser,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceBrowser,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
-  commandPaletteNewFileRequested,
-  openAgentTabRequested,
-  openTerminalTabRequested,
-} from '$store/renderer/slices/app-layout/app-layout-slice';
+    commandPaletteNewFileRequested,
+    openAgentTabRequested,
+    openTerminalTabRequested,
+  } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-  type PaletteFilter,
-  type WorkspaceObject,
-  FILTER_PREFIXES,
-  fuzzyScore,
-  formatRelativeTime,
-  parseQueryFilter,
-  buildNoteBreadcrumbs,
-  buildRecentItems,
-} from '$store/renderer/slices/command-palette/command-palette-utils';
+    type PaletteFilter,
+    type WorkspaceObject,
+    FILTER_PREFIXES,
+    fuzzyScore,
+    formatRelativeTime,
+    parseQueryFilter,
+    buildNoteBreadcrumbs,
+    buildRecentItems,
+  } from '$store/renderer/slices/command-palette/command-palette-utils';
   import {
-  recordPaletteFileMru,
-  recordPaletteMruItem,
-} from '$store/renderer/slices/palette/palette-slice';
+    recordPaletteFileMru,
+    recordPaletteMruItem,
+  } from '$store/renderer/slices/palette/palette-slice';
   import {
-  selectPaletteFileMru,
-  selectPaletteMruEntries,
-} from '$store/renderer/slices/palette/palette-selectors';
+    selectPaletteFileMru,
+    selectPaletteMruEntries,
+  } from '$store/renderer/slices/palette/palette-selectors';
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
@@ -79,12 +76,12 @@
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
   import {
-  compareWorkspaceActivityDisplayTimeDesc,
-  getWorkspaceActivityDisplayTime,
-} from '$shared/utils/workspace-activity-time';
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('CommandPalette');
@@ -238,7 +235,10 @@
   );
   let recentItems: WorkspaceObject[] = $derived(
     workspaceId
-      ? buildRecentItems([...agents, ...notes, ...changes, ...terminals, ...browserUrls], $paletteMruEntries$)
+      ? buildRecentItems(
+          [...agents, ...notes, ...changes, ...terminals, ...browserUrls],
+          $paletteMruEntries$,
+        )
       : [],
   );
 
@@ -414,23 +414,21 @@
       const q = (pattern || '').trim();
       if (q) {
         const mru = getMRUMap();
-        return (
-          (mapped as any[])
-            .map((m: any) => ({
-              ...m,
-              _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
-              _mru: m.path ? mru.get(m.path) || 0 : 0,
-            }))
-            .filter((m: any) => m._score !== -Infinity)
-            .sort(
-              (a: any, b: any) =>
-                (b._score as number) - (a._score as number) ||
-                (b._mru as number) - (a._mru as number),
-            )
+        return (mapped as any[])
+          .map((m: any) => ({
+            ...m,
+            _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
+            _mru: m.path ? mru.get(m.path) || 0 : 0,
+          }))
+          .filter((m: any) => m._score !== -Infinity)
+          .sort(
+            (a: any, b: any) =>
+              (b._score as number) - (a._score as number) ||
+              (b._mru as number) - (a._mru as number),
+          )
 
-            .map(({ _score, _mru, ...rest }: any) => rest)
-            .slice(0, 8)
-        );
+          .map(({ _score, _mru, ...rest }: any) => rest)
+          .slice(0, 8);
       } else {
         return rankByMRU(mapped).slice(0, 8);
       }
@@ -781,9 +779,7 @@
           break;
         case 'note':
           if (workspaceId) {
-            appStore.dispatch(
-              openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }),
-            );
+            appStore.dispatch(openWorkspaceNote(workspaceId, item.id, { openInAdjacentPanel }));
           }
           break;
         case 'change':
@@ -793,9 +789,7 @@
           break;
         case 'terminal':
           if (workspaceId) {
-            appStore.dispatch(
-              openTerminalTabRequested(workspaceId, { terminalId: item.id }),
-            );
+            appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId: item.id }));
           }
           break;
         case 'browser':
@@ -1064,7 +1058,7 @@
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
                     <kbd
-                      class="text-ui px-1.5 py-0.5 rounded bg-foreground/[0.04] text-foreground/30 font-mono normal-case"
+                      class="text-ui px-1.5 py-0.5 rounded bg-foreground/[0.04] text-foreground/30 normal-case"
                     >
                       {item._shortcutKey}
                     </kbd>

@@ -219,7 +219,7 @@
     auggieCommand = null;
   }
 
-  // Provider setup is now non-blocking on the homepage — the gate is retained
+  // Provider setup is now non-blocking in the app shell — the gate is retained
   // for the multi-provider setup UI it hosts, but not rendered by default.
   const shouldBlock = $derived.by(() => false);
 

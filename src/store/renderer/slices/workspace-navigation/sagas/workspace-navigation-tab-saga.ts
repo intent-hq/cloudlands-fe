@@ -7,9 +7,14 @@ import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layo
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
+  openWorkspaceActivityChanges,
+  openWorkspaceBrowser,
+  openWorkspaceChatChanges,
+  openWorkspaceCodeReview,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
+  openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from '../workspace-navigation-slice';
 
@@ -18,9 +23,15 @@ function* openWorkspaceTab(
   tab: Omit<PanelTab, 'id'>,
   adjacent: boolean,
   sourcePanelId?: string,
+  openInNewAdjacentPanel = false,
 ): SagaGenerator<void> {
   if (adjacent) {
-    yield* put(openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true }));
+    yield* put(
+      openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {
+        force: true,
+        alwaysSplit: openInNewAdjacentPanel,
+      }),
+    );
     return;
   }
   yield* put(openTab(workspaceId, tab, sourcePanelId, undefined, true));
@@ -90,6 +101,7 @@ function* openNote(action: ReturnType<typeof openWorkspaceNote>): SagaGenerator<
     },
     adjacent,
     options?.sourcePanelId,
+    options?.openInNewAdjacentPanel ?? false,
   );
 }
 
@@ -119,9 +131,106 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
   );
 }
 
+function* openBrowser(action: ReturnType<typeof openWorkspaceBrowser>): SagaGenerator<void> {
+  const [workspaceId, url] = action.payload;
+  if (!workspaceId || !url) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'browser',
+      title: m.layout_tabTypes_browser_title(),
+      browserUrl: url,
+      workspaceId,
+      closable: true,
+    },
+    false,
+  );
+}
+
+function* openLocalChanges(
+  action: ReturnType<typeof openWorkspaceLocalChanges>,
+): SagaGenerator<void> {
+  const [workspaceId] = action.payload;
+  if (!workspaceId) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'local-changes',
+      title: m.layout_tabTypes_localChanges_title(),
+      workspaceId,
+      closable: true,
+    },
+    false,
+  );
+}
+
+function* openChatChanges(
+  action: ReturnType<typeof openWorkspaceChatChanges>,
+): SagaGenerator<void> {
+  const [workspaceId, changes, title, options] = action.payload;
+  if (!workspaceId) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'chat-changes',
+      title: title || m.layout_tabTypes_chatChanges_title(),
+      workspaceId,
+      closable: true,
+      data: {
+        changes,
+        isAggregate: options?.isAggregate ?? false,
+        ...(options?.messageId ? { messageId: options.messageId } : {}),
+        ...(options?.agentId ? { agentId: options.agentId } : {}),
+        ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
+      },
+    },
+    Boolean(options?.sourcePanelId),
+    options?.sourcePanelId,
+  );
+}
+
+function* openActivityChanges(
+  action: ReturnType<typeof openWorkspaceActivityChanges>,
+): SagaGenerator<void> {
+  const [workspaceId, event] = action.payload;
+  if (!workspaceId || !event) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'activity-changes',
+      title: m.layout_tabTypes_activityChanges_title(),
+      workspaceId,
+      closable: true,
+      data: { event },
+    },
+    false,
+  );
+}
+
+function* openCodeReview(action: ReturnType<typeof openWorkspaceCodeReview>): SagaGenerator<void> {
+  const [workspaceId, review] = action.payload;
+  if (!workspaceId) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'code-review',
+      title: m.layout_tabTypes_codeReview_title(),
+      workspaceId,
+      closable: true,
+      data: { ...review },
+    },
+    false,
+  );
+}
+
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
+  yield* takeEvery(openWorkspaceActivityChanges, openActivityChanges);
+  yield* takeEvery(openWorkspaceBrowser, openBrowser);
+  yield* takeEvery(openWorkspaceChatChanges, openChatChanges);
+  yield* takeEvery(openWorkspaceCodeReview, openCodeReview);
   yield* takeEvery(openWorkspaceCommitChangeset, openCommit);
   yield* takeEvery(openWorkspaceFile, openFile);
+  yield* takeEvery(openWorkspaceLocalChanges, openLocalChanges);
   yield* takeEvery(openWorkspaceNote, openNote);
   yield* takeEvery(openWorkspaceDiff, openDiff);
 }

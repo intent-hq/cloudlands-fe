@@ -138,6 +138,7 @@
 </script>
 
 <div
+  role="group"
   class="cylinder-scroller"
   style={containerStyle}
   bind:this={scrollContainer}

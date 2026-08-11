@@ -21,7 +21,7 @@
 } from './patch-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughAnnotationCard from './WalkthroughAnnotationCard.svelte';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The unified diff/patch string */

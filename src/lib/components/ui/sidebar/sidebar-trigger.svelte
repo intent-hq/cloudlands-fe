@@ -24,6 +24,7 @@
   data-slot="sidebar-trigger"
   variant="ghost"
   size="icon"
+  aria-label="Toggle sidebar"
   class={cn('size-7', className)}
   type="button"
   onclick={(e) => {

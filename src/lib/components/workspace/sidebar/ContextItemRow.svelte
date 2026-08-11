@@ -6,14 +6,14 @@
    * Supports nested display for items under notes.
    */
   import type { ContextItem } from '$features/context/types';
-  import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
+  import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import Fa from 'svelte-fa';
   import {
-  faExternalLink,
-  faChevronRight,
-  faTrash,
-  faArrowUpRightFromSquare,
-} from '@fortawesome/free-solid-svg-icons';
+    faExternalLink,
+    faChevronRight,
+    faTrash,
+    faArrowUpRightFromSquare,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -78,7 +78,6 @@
     e.preventDefault();
     onExternalOpen?.(item);
   }
-
 
   // Can delete non-note items
   const canDelete = $derived(item.type !== 'note');
@@ -167,9 +166,7 @@
   <!-- Content -->
   <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
     <div class="w-full min-w-0 flex items-center gap-1.5">
-      <span class="text-ui truncate {isSelected ? 'text-primary' : ''}"
-        >{displayTitle()}</span
-      >
+      <span class="text-ui truncate {isSelected ? 'text-primary' : ''}">{displayTitle()}</span>
       {#if item.type === 'note' && item.isSpec}
         <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
           >{m.workspace_contextItem_spec_label()}</span

@@ -21,10 +21,13 @@ import {
   loadWorkspaceTabsState,
   markWorkspaceTabOptimistic,
   markWorkspaceTabUnsaved,
+  moveWorkspace,
   openWorkspaceTab,
   removeScrollPosition,
   reorderWorkspaceTabs,
+  reopenLastClosedWorkspaceTab,
   saveScrollPosition,
+  setWorkspaceViewMode,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
@@ -44,6 +47,8 @@ const persistedTabs = {
   unsavedTabs: [],
   optimisticTabs: ['optimistic-1'],
   tabOrder: ['ws-1'],
+  workspaceStacks: [['ws-1']],
+  viewMode: 'columns' as const,
 };
 
 const state = {
@@ -55,6 +60,8 @@ const state = {
     unsavedTabs: {},
     optimisticTabs: { 'optimistic-1': true },
     tabOrder: ['ws-1'],
+    workspaceStacks: [['ws-1']],
+    viewMode: 'columns' as const,
   },
   workspace: { hasLoaded: true },
   connections: { activeId: LOCAL_CONNECTION_ID },
@@ -106,17 +113,20 @@ describe('tabStateSaga', () => {
   it.each([
     openWorkspaceTab('ws-1'),
     closeWorkspaceTab('ws-1'),
+    reopenLastClosedWorkspaceTab(),
     clearCurrentWorkspaceTab(),
     cleanupInvalidWorkspaceTabs(['ws-1']),
     toggleWorkspaceTabPin('ws-1'),
     markWorkspaceTabUnsaved('ws-1', true),
     reorderWorkspaceTabs('ws-1', 'ws-2'),
+    moveWorkspace('ws-1', 'ws-2', 'above'),
     markWorkspaceTabOptimistic('optimistic-1'),
     unmarkWorkspaceTabOptimistic('optimistic-1'),
     handleOptimisticWorkspaceTabTransition('optimistic-1', 'ws-1'),
     switchToNextWorkspaceTab(),
     switchToPreviousWorkspaceTab(),
     switchToWorkspaceTabByIndex(0),
+    setWorkspaceViewMode('columns'),
   ])('persists the exact post-reducer tab snapshot for $type', async (action) => {
     storage.getJSON.mockReturnValue(undefined);
     const channel = stdChannel();
@@ -213,6 +223,47 @@ describe('tabStateSaga', () => {
         loadScrollPositions({}),
         loadWorkspaceTabsState(persistedTabs),
       ]);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  describe('regression: clear recently-closed tabs on backend switch', () => {
+    it('loads workspace tabs state on backend switch', async () => {
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      let backendId = LOCAL_CONNECTION_ID;
+      const task = runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () => ({ ...state, connections: { activeId: backendId } }),
+        },
+        tabStateSaga,
+      );
+      await new Promise(setImmediate);
+
+      storage.getJSON.mockReturnValue({
+        openTabs: ['ws-2'],
+        currentTabId: 'ws-2',
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: ['ws-2'],
+        workspaceStacks: [['ws-2']],
+        viewMode: 'single',
+      });
+
+      backendId = 'remote-backend';
+      dispatch.mockClear();
+      channel.put(connectionsListReceived({ connections: [], activeId: 'remote-backend' }));
+      await new Promise(setImmediate);
+
+      const loadActions = dispatch.mock.calls.filter(
+        ([action]) => action.type === loadWorkspaceTabsState.type,
+      );
+      expect(loadActions.length).toBeGreaterThan(0);
+
       task.cancel();
       await task.toPromise();
     });

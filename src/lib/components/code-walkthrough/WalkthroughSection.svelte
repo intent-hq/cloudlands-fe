@@ -14,7 +14,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import type { WalkthroughSection as SectionType, WalkthroughAnnotation } from './types';
   import WalkthroughDiffViewer from './WalkthroughDiffViewer.svelte';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Section data */

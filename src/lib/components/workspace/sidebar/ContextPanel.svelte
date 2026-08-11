@@ -9,10 +9,10 @@
   import type { ContextItem, ContextProvider } from '$features/context/types';
 
   import {
-  initContextForWorkspace,
-  addContextItem,
-  removeContextItem,
-} from '$store/renderer/slices/context/context-slice';
+    initContextForWorkspace,
+    addContextItem,
+    removeContextItem,
+  } from '$store/renderer/slices/context/context-slice';
   import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -61,7 +61,6 @@
   // Picker modal state (legacy - for ContextPickerModal)
   let pickerOpen = $state(false);
   let pickerProvider = $state<ContextProvider>('linear');
-
 
   // Initialize context store for this workspace
   let lastInitWorkspaceId: string | undefined;
@@ -114,7 +113,10 @@
   // Handle opening URLs in external browser (explicit "Open in Browser" action)
   function handleExternalOpen(item: ContextItem) {
     if (item.url) {
-      handleLink(item.url, { workspaceId: workspaceId as import('$shared/types/branded-ids').WorkspaceId, forceExternal: true });
+      handleLink(item.url, {
+        workspaceId: workspaceId as import('$shared/types/branded-ids').WorkspaceId,
+        forceExternal: true,
+      });
     }
   }
 
@@ -128,7 +130,9 @@
       layoutManager.openBrowserPanel(item.url, item.id);
     } else if (item.url) {
       // Open other context items (Linear, GitHub, Sentry) in embedded browser panel
-      handleLink(item.url, { workspaceId: workspaceId as import('$shared/types/branded-ids').WorkspaceId });
+      handleLink(item.url, {
+        workspaceId: workspaceId as import('$shared/types/branded-ids').WorkspaceId,
+      });
     }
   }
 
@@ -254,7 +258,7 @@
   onSelect={handlePickerSelect}
 />
 
-<div class="flex flex-col h-full px-2 {className ?? ''}">
+<div class="flex flex-col h-full {className ?? ''}">
   <!-- Add Context Section -->
   {#if showAddSection}
     <div bind:this={addContextAnchor} class="mb-1.5">
@@ -292,6 +296,7 @@
       {onReorderNotes}
       onCreateNote={undefined}
       {loading}
+      flush
     />
 
     <!-- Standalone context items (rendered in same list flow) -->

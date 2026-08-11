@@ -69,22 +69,35 @@ const preventSvelteKitRegenHMR = () => ({
   enforce: 'pre',
   // eslint-disable-next-line no-unused-vars
   handleHotUpdate({ file, server }) {
+    const normalizedFile = file.replace(/\\/g, '/');
     // Block HMR for .svelte-kit/generated and .svelte-kit/types files
-    if (file.includes('.svelte-kit/generated') || file.includes('.svelte-kit/types')) {
-      console.log(`[HMR-BLOCKED] Prevented page reload for: ${file.split('.svelte-kit/')[1]}`);
+    if (
+      normalizedFile.includes('.svelte-kit/generated') ||
+      normalizedFile.includes('.svelte-kit/types')
+    ) {
+      console.log(
+        `[HMR-BLOCKED] Prevented page reload for: ${normalizedFile.split('.svelte-kit/')[1]}`,
+      );
       // Return empty array to prevent HMR from processing this file
       return [];
     }
     // Block HMR for non-source files that can't be hot-updated and would trigger
     // a full page reload, destroying in-flight state (e.g. workspace creation navigation).
     // This is a safety net in case the server.watch.ignored patterns don't catch everything.
-    const basename = file.split('/').pop() || '';
+    const basename = normalizedFile.split('/').pop() || '';
+    const isTestOnlyFile =
+      /\.(test|spec)\.[^/]+$/.test(basename) ||
+      normalizedFile.includes('/__tests__/') ||
+      normalizedFile.includes('/__mocks__/') ||
+      normalizedFile.includes('/tests/') ||
+      normalizedFile.includes('/test/');
     if (
+      isTestOnlyFile ||
       basename === 'package.json' ||
       basename === 'pnpm-lock.yaml' ||
       basename === 'package-lock.json' ||
       basename === 'log.txt' ||
-      file.includes('/test-reports/')
+      normalizedFile.includes('/test-reports/')
     ) {
       console.log(`[HMR-BLOCKED] Prevented page reload for non-source file: ${basename}`);
       return [];
@@ -226,6 +239,9 @@ export default defineConfig(({ mode }) => {
   // transport when window.electronAPI is absent; without it the app boots on
   // the browser mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
+  const useBundledMessages = mode === 'production';
+  const i18nVirtualMessages = '\0intent-paraglide-messages';
+  const i18nVirtualRuntime = '\0intent-paraglide-runtime';
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
@@ -247,9 +263,50 @@ export default defineConfig(({ mode }) => {
     // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
     // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
     plugins: [
+      {
+        name: 'use-production-paraglide-bundle',
+        enforce: 'pre',
+        resolveId(source) {
+          if (useBundledMessages && source.endsWith('/paraglide/messages.js')) {
+            return i18nVirtualMessages;
+          }
+          if (useBundledMessages && source.endsWith('/paraglide/runtime.js')) {
+            return i18nVirtualRuntime;
+          }
+          return null;
+        },
+        load(id) {
+          if (id === i18nVirtualMessages) {
+            return (
+              'const i18n = globalThis.__INTENT_PARAGLIDE_I18N__;\n' +
+              'if (!i18n) throw new Error("Paraglide production bundle was not loaded");\n' +
+              'export const m = i18n.m;\n'
+            );
+          }
+          if (id === i18nVirtualRuntime) {
+            return `
+              const runtime = globalThis.__INTENT_PARAGLIDE_I18N__.runtime;
+              export const baseLocale = runtime.baseLocale;
+              export const locales = runtime.locales;
+              export const overwriteGetLocale = (...args) => runtime.overwriteGetLocale(...args);
+              export const getLocale = (...args) => runtime.getLocale(...args);
+              export const setLocale = (...args) => runtime.setLocale(...args);
+              export const getTextDirection = (...args) => runtime.getTextDirection(...args);
+              export const isLocale = (...args) => runtime.isLocale(...args);
+              export const toLocale = (...args) => runtime.toLocale(...args);
+              export const localizeHref = (...args) => runtime.localizeHref(...args);
+            `;
+          }
+          return null;
+        },
+      },
       paraglideVitePlugin({
         project: join(__dirname, 'project.inlang'),
         outdir: join(__dirname, 'src/shared/paraglide'),
+        // The app-wide `m` namespace uses nearly the complete catalog. Emitting one
+        // module per message creates 5k+ Rollup nodes without useful tree-shaking;
+        // locale modules keep the same runtime contract with a bounded build graph.
+        outputStructure: 'locale-modules',
       }),
       devHealthProbeSilencer(),
       preventSvelteKitRegenHMR(),
@@ -364,6 +421,15 @@ export default defineConfig(({ mode }) => {
           '**/.augment/**',
           '**/playwright-report/**',
           '**/test-results/**',
+          // Tests are not part of the running renderer module graph. Vite falls back to
+          // a full page reload when they change, which destroys in-progress app state
+          // even when the corresponding runtime component updates cleanly through HMR.
+          '**/*.test.*',
+          '**/*.spec.*',
+          '**/__tests__/**',
+          '**/__mocks__/**',
+          '**/tests/**',
+          '**/test/**',
           // Ignore the .workspace/ data subdirectories where runtime data is stored
           // This prevents HMR reloads when agents modify workspace data files
           // Note: We do NOT ignore the entire ~/.workspaces/ directory because
@@ -396,7 +462,6 @@ export default defineConfig(({ mode }) => {
         // Path aliases for cleaner imports
         { find: '$lib', replacement: join(__dirname, './src/lib') },
         { find: '$store', replacement: join(__dirname, './src/store') },
-        { find: '$app', replacement: join(__dirname, './src/app') },
         { find: '$features', replacement: join(__dirname, './src/features') },
         { find: '$shared', replacement: join(__dirname, './src/shared') },
 

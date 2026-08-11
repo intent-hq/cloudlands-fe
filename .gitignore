@@ -111,3 +111,5 @@ resources/sidecar/
 # Speech helper staging directory (build-speech-helper.cjs output)
 resources/speech-helper/
 
+# Generated production-only Paraglide bundle
+static/generated/

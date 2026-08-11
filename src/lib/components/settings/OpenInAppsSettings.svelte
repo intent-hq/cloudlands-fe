@@ -6,22 +6,19 @@
   import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { SettingsFieldRow } from '$lib/components/ui/settings-field-row';
+  import { Switch } from '$lib/components/ui/switch';
   import {
-  selectHiddenEditorIds,
-  selectInstalledEditors,
-} from '$store/renderer/slices/external-editors/external-editors-selectors';
+    selectHiddenEditorIds,
+    selectInstalledEditors,
+  } from '$store/renderer/slices/external-editors/external-editors-selectors';
   import {
-  fetchEditors,
-  toggleHiddenEditor,
-  type InstalledEditor,
-} from '$store/renderer/slices/external-editors/external-editors-slice';
+    fetchEditors,
+    toggleHiddenEditor,
+    type InstalledEditor,
+  } from '$store/renderer/slices/external-editors/external-editors-slice';
 
-  import {
-  faCode,
-  faFolder,
-  faTerminal,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCode, faFolder, faTerminal } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -49,8 +46,7 @@
     return !$hiddenEditorIds$.includes(editorId);
   }
 
-  function handleEditorToggle(editorId: string, value: string | boolean) {
-    const enabled = value === true;
+  function handleEditorToggle(editorId: string, enabled: boolean) {
     if (isEditorEnabled(editorId) !== enabled) {
       appStore.dispatch(toggleHiddenEditor(editorId));
     }
@@ -61,35 +57,45 @@
   }
 </script>
 
-<div class="flex flex-col gap-1">
+<div class="min-w-0 space-y-1" data-open-in-apps>
   {#if installedEditors.length === 0}
-    <p class="text-sm text-subtle">{m.settings_openInApps_empty()}</p>
+    <p class="type-body py-3 text-muted-foreground">{m.settings_openInApps_empty()}</p>
   {:else}
     {#each installedEditors as editor (editor.id)}
-      <div class="flex items-center justify-between gap-4 py-2">
-        <div class="flex items-center gap-3 min-w-0">
-          {#if editor.iconBase64}
-            <img src="data:image/png;base64,{editor.iconBase64}" alt={editor.name} class="w-5 h-5" />
-          {:else if getEditorIcon(editor)}
-            {@const Icon = getEditorIcon(editor)}
-            <Icon size={16} />
-          {:else if editor.category === 'terminal'}
-            <Fa icon={faTerminal} class="w-4 h-4 opacity-60" />
-          {:else if editor.category === 'finder'}
-            <Fa icon={faFolder} class="w-4 h-4 opacity-60" />
-          {:else}
-            <Fa icon={faCode} class="w-4 h-4 opacity-60" />
-          {/if}
-          <span class="text-sm font-medium text-foreground truncate">{editor.name}</span>
-        </div>
-        <Toggle
-          variant="indicator"
-          pressed={isEditorEnabled(editor.id)}
-          onChange={(value) => handleEditorToggle(editor.id, value)}
-          size="xs"
-          ariaLabel={m.settings_openInApps_showToggleAriaLabel({ name: editor.name })}
-        />
-      </div>
+      <SettingsFieldRow
+        id={`open-in-${editor.id}`}
+        htmlFor={`open-in-${editor.id}-switch`}
+        label={editor.name}
+        class="py-2.5 first:pt-2.5 last:pb-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4"
+      >
+        {#snippet leading()}
+          <div
+            class="flex size-8 items-center justify-center overflow-hidden rounded-(--radius-small) bg-muted/50 text-muted-foreground"
+          >
+            {#if editor.iconBase64}
+              <img src="data:image/png;base64,{editor.iconBase64}" alt="" class="size-5" />
+            {:else if getEditorIcon(editor)}
+              {@const Icon = getEditorIcon(editor)}
+              <Icon size={16} />
+            {:else if editor.category === 'terminal'}
+              <Fa icon={faTerminal} class="w-4 h-4 opacity-60" />
+            {:else if editor.category === 'finder'}
+              <Fa icon={faFolder} class="w-4 h-4 opacity-60" />
+            {:else}
+              <Fa icon={faCode} class="w-4 h-4 opacity-60" />
+            {/if}
+          </div>
+        {/snippet}
+        {#snippet control({ labelId })}
+          <Switch
+            id={`open-in-${editor.id}-switch`}
+            checked={isEditorEnabled(editor.id)}
+            onCheckedChange={(enabled) => handleEditorToggle(editor.id, enabled)}
+            size="sm"
+            ariaLabelledby={labelId}
+          />
+        {/snippet}
+      </SettingsFieldRow>
     {/each}
   {/if}
 </div>

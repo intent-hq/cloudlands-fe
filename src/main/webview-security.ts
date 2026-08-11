@@ -16,18 +16,10 @@
  * to ensure consistency across the codebase.
  */
 
-import {
-  app,
-  session,
-  shell,
-  systemPreferences,
-} from 'electron';
+import { app, session, shell, systemPreferences } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  BROWSER_PANEL_PARTITION,
-  BROWSER_PROTOCOLS,
-} from '../shared/constants';
+import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../shared/constants';
 import {
   HUD_ROUTE_PREFIX,
   findExistingHudWindow,
@@ -36,6 +28,7 @@ import {
 } from './hud-window';
 import { isTrustedHidOrigin } from '../features/hardware-console/main/hardware-console.ipc';
 import { Logger } from '../shared/logger';
+import { isTrustedRendererUrl } from './ipc-authorization';
 
 const logger = new Logger('WebviewSecurity');
 
@@ -45,17 +38,32 @@ const __dirname = path.dirname(__filename);
 /**
  * Permissions allowed in the browser panel session.
  * These are needed for OAuth flows and general web browsing.
- * - clipboard-read/write: copy/paste support
+ * - clipboard-sanitized-write: explicit web clipboard writes
  * - storage-access: third-party cookie access (OAuth providers set cookies across domains)
  * - top-level-storage-access: allows top-level sites to request third-party cookie access
  *   on behalf of embedded content (used by federated login flows)
  */
 const BROWSER_PANEL_ALLOWED_PERMISSIONS = new Set([
-  'clipboard-read',
   'clipboard-sanitized-write',
   'storage-access',
   'top-level-storage-access',
 ]);
+
+const APP_CLIPBOARD_PERMISSIONS = new Set(['clipboard-read', 'clipboard-sanitized-write']);
+
+/** @internal Exported for focused permission-boundary tests. */
+export function isDefaultSessionPermissionAllowed(
+  permission: string,
+  requestingUrl: string,
+): boolean {
+  if (permission === 'hid') return isTrustedHidOrigin(requestingUrl);
+  return APP_CLIPBOARD_PERMISSIONS.has(permission) && isTrustedRendererUrl(requestingUrl);
+}
+
+/** @internal Exported for focused permission-boundary tests. */
+export function isBrowserPanelPermissionAllowed(permission: string): boolean {
+  return BROWSER_PANEL_ALLOWED_PERMISSIONS.has(permission);
+}
 
 /**
  * Check if a URL uses a protocol allowed in webviews
@@ -210,7 +218,6 @@ function trackWebviewPopup(popupWindow: Electron.BrowserWindow): void {
   });
 }
 
-
 /**
  * Setup webview security handlers
  * Should be called early in app initialization, before any windows are created
@@ -278,7 +285,9 @@ export function setupWebviewSecurity(): void {
 
       if (contents.getType() === 'webview') {
         if (!isWebviewAllowedUrl(url)) {
-          logger.warn('Blocked disallowed protocol navigation in webview', { url: url.substring(0, 100) });
+          logger.warn('Blocked disallowed protocol navigation in webview', {
+            url: url.substring(0, 100),
+          });
           event.preventDefault();
         }
         return;
@@ -290,7 +299,9 @@ export function setupWebviewSecurity(): void {
       // browser, breaking the authentication flow.
       if (isWebviewPopup(contents)) {
         if (!isWebviewAllowedUrl(url)) {
-          logger.warn('Blocked disallowed protocol in webview popup', { url: url.substring(0, 100) });
+          logger.warn('Blocked disallowed protocol in webview popup', {
+            url: url.substring(0, 100),
+          });
           event.preventDefault();
         }
         return;
@@ -499,7 +510,7 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     const url = details.requestingUrl || webContents?.getURL() || 'unknown';
     logger.info('Permission requested', { permission, url: url.substring(0, 100) });
 
-    if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+    if (isDefaultSessionPermissionAllowed(permission, url)) {
       callback(true);
       return;
     }
@@ -516,17 +527,10 @@ function setupPermissionHandlers(ses: Electron.Session): void {
     logger.warn('Blocked permission request', { permission, url: url.substring(0, 100) });
     callback(false);
   });
-
-
   ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+    const url = requestingOrigin || webContents?.getURL() || 'unknown';
+    if (isDefaultSessionPermissionAllowed(permission, url)) {
       return true;
-    }
-    // WebHID for the hardware console (Creator Micro 2 / Codex Micro): the
-    // app shell may enumerate HID devices; the actual device grant is scoped
-    // to supported VID/PIDs by the feature's device permission handler.
-    if (permission === 'hid') {
-      return isTrustedHidOrigin(requestingOrigin);
     }
     // Audio capture for voice dictation (navigator.permissions / device
     // enumeration checks before the actual getUserMedia request). Video
@@ -537,7 +541,7 @@ function setupPermissionHandlers(ses: Electron.Session): void {
       if (webContents?.getType() === 'webview') {
         return false;
       }
-      return details.mediaType !== 'video' && isAppShellUrl(requestingOrigin);
+      return details.mediaType !== 'video' && isAppShellUrl(url);
     }
     return false;
   });
@@ -636,7 +640,7 @@ function setupBrowserPanelSession(): void {
     const url = details.requestingUrl || webContents?.getURL() || 'unknown';
     logger.info('Browser panel permission requested', { permission, url: url.substring(0, 100) });
 
-    if (BROWSER_PANEL_ALLOWED_PERMISSIONS.has(permission)) {
+    if (isBrowserPanelPermissionAllowed(permission)) {
       logger.debug('Allowing browser panel permission', { permission });
       callback(true);
       return;
@@ -651,9 +655,8 @@ function setupBrowserPanelSession(): void {
 
   // Permission check handler — synchronous permission queries
   browserSession.setPermissionCheckHandler(
-
     (_webContents, permission, _requestingOrigin, _details) => {
-      return BROWSER_PANEL_ALLOWED_PERMISSIONS.has(permission);
+      return isBrowserPanelPermissionAllowed(permission);
     },
   );
 

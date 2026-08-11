@@ -11,7 +11,7 @@
    * When a workspace is provided, hovering the pill opens the disk-usage
    * tooltip and fetches the footprint on demand via the `workspace.diskUsage`
    * method (PROTOCOL §5.1) — list/get rows no longer carry it
-   * (monorepo#1396). While a walk is in flight with no value yet a spinner
+   * (monorepo#1396). While a walk is in flight with no value yet a skeleton
    * shows; once a value exists the tooltip renders total size + file count,
    * the physical-space/scope notes, the per-directory breakdown, and a
    * "shrink" link (a stale value shows immediately with a subtle refreshing
@@ -24,9 +24,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
   import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
+  import Fa from 'svelte-fa';
+  import { faCodeFork } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     checkoutMode?: 'cow' | 'worktree' | 'direct';
@@ -201,10 +204,19 @@
 
 {#snippet pill(title?: string)}
   <span
-    class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle {className}"
+    class="inline-flex h-5 shrink-0 cursor-help items-center justify-center rounded-full bg-muted/20 text-ui-sm leading-4 text-subtle {mode ===
+    'worktree'
+      ? 'w-5'
+      : 'px-1'} {className}"
+    aria-label={m.workspace_checkoutModePill_tooltip({ label: label ?? '' })}
+    data-checkout-mode={mode}
     {title}
   >
-    {label}
+    {#if mode === 'worktree'}
+      <Fa icon={faCodeFork} size="xs" />
+    {:else}
+      {label}
+    {/if}
   </span>
 {/snippet}
 
@@ -256,26 +268,31 @@
               <ul class="flex flex-col gap-0.5 text-xs">
                 {#each diskUsage.breakdown as entry (entry.name)}
                   <li class="flex items-baseline justify-between gap-3">
-                    <span class="truncate font-mono">{entry.name}</span>
+                    <span class="truncate">{entry.name}</span>
                     <span class="shrink-0 tabular-nums">{formatBytesBinary(entry.bytes)}</span>
                   </li>
                 {/each}
               </ul>
             {/if}
-            <button
-              type="button"
-              class="self-start text-xs underline decoration-dotted underline-offset-2 cursor-pointer bg-transparent border-none p-0 text-accent-foreground hover:opacity-80"
-              onclick={handleShrinkClick}
-            >
-              {m.workspace_diskUsagePill_shrink_label()}
-            </button>
+            <div class="mt-0.5 flex flex-col gap-1 border-t border-border/50 pt-1.5 text-xs">
+              <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
+              <button
+                type="button"
+                class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+                onclick={handleShrinkClick}
+              >
+                {m.workspace_diskUsagePill_shrink_label()}
+              </button>
+            </div>
           {:else if loading}
-            <div class="flex items-center justify-center py-1">
-              <span
-                role="status"
-                aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
-                class="inline-block size-4 animate-spin rounded-full border-2 border-current border-t-transparent text-subtle"
-              ></span>
+            <div
+              class="flex min-w-56 flex-col gap-2 py-1"
+              role="status"
+              aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
+            >
+              <Skeleton class="h-4 w-36" />
+              <Skeleton class="h-3 w-full" />
+              <Skeleton class="h-3 w-4/5" />
             </div>
           {/if}
         </div>

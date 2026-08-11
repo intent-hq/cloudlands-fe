@@ -7,12 +7,9 @@
    */
   import type { NodeViewProps } from '@tiptap/core';
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
-  import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
+  import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
-  import {
-  Tooltip,
-  TooltipRich,
-} from '$lib/components/ui/tooltip';
+  import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
   import type { ContextProvider, ContextItemType } from '$features/context/types';
   import type { ContextMentionMetadata } from './ContextMention';
   import { handleLink } from '$features/navigation/link-handler';
@@ -41,7 +38,10 @@
     document.addEventListener('initializer-branch-updated', handleBranchUpdate as EventListener);
 
     return () => {
-      document.removeEventListener('initializer-branch-updated', handleBranchUpdate as EventListener);
+      document.removeEventListener(
+        'initializer-branch-updated',
+        handleBranchUpdate as EventListener,
+      );
     };
   });
 
@@ -96,17 +96,17 @@
   // Check if this is a GitHub PR with a source branch
   const isGitHubPR = $derived(
     provider === 'github' &&
-    (itemType === 'github-pr' || itemType === 'github-issue') &&
-    prSourceBranch() !== null
+      (itemType === 'github-pr' || itemType === 'github-issue') &&
+      prSourceBranch() !== null,
   );
 
   // Check if branch differs from currently selected branch
   // Only show if we're in a context with the initializer (has received branch update events)
   const branchDiffers = $derived(
     hasInitializerContext &&
-    isGitHubPR &&
-    prSourceBranch() &&
-    prSourceBranch() !== currentSelectedBranch
+      isGitHubPR &&
+      prSourceBranch() &&
+      prSourceBranch() !== currentSelectedBranch,
   );
 
   // Handle switching to the PR's branch
@@ -234,7 +234,10 @@
   <!-- Wrap in clickable span to handle clicks outside tooltip -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <span class="context-mention-wrapper group/pill relative inline-flex items-center" onclick={handleClick}>
+  <span
+    class="context-mention-wrapper group/pill relative inline-flex items-center"
+    onclick={handleClick}
+  >
     <TooltipRich side="top" align="start" delayDuration={300} interactive={true} maxWidth="20rem">
       {#snippet trigger()}
         <span
@@ -277,9 +280,7 @@
             <div class="flex flex-wrap items-center gap-1.5">
               <!-- State badge -->
               {#if meta.state}
-                <span
-                  class="px-1.5 py-0.5 rounded text-ui font-medium {getStateColor(meta.state)}"
-                >
+                <span class="px-1.5 py-0.5 rounded text-ui font-medium {getStateColor(meta.state)}">
                   {meta.state}
                 </span>
               {/if}
@@ -311,15 +312,12 @@
                 .map((l) => l.trim())
                 .filter(Boolean)
                 .slice(0, 5) as label}
-                <span
-                  class="px-1.5 py-0.5 rounded-full text-ui font-medium bg-muted/50 text-subtle"
+                <span class="px-1.5 py-0.5 rounded-full text-ui font-medium bg-muted/50 text-subtle"
                   >{label}</span
                 >
               {/each}
               {#if meta.labels.split(',').length > 5}
-                <span class="text-ui text-subtle"
-                  >+{meta.labels.split(',').length - 5}</span
-                >
+                <span class="text-ui text-subtle">+{meta.labels.split(',').length - 5}</span>
               {/if}
             </div>
           {/if}
@@ -351,8 +349,7 @@
                 <span class="text-ui text-subtle">{m.tiptap_contextMention_byAuthor_label({ author: meta.author })}</span>
               {/if}
               {#if meta.createdAt}
-                <span class="text-ui text-subtle ml-auto"
-                  >{formatRelativeTime(meta.createdAt)}</span
+                <span class="text-ui text-subtle ml-auto">{formatRelativeTime(meta.createdAt)}</span
                 >
               {/if}
             </div>

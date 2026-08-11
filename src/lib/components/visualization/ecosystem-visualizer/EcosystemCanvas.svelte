@@ -23,7 +23,7 @@
 } from 'svelte';
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   // Change type colors matching repo-visualizer
   const CHANGE_COLORS = {

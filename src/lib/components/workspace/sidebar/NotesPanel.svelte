@@ -1,70 +1,62 @@
 <script lang="ts">
   import type { Note, TaskStatus } from '$shared/types';
-  import {
-  ListContainer,
-  ListItem,
-} from '$lib/components/ui/list';
+  import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { cn } from '$lib/utils';
   import {
-  getNoteIcon,
-  getNoteTitle,
-  sortNotes,
-  isChildNote,
-  isSpecNote,
-  getChildNotes,
-  getNoteDepth,
-  isHiddenByAnyCollapsedAncestor,
-  parseTaskStats,
-  getNoteIconClass,
-} from './utils';
+    getNoteIcon,
+    getNoteTitle,
+    sortNotes,
+    isChildNote,
+    isSpecNote,
+    getChildNotes,
+    getNoteDepth,
+    isHiddenByAnyCollapsedAncestor,
+    parseTaskStats,
+    getNoteIconClass,
+  } from './utils';
   import {
-  faChevronDown,
-  faPlus,
-  faArrowUpRightFromSquare,
-  faPencil,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faPlus,
+    faArrowUpRightFromSquare,
+    faPencil,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
   import {
-  type AvatarState,
-  getAvatarState,
-} from '$lib/components/ui/auggie-avatar/avatar-state';
+    type AvatarState,
+    getAvatarState,
+  } from '$features/agent/components/auggie-avatar/avatar-state';
   import {
-  selectAgentIsResponding,
-  selectAgentIsWaiting,
-  selectAgentSessionsByIds,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentIsResponding,
+    selectAgentIsWaiting,
+    selectAgentSessionsByIds,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import { writable } from 'svelte/store';
   import {
-  setWorkspaceNoteOrder,
-  toggleWorkspaceCollapsedNote,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+    setWorkspaceNoteOrder,
+    toggleWorkspaceCollapsedNote,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-  selectWorkspaceCollapsedNoteIds,
-  selectWorkspaceNoteOrder,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+    selectWorkspaceCollapsedNoteIds,
+    selectWorkspaceNoteOrder,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
-  getPanelLayoutManager,
-  hasPanelLayoutManager,
-} from '$features/layout/panel-layout-adapter';
+    getPanelLayoutManager,
+    hasPanelLayoutManager,
+  } from '$features/layout/panel-layout-adapter';
 
-  import {
-  deleteNote,
-  createNote,
-  updateNoteTitle,
-} from '$features/notes/notes-write-service';
+  import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
   import { toast } from 'svelte-sonner';
   import { store as appStore } from '$store/renderer/store';
-
 
   interface Props {
     notes: Note[];
@@ -77,6 +69,7 @@
     loading?: boolean;
     class?: string;
     indentSize?: number; // Size of each indent level in px (default: 22)
+    flush?: boolean;
   }
 
   let {
@@ -90,6 +83,7 @@
     loading = false,
     class: className,
     indentSize = 22,
+    flush = false,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -209,26 +203,23 @@
           void deleteNote(workspaceId, note.id);
           closeContextMenu();
 
-          toast.warning(
-            `Deleted "${noteTitle}"`,
-            {
-              duration: 15000,
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-                  void createNote(workspaceId, {
-                    title: savedNote.title,
-                    content: savedNote.content,
-                    contentType: savedNote.contentType,
-                    tags: savedNote.tags,
-                    parentId: savedNote.parentId,
-                    visibility: savedNote.visibility,
-                  });
-                },
+          toast.warning(`Deleted "${noteTitle}"`, {
+            duration: 15000,
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
+                void createNote(workspaceId, {
+                  title: savedNote.title,
+                  content: savedNote.content,
+                  contentType: savedNote.contentType,
+                  tags: savedNote.tags,
+                  parentId: savedNote.parentId,
+                  visibility: savedNote.visibility,
+                });
               },
             },
-          );
+          });
         },
       });
     }
@@ -444,7 +435,7 @@
       {/each}
     </div>
   {:else}
-    <ListContainer class="w-full">
+    <ListContainer class={cn('w-full', flush && 'px-0')}>
       {#each sortedNotes as note (note.id)}
         {@const depth = getNoteDepth(note, notes)}
         {@const childNotes = getChildNotes(note, notes)}
@@ -491,7 +482,7 @@
           >
             {#if editingNoteId === note.id}
               <!-- Inline edit mode - matches ListItem sm size styling with active state -->
-              {@const leftIndent = depth * Math.round(indentSize * 16 / 22)}
+              {@const leftIndent = depth * Math.round((indentSize * 16) / 22)}
               <div
                 class="flex items-center gap-2 py-0.5 px-2 rounded-md border border-border shadow-xs bg-background text-foreground"
                 style="margin-left: {leftIndent}px; width: calc(100% - {leftIndent}px);"

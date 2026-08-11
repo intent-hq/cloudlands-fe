@@ -19,22 +19,14 @@
  *
  * This test should FAIL before the fix and PASS after.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  fireEvent,
-  render,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { cubicOut } from 'svelte/easing';
 import ResponseGroup from '../ResponseGroup.svelte';
+import { getResponseGroupBlockKey, getResponseGroupPreviewBlock } from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
+import type { ContentBlock } from '$shared/types';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -195,9 +187,37 @@ describe('ResponseGroup - collapse state model', () => {
     return !!el && (el.getAttribute('style') ?? '').includes('max-height');
   }
 
-  it('last completed group toggles expanded ↔ semi-open and never fully closes', async () => {
+  it('uses caption-sized operational titles and only shows the preview while collapsed', async () => {
+    const blocks = [{ type: 'text', text: 'Collapsed preview text' }] as ContentBlock[];
+    const { container, queryByText } = render(ResponseGroup, {
+      props: { name: 'Group title', blocks, children },
+    });
+    const btn = header(container);
+
+    expect(btn.className).toContain('type-caption');
+    expect(btn.className).toContain('text-muted-foreground/60');
+    expect(btn.className).not.toContain('text-base');
+    expect(btn.className).not.toContain('px-1');
+    expect(queryByText('Collapsed preview text')).not.toBeNull();
+
+    await fireEvent.click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(queryByText('Collapsed preview text')).toBeNull();
+    expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
+  });
+
+  it('does not render a leading group icon', () => {
     const { container } = render(ResponseGroup, {
-      props: { name: 'Group', isLast: true, children },
+      props: { name: 'Group title', children },
+    });
+
+    expect(header(container).querySelector('svg')).toBeNull();
+  });
+
+  it('last completed group toggles expanded ↔ semi-open and never fully closes', async () => {
+    const blocks = [{ type: 'text', text: 'Latest group activity' }] as ContentBlock[];
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Group', isLast: true, blocks, children },
     });
     const btn = header(container);
 
@@ -211,7 +231,10 @@ describe('ResponseGroup - collapse state model', () => {
     expect(btn.getAttribute('aria-expanded')).toBe('false');
     expect(cylinder(container)).not.toBeNull();
     expect(isConstrained(cylinder(container))).toBe(true);
-    expect(container.querySelector('.test-block')).not.toBeNull();
+    expect(container.querySelector('.test-block')).toBeNull();
+    expect(container.querySelector('[data-response-group-preview]')?.textContent).toContain(
+      'Latest group activity',
+    );
 
     // Toggle again → back to fully expanded
     await fireEvent.click(btn);
@@ -220,8 +243,9 @@ describe('ResponseGroup - collapse state model', () => {
   });
 
   it('collapsing a streaming group lands on semi-open with content still visible', async () => {
+    const blocks = [{ type: 'text', text: 'Visible streaming activity' }] as ContentBlock[];
     const { container } = render(ResponseGroup, {
-      props: { name: 'Group', isStreaming: true, children },
+      props: { name: 'Group', isStreaming: true, blocks, children },
     });
     const btn = header(container);
 
@@ -238,7 +262,64 @@ describe('ResponseGroup - collapse state model', () => {
     expect(btn.getAttribute('aria-expanded')).toBe('false');
     expect(cylinder(container)).not.toBeNull();
     expect(isConstrained(cylinder(container))).toBe(true);
-    expect(container.querySelector('.test-block')).not.toBeNull();
+    expect(container.querySelector('.test-block')).toBeNull();
+    expect(container.querySelector('[data-response-group-preview]')?.textContent).toContain(
+      'Visible streaming activity',
+    );
+  });
+
+  it('does not instantiate detail children while a large streaming group is collapsed', async () => {
+    const detailFactory = vi.fn(() => ({
+      render: () =>
+        `<div>${Array.from({ length: 100 }, (_, index) => `<button>detail-${index}</button>`).join('')}</div>`,
+    }));
+    const detailChildren = createRawSnippet(detailFactory);
+    const blocks = Array.from({ length: 100 }, (_, index) => ({
+      type: 'text',
+      text: `payload-${index}`,
+    })) as ContentBlock[];
+
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Large group', isStreaming: true, blocks, children: detailChildren },
+    });
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-response-group-preview]')).not.toBeNull(),
+    );
+    expect(detailFactory).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('[data-response-group-preview]')?.textContent).toBe(
+      'payload-99',
+    );
+
+    await fireEvent.click(header(container));
+    expect(detailFactory).toHaveBeenCalledTimes(1);
+    expect(container.querySelectorAll('button')).toHaveLength(101);
+    expect(container.querySelector('[data-response-group-preview]')).toBeNull();
+  });
+
+  it('updates the collapsed streaming preview without mounting details', async () => {
+    const detailFactory = vi.fn(() => ({ render: () => '<div>exact expanded payload</div>' }));
+    const detailChildren = createRawSnippet(detailFactory);
+    const initialBlocks = [{ type: 'text', text: 'first payload' }] as ContentBlock[];
+    const { container, rerender } = render(ResponseGroup, {
+      props: {
+        name: 'Streaming group',
+        isStreaming: true,
+        blocks: initialBlocks,
+        children: detailChildren,
+      },
+    });
+
+    await rerender({
+      blocks: [...initialBlocks, { type: 'text', text: 'latest {exact} payload' }],
+    });
+
+    expect(detailFactory).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-response-group-preview]')?.textContent).toBe(
+      'latest {exact} payload',
+    );
+    expect(header(container).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('non-last group collapsed mid-stream fully closes after streaming ends', async () => {
@@ -316,5 +397,31 @@ describe('ResponseGroup - collapse state model', () => {
       expect(btn.getAttribute('aria-expanded')).toBe('true');
       expect(isConstrained(cylinder(container))).toBe(false);
     });
+  });
+});
+
+describe('ResponseGroup - block identity', () => {
+  it('uses protocol-backed tool identities instead of positions', () => {
+    const toolUse = { type: 'tool_use', id: 'tool-42', name: 'search' } as ContentBlock;
+    const toolResult = { type: 'tool_result', tool_use_id: 'tool-42' } as ContentBlock;
+
+    expect(getResponseGroupBlockKey(toolUse, 1)).toBe(getResponseGroupBlockKey(toolUse, 99));
+    expect(getResponseGroupBlockKey(toolResult, 2)).toBe(getResponseGroupBlockKey(toolResult, 100));
+  });
+
+  it('selects the latest presentable payload without cloning or rewriting it', () => {
+    const latestTool = {
+      type: 'tool_use',
+      id: 'tool-latest',
+      name: 'workspace_api',
+      input: { summary: 'Keep this exact payload' },
+    } as ContentBlock;
+    const trailingResult = {
+      type: 'tool_result',
+      tool_use_id: 'tool-latest',
+      output: { content: 'exact result' },
+    } as ContentBlock;
+
+    expect(getResponseGroupPreviewBlock([latestTool, trailingResult])).toBe(latestTool);
   });
 });

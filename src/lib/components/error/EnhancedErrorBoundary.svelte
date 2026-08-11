@@ -23,12 +23,12 @@
   faTriangleExclamation,
   faRotateRight,
   faArrowsRotate,
-  faHouse,
+  faLayerGroup,
   faSpinner,
   faCopy,
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
-  import { goto } from '$app/navigation';
+  import { navigateToFirstWorkspace } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('EnhancedErrorBoundary');
@@ -182,8 +182,12 @@
     window.location.reload();
   }
 
-  function handleGoHome() {
-    goto('/');
+  async function handleNavigateAway() {
+    try {
+      await navigateToFirstWorkspace();
+    } catch (error) {
+      logger.error('[EnhancedErrorBoundary] Failed to navigate to first workspace', error);
+    }
   }
 
   async function handleCopyDetails() {
@@ -272,9 +276,9 @@
 
               <!-- Secondary action and details toggle - Separate row -->
               <div class="flex items-center justify-center gap-3 flex-wrap">
-                <Button variant="ghost" size="sm" onclick={handleGoHome}>
-                  <Fa icon={faHouse} class="w-4 h-4" />
-                  {m.error_boundary_goHome_label()}
+                <Button variant="ghost" size="sm" onclick={handleNavigateAway}>
+                  <Fa icon={faLayerGroup} class="w-4 h-4" />
+                  {m.layout_sidebarNav_allWorkspaces_title()}
                 </Button>
                 {#if errorInfo}
                   <div class="relative">

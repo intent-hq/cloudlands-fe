@@ -58,7 +58,7 @@
     type="button"
   >
     {#if copied}
-      <Fa icon={faCheck} {size} class="text-green-500" />
+      <Fa icon={faCheck} {size} class="text-success" />
     {:else}
       <Fa icon={faCopy} {size} />
     {/if}

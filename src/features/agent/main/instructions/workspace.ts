@@ -43,18 +43,22 @@ Call \`ws.workspace.referenceDocs("diagrams")\` or \`ws.workspace.referenceDocs(
 
 ## Workspace Status Message
 
-Keep the workspace \`statusMessage\` current when the high-level work status changes (plan, progress, blocker, review state), using 1–2 concise sentences. Be clear if the user needs to do anything, and put important info first. This is user-facing and separate from the \`Workspace.status\` lifecycle (Active/Archived/Deleted) and from task statuses; do not update it for minor implementation details. Examples:
+Keep the workspace \`statusMessage\` current when the high-level work status changes (plan, progress, blocker, review state). Use exactly one plain TL;DR sentence, ideally 3–8 words and never more than 12 words. State only the current phase or outcome. Do not include test counts, file or task counts, implementation details, lists, semicolons, or multiple clauses. Mention a next step or blocker only when it is the status. This is user-facing and separate from the \`Workspace.status\` lifecycle (Active/Archived/Deleted) and from task statuses; do not use it as an implementation log or update it for minor details. Examples:
 
-- Researching how to add dark mode. Will create a spec once done.
-- Implementing new toggle button and state, 8 more tasks to go.
-- Ready to review and create a PR or merge. Done implementing dark mode.
-- PR #123 open and waiting for a review.
+- Ready for review.
+- Implementing panel resizing.
+- Blocked on GitHub authentication.
+- Waiting for CI.
+- Planning dark mode support.
+
+When a meaningful visual result would help the user review progress—such as a completed UI state, rendered design, or visual bug fix—attach a current screenshot with \`ws.workspace.setStatusImage({ data, mimeType, originalName? })\`. \`data\` is base64 image data (a data URL is accepted) and \`mimeType\` must be an \`image/*\` type. Do not capture minor or non-visual changes, and never include secrets or sensitive information. Replace the image when it becomes stale, or call \`ws.workspace.setStatusImage(null)\` to clear it.
 
 ## Workspace Management
 
 - \`ws.workspace.setTitle(title)\` — Set the workspace title (1-5 words describing the task)
 - \`ws.workspace.details()\` — Get workspace metadata, including lifecycle \`status\` and user-facing \`statusMessage\`
-- \`ws.workspace.setStatusMessage(message)\` — Update or clear the 1–2 sentence high-level work status message
+- \`ws.workspace.setStatusMessage(message)\` — Update or clear the 3–8 word high-level TL;DR
+- \`ws.workspace.setStatusImage({ data, mimeType, originalName? } | null)\` — Set or clear the current status screenshot shown beneath the status message
 
 ## Agent Collaboration
 

@@ -126,9 +126,11 @@
   }
 
   .ov-banner {
+    --banner-in-delay: 0s;
+    --banner-out-delay: 5.2s;
     border-top: 1px solid hsl(var(--border) / 0.8);
     border-bottom: 1px solid hsl(var(--border) / 0.8);
-    background: hsl(var(--app-background) / 0.88);
+    background: hsl(var(--background) / 0.88);
     padding: 14px 22px;
     /* Typewriter wipe in, then auto fade-out while the map stays up. The
        out-delay is dwell-proportional (bannerOutDelay: unfolded hold ≈ half
@@ -171,6 +173,9 @@
      the measured overflow at the constant HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S
      speed after the wipe-in + head hold; fill both holds the tail. */
   .ov-banner-marquee {
+    --banner-scroll-px: 0px;
+    --banner-scroll-s: 0s;
+    --banner-scroll-delay: 0s;
     display: inline-block;
     animation: bannerscroll var(--banner-scroll-s, 0s) linear var(--banner-scroll-delay, 0s) both;
   }
@@ -178,14 +183,14 @@
     margin-top: 6px;
     font: 500 11.5px 'JetBrains Mono', monospace;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-banner-status {
     margin-top: 8px;
     font: 500 14px 'JetBrains Mono', monospace;
     line-height: 1.4;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;

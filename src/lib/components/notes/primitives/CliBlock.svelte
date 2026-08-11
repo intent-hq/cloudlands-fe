@@ -5,27 +5,25 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faTerminal,
-  faPlay,
-  faArrowUpRightFromSquare,
-  faCheck,
-  faTimes,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  invoke,
-  listenSync,
-} from '$lib/electron-bridge';
+    faTerminal,
+    faPlay,
+    faArrowUpRightFromSquare,
+    faCheck,
+    faTimes,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { invoke, listenSync } from '$lib/electron-bridge';
   import { toast } from 'svelte-sonner';
   import { onDestroy } from 'svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
-  openAgentTabRequested,
-  openTerminalTabRequested,
-} from '$store/renderer/slices/app-layout/app-layout-slice';
+    openAgentTabRequested,
+    openTerminalTabRequested,
+  } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('CliBlock');
@@ -149,7 +147,11 @@
         throw new Error(result.error || m.notes_cliBlock_createTerminalFailed_error());
       }
     } catch (err) {
-      logger.error('[runCommand] Error running command', { error: err, command: primitive?.command, workspaceId });
+      logger.error('[runCommand] Error running command', {
+        error: err,
+        command: primitive?.command,
+        workspaceId,
+      });
       running = false;
       toast.error(err instanceof Error ? err.message : m.notes_cliBlock_runFailed_error());
     }
@@ -169,16 +171,21 @@
 <NodeViewWrapper>
   {#if primitive}
     {@const linkedAgentId = primitive.createdByAgentId}
-    <div class="my-1.5 flex items-center gap-2">
+    <div
+      class="ws-block-widget my-2 flex min-h-9 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-foreground shadow-(--elevation-raised)"
+    >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
         <button
           type="button"
-          class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-          onclick={() => {
+          class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
+          onclick={(event) => {
             if (workspaceId) {
               appStore.dispatch(
-                openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
+                openAgentTabRequested(workspaceId, {
+                  agentId: linkedAgentId,
+                  ...getNavigationContext(event),
+                }),
               );
             }
           }}
@@ -187,15 +194,15 @@
           <AuggieAvatar agentId={linkedAgentId} size={16} />
         </button>
       {:else}
-        <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
+        <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}
-      <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
+      <code class="type-code min-w-0 flex-1 truncate bg-transparent p-0 text-foreground">
         {primitive.command}
       </code>
       <Button
         variant="ghost-light"
         size="sm"
-        class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
+        class="type-caption shrink-0"
         onclick={hasTerminal ? openTerminal : runCommand}
         disabled={running}
       >
@@ -204,6 +211,8 @@
       </Button>
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">{m.notes_cliBlock_invalid_error()}</div>
+    <div class="ws-block-widget type-caption my-2 text-muted-foreground">
+      {m.notes_cliBlock_invalid_error()}
+    </div>
   {/if}
 </NodeViewWrapper>

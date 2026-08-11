@@ -5,16 +5,12 @@
  * as the old MessageAccumulatorService singleton. Consumers import
  * these functions instead of the singleton.
  *
- * Write operations dispatch to the main-process Redux store.
- * Read operations use getMainState() for synchronous access.
+ * This module owns its transient process-local state and exposes synchronous access.
  */
 
 import { Logger } from "../../../../shared/logger";
 import type { ContentBlock } from "../../../../shared/types";
-import {
-  mainDispatch,
-  getMainState,
-} from "../../redux-store-bridge";
+import type { MainStoreState } from '../../types';
 import {
   startAccumulation as startAccumulationAction,
   addChunk as addChunkAction,
@@ -24,6 +20,7 @@ import {
   clearAccumulator as clearAccumulatorAction,
   clearAllAccumulators as clearAllAccumulatorsAction,
   cleanupStaleAccumulators as cleanupStaleAccumulatorsAction,
+  messageAccumulatorReducer,
 } from "./message-accumulator-slice";
 import {
   selectAccumulator,
@@ -43,13 +40,27 @@ const logger = new Logger("MessageAccumulatorAPI");
 const textEncoder = new TextEncoder();
 
 const config = DEFAULT_ACCUMULATOR_CONFIG;
+let accumulatorState = messageAccumulatorReducer(undefined, { type: '@@init' } as any);
+
+/** @internal Test-only reset for the process-local service. */
+export function resetMessageAccumulatorState(): void {
+  accumulatorState = messageAccumulatorReducer(undefined, { type: '@@init' } as any);
+}
+
+function dispatch(action: any): void {
+  accumulatorState = messageAccumulatorReducer(accumulatorState, action);
+}
+
+function getState(): MainStoreState {
+  return { messageAccumulator: accumulatorState } as MainStoreState;
+}
 
 // ============================================================================
 // Write Operations
 // ============================================================================
 
 export function startAccumulation(sessionId: string, metadata?: Record<string, unknown>): void {
-  mainDispatch(startAccumulationAction(sessionId, metadata));
+  dispatch(startAccumulationAction(sessionId, metadata));
 }
 
 export function addChunk(
@@ -57,7 +68,7 @@ export function addChunk(
   chunk: string,
   metadata?: Record<string, unknown>,
 ): void {
-  const state = getMainState();
+  const state = getState();
   const acc = selectAccumulator.select(state, sessionId);
 
   if (!acc) {
@@ -81,15 +92,15 @@ export function addChunk(
     return;
   }
 
-  mainDispatch(addChunkAction(sessionId, chunk, chunkByteSize, metadata));
+  dispatch(addChunkAction(sessionId, chunk, chunkByteSize, metadata));
 }
 
 export function addContentBlock(sessionId: string, block: ContentBlock): void {
-  mainDispatch(addContentBlockAction(sessionId, block));
+  dispatch(addContentBlockAction(sessionId, block));
 }
 
 export function updateContentBlock(sessionId: string, block: ContentBlock): boolean {
-  const state = getMainState();
+  const state = getState();
   const acc = selectAccumulator.select(state, sessionId);
   if (!acc || !block.id) return false;
 
@@ -99,22 +110,22 @@ export function updateContentBlock(sessionId: string, block: ContentBlock): bool
   );
   if (!exists) return false;
 
-  mainDispatch(updateContentBlockAction(sessionId, block));
+  dispatch(updateContentBlockAction(sessionId, block));
   return true;
 }
 
 export function complete(sessionId: string): SerializedAccumulatedMessage | undefined {
-  mainDispatch(completeAccumulationAction(sessionId));
-  const state = getMainState();
+  dispatch(completeAccumulationAction(sessionId));
+  const state = getState();
   return selectAccumulator.select(state, sessionId);
 }
 
 export function clear(sessionId: string): void {
-  mainDispatch(clearAccumulatorAction(sessionId));
+  dispatch(clearAccumulatorAction(sessionId));
 }
 
 export function clearAll(): void {
-  mainDispatch(clearAllAccumulatorsAction());
+  dispatch(clearAllAccumulatorsAction());
 }
 
 // ============================================================================
@@ -124,28 +135,28 @@ export function clearAll(): void {
 export function getAccumulated(
   sessionId: string,
 ): SerializedAccumulatedMessage | undefined {
-  return selectAccumulator.select(getMainState(), sessionId);
+  return selectAccumulator.select(getState(), sessionId);
 }
 
 export function getPartialContent(
   sessionId: string,
 ): { content: string; contentBlocks: ContentBlock[] } {
-  return selectPartialContent.select(getMainState(), sessionId);
+  return selectPartialContent.select(getState(), sessionId);
 }
 
 export function getActiveSessionIds(): string[] {
-  return selectActiveSessionIds.select(getMainState());
+  return selectActiveSessionIds.select(getState());
 }
 
 export function getStats(): AccumulatorStats {
-  return selectAccumulatorStats.select(getMainState());
+  return selectAccumulatorStats.select(getState());
 }
 
 /** Trigger stale cleanup manually (e.g., from memory pressure handler) */
 export function cleanupStale(): void {
   // Implemented via saga — dispatch a trigger if needed.
   // For immediate cleanup, read state and dispatch cleanup action directly.
-  const state = getMainState();
+  const state = getState();
   const sessionIds = selectActiveSessionIds.select(state);
   const now = Date.now();
   const STALE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -154,7 +165,7 @@ export function cleanupStale(): void {
     return acc && now - acc.lastUpdateTime > STALE_TIMEOUT_MS;
   });
   if (staleIds.length > 0) {
-    mainDispatch(cleanupStaleAccumulatorsAction(staleIds));
+    dispatch(cleanupStaleAccumulatorsAction(staleIds));
   }
 }
 

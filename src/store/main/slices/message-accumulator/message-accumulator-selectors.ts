@@ -1,11 +1,7 @@
 /**
  * Message Accumulator Selectors (Main Process)
  *
- * The main-process Redux store was removed (see redux-store-bridge.ts), so
- * `getMainState()` returns an empty snapshot and the `messageAccumulator`
- * slice is never present. Every selector must tolerate the missing slice —
- * an unguarded `state.messageAccumulator.accumulators` read crashes any
- * legacy caller (it took down the quit path via getActiveStreams).
+ * The message accumulator API supplies its process-local state to these selectors.
  */
 
 import { createMainSelector } from '../../create-main-selector';

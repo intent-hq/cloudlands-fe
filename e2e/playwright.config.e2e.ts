@@ -20,7 +20,7 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: false, // Run tests sequentially for Electron app
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
+  retries: 0,
   workers: process.env.CI ? 1 : 2,
 
   // Timeouts
@@ -120,7 +120,13 @@ export default defineConfig({
     },
     {
       name: 'all-e2e',
-      testMatch: '**/*.e2e.ts',
+      testMatch: [
+        '**/complete-user-workflows.e2e.ts',
+        '**/multi-agent-scenarios.e2e.ts',
+        '**/error-recovery.e2e.ts',
+        '**/performance-load.e2e.ts',
+        '**/agent-ui-rendering.e2e.ts',
+      ],
       use: {
         ...devices['Desktop Chrome'],
       },

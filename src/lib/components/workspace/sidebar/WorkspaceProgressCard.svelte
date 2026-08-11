@@ -4,12 +4,11 @@
   import type { Note } from '$shared/types';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
+  import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
   import {
-    extractOrderedSpecTaskIds,
-    extractSpecTaskIds,
-  } from '$shared/utils/task-stats';
-  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
+    selectWorkspaceTaskProgress,
+    selectWorkspaceTasksLoading,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
   import {
     faEllipsisV,
@@ -18,25 +17,28 @@
     faCodePullRequest,
     faCheck,
     faFileLines,
+    faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
-  import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
-  import TaskStatusIndicator from '$lib/components/workspace/TaskStatusIndicator.svelte';
+  import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
-  import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
     type MenuAction,
-  } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
+  } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
-  import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import {
+    toggleSidebar,
+    toggleSidebarSide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
+  import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { m } from '$shared/paraglide/messages.js';
-  import { goto } from '$app/navigation';
+  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import { logger, createLogger } from '$lib/utils/client-logger';
@@ -67,7 +69,6 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     selectWorkspaceById,
-    selectWorkspaceProgressHeadline,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import type {
@@ -76,6 +77,7 @@
     WorkspaceProgressInput,
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
+  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -83,13 +85,16 @@
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
-    /** Compact mode for homepage cards - hides editing, skips git status loading */
-    compact?: boolean;
-    /** Click handler for the entire card (used in compact mode) */
-    onClick?: () => void;
+    /** Column-mode action rendered to the right of the workspace kebab. */
+    onCloseWorkspace?: (event: MouseEvent) => void;
   }
 
-  let { workspaceId, onOpenNote, onAcceptChanges, compact = false, onClick }: Props = $props();
+  let {
+    workspaceId,
+    onOpenNote: _onOpenNote,
+    onAcceptChanges,
+    onCloseWorkspace,
+  }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -103,6 +108,7 @@
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
+  const tasksLoading$ = selectWorkspaceTasksLoading(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
   // in sync via an $effect below once the derived state is available. PR identity
@@ -118,7 +124,6 @@
 
   // ✅ Selector readables captured at component init — the workspace slice owns
   // the workflow-stage, headline, and action logic.
-  const progressHeadline$ = selectWorkspaceProgressHeadline(workspaceIdStore, progressInput$);
   const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
 
   // Git status state for workflow awareness
@@ -176,9 +181,8 @@
 
   // Load git status on mount and when workspace changes
   // Keep this as an effect since it needs to react to workspaceId changes
-  // Skip in compact mode to avoid expensive GitHub API calls on homepage
   $effect(() => {
-    if (workspaceId && !compact) {
+    if (workspaceId) {
       loadGitStatus();
     }
   });
@@ -186,7 +190,7 @@
   // Listen for git status changes to refresh
   // Using onMount with listenSync for proper cleanup on unmount
   onMount(() => {
-    if (!workspaceId || compact) return;
+    if (!workspaceId) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const DEBOUNCE_MS = 5000; // 5 seconds debounce to avoid rate limiting GitHub API
@@ -258,6 +262,7 @@
   // Header editing state
   let isDeleting = $state(false);
   let isEditingTitle = $state(false);
+  let isSavingTitle = false;
   let editedTitle = $state('');
   let titleInputRef: HTMLInputElement | null = $state(null);
   let isEditingStatusMessage = $state(false);
@@ -269,6 +274,11 @@
 
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  const repositoryLabel = $derived(
+    $workspace?.repositoryOwner && $workspace?.repositoryName
+      ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
+      : ($workspace?.repositoryPath?.split('/').pop() ?? 'Repository'),
+  );
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
@@ -288,15 +298,16 @@
   let copiedRepoPath = $state(false);
   let repoTooltipOpen = $state(false);
   let copyRepoPathTimeout: ReturnType<typeof setTimeout> | null = null;
+  let copiedBranchName = $state(false);
+  let branchTooltipOpen = $state(false);
+  let copyBranchNameTimeout: ReturnType<typeof setTimeout> | null = null;
 
   function handleRepoTooltipOpenChange(open: boolean) {
-    // Don't close if we just copied (keep it open to show check)
-    if (!open && copiedRepoPath) return;
     repoTooltipOpen = open;
   }
 
   async function copyRepoPath(event?: MouseEvent) {
-    event?.stopPropagation(); // Prevent triggering parent click handlers in compact mode
+    event?.stopPropagation(); // Keep the copy action from triggering parent click handlers.
     event?.preventDefault();
     if (!workspacePath) return;
     try {
@@ -306,10 +317,29 @@
       if (copyRepoPathTimeout) clearTimeout(copyRepoPathTimeout);
       copyRepoPathTimeout = setTimeout(() => {
         copiedRepoPath = false;
-        repoTooltipOpen = false;
       }, 2000);
     } catch (error) {
       logger.error('Failed to copy path:', error);
+    }
+  }
+
+  function handleBranchTooltipOpenChange(open: boolean) {
+    branchTooltipOpen = open;
+  }
+
+  async function copyBranchName(event?: MouseEvent) {
+    event?.preventDefault();
+    if (!$workspace?.branch) return;
+    try {
+      await navigator.clipboard.writeText($workspace.branch);
+      copiedBranchName = true;
+      branchTooltipOpen = true;
+      if (copyBranchNameTimeout) clearTimeout(copyBranchNameTimeout);
+      copyBranchNameTimeout = setTimeout(() => {
+        copiedBranchName = false;
+      }, 2000);
+    } catch (error) {
+      logger.error('Failed to copy branch name:', error);
     }
   }
 
@@ -317,6 +347,10 @@
     if (copyRepoPathTimeout) {
       clearTimeout(copyRepoPathTimeout);
       copyRepoPathTimeout = null;
+    }
+    if (copyBranchNameTimeout) {
+      clearTimeout(copyBranchNameTimeout);
+      copyBranchNameTimeout = null;
     }
   });
 
@@ -356,7 +390,7 @@
           },
         },
       });
-      goto('/');
+      await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
@@ -389,16 +423,19 @@
   }
 
   async function saveTitle() {
-    if (!$workspace || !editedTitle.trim()) {
+    if (isSavingTitle || !$workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
     }
 
     const newTitle = editedTitle.trim();
     if (newTitle !== $workspace.title) {
-      const result = await workspaceClient.update({ id: $workspace.id, title: newTitle });
-      if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
+      isSavingTitle = true;
+      isEditingTitle = false;
+      try {
+        await renameWorkspaceTitle($workspace, newTitle);
+      } finally {
+        isSavingTitle = false;
       }
     }
     isEditingTitle = false;
@@ -414,13 +451,6 @@
     }
   }
 
-  // Grow the status textarea to fit its wrapped content so no scrollbar appears.
-  function autoResizeStatusInput() {
-    if (!statusInputRef) return;
-    statusInputRef.style.height = 'auto';
-    statusInputRef.style.height = `${statusInputRef.scrollHeight}px`;
-  }
-
   function startEditingStatusMessage() {
     if (!$workspace) return;
     skipNextStatusBlurSave = false;
@@ -430,7 +460,6 @@
       if (statusInputRef) {
         statusInputRef.focus();
         statusInputRef.select();
-        autoResizeStatusInput();
       }
     });
   }
@@ -476,7 +505,7 @@
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter') {
       e.preventDefault();
       saveStatusMessage();
     } else if (e.key === 'Escape') {
@@ -491,13 +520,22 @@
     dropdownOpen = false;
   }
 
+  const sidebarToggleAction: MenuAction = {
+    label: m.ui_sidebar_toggle_label(),
+    iconSnippet: sidebarToggleIconSnippet,
+    dividerBefore: true,
+    shortcut: 'mod+b',
+    onClick: () => {
+      appStore.dispatch(toggleSidebar());
+    },
+  };
+
   const sidebarSideAction: MenuAction = $derived({
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
         : m.workspace_sidebarHeader_moveSidebarLeft_label(),
     iconSnippet: sidebarSideIconSnippet,
-    dividerBefore: true,
     onClick: () => {
       appStore.dispatch(toggleSidebarSide());
     },
@@ -518,9 +556,6 @@
     }
   });
 
-  // Hover state for progress segments
-  let hoveredNoteId: string | null = $state(null);
-
   // Ready tasks state — derived from Redux store
   let currentReadyIndex = $state(0);
 
@@ -537,10 +572,9 @@
 
   // Auto-load ready tasks on initial load (only once)
   // Keep this as an effect since it needs to react to notes changes
-  // Skip in compact mode - ready tasks are not shown on homepage
   let lastFetchReadyTasksKey: string | undefined;
   $effect(() => {
-    if (workspaceId && $notes.length > 0 && !compact) {
+    if (workspaceId && $notes.length > 0) {
       const fetchKey = workspaceId + ':' + $notes.length;
       if (fetchKey !== lastFetchReadyTasksKey) {
         lastFetchReadyTasksKey = fetchKey;
@@ -552,7 +586,7 @@
   // Listen for ready tasks changes from backend
   // Using onMount with listenSync for proper cleanup on unmount
   onMount(() => {
-    if (!workspaceId || compact) return;
+    if (!workspaceId) return;
 
     // Capture workspaceId at mount time
     const mountedWorkspaceId = workspaceId;
@@ -593,17 +627,13 @@
     return unsubscribe;
   });
 
-  // Check if a note has unread changes (reactive via store subscription)
-  // NOTE: The refresh is triggered by the parent component (WorkspaceDetailSidebar)
-  // to avoid duplicate IPC calls from multiple components.
-  const unreadNoteIds = selectUnreadNoteIds();
-
   // Get spec note
   const specNote = $derived($notes.find((n) => n.id === 'spec' || n.isDefault));
 
   // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
   // workspace-tasks slice — no client classification of task status.
   const taskStats = $derived($taskStats$);
+  const showFlameGraph = $derived($tasksLoading$ || taskStats.total > 0);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {
@@ -781,7 +811,7 @@
 
   // Reactive: build flame graph data
   const taskTree = $derived(buildTaskTree($notes));
-  const flameRows = $derived(treeToRows(taskTree));
+  const _flameRows = $derived(treeToRows(taskTree));
 
   // Calculate completion ratio
   const completionRatio = $derived(taskStats.total > 0 ? taskStats.completed / taskStats.total : 0);
@@ -790,9 +820,7 @@
   // Uses workspace-agents membership to check streaming state per workspace.
   // ✅ Selector called at component init time (uses getContext internally)
   const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
-  const isAgentWorking = $derived(
-    compact ? false : $workspaceAgentSessions$.some((s) => s.isStreaming),
-  );
+  const isAgentWorking = $derived($workspaceAgentSessions$.some((s) => s.isStreaming));
 
   // Check if spec has meaningful content
   const specHasContent = $derived.by(() => {
@@ -837,117 +865,20 @@
 
   // First actionable descriptor for the full-mode workflow button. Actions that
   // require onAcceptChanges are hidden when no handler is provided.
-  const displayAction = $derived(
-    $progressActions$.find((action) => action.url || onAcceptChanges),
-  );
+  const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
 </script>
 
-{#snippet sidebarSideIconSnippet()}
-  <SidebarIcon
-    size={12}
-    side={$sidebarSide$ === 'left' ? 'right' : 'left'}
-    class="mr-1.5 opacity-50"
-  />
+{#snippet sidebarToggleIconSnippet()}
+  <SidebarIcon size={12} side={$sidebarSide$} class="opacity-50" />
 {/snippet}
 
-{#if compact}
-  <!-- Compact mode for homepage cards -->
-  <button
-    class="w-full flex flex-col p-3 rounded-lg bg-card hover:bg-accent/50
-           transition-colors duration-150 cursor-pointer text-left"
-    onclick={onClick}
-  >
-    <!-- Header: Title and repo -->
-    <div class="w-full">
-      <div class="text-sm font-semibold text-foreground truncate">
-        {$workspace?.title || m.workspace_links_untitled_label()}
-      </div>
-      <div class="text-sm text-subtle truncate mt-0.5 flex items-baseline gap-1">
-        <Tooltip
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          contentClass="max-w-xs relative"
-          bind:open={repoTooltipOpen}
-          onOpenChange={handleRepoTooltipOpenChange}
-          disableCloseOnTriggerClick={true}
-          class="min-w-0"
-        >
-          {#snippet content()}
-            <span>
-              {#if $workspace?.skipWorktree}
-                {m.workspace_progressCard_workingDirectlyAt_before()}
-                <span class="underline underline-offset-2 break-all"
-                  >{workspacePath.split('/').slice(-2).join('/')}</span
-                >.
-              {:else}
-                {m.workspace_progressCard_isolatedCopy_before()}
-                <span class="underline underline-offset-2"
-                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
-                >
-                {m.workspace_progressCard_isolatedCopy_after()}
-              {/if}
-              <br /><span class="text-subtle"
-                >{m.workspace_progressCard_clickToCopy_before()} <Fa
-                  icon={faEllipsisV}
-                  class="inline mx-0.5"
-                  size="xs"
-                /> {m.workspace_progressCard_clickToCopy_after()}</span
-              >
-            </span>
-            {#if copiedRepoPath}
-              <span class="absolute top-2 right-2">
-                <Fa icon={faCheck} class="text-green-500" size="xs" />
-              </span>
-            {/if}
-          {/snippet}
-          <button
-            type="button"
-            class="min-w-0 truncate cursor-pointer bg-transparent border-none p-0 text-inherit font-inherit hover:underline"
-            onclick={copyRepoPath}
-          >
-            {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
-              {$workspace.repositoryOwner}/{$workspace.repositoryName}
-            {:else if $workspace?.repositoryPath}
-              {$workspace.repositoryPath.split('/').pop()}
-            {/if}
-          </button>
-        </Tooltip>
-        {#if $workspace?.checkoutMode}
-          <span class="mx-1">·</span>
-        {/if}
-        <CheckoutModePill workspace={$workspace} />
-        {#if $workspace?.branch}
-          <span class="mx-1">·</span>
-          <span>{$workspace.branch}</span>
-        {/if}
-      </div>
-    </div>
+{#snippet sidebarSideIconSnippet()}
+  <SidebarIcon size={12} side={$sidebarSide$ === 'left' ? 'right' : 'left'} class="opacity-50" />
+{/snippet}
 
-    <!-- Flame Graph Progress Section (compact) -->
-    {#if flameRows.length > 0}
-      <div class="w-full mt-3">
-        <FlameGraph
-          notes={$notes}
-          onCellClick={(noteId) => onOpenNote?.(noteId)}
-          onCellHover={(noteId) => (hoveredNoteId = noteId)}
-          onSpecClick={() => onOpenNote?.('spec')}
-          {hoveredNoteId}
-          hasUnreadChanges={(noteId) => $unreadNoteIds.includes(noteId)}
-        />
-      </div>
-    {/if}
-
-    <!-- Summary message (compact) -->
-    <div class="text-xs text-subtle mt-2 leading-tight">
-      {$progressHeadline$.headline}
-    </div>
-  </button>
-{:else}
-  <!-- Full mode for sidebar -->
-  <div class="w-full flex flex-col">
+<div class="flex w-full flex-col" data-workspace-title-section>
     <!-- Workspace Header -->
-    <div class="w-full pl-1 pb-1">
+    <div class="flex w-full flex-col pb-1">
       <div class="flex items-center justify-between group">
         <div class="flex-1 flex flex-col min-w-0">
           {#if isEditingTitle}
@@ -988,13 +919,14 @@
           {/if}
         </div>
 
-        <div class="shrink-0 -mt-0.5">
+        <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
           <DropdownMenu bind:open={dropdownOpen}>
             {#snippet trigger({ toggle }: { toggle: () => void })}
               <Button
                 variant="ghost-light"
                 size="icon-sm"
-                class="-mr-1 opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150"
+                aria-label="Workspace actions"
+                class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
                 onclick={toggle}
                 disabled={isDeleting}
               >
@@ -1027,114 +959,183 @@
                   showArchiveOption={true}
                   showFileNameCopy={false}
                   showFileActions={true}
-                  additionalActions={[sidebarSideAction]}
+                  additionalActions={[sidebarToggleAction, sidebarSideAction]}
                 />
               </div>
             {/snippet}
           </DropdownMenu>
+          {#if onCloseWorkspace}
+            <Button
+              variant="ghost-light"
+              size="icon-sm"
+              aria-label={`Close workspace ${workspaceId}`}
+              data-workspace-close
+              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+              onpointerdown={(event) => event.stopPropagation()}
+              onclick={onCloseWorkspace}
+            >
+              <Fa icon={faXmark} size="sm" />
+            </Button>
+          {/if}
         </div>
       </div>
-      <!-- repo -->
-      <div class="w-full flex items-baseline -mt-1.5 gap-1">
-        <Tooltip
+      <!-- repository and branch metadata -->
+      <div
+        class="type-caption mb-4 flex h-5 w-full min-w-0 items-center gap-2.5 font-normal leading-5 text-muted-foreground"
+        data-sidebar-repository-branch-metadata
+      >
+        <TooltipRich
           side="bottom"
           align="start"
-          sideOffset={4}
-          contentClass="max-w-xs relative"
+          sideOffset={6}
+          delayDuration={300}
+          maxWidth="16rem"
+          contentClass="border-0!"
+          contentContainerClass="p-0! space-y-0!"
+          showArrow={false}
+          class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
           bind:open={repoTooltipOpen}
           onOpenChange={handleRepoTooltipOpenChange}
-          disableCloseOnTriggerClick={true}
-          class="min-w-0"
+          disableCloseOnTriggerClick
+          onclick={copyRepoPath}
         >
-          {#snippet content()}
-            <span>
-              {#if $workspace?.skipWorktree}
-                {m.workspace_progressCard_workingDirectlyAt_before()}
-                <span class="underline underline-offset-2 break-all"
-                  >{workspacePath.split('/').slice(-2).join('/')}</span
-                >.
-              {:else}
-                {m.workspace_progressCard_isolatedCopy_before()}
-                <span class="underline underline-offset-2"
-                  ><!-- i18n-ignore (file path) -->{$workspace?.id || 'workspace'}/repo</span
-                >
-                {m.workspace_progressCard_isolatedCopy_after()}
-              {/if}
-              <br /><span class="text-subtle"
-                >{m.workspace_progressCard_clickToCopy_before()} <Fa
-                  icon={faEllipsisV}
-                  class="inline mx-0.5"
-                  size="xs"
-                /> {m.workspace_progressCard_clickToCopy_after()}</span
-              >
+          {#snippet trigger()}
+            <span
+              class="block min-w-0 truncate"
+              data-sidebar-repository-control
+              data-sidebar-repository-label
+            >
+              {repositoryLabel}
             </span>
-            {#if copiedRepoPath}
-              <span class="absolute top-2 right-2">
-                <Fa icon={faCheck} class="text-green-500" size="xs" />
-              </span>
-            {/if}
           {/snippet}
-          <button
-            type="button"
-            class="flex-1 text-muted-foreground text-sm truncate text-left cursor-pointer bg-transparent border-none p-0 font-inherit hover:underline"
-            onclick={copyRepoPath}
+          {#snippet content()}
+            <div class="w-56 p-2.5" data-sidebar-repository-hover-card>
+              <div class="flex min-w-0 items-center gap-2">
+                <p
+                  class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
+                  title={repositoryLabel}
+                >
+                  {repositoryLabel}
+                </p>
+                {#if copiedRepoPath}
+                  <span class="flex shrink-0 items-center gap-1 text-xs text-success">
+                    <Fa icon={faCheck} size="xs" />
+                    Copied
+                  </span>
+                {/if}
+              </div>
+              <p class="mt-1 truncate text-xs text-muted-foreground" title={workspacePath}>
+                {workspacePath}
+              </p>
+              <p class="mt-1 text-xs text-subtle">
+                {$workspace?.skipWorktree ? 'Direct checkout' : 'Worktree'}
+              </p>
+            </div>
+          {/snippet}
+        </TooltipRich>
+        {#if $workspace?.branch}
+          <TooltipRich
+            side="bottom"
+            align="start"
+            sideOffset={6}
+            delayDuration={300}
+            maxWidth="16rem"
+            contentClass="border-0!"
+            contentContainerClass="p-0! space-y-0!"
+            showArrow={false}
+            class="h-5 min-w-0 shrink cursor-copy items-center justify-start gap-0.5 overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+            bind:open={branchTooltipOpen}
+            onOpenChange={handleBranchTooltipOpenChange}
+            disableCloseOnTriggerClick
+            onclick={copyBranchName}
           >
-            {#if $workspace?.repositoryOwner && $workspace?.repositoryName}
-              {$workspace.repositoryOwner}/{$workspace.repositoryName}
-            {:else if $workspace?.repositoryPath}
-              {$workspace.repositoryPath.split('/').pop()}
-            {/if}
-          </button>
-        </Tooltip>
-        {#if $workspace?.checkoutMode}
-          <span class="mx-1">·</span>
+            {#snippet trigger()}
+              <span
+                class="grid size-4 shrink-0 place-items-center text-muted-foreground"
+                data-sidebar-branch-icon
+                data-sidebar-branch-control
+                aria-hidden="true"
+              >
+                <GitBranchIcon size={14} class="block size-3.5" />
+              </span>
+              <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
+                {$workspace.branch}
+              </span>
+            {/snippet}
+            {#snippet content()}
+              <div class="w-56 p-2.5" data-sidebar-branch-hover-card>
+                <div class="flex min-w-0 items-center gap-2">
+                  <p
+                    class="min-w-0 flex-1 truncate text-sm font-medium text-popover-foreground"
+                    title={$workspace.branch}
+                  >
+                    {$workspace.branch}
+                  </p>
+                  {#if copiedBranchName}
+                    <span class="flex shrink-0 items-center gap-1 text-xs text-success">
+                      <Fa icon={faCheck} size="xs" />
+                      Copied
+                    </span>
+                  {/if}
+                </div>
+                <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  {#if $workspace.baseRef}
+                    <span class="min-w-0 truncate">Base {$workspace.baseRef}</span>
+                    <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
+                  {/if}
+                  <span class="shrink-0">
+                    {$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
+                  </span>
+                </div>
+              </div>
+            {/snippet}
+          </TooltipRich>
         {/if}
-        <CheckoutModePill workspace={$workspace} />
+        {#if $workspace?.checkoutMode}
+          <CheckoutModePill workspace={$workspace} />
+        {/if}
       </div>
     </div>
 
-    <div class="w-full pb-2 pl-1 text-left flex flex-col gap-3">
-      <!-- Flame Graph Progress Section (always show task-focused view) -->
-      {#if flameRows.length > 0}
-        <div class="flex-1 shrink-0 flex" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="flex w-full flex-col gap-3.5 pb-2 text-left">
+      {#if showFlameGraph}
+        <!-- Keep the task progress placeholder visible while canonical tasks load. -->
+        <div class="flex h-5 flex-1 shrink-0" data-workspace-task-progress>
           <FlameGraph
             notes={$notes}
-            onCellClick={(noteId) => onOpenNote?.(noteId)}
-            onCellHover={(noteId) => (hoveredNoteId = noteId)}
-            onSpecClick={() => onOpenNote?.('spec')}
-            {hoveredNoteId}
-            hasUnreadChanges={(noteId) => $unreadNoteIds.includes(noteId)}
+            onTaskClick={_onOpenNote}
+            progress={completionRatio}
+            animationKey={workspaceId}
           />
         </div>
-        <!-- Workflow action button (styled like AI-assisted action prompts) -->
-        {#if displayAction}
-          {@const action = displayAction}
-          <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-            {#if action}
-              <div class="mt-1">
-                <Tooltip
-                  content={action?.tooltip}
-                  side="bottom"
-                  align="start"
-                  disabled={!action?.tooltip}
+      {/if}
+      <!-- Workflow action button (styled like AI-assisted action prompts) -->
+      {#if displayAction}
+        {@const action = displayAction}
+        <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+          {#if action}
+            <div class="mt-1">
+              <Tooltip
+                content={action?.tooltip}
+                side="bottom"
+                align="start"
+                disabled={!action?.tooltip}
+              >
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="w-full text-left justify-start px-0! -mb-1"
+                  onclick={() => runProgressAction(action)}
                 >
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    class="w-full text-left justify-start px-0! -mb-1"
-                    onclick={() => runProgressAction(action)}
-                  >
-                    <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
-                    <span class="underline decoration-dotted underline-offset-2"
-                      >{action.label}</span
-                    >
-                  </Button>
-                </Tooltip>
-              </div>
-            {/if}
+                  <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+                  <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+                </Button>
+              </Tooltip>
+            </div>
+          {/if}
 
-            <!-- Contextual Action Prompts (AI-assisted actions) -->
-            <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
+          <!-- Contextual Action Prompts (AI-assisted actions) -->
+          <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}
           <div class="mt-1">
             {#if hasContentNoTasks}
               <Tooltip
@@ -1181,8 +1182,7 @@
             {/if}
           </div>
         {/if} -->
-          </div>
-        {/if}
+        </div>
       {/if}
 
       <!-- Token usage row (renders nothing until data is available) -->
@@ -1190,40 +1190,29 @@
         <WorkspaceTokenUsage {workspaceId} />
       {/if}
 
-      <!-- status message -->
+      <!-- Status follows identity and progress so it reads as the current update. -->
       {#if isEditingStatusMessage || currentStatusMessage}
-        <div>
+        <div class="pt-1">
           {#if isEditingStatusMessage}
             <textarea
               bind:this={statusInputRef}
-              rows="1"
               bind:value={editedStatusMessage}
-              oninput={autoResizeStatusInput}
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
+              rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="text-xs text-foreground bg-none
-                   px-0.5 py-1 rounded
-                   outline-none w-full leading-snug
-                   resize-none overflow-hidden break-words whitespace-pre-wrap
-                   focus:ring-none! focus:outline-none!
-                   transition-all duration-150 disabled:opacity-50"
-              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
-            ></textarea>
+              class="type-body min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-none py-0.5 text-foreground outline-none leading-snug
+                   focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
+              style="field-sizing: content;"
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
           {:else if $workspace && currentStatusMessage}
             <button
-              class="w-full text-xs text-subtle bg-transparent
-                   border-none px-0.5 py-1 rounded cursor-pointer text-left
-                   break-words whitespace-pre-wrap
-                   transition-all duration-150 leading-snug
-                   hover:text-foreground hover:opacity-80
-                   focus-visible:outline focus-visible:outline-1
-                   focus-visible:outline-primary/50 focus-visible:outline-offset-[-1px]
+              class="type-body w-full cursor-pointer whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+                   transition-all duration-150 leading-snug hover:text-foreground
+                   focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                    disabled:cursor-default disabled:opacity-50"
-              class:italic={!currentStatusMessage}
-              class:text-ghost={!currentStatusMessage}
               onclick={startEditingStatusMessage}
               title={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_tooltip()
@@ -1241,7 +1230,7 @@
 
       <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
       {#if showStatusImage}
-        <div class="px-0.5 py-1">
+        <div class="py-1">
           <button
             bind:this={statusImageButtonRef}
             type="button"
@@ -1322,37 +1311,4 @@
     </div>
   {/if} -->
     </div>
-
-    <!-- Hover Card for task segments -->
-    {#if hoveredNoteId}
-      {@const hoveredNote = $notes.find((n) => n.id === hoveredNoteId)}
-      {#if hoveredNote}
-        {@const taskStatus = hoveredNote.metadata?.task?.status ?? 'not_started'}
-        {@const assignedAgentIds = hoveredNote.metadata?.task?.assignedAgentIds}
-        {@const latestAgentId = assignedAgentIds?.length
-          ? assignedAgentIds[assignedAgentIds.length - 1]
-          : null}
-        <HoverCard anchor="--task-{hoveredNoteId}" position="bottom-right">
-          <div class="p-3 flex flex-col gap-2">
-            <!-- Task title -->
-            <div class="text-sm font-medium text-foreground leading-tight line-clamp-3">
-              {hoveredNote.title}
-            </div>
-
-            <!-- Status badge -->
-            <div class="flex items-center">
-              <TaskStatusIndicator status={taskStatus} readonly compact />
-            </div>
-
-            <!-- Agent row (if assigned) -->
-            {#if latestAgentId}
-              <div class="border-t border-border pt-2 mt-1">
-                <TaskAgentStatus agentId={latestAgentId} compact />
-              </div>
-            {/if}
-          </div>
-        </HoverCard>
-      {/if}
-    {/if}
   </div>
-{/if}

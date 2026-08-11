@@ -11,7 +11,7 @@
    * a brief "Woken up" indicator when an agent is woken by a subscription.
    *
    * All subscription data comes from Redux selectors (populated by the
-   * agent-subscription-ui read middleware). No IPC listeners, polling, or
+   * agent-subscription-ui read saga). No IPC listeners, polling, or
    * timers in this component.
    */
   import { fade } from 'svelte/transition';
@@ -140,16 +140,16 @@
   // daemon guarantees watch uniqueness per (parent, target, event), so no
   // client-side dedup beyond the Set here. Merged single-agent groups render
   // here too, so their agents are counted in the "Waiting for…" header.
-  // Sorted by agent id so daemon snapshot iteration-order churn cannot
-  // change `.slice(0, 5)` membership and trigger spurious row enter/exit.
   const oneShotWatchedIds = $derived.by(() => {
     const ids = new Set<string>();
-    for (const sub of $subs$) {
+    for (const sub of [...$subs$].sort(
+      (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+    )) {
       if (sub.delegationGroup?.awaitMode === 'all') continue;
       for (const actorId of sub.actorIds || []) ids.add(actorId);
     }
     for (const id of mergedGroupByAgentId.keys()) ids.add(id);
-    return Array.from(ids).sort();
+    return Array.from(ids).sort((a, b) => a.localeCompare(b));
   });
 
   // Agents that have finished (completed or deleted) across delegation groups
@@ -347,10 +347,7 @@
   <div class="w-full font-family-child">
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
-      <div
-        class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
-        transition:safeSlide={{ axis: 'y', duration: 200 }}
-      >
+      <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
         {#if isCompleted}
           <span
             class="shrink-0 flex items-center gap-2 whitespace-nowrap text-green-500"
@@ -399,7 +396,7 @@
       <div class="w-full" data-testid="one-shot-watches" transition:safeSlide={{ duration: 150 }}>
         <!-- Section header: waiting label, collapse toggle, avatar strip when collapsed -->
         <div
-          class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle"
+          class="flex items-center gap-2 pl-0 pr-3 py-1.5 text-sm text-subtle"
           data-testid="one-shot-header"
         >
           <!-- Collapse/expand toggle -->
@@ -461,7 +458,8 @@
         <!-- Watch rows with per-row actions - shown when expanded -->
         {#if !oneShotCollapsed}
           <div
-            class="flex flex-col gap-0.5 w-full pl-4.5 pr-2"
+            class="flex flex-col gap-0.5 w-full pl-0 pr-2"
+            data-testid="one-shot-agent-list"
             transition:safeSlide={{ duration: 150 }}
           >
             {#each oneShotWatchedIds.slice(0, 5) as watchedAgentId (watchedAgentId)}

@@ -88,8 +88,12 @@
         // local-only, so drop this stale load entirely.
         return;
       }
-      const wsApiEnabled = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled');
-      const wsApiPort = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.port');
+      const wsApiEnabled = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled',
+      );
+      const wsApiPort = settings.find(
+        (s: { path: string; value: unknown }) => s.path === 'server.wsApi.port',
+      );
 
       enabled = wsApiEnabled?.value === true;
 
@@ -125,7 +129,9 @@
       ]);
 
       // Check if the daemon rolled back the setting on failure
-      const applied = result.find((r: { path: string; value: unknown }) => r.path === 'server.wsApi.enabled');
+      const applied = result.find(
+        (r: { path: string; value: unknown }) => r.path === 'server.wsApi.enabled',
+      );
       if (applied && applied.value !== checked) {
         toast.error(m.settings_wsApi_startListenerError());
         enabled = false;
@@ -159,7 +165,9 @@
       ]);
 
       // Check if the daemon rolled back the setting on failure
-      const applied = result.find((r: { path: string; value: unknown }) => r.path === 'server.wsApi.port');
+      const applied = result.find(
+        (r: { path: string; value: unknown }) => r.path === 'server.wsApi.port',
+      );
       if (applied && applied.value !== newPort) {
         // Daemon rolled back to a different value (could be the old value or a different one)
         const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
@@ -265,162 +273,165 @@
   onDestroy(() => {
     if (qrTimer) clearTimeout(qrTimer);
   });
-
 </script>
 
-<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+<div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
   {#if isRemote}
-  <!-- Remote connection: info-only panel — no toggle/port/token/QR controls -->
-  <section class="px-6 py-5">
-    <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
-    <p class="text-xs text-subtle mt-1">
-      {m.settings_wsApi_remoteInfo_description()}
-    </p>
-  </section>
+    <!-- Remote connection: info-only panel — no toggle/port/token/QR controls -->
+    <section>
+      <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
+      <p class="text-xs text-subtle mt-1">
+        {m.settings_wsApi_remoteInfo_description()}
+      </p>
+    </section>
   {:else}
-  <!-- Enable toggle -->
-  <section class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
-        <p class="text-xs text-subtle mt-1">
-          {m.settings_wsApi_enable_description()}
-        </p>
+    <!-- Enable toggle -->
+    <section>
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-foreground">{m.settings_wsApi_enable_label()}</p>
+          <p class="text-xs text-subtle mt-1">
+            {m.settings_wsApi_enable_description()}
+          </p>
+        </div>
+        <Toggle
+          pressed={enabled}
+          onclick={() => handleToggle(!enabled)}
+          variant="indicator"
+          size="xs"
+          class="mb-auto"
+          disabled={loading}
+          ariaLabel={m.settings_wsApi_enable_label()}
+        />
       </div>
-      <Toggle
-        pressed={enabled}
-        onclick={() => handleToggle(!enabled)}
-        variant="indicator"
-        size="xs"
-        class="mb-auto"
-        disabled={loading}
-        ariaLabel={m.settings_wsApi_enable_label()}
-      />
-    </div>
-  </section>
+    </section>
 
-  <!-- Port (always visible) -->
-  <section class="px-6 py-4">
-    {#snippet portValidation()}
-      {@const portNum = Number(editedPort)}
-      <!-- i18n-ignore (template expression, not user-facing text) -->
-      {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
-      <div class="flex items-center justify-between gap-3">
-        <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
-        <div class="flex items-center gap-2">
-          <div class="shrink-0 w-32">
-            <Input
-              type="number"
-              min="1024"
-              max="65535"
-              bind:value={editedPort}
-              disabled={portSaving}
-              aria-label={m.settings_wsApi_port_ariaLabel()}
-              class="h-9 text-sm"
-            />
+    <!-- Port (always visible) -->
+    <section>
+      {#snippet portValidation()}
+        {@const portNum = Number(editedPort)}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-sm text-muted-foreground">{m.settings_wsApi_port_label()}</span>
+          <div class="flex items-center gap-2">
+            <div class="shrink-0 w-32">
+              <Input
+                type="number"
+                min="1024"
+                max="65535"
+                bind:value={editedPort}
+                disabled={portSaving}
+                aria-label={m.settings_wsApi_port_ariaLabel()}
+                class="h-9 text-sm"
+              />
+            </div>
+            {#if Number(editedPort) !== persistedPort}
+              <button
+                type="button"
+                onclick={handlePortSave}
+                disabled={portSaving || !isValid}
+                class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+              </button>
+            {/if}
           </div>
-          {#if Number(editedPort) !== persistedPort}
+        </div>
+        {#if !isValid}
+          <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
+        {/if}
+        {#if enabled && port}
+          <p class="text-xs text-subtle mt-1">
+            {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
+          </p>
+        {/if}
+      {/snippet}
+      {@render portValidation()}
+    </section>
+
+    {#if enabled}
+      <div transition:slide={{ duration: 200 }} class="space-y-4">
+        <!-- Mobile App Pairing -->
+        <section>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-foreground">
+                {m.settings_wsApi_mobilePairing_label()}
+              </p>
+              <p class="text-xs text-subtle mt-1">
+                {m.settings_wsApi_mobilePairing_description()}
+              </p>
+            </div>
             <button
               type="button"
-              onclick={handlePortSave}
-              disabled={portSaving || !isValid}
-              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleShowQr}
+              class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
             >
-              {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+              <Fa icon={faQrcode} size="sm" />
+              {m.settings_wsApi_showQrCode()}
             </button>
-          {/if}
-        </div>
-      </div>
-      {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">{m.settings_wsApi_port_invalid()}</p>
-      {/if}
-      {#if enabled && port}
-        <p class="text-xs text-subtle mt-1">
-          {m.settings_wsApi_port_currentlyBound({ port: String(port) })}
-        </p>
-      {/if}
-    {/snippet}
-    {@render portValidation()}
-  </section>
-
-  {#if enabled}
-    <div transition:slide={{ duration: 200 }}>
-      <!-- Mobile App Pairing -->
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-foreground">{m.settings_wsApi_mobilePairing_label()}</p>
-            <p class="text-xs text-subtle mt-1">
-              {m.settings_wsApi_mobilePairing_description()}
-            </p>
-          </div>
-          <button
-            type="button"
-            onclick={handleShowQr}
-            class="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
-          >
-            <Fa icon={faQrcode} size="sm" />
-            {m.settings_wsApi_showQrCode()}
-          </button>
-        </div>
-      </section>
-
-      <!-- TLS Certificate Fingerprint -->
-      {#if certFingerprint}
-        <section class="px-6 py-4">
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-muted-foreground">{m.settings_wsApi_tlsFingerprint_label()}</span>
-            <code
-              class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-              title={certFingerprint}
-            >{certFingerprint.slice(0, 23)}…</code>
           </div>
         </section>
-      {/if}
 
-      <!-- Token -->
-      <section class="px-6 py-4 space-y-3">
-        <div class="flex items-center justify-between">
-          <span class="text-sm text-muted-foreground">{m.settings_wsApi_apiToken_label()}</span>
-          <div class="flex items-center gap-2">
-            <code
-              class="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded max-w-[280px] truncate select-all"
-            >
-              {showToken ? token : maskedToken}
-            </code>
-            <button
-              type="button"
-              onclick={() => (showToken = !showToken)}
-              class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-              title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
-            >
-              <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
-            </button>
-            <button
-              type="button"
-              onclick={handleCopy}
-              class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
-              title={m.settings_wsApi_copyToken()}
-            >
-              <Fa icon={faCopy} size="sm" />
-            </button>
-            <button
-              type="button"
-              onclick={handleRegenerate}
-              disabled={regenerating}
-              class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-              title={m.settings_wsApi_regenerateToken()}
-            >
-              <Fa icon={faRotateRight} size="sm" class={regenerating ? 'animate-spin' : ''} />
-            </button>
+        <!-- TLS Certificate Fingerprint -->
+        {#if certFingerprint}
+          <section>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-muted-foreground"
+                >{m.settings_wsApi_tlsFingerprint_label()}</span
+              >
+              <code
+                class="text-xs font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
+              >
+            </div>
+          </section>
+        {/if}
+
+        <!-- Token -->
+        <section class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-muted-foreground">{m.settings_wsApi_apiToken_label()}</span>
+            <div class="flex items-center gap-2">
+              <code
+                class="text-xs font-mono text-foreground bg-muted px-2 py-1 rounded max-w-[280px] truncate select-all"
+              >
+                {showToken ? token : maskedToken}
+              </code>
+              <button
+                type="button"
+                onclick={() => (showToken = !showToken)}
+                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
+              >
+                <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
+              </button>
+              <button
+                type="button"
+                onclick={handleCopy}
+                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                title={m.settings_wsApi_copyToken()}
+              >
+                <Fa icon={faCopy} size="sm" />
+              </button>
+              <button
+                type="button"
+                onclick={handleRegenerate}
+                disabled={regenerating}
+                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                title={m.settings_wsApi_regenerateToken()}
+              >
+                <Fa icon={faRotateRight} size="sm" class={regenerating ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
-        </div>
-        <p class="text-xs text-amber-500/90">
-          {m.settings_wsApi_tokenSecretWarning()}
-        </p>
-      </section>
-    </div>
-  {/if}
+          <p class="text-xs text-amber-500/90">
+            {m.settings_wsApi_tokenSecretWarning()}
+          </p>
+        </section>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -428,17 +439,16 @@
   <!-- QR Code overlay -->
   <div
     class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    onclick={handleCloseQr}
+    onclick={(event) => {
+      if (event.target === event.currentTarget) handleCloseQr();
+    }}
     onkeydown={(e) => e.key === 'Escape' && handleCloseQr()}
     role="dialog"
     aria-modal="true"
     aria-label={m.settings_wsApi_qrDialogAriaLabel()}
     tabindex="-1"
   >
-    <div
-      class="bg-card rounded-xl p-6 shadow-xl max-w-xs text-center"
-      onclick={(e) => e.stopPropagation()}
-    >
+    <div class="bg-card rounded-xl p-6 shadow-xl max-w-xs text-center">
       <h3 class="text-sm font-medium text-foreground mb-3">{m.settings_wsApi_scanToConnect()}</h3>
       {#if qrDataUrl}
         <img

@@ -5,8 +5,8 @@
  * renderer `FileContentEntry` cache shape. `gitStatusMap` is DERIVED from
  * `git.status` (the daemon exposes no per-path status map). `explorerTree`
  * resolves via the additive `file.tree` read (PROTOCOL §5.9), anchored at the
- * workspace root; transport/daemon errors fold to `null` so the explorer
- * degrades cleanly. `list` returns an empty content cache (the daemon's
+ * workspace root; transport/daemon errors propagate so the explorer can
+ * expose a retryable failure. `list` returns an empty content cache (the daemon's
  * directory listing is not a `FileContentEntry` collection). `subscribe`
  * refetches on `file:*` events.
  */
@@ -118,13 +118,12 @@ export class LiveFilesClient implements FilesClient {
   // wrap the entries as the synthetic root `FileNode`'s children (the wire
   // result is shallow — deeper levels load lazily via `listDirectory`).
   async explorerTree(workspaceId: string): Promise<FileNode | null> {
-    try {
-      const result = await backendRequest<unknown>("file.tree", { workspaceId, path: "." });
-      const children = toFileNodes(result);
-      return { name: "", path: "", type: "directory", children };
-    } catch {
-      return null;
+    const result = await backendRequest<unknown>("file.tree", { workspaceId, path: "." });
+    if (!Array.isArray(result)) {
+      throw new Error("Invalid file.tree response: expected an array");
     }
+    const children = toFileNodes(result);
+    return { name: "", path: "", type: "directory", children };
   }
 
   // Directory listing via the daemon's `file.list` (a directory listing, unlike

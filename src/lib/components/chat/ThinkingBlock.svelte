@@ -8,10 +8,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import {
-  faChevronRight,
-  faBrain,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronRight, faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -57,18 +54,14 @@
   });
 </script>
 
-<div class="rounded-lg border border-border/40 overflow-hidden {className}">
+<div class="rounded-lg border border-border bg-muted overflow-hidden {className}">
   <button
     type="button"
-    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-xs transition-colors duration-150 hover:bg-muted/30"
+    class="type-caption flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-2 text-left text-muted-foreground transition-colors duration-150 hover:bg-muted/30"
     onclick={toggle}
     aria-expanded={isExpanded}
   >
-    <div
-      class="flex items-center justify-center text-subtle {isStreaming
-        ? 'animate-pulse'
-        : ''}"
-    >
+    <div class="flex items-center justify-center text-subtle {isStreaming ? 'animate-pulse' : ''}">
       <Fa icon={faBrain} class="w-3.5 h-3.5" />
     </div>
     <span class="font-medium text-muted-foreground shrink-0">
@@ -82,7 +75,7 @@
       <Fa icon={faChevronRight} class="w-3 h-3" />
     </div>
     {#if !isExpanded}
-      <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap opacity-70 text-xs"
+      <span class="type-caption flex-1 overflow-hidden text-ellipsis whitespace-nowrap opacity-70"
         >{summary}</span
       >
     {/if}
@@ -90,7 +83,7 @@
 
   {#if isExpanded}
     <div
-      class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_.markdown-viewer]:text-xs! [&_.markdown-viewer]:text-subtle! [&_p]:my-2 [&_p:first-child]:mt-0"
+      class="type-caption px-3 pb-3 text-subtle [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-[13px] [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
       transition:safeSlide={{ duration: 200, easing: cubicOut }}
     >
       <MarkdownViewer {content} {isStreaming} />

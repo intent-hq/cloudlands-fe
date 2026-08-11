@@ -502,7 +502,7 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Font style for notes.',
     category: 'fonts',
     type: 'enum',
-    enumValues: ['sans', 'monospace'],
+    enumValues: ['sans', 'serif', 'monospace'],
     source: 'local-storage',
     storageKey: 'note-font-settings',
     valuePath: 'fontStyle',

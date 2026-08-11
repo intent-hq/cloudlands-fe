@@ -96,6 +96,10 @@ export class TerminalThemeManager {
 
   constructor(private container?: HTMLElement | null) {
     this.currentTheme = this.detectSystemTheme();
+    // Paint the host immediately. applyTheme() intentionally skips identical
+    // themes, so deferring this until the first theme change leaves xterm's
+    // transparent padded frame showing its upstream black fallback.
+    this.setContainer(this.container ?? null);
     this.setupThemeObserver();
   }
 
@@ -325,7 +329,9 @@ export class TerminalThemeManager {
 
       if (terminalColors && Object.keys(terminalColors).length > 0) {
         // Custom VS Code theme provides terminal colors
-        const baseTheme = isDark ? TerminalThemeManager.DARK_THEME : TerminalThemeManager.LIGHT_THEME;
+        const baseTheme = isDark
+          ? TerminalThemeManager.DARK_THEME
+          : TerminalThemeManager.LIGHT_THEME;
         newTheme = {
           ...baseTheme,
           ...terminalColors,

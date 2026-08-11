@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -21,10 +18,11 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import {
-  openWorkspaceFile,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { WorkspaceId } from '$shared/types/branded-ids';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
 
@@ -35,8 +33,12 @@
     content: string;
     isStreaming?: boolean;
     className?: string;
+    workspaceId?: string;
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
-    onFileClick?: (path: string) => void;
+    onFileClick?: (
+      path: string,
+      options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    ) => void;
     taskBlockRenderMode?: 'placeholder' | 'content';
   }
 
@@ -44,6 +46,7 @@
     content,
     isStreaming = false,
     className = '',
+    workspaceId,
 
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
@@ -277,8 +280,16 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      const sourcePanelId = getSourcePanelId(event);
+      const owningWorkspaceId = workspaceId
+        ? WorkspaceId(workspaceId)
+        : ($activeWorkspaceId ?? undefined);
+
       handleLink(anchor.href, {
-        workspaceId: $activeWorkspaceId ?? undefined,
+        workspaceId: owningWorkspaceId,
+        sourcePanelId,
+        openInAdjacentPanel: true,
+        openInNewAdjacentPanel: true,
         event,
         rawHref: anchor.getAttribute('href') ?? undefined,
       });
@@ -301,15 +312,14 @@
         logger.debug('[MarkdownViewer] File mention clicked', { filePath, meta });
 
         // Get source panel ID for same-panel navigation
-        const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
-        const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-        const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+        const sourcePanelId = getSourcePanelId(event);
+        const openInAdjacentPanel = true;
 
         // Use onFileClick callback if provided, otherwise use direct navigation
         if (onFileClick) {
-          onFileClick(filePath);
+          onFileClick(filePath, { openInAdjacentPanel, sourcePanelId });
         } else {
-          const wsId = $activeWorkspaceId;
+          const wsId = workspaceId ?? $activeWorkspaceId;
           if (wsId) {
             appStore.dispatch(
               openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
@@ -325,18 +335,27 @@
         logger.debug('[MarkdownViewer] Note mention clicked', { noteId, meta });
 
         // Get source panel ID for same-panel navigation
-        const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
-        const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
+        const sourcePanelId = getSourcePanelId(event);
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
 
-        const wsIdNote = $activeWorkspaceId;
+        const wsIdNote = workspaceId ?? $activeWorkspaceId;
         if (wsIdNote) {
           appStore.dispatch(
-            openWorkspaceNote(wsIdNote, noteId, { openInAdjacentPanel, sourcePanelId }),
+            openWorkspaceNote(wsIdNote, noteId, {
+              openInAdjacentPanel,
+              openInNewAdjacentPanel: true,
+              sourcePanelId,
+            }),
           );
         }
       }
     }
+  }
+
+  function getSourcePanelId(event: MouseEvent): string | undefined {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return undefined;
+    return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
   }
 
   // Store file click handler for cleanup
@@ -440,7 +459,10 @@
         event.preventDefault();
         const filePath = match[1];
         logger.info('File reference clicked in markdown', { filePath });
-        onFileClick(filePath);
+        onFileClick(filePath, {
+          openInAdjacentPanel: event.metaKey || event.ctrlKey,
+          sourcePanelId: getSourcePanelId(event),
+        });
       }
 
       // Also check for code elements that might contain file paths
@@ -449,7 +471,10 @@
         if (cleanPath.includes('.') && onFileClick) {
           event.preventDefault();
           logger.info('Code file reference clicked', { cleanPath });
-          onFileClick(cleanPath);
+          onFileClick(cleanPath, {
+            openInAdjacentPanel: event.metaKey || event.ctrlKey,
+            sourcePanelId: getSourcePanelId(event),
+          });
         }
       }
     };
@@ -537,9 +562,12 @@
   .markdown-viewer {
     position: relative;
     width: 100%;
-    font-size: 1rem;
-    line-height: 1.6;
-    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+    font-weight: var(--text-body-weight);
+    letter-spacing: var(--text-body-tracking);
+    color: hsl(var(--foreground));
   }
 
   /* PERF: Streaming content uses contain for rendering isolation */
@@ -587,10 +615,11 @@
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+    text-wrap: pretty;
   }
 
   .markdown-viewer :global(strong) {
-    font-weight: 700;
+    font-weight: var(--text-body-strong-weight);
   }
 
   .markdown-viewer :global(h1),
@@ -600,23 +629,40 @@
   .markdown-viewer :global(h5),
   .markdown-viewer :global(h6) {
     margin-top: 1.5rem;
-    margin-bottom: 0.75rem;
-    font-weight: 600;
-    line-height: 1.25;
+    margin-bottom: 0.5rem;
+    color: hsl(var(--foreground));
+    font-weight: var(--text-title-weight);
+    text-wrap: balance;
   }
 
   .markdown-viewer :global(h1) {
-    font-size: 1.25rem;
-    letter-spacing: -0.02em;
+    font-size: var(--text-display-size);
+    line-height: var(--text-display-line-height);
+    letter-spacing: var(--text-display-tracking);
   }
 
   .markdown-viewer :global(h2) {
-    font-size: 1rem;
-    letter-spacing: -0.016em;
+    font-size: var(--text-title-size);
+    line-height: var(--text-title-line-height);
+    letter-spacing: var(--text-title-tracking);
   }
 
-  .markdown-viewer :global(h3) {
-    font-size: 1rem;
+  .markdown-viewer :global(h3),
+  .markdown-viewer :global(h4),
+  .markdown-viewer :global(h5),
+  .markdown-viewer :global(h6) {
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+    letter-spacing: var(--text-body-tracking);
+  }
+
+  .markdown-viewer :global(h1:first-child),
+  .markdown-viewer :global(h2:first-child),
+  .markdown-viewer :global(h3:first-child),
+  .markdown-viewer :global(h4:first-child),
+  .markdown-viewer :global(h5:first-child),
+  .markdown-viewer :global(h6:first-child) {
+    margin-top: 0;
   }
 
   /* Lists */
@@ -657,7 +703,7 @@
     margin-top: 0.125rem;
     border: none;
     border-radius: 0.3125rem;
-    background: var(--color-muted);
+    background: hsl(var(--muted));
     cursor: default;
     pointer-events: none; /* Read-only */
     position: relative;
@@ -665,7 +711,7 @@
   }
 
   .markdown-viewer :global(.task-item input[type='checkbox']:checked) {
-    background: var(--color-foreground);
+    background: hsl(var(--foreground));
   }
 
   .markdown-viewer :global(.task-item input[type='checkbox']:checked::after) {
@@ -675,31 +721,32 @@
     top: 50%;
     width: 0.3rem;
     height: 0.5rem;
-    border: solid var(--color-background);
+    border: solid hsl(var(--background));
     border-width: 0 2px 2px 0;
     transform: translate(-45%, -60%) rotate(45deg);
   }
 
   /* Code */
   .markdown-viewer :global(code:not(.code-block code)) {
-    background: hsla(var(--muted) / 0.4);
-    color: var(--color-muted-foreground);
+    background: hsl(var(--muted) / 0.4);
+    color: hsl(var(--muted-foreground));
     padding: 0.125rem 0.375rem;
     border-radius: 0.25rem;
     font-size: 0.9em;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-code);
   }
 
   /* Code blocks */
   .markdown-viewer :global(.code-block) {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;
     padding: 1rem;
     overflow-x: auto;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-    font-size: 0.8rem;
-    line-height: 1.5;
+    font-family: var(--font-code);
+    font-size: var(--text-code-size);
+    line-height: var(--text-code-line-height);
+    letter-spacing: var(--text-code-tracking);
     position: relative;
   }
 
@@ -854,7 +901,7 @@
   }
 
   .markdown-viewer :global(.markdown-link) {
-    color: var(--color-primary);
+    color: hsl(var(--primary));
   }
 
   .markdown-viewer :global(a:hover),
@@ -869,11 +916,11 @@
 
   /* Blockquotes */
   .markdown-viewer :global(blockquote) {
-    border-left: 3px solid var(--color-primary);
+    border-left: 1px solid hsl(var(--border));
     padding-left: 1rem;
     margin: 0.75rem 0;
-    color: var(--color-text-secondary);
-    font-style: italic;
+    color: hsl(var(--muted-foreground));
+    font-style: normal;
   }
 
   /* Tables */
@@ -883,11 +930,14 @@
     margin: 0.75rem 0;
     overflow: auto;
     display: block;
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
   }
 
   .markdown-viewer :global(th),
   .markdown-viewer :global(td) {
-    border: 1px solid var(--color-border);
+    border: 1px solid hsl(var(--border));
     padding: 0.5rem;
     text-align: left;
     word-break: auto-phrase;
@@ -896,17 +946,17 @@
 
   .markdown-viewer :global(th) {
     background: hsl(var(--muted) / 0.3);
-    font-weight: 600;
+    font-weight: var(--text-body-strong-weight);
   }
 
   .markdown-viewer :global(tr:hover) {
-    background: var(--color-surface-1);
+    background: hsl(var(--muted));
   }
 
   /* Horizontal rule */
   .markdown-viewer :global(hr) {
     border: none;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid hsl(var(--border));
     margin: 1.5rem 0;
   }
 
@@ -930,7 +980,7 @@
     width: 1rem;
     height: 1rem;
     border-radius: 0.25rem;
-    border: 2px solid var(--color-muted-foreground);
+    border: 2px solid hsl(var(--muted-foreground));
     opacity: 0.3;
     cursor: default;
     flex-shrink: 0;
@@ -942,9 +992,9 @@
     max-width: 200px;
     background: linear-gradient(
       90deg,
-      var(--color-muted-foreground) 25%,
+      hsl(var(--muted-foreground)) 25%,
       transparent 50%,
-      var(--color-muted-foreground) 75%
+      hsl(var(--muted-foreground)) 75%
     );
     background-size: 200% 100%;
     opacity: 0.15;

@@ -79,7 +79,9 @@ describe('WebSocketApiSettings', () => {
 
     // Mock settings.update to reject (daemon error)
     mocks.mockSettingsUpdate.mockRejectedValueOnce(
-      new Error('Port 5181 is already in use — choose a different port or stop the process using it')
+      new Error(
+        'Port 5181 is already in use — choose a different port or stop the process using it',
+      ),
     );
 
     // Act: toggle enable
@@ -96,7 +98,7 @@ describe('WebSocketApiSettings', () => {
     // Assert: toast.error was called with the daemon's error message
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith(
-        expect.stringContaining('Port 5181 is already in use')
+        expect.stringContaining('Port 5181 is already in use'),
       );
     });
   });
@@ -144,6 +146,22 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
+  it('delegates the outer surface and padding to SettingsSection', async () => {
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+
+    const { container } = render(WebSocketApiSettings);
+    await waitFor(() => expect(screen.getByText('Port')).toBeTruthy());
+
+    const root = container.querySelector('[data-settings-websocket-api]');
+    expect(root?.className).toContain('gap-4');
+    expect(root?.className).not.toContain('bg-card');
+    expect(root?.className).not.toContain('divide-y');
+    expect(root?.querySelector('.px-6')).toBeNull();
+  });
+
   it('shows Save button when port value differs from persisted setting, and clicking Save calls settings.update', async () => {
     // Arrange: WSS disabled, port 5181
     mocks.mockSettingsList.mockResolvedValue([
@@ -151,9 +169,7 @@ describe('WebSocketApiSettings', () => {
       { path: 'server.wsApi.port', value: 5181 },
     ]);
 
-    mocks.mockSettingsUpdate.mockResolvedValueOnce([
-      { path: 'server.wsApi.port', value: 5182 },
-    ]);
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([{ path: 'server.wsApi.port', value: 5182 }]);
 
     render(WebSocketApiSettings);
 
@@ -179,9 +195,7 @@ describe('WebSocketApiSettings', () => {
 
     // Assert: success toast was shown
     await waitFor(() => {
-      expect(mockToast.success).toHaveBeenCalledWith(
-        expect.stringContaining('saved')
-      );
+      expect(mockToast.success).toHaveBeenCalledWith(expect.stringContaining('saved'));
     });
   });
 

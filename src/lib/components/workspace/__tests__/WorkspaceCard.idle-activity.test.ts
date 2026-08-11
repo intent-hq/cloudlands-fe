@@ -1,25 +1,22 @@
 /**
  * Tests for WorkspaceCard idle activity behavior.
  *
- * Verifies that when workspace.activity === 'idle', the card suppresses
- * running-state agent avatars regardless of stale tracker/Redux data,
- * while preserving unread-agent icons.
+ * Verifies that compact workspace rows communicate activity through the
+ * phase indicator without rendering a noisy inline agent avatar/count cluster.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
-import type { Workspace, AgentSession, WorkspaceId, AgentId } from '$shared/types';
-import { WorkspaceStatus, AgentStatus } from '$shared/types';
-import { createTestWorkspaceId, createTestAgentId } from '../../../../test/factories/workspace.factory';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render } from '@testing-library/svelte';
+import type { Workspace } from '$shared/types';
+import { WorkspaceStatus } from '$shared/types';
+import {
+  createTestWorkspaceId,
+  createTestAgentId,
+} from '../../../../test/factories/workspace.factory';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
-  const streamingAgentIds: string[] = [];
-  const state = {
-    agentSessions: {
-      byAgentId: {} as Record<string, AgentSession>,
-    },
-  };
+  const state = {};
 
   const readable = <T>(value: T) => ({
     subscribe(run: (v: T) => void) {
@@ -29,48 +26,38 @@ const mocks = vi.hoisted(() => {
   });
 
   const selector = <T>(getter: (state: any, ...args: any[]) => T) =>
-    Object.assign(
-      (...args: any[]) => readable(getter(state, ...args)),
-      { select: (s: any, ...a: any[]) => getter(s ?? state, ...a) }
-    );
+    Object.assign((...args: any[]) => readable(getter(state, ...args)), {
+      select: (s: any, ...a: any[]) => getter(s ?? state, ...a),
+    });
 
-  return { dispatch, streamingAgentIds, state, readable, selector };
+  return { dispatch, state, readable, selector };
 });
 
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => mocks.state,
     dispatch: mocks.dispatch,
   });
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: mocks.selector((state, agentId: string) => state.agentSessions.byAgentId[agentId] ?? null),
-  selectAgentIsResponding: mocks.selector((state, agentId: string) => {
-    const session = state.agentSessions.byAgentId[agentId];
-    return session?.isStreaming || session?.isProcessing || false;
-  }),
-  selectAgentIsWaiting: mocks.selector(() => false),
-  selectAgentProvider: mocks.selector(() => 'auggie'),
-}));
-
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasksLoading: mocks.selector(() => false),
   selectWorkspaceTaskProgress: mocks.selector(() => ({ total: 0, completed: 0 })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-slice', () => ({
-  ensureWorkspaceTasksLoaded: vi.fn((id) => ({ type: 'workspace-tasks/ensureLoaded', payload: id })),
+  ensureWorkspaceTasksLoaded: vi.fn((id) => ({
+    type: 'workspace-tasks/ensureLoaded',
+    payload: id,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
-}));
-
-vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
-  default: (await import('./mocks/MockAugieAvatar.svelte')).default,
 }));
 
 import WorkspaceCard from '../WorkspaceCard.svelte';
@@ -92,92 +79,107 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   } as Workspace;
 }
 
-function makeSession(agentId: AgentId, workspaceId: WorkspaceId, overrides: Partial<AgentSession> = {}): AgentSession {
-  return {
-    id: agentId,
-    backendSessionId: null,
-    workspaceId,
-    name: 'Test Agent',
-    status: AgentStatus.Idle,
-    messages: [],
-    model: 'test-model',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    isStreaming: false,
-    isProcessing: false,
-    ...overrides,
-  } as AgentSession;
-}
-
-describe('WorkspaceCard idle activity behavior', () => {
-  beforeEach(() => {
-    mocks.state.agentSessions.byAgentId = {};
-    mocks.streamingAgentIds.length = 0;
-  });
-
-  it('suppresses running avatars when workspace.activity === "idle" despite stale tracker data', () => {
+describe('WorkspaceCard compact agent metadata', () => {
+  it('does not render inline agent metadata when workspace.activity === "agent_running"', () => {
     const wsId = createTestWorkspaceId();
     const agentId = createTestAgentId();
-    const workspace = makeWorkspace({ id: wsId, activity: 'idle', agentSummary: { agentIds: [agentId], hasActiveAgents: false } });
-
-    // Stale tracker claims agent is streaming
-    mocks.streamingAgentIds.push(agentId);
-
-    const { container } = render(WorkspaceCard, {
-      props: { workspace, streamingAgentIds: mocks.streamingAgentIds, isRunning: true },
+    const workspace = makeWorkspace({
+      id: wsId,
+      activity: 'agent_running',
+      agentSummary: { agentIds: [agentId], hasActiveAgents: true },
     });
 
-    // No running-state avatars should render (the mocked avatar with data-state="running")
-    const runningAvatars = container.querySelectorAll('[data-state="running"]');
-    expect(runningAvatars).toHaveLength(0);
+    const { container } = render(WorkspaceCard, {
+      props: { workspace, streamingAgentIds: [agentId], isRunning: true },
+    });
+
+    expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
+    expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
   });
 
-  it('suppresses running avatars when workspace.activity === "idle" despite Redux isStreaming=true', () => {
+  it('uses the workspace unread marker without rendering inline agent metadata', () => {
     const wsId = createTestWorkspaceId();
     const agentId = createTestAgentId();
-    const workspace = makeWorkspace({ id: wsId, activity: 'idle', agentSummary: { agentIds: [agentId], hasActiveAgents: false } });
-
-    // Stale Redux session claims streaming
-    mocks.state.agentSessions.byAgentId[agentId] = makeSession(agentId, wsId, { isStreaming: true });
-
-    const { container } = render(WorkspaceCard, {
-      props: { workspace, streamingAgentIds: [], isRunning: false },
+    const workspace = makeWorkspace({
+      id: wsId,
+      activity: 'idle',
+      agentSummary: { agentIds: [agentId], hasActiveAgents: false },
     });
 
-    const runningAvatars = container.querySelectorAll('[data-state="running"]');
-    expect(runningAvatars).toHaveLength(0);
+    const { container } = render(WorkspaceCard, {
+      props: {
+        workspace,
+        streamingAgentIds: [],
+        isRunning: false,
+        isUnread: true,
+      },
+    });
+
+    expect(container.querySelector('.bg-info')).toBeTruthy();
+    expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
+    expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
   });
 
-  it('renders running avatars when workspace.activity === "agent_running"', () => {
-    const wsId = createTestWorkspaceId();
-    const agentId = createTestAgentId();
-    const workspace = makeWorkspace({ id: wsId, activity: 'agent_running', agentSummary: { agentIds: [agentId], hasActiveAgents: true } });
+  it('uses the canonical compact row hierarchy and inset styling', () => {
+    const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+    const row = container.querySelector('[data-workspace-card-row]');
+    const title = container.querySelector('[data-workspace-card-title]');
+    const time = container.querySelector('[data-workspace-card-time] span');
 
-    mocks.streamingAgentIds.push(agentId);
-
-    const { container } = render(WorkspaceCard, {
-      props: { workspace, streamingAgentIds: mocks.streamingAgentIds, isRunning: true },
-    });
-
-    // Running avatars should render when workspace is not idle
-    const runningAvatars = container.querySelectorAll('[data-state="running"]');
-    expect(runningAvatars.length).toBeGreaterThan(0);
+    expect(row?.className).toContain('mx-1');
+    expect(row?.className).toContain('rounded-md');
+    expect(row?.className).toContain('py-2');
+    expect(row?.className).toContain('font-normal');
+    expect(row?.className).toContain('hover:bg-background/40');
+    expect(title?.className).toContain('type-body');
+    expect(title?.className).toContain('font-normal!');
+    expect(time?.className).toContain('type-caption');
+    expect(time?.className).toContain('tabular-nums');
   });
 
-  it('preserves unread-agent icons when workspace.activity === "idle"', () => {
-    const wsId = createTestWorkspaceId();
-    const agentId = createTestAgentId();
-    const workspace = makeWorkspace({ id: wsId, activity: 'idle', agentSummary: { agentIds: [agentId], hasActiveAgents: false } });
-
-    // Agent is idle (not streaming/processing in Redux)
-    mocks.state.agentSessions.byAgentId[agentId] = makeSession(agentId, wsId, { isStreaming: false });
-
-    const { container } = render(WorkspaceCard, {
-      props: { workspace, streamingAgentIds: [], isRunning: false, unreadAgentIds: [agentId] },
+  it('uses sibling named controls and reveals canonical-size actions to keyboard focus', async () => {
+    const onClick = vi.fn();
+    const onTogglePin = vi.fn();
+    const onMarkAsRead = vi.fn();
+    const { container, getByRole } = render(WorkspaceCard, {
+      props: {
+        workspace: makeWorkspace(),
+        isUnread: true,
+        onClick,
+        onTogglePin,
+        onMarkAsRead,
+      },
     });
 
-    // Unread agent avatars should still render (even though workspace is idle)
-    const avatars = container.querySelectorAll('[data-agent-id]');
-    expect(avatars.length).toBeGreaterThan(0);
+    const workspaceButton = getByRole('button', { name: 'Test Workspace' });
+    const pinButton = getByRole('button', { name: 'Pin' });
+    const markAsReadButton = getByRole('button', { name: 'Mark as read' });
+    const actions = container.querySelector('[class*="wc-actions"]');
+
+    expect(workspaceButton.contains(pinButton)).toBe(false);
+    expect(workspaceButton.contains(markAsReadButton)).toBe(false);
+    expect(pinButton.className).toContain('size-7');
+    expect(markAsReadButton.className).toContain('size-7');
+    expect(actions?.className).toContain('focus-within:opacity-100');
+
+    pinButton.focus();
+    expect(document.activeElement).toBe(pinButton);
+    await fireEvent.click(pinButton);
+    expect(onTogglePin).toHaveBeenCalledOnce();
+    expect(onClick).not.toHaveBeenCalled();
+
+    await fireEvent.click(workspaceButton);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('omits busy agent counts from the compact row', () => {
+    const workspace = makeWorkspace({ activity: 'agent_running' });
+    const streamingAgentIds = Array.from({ length: 5 }, () => createTestAgentId());
+    const { container } = render(WorkspaceCard, {
+      props: { workspace, streamingAgentIds, isRunning: true },
+    });
+    expect(container.querySelector('[data-workspace-card-agents]')).toBeNull();
+    expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
+    expect(container.textContent).not.toContain('+4');
   });
 });

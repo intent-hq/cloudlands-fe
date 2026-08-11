@@ -25,15 +25,14 @@
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeSlide } from '$lib/utils/animations';
   import type { ContextItem } from './input/context-api';
-  import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
-  import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
+  import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
-  import { isQuestionOnlyContent, resolveStoppedIndicatorLabel } from './message-display-utils';
+  import { isQuestionOnlyContent } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
@@ -56,25 +55,47 @@
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-
+  import {
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   const activeWorkspaceId = selectActiveWorkspaceId();
 
+  function getOwningWorkspaceId(): string | undefined {
+    return workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? undefined);
+  }
+
+  function getPanelOptions(event?: MouseEvent) {
+    const target = event?.target;
+    const sourcePanelId =
+      target instanceof HTMLElement
+        ? target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId
+        : undefined;
+    return {
+      openInAdjacentPanel: Boolean(event?.metaKey || event?.ctrlKey),
+      sourcePanelId,
+    };
+  }
+
+  function openChatFile(path: string, event?: MouseEvent) {
+    const workspaceId = getOwningWorkspaceId();
+    if (!workspaceId) return;
+    appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event)));
+  }
+
+  function openChatNote(noteId: string, event?: MouseEvent) {
+    const workspaceId = getOwningWorkspaceId();
+    if (!workspaceId) return;
+    appStore.dispatch(openWorkspaceNote(workspaceId, noteId, getPanelOptions(event)));
+  }
   // Type for parsed context items (pills shown before text)
   interface ContextPill {
     type:
-      | 'file'
-      | 'diff'
-      | 'note'
-      | 'spec'
-      | 'selection'
-      | 'linear'
-      | 'github'
-      | 'sentry'
-      | 'external';
+      'file' | 'diff' | 'note' | 'spec' | 'selection' | 'linear' | 'github' | 'sentry' | 'external';
     label: string;
     icon: typeof faFile;
     /** File path for file/diff pills */
@@ -111,7 +132,6 @@
     }
     return rawUrl;
   }
-
   // Type for inline message segments (text interspersed with mentions)
   type MessageSegment =
     | { type: 'text'; content: string }
@@ -140,7 +160,6 @@
     /** Message id; when paired with `agentId`, enables per-message Redux subscription. */
     messageId?: string;
     isStreaming?: boolean;
-    showTimestamp?: boolean;
     animationDelay?: number;
     hideToolCalls?: boolean;
     sessionMetadata?: any; // Session metadata containing applied rules
@@ -158,10 +177,10 @@
     onVote?: (vote: 'up' | 'down') => void;
     onCopy?: () => void;
     onRegisterRef?: (element: HTMLDivElement) => void;
-    /** Whether sticky behavior should be enabled for this user message */
-    enableSticky?: boolean;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    isSticky?: boolean;
+    onStickyClick?: () => void;
     /** Backend session ID (auggie ID) for debugging */
     backendSessionId?: string | null;
     /** Hide noisy stopped badges for interrupted automated coordination turns. */
@@ -173,9 +192,6 @@
     agentId,
     messageId,
     isStreaming = false,
-
-    showTimestamp: _showTimestamp = true,
-
     animationDelay: _animationDelay = 0,
     hideToolCalls = false,
     sessionMetadata,
@@ -187,9 +203,9 @@
     onVote,
     onCopy,
     onRegisterRef,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    enableSticky = false,
     onScrollToPrevious,
+    isSticky = false,
+    onStickyClick,
     backendSessionId,
     suppressCoordinationStoppedIndicator = false,
   }: Props = $props();
@@ -199,7 +215,7 @@
   // to `undefined` when either id is empty, so subscribing unconditionally with
   // empty-string fallbacks is safe and avoids a conditional-store gotcha with
   // Svelte's `$store` auto-subscription.
-  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by message id.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
   // Looked-up message drives ALL downstream $derived values, the `data-message-id`
@@ -208,7 +224,6 @@
   // the `message` prop to preserve today's behavior for pending/optimistic
   // messages where ids may not be Redux-backed.
   let message = $derived(agentId && messageId ? $storeMessage$ : messageProp);
-
   // Edit mode state
   let isEditing = $state(false);
   let editValue = $state('');
@@ -224,15 +239,17 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
+  const stickySurfaceClass = $derived(
+    workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card',
+  );
 
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
 
+  let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
+
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
-
-  // Daemon-delivered dismissal notification row (metadata type "questions_dismissed")
-  let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
   let shouldShowStoppedIndicator = $derived.by(() => {
     return resolveShouldShowStoppedIndicator({
@@ -242,35 +259,14 @@
     });
   });
 
-  // Reason-specific Stopped label (PROTOCOL §7 interrupted-row metadata);
-  // legacy rows without `interruptReason` keep the generic "Stopped".
-  let stoppedIndicatorLabel = $derived.by(() => {
-    const label = resolveStoppedIndicatorLabel(message);
-    switch (label.kind) {
-      case 'preempted-by-message':
-        return m.chat_chatMessage_stoppedPreemptedByMessage_label();
-      case 'preempted-by-agent':
-        return m.chat_chatMessage_stoppedPreemptedByAgent_label({ name: label.name });
-      case 'daemon-shutdown':
-        return m.chat_chatMessage_stoppedDaemonRestarted_label();
-      case 'agent-stopped':
-        return m.chat_chatMessage_stoppedAgentTerminated_label();
-      case 'stopped':
-        return m.chat_chatMessage_stopped_label();
-      default: {
-        // Compile-time exhaustiveness: a new descriptor kind is a type error
-        // here; at runtime it still falls back to the generic "Stopped".
-        const _exhaustive: never = label;
-        void _exhaustive;
-        return m.chat_chatMessage_stopped_label();
-      }
-    }
-  });
-
   // Sender attribution for agent-to-agent messages (metadata-first, null when
   // metadata is absent or malformed so plain user messages render unchanged).
   let agentAttribution = $derived(
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
+  );
+  let isAgentMessageExpanded = $state(false);
+  let shouldOfferAgentMessageExpansion = $derived(
+    !!agentAttribution && !!message && extractAllContent(message).trim().length > 160,
   );
 
   // Queued-delivery info for messages drained from the pending queue
@@ -315,7 +311,7 @@
   });
 
   // Local state
-  let messageElement: HTMLDivElement;
+  let messageElement = $state<HTMLDivElement>();
   let showRulesInspector = $state(false);
 
   // Lightbox state for sent image attachments
@@ -528,7 +524,7 @@
       } else if (captured.startsWith('note/')) {
         // Note mention: @note/{noteId}
         const noteId = captured.slice(5); // Remove "note/" prefix
-        const wsId = $activeWorkspaceId ?? '';
+        const wsId = getOwningWorkspaceId() ?? '';
         const allNotes = selectAllNotes.select(appStore.state, wsId);
         const matchingNote = allNotes.find((n) => n.id === noteId) ?? null;
         const label = matchingNote?.title || noteId;
@@ -672,7 +668,7 @@
   async function handlePillClick(pill: ContextPill, event?: MouseEvent) {
     // Handle external links (Linear, GitHub, Sentry, etc.) via unified link handler
     if (pill.url) {
-      const wsId = $activeWorkspaceId;
+      const wsId = getOwningWorkspaceId();
       if (wsId) {
         await handleLink(pill.url, {
           workspaceId: WorkspaceId(wsId),
@@ -682,24 +678,24 @@
       return;
     }
     if (pill.type === 'spec') {
-      await navigateToSpec();
+      openChatNote('spec', event);
     } else if (pill.type === 'file' && pill.path) {
-      await navigateToFile(pill.path);
+      openChatFile(pill.path, event);
     } else if (pill.type === 'diff' && pill.path) {
       // For diffs, open the file - the diff view would need to be triggered separately
-      await navigateToFile(pill.path);
+      openChatFile(pill.path, event);
     } else if (pill.type === 'note' && pill.noteId) {
       // noteId is actually the note title from the context string
       // Look up the actual note ID from the title
       const noteTitle = pill.noteId;
-      const wsId = $activeWorkspaceId ?? '';
+      const wsId = getOwningWorkspaceId() ?? '';
       const allNotes = selectAllNotes.select(appStore.state, wsId);
       const matchingNote = allNotes.find((n) => n.title === noteTitle) ?? null;
       if (matchingNote) {
-        await navigateToNote(matchingNote.id);
+        openChatNote(matchingNote.id, event);
       }
     } else if (pill.type === 'selection' && pill.path) {
-      await navigateToFile(pill.path);
+      openChatFile(pill.path, event);
     }
   }
 
@@ -725,7 +721,11 @@
   });
 
   // Open image in lightbox
-  function openImageLightbox(imageBlock: ContentBlock & { data: string; mimeType: string }, openerElement: HTMLButtonElement, index: number = 0) {
+  function openImageLightbox(
+    imageBlock: ContentBlock & { data: string; mimeType: string },
+    openerElement: HTMLButtonElement,
+    index: number = 0,
+  ) {
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -758,9 +758,7 @@
     if (role === 'user') {
       // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
       // when structured queueInfo metadata renders it as a chip instead.
-      const parsed = parseContextFromMessage(
-        queueInfo ? stripDequeueWaitNote(rawText) : rawText,
-      );
+      const parsed = parseContextFromMessage(queueInfo ? stripDequeueWaitNote(rawText) : rawText);
       // Get metadata refs for URL lookup
       const metadataRefs = message?.metadata?.contextReferences;
 
@@ -1027,12 +1025,14 @@
 
 {#if !message}
   <!-- Guard against null message prop -->
-  <div class="text-subtle text-sm p-2">{m.chat_chatMessage_loading_label()}</div>
+  <div class="type-caption p-2 text-subtle">{m.chat_chatMessage_loading_label()}</div>
 {:else if modelChangeNotice}
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
-  <ModelChangeNotice notice={modelChangeNotice} fallbackText={extractAllContent(message) || undefined} />
+  <ModelChangeNotice
+    notice={modelChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionsDismissedNotice}
-  <!-- Daemon-delivered dismissal notification row - compact centered chip -->
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
@@ -1040,14 +1040,11 @@
     bind:this={messageElement}
     class="group group/message transition-transform duration-200 ease-out {role === 'user'
       ? 'user-message'
-      : 'relative assistant-message px-2'}"
+      : 'relative assistant-message'}"
     data-message-id={message?.id}
     data-message-role={role}
   >
     {#if role === 'user'}
-      <!-- User Message: Two-layer approach -->
-      <!-- Layer 1: Sticky compact version - sticks to top when scrolled past -->
-      <!-- Layer 2: Full expanded version - in normal flow, scrolls away, covers sticky when in view -->
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
         <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
@@ -1065,15 +1062,16 @@
           />
         </div>
       {:else}
-        <!-- Full expanded version - uses negative margin to overlap the sticky header in ChatPanel -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit &&
+          data-testid="user-message-surface"
+          class="relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&
           !prMonitorWakeAttribution
             ? 'cursor-pointer'
-            : 'cursor-default'} overflow-hidden z-20"
+            : 'cursor-default'}"
           ondblclick={() =>
             onEditSubmit &&
             !agentAttribution &&
@@ -1083,7 +1081,7 @@
         >
           <!-- Actions -->
           <div
-            class="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute right-1 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
           >
             <div
               class="flex items-center gap-0.5 bg-sidebar/95 backdrop-blur-sm rounded-md border border-border"
@@ -1111,18 +1109,35 @@
 
           <!-- Queued-delivery notice for messages drained from the pending queue -->
           {#if queueInfo}
-            <QueuedMessageNoticeHeader {queueInfo} class="mb-1.5" />
+            <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
           {/if}
 
-          <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle select-text line-clamp-6 {onEditSubmit &&
-            !agentAttribution &&
-            !hookWakeAttribution &&
-            !prMonitorWakeAttribution
+            id={agentAttribution ? `agent-message-body-${message.id}` : undefined}
+            class="type-body select-text font-medium! text-pretty text-foreground {isSticky ||
+            (agentAttribution && !isAgentMessageExpanded)
+              ? 'line-clamp-2'
+              : agentAttribution
+                ? ''
+                : 'line-clamp-6'} {isSticky ||
+            (onEditSubmit &&
+              !agentAttribution &&
+              !hookWakeAttribution &&
+              !prMonitorWakeAttribution)
               ? 'cursor-pointer'
-              : 'cursor-text'}"
+              : 'cursor-text'} {agentAttribution && shouldOfferAgentMessageExpansion
+              ? 'agent-message-body'
+              : ''}"
+            data-expanded={agentAttribution && shouldOfferAgentMessageExpansion
+              ? isAgentMessageExpanded
+              : undefined}
             onclick={(e) => {
+              if (isSticky && onStickyClick) {
+                e.preventDefault();
+                e.stopPropagation();
+                onStickyClick();
+                return;
+              }
               if (
                 onEditSubmit &&
                 !agentAttribution &&
@@ -1145,7 +1160,7 @@
               )}
               <button
                 type="button"
-                class="inline-flex items-center gap-1 px-1.5 py-1 bg-muted/60 text-foreground/80 rounded-md text-xs whitespace-nowrap font-medium hover:bg-muted hover:text-foreground transition-colors mx-0.5 align-middle"
+                class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                 title={pill.content || pill.path || pill.noteId || pill.label}
                 onclick={(e) => {
                   e.stopPropagation();
@@ -1175,7 +1190,7 @@
                 )}
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 px-1.5 py-1 bg-muted/60 text-foreground/80 rounded-md text-xs whitespace-nowrap font-medium hover:bg-muted hover:text-foreground transition-colors mx-0.5 align-middle"
+                  class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                   title={segment.path ||
                     segment.noteId ||
                     (segment.identifier
@@ -1184,7 +1199,7 @@
                   onclick={(e) => {
                     e.stopPropagation();
                     if (segment.url) {
-                      const wsId = $activeWorkspaceId;
+                      const wsId = getOwningWorkspaceId();
                       if (wsId) {
                         handleLink(segment.url, {
                           workspaceId: WorkspaceId(wsId),
@@ -1192,12 +1207,12 @@
                         });
                       }
                     } else if (segment.path) {
-                      navigateToFile(segment.path);
+                      openChatFile(segment.path, e);
                     } else if (segment.noteId) {
                       if (segment.mentionType === 'spec') {
-                        navigateToNote('spec');
+                        openChatNote('spec', e);
                       } else {
-                        navigateToNote(segment.noteId);
+                        openChatNote(segment.noteId, e);
                       }
                     }
                   }}
@@ -1220,9 +1235,21 @@
               {/if}
             {/each}
           </div>
+          {#if shouldOfferAgentMessageExpansion && !isSticky}
+            <button
+              type="button"
+              class="type-caption mt-1 cursor-pointer text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onclick={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
+              aria-expanded={isAgentMessageExpanded}
+              aria-controls={`agent-message-body-${message.id}`}
+              data-testid="agent-message-expansion-toggle"
+            >
+              {isAgentMessageExpanded ? 'Collapse' : 'Show full message'}
+            </button>
+          {/if}
 
           <!-- Attached images -->
-          {#if imageBlocks.length > 0}
+          {#if imageBlocks.length > 0 && !isSticky}
             <div class="flex flex-wrap gap-1.5 mt-2">
               {#each imageBlocks as imageBlock, i (i)}
                 <button
@@ -1255,12 +1282,12 @@
           {/if}
 
           <!-- Attached files -->
-          {#if fileBlocks.length > 0}
+          {#if fileBlocks.length > 0 && !isSticky}
             <div class="flex flex-wrap gap-1.5 mt-2">
               {#each fileBlocks as fileBlock, i (i)}
                 <button
                   type="button"
-                  class="flex items-center gap-1.5 px-2 py-1 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onclick={() => {
                     const dataUrl = `data:${fileBlock.mimeType || 'application/octet-stream'};base64,${fileBlock.data}`;
                     const link = document.createElement('a');
@@ -1282,7 +1309,7 @@
           <!-- Send failure indicator for optimistic user messages -->
           {#if message?.error}
             <div
-              class="flex items-center gap-2 text-destructive font-medium text-xs mt-2"
+              class="type-caption mt-2 flex items-center gap-2 font-medium text-destructive"
               title={message.error}
             >
               <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
@@ -1293,7 +1320,7 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="text-sm leading-relaxed text-foreground">
+      <div class="type-body text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}
@@ -1303,17 +1330,20 @@
 
         <!-- Stopped indicator for interrupted messages -->
         {#if shouldShowStoppedIndicator}
-          <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
+          <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>{stoppedIndicatorLabel}</span>
+            <span>{m.chat_chatMessage_stopped_label()}</span>
           </div>
         {/if}
 
-        <!-- Actions for assistant messages (shown on hover) -->
+        <!-- Actions for assistant messages: overlay without shifting content on hover/focus -->
         {#if !isStreaming && !questionOnlyTurn}
-          <div class="flex items-center justify-end mt-2">
+          <div
+            class="pointer-events-none absolute bottom-0 right-0 z-10 rounded-md bg-background/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+          >
             <MessageActions
               role="assistant"
+              showOnHover={false}
               {onRegenerate}
               {onFork}
               {onVote}
@@ -1359,3 +1389,22 @@
   onConfirm={handleConfirmEditSubmit}
   onCancel={() => (showEditConfirm = false)}
 />
+
+<style>
+  .agent-message-body {
+    height: calc(var(--text-body-line-height) + var(--text-body-line-height));
+    overflow: hidden;
+    interpolate-size: allow-keywords;
+    transition: height var(--motion-slow) var(--ease-emphasized-out);
+  }
+
+  .agent-message-body[data-expanded='true'] {
+    height: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-message-body {
+      transition: none;
+    }
+  }
+</style>

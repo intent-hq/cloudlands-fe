@@ -46,7 +46,7 @@ const { values: args } = parseArgs({
     retries: {
       type: 'string',
       short: 'r',
-      default: '1',
+      default: '0',
     },
     timeout: {
       type: 'string',
@@ -136,15 +136,16 @@ async function runTests() {
   }
 
   if (args.grep) {
-    playwrightArgs.push(`--grep="${args.grep}"`);
+    playwrightArgs.push(`--grep=${args.grep}`);
   }
 
   // Run Playwright tests
   console.log('🎭 Running Playwright tests...\n');
 
-  const testProcess = spawn('npx', ['playwright', ...playwrightArgs], {
+  const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+  const testProcess = spawn(pnpmCommand, ['exec', 'playwright', ...playwrightArgs], {
     stdio: 'inherit',
-    shell: true,
+    shell: false,
     env: {
       ...process.env,
       FORCE_COLOR: '1',

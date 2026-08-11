@@ -4,9 +4,9 @@ import { createBooleanPreference } from "@augmentcode/themis/utils/store/boolean
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 
-export const DEFAULT_WIDTH = 350;
+export const DEFAULT_WIDTH = 360;
 export const DEFAULT_EXPANDED_WIDTH = 600;
-export const MIN_WIDTH = 180;
+export const MIN_WIDTH = 280;
 export const MAX_WIDTH = 800;
 
 // Bottom dock constants

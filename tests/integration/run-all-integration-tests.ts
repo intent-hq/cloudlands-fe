@@ -8,6 +8,7 @@
 
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import { tmpdir } from 'os';
 import * as path from 'path';
 import { performance } from 'perf_hooks';
 import { fileURLToPath } from 'url';
@@ -21,6 +22,7 @@ interface TestResult {
   passed: number;
   failed: number;
   skipped: number;
+  exitCode: number;
   duration: number;
   errors: string[];
   memoryUsage: NodeJS.MemoryUsage;
@@ -61,51 +63,112 @@ class IntegrationTestRunner {
       console.log(`\n🧪 Running ${suiteName}...`);
 
       const startTime = performance.now();
+      const reportPath = path.join(
+        tmpdir(),
+        `intent-integration-${process.pid}-${Date.now()}-${suiteName}.json`,
+      );
 
-      const proc = spawn('npx', ['vitest', 'run', suitePath], {
-        stdio: this.verbose ? 'inherit' : 'pipe',
-        env: { ...process.env, NODE_ENV: 'test' },
-      });
+      const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+      const proc = spawn(
+        pnpmCommand,
+        [
+          'exec',
+          'vitest',
+          'run',
+          '--config',
+          'tests/integration/vitest.integration.config.ts',
+          '--reporter=json',
+          `--outputFile=${reportPath}`,
+          suitePath,
+        ],
+        {
+          stdio: this.verbose ? 'inherit' : 'pipe',
+          env: { ...process.env, NODE_ENV: 'test' },
+        },
+      );
 
-      let output = '';
       let errorOutput = '';
 
       if (!this.verbose) {
-        proc.stdout?.on('data', (data) => {
-          output += data.toString();
-        });
+        proc.stdout?.resume();
 
         proc.stderr?.on('data', (data) => {
           errorOutput += data.toString();
         });
       }
 
-      proc.on('close', (code) => {
+      proc.on('close', async (code) => {
         const duration = performance.now() - startTime;
         const endMemory = process.memoryUsage();
+        let report:
+          | {
+              numPassedTests: number;
+              numFailedTests: number;
+              numPendingTests: number;
+              numTodoTests: number;
+              testResults?: Array<{
+                assertionResults?: Array<{ failureMessages?: string[] }>;
+              }>;
+            }
+          | undefined;
 
-        // Parse test results from output
-        const passed = (output.match(/✓/g) || []).length;
-        const failed = (output.match(/✗/g) || []).length;
-        const skipped = (output.match(/↓/g) || []).length;
+        try {
+          report = JSON.parse(await fs.readFile(reportPath, 'utf8'));
+        } catch {
+          report = undefined;
+        } finally {
+          await fs.rm(reportPath, { force: true });
+        }
+
+        const passed = report?.numPassedTests ?? 0;
+        const reportedFailures = report?.numFailedTests ?? 0;
+        const failed = code === 0 && report ? reportedFailures : Math.max(reportedFailures, 1);
+        const skipped = (report?.numPendingTests ?? 0) + (report?.numTodoTests ?? 0);
+        const exitCode = code === 0 && report ? 0 : code === 0 ? 1 : (code ?? 1);
+        const failureMessages =
+          report?.testResults
+            ?.flatMap((testResult) => testResult.assertionResults ?? [])
+            .flatMap((assertion) => assertion.failureMessages ?? []) ?? [];
 
         const result: TestResult = {
           suite: suiteName,
           passed,
           failed,
           skipped,
+          exitCode,
           duration,
-          errors: errorOutput ? [errorOutput] : [],
+          errors: errorOutput
+            ? [errorOutput]
+            : failureMessages.length > 0
+              ? failureMessages
+              : !report
+                ? ['Vitest did not produce a valid JSON report']
+                : code === 0
+                  ? []
+                  : [`Vitest exited with code ${code ?? 'unknown'}`],
           memoryUsage: endMemory,
         };
 
-        if (code === 0) {
+        if (exitCode === 0) {
           console.log(`✅ ${suiteName} completed (${passed} passed, ${duration.toFixed(2)}ms)`);
         } else {
           console.log(`❌ ${suiteName} failed (${failed} failures)`);
         }
 
         resolve(result);
+      });
+
+      proc.on('error', (error) => {
+        resolve({
+          suite: suiteName,
+          passed: 0,
+          failed: 1,
+          skipped: 0,
+          exitCode: 1,
+          duration: performance.now() - startTime,
+          errors: [error.message],
+          memoryUsage: process.memoryUsage(),
+        });
       });
     });
   }

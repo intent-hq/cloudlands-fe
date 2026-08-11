@@ -143,7 +143,7 @@
     font:
       500 9px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-attention-slot {
     flex: 1;

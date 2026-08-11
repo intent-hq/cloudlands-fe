@@ -34,8 +34,8 @@
   import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
-  import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeSlide } from '$lib/utils/animations';

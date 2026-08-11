@@ -1,18 +1,10 @@
 <script lang="ts">
   /**
-   * Modal - Reusable modal component for compact confirmation-style dialogs.
-   * Provides backdrop blur, fly transitions, header with title/close, and content area.
+   * @deprecated Use `$lib/components/ui/dialog`.
+   * Removal gate: migrate SetupScriptModal and keep canonical Dialog behavior tests green.
    */
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import {
-  fade,
-  fly,
-} from 'svelte/transition';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { Snippet } from 'svelte';
+  import * as Dialog from '$lib/components/ui/dialog';
 
   interface Props {
     open?: boolean;
@@ -22,67 +14,50 @@
     children?: Snippet;
   }
 
-  let { open = $bindable(false), title = '', contentClass = 'px-12 py-8', onClose, children }: Props = $props();
+  let {
+    open = $bindable(false),
+    title = '',
+    contentClass = 'px-12 py-8',
+    onClose,
+    children,
+  }: Props = $props();
+  let escapeKeydownBehavior = $state<'close' | 'ignore'>('close');
 
-  function close() {
-    open = false;
-    onClose?.();
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) onClose?.();
   }
 
-  // Escape layer: only the topmost overlay handles Escape (stacked overlays
-  // dismiss one at a time in LIFO order)
-  $effect(() => {
-    if (!open) return;
-    return pushEscapeLayer((e) => {
-      // Don't close modal if user is editing an input — let the input handle Escape first
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return false;
-      close();
-    });
-  });
+  function handleFocusIn(event: FocusEvent) {
+    const target = event.target;
+    escapeKeydownBehavior =
+      target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+        ? 'ignore'
+        : 'close';
+  }
 </script>
 
-{#if open}
-  <Portal target="body" zIndex={100}>
-    <div
-      class="fixed inset-0 bg-background/50 backdrop-blur cursor-pointer z-50"
-      onclick={close}
-      transition:fade={{ duration: 150 }}
-    />
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div
-      class="fixed inset-0 z-60 flex items-center justify-center overflow-y-auto pointer-events-none"
-      role="presentation"
-      transition:fly={{ y: 20, duration: 200 }}
-    >
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="relative w-full max-w-6xl mx-auto flex flex-col px-8 my-auto max-h-[90vh] z-20 pointer-events-auto"
-        onclick={(e) => e.stopPropagation()}
-        role="dialog"
-        tabindex="-1"
-        transition:fly={{ y: -8, duration: 180 }}
+<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+  <Dialog.Content
+    showCloseButton={false}
+    {escapeKeydownBehavior}
+    onfocusin={handleFocusIn}
+    class="max-w-6xl border-0 bg-transparent p-0 shadow-none"
+  >
+    <div class="flex items-center justify-between px-1 pb-4">
+      <Dialog.Title class="text-lg font-medium tracking-[-0.02em]">{title}</Dialog.Title>
+      <Dialog.Close
+        aria-label="Close modal"
+        class="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <!-- Header -->
-        <div class="px-1 pb-4 flex items-center justify-between shrink-0">
-          <h2 class="text-lg font-medium tracking-[-0.02em] text-foreground">{title}</h2>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            class="text-muted-foreground hover:text-foreground"
-            onclick={close}
-          >
-            <Fa icon={faXmark} />
-          </Button>
-        </div>
-
-        <!-- Content -->
-        <div class="bg-sidebar border border-border shadow-xs {contentClass} overflow-hidden flex flex-col min-h-0">
-          {#if children}
-            {@render children()}
-          {/if}
-        </div>
-      </div>
+        <svg aria-hidden="true" viewBox="0 0 16 16" class="size-4" fill="none">
+          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </Dialog.Close>
     </div>
-  </Portal>
-{/if}
+    <div
+      class="bg-sidebar border border-border shadow-xs {contentClass} overflow-hidden flex flex-col min-h-0"
+    >
+      {@render children?.()}
+    </div>
+  </Dialog.Content>
+</Dialog.Root>

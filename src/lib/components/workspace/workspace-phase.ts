@@ -90,6 +90,10 @@ export interface WorkspaceTaskProgressLike {
   inProgress: number;
 }
 
+/** Generic call-to-action subtitle shown for brand-new planning workspaces.
+ *  Exported so list surfaces can detect it and substitute richer copy. */
+export const PLANNING_PLACEHOLDER_SUBTITLE = 'Describe what you want to build';
+
 /** Derive the current phase of a workspace from its metadata plus separated task/change data. */
 export function deriveWorkspacePhase(
   workspace: Workspace,
@@ -181,7 +185,7 @@ export function deriveWorkspacePhase(
       ? m.workspace_phase_coordinatorResearching_label()
       : t > 0 || opts?.hasSpecContent
         ? m.workspace_phase_specReady_label()
-        : m.workspace_phase_describeWhatToBuild_label(),
+        : PLANNING_PLACEHOLDER_SUBTITLE,
     isActive: specCreating || active,
   };
 }

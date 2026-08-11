@@ -106,19 +106,8 @@ vi.mock('$features/workspace/mark-workspace-seen', () => ({
   markWorkspaceSeenIfViewing: markWorkspaceSeenIfViewingSpy,
 }));
 
-// Fake the agent-subscription read service so the bridge's completion-watch
-// refresh routing (agent:idle/failed/deleted/created →
-// refreshWorkspaceSubscriptionEntries) is observable without real
-// `agent.getSubscriptions` fetches mutating the store.
-const { refreshWorkspaceSubscriptionEntriesSpy } = vi.hoisted(() => ({
-  refreshWorkspaceSubscriptionEntriesSpy: vi.fn(),
-}));
-vi.mock('$features/agent/agent-subscription-read-service', () => ({
-  refreshWorkspaceSubscriptionEntries: refreshWorkspaceSubscriptionEntriesSpy,
-  createAgentSubscriptionReadMiddleware:
-    () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
-      next(a),
-}));
+// The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
+// of calling the service directly — the saga handles the actual fetch. No mock needed.
 
 // RESUB-1: mock chat-read-service so the bridge's reconnect refresh path can
 // assert `loadChatTranscript(activeAgentId)` fires without touching the real
@@ -235,6 +224,7 @@ import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
+import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -6197,10 +6187,15 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
   beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    refreshWorkspaceSubscriptionEntriesSpy.mockClear();
   });
 
   afterEach(() => vi.clearAllMocks());
@@ -6212,24 +6207,30 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
     'agent:created',
     'agent:subscriptions-changed',
   ])(
-    "%s triggers refreshWorkspaceSubscriptionEntries for the event's workspace",
+    "%s dispatches refreshWorkspaceSubscriptionEntriesRequested for the event's workspace",
     async (eventType) => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
       handler(notification(eventType, { agentId: AGENT }));
 
-      expect(refreshWorkspaceSubscriptionEntriesSpy).toHaveBeenCalledWith(WS);
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshWorkspaceSubscriptionEntriesRequested(WS));
+      dispatchSpy.mockRestore();
     },
   );
 
   it('non-completion agent events do not trigger a subscription refresh (except status-changed/idle which trigger agent list refresh instead)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
     handler(notification('agent:renamed', { agentId: AGENT, name: 'Renamed' }));
 
-    expect(refreshWorkspaceSubscriptionEntriesSpy).not.toHaveBeenCalled();
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: refreshWorkspaceSubscriptionEntriesRequested.type }),
+    );
+    dispatchSpy.mockRestore();
   });
 });
 

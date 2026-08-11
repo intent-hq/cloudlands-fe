@@ -10,7 +10,13 @@ import { shouldSuppressMonacoUnhandledRejection } from '$lib/utils/monaco-error-
 // channels then fail loudly (UnbridgedMockIpcChannelError) instead of silently
 // serving mock data. The import auto-installs the mock if window.electronAPI is
 // not already present (installBrowserMock re-checks the same gate internally).
-if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true') {
+const isCatalogRoute =
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/sandbox');
+
+if (
+  !isCatalogRoute &&
+  (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true')
+) {
   void import('$lib/browser-mock');
 }
 

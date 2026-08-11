@@ -1,10 +1,6 @@
 <script lang="ts">
-/* eslint-disable max-lines */
-  import {
-  onMount,
-  tick,
-  untrack,
-} from 'svelte';
+  /* eslint-disable max-lines */
+  import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import type {
     FileExplorerDisplayNode as FileNode,
@@ -12,16 +8,16 @@
   } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
   import {
-  faChevronDown,
-  faPlus,
-  faArrowUpRightFromSquare,
-  faPencil,
-  faFolderOpen,
-  faTrash,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faPlus,
+    faArrowUpRightFromSquare,
+    faPencil,
+    faFolderOpen,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import Fa from 'svelte-fa';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -29,9 +25,9 @@
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
-  getPanelLayoutManager,
-  hasPanelLayoutManager,
-} from '$features/layout/panel-layout-adapter';
+    getPanelLayoutManager,
+    hasPanelLayoutManager,
+  } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
@@ -272,10 +268,7 @@
 
     // Walk backwards to find the first directory with lower depth
     for (let i = currentIndex - 1; i >= 0; i--) {
-      if (
-        flattenedNodes[i].depth < currentDepth &&
-        flattenedNodes[i].node.type === 'directory'
-      ) {
+      if (flattenedNodes[i].depth < currentDepth && flattenedNodes[i].node.type === 'directory') {
         return i;
       }
     }
@@ -655,10 +648,7 @@
           targetDir =
             focusedFlatNode.node.type === 'directory'
               ? focusedFlatNode.node.path
-              : focusedFlatNode.node.path.substring(
-                  0,
-                  focusedFlatNode.node.path.lastIndexOf('/'),
-                );
+              : focusedFlatNode.node.path.substring(0, focusedFlatNode.node.path.lastIndexOf('/'));
         }
       }
       if (!targetDir) {
@@ -800,7 +790,8 @@
         },
       });
       if (onCreateFile) {
-        const parentDir = node.path.substring(0, node.path.lastIndexOf('/')) || $fileExplorerWorkspacePath;
+        const parentDir =
+          node.path.substring(0, node.path.lastIndexOf('/')) || $fileExplorerWorkspacePath;
         items.push({
           id: 'new-file',
           label: m.fileExplorer_tree_newFile_label(),
@@ -1097,7 +1088,9 @@
                 class="relative min-w-0 flex items-center gap-2.5 py-1 rounded-md border border-border shadow-xs bg-background text-foreground"
                 style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
               >
-                <span class="shrink-0 flex items-center justify-center w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
+                <span
+                  class="shrink-0 flex items-center justify-center w-4 h-4 [&>svg]:w-full [&>svg]:h-full"
+                >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
                 <input
@@ -1123,8 +1116,7 @@
                   : ''
                 : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =
-              (flatNode.gitStatus?.additions ?? 0) > 0 ||
-              (flatNode.gitStatus?.deletions ?? 0) > 0}
+              (flatNode.gitStatus?.additions ?? 0) > 0 || (flatNode.gitStatus?.deletions ?? 0) > 0}
             {@const isModified = isFileModified(node.path) && node.type === 'file'}
             {@const isDropTarget =
               isExternalFileDragOver &&
@@ -1139,7 +1131,9 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="flex items-center transition-colors duration-150 {isIgnored ? 'opacity-50' : ''}"
+              class="flex items-center transition-colors duration-150 {isIgnored
+                ? 'opacity-50'
+                : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
               style="height: {itemHeight}px; padding-left: {depth * 16}px;"
@@ -1153,7 +1147,9 @@
                   class="relative min-w-0 flex items-center gap-2.5 py-1 rounded-md border border-border shadow-xs bg-background text-foreground"
                   style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
-                  <span class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}>
+                  <span
+                    class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
+                  >
                     {#if node.type === 'directory'}
                       <Fa icon={faChevronDown} size="12" />
                     {:else}
@@ -1255,7 +1251,9 @@
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}
-    items={contextMenu.node ? getContextMenuItems(contextMenu.node) : getBackgroundContextMenuItems()}
+    items={contextMenu.node
+      ? getContextMenuItems(contextMenu.node)
+      : getBackgroundContextMenuItems()}
     onClickOutside={closeContextMenu}
   />
 {/if}

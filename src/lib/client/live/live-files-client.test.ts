@@ -131,11 +131,20 @@ describe("LiveFilesClient.explorerTree (fake transport)", () => {
     });
   });
 
-  it("resolves null when the daemon errors", async () => {
+  it("propagates daemon errors so initialization can expose a retry", async () => {
     mockedRequest.mockRejectedValueOnce(new Error("tree boom"));
     const client = new LiveFilesClient();
 
-    expect(await client.explorerTree("ws-1")).toBeNull();
+    await expect(client.explorerTree("ws-1")).rejects.toThrow("tree boom");
+  });
+
+  it("rejects a non-array file.tree response instead of treating it as an empty tree", async () => {
+    mockedRequest.mockResolvedValueOnce({ entries: [] });
+    const client = new LiveFilesClient();
+
+    await expect(client.explorerTree("ws-1")).rejects.toThrow(
+      "Invalid file.tree response: expected an array",
+    );
   });
 });
 

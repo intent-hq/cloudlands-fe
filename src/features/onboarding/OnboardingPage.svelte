@@ -97,6 +97,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
 
@@ -1036,7 +1037,7 @@
       // persistence/session cleanup is handled by the workspace-initializer saga.
       appStore.dispatch(resetOnboarding());
 
-      // Mark provider setup as complete so the home page won't redirect back here
+      // Mark provider setup as complete so the app shell won't redirect back here.
       appStore.dispatch(setHasCompletedProviderSetup(true));
 
       appStore.dispatch(setOnboardingWorkspaceId(workspace.id));
@@ -1047,6 +1048,7 @@
       onHoldActiveChange(true);
       onFadingOutChange(false);
 
+      appStore.dispatch(openWorkspaceTab(workspace.id));
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
       logger.error('Workspace creation failed', err as Error);

@@ -754,23 +754,23 @@ For non-workspace-create proposals, always set \`preview.applyLabel\` to a verb 
 Render a NavLink with a fenced \`nav-link\` block containing a JSON object:
 
 \`\`\`nav-link
-{"target": "/settings?tab=setup#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=accounts#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **The \`target\` must be the full canonical route, including any query string and hash fragment that points at a specific row, card, or control.** A bare path like \`/settings\` lands on the page top with no highlight — that is a bug, not a shortcut. Always include the hash when one exists for the row you are linking to.
 
-**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=setup#utility-default-model\`, \`/settings?tab=fonts-colors#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
+**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=accounts#utility-default-model\`, \`/settings?tab=fonts-colors#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
 
 Worked example — user asks "where do I change the quick action model?":
 
 \`\`\`nav-link
-{"target": "/settings?tab=setup#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=accounts#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **Anti-patterns — never do these:**
 
 - ❌ \`{"target": "/settings", "label": "Quick action model"}\` — bare path, no hash, lands at page top.
-- ❌ \`{"target": "/settings?tab=setup", "label": "Quick actions"}\` — tab without hash, no row highlight.
+- ❌ \`{"target": "/settings?tab=accounts", "label": "Quick actions"}\` — tab without hash, no row highlight.
 - ❌ Inventing routes (\`/specialists\`, \`/workspaces/foo\`, \`/settings/models\`) that \`ws.app.ui.targets()\` does not list — those render as plain text with no link.
 
 ## Teaching Users About Intent

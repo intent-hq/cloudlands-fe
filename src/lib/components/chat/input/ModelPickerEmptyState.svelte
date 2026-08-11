@@ -1,9 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import {
-  faArrowsRotate,
-  faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowsRotate, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   import { cn } from '$lib/utils';
@@ -32,8 +29,7 @@
             <div class="flex-1 min-w-0">
               <div
                 class="h-3.5 rounded bg-muted/40 animate-pulse"
-                style="width: {60 + ((j * 17 + i * 23) % 30)}%; animation-delay: {(i *
-                  itemCount +
+                style="width: {60 + ((j * 17 + i * 23) % 30)}%; animation-delay: {(i * itemCount +
                   j) *
                   75}ms"
               ></div>
@@ -46,9 +42,9 @@
     <div class="flex flex-col items-center gap-2.5 py-4 px-3">
       <div class="flex items-center gap-1.5 text-destructive-foreground">
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
-        <span class="text-sm font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
+        <span class="type-body font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
       </div>
-      <div class="text-xs text-center text-muted-foreground leading-tight max-w-[280px]">
+      <div class="type-caption max-w-[280px] text-center leading-tight text-muted-foreground">
         <div>{blockingLoadError.displayText}</div>
         {#if blockingLoadError.hint}
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
@@ -57,7 +53,7 @@
       <button
         type="button"
         class={cn(
-          'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
+          'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}
@@ -69,11 +65,11 @@
     </div>
   {:else}
     <div class="flex flex-col items-center gap-2.5 py-4 px-3 text-muted-foreground">
-      <span class="text-sm">{m.chat_modelPicker_noModels_label()}</span>
+      <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
       <button
         type="button"
         class={cn(
-          'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md',
+          'type-caption flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium',
           'bg-muted hover:bg-muted/80 text-foreground transition-colors',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}

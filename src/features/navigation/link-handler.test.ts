@@ -9,16 +9,18 @@ import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/sli
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
 const TEST_WORKTREE_ROOT = '/repo/root';
 
+const handleIntentLinkMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 // Mock the dynamic imports used by handleLink
 vi.mock('$lib/utils/workspaces-link-handler', () => ({
-  handleIntentLink: vi.fn().mockResolvedValue(true),
+  handleIntentLink: handleIntentLinkMock,
 }));
 
 const openBrowserPanelMock = vi.hoisted(() => vi.fn());
+const getPanelLayoutManagerMock = vi.hoisted(() =>
+  vi.fn().mockReturnValue({ openBrowserPanel: openBrowserPanelMock }),
+);
 vi.mock('$features/layout/panel-layout-adapter', () => ({
-  getPanelLayoutManager: vi.fn().mockReturnValue({
-    openBrowserPanel: openBrowserPanelMock,
-  }),
+  getPanelLayoutManager: getPanelLayoutManagerMock,
 }));
 
 const invokeIpcMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -62,7 +64,13 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({
+      panelLayout: {
+        byWorkspaceId: {
+          'ws-1': { panels: { 'panel-chat': { tabs: [] } } },
+        },
+      },
+    }),
     dispatch: reduxDispatchMock,
   });
 });
@@ -111,6 +119,22 @@ describe('handleLink – devspace://terminal routing', () => {
     expect(result).toBe(true);
     // No terminal action should be dispatched
     expect(reduxDispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards an explicit adjacent-panel preference for note links', async () => {
+    await handleLink('intent://local/note/spec', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sourcePanelId: 'panel-note',
+      openInAdjacentPanel: true,
+      openInNewAdjacentPanel: true,
+    });
+
+    expect(handleIntentLinkMock).toHaveBeenCalledWith('intent://local/note/spec', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sourcePanelId: 'panel-note',
+      openInAdjacentPanel: true,
+      openInNewAdjacentPanel: true,
+    });
   });
 });
 
@@ -257,6 +281,8 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
     reduxDispatchMock.mockClear();
     openBrowserPanelMock.mockClear();
     invokeIpcMock.mockClear();
+    getPanelLayoutManagerMock.mockClear();
+    handleIntentLinkMock.mockClear();
     (window as unknown as { electronAPI?: object }).electronAPI = {};
   });
 
@@ -354,6 +380,64 @@ describe('handleLink – path-like targets → workspace file viewer', () => {
         openInAdjacentPanel: true,
       }),
     );
+  });
+
+  it('carries the source panel from the click into workspace file navigation', async () => {
+    const panel = document.createElement('div');
+    panel.dataset.panelId = 'panel-chat';
+    const anchor = document.createElement('a');
+    panel.appendChild(anchor);
+    const event = new MouseEvent('click');
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    await handleLink(resolvedUrl('src/scoped.ts'), {
+      workspaceId: TEST_WORKSPACE_ID,
+      rawHref: 'src/scoped.ts',
+      event,
+    });
+
+    expect(reduxDispatchMock).toHaveBeenCalledWith(
+      openWorkspaceFile(TEST_WORKSPACE_ID, 'src/scoped.ts', {
+        line: undefined,
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    );
+  });
+
+  it('opens browser links in the workspace-column layout and source panel', async () => {
+    const panel = document.createElement('div');
+    panel.dataset.panelId = 'panel-chat';
+    const anchor = document.createElement('a');
+    panel.appendChild(anchor);
+    const event = new MouseEvent('click', { metaKey: true, ctrlKey: true });
+    Object.defineProperty(event, 'target', { value: anchor });
+
+    await handleLink('https://example.com/docs', {
+      workspaceId: TEST_WORKSPACE_ID,
+      event,
+    });
+
+    expect(getPanelLayoutManagerMock).toHaveBeenCalledWith('ws-1');
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(
+      'https://example.com/docs',
+      undefined,
+      'panel-chat',
+    );
+  });
+
+  it('passes the owning workspace and source panel to intent navigation', async () => {
+    await handleLink('intent://local/note/spec', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sourcePanelId: 'panel-chat',
+    });
+
+    expect(handleIntentLinkMock).toHaveBeenCalledWith('intent://local/note/spec', {
+      workspaceId: TEST_WORKSPACE_ID,
+      sourcePanelId: 'panel-chat',
+      openInAdjacentPanel: false,
+      openInNewAdjacentPanel: false,
+    });
   });
 
   it('should return false without a workspaceId and never open the browser panel', async () => {

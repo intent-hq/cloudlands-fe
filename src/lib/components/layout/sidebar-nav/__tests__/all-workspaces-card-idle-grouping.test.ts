@@ -62,7 +62,7 @@ function makeWorkspace(
 }
 
 function getGroupHeaders(): string[] {
-  return screen.queryAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
+  return screen.queryAllByRole('heading', { level: 4 }).map((el) => el.textContent ?? '');
 }
 
 describe('AllWorkspacesCard IDLE grouping (Status view)', () => {

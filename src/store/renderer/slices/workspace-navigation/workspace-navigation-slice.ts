@@ -362,7 +362,11 @@ export const openWorkspaceNote = createAction<
   [
     wsId: string,
     noteId: string,
-    options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    options?: {
+      openInAdjacentPanel?: boolean;
+      openInNewAdjacentPanel?: boolean;
+      sourcePanelId?: string;
+    },
   ]
 >('workspaceNavigation/openWorkspaceNote');
 
@@ -408,7 +412,13 @@ export const openWorkspaceChatChanges = createAction<
     wsId: string,
     changes: JsonValue[],
     title: string,
-    options?: { messageId?: string; isAggregate?: boolean; agentId?: string; turnNumber?: number },
+    options?: {
+      messageId?: string;
+      isAggregate?: boolean;
+      agentId?: string;
+      turnNumber?: number;
+      sourcePanelId?: string;
+    },
   ]
 >('workspaceNavigation/openWorkspaceChatChanges');
 
@@ -462,7 +472,9 @@ export const closeWorkspaceDrawer = createAction<[wsId: string]>(
 );
 
 export const workspaceNavigationReducer = createReducer(initialState);
-workspaceNavigationReducer.with(hydrateWorkspaceNavigation, (state, { payload: [wsId, workspaceState] }) =>
+workspaceNavigationReducer.with(
+  hydrateWorkspaceNavigation,
+  (state, { payload: [wsId, workspaceState] }) =>
     setWorkspaceState(state, wsId, {
       ...workspaceState,
       version: STORAGE_VERSION,
@@ -471,8 +483,10 @@ workspaceNavigationReducer.with(hydrateWorkspaceNavigation, (state, { payload: [
         status: workspaceState.workspace.status,
       },
     }),
-  );
-workspaceNavigationReducer.with(setWorkspaceNavigationWorkspaceStatus, (state, { payload: [wsId, status] }) =>
+);
+workspaceNavigationReducer.with(
+  setWorkspaceNavigationWorkspaceStatus,
+  (state, { payload: [wsId, status] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       mergeWorkspaceNavigationState(workspaceState, {
         workspace: {
@@ -482,50 +496,52 @@ workspaceNavigationReducer.with(setWorkspaceNavigationWorkspaceStatus, (state, {
         },
       }),
     ),
-  );
+);
 workspaceNavigationReducer.with(markWorkspaceNavigationInitialized, (state, { payload: [wsId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      let nextState = mergeWorkspaceNavigationState(workspaceState, {
-        ui: {
-          ...workspaceState.ui,
-          hasInitialized: true,
-        },
-      });
+  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    let nextState = mergeWorkspaceNavigationState(workspaceState, {
+      ui: {
+        ...workspaceState.ui,
+        hasInitialized: true,
+      },
+    });
 
-      if (nextState.navigation.history.length === 0 && nextState.navigation.currentIndex === -1) {
-        switch (nextState.mainPanel.type) {
-          case 'notes':
-            if (nextState.mainPanel.selectedNoteId) {
-              nextState = pushHistoryEntry(nextState, {
-                type: 'note',
-                id: nextState.mainPanel.selectedNoteId,
-                label: 'Note',
-              });
-            }
-            break;
-          case 'file':
-            if (nextState.mainPanel.selectedFile) {
-              nextState = pushHistoryEntry(nextState, {
-                type: 'file',
-                id: nextState.mainPanel.selectedFile,
-                label: nextState.mainPanel.selectedFile.split('/').pop() || 'File',
-              });
-            }
-            break;
-          case 'dashboard':
+    if (nextState.navigation.history.length === 0 && nextState.navigation.currentIndex === -1) {
+      switch (nextState.mainPanel.type) {
+        case 'notes':
+          if (nextState.mainPanel.selectedNoteId) {
             nextState = pushHistoryEntry(nextState, {
-              type: 'dashboard',
-              id: 'dashboard',
-              label: 'Dashboard',
+              type: 'note',
+              id: nextState.mainPanel.selectedNoteId,
+              label: 'Note',
             });
-            break;
-        }
+          }
+          break;
+        case 'file':
+          if (nextState.mainPanel.selectedFile) {
+            nextState = pushHistoryEntry(nextState, {
+              type: 'file',
+              id: nextState.mainPanel.selectedFile,
+              label: nextState.mainPanel.selectedFile.split('/').pop() || 'File',
+            });
+          }
+          break;
+        case 'dashboard':
+          nextState = pushHistoryEntry(nextState, {
+            type: 'dashboard',
+            id: 'dashboard',
+            label: 'Dashboard',
+          });
+          break;
       }
+    }
 
-      return nextState;
-    }),
-  );
-workspaceNavigationReducer.with(setWorkspaceMainPanel, (state, { payload: [wsId, type, selection] }) =>
+    return nextState;
+  }),
+);
+workspaceNavigationReducer.with(
+  setWorkspaceMainPanel,
+  (state, { payload: [wsId, type, selection] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       let nextState = mergeWorkspaceNavigationState(workspaceState, {
         mainPanel: createMainPanelState(type, selection),
@@ -584,8 +600,10 @@ workspaceNavigationReducer.with(setWorkspaceMainPanel, (state, { payload: [wsId,
 
       return nextState;
     }),
-  );
-workspaceNavigationReducer.with(openWorkspaceFile, (state, { payload: [wsId, filePath, options] }) =>
+);
+workspaceNavigationReducer.with(
+  openWorkspaceFile,
+  (state, { payload: [wsId, filePath, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
@@ -602,108 +620,110 @@ workspaceNavigationReducer.with(openWorkspaceFile, (state, { payload: [wsId, fil
         },
       ),
     ),
-  );
+);
 workspaceNavigationReducer.with(openWorkspaceNote, (state, { payload: [wsId, noteId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      if (
-        workspaceState.mainPanel.type === 'notes' &&
-        workspaceState.mainPanel.selectedNoteId === noteId
-      ) {
-        return workspaceState;
-      }
+  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    if (
+      workspaceState.mainPanel.type === 'notes' &&
+      workspaceState.mainPanel.selectedNoteId === noteId
+    ) {
+      return workspaceState;
+    }
 
-      return pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('notes', { selectedNoteId: noteId }),
-        }),
-        {
-          type: 'note',
-          id: noteId,
-          label: 'Note',
-        },
-      );
-    }),
-  );
+    return pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('notes', { selectedNoteId: noteId }),
+      }),
+      {
+        type: 'note',
+        id: noteId,
+        label: 'Note',
+      },
+    );
+  }),
+);
 workspaceNavigationReducer.with(openWorkspaceBrowser, (state, { payload: [wsId, url] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('browser', { selectedBrowserUrl: url }),
-        }),
-        {
-          type: 'browser',
-          id: url,
-          label: 'Browser',
-        },
-      ),
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('browser', { selectedBrowserUrl: url }),
+      }),
+      {
+        type: 'browser',
+        id: url,
+        label: 'Browser',
+      },
     ),
-  );
+  ),
+);
 workspaceNavigationReducer.with(openWorkspaceAcceptChanges, (state, { payload: [wsId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('accept-changes'),
-        }),
-        {
-          type: 'accept-changes',
-          id: 'accept-changes',
-          label: m.workspace_nav_acceptChanges_label(),
-        },
-      ),
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('accept-changes'),
+      }),
+      {
+        type: 'accept-changes',
+        id: 'accept-changes',
+        label: m.workspace_nav_acceptChanges_label(),
+      },
     ),
-  );
+  ),
+);
 workspaceNavigationReducer.with(openWorkspaceDiff, (state, { payload: [wsId, change, options] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      const filePath = options?.filePath || change.file || change.relativePath;
-      const isSameFileAndStage =
-        workspaceState.mainPanel.type === 'file-tracking-diff' &&
-        workspaceState.mainPanel.selectedFile === filePath &&
-        workspaceState.mainPanel.selectedTrackedChange?.stage === change.stage;
+  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    const filePath = options?.filePath || change.file || change.relativePath;
+    const isSameFileAndStage =
+      workspaceState.mainPanel.type === 'file-tracking-diff' &&
+      workspaceState.mainPanel.selectedFile === filePath &&
+      workspaceState.mainPanel.selectedTrackedChange?.stage === change.stage;
 
-      if (isSameFileAndStage && !options?.scrollToLine && !options?.forceUpdate) {
-        return mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('accept-changes'),
-        });
-      }
+    if (isSameFileAndStage && !options?.scrollToLine && !options?.forceUpdate) {
+      return mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('accept-changes'),
+      });
+    }
 
-      return pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('file-tracking-diff', {
-            selectedTrackedChange: change,
-            selectedFile: filePath,
-            selectedChangeId: options?.changeId || change.id,
-            scrollToLine: options?.scrollToLine,
-            branchBaseRef: options?.branchBaseRef,
-            branchBaseCommitSha: options?.branchBaseCommitSha,
-          }),
-        }),
-        {
-          type: 'diff',
-          id: options?.changeId || change.id,
-          label: filePath?.split('/').pop() || 'Diff',
-          trackedChange: change,
-          filePath,
+    return pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('file-tracking-diff', {
+          selectedTrackedChange: change,
+          selectedFile: filePath,
+          selectedChangeId: options?.changeId || change.id,
+          scrollToLine: options?.scrollToLine,
           branchBaseRef: options?.branchBaseRef,
           branchBaseCommitSha: options?.branchBaseCommitSha,
-        },
-      );
-    }),
-  );
-workspaceNavigationReducer.with(openWorkspaceChangeSet, (state, { payload: [wsId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('change-set'),
         }),
-        {
-          type: 'change-set',
-          id: 'commit',
-          label: m.workspace_nav_commitChanges_label(),
-        },
-      ),
+      }),
+      {
+        type: 'diff',
+        id: options?.changeId || change.id,
+        label: filePath?.split('/').pop() || 'Diff',
+        trackedChange: change,
+        filePath,
+        branchBaseRef: options?.branchBaseRef,
+        branchBaseCommitSha: options?.branchBaseCommitSha,
+      },
+    );
+  }),
+);
+workspaceNavigationReducer.with(openWorkspaceChangeSet, (state, { payload: [wsId] }) =>
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('change-set'),
+      }),
+      {
+        type: 'change-set',
+        id: 'commit',
+        label: m.workspace_nav_commitChanges_label(),
+      },
     ),
-  );
-workspaceNavigationReducer.with(openWorkspaceAgentTurnChanges, (state, { payload: [wsId, turn, aggregate] }) =>
+  ),
+);
+workspaceNavigationReducer.with(
+  openWorkspaceAgentTurnChanges,
+  (state, { payload: [wsId, turn, aggregate] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const historyType = aggregate ? 'agent-aggregate-changes' : 'agent-turn-changes';
       const historyId = aggregate
@@ -725,30 +745,30 @@ workspaceNavigationReducer.with(openWorkspaceAgentTurnChanges, (state, { payload
         },
       );
     }),
-  );
+);
 workspaceNavigationReducer.with(openWorkspaceActivityChanges, (state, { payload: [wsId, event] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      const eventId =
-        'id' in event && typeof event.id === 'string'
-          ? event.id
-          : `${event.type}:${event.timestamp}`;
+  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    const eventId =
+      'id' in event && typeof event.id === 'string' ? event.id : `${event.type}:${event.timestamp}`;
 
-      return pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('activity-changes', {
-            selectedActivityEvent: event,
-          }),
+    return pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('activity-changes', {
+          selectedActivityEvent: event,
         }),
-        {
-          type: 'activity-changes',
-          id: eventId,
-          label: m.workspace_nav_activityChanges_label(),
-          activityEventData: event,
-        },
-      );
-    }),
-  );
-workspaceNavigationReducer.with(openWorkspaceChatChanges, (state, { payload: [wsId, changes, title, options] }) =>
+      }),
+      {
+        type: 'activity-changes',
+        id: eventId,
+        label: m.workspace_nav_activityChanges_label(),
+        activityEventData: event,
+      },
+    );
+  }),
+);
+workspaceNavigationReducer.with(
+  openWorkspaceChatChanges,
+  (state, { payload: [wsId, changes, title, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) =>
       pushHistoryEntry(
         mergeWorkspaceNavigationState(workspaceState, {
@@ -774,22 +794,24 @@ workspaceNavigationReducer.with(openWorkspaceChatChanges, (state, { payload: [ws
         },
       ),
     ),
-  );
+);
 workspaceNavigationReducer.with(openWorkspaceLocalChanges, (state, { payload: [wsId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('local-changes'),
-        }),
-        {
-          type: 'local-changes',
-          id: 'local',
-          label: m.workspace_nav_localChanges_label(),
-        },
-      ),
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('local-changes'),
+      }),
+      {
+        type: 'local-changes',
+        id: 'local',
+        label: m.workspace_nav_localChanges_label(),
+      },
     ),
-  );
-workspaceNavigationReducer.with(openWorkspaceCommitChangeset, (state, { payload: [wsId, commitHash, commitMessage] }) =>
+  ),
+);
+workspaceNavigationReducer.with(
+  openWorkspaceCommitChangeset,
+  (state, { payload: [wsId, commitHash, commitMessage] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const label = commitMessage
         ? `Commit: ${truncateLabel(commitMessage, 30)}`
@@ -811,88 +833,90 @@ workspaceNavigationReducer.with(openWorkspaceCommitChangeset, (state, { payload:
         },
       );
     }),
-  );
+);
 workspaceNavigationReducer.with(openWorkspaceCodeReview, (state, { payload: [wsId, review] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      pushHistoryEntry(
-        mergeWorkspaceNavigationState(workspaceState, {
-          mainPanel: createMainPanelState('code-review', {
-            result: review.result,
-            agentId: review.agentId,
-            stagedFiles: review.stagedFiles,
-            status: review.status,
-            streamingText: review.streamingText,
-            error: review.error,
-          }),
-        }),
-        {
-          type: 'code-review',
-          id: 'review',
-          label: m.workspace_nav_codeReview_label(),
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    pushHistoryEntry(
+      mergeWorkspaceNavigationState(workspaceState, {
+        mainPanel: createMainPanelState('code-review', {
           result: review.result,
           agentId: review.agentId,
           stagedFiles: review.stagedFiles,
           status: review.status,
           streamingText: review.streamingText,
           error: review.error,
-        },
-      ),
+        }),
+      }),
+      {
+        type: 'code-review',
+        id: 'review',
+        label: m.workspace_nav_codeReview_label(),
+        result: review.result,
+        agentId: review.agentId,
+        stagedFiles: review.stagedFiles,
+        status: review.status,
+        streamingText: review.streamingText,
+        error: review.error,
+      },
     ),
-  );
+  ),
+);
 workspaceNavigationReducer.with(updateWorkspaceCodeReview, (state, { payload: [wsId, update] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) => {
-      if (workspaceState.mainPanel.type !== 'code-review') {
-        return workspaceState;
-      }
+  withWorkspaceNavigationState(state, wsId, (workspaceState) => {
+    if (workspaceState.mainPanel.type !== 'code-review') {
+      return workspaceState;
+    }
 
-      let nextState = mergeWorkspaceNavigationState(workspaceState, {
-        mainPanel: {
-          ...workspaceState.mainPanel,
-          result: update.result ?? workspaceState.mainPanel.result,
-          agentId: update.agentId ?? workspaceState.mainPanel.agentId,
-          stagedFiles: update.stagedFiles ?? workspaceState.mainPanel.stagedFiles,
-          status: update.status ?? workspaceState.mainPanel.status,
-          streamingText: update.streamingText ?? workspaceState.mainPanel.streamingText,
-          error: update.error,
-        },
-      });
+    let nextState = mergeWorkspaceNavigationState(workspaceState, {
+      mainPanel: {
+        ...workspaceState.mainPanel,
+        result: update.result ?? workspaceState.mainPanel.result,
+        agentId: update.agentId ?? workspaceState.mainPanel.agentId,
+        stagedFiles: update.stagedFiles ?? workspaceState.mainPanel.stagedFiles,
+        status: update.status ?? workspaceState.mainPanel.status,
+        streamingText: update.streamingText ?? workspaceState.mainPanel.streamingText,
+        error: update.error,
+      },
+    });
 
-      nextState = updateCurrentHistoryEntry(nextState, (entry) => {
-        if (entry.type !== 'code-review') return entry;
-        return {
-          ...entry,
-          result: update.result ?? entry.result,
-          agentId: update.agentId ?? entry.agentId,
-          stagedFiles: update.stagedFiles ?? entry.stagedFiles,
-          status: update.status ?? entry.status,
-          streamingText: update.streamingText ?? entry.streamingText,
-          error: update.error,
-        };
-      });
+    nextState = updateCurrentHistoryEntry(nextState, (entry) => {
+      if (entry.type !== 'code-review') return entry;
+      return {
+        ...entry,
+        result: update.result ?? entry.result,
+        agentId: update.agentId ?? entry.agentId,
+        stagedFiles: update.stagedFiles ?? entry.stagedFiles,
+        status: update.status ?? entry.status,
+        streamingText: update.streamingText ?? entry.streamingText,
+        error: update.error,
+      };
+    });
 
-      return nextState;
-    }),
-  );
+    return nextState;
+  }),
+);
 workspaceNavigationReducer.with(openWorkspaceDrawer, (state, { payload: [wsId, type, itemId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      mergeWorkspaceNavigationState(workspaceState, {
-        drawer: {
-          open: true,
-          type,
-          itemId: itemId ?? null,
-        },
-      }),
-    ),
-  );
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    mergeWorkspaceNavigationState(workspaceState, {
+      drawer: {
+        open: true,
+        type,
+        itemId: itemId ?? null,
+      },
+    }),
+  ),
+);
 workspaceNavigationReducer.with(closeWorkspaceDrawer, (state, { payload: [wsId] }) =>
-    withWorkspaceNavigationState(state, wsId, (workspaceState) =>
-      mergeWorkspaceNavigationState(workspaceState, {
-        drawer: {
-          open: false,
-          type: null,
-          itemId: null,
-        },
-      }),
-    ),
-  );
-workspaceNavigationReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  withWorkspaceNavigationState(state, wsId, (workspaceState) =>
+    mergeWorkspaceNavigationState(workspaceState, {
+      drawer: {
+        open: false,
+        type: null,
+        itemId: null,
+      },
+    }),
+  ),
+);
+workspaceNavigationReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);

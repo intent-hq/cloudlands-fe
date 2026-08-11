@@ -90,6 +90,7 @@ import {
   setSpellcheckEnabled,
   setVolume,
   type FontStyle,
+  type NoteFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   setDefaultModel,
@@ -325,6 +326,10 @@ function isFontStyle(value: unknown): value is FontStyle {
   return value === 'sans' || value === 'monospace';
 }
 
+function isNoteFontStyle(value: unknown): value is NoteFontStyle {
+  return value === 'sans' || value === 'serif' || value === 'monospace';
+}
+
 function dispatchReduxAction(path: string, value: unknown): boolean {
   switch (path) {
     case 'preferences.betaUpdatesEnabled': {
@@ -405,7 +410,7 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setAgentFontStyle(value));
       return true;
     case 'fonts.notes':
-      if (!isFontStyle(value)) return false;
+      if (!isNoteFontStyle(value)) return false;
       appStore.dispatch(setNoteFontStyle(value));
       return true;
     case 'fonts.code':

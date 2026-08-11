@@ -9,10 +9,6 @@ import { beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import {
-  _resetMainStoreBridge,
-  initMainStoreBridge,
-} from '../../src/store/main/redux-store-bridge';
 
 vi.mock('electron', () => ({
   app: {
@@ -65,15 +61,6 @@ vi.mock('electron-store', () => ({
     }
   },
 }));
-
-try {
-  initMainStoreBridge({
-    state: {},
-    dispatch: (action: any) => action,
-  } as any);
-} catch {
-  // Some test files install their own bridge; keep the first initialized bridge.
-}
 
 // Test environment configuration
 const TEST_ENV = {
@@ -153,7 +140,7 @@ function setupIPCMocks() {
                 },
               };
             default:
-              return { success: true };
+              throw new Error(`Unregistered integration IPC channel: ${channel}`);
           }
         },
         on: (channel: string) => {
@@ -212,7 +199,6 @@ beforeAll(async () => {
 afterAll(async () => {
   console.log('🧹 Cleaning up integration test environment');
   await cleanupTestDirectories();
-  _resetMainStoreBridge();
 });
 
 // Test-level setup

@@ -8,7 +8,10 @@
 </script>
 
 <ol
-  class={cn('flex items-center gap-1.5 text-sm text-subtle sm:gap-2.5', className)}
+  class={cn(
+    'type-body flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-muted-foreground sm:gap-2',
+    className,
+  )}
   {...restProps}
 >
   {@render children?.()}

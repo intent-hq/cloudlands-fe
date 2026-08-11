@@ -70,6 +70,8 @@ export interface JsonRpcClientOptions {
   heartbeatIntervalMs?: number;
   /** Optional async liveness probe invoked on each heartbeat tick. */
   healthCheck?: () => Promise<void>;
+  /** Consecutive failed liveness probes required before reconnecting. Defaults to 1. */
+  healthCheckFailureThreshold?: number;
   /**
    * §5.17 stable client identity. When set, the client performs a
    * `client.hello` handshake with these params (the persisted clientId) on
@@ -120,6 +122,7 @@ export class JsonRpcClient extends EventEmitter {
   private readonly maxReconnectDelayMs: number;
   private readonly heartbeatIntervalMs: number;
   private readonly healthCheck?: () => Promise<void>;
+  private readonly healthCheckFailureThreshold: number;
   private readonly helloParams?: () => Promise<Record<string, unknown>> | Record<string, unknown>;
   private readonly onHelloResult?: (result: unknown) => void;
 
@@ -135,6 +138,8 @@ export class JsonRpcClient extends EventEmitter {
   private currentReconnectDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatInFlight = false;
+  private consecutiveHealthCheckFailures = 0;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
   /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
@@ -153,6 +158,13 @@ export class JsonRpcClient extends EventEmitter {
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? DEFAULT_MAX_RECONNECT_MS;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 0;
     this.healthCheck = options.healthCheck;
+    const healthCheckFailureThreshold = options.healthCheckFailureThreshold;
+    this.healthCheckFailureThreshold =
+      typeof healthCheckFailureThreshold === 'number' &&
+      Number.isFinite(healthCheckFailureThreshold) &&
+      healthCheckFailureThreshold >= 1
+        ? Math.floor(healthCheckFailureThreshold)
+        : 1;
     this.helloParams = options.helloParams;
     this.onHelloResult = options.onHelloResult;
     this.currentReconnectDelay = this.reconnectDelayMs;
@@ -548,12 +560,36 @@ export class JsonRpcClient extends EventEmitter {
   private startHeartbeat(): void {
     if (this.heartbeatIntervalMs <= 0) return;
     this.stopHeartbeat();
+    this.heartbeatInFlight = false;
+    this.consecutiveHealthCheckFailures = 0;
     this.heartbeatTimer = setInterval(() => {
       this.emit('heartbeat');
-      if (!this.healthCheck) return;
-      this.healthCheck().catch((error) =>
-        this.onConnectionFailure(error instanceof Error ? error : new Error(String(error))),
-      );
+      if (!this.healthCheck || this.heartbeatInFlight) return;
+
+      const socket = this.socket;
+      this.heartbeatInFlight = true;
+      this.healthCheck()
+        .then(() => {
+          if (this.disposed || this.socket !== socket) return;
+          this.consecutiveHealthCheckFailures = 0;
+        })
+        .catch((error) => {
+          if (this.disposed || this.socket !== socket) return;
+          this.consecutiveHealthCheckFailures += 1;
+          const connectionError = error instanceof Error ? error : new Error(String(error));
+          if (this.consecutiveHealthCheckFailures >= this.healthCheckFailureThreshold) {
+            this.onConnectionFailure(connectionError);
+            return;
+          }
+          logger.warn('Backend health check failed; waiting for confirmation before reconnecting', {
+            failures: this.consecutiveHealthCheckFailures,
+            threshold: this.healthCheckFailureThreshold,
+            error: connectionError.message,
+          });
+        })
+        .finally(() => {
+          if (this.socket === socket) this.heartbeatInFlight = false;
+        });
     }, this.heartbeatIntervalMs);
   }
 

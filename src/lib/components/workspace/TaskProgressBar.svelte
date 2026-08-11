@@ -2,8 +2,8 @@
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import { m } from '$shared/paraglide/messages.js';
@@ -141,9 +141,7 @@
                       specialist={task.agentSpecialist}
                     />
                     {#if task.agentName}
-                      <span class="text-ui text-subtle truncate"
-                        >{task.agentName}</span
-                      >
+                      <span class="text-ui text-subtle truncate">{task.agentName}</span>
                     {/if}
                   </div>
                 {/if}
@@ -168,9 +166,7 @@
                       specialist={task.agentSpecialist}
                     />
                     {#if task.agentName}
-                      <span class="text-ui text-subtle truncate"
-                        >{task.agentName}</span
-                      >
+                      <span class="text-ui text-subtle truncate">{task.agentName}</span>
                     {/if}
                   </div>
                 {/if}
@@ -186,9 +182,7 @@
                   <div class="shrink-0">
                     <TaskStatusIcon status="complete" size={12} />
                   </div>
-                  <span class="text-ui text-subtle truncate line-through"
-                    >{task.title}</span
-                  >
+                  <span class="text-ui text-subtle truncate line-through">{task.title}</span>
                 </div>
               {/each}
               {#if completedTasks.length > 3}

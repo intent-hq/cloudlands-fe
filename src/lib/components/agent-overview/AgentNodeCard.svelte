@@ -6,13 +6,13 @@
    * Uses similar styling to AgentCard but more compact for visualization.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
 
   import {
-  selectSpecialistName,
-  selectSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialistName,
+    selectSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
@@ -93,8 +93,8 @@
         date={$attentionRequest$.timestamp}
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
-          ? 'text-red-500'
-          : 'text-amber-500'}"
+          ? 'text-destructive'
+          : 'text-warning'}"
       />
     {/if}
     <!-- {#if specialist}

@@ -1,16 +1,5 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  render,
-  screen,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/svelte';
 
 const makeReadable = <T>(value: T) => ({
   subscribe: (run: (value: T) => void) => {
@@ -45,7 +34,7 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => makeReadable(null),
 }));
 
-vi.mock('../../ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 
@@ -91,6 +80,42 @@ describe('isCompleted avatar state wiring', () => {
     render(AgentCard, { props: { agentId: 'agent-1' } });
 
     expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('idle');
+  });
+
+  it('AgentCard presents wake-up details in one compact inline row', () => {
+    render(AgentCard, {
+      props: {
+        agentId: 'agent-1',
+        agentName: 'Verifier',
+        inline: true,
+        hidePreview: true,
+        statusLabel: 'finished',
+        lastResponseSummary: 'All checks passed',
+      },
+    });
+
+    const row = screen.getByRole('button');
+    expect(row.textContent).toContain('Verifier');
+    expect(row.textContent).toContain('finished');
+    expect(row.textContent).not.toContain('All checks passed');
+    expect(row.textContent).not.toContain('·');
+    expect(row.className).toContain('type-body');
+    expect(row.querySelector('.agent-card-content')?.className).toContain('flex-row');
+    expect(row.querySelector('.agent-card-header')?.className).toContain(
+      'inline-agent-card-header',
+    );
+    expect(row.querySelector('.agent-card-header')?.className).not.toContain('max-w-[52%]');
+    expect(row.querySelector('.inline-agent-card-preview')).toBeNull();
+    expect(row.querySelector('h3')?.parentElement?.className).toContain('overflow-hidden');
+    expect(row.querySelector('h3')?.className).not.toContain('text-sm');
+    const avatarClasses = Array.from(
+      screen.getByTestId('mock-avatar-with-state').parentElement?.classList ?? [],
+    );
+    expect(avatarClasses).toContain('relative');
+    expect(avatarClasses).toContain('shrink-0');
+    expect(
+      avatarClasses.filter((name) => name.startsWith('mt-') || name.startsWith('-mb-')),
+    ).toEqual([]);
   });
 
   it('AgentCard renders running, not completed, for a re-woken completed agent', () => {

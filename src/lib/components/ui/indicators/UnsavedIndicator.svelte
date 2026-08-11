@@ -22,6 +22,6 @@
     aria-label={m.ui_unsavedIndicator_tooltip()}
     title={m.ui_unsavedIndicator_tooltip()}
   >
-    <div class="w-1 h-1 rounded-full bg-yellow-500 animate-pulse motion-reduce:animate-none"></div>
+    <div class="w-1 h-1 rounded-full bg-warning animate-pulse motion-reduce:animate-none"></div>
   </div>
 {/if}

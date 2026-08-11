@@ -14,7 +14,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     states: DiagramState[];

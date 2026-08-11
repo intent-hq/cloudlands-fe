@@ -1,19 +1,16 @@
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import type { Note,
-  AgentMessage,
-  AgentSession } from '$shared/types';
-  import type { WorkspaceId,
-  AgentId } from '$shared/types/branded-ids';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import type { Note, AgentMessage, AgentSession } from '$shared/types';
+  import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
   import { createLogger } from '$lib/utils/client-logger';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import TaskStatusIndicator from './TaskStatusIndicator.svelte';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import {
-  getFileChangesFromMessages,
-  type ChatFileChange,
-} from '$lib/utils/get-file-changes-from-messages';
+    getFileChangesFromMessages,
+    type ChatFileChange,
+  } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -22,10 +19,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceChatChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
-  ensureAgentSessionLoaded,
-  restoreAgentSessionRequested,
-  runAgentForNoteRequested,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+    ensureAgentSessionLoaded,
+    restoreAgentSessionRequested,
+    runAgentForNoteRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { toStore } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -62,7 +59,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     return allNotes.filter((n) => n.parentId === note.id && n.metadata?.task);
   });
 
-
   // Sort assigned agents by creation date (oldest first)
   const assignedAgents = $derived.by(() => {
     // Keep this derived value reactive to agent session loads while resolving
@@ -97,7 +93,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
     const missingAgentIds = assignedAgentIds.filter(
       (agentId) =>
-        !$workspaceAgents$.some((agent) => agent.id === agentId) && !loadAttemptedAgents.has(agentId),
+        !$workspaceAgents$.some((agent) => agent.id === agentId) &&
+        !loadAttemptedAgents.has(agentId),
     );
 
     if (missingAgentIds.length > 0) {
@@ -182,7 +179,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 {#if !isSpec && isTask && taskMetadata}
   <!-- Task note metadata (template is in header) -->
   <div class="w-full flex justify-center">
-    <div class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col">
+    <div
+      class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col"
+    >
       <!-- Status row -->
       <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_status_label()}</div>

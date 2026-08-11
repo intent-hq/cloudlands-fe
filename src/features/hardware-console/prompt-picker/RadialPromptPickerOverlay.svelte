@@ -89,19 +89,19 @@
 
 <style>
   .radial-backdrop {
-    background: color-mix(in srgb, var(--color-bg-primary, #0b0b10) 55%, transparent);
+    background: color-mix(in srgb, hsl(var(--background)) 55%, transparent);
     backdrop-filter: blur(2px);
     pointer-events: none;
   }
   .radial-hub {
-    background: var(--color-bg-secondary, #1a1a22);
-    color: var(--color-text-secondary, #a0a0b0);
+    background: hsl(var(--card));
+    color: hsl(var(--muted-foreground));
     border: 1px solid var(--color-border, #2c2c38);
     white-space: nowrap;
   }
   .radial-item {
-    background: var(--color-bg-secondary, #1a1a22);
-    color: var(--color-text-primary, #e8e8f0);
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
     border: 1px solid var(--color-border, #2c2c38);
     overflow: hidden;
     text-overflow: ellipsis;

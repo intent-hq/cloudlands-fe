@@ -9,9 +9,8 @@ const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
 // Mock Redux store and selectors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: dispatchMock,
@@ -54,7 +53,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   ),
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/AuggieAvatar.svelte')).default,
 }));
 
@@ -87,17 +86,44 @@ function userMessage(text: string, metadata?: Record<string, unknown>): AgentMes
 }
 
 describe('ChatMessage queued-delivery notice', () => {
-  it('renders the chip and hides the [SYSTEM NOTE] line when queueInfo metadata is present', () => {
-    const { container } = render(ChatMessage, {
+  it('renders relative queue time and hides the [SYSTEM NOTE] line when metadata is present', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+    const { container, unmount } = render(ChatMessage, {
       props: { message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA) },
     });
 
     const chip = screen.getByTestId('queued-message-notice');
+    expect(chip.textContent).toContain('2 minutes ago');
     expect(chip.textContent).toContain('waited');
     expect(chip.textContent).toContain('before delivery');
     // Body keeps the message text but not the raw note
     expect(screen.getByText('hello queued world')).toBeTruthy();
     expect(container.textContent).not.toContain('[SYSTEM NOTE]');
+    unmount();
+    vi.useRealTimers();
+  });
+
+  it('truncates the queued notice to one line only while sticky', async () => {
+    const { rerender } = render(ChatMessage, {
+      props: {
+        message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA),
+        isSticky: false,
+      },
+    });
+
+    const notice = screen.getByTestId('queued-message-notice');
+    const text = screen.getByTestId('queued-message-notice-text');
+    expect(notice.className).not.toContain('overflow-hidden');
+    expect(text.className).not.toContain('truncate');
+
+    await rerender({
+      message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA),
+      isSticky: true,
+    });
+
+    expect(notice.className).toContain('overflow-hidden');
+    expect(text.className).toContain('truncate');
   });
 
   it('renders old transcripts (raw note, no metadata) unchanged with no chip', () => {

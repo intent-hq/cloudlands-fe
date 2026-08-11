@@ -84,6 +84,19 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     cleanup();
   });
 
+  it('delegates the outer surface and padding to SettingsSection', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+
+    const { container } = render(GitWorkspaceSettings);
+    await waitFor(() => expect(screen.getByLabelText('Worktrees Location')).toBeTruthy());
+
+    const root = container.querySelector('[data-settings-git-workspace]');
+    expect(root?.className).toContain('gap-4');
+    expect(root?.className).not.toContain('bg-card');
+    expect(root?.className).not.toContain('rounded');
+    expect(root?.querySelector('.px-6')).toBeNull();
+  });
+
   it('renders the toggle checked when the daemon reports the setting as true', async () => {
     mocks.mockSettingsList.mockResolvedValue([
       ...baseSettings,

@@ -23,7 +23,7 @@ import type {
 import { backendRequest } from "./backend-transport";
 
 /** Boot snapshot size — matches the renderer event buffer cap (MAX_EVENTS). */
-const BOOT_SNAPSHOT_LIMIT = 100;
+const BOOT_SNAPSHOT_LIMIT = 300;
 
 export class LiveEventsClient implements EventsClient {
   async list(workspaceId: string): Promise<WorkspaceEvent[]> {

@@ -2,7 +2,7 @@
   import Fa from 'svelte-fa';
   import { faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
-  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
+  import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {

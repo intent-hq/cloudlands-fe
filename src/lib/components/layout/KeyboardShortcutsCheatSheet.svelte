@@ -6,28 +6,24 @@
    * Triggered by Mod+/ or ? key
    */
 
-  import {
-  fade,
-  fly,
-} from 'svelte/transition';
+  import { fade, fly } from 'svelte/transition';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import {
-  getAllShortcutCategories,
-  formatShortcut,
-  type ShortcutCategory,
-} from '$lib/utils/shortcuts';
+    getAllShortcutCategories,
+    formatShortcut,
+    type ShortcutCategory,
+  } from '$lib/utils/shortcuts';
   import Button from '../ui/button/button.svelte';
   import Header from '../ui/Header.svelte';
   import {
-  selectIsCheatSheetOpen,
-  selectCheatSheetContext,
-} from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+    selectIsCheatSheetOpen,
+    selectCheatSheetContext,
+  } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
   import { closeCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { store as appStore } from '$store/renderer/store';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-
 
   const isOpen = selectIsCheatSheetOpen();
   const context = selectCheatSheetContext();
@@ -82,7 +78,12 @@
             </span>
           {/if}
         </div>
-        <Button variant="ghost-light" size="icon-xs" onclick={handleClose}>
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={handleClose}
+          aria-label="Close keyboard shortcuts"
+        >
           <Fa icon={faTimes} size={12} />
         </Button>
       </div>

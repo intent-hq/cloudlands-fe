@@ -11,7 +11,7 @@
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
-  import ZoomPanViewport from './ZoomPanViewport.svelte';
+  import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 

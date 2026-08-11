@@ -130,7 +130,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-ws-grid-fade {
     position: absolute;
@@ -138,7 +138,7 @@
     right: -4px;
     bottom: 0;
     height: 120px;
-    background: linear-gradient(180deg, transparent, hsl(var(--app-background)));
+    background: linear-gradient(180deg, transparent, hsl(var(--background)));
     pointer-events: none;
   }
 </style>

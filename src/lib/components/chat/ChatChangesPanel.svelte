@@ -193,7 +193,7 @@
   import { faNote } from '$lib/icons/faNote';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import InlineDiffItem from './InlineDiffItem.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { safeSlide } from '$lib/utils/animations';
   import { onDestroy, tick, untrack } from 'svelte';
@@ -219,7 +219,7 @@
     batchedGitDiff,
     dedupedGitNumstat,
     dedupedShowFile,
-  } from '$lib/components/ui/diff/diff-ipc-batcher';
+  } from '$features/file-tracking/components/diff/diff-ipc-batcher';
   import { toast } from '$lib/components/ui/toast';
   import { type WorkspaceId } from '$shared/types/branded-ids';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';

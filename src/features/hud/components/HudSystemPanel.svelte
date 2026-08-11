@@ -82,7 +82,7 @@
     animation: hudpulse 2.2s ease-in-out infinite;
   }
   .hud-system-key {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .hud-system-spacer {
     flex: 1;

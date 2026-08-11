@@ -211,7 +211,7 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
   // jsdom normalizes concrete hsl() colors to rgb, so the card's purple
   // prMerged accent (hsl(262 60% 62%)) asserts as its rgb serialization.
   it.each([
-    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--text-ghost))'],
+    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
     ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
     ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],

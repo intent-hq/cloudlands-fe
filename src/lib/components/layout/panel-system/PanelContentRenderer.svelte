@@ -16,6 +16,7 @@
   interface Props {
     tab: PanelTab;
     workspaceId: string;
+    layoutId: string;
     /** Whether this tab is currently the active/visible tab */
     isActive?: boolean;
     /** Whether this panel is currently focused AND this tab is active */
@@ -24,7 +25,14 @@
     onFocus?: () => void;
   }
 
-  let { tab, workspaceId, isActive = true, isPanelFocused = false, onFocus }: Props = $props();
+  let {
+    tab,
+    workspaceId,
+    layoutId,
+    isActive = true,
+    isPanelFocused = false,
+    onFocus,
+  }: Props = $props();
 </script>
 
 <div class="panel-content-renderer h-full w-full overflow-hidden">
@@ -32,7 +40,7 @@
   {#if tabTypeRegistry.get(tab.type)}
     {@const tabTypeDef = tabTypeRegistry.get(tab.type)!}
     {@const TabComponent = tabTypeDef.component}
-    <TabComponent {tab} {workspaceId} {isActive} {isPanelFocused} {onFocus} />
+    <TabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
   {:else}
     <!-- Fallback for unsupported types -->
     <div class="flex flex-col items-center justify-center h-full text-subtle gap-4">

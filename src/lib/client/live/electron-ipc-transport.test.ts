@@ -1,16 +1,15 @@
 /**
- * Unit tests for the Electron-IPC `BackendTransport` reconnect fan-out.
+ * Unit tests for the Electron-IPC `BackendTransport` notification fan-out.
  *
- * `onReconnected` must register at most ONE underlying `backend:status`
- * listener on the preload bridge and fan out to any number of subscribers,
- * so the IPC listener count no longer scales with subscriber modules
- * (intent-hq/monorepo#1424).
+ * Notification and reconnect subscribers each share one underlying preload
+ * listener, so IPC listener counts do not scale with subscriber modules.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
 
 const STATUS = IPC_CHANNELS.BACKEND.STATUS;
+const NOTIFICATION = IPC_CHANNELS.BACKEND.NOTIFICATION;
 
 /** Minimal preload-bridge fake tracking per-channel listener registrations. */
 function createFakeApi() {
@@ -49,6 +48,61 @@ function installFakeApi() {
 afterEach(() => {
   delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   vi.restoreAllMocks();
+});
+
+describe("electron-ipc-transport onNotification fan-out", () => {
+  it("registers one IPC listener and fans the exact notification out to every subscriber", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+    const handlers = Array.from({ length: 20 }, () => vi.fn());
+    const disposers = handlers.map((handler) => transport.onNotification(handler));
+    const notification = { method: "events.event", params: { event: { type: "agent:idle" } } };
+
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+    api.emit(NOTIFICATION, notification);
+    for (const handler of handlers) expect(handler.mock.calls[0]?.[0]).toBe(notification);
+
+    disposers.forEach((dispose) => dispose());
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+  });
+
+  it("keeps duplicate subscriptions and their idempotent disposers independent", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+    const handler = vi.fn();
+    const disposeFirst = transport.onNotification(handler);
+    const disposeSecond = transport.onNotification(handler);
+
+    api.emit(NOTIFICATION, { method: "events.event" });
+    expect(handler).toHaveBeenCalledTimes(2);
+
+    disposeFirst();
+    disposeFirst();
+    api.emit(NOTIFICATION, { method: "events.event" });
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+
+    disposeSecond();
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+  });
+
+  it("isolates a throwing subscriber so later subscribers still receive the notification", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+    const disposeFirst = transport.onNotification(() => {
+      throw new Error("boom");
+    });
+    const second = vi.fn();
+    const disposeSecond = transport.onNotification(second);
+
+    api.emit(NOTIFICATION, { method: "events.event" });
+    expect(second).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+
+    disposeFirst();
+    disposeSecond();
+  });
 });
 
 describe("electron-ipc-transport onReconnected fan-out", () => {

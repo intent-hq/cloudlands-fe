@@ -2,10 +2,10 @@
   import { createEventDispatcher } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-  faExclamationCircle,
-  faTriangleExclamation,
-  faCircleInfo,
-} from '@fortawesome/free-solid-svg-icons';
+    faExclamationCircle,
+    faTriangleExclamation,
+    faCircleInfo,
+  } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { AppError } from '$lib/utils/error-handler.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -43,14 +43,13 @@
       case 'error':
         return 'text-destructive';
       case 'warning':
-        return 'text-amber-500';
+        return 'text-warning';
       case 'info':
-        return 'text-blue-500';
+        return 'text-info';
       default:
         return 'text-destructive';
     }
   }
-
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
@@ -70,7 +69,9 @@
       <Button variant="outline" size="sm" onclick={onCopy}>{m.ui_errorToast_copy_label()}</Button>
       <Button variant="outline" size="sm" onclick={onDebug}>{m.ui_errorToast_debug_label()}</Button>
       {#if error.recoverable && onRetry}
-        <Button variant="outline" size="sm" onclick={onRetry}>{m.ui_errorToast_retry_label()}</Button>
+        <Button variant="outline" size="sm" onclick={onRetry}
+          >{m.ui_errorToast_retry_label()}</Button
+        >
       {/if}
     </div>
   </div>

@@ -62,6 +62,8 @@ export const selectNoteFontStyleLabel = store.createSelector((state) => {
   switch (state.userPreferences.noteFontStyle) {
     case 'sans':
       return 'Sans-serif';
+    case 'serif':
+      return 'Serif';
     case 'monospace':
       return 'Monospace';
     default:

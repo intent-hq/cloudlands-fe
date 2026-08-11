@@ -47,7 +47,9 @@ import {
   chatLastAttemptedMessageSet,
   initialState as chatInitialState,
   chatStateReducer,
+  refreshChatTranscriptRequested,
   sendMessage,
+  transcriptHydrationSettled,
 } from '../chat-state-slice';
 import { chatSendSaga } from './chat-send-saga';
 
@@ -84,17 +86,19 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
 function harness(
   seedSession = session(),
   getStateError?: () => Error | undefined,
-  workspaceRecord?: Workspace,
+  workspaceRecord?: Workspace | null,
 ) {
   const channel = stdChannel();
   let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions([seedSession]));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
-  const workspaceEntity =
-    workspaceRecord ?? ({ id: WS, name: 'Workspace', path: '/repo' } as Workspace);
+  const workspaceEntities =
+    workspaceRecord === null
+      ? []
+      : [workspaceRecord ?? ({ id: WS, name: 'Workspace', path: '/repo' } as Workspace)];
   const workspace = {
     ...workspaceInitialState,
-    workspaces: createCollection('id', [workspaceEntity]),
+    workspaces: createCollection('id', workspaceEntities),
   };
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
@@ -120,6 +124,9 @@ function harness(
     task,
     setChat: (action: ReturnType<typeof chatLastAttemptedMessageSet>) => {
       chatState = chatStateReducer(chatState, action);
+    },
+    settleTranscript: (agentId = AGENT) => {
+      chatState = chatStateReducer(chatState, transcriptHydrationSettled(agentId));
     },
   };
 }
@@ -170,6 +177,42 @@ describe('chatSendSaga', () => {
     );
     resolveFirst();
     await settle();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sends the first Chief message without redundantly reloading a settled blank transcript', async () => {
+    const chiefWorkspaceId = '__chief__';
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness(
+      session({ workspaceId: chiefWorkspaceId, backendSessionId: null, messages: [] }),
+      undefined,
+      null,
+    );
+    run.settleTranscript();
+
+    run.channel.put(
+      sendMessage(AGENT, {
+        wsId: chiefWorkspaceId,
+        text: 'Summarize my active work',
+      }),
+    );
+    await settle();
+
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'Summarize my active work',
+      expect.objectContaining({ id: chiefWorkspaceId }),
+      {
+        imageBlocks: undefined,
+        noteIds: undefined,
+        messageMetadata: undefined,
+        priority: undefined,
+      },
+    );
+    expect(run.dispatch).not.toHaveBeenCalledWith(
+      refreshChatTranscriptRequested(chiefWorkspaceId, AGENT),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });

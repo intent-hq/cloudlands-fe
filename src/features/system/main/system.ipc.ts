@@ -7,6 +7,11 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import { spawn } from 'child_process';
 import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
+import {
+  clearWindowBrowserFocusOwner,
+  hasWindowBrowserFocusOwner,
+  updateWindowBrowserFocusOwner,
+} from './window-browser-focus-ownership';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -63,6 +68,11 @@ import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { MINIMUM_NODE_VERSION } from '../../../shared/constants/auggie';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
+import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
+import {
+  getWindowAppearanceOptions,
+  getWindowBackgroundColor,
+} from '../../../shared/main/window-appearance';
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
 
@@ -132,8 +142,6 @@ function getPayloadWorkspaceId(data: unknown): string | undefined {
 const windowWorkspaceState = new Map<number, boolean>();
 /** Track which workspace ID each window is viewing */
 const windowWorkspaceIds = new Map<number, string>();
-/** Track which windows have a browser panel as the focused/active panel */
-const windowBrowserFocusState = new Map<number, boolean>();
 /** Track which workspace tabs are open per window */
 const windowOpenWorkspaceTabs = new Map<number, string[]>();
 
@@ -275,7 +283,7 @@ export function sendToWorkspaceWindows(
 export function isFocusedWindowBrowserActive(): boolean {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return false;
-  return windowBrowserFocusState.get(focusedWindow.id) ?? false;
+  return hasWindowBrowserFocusOwner(focusedWindow.id);
 }
 
 // Clean up state when windows are closed
@@ -283,7 +291,7 @@ app.on('browser-window-created', (_event, window) => {
   window.on('closed', () => {
     windowWorkspaceState.delete(window.id);
     windowWorkspaceIds.delete(window.id);
-    windowBrowserFocusState.delete(window.id);
+    clearWindowBrowserFocusOwner(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
     // A close changes the set of open workspaces: notify listeners (menu
     // rebuild, cache trim, notification-service reconciliation) so services
@@ -691,18 +699,9 @@ export function setupSystemIPC() {
         try {
           const window = BrowserWindow.fromWebContents(event.sender);
           if (window) {
-            // Determine the effective theme
-            let isDark: boolean;
-            if (validated.theme === 'system') {
-              // Use native theme detector
-              const { nativeTheme } = await import('electron');
-              isDark = nativeTheme.shouldUseDarkColors;
-            } else {
-              isDark = validated.theme === 'dark';
-            }
-
-            // Update the window's background color (vibrancy disabled for performance)
-            window.setBackgroundColor(isDark ? '#0a0a0a' : '#ffffff');
+            nativeTheme.themeSource = validated.theme;
+            const isDark = nativeTheme.shouldUseDarkColors;
+            window.setBackgroundColor(getWindowBackgroundColor(isDark));
 
             logger.info('Window theme updated', { theme: validated.theme, isDark });
           }
@@ -810,7 +809,11 @@ export function setupSystemIPC() {
       async (event, validated) => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
-          windowBrowserFocusState.set(window.id, validated.browserFocused);
+          updateWindowBrowserFocusOwner(
+            window.id,
+            validated.browserFocused,
+            validated.focusOwnerId,
+          );
         }
         return { success: true };
       },
@@ -865,7 +868,7 @@ export function setupSystemIPC() {
         tabbingIdentifier: 'intent',
       }),
       title: 'Intent',
-      backgroundColor: isDarkMode ? '#0a0a0a' : '#ffffff',
+      ...getWindowAppearanceOptions(isDarkMode),
     });
     forwardRendererConsoleToMainLog(newWindow);
 
@@ -1302,89 +1305,66 @@ export function setupSystemIPC() {
       VscodeOpenDiffSchema,
       async (_event, validated) => {
         try {
-          const { promises: fsPromises } = require('fs');
-          const path = require('path');
-          const os = require('os');
-          // LOCAL-GUI: launches the user's VSCode on the client host to view a
-          // diff of two temp files; not workspace execution.
-          const { spawn } = require('child_process');
-
-          // Create temp directory (ASYNC)
-          const tempDir = path.join(os.tmpdir(), 'vscode-diff');
-          await fsPromises.mkdir(tempDir, { recursive: true }).catch(() => {
-            // Directory might already exist, that's fine
-          });
-
-          // Create temp files with unique names to avoid conflicts
-          const timestamp = Date.now();
-          const oldFilePath = path.join(tempDir, `${timestamp}-${validated.oldFileName}`);
-          const newFilePath = path.join(tempDir, `${timestamp}-${validated.newFileName}`);
-
-          // Write content to temp files (ASYNC)
-          await Promise.all([
-            fsPromises.writeFile(oldFilePath, validated.oldContent, 'utf-8'),
-            fsPromises.writeFile(newFilePath, validated.newContent, 'utf-8'),
-          ]);
-
-          // PERF: Find VSCode asynchronously to avoid blocking the main thread
-          const codeCommand = (await findVSCodeAsync()) || 'code';
-
-          // Open diff view in VSCode using -d flag
-          // Format: code -d <file1> <file2>
-          // Include --skip-add-to-recently-opened to prevent GitLens tracking
-          // Only use shell: true if we're using 'code' (from PATH), not for full paths
-          const useShell = codeCommand === 'code';
-          const child = spawn(
-            codeCommand,
-            ['-n', '--skip-add-to-recently-opened', '-d', oldFilePath, newFilePath],
+          await withDiffTempFiles(
             {
-              detached: true,
-              stdio: 'ignore',
-              shell: useShell, // Use shell only when needed for PATH resolution
-              windowsHide: true,
+              oldContent: validated.oldContent,
+              newContent: validated.newContent,
+              oldDisplayLabel: validated.oldFileName,
+              newDisplayLabel: validated.newFileName,
+            },
+            async (tempFiles) => {
+              // LOCAL-GUI: launches the user's VSCode on the client host to view a
+              // diff of two temp files; not workspace execution.
+              const { spawn } = require('child_process');
+              const codeCommand = (await findVSCodeAsync()) || 'code';
+              const useShell = codeCommand === 'code';
+              const child = spawn(
+                codeCommand,
+                [
+                  '-n',
+                  '--skip-add-to-recently-opened',
+                  '-d',
+                  tempFiles.oldFile.path,
+                  tempFiles.newFile.path,
+                ],
+                {
+                  detached: true,
+                  stdio: 'ignore',
+                  shell: useShell,
+                  windowsHide: true,
+                },
+              );
+
+              const spawnResult = await new Promise<boolean>((resolve) => {
+                let resolved = false;
+
+                child.on('error', (error: any) => {
+                  if (!resolved) {
+                    resolved = true;
+                    logger.error('Failed to spawn code command for diff:', error as Error, {
+                      error,
+                    });
+                    resolve(false);
+                  }
+                });
+
+                setTimeout(() => {
+                  if (!resolved) {
+                    resolved = true;
+                    resolve(true);
+                  }
+                }, 100);
+              });
+
+              if (!spawnResult) throw new Error('code command not found');
+              child.unref();
+            },
+            {
+              cleanupDelayMs: 5000,
+              onCleanupError: (error) =>
+                logger.warn('Failed to clean up temp diff directory', error as Error),
             },
           );
-
-          // Wait for error or successful spawn
-          const spawnResult = await new Promise<boolean>((resolve) => {
-            let resolved = false;
-
-            // If error occurs, resolve with false
-            child.on('error', (error: any) => {
-              if (!resolved) {
-                resolved = true;
-                logger.error('Failed to spawn code command for diff:', error as Error, { error });
-                resolve(false);
-              }
-            });
-
-            // If spawn succeeds, resolve with true after a short delay
-            setTimeout(() => {
-              if (!resolved) {
-                resolved = true;
-                resolve(true);
-              }
-            }, 100);
-          });
-
-          if (!spawnResult) {
-            // Clean up temp files immediately if spawn failed (ASYNC)
-            await Promise.all([
-              fsPromises.unlink(oldFilePath).catch(() => {}),
-              fsPromises.unlink(newFilePath).catch(() => {}),
-            ]);
-            throw new Error('code command not found');
-          }
-
-          child.unref();
-
-          // Clean up temp files after a delay (VSCode will have read them by then) - ASYNC
-          setTimeout(async () => {
-            await Promise.all([
-              fsPromises.unlink(oldFilePath).catch(() => {}),
-              fsPromises.unlink(newFilePath).catch(() => {}),
-            ]);
-          }, 5000);
 
           return { success: true };
         } catch (error) {
@@ -2267,8 +2247,8 @@ export function setupSystemIPC() {
           // SECURITY WARNING: This executes arbitrary commands
           // This should only be used for trusted, internal operations
           logger.warn('Executing command - ensure input is trusted', {
-            command: command.substring(0, 100),
-            cwd,
+            commandLength: command.length,
+            hasCwd: typeof cwd === 'string' && cwd.length > 0,
           });
 
           const [shellCmd, shellFlag] =
@@ -2300,8 +2280,10 @@ export function setupSystemIPC() {
             },
           };
         } catch (error) {
-          logger.error('Command execution failed', error as Error, {
-            command: validated.command?.substring(0, 100),
+          logger.error('Command execution failed', {
+            commandLength: validated.command.length,
+            hasCwd: typeof validated.cwd === 'string' && validated.cwd.length > 0,
+            errorType: error instanceof Error ? error.name : typeof error,
           });
           return {
             success: false,

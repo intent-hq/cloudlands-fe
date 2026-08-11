@@ -7,7 +7,7 @@
    * auto-fills). Rendered only while a micro is connected — the parent
    * gates on `microConnectedReadable()`.
    */
-  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
+  import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { store as appStore } from '$store/renderer/store';
@@ -22,7 +22,7 @@
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { slotHoverClasses as slotHoverClassesFor } from '$lib/components/ui/toast/micro-key-slot-colors';
+  import { slotHoverClasses as slotHoverClassesFor } from '$features/hardware-console/components/micro-key-slot-colors';
 
   interface Props {
     workspaceId: string;

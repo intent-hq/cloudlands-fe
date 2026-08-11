@@ -550,6 +550,55 @@ describe("JsonRpcClient reconnect + heartbeat", () => {
     client.dispose();
   });
 
+  it("keeps a live socket connected after one transient health-check failure", async () => {
+    vi.useFakeTimers();
+    const healthCheck = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("daemon busy"))
+      .mockResolvedValueOnce(undefined);
+    const { client, sockets } = makeReconnectingClient({
+      heartbeatIntervalMs: 1000,
+      healthCheck,
+      healthCheckFailureThreshold: 2,
+    });
+    client.start();
+    sockets[0].open();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(healthCheck).toHaveBeenCalledTimes(1);
+    expect(client.getStatus()).toBe("connected");
+    expect(sockets).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(healthCheck).toHaveBeenCalledTimes(2);
+    expect(client.getStatus()).toBe("connected");
+    expect(sockets).toHaveLength(1);
+
+    client.dispose();
+  });
+
+  it("reconnects after the configured number of consecutive health-check failures", async () => {
+    vi.useFakeTimers();
+    const healthCheck = vi.fn().mockRejectedValue(new Error("half-open socket"));
+    const { client, sockets } = makeReconnectingClient({
+      heartbeatIntervalMs: 1000,
+      healthCheck,
+      healthCheckFailureThreshold: 2,
+    });
+    client.start();
+    sockets[0].open();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(client.getStatus()).toBe("connected");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(client.getStatus()).toBe("disconnected");
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets.length).toBeGreaterThanOrEqual(2);
+
+    client.dispose();
+  });
+
   it("emits `reconnected` on the 2nd (and later) successful connect but not on the first (RESUB-1)", async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();

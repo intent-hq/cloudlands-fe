@@ -105,10 +105,11 @@
   {/snippet}
 
   {#snippet content()}
-    <span class="text-sm">{label}</span>
+    <span class="type-body">{label}</span>
 
     {#if formattedShortcut.length > 0}
-      <div class="flex items-center text-muted-foreground/75"> <!-- a11y-ignore -->
+      <div class="flex items-center text-muted-foreground/75">
+        <!-- a11y-ignore -->
         {#each formattedShortcut as key, i (`key-${i}-${key}`)}
           <kbd class={cn()}>
             {key}

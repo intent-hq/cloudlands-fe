@@ -52,14 +52,14 @@ describe('workspaceEventsReducer', () => {
     expect(state).toBe(initialState);
   });
 
-  it('caps eventReceived events at 100', () => {
+  it('caps eventReceived events at 300', () => {
     let state = initialState;
-    for (let i = 0; i < 110; i++) {
+    for (let i = 0; i < 310; i++) {
       state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent(`evt-${i}`)));
     }
-    expect(state.byWorkspaceId[WS_1].events).toHaveLength(100);
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(300);
     expect(state.byWorkspaceId[WS_1].events[0].id).toBe('evt-10');
-    expect(state.byWorkspaceId[WS_1].events[99].id).toBe('evt-109');
+    expect(state.byWorkspaceId[WS_1].events[299].id).toBe('evt-309');
   });
 
   it('dedups bulkEventsReceived against the existing buffer by id', () => {
@@ -89,14 +89,14 @@ describe('workspaceEventsReducer', () => {
     ]);
   });
 
-  it('caps events at 100', () => {
+  it('caps events at 300', () => {
     let state = initialState;
-    for (let i = 0; i < 110; i++) {
+    for (let i = 0; i < 310; i++) {
       state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, [mockEvent(`evt-${i}`)]));
     }
-    expect(state.byWorkspaceId[WS_1].events).toHaveLength(100);
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(300);
     expect(state.byWorkspaceId[WS_1].events[0].id).toBe('evt-10');
-    expect(state.byWorkspaceId[WS_1].events[99].id).toBe('evt-109');
+    expect(state.byWorkspaceId[WS_1].events[299].id).toBe('evt-309');
   });
 
   it('replaces events on eventsLoaded and clears loading', () => {

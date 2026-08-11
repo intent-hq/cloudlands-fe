@@ -30,7 +30,7 @@ export const HUD_STATE_COLORS = {
   done: 'hsl(var(--primary))',
   attention: 'hsl(var(--warning))',
   failed: 'hsl(var(--destructive-foreground))',
-  idle: 'hsl(var(--text-ghost))',
+  idle: 'hsl(var(--muted-foreground) / 0.65)',
   unread: 'hsl(var(--ring))',
   pr: 'hsl(var(--ring))',
   prMerged: 'hsl(262 60% 62%)',

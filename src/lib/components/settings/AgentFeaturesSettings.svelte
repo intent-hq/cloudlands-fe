@@ -21,7 +21,7 @@
    * gets NO UI — it is config-file only.
    */
   import { onMount } from 'svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { Input } from '$lib/components/ui/input';
   import { toast } from '$lib/components/ui/toast';
   import { appClient } from '$lib/client';

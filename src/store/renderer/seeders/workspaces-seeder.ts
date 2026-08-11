@@ -22,29 +22,29 @@
  * `appClient.workspaces.create` directly (PROTOCOL §5.1), so the legacy
  * `workspace:create` IPC channel has no consumer.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { appClient } from "$lib/client";
-import { backendRequest } from "$lib/client/live/backend-transport";
-import type { KnownRepo } from "$shared/types/known-repo";
-import { isDaemonManagedCheckoutPath } from "$shared/utils/daemon-managed-checkout";
-import type { Workspace } from "$shared/types";
-import { WorkspaceStatus } from "$shared/types";
-import { registerMockSeeder } from "../mock-bootstrap";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { appClient } from '$lib/client';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import type { KnownRepo } from '$shared/types/known-repo';
+import { isDaemonManagedCheckoutPath } from '$shared/utils/daemon-managed-checkout';
+import type { Workspace } from '$shared/types';
+import { WorkspaceStatus } from '$shared/types';
+import { registerMockSeeder } from '../mock-bootstrap';
 import {
   loadRecencyData,
   replaceWorkspaceList,
   setActiveWorkspaceId,
   setWorkspaceHasLoaded,
-} from "../slices/workspace/workspace-slice";
-import { openWorkspaceTab } from "../slices/tab-state/tab-state-slice";
+} from '../slices/workspace/workspace-slice';
+import { openWorkspaceTab } from '../slices/tab-state/tab-state-slice';
 
 /** Read the `id` (preferred) or `workspaceId` field off the route loader's open payload. */
 function readWorkspaceOpenId(arg: unknown): string {
   const raw = (arg as { id?: unknown; workspaceId?: unknown } | undefined) ?? {};
-  if (typeof raw.id === "string") return raw.id;
-  if (typeof raw.workspaceId === "string") return raw.workspaceId;
-  return "";
+  if (typeof raw.id === 'string') return raw.id;
+  if (typeof raw.workspaceId === 'string') return raw.workspaceId;
+  return '';
 }
 
 // Registered at import time (not inside the async seeder) so the route loader's
@@ -54,11 +54,11 @@ function readWorkspaceOpenId(arg: unknown): string {
 registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
   const id = readWorkspaceOpenId(arg);
   if (!id) {
-    return { success: false, error: "Workspace not found" };
+    return { success: false, error: 'Workspace not found' };
   }
   const workspace = await appClient.workspaces.open(id);
   if (!workspace) {
-    return { success: false, error: "Workspace not found" };
+    return { success: false, error: 'Workspace not found' };
   }
   return { success: true, data: workspace };
 });
@@ -72,12 +72,12 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
   const id = readWorkspaceOpenId(arg);
   if (!id) {
-    return { success: false, error: "Workspace not found" };
+    return { success: false, error: 'Workspace not found' };
   }
   try {
     const workspace = await appClient.workspaces.get(id);
     if (!workspace) {
-      return { success: false, error: "Workspace not found" };
+      return { success: false, error: 'Workspace not found' };
     }
     return { success: true, data: workspace };
   } catch (error) {
@@ -103,11 +103,11 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
 // `repo.list` registry is keyed on local paths, so these entries live beside
 // it and are merged into the recents read below. Mirrors the legacy
 // main-process repo-registry, which persists through the same setting.
-const REPOS_KNOWN_SETTING = "repos.known";
+const REPOS_KNOWN_SETTING = 'repos.known';
 
 async function readReposKnownSetting(): Promise<KnownRepo[]> {
   try {
-    const setting = await backendRequest<{ value?: unknown }>("settings.get", {
+    const setting = await backendRequest<{ value?: unknown }>('settings.get', {
       path: REPOS_KNOWN_SETTING,
     });
     return Array.isArray(setting?.value) ? (setting.value as KnownRepo[]) : [];
@@ -127,17 +127,13 @@ async function readReposKnownSetting(): Promise<KnownRepo[]> {
 // `repo.list` read propagate as rejections — the caller keeps the prior
 // known-repos list on error (mirrors the legacy safe-handler contract).
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
-  const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
-  const repos = (result.repos ?? []).filter(
-    (repo) => !isDaemonManagedCheckoutPath(repo.path),
-  );
-  const githubPicks = (await readReposKnownSetting()).filter(
-    (repo) => !!repo.githubUrl,
-  );
+  const result = await backendRequest<{ repos: KnownRepo[] }>('repo.list');
+  const repos = (result.repos ?? []).filter((repo) => !isDaemonManagedCheckoutPath(repo.path));
+  const githubPicks = (await readReposKnownSetting()).filter((repo) => !!repo.githubUrl);
   const merged = [
     ...githubPicks,
     ...repos.filter((repo) => !githubPicks.some((pick) => pick.path === repo.path)),
-  ].sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+  ].sort((a, b) => (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? ''));
   return { success: true, data: merged };
 });
 
@@ -148,21 +144,20 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
 // forget with a logged warning).
 registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => {
   const payload = arg as
-    | { repository?: unknown; name?: unknown; owner?: unknown; githubUrl?: unknown }
-    | undefined;
-  const repository = typeof payload?.repository === "string" ? payload.repository : "";
+    { repository?: unknown; name?: unknown; owner?: unknown; githubUrl?: unknown } | undefined;
+  const repository = typeof payload?.repository === 'string' ? payload.repository : '';
   if (!repository) {
-    return { success: false, error: "repository is required" };
+    return { success: false, error: 'repository is required' };
   }
   try {
     const existing = await readReposKnownSetting();
     const now = new Date().toISOString();
     const name =
-      typeof payload?.name === "string" && payload.name
+      typeof payload?.name === 'string' && payload.name
         ? payload.name
-        : repository.split("/").pop() || "Unknown";
-    const owner = typeof payload?.owner === "string" ? payload.owner : undefined;
-    const githubUrl = typeof payload?.githubUrl === "string" ? payload.githubUrl : undefined;
+        : repository.split('/').pop() || 'Unknown';
+    const owner = typeof payload?.owner === 'string' ? payload.owner : undefined;
+    const githubUrl = typeof payload?.githubUrl === 'string' ? payload.githubUrl : undefined;
     const index = existing.findIndex((repo) => repo.path === repository);
     if (index >= 0) {
       existing[index] = {
@@ -175,7 +170,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => 
     } else {
       existing.push({ path: repository, name, owner, githubUrl, addedAt: now, lastUsedAt: now });
     }
-    await backendRequest("settings.update", {
+    await backendRequest('settings.update', {
       changes: [{ path: REPOS_KNOWN_SETTING, value: existing }],
     });
     return { success: true };
@@ -196,22 +191,22 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => 
 // `{ success:false, error }` so the caller surfaces them loud.
 registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) => {
   const repository = (arg as { repository?: unknown } | undefined)?.repository;
-  if (typeof repository !== "string" || repository.length === 0) {
-    return { success: false, error: "repository is required" };
+  if (typeof repository !== 'string' || repository.length === 0) {
+    return { success: false, error: 'repository is required' };
   }
   try {
     // `repo.remove` runs first so a daemon hiccup there fails the whole call
     // before any state changed; only then is a matching path-less GitHub pick
     // dropped from the `repos.known` setting (those entries live beside the
     // daemon's repo.list registry, not in it).
-    const result = await backendRequest<{ removed: boolean }>("repo.remove", {
+    const result = await backendRequest<{ removed: boolean }>('repo.remove', {
       path: repository,
     });
     const githubPicks = await readReposKnownSetting();
     const remaining = githubPicks.filter((repo) => repo.path !== repository);
     const removedFromSetting = remaining.length !== githubPicks.length;
     if (removedFromSetting) {
-      await backendRequest("settings.update", {
+      await backendRequest('settings.update', {
         changes: [{ path: REPOS_KNOWN_SETTING, value: remaining }],
       });
     }
@@ -234,13 +229,13 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
 // success envelope so it doesn't reject.
 registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
   const payload = arg as { id?: unknown; settings?: unknown } | undefined;
-  const id = typeof payload?.id === "string" ? payload.id : "";
+  const id = typeof payload?.id === 'string' ? payload.id : '';
   const settings = payload?.settings;
-  if (!id || typeof settings !== "object" || settings === null) {
-    return { success: false, error: "id and settings are required" };
+  if (!id || typeof settings !== 'object' || settings === null) {
+    return { success: false, error: 'id and settings are required' };
   }
   try {
-    await backendRequest("workspace.updateSettings", { id, settings });
+    await backendRequest('workspace.updateSettings', { id, settings });
     return { success: true, data: {} };
   } catch (error) {
     return {
@@ -250,7 +245,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
   }
 });
 
-registerMockSeeder("workspaces", async ({ store, client }) => {
+registerMockSeeder('workspaces', async ({ store, client }) => {
   let workspaces: Workspace[] = [];
   let recentViews: Record<string, number> = {};
 
@@ -260,7 +255,7 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
   try {
     workspaces = await client.workspaces.list({ includeArchived: true });
   } catch (error) {
-    console.error("Workspaces seeder: client.workspaces.list() failed:", error);
+    console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
     store.dispatch(replaceWorkspaceList([]));
     store.dispatch(setWorkspaceHasLoaded(true));
@@ -273,7 +268,7 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
   try {
     recentViews = await client.workspaces.recentViews();
   } catch (error) {
-    console.error("Workspaces seeder: client.workspaces.recentViews() failed:", error);
+    console.error('Workspaces seeder: client.workspaces.recentViews() failed:', error);
     // Continue with empty recency data — the list is already loaded
     recentViews = {};
   }

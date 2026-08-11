@@ -217,10 +217,10 @@ describe('workspaceAgentsReducer', () => {
     state = workspaceAgentsReducer(state, setWaitingForFirstMessage(WS_1, 'agent-1', true));
     state = workspaceAgentsReducer(state, setWaitingForFirstMessage(WS_1, 'agent-2', true));
 
-    // Disk only has agent-2, but agent-1 was added via IPC and should be preserved
+    // Disk only has agent-2; daemon IDs are authoritative, optimistic agent-1 appended
     const nextState = workspaceAgentsReducer(state, setAgents(WS_1, [mockAgent('agent-2')]));
 
-    expect(nextState.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1', 'agent-2']);
+    expect(nextState.byWorkspaceId[WS_1].agentIds).toEqual(['agent-2', 'agent-1']);
     expect(nextState.byWorkspaceId[WS_1].recentlyCreatedAgents).toEqual(['agent-1', 'agent-2']);
     expect(nextState.byWorkspaceId[WS_1].isWaitingForFirstMessage).toEqual({
       'agent-1': true,
@@ -249,18 +249,18 @@ describe('workspaceAgentsReducer', () => {
     expect(state.byWorkspaceId[WS_1].foregroundAgentIds).toEqual(['agent-1', 'agent-3']);
   });
 
-  it("preserves IPC-added agents when setAgents loads disk agents that don't include them", () => {
+  it('daemon snapshot IDs are authoritative; non-optimistic IPC agents are removed', () => {
     // 1. Coordinator created and added to state
     let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent('coordinator')));
-    // 2. Subagent arrives via IPC (upsertSession)
+    // 2. Subagent arrives via IPC (upsertSession) but is NOT marked optimistic
     state = workspaceAgentsReducer(state, upsertSession(mockAgent('subagent', WS_1)));
     expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['coordinator', 'subagent']);
 
     // 3. loadAgentsFromDiskSaga finishes — disk only has coordinator
     state = workspaceAgentsReducer(state, setAgents(WS_1, [mockAgent('coordinator')]));
 
-    // subagent must NOT be wiped
-    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['coordinator', 'subagent']);
+    // Daemon snapshot is authoritative; non-optimistic subagent is removed
+    expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['coordinator']);
   });
 
   it('adds new disk-loaded agents not already in agentIds', () => {

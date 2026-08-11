@@ -6,9 +6,7 @@
 
 import { ipcMain, shell } from 'electron';
 import { spawn } from 'child_process';
-import { unlinkSync } from 'fs';
-import { writeFile } from 'fs/promises';
-import { homedir, tmpdir } from 'os';
+import { homedir } from 'os';
 import { join } from 'path';
 import { Logger } from '$lib/utils/logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -19,6 +17,7 @@ import { execFileAsync } from '../../../shared/git/git-env';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { withDiffTempFiles } from './diff-temp-files.service';
 
 const logger = new Logger({ category: 'IDE-IPC' });
 
@@ -535,59 +534,52 @@ export function registerIDEHandlers(): void {
     createSafeValidatedHandler(
       OpenDiffSchema,
       async (_event, { oldContent, newContent, oldFileName, newFileName, filePath }) => {
-        // Create temporary files for diff view
-        const tempDir = tmpdir();
-        const oldFilePath = join(tempDir, oldFileName);
-        const newFilePath = join(tempDir, newFileName);
-
         try {
-          // PERF: Write content to temp files asynchronously
-          await Promise.all([
-            writeFile(oldFilePath, oldContent, 'utf-8'),
-            writeFile(newFilePath, newContent, 'utf-8'),
-          ]);
-
-          const { spawn: spawnProcess } = await import('child_process');
-
-          // PERF: Find VSCode asynchronously to avoid blocking main thread
-          const codeCommand = (await findVSCodeAsync()) || 'code';
-
-          // Spawn the process
-          const useShell = codeCommand === 'code';
-          // LOCAL-GUI: launches the user's editor to view a diff on the client host; not workspace execution
-          const child = spawnProcess(
-            codeCommand,
-            ['-n', '--skip-add-to-recently-opened', '-d', oldFilePath, newFilePath],
+          await withDiffTempFiles(
             {
-              detached: true,
-              stdio: 'ignore',
-              shell: useShell,
+              oldContent,
+              newContent,
+              oldDisplayLabel: oldFileName,
+              newDisplayLabel: newFileName,
+            },
+            async (tempFiles) => {
+              const { spawn: spawnProcess } = await import('child_process');
+              const codeCommand = (await findVSCodeAsync()) || 'code';
+              const useShell = codeCommand === 'code';
+              // LOCAL-GUI: launches the user's editor to view a diff on the client host; not workspace execution
+              const child = spawnProcess(
+                codeCommand,
+                [
+                  '-n',
+                  '--skip-add-to-recently-opened',
+                  '-d',
+                  tempFiles.oldFile.path,
+                  tempFiles.newFile.path,
+                ],
+                {
+                  detached: true,
+                  stdio: 'ignore',
+                  shell: useShell,
+                },
+              );
+
+              child.unref();
+              logger.info('Opened diff in VSCode', {
+                filePath,
+                oldFileName: tempFiles.oldFile.displayLabel,
+                newFileName: tempFiles.newFile.displayLabel,
+              });
+            },
+            {
+              cleanupDelayMs: 5000,
+              onCleanupError: (error) =>
+                logger.warn('Failed to clean up temp diff directory', error as Error),
             },
           );
-
-          child.unref();
-          logger.info('Opened diff in VSCode', { filePath, oldFileName, newFileName });
-
-          // Clean up temp files after a delay (VSCode will have read them by then)
-          setTimeout(() => {
-            try {
-              unlinkSync(oldFilePath);
-              unlinkSync(newFilePath);
-            } catch (e) {
-              logger.warn('Failed to clean up temp diff files', e as Error);
-            }
-          }, 5000);
 
           return { success: true };
         } catch (error) {
           logger.error('Failed to open diff in VSCode', error as Error);
-          // Clean up on error
-          try {
-            unlinkSync(oldFilePath);
-            unlinkSync(newFilePath);
-          } catch {
-            // Ignore cleanup errors
-          }
           return {
             success: false,
             error: error instanceof Error ? error.message : m.ide_ipc_unknown_error(),

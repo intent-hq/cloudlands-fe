@@ -12,15 +12,12 @@
 
   import { fade } from 'svelte/transition';
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
-  import {
-  ChangeStage,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
-  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
+  import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import type { LocalFileChange } from './types';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -197,7 +194,6 @@
     const firstChunkLine = 'chunks' in change ? change.chunks?.[0]?.newStart : undefined;
     return firstChunkLine ?? change.startLineNumber ?? 1;
   });
-
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

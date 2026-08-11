@@ -39,12 +39,23 @@ function truncate(str: string, maxLength: number = 40): string {
 }
 
 /**
- * Get the actor name from an event, with truncation
+ * Get the actor name from an event, with truncation.
+ * The daemon attributes its own bookkeeping (task status recomputes, note
+ * rewrites, …) to a "System" actor — that's not a person, so skip it and let
+ * the label fall back to an actor-less phrasing.
  */
 function getActorName(event: WorkspaceEvent, fallback?: string): string {
   const name = event.actor?.name;
-  if (name) return truncate(name, 30);
+  if (name && name !== 'System') return truncate(name, 30);
   return fallback ?? m.events_activity_agent_fallback();
+}
+
+/**
+ * Lowercase the first character (for splicing a title mid-sentence)
+ */
+function lowercaseFirst(str: string): string {
+  if (!str) return str;
+  return str.charAt(0).toLowerCase() + str.slice(1);
 }
 
 /**
@@ -297,6 +308,15 @@ const labelGenerators: Record<string, LabelGenerator> = {
 
   'agent:tool:call': (event) => {
     const data = event.data as any;
+    // `title` is the human-readable ACP tool-call title (e.g. "Read foo.ts");
+    // prefer it over the raw tool name (§6.6 payload). `tool_call_update`
+    // payloads only carry changed fields, so `title` is often empty there —
+    // fall back to the `_acpTitle` echoed on the input, then the tool name,
+    // then a toolKind-based phrase.
+    const title = truncate(data?.title || data?.input?._acpTitle || '', 40);
+    if (title) {
+      return title;
+    }
     // Clean the tool name so raw MCP identifiers (mcp__<server>__<tool>, from
     // older daemons) never display in the activity feed. Unstrippable raw
     // names (e.g. server segments with underscores) and deferred tool-loading
@@ -314,13 +334,29 @@ const labelGenerators: Record<string, LabelGenerator> = {
     if (toolName) {
       return m.events_activity_usedTool_label({ toolName });
     }
-    return m.events_activity_usedATool_label();
+    // toolKind is one of file|search|terminal|git|note|other (§6.6).
+    switch (data?.toolKind) {
+      case 'file':
+        return 'Worked on a file';
+      case 'search':
+        return 'Searched the codebase';
+      case 'terminal':
+        return 'Ran a terminal command';
+      case 'git':
+        return 'Ran a git operation';
+      case 'note':
+        return 'Worked on a note';
+      default:
+        return 'Used a tool';
+    }
   },
 
   'agent:created': (event) => {
     const data = event.data as any;
-    // Use the agent name from data (the created agent), not actor.name (who created it)
-    const agentName = truncate(data?.agentName || data?.name || '', 20);
+    // Use the agent name from data (the created agent), not actor.name (who created it).
+    // A default pre-rename name of "Agent" reads doubled ("Created agent Agent"), so drop it.
+    const rawName = String(data?.agentName || data?.name || '');
+    const agentName = /^agent$/i.test(rawName.trim()) ? '' : truncate(rawName, 20);
     const creatorName = truncate(getActorName(event, ''), 20);
     if (agentName && creatorName) {
       return m.events_activity_creatorCreatedAgent_label({ creator: creatorName, agentName });
@@ -334,10 +370,79 @@ const labelGenerators: Record<string, LabelGenerator> = {
     return m.events_activity_createdNewAgent_label();
   },
 
-  // Task events - show task name and status clearly
+  'agent:renamed': (event) => {
+    const data = event.data as any;
+    // Payload is `{ agentId, name }` — the new name.
+    const name = truncate(data?.name || '', 30);
+    if (name) {
+      return `Renamed agent to ${name}`;
+    }
+    return 'Renamed an agent';
+  },
+
+  'agent:updated': (event) => {
+    const data = event.data as any;
+    const name = truncate(event.actor?.name || data?.agentName || '', 25);
+    const who = name || 'Agent';
+    // Payload carries the specific mutation (§5.5): modelId for setModel, etc.
+    if (typeof data?.modelId === 'string' && data.modelId) {
+      return `${who} model set to ${truncate(data.modelId, 25)}`;
+    }
+    if (data?.completionReportCleared) {
+      return `Cleared ${who.toLowerCase() === 'agent' ? "an agent's" : `${who}'s`} report`;
+    }
+    return `${who} settings updated`;
+  },
+
+  'agent:restored': (event) => {
+    const data = event.data as any;
+    const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 30);
+    if (name) {
+      return `Restored ${name}`;
+    }
+    return 'Restored an agent';
+  },
+
+  'agent:permission:request': (event) => {
+    const data = event.data as any;
+    // Payload is PermissionRequestData: `{ title, agentName, riskLevel }` (§8);
+    // `title` is the tool-call title (e.g. "Run pnpm test").
+    const agentName = truncate(data?.agentName || event.actor?.name || '', 20);
+    const title = truncate(data?.title || '', 35);
+    if (agentName && title) {
+      return `${agentName} asked to ${lowercaseFirst(title)}`;
+    }
+    if (title) {
+      return `Permission requested: ${title}`;
+    }
+    return 'Agent asked for permission';
+  },
+
+  'agent:permission:resolved': (event) => {
+    const data = event.data as any;
+    // Payload is `{ requestId, outcome: { outcome: "selected"|"cancelled" } }`.
+    const outcome = data?.outcome?.outcome;
+    if (outcome === 'cancelled') {
+      return 'Permission request dismissed';
+    }
+    return 'Permission request answered';
+  },
+
+  'agent:user-message:sent': (event) => {
+    const data = event.data as any;
+    const agentName = truncate(data?.agentName || data?.toAgentName || '', 25);
+    if (agentName) {
+      return `You messaged ${agentName}`;
+    }
+    return 'You sent a message';
+  },
+
+  // Task events - show task name and status clearly. The status verb LEADS
+  // the sentence so the (untruncated) task title is the tail — the row's CSS
+  // `truncate` clips the title with a single ellipsis instead of the metadata.
   'task:status-changed': (event) => {
     const data = event.data as any;
-    const taskName = truncate(data?.taskName || data?.noteTitle || '', 30);
+    const taskName = data?.taskName || data?.noteTitle || '';
     const newStatus = data?.newStatus || data?.status;
     const actor = truncate(getActorName(event, ''), 25);
 
@@ -357,10 +462,15 @@ const labelGenerators: Record<string, LabelGenerator> = {
     }
 
     if (taskName && taskName !== 'task') {
-      if (actor) {
-        return m.events_activity_actorMarkedTask_label({ actor, taskName, status: friendlyStatus });
-      }
-      return m.events_activity_taskMarkedStatus_label({ taskName, status: friendlyStatus });
+      const verb =
+        friendlyStatus === 'complete'
+          ? 'Completed'
+          : friendlyStatus === 'in progress'
+            ? 'Started'
+            : friendlyStatus === 'cancelled'
+              ? 'Cancelled'
+              : `Marked ${friendlyStatus}:`;
+      return `${verb} ${taskName}`;
     }
     if (actor) {
       return m.events_activity_actorUpdatedTaskStatus_label({ actor });
@@ -370,14 +480,61 @@ const labelGenerators: Record<string, LabelGenerator> = {
 
   'task:ready-tasks-changed': (event) => {
     const data = event.data as any;
-    const count = data?.count || data?.taskCount;
+    // Payload is `{ readyTaskIds, triggeredBy: { previousStatus, newStatus } }`.
+    const count = Array.isArray(data?.readyTaskIds)
+      ? data.readyTaskIds.length
+      : data?.count || data?.taskCount;
     if (typeof count === 'number') {
-      return count === 1
-        ? m.events_activity_oneTaskReady_label()
-        : m.events_activity_tasksReady_label({ count });
+      if (count === 0) return 'No tasks ready to start';
+      return count === 1 ? '1 task ready to start' : `${count} tasks ready to start`;
     }
     return m.events_activity_readyTasksUpdated_label();
   },
+
+  'task:agent-linked': (event) => {
+    const data = event.data as any;
+    // Payload is `{ noteId, taskKey, link: { taskText, agentId } }` (§6.7).
+    // Tail position — leave untruncated for CSS to clip.
+    const taskText = data?.link?.taskText || data?.taskKey || '';
+    if (taskText) {
+      return `Agent assigned to ${taskText}`;
+    }
+    return 'Agent assigned to a task';
+  },
+
+  'task:agent-unlinked': (event) => {
+    const data = event.data as any;
+    const taskText = data?.taskKey || '';
+    if (taskText) {
+      return `Agent unassigned from ${taskText}`;
+    }
+    return 'Agent unassigned from a task';
+  },
+
+  // Pull request events (§7.6)
+  'pr:linked': (event) => {
+    const data = event.data as any;
+    const prNumber = data?.prNumber;
+    if (prNumber) {
+      return `Linked PR #${prNumber}`;
+    }
+    return 'Linked a pull request';
+  },
+
+  'pr:updated': (event) => {
+    const data = event.data as any;
+    const prNumber = data?.prNumber;
+    const status = typeof data?.prStatus === 'string' ? data.prStatus.toLowerCase() : '';
+    if (prNumber && status) {
+      return `PR #${prNumber} is ${status === 'draft' ? 'a draft' : status}`;
+    }
+    if (prNumber) {
+      return `PR #${prNumber} updated`;
+    }
+    return 'Pull request updated';
+  },
+
+  'pr:unlinked': () => 'Unlinked pull request',
 
   // Terminal events
   'terminal:command': (event) => {
@@ -395,6 +552,49 @@ const labelGenerators: Record<string, LabelGenerator> = {
       return m.events_activity_actorRanACommand_label({ actor });
     }
     return m.events_activity_ranCommand_label();
+  },
+
+  'terminal:exit': (event) => {
+    const data = event.data as any;
+    // Payload is `{ terminalId, exitCode, signal }`.
+    const exitCode = data?.exitCode;
+    if (typeof exitCode === 'number' && exitCode !== 0) {
+      return `Terminal exited with code ${exitCode}`;
+    }
+    return 'Terminal session ended';
+  },
+
+  'terminal:title': (event) => {
+    const data = event.data as any;
+    const title = truncate(data?.title || '', 35);
+    if (title) {
+      return `Terminal running ${title}`;
+    }
+    return 'Terminal title changed';
+  },
+
+  // Script events
+  'script:state': (event) => {
+    const data = event.data as any;
+    // Payload is ScriptRuntimeState + scriptId: `{ scriptId, status, exitCode, error }`.
+    const scriptId = truncate(data?.scriptId || '', 25);
+    const status = data?.status;
+    const name = scriptId || 'Script';
+    switch (status) {
+      case 'running':
+        return `${name} started`;
+      case 'stopped': {
+        const exitCode = data?.exitCode;
+        if (typeof exitCode === 'number' && exitCode !== 0) {
+          return `${name} failed (exit ${exitCode})`;
+        }
+        return `${name} stopped`;
+      }
+      case 'error':
+        return `${name} errored${data?.error ? `: ${truncate(data.error, 30)}` : ''}`;
+      default:
+        return status ? `${name} is ${status}` : `${name} state changed`;
+    }
   },
 
   // Test events
@@ -472,7 +672,8 @@ const labelGenerators: Record<string, LabelGenerator> = {
   // Workspace events
   'workspace:created': (event) => {
     const data = event.data as any;
-    const name = truncate(data?.name || '', 35);
+    // Payload is `{ workspaceId, workspace }` (§6.7).
+    const name = truncate(data?.workspace?.title || data?.name || '', 35);
     if (name) {
       return m.events_activity_createdWorkspaceName_label({ name });
     }
@@ -480,6 +681,42 @@ const labelGenerators: Record<string, LabelGenerator> = {
   },
   'workspace:updated': (event) => {
     const data = event.data as any;
+    // Payload is `{ workspaceId, changes }` where `changes` is the applied
+    // WorkspaceUpdate delta (PROTOCOL §6.5) — describe what actually changed.
+    const changes = (data?.changes ?? {}) as Record<string, unknown>;
+    if (typeof changes.title === 'string' && changes.title) {
+      return `Renamed workspace to ${truncate(changes.title, 30)}`;
+    }
+    if (typeof changes.statusMessage === 'string') {
+      return changes.statusMessage
+        ? `Status: ${truncate(changes.statusMessage, 40)}`
+        : 'Cleared workspace status';
+    }
+    if (typeof changes.status === 'string' && changes.status) {
+      return `Workspace marked ${changes.status.toLowerCase()}`;
+    }
+    if (typeof changes.branch === 'string' && changes.branch) {
+      return `Branch set to ${truncate(changes.branch, 30)}`;
+    }
+    if (typeof changes.baseRef === 'string' && changes.baseRef) {
+      return `Base branch set to ${truncate(changes.baseRef, 30)}`;
+    }
+    const FIELD_LABELS: Record<string, string> = {
+      baseCommitSha: 'base commit',
+      statusMessage: 'status message',
+      lastActivity: 'activity time',
+      repositoryPath: 'repository path',
+      repositoryOwner: 'repository owner',
+      repositoryName: 'repository name',
+      worktreePath: 'worktree path',
+      setupScript: 'setup script',
+      skipWorktree: 'worktree setting',
+    };
+    const changedFields = Object.keys(changes).filter((key) => key !== 'workspaceId');
+    if (changedFields.length > 0) {
+      const friendly = changedFields.map((field) => FIELD_LABELS[field] ?? field);
+      return `Changed workspace ${truncate(friendly.join(', '), 35)}`;
+    }
     const name = truncate(data?.name || '', 35);
     if (name) {
       return m.events_activity_updatedWorkspaceName_label({ name });
@@ -588,6 +825,15 @@ const labelGenerators: Record<string, LabelGenerator> = {
     return m.events_activity_receivedAMessage_label({ toName });
   },
 
+  'agent:message:delivery-failed': (event) => {
+    const data = event.data as any;
+    const toName = truncate(data?.toAgentName || data?.agentName || '', 25);
+    if (toName) {
+      return `Message to ${toName} failed to deliver`;
+    }
+    return 'Agent message failed to deliver';
+  },
+
   // Agent subscription events
   'agent:subscribed': (event) => {
     const data = event.data as any;
@@ -639,6 +885,68 @@ const labelGenerators: Record<string, LabelGenerator> = {
     }
     return m.events_activity_agentResumed_label();
   },
+
+  'comment:resolved': (event) => {
+    const data = event.data as any;
+    // Payload is `{ noteId, threadId, resolved }` — resolved:false means reopened.
+    if (data?.resolved === false) {
+      return 'Reopened a comment thread';
+    }
+    return 'Resolved a comment thread';
+  },
+
+  // Git clone events
+  'git:clone:done': (event) => {
+    const data = event.data as any;
+    const repo = truncate(data?.repository || data?.repo || data?.url || '', 35);
+    if (repo) {
+      return `Cloned ${repo}`;
+    }
+    return 'Repository cloned';
+  },
+
+  // Settings & config events
+  'settings:changed': (event) => {
+    const data = event.data as any;
+    // Payload is `{ changes: [{ path, value }] }` with redacted values (§9.8).
+    const paths = Array.isArray(data?.changes)
+      ? data.changes.map((c: { path?: string }) => c?.path).filter(Boolean)
+      : [];
+    if (paths.length === 1) {
+      return `Changed setting ${truncate(paths[0], 35)}`;
+    }
+    if (paths.length > 1) {
+      return `Changed ${paths.length} settings`;
+    }
+    return 'Settings changed';
+  },
+
+  'skills:changed': () => 'Available skills changed',
+
+  'mcp:notification': (event) => {
+    const data = event.data as any;
+    const server = truncate(data?.serverName || data?.server || '', 25);
+    if (server) {
+      return `Update from ${server}`;
+    }
+    return 'MCP server notification';
+  },
+
+  'mcp.servers:status-changed': () => 'MCP server status changed',
+
+  'github:auth-changed': (event) => {
+    const data = event.data as any;
+    const status = data?.status;
+    if (status === 'authenticated' || status === 'success') {
+      return 'Signed in to GitHub';
+    }
+    if (status === 'signed-out' || status === 'expired') {
+      return 'GitHub sign-in expired';
+    }
+    return 'GitHub authentication changed';
+  },
+
+  'workspace:context-changed': () => 'Workspace context updated',
 };
 
 /**

@@ -4,7 +4,7 @@
  * The toast seam is faked via `vi.mock('svelte-sonner')` (existing pattern);
  * these tests lock in the stickiness contract (duration: Infinity, stable
  * per-agent id, only close/Switch To dismiss) and the "Switch To" wiring
- * (cross-workspace goto + openAgentTabRequested dispatch).
+ * (workspace activation + cross-workspace goto + agent-tab dispatch).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,9 +43,8 @@ vi.mock('$lib/utils/navigation.client', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ dispatch: dispatchMock });
 });
 
@@ -61,6 +60,7 @@ vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', ()
 }));
 
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   agentAttentionToastId,
   dismissAgentAttentionToast,
@@ -201,20 +201,26 @@ describe('agent-attention-toast-service', () => {
     expect(lastCustomCall().componentProps.reason).toBe('Escalated to a blocker');
   });
 
-  it('Switch To dismisses the toast, navigates to the reporting workspace, and opens the agent tab', async () => {
+  it('Switch To activates the workspace before navigating and opening the agent tab', async () => {
     await switchToAttentionAgent(WS, AGENT);
 
     expect(toastDismissMock).toHaveBeenCalledWith(agentAttentionToastId(AGENT));
     expect(navigateToRouteMock).toHaveBeenCalledWith(`/workspace/${WS}`);
-    expect(dispatchMock).toHaveBeenCalledWith(openAgentTabRequested(WS, { agentId: AGENT }));
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      openWorkspaceTab(WS),
+      openAgentTabRequested(WS, { agentId: AGENT }),
+    ]);
   });
 
-  it('Switch To still opens the agent tab when navigation rejects', async () => {
+  it('Switch To still activates the workspace and opens the agent tab when navigation rejects', async () => {
     navigateToRouteMock.mockRejectedValueOnce(new Error('nav failed'));
 
     await switchToAttentionAgent(WS, AGENT);
 
-    expect(dispatchMock).toHaveBeenCalledWith(openAgentTabRequested(WS, { agentId: AGENT }));
+    expect(dispatchMock.mock.calls.map(([action]) => action)).toEqual([
+      openWorkspaceTab(WS),
+      openAgentTabRequested(WS, { agentId: AGENT }),
+    ]);
   });
 
   it('explicit dismissal removes the toast by its stable id', async () => {

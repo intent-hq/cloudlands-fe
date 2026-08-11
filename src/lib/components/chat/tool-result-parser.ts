@@ -315,7 +315,10 @@ function extractResultText(result: unknown): string | null {
     if (obj.text && typeof obj.text === 'string') {
       return obj.text;
     }
-    // Object with content array
+    // Object-wrapped tool payloads can carry either content or output.
+    if (typeof obj.content === 'string') {
+      return obj.content;
+    }
     if (Array.isArray(obj.content)) {
       return extractResultText(obj.content);
     }
@@ -337,6 +340,9 @@ export function parseToolResult(
   input: Record<string, any>,
   result: unknown,
 ): ParsedToolResult {
+  // Streaming tool_use blocks can pair a result before their input has
+  // finished arriving; treat a missing input as empty rather than crashing.
+  input = input || {};
   // Extract text from various result formats
   const resultText = extractResultText(result);
   const name = (toolName || '').toLowerCase();

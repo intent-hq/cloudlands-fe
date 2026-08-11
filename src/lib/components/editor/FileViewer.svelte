@@ -117,6 +117,21 @@
     return '';
   };
 
+  const getSvgSrc = (): string => {
+    const bytes =
+      typeof fileContent === 'string'
+        ? new TextEncoder().encode(fileContent)
+        : new Uint8Array(fileContent);
+    const chunks: string[] = [];
+    const chunkSize = 0x8000;
+
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+    }
+
+    return `data:image/svg+xml;base64,${btoa(chunks.join(''))}`;
+  };
+
   const handleZoomIn = () => {
     imageZoom = Math.min(imageZoom + 25, 500);
   };
@@ -288,7 +303,7 @@
         </div>
       </div>
       <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
-        {@html fileContent}
+        <img src={getSvgSrc()} alt={fileName} class="max-w-full max-h-full object-contain" />
       </div>
     </div>
   {:else if fileType === 'video'}

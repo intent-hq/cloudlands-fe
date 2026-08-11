@@ -17,10 +17,12 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 import {
   CARD_PINNED_KEY,
   CHIEF_ACTIVE_AGENT_ID_KEY,
+  COMBINED_PANEL_SPLIT_KEY,
   closeAll,
   closeHoverCards,
   closePanel,
   hydrateSidebarNav,
+  LEGACY_HOME_PANEL_SPLIT_KEY,
   MULTISELECT_SIDEBAR_TAB_ORDER_KEY,
   openPanel,
   PANEL_ITEM_KEY,
@@ -30,6 +32,7 @@ import {
   setAllSpacesViewMode,
   setCardPinned,
   setChiefActiveAgentId,
+  setCombinedPanelSplit,
   setMultiSelectSidebarTabOrder,
   setPanelWidth,
   setPinnedWorkspaceIds,
@@ -50,6 +53,7 @@ const current = {
     pinnedWorkspaceIds: ['ws-1'],
     allSpacesViewMode: 'repo' as const,
     panelWidth: 320,
+    combinedPanelSplit: 0.4,
     panelItem: 'chief' as const,
     isCardPinned: true,
     chiefActiveAgentId: 'agent-1',
@@ -78,6 +82,7 @@ describe('sidebarNavSaga', () => {
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return ['ws-1', 2, 'ws-2'];
       if (key === PANEL_WIDTH_KEY) return 320;
+      if (key === COMBINED_PANEL_SPLIT_KEY) return 0.4;
       if (key === PANEL_ITEM_KEY) return 'chief';
       if (key === CARD_PINNED_KEY) return true;
       if (key === CHIEF_ACTIVE_AGENT_ID_KEY) return 'agent-1';
@@ -85,7 +90,10 @@ describe('sidebarNavSaga', () => {
       return undefined;
     });
     const dispatch = vi.fn();
-    const task = runSaga({ channel: stdChannel(), dispatch, getState: () => current }, sidebarNavSaga);
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => current },
+      sidebarNavSaga,
+    );
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -93,6 +101,7 @@ describe('sidebarNavSaga', () => {
         pinnedWorkspaceIds: ['ws-1', 'ws-2'],
         allSpacesViewMode: 'repo',
         panelWidth: 320,
+        combinedPanelSplit: 0.4,
         panelItem: 'chief',
         isCardPinned: true,
         chiefActiveAgentId: 'agent-1',
@@ -109,6 +118,8 @@ describe('sidebarNavSaga', () => {
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return 'bad';
       if (key === PANEL_WIDTH_KEY) return Number.NaN;
+      if (key === COMBINED_PANEL_SPLIT_KEY) return Number.NaN;
+      if (key === LEGACY_HOME_PANEL_SPLIT_KEY) return Number.NaN;
       if (key === PANEL_ITEM_KEY) return 'not-a-panel';
       if (key === CARD_PINNED_KEY) return 'yes';
       if (key === CHIEF_ACTIVE_AGENT_ID_KEY) return 4;
@@ -116,7 +127,10 @@ describe('sidebarNavSaga', () => {
       return undefined;
     });
     const dispatch = vi.fn();
-    const task = runSaga({ channel: stdChannel(), dispatch, getState: () => current }, sidebarNavSaga);
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => current },
+      sidebarNavSaga,
+    );
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -134,15 +148,43 @@ describe('sidebarNavSaga', () => {
     [togglePinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
     [setAllSpacesViewMode('repo'), [[VIEW_MODE_KEY, 'repo']]],
     [setPanelWidth(320), [[PANEL_WIDTH_KEY, 320]]],
-    [openPanel('chief'), [[PANEL_ITEM_KEY, 'chief'], [CARD_PINNED_KEY, true]]],
-    [closePanel(), [[PANEL_ITEM_KEY, 'chief'], [CARD_PINNED_KEY, true]]],
-    [togglePanel('chief'), [[PANEL_ITEM_KEY, 'chief'], [CARD_PINNED_KEY, true]]],
-    [closeAll(false), [[PANEL_ITEM_KEY, 'chief'], [CARD_PINNED_KEY, true]]],
+    [setCombinedPanelSplit(0.4), [[COMBINED_PANEL_SPLIT_KEY, 0.4]]],
+    [
+      openPanel('chief'),
+      [
+        [PANEL_ITEM_KEY, 'chief'],
+        [CARD_PINNED_KEY, true],
+      ],
+    ],
+    [
+      closePanel(),
+      [
+        [PANEL_ITEM_KEY, 'chief'],
+        [CARD_PINNED_KEY, true],
+      ],
+    ],
+    [
+      togglePanel('chief'),
+      [
+        [PANEL_ITEM_KEY, 'chief'],
+        [CARD_PINNED_KEY, true],
+      ],
+    ],
+    [
+      closeAll(false),
+      [
+        [PANEL_ITEM_KEY, 'chief'],
+        [CARD_PINNED_KEY, true],
+      ],
+    ],
     [closeHoverCards(), [[CARD_PINNED_KEY, true]]],
     [setCardPinned(true), [[CARD_PINNED_KEY, true]]],
     [toggleCardPinned(), [[CARD_PINNED_KEY, true]]],
     [setChiefActiveAgentId('agent-1'), [[CHIEF_ACTIVE_AGENT_ID_KEY, 'agent-1']]],
-    [setMultiSelectSidebarTabOrder(['context']), [[MULTISELECT_SIDEBAR_TAB_ORDER_KEY, ['context', 'overview']]]],
+    [
+      setMultiSelectSidebarTabOrder(['context']),
+      [[MULTISELECT_SIDEBAR_TAB_ORDER_KEY, ['context', 'overview']]],
+    ],
   ] as const)('persists an audited mutation trigger', async (action, expected) => {
     storage.getItem.mockReturnValue(null);
     storage.getJSON.mockReturnValue(undefined);
@@ -153,6 +195,26 @@ describe('sidebarNavSaga', () => {
     await settle();
 
     expect(storage.setJSON.mock.calls).toEqual(expected);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('migrates the legacy combined-panel split storage key', async () => {
+    storage.getItem.mockReturnValue(null);
+    storage.getJSON.mockImplementation((key: string) =>
+      key === LEGACY_HOME_PANEL_SPLIT_KEY ? 0.35 : undefined,
+    );
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel: stdChannel(), dispatch, getState: () => current },
+      sidebarNavSaga,
+    );
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      hydrateSidebarNav({ combinedPanelSplit: 0.35 }),
+    ]);
+    expect(storage.setJSON.mock.calls).toEqual([[COMBINED_PANEL_SPLIT_KEY, 0.35]]);
     task.cancel();
     await task.toPromise();
   });
@@ -201,6 +263,8 @@ describe('sidebarNavSaga', () => {
       expect(storage.getJSON.mock.calls).toEqual([
         [REMOTE_PINNED_KEY],
         [PANEL_WIDTH_KEY],
+        [COMBINED_PANEL_SPLIT_KEY],
+        [LEGACY_HOME_PANEL_SPLIT_KEY],
         [PANEL_ITEM_KEY],
         [CARD_PINNED_KEY],
         [REMOTE_CHIEF_KEY],

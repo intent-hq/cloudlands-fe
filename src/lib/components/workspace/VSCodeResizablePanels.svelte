@@ -8,17 +8,16 @@
   import ErrorBoundary from '../ErrorBoundary.svelte';
   import { fly } from 'svelte/transition';
   import {
-  selectPanelVisibilityFlag,
-  selectWorkspaceSidebarPanelLayout,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectPanelVisibilityFlag,
+    selectWorkspaceSidebarPanelLayout,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-  setWorkspaceSidebarPanelLayout,
-  type WorkspaceSidebarPanelLayoutState,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    setWorkspaceSidebarPanelLayout,
+    type WorkspaceSidebarPanelLayoutState,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Props {
     workspaceId: string;
@@ -69,7 +68,6 @@
   // Dragging state
   let isDragging = $state(false);
   let draggedDivider: string | null = $state(null);
-  let focusedDivider: string | null = $state(null);
   let dragStartY = $state(0);
   let dragStartHeights = $state<Record<string, number>>({});
 
@@ -135,7 +133,6 @@
   });
 
   // Wrapper functions to handle type mismatches
-
 
   function ensureMissingPanelStates() {
     panels.forEach((panel) => {
@@ -257,7 +254,6 @@
     e.preventDefault();
     isDragging = true;
     draggedDivider = panelId;
-    focusedDivider = panelId;
     dragStartY = e.clientY;
 
     // Store current heights
@@ -302,7 +298,6 @@
     if (isDragging) {
       isDragging = false;
       draggedDivider = null;
-      focusedDivider = null;
       document.body.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -319,11 +314,9 @@
     const step = e.shiftKey ? 20 : 10;
     if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
       e.preventDefault();
-      focusedDivider = panelId;
       adjustDivider(panelId, -step);
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
       e.preventDefault();
-      focusedDivider = panelId;
       adjustDivider(panelId, step);
     } else if (e.key === 'Enter') {
       // Reset equal distribution among visible panels
@@ -415,13 +408,13 @@
         {#if shouldShowDivider('notes')}
           <button
             type="button"
-            class="resize-divider {focusedDivider === 'notes' ? 'resize-divider-active' : ''}"
+            class="app-resize-handle resize-divider"
+            data-resize-axis="y"
+            data-resizing={isDragging && draggedDivider === 'notes'}
             aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'notes')}
             onmousedown={(e) => handleDividerMouseDown(e, 'notes')}
-            onfocus={() => (focusedDivider = 'notes')}
-            onblur={() => (focusedDivider = null)}
             title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
@@ -448,15 +441,13 @@
         {#if shouldShowDivider('source-control')}
           <button
             type="button"
-            class="resize-divider {focusedDivider === 'source-control'
-              ? 'resize-divider-active'
-              : ''}"
+            class="app-resize-handle resize-divider"
+            data-resize-axis="y"
+            data-resizing={isDragging && draggedDivider === 'source-control'}
             aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'source-control')}
             onmousedown={(e) => handleDividerMouseDown(e, 'source-control')}
-            onfocus={() => (focusedDivider = 'source-control')}
-            onblur={() => (focusedDivider = null)}
             title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
@@ -487,13 +478,13 @@
         {#if shouldShowDivider('explorer')}
           <button
             type="button"
-            class="resize-divider {focusedDivider === 'explorer' ? 'resize-divider-active' : ''}"
+            class="app-resize-handle resize-divider"
+            data-resize-axis="y"
+            data-resizing={isDragging && draggedDivider === 'explorer'}
             aria-label={m.workspace_resizablePanels_resize_ariaLabel()}
             tabindex="0"
             onkeydown={(e) => handleDividerKeydown(e, 'explorer')}
             onmousedown={(e) => handleDividerMouseDown(e, 'explorer')}
-            onfocus={() => (focusedDivider = 'explorer')}
-            onblur={() => (focusedDivider = null)}
             title={m.workspace_resizablePanels_resize_tooltip()}
           ></button>
         {/if}
@@ -524,9 +515,7 @@
                 {handleFileSelect}
                 onShowAgent={(agentId) => {
                   // Dispatch action to open agent in panel
-                  appStore.dispatch(
-                    openAgentTabRequested(workspaceId, { agentId }),
-                  );
+                  appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
                 }}
               />
             </ErrorBoundary>
@@ -580,61 +569,11 @@
 
   .resize-divider {
     position: absolute;
-    bottom: -4px;
+    bottom: -8px;
     left: 0;
     right: 0;
-    height: 8px;
-    cursor: ns-resize;
+    height: 16px;
     z-index: 10;
-    background: transparent;
-    transition: background-color 0.15s ease;
-    border: none;
-    padding: 0;
-  }
-
-  /* Subtle line indicator */
-  .resize-divider::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: var(--border);
-    transform: translateY(-50%);
-    transition: all 0.15s ease;
-  }
-
-  /* Hover state - subtle highlight */
-  .resize-divider:hover {
-    background: hsl(var(--primary) / 0.1);
-  }
-
-  .resize-divider:hover::before {
-    background: hsl(var(--primary) / 0.5);
-  }
-
-  /* Focus state - keyboard navigation */
-  .resize-divider:focus {
-    outline: none;
-    background: hsl(var(--primary) / 0.15);
-  }
-
-  .resize-divider:focus::before {
-    background: hsl(var(--primary) / 0.6);
-    height: 2px;
-  }
-
-  /* Active/dragging state - only for the actively dragged divider */
-  .resize-divider-active,
-  .resize-divider-active:hover {
-    background: hsl(var(--primary) / 0.2);
-  }
-
-  .resize-divider-active::before,
-  .resize-divider-active:hover::before {
-    background: hsl(var(--primary));
-    height: 2px;
   }
 
   /* Remove global dragging style that affects all dividers */

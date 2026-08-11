@@ -1,40 +1,38 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { scrollFade } from '$lib/actions/scroll-fade';
   import { m } from '$shared/paraglide/messages.js';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import {
-  selectWorkspaceItems,
-  selectWorkspaceHasLoaded,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectWorkspaceItems,
+    selectWorkspaceHasLoaded,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum, isWorkspaceDisplayStatus } from '$shared/types';
   import type { Workspace, WorkspaceDisplayStatus } from '$shared/types';
   import {
-  buildRepoPathLookup,
-  getGroupKey,
-} from '$lib/components/workspace/utils/workspace-grouping';
+    buildRepoPathLookup,
+    getGroupKey,
+  } from '$lib/components/workspace/utils/workspace-grouping';
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
 
   import {
-  selectPinnedWorkspaceIds,
-  selectAllSpacesViewMode,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+    selectPinnedWorkspaceIds,
+    selectAllSpacesViewMode,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { markWorkspaceSeen } from '$features/workspace/mark-workspace-seen';
 
+  import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-  closeAll,
-  togglePinWorkspace,
-  setAllSpacesViewMode,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import type { AllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import {
-  compareWorkspaceActivityDisplayTimeDesc,
-  getWorkspaceActivityDisplayTime,
-} from '$shared/utils/workspace-activity-time';
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { Button } from '$lib/components/ui/button';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -47,26 +45,54 @@
 
   interface Props {
     expanded?: boolean;
+    /** Whether the search input is shown (the host may hide it behind a toggle). */
+    searchVisible?: boolean;
+    /** Plain, activity-ordered rows for the compact hover dropdown. */
+    recentsOnly?: boolean;
+    /** Number of recent rows shown before expansion. */
+    recentLimit?: number;
+    /** Whether compact recents can search across every active workspace. */
+    searchRecents?: boolean;
+    /** Whether compact recents render a show-more/show-less toggle. */
+    expandableRecents?: boolean;
+    /** Workspace IDs omitted from default, expanded, and searched results. */
+    excludedWorkspaceIds?: readonly string[];
+    /** Whether compact recents announce loading with visible text. */
+    showLoadingText?: boolean;
   }
 
-  let { expanded = false }: Props = $props();
-
+  let {
+    expanded = false,
+    searchVisible = true,
+    recentsOnly = false,
+    recentLimit = 10,
+    searchRecents = false,
+    expandableRecents = false,
+    excludedWorkspaceIds = [],
+    showLoadingText = true,
+  }: Props = $props();
 
   let searchQuery = $state('');
   let searchInputEl = $state<HTMLInputElement | null>(null);
   let highlightedIndex = $state(-1);
+  let showAllRecents = $state(false);
+  const excludedWorkspaceIdSet = $derived(new Set(excludedWorkspaceIds));
 
   // Reset highlight when search query or view mode changes
   $effect(() => {
     void searchQuery;
     void $viewMode$;
-    highlightedIndex = filteredWorkspaces.length > 0 ? 0 : -1;
+    void recentsOnly;
+    highlightedIndex = allVisibleIds.length > 0 ? 0 : -1;
   });
 
-  // Auto-focus search when expanded
+  // Auto-focus search when shown; clear any stale filter when hidden so the
+  // list isn't invisibly filtered.
   $effect(() => {
-    if (expanded && searchInputEl) {
+    if (expanded && searchVisible && searchInputEl) {
       searchInputEl.focus();
+    } else if (!searchVisible) {
+      searchQuery = '';
     }
   });
 
@@ -81,13 +107,41 @@
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
+  const recentWorkspaces = $derived.by(() =>
+    $workspaceItems
+      .filter(
+        (workspace) =>
+          !excludedWorkspaceIdSet.has(workspace.id) &&
+          workspace.status !== WorkspaceStatusEnum.Archived &&
+          workspace.status !== WorkspaceStatusEnum.Deleted,
+      )
+      .sort(compareWorkspaceActivityDisplayTimeDesc),
+  );
+
+  const filteredRecentWorkspaces = $derived.by(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return recentWorkspaces;
+    return recentWorkspaces.filter(
+      (workspace) =>
+        (workspace.title || '').toLowerCase().includes(query) ||
+        (workspace.repositoryName || '').toLowerCase().includes(query),
+    );
+  });
+
+  const visibleRecentWorkspaces = $derived.by(() => {
+    if (searchQuery.trim() || showAllRecents) return filteredRecentWorkspaces;
+    return filteredRecentWorkspaces.slice(0, recentLimit);
+  });
+
   const allWorkspaces = $derived.by(() => {
     void $pinnedIds$;
 
     return $workspaceItems
       .filter(
         (w) =>
-          w.status !== WorkspaceStatusEnum.Archived && w.status !== WorkspaceStatusEnum.Deleted,
+          !excludedWorkspaceIdSet.has(w.id) &&
+          w.status !== WorkspaceStatusEnum.Archived &&
+          w.status !== WorkspaceStatusEnum.Deleted,
       )
       .sort((a, b) => {
         const aPinned = $pinnedIds$.includes(a.id);
@@ -136,7 +190,11 @@
   const groupedByRepo = $derived.by(() => {
     const groups = new Map<string, { workspaces: Workspace[]; owner?: string; label: string }>();
     for (const ws of filteredWorkspaces) {
-      const { key, label, owner } = getGroupKey(ws, sidebarRepoPathLookup, m.layout_allCard_noRepository_label());
+      const { key, label, owner } = getGroupKey(
+        ws,
+        sidebarRepoPathLookup,
+        m.layout_allCard_noRepository_label(),
+      );
 
       if (!groups.has(key)) groups.set(key, { workspaces: [], owner, label });
       groups.get(key)!.workspaces.push(ws);
@@ -202,11 +260,6 @@
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
   }
 
-  function getUnreadAgentIds(ws: Workspace): string[] {
-    // Attention is workspace-level (BE-owned); show member agents as the unread set.
-    return ws.attention === 'unread' ? (ws.agentSummary?.agentIds ?? []) : [];
-  }
-
   function _isUnread(ws: Workspace): boolean {
     void activeStreamsVersion;
     const streamingIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -225,8 +278,8 @@
 
     keyboardNavActive = false;
     highlightedIndex = -1;
-    appStore.dispatch(closeAll(false));
-    goto(route);
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+    await goto(route);
   }
 
   function handleTogglePin(e: MouseEvent, workspaceId: string) {
@@ -243,6 +296,7 @@
 
   // Flat ordered list of workspace IDs matching the current view mode's display order
   const allVisibleIds = $derived.by(() => {
+    if (recentsOnly) return visibleRecentWorkspaces.map((workspace) => workspace.id);
     if ($viewMode$ === 'repo') {
       return groupedByRepo.flatMap(([, group]) => group.workspaces.map((w) => w.id));
     } else if ($viewMode$ === 'status') {
@@ -305,156 +359,192 @@
   role="listbox"
   tabindex="0"
 >
-  <div class="flex flex-col gap-1 px-3 pt-1 pb-1 shrink-0 w-full">
-    <div class="view-mode-tabs gap-0.5 bg-slate-500/10 rounded-lg p-0.5 mb-2 w-full">
-      {#each [['recent', m.layout_allCard_recent_label()], ['repo', m.layout_allCard_repo_label()], ['status', m.layout_allCard_status_label()]] as [mode, label]}
-        <button
-          class="view-mode-tab px-1.5 py-1 text-xs rounded-md transition-all duration-150 cursor-pointer text-center truncate
-            {$viewMode$ === mode
-            ? 'bg-background text-foreground font-medium shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'}"
-          title={label}
-          onclick={() => appStore.dispatch(setAllSpacesViewMode(mode as AllSpacesViewMode))}
-        >
-          {label}
-        </button>
-      {/each}
-    </div>
-  </div>
+  {#if recentsOnly}
+    {#if $hasLoaded$ && searchRecents && searchVisible && recentWorkspaces.length > recentLimit}
+      <div class="px-2 pb-2">
+        <input
+          bind:this={searchInputEl}
+          type="text"
+          placeholder={m.layout_activeCard_search_placeholder()}
+          bind:value={searchQuery}
+          class="w-full rounded-md bg-background/30 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+        />
+      </div>
+    {/if}
 
-  {#if $hasLoaded$ && expanded && allWorkspaces.length > 3}
-    <div class="px-3 pb-2">
-      <input
-        bind:this={searchInputEl}
-        type="text"
-        placeholder={m.layout_activeCard_search_placeholder()}
-        bind:value={searchQuery}
-        class="w-full px-2.5 py-1.5 text-sm bg-background/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
-      />
-    </div>
-  {/if}
-
-  {#if !$hasLoaded$}
-    <!-- Show skeleton placeholders while loading -->
-    <div class="pb-2">
-      {#each Array(5) as _, i (i)}
-        <WorkspaceCardSkeleton />
-      {/each}
-    </div>
-  {:else if allWorkspaces.length === 0}
-    <div class="px-3 pb-3 text-xs text-subtle">{m.layout_allCard_noWorkspaces_label()}</div>
-  {:else}
-    <div class="overflow-y-auto flex-1 min-h-0 pb-2">
-      {#if $viewMode$ === 'recent'}
-        {#each filteredWorkspaces as workspace, i (workspace.id)}
-          {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
-            <div class="border-t border-border my-1 mx-2"></div>
-          {/if}
-          <WorkspaceCard
-            {workspace}
-            variant="compact"
-            isRunning={_isRunning(workspace)}
-            isUnread={_isUnread(workspace)}
-            isPinned={$pinnedIds$.includes(workspace.id)}
-            streamingAgentIds={_getStreamingIds(workspace)}
-            unreadAgentIds={getUnreadAgentIds(workspace)}
-            highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
-            suppressHover={keyboardNavActive}
-            onClick={(e) => handleClick(workspace.id, e)}
-            onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-            onMarkAsRead={_isUnread(workspace)
-              ? (e) => handleMarkAsRead(e, workspace.id)
-              : undefined}
-            onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
-            onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
-          />
-        {/each}
-      {:else if $viewMode$ === 'repo'}
-        {#each groupedByRepo as [, group]}
-          <div class="section-header flex items-center gap-1.5 px-3 pt-2.5 pb-1 mt-3 min-w-0">
-            {#if group.owner}
-              <img
-                src={getGitHubAvatarUrl(group.owner)}
-                alt={group.owner}
-                class="size-3.5 rounded-full shrink-0"
-                loading="lazy"
-                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-              />
-            {/if}
-            <Header size={3} class="truncate">{group.label}</Header>
-          </div>
-          {#each group.workspaces as workspace, _i (workspace.id)}
-            <WorkspaceCard
-              {workspace}
-              variant="compact"
-              isRunning={_isRunning(workspace)}
-              isUnread={_isUnread(workspace)}
-              isPinned={$pinnedIds$.includes(workspace.id)}
-              streamingAgentIds={_getStreamingIds(workspace)}
-              unreadAgentIds={getUnreadAgentIds(workspace)}
-              hideRepoAvatar={true}
-              highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
-              suppressHover={keyboardNavActive}
-              onClick={(e) => handleClick(workspace.id, e)}
-              onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-              onMarkAsRead={_isUnread(workspace)
-                ? (e) => handleMarkAsRead(e, workspace.id)
-                : undefined}
-              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
-              onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
-            />
-          {/each}
-        {/each}
-      {:else if $viewMode$ === 'status'}
-        {#each groupedByStatus as [statusLabel, workspaces]}
-          <div class="section-header px-3 pt-2 pb-1 mt-3 min-w-0">
-            <Header size={3} class="truncate">{statusLabel}</Header>
-          </div>
-          {#each workspaces as workspace, _i (workspace.id)}
-            <WorkspaceCard
-              {workspace}
-              variant="compact"
-              isRunning={_isRunning(workspace)}
-              isUnread={_isUnread(workspace)}
-              isPinned={$pinnedIds$.includes(workspace.id)}
-              streamingAgentIds={_getStreamingIds(workspace)}
-              unreadAgentIds={getUnreadAgentIds(workspace)}
-              highlighted={keyboardNavActive && highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
-              suppressHover={keyboardNavActive}
-              onClick={(e) => handleClick(workspace.id, e)}
-              onTogglePin={(e) => handleTogglePin(e, workspace.id)}
-              onMarkAsRead={_isUnread(workspace)
-                ? (e) => handleMarkAsRead(e, workspace.id)
-                : undefined}
-              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
-              onHover={() => { hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1; }}
-            />
-          {/each}
-        {/each}
+    {#if !$hasLoaded$}
+      {#if showLoadingText}
+        <div class="px-3 py-3 text-sm text-subtle">{m.ui_spinner_loading_ariaLabel()}</div>
       {/if}
-    </div>
+    {:else if recentWorkspaces.length === 0}
+      <div class="px-3 py-3 text-sm text-subtle">{m.layout_allCard_noWorkspaces_label()}</div>
+    {:else if visibleRecentWorkspaces.length === 0}
+      <div class="px-3 py-3 text-sm text-subtle">{m.ui_dropdown_noResults_label()}</div>
+    {:else}
+      <div class="min-h-0 flex-1 overflow-y-auto py-1">
+        {#each visibleRecentWorkspaces as workspace, index (workspace.id)}
+          <div data-recent-space-row data-workspace-id={workspace.id}>
+            <WorkspaceCard
+              {workspace}
+              variant="compact"
+              isRunning={_isRunning(workspace)}
+              isUnread={_isUnread(workspace)}
+              isPinned={$pinnedIds$.includes(workspace.id)}
+              streamingAgentIds={_getStreamingIds(workspace)}
+              highlighted={keyboardNavActive && highlightedIndex === index}
+              suppressHover={keyboardNavActive}
+              onClick={(event) => handleClick(workspace.id, event)}
+              onTogglePin={(event) => handleTogglePin(event, workspace.id)}
+              onMarkAsRead={_isUnread(workspace)
+                ? (event) => handleMarkAsRead(event, workspace.id)
+                : undefined}
+              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+              onHover={() => {
+                hoveredIndex = index;
+              }}
+            />
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if expandableRecents && !searchQuery.trim() && recentWorkspaces.length > recentLimit}
+      <div class="px-2 pb-2">
+        <Button
+          variant="ghost-light"
+          size="xs"
+          class="w-full"
+          aria-expanded={showAllRecents}
+          data-recent-spaces-toggle
+          onclick={() => (showAllRecents = !showAllRecents)}
+        >
+          {showAllRecents ? m.layout_allCard_showLess_label() : m.layout_allCard_showMore_label()}
+        </Button>
+      </div>
+    {/if}
+  {:else}
+    {#if $hasLoaded$ && expanded && searchVisible && allWorkspaces.length > 3}
+      <div class="px-2 pb-2">
+        <input
+          bind:this={searchInputEl}
+          type="text"
+          placeholder={m.layout_activeCard_search_placeholder()}
+          bind:value={searchQuery}
+          class="w-full px-2.5 py-1.5 text-sm bg-background/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+        />
+      </div>
+    {/if}
+
+    {#if !$hasLoaded$}
+      <!-- Show skeleton placeholders while loading -->
+      <div class="pb-2">
+        {#each Array(5) as _, index (index)}
+          <WorkspaceCardSkeleton {index} />
+        {/each}
+      </div>
+    {:else if allWorkspaces.length === 0}
+      <div class="px-2 pb-3 text-xs text-subtle">{m.layout_allCard_noWorkspaces_label()}</div>
+    {:else}
+      <div class="overflow-y-auto flex-1 min-h-0 pb-2" use:scrollFade>
+        {#if $viewMode$ === 'recent'}
+          {#each filteredWorkspaces as workspace, i (workspace.id)}
+            {#if i > 0 && !$pinnedIds$.includes(workspace.id) && $pinnedIds$.includes(filteredWorkspaces[i - 1].id)}
+              <div class="border-t border-border my-1 mx-2"></div>
+            {/if}
+            <WorkspaceCard
+              {workspace}
+              variant="compact"
+              isRunning={_isRunning(workspace)}
+              isUnread={_isUnread(workspace)}
+              isPinned={$pinnedIds$.includes(workspace.id)}
+              streamingAgentIds={_getStreamingIds(workspace)}
+              highlighted={keyboardNavActive &&
+                highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+              suppressHover={keyboardNavActive}
+              onClick={(e) => handleClick(workspace.id, e)}
+              onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+              onMarkAsRead={_isUnread(workspace)
+                ? (e) => handleMarkAsRead(e, workspace.id)
+                : undefined}
+              onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+              onHover={() => {
+                hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
+              }}
+            />
+          {/each}
+        {:else if $viewMode$ === 'repo'}
+          {#each groupedByRepo as [, group]}
+            <div class="section-header flex items-center gap-1.5 px-2 pt-2 pb-1 mt-2 min-w-0">
+              {#if group.owner}
+                <img
+                  src={getGitHubAvatarUrl(group.owner)}
+                  alt={group.owner}
+                  class="size-3.5 rounded-full shrink-0"
+                  loading="lazy"
+                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                />
+              {/if}
+              <Header size={4} class="truncate">{group.label}</Header>
+            </div>
+            {#each group.workspaces as workspace, _i (workspace.id)}
+              <WorkspaceCard
+                {workspace}
+                variant="compact"
+                isRunning={_isRunning(workspace)}
+                isUnread={_isUnread(workspace)}
+                isPinned={$pinnedIds$.includes(workspace.id)}
+                streamingAgentIds={_getStreamingIds(workspace)}
+                highlighted={keyboardNavActive &&
+                  highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+                suppressHover={keyboardNavActive}
+                onClick={(e) => handleClick(workspace.id, e)}
+                onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+                onMarkAsRead={_isUnread(workspace)
+                  ? (e) => handleMarkAsRead(e, workspace.id)
+                  : undefined}
+                onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+                onHover={() => {
+                  hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
+                }}
+              />
+            {/each}
+          {/each}
+        {:else if $viewMode$ === 'status'}
+          {#each groupedByStatus as [statusLabel, workspaces]}
+            <div class="section-header px-2 pt-2 pb-1 mt-2 min-w-0">
+              <Header size={4} class="truncate">{statusLabel}</Header>
+            </div>
+            {#each workspaces as workspace, _i (workspace.id)}
+              <WorkspaceCard
+                {workspace}
+                variant="compact"
+                isRunning={_isRunning(workspace)}
+                isUnread={_isUnread(workspace)}
+                isPinned={$pinnedIds$.includes(workspace.id)}
+                streamingAgentIds={_getStreamingIds(workspace)}
+                highlighted={keyboardNavActive &&
+                  highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}
+                suppressHover={keyboardNavActive}
+                onClick={(e) => handleClick(workspace.id, e)}
+                onTogglePin={(e) => handleTogglePin(e, workspace.id)}
+                onMarkAsRead={_isUnread(workspace)
+                  ? (e) => handleMarkAsRead(e, workspace.id)
+                  : undefined}
+                onOpenInNewWindow={() => openWorkspaceInNewWindow(workspace.id)}
+                onHover={() => {
+                  hoveredIndex = _visibleIdIndex.get(workspace.id) ?? -1;
+                }}
+              />
+            {/each}
+          {/each}
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
 
 <style>
-  /* Default: horizontal tabs */
-  .view-mode-tabs {
-    display: flex;
-    flex-direction: row;
-  }
-  .view-mode-tab {
-    flex: 1;
-  }
-
-  /* Narrow: stack tabs vertically, tighten spacing */
   @container (max-width: 180px) {
-    .view-mode-tabs {
-      flex-direction: column;
-    }
-    .view-mode-tab {
-      flex: none;
-      width: 100%;
-    }
     .section-header {
       padding-left: 0.5rem;
       padding-right: 0.5rem;

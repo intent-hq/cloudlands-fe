@@ -10,7 +10,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mockInvoke, resetMockIpcRouter, UnbridgedMockIpcChannelError } from '$shared/ipc-mock-router';
+import {
+  mockInvoke,
+  resetMockIpcRouter,
+  UnbridgedMockIpcChannelError,
+} from '$shared/ipc-mock-router';
 
 /** Import a fresh copy of browser-mock so its auto-install side effect re-runs. */
 async function importBrowserMock() {
@@ -83,6 +87,84 @@ describe('browser-mock DEV gate', () => {
 
     expect(installBrowserMock()).toBe(false);
     expect((window as any).electronAPI).toBe(realBridge);
+  });
+
+  it('serves protocol-shaped backend lists to the live AppClient in browser mode', async () => {
+    vi.stubEnv('DEV', true);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await importBrowserMock();
+    const api = (window as any).electronAPI;
+    const invokeSpy = vi.spyOn(api, 'invoke');
+    const { LiveAppClient } = await import('./client');
+    const { backendRequest } = await import('./client/live/backend-transport');
+    const { rememberNoteWorkspace } = await import('./client/live/live-support');
+    const client = new LiveAppClient();
+
+    const workspaces = await client.workspaces.list({ includeArchived: true });
+    const agents = await client.agents.list(String(workspaces[0].id));
+    const interrupted = await client.agents.listInterrupted();
+    const files = await backendRequest<{ files?: string[] }>('search.fileNames', {
+      workspaceId: String(workspaces[0].id),
+      pattern: '',
+      limit: 50,
+    });
+    rememberNoteWorkspace('mock-note', 'mock-ws-1');
+    const comments = await client.comments.list('mock-note');
+    const tasks = await client.tasks.list('mock-ws-1');
+    const gitStatus = await client.git.status('mock-ws-1');
+
+    expect(workspaces.map(({ id }) => String(id))).toEqual(['mock-ws-1', 'mock-ws-2']);
+    expect(agents).toEqual([]);
+    expect(interrupted).toEqual([]);
+    expect(files).toEqual({ files: [] });
+    expect(comments).toEqual([]);
+    expect(tasks).toEqual({ tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } });
+    expect(gitStatus).toEqual({
+      branch: '',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(1, 'backend:request', {
+      method: 'workspace.list',
+      params: { includeArchived: true },
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(2, 'backend:request', {
+      method: 'agent.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(3, 'backend:request', {
+      method: 'agent.listInterrupted',
+      params: {},
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(4, 'backend:request', {
+      method: 'search.fileNames',
+      params: { workspaceId: 'mock-ws-1', pattern: '', limit: 50 },
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(5, 'backend:request', {
+      method: 'comment.list',
+      params: { workspaceId: 'mock-ws-1', noteId: 'mock-note', includeComments: true },
+    });
+    await expect(invokeSpy.mock.results[4].value).resolves.toEqual({
+      ok: true,
+      result: { threads: [] },
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(6, 'backend:request', {
+      method: 'task.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    await expect(invokeSpy.mock.results[5].value).resolves.toEqual({
+      ok: true,
+      result: { tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } },
+    });
+    expect(invokeSpy).toHaveBeenNthCalledWith(7, 'backend:request', {
+      method: 'git.status',
+      params: { workspaceId: 'mock-ws-1' },
+    });
   });
 
   it('logs a [BrowserMock]-prefixed warning naming the channel for every served response', async () => {

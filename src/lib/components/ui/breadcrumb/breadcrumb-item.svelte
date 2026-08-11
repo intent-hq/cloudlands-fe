@@ -7,6 +7,6 @@
   let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<li class={cn('inline-flex items-center gap-1.5', className)} {...restProps}>
+<li class={cn('inline-flex min-w-0 items-center gap-1.5', className)} {...restProps}>
   {@render children?.()}
 </li>

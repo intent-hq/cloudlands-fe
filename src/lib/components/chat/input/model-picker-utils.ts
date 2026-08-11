@@ -106,17 +106,19 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
 }
 
 /**
- * Normalize a model ID for equivalence comparison: strip the effective
- * default-provider prefix so `auggie:sonnet4.6` matches bare `sonnet4.6`
- * (and vice versa) when `auggie` is the effective default provider.
- * Other prefixes are preserved so `opencode:foo` still only matches the
- * compound form.
+ * Normalize a model ID for equivalence comparison. Explicit compound ids use
+ * their canonical provider; bare ids use the picker's effective provider when
+ * supplied, then the global default. This keeps a valid bare session model
+ * matched while the global default is unresolved without conflating models
+ * from different providers.
  */
-export function normalizeModelIdForMatch(modelId: string): string {
+export function normalizeModelIdForMatch(modelId: string, bareProviderId?: string): string {
+  const { providerId: explicitProviderId, modelId: baseModelId } = splitCompoundModelId(modelId);
   const defaultProviderId = selectEffectiveDefaultProviderId.select(appStore.state);
-  if (!defaultProviderId) return modelId;
-  const prefix = `${defaultProviderId}:`;
-  return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+  const providerId = explicitProviderId || bareProviderId || defaultProviderId;
+  if (!providerId) return baseModelId;
+  const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+  return `${normalizedProviderId}:${baseModelId}`;
 }
 
 export interface FindModelFallbackOptionParams {

@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  faArrowsRotate,
-  faChevronDown,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowsRotate, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   import Button from '$lib/components/ui/button/button.svelte';
@@ -26,7 +23,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class={cn(
-      'group/header px-3 text-xs font-medium text-muted-foreground flex items-center gap-2 cursor-pointer select-none',
+      'group/header type-caption flex cursor-pointer select-none items-center gap-2 px-3 font-medium text-muted-foreground',
       groupIndex > 0 && 'pt-1.5',
     )}
     role="button"

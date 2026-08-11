@@ -19,6 +19,18 @@ export interface GroupKeyResult {
   owner?: string;
 }
 
+export interface KnownRepoInfo {
+  path: string;
+  name: string;
+  owner?: string;
+}
+
+export interface RepositoryGroup extends GroupKeyResult {
+  repoPath?: string;
+  name?: string;
+  workspaces: Workspace[];
+}
+
 /**
  * Build a lookup from repositoryPath → {owner, name} so workspaces missing
  * owner/name can be merged into the correct group instead of creating duplicates.
@@ -75,14 +87,6 @@ export function getGroupKey(
     };
   }
 
-  if (ws.repositoryName && !ws.repositoryOwner) {
-    return {
-      key: ws.repositoryName,
-      label: ws.repositoryName,
-      isGithub: false,
-    };
-  }
-
   if (ws.repositoryPath) {
     const githubInfo = repoPathLookup.get(ws.repositoryPath);
     if (githubInfo) {
@@ -100,5 +104,80 @@ export function getGroupKey(
     };
   }
 
+  if (ws.repositoryName && !ws.repositoryOwner) {
+    return {
+      key: ws.repositoryName,
+      label: ws.repositoryName,
+      isGithub: false,
+    };
+  }
+
   return { key: noRepoLabel, label: noRepoLabel, isGithub: false };
+}
+
+function getKnownRepoGroupKey(
+  repo: KnownRepoInfo,
+  repoPathLookup: Map<string, RepoGithubInfo>,
+): GroupKeyResult {
+  const githubInfo = repoPathLookup.get(repo.path);
+  const owner = githubInfo?.owner ?? repo.owner;
+  const name = githubInfo?.name ?? repo.name;
+
+  if (owner) {
+    return { key: `${owner}/${name}`, label: `${owner}/${name}`, isGithub: true, owner };
+  }
+
+  return { key: repo.path, label: repo.name, isGithub: false };
+}
+
+/**
+ * Groups known repositories and workspaces through one canonical identity.
+ * Path remains the identity for local repositories, while active GitHub metadata
+ * upgrades both sources to owner/name. Seeded metadata is retained for creation.
+ */
+export function groupWorkspacesByRepository({
+  workspaces,
+  knownRepos,
+  repoPathLookup,
+  includeKnownRepos,
+}: {
+  workspaces: Workspace[];
+  knownRepos: KnownRepoInfo[];
+  repoPathLookup: Map<string, RepoGithubInfo>;
+  includeKnownRepos: boolean;
+}): RepositoryGroup[] {
+  const groups = new Map<string, RepositoryGroup>();
+
+  if (includeKnownRepos) {
+    for (const repo of knownRepos) {
+      const identity = getKnownRepoGroupKey(repo, repoPathLookup);
+      if (!groups.has(identity.key)) {
+        groups.set(identity.key, {
+          ...identity,
+          repoPath: repo.path,
+          name: identity.isGithub ? identity.label.split('/').pop() : repo.name,
+          workspaces: [],
+        });
+      }
+    }
+  }
+
+  for (const workspace of workspaces) {
+    const identity = getGroupKey(workspace, repoPathLookup);
+    let group = groups.get(identity.key);
+    if (!group) {
+      group = {
+        ...identity,
+        repoPath: workspace.repositoryPath,
+        name:
+          workspace.repositoryName ??
+          (identity.isGithub ? identity.label.split('/').pop() : identity.label),
+        workspaces: [],
+      };
+      groups.set(identity.key, group);
+    }
+    group.workspaces.push(workspace);
+  }
+
+  return Array.from(groups.values());
 }

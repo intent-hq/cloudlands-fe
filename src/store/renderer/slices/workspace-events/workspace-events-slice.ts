@@ -7,7 +7,11 @@ import {
   sanitizeWorkspaceEventsList,
 } from './workspace-events-sanitizer';
 
-const MAX_EVENTS = 100;
+// Buffer depth. The raw feed includes chatty machine events (agent:stream:*,
+// tool-call status patches, git-status ticks) that UI consumers filter out, so
+// the buffer must be deep enough that user-meaningful events survive the cap.
+// Keep in sync with BOOT_SNAPSHOT_LIMIT in live-events-client.ts.
+const MAX_EVENTS = 300;
 
 export type WorkspaceEventsWorkspaceState = {
   events: WorkspaceEvent[];

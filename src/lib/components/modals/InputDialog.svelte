@@ -84,7 +84,7 @@
             <p class="text-sm text-subtle mt-0.5">{description}</p>
           {/if}
         </div>
-        <Button variant="ghost" size="icon" onclick={close}>
+        <Button variant="ghost" size="icon" onclick={close} aria-label="Close input dialog">
           <Fa icon={faXmark} />
         </Button>
       </div>

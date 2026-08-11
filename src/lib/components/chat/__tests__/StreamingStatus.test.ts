@@ -2,19 +2,8 @@
  * @vitest-environment jsdom
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/svelte';
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('./mocks/Button.svelte')).default,
@@ -46,6 +35,25 @@ afterEach(() => {
 });
 
 describe('StreamingStatus rendered UI', () => {
+  it('renders the compact legacy spinner and Thinking row while active', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isProcessing: true, seed: 'agent-1' },
+    });
+
+    const row = container.firstElementChild as HTMLElement;
+    const spinner = screen.getByRole('status');
+    const label = screen.getByTestId('streaming-status-thinking');
+
+    expect(row.className).toContain('py-1');
+    expect(row.className).toContain('pl-2');
+    expect(row.className).not.toContain('pr-3');
+    expect(spinner.className).toContain('legacy-streaming-spinner');
+    expect(spinner.getAttribute('style')).toContain('--size: 5px');
+    expect(label.textContent).toBe('Thinking');
+    expect(label.className).toContain('text-xs');
+    expect(label.className).toContain('font-medium');
+  });
+
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
     const onRetry = vi.fn();
     const { container } = render(StreamingStatus, {
@@ -180,7 +188,7 @@ describe('StreamingStatus rendered UI', () => {
       seed: 'agent-1',
     });
 
-    expect(screen.queryByTestId('error-title')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('error-title')).toBeNull());
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
   });
 
@@ -422,25 +430,44 @@ describe('StreamingStatus utilities', () => {
   describe('tool→streaming lifecycle (state transitions)', () => {
     it('full lifecycle: streaming → tool-call → tool-waiting → streaming again', () => {
       // Phase 1: Initial text chunk (receivedFirstChunk=false, has prompt event)
-      const initialEvents: StatusEvent[] = [{ phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 }];
+      const initialEvents: StatusEvent[] = [
+        { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+      ];
       expect(shouldAppendStreamingEvent(false, initialEvents)).toBe(true);
       // After first chunk: receivedFirstChunk=true, events include streaming
 
       // Phase 2: More text chunks (receivedFirstChunk=true) — no more streaming events
-      const afterFirstChunk: StatusEvent[] = [...initialEvents, { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 }];
+      const afterFirstChunk: StatusEvent[] = [
+        ...initialEvents,
+        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
+      ];
       expect(shouldAppendStreamingEvent(true, afterFirstChunk)).toBe(false);
 
       // Phase 3: Tool-call arrives — receivedFirstChunk reset to false by status handler
-      const afterToolCall: StatusEvent[] = [...afterFirstChunk, { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 }];
+      const afterToolCall: StatusEvent[] = [
+        ...afterFirstChunk,
+        { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 },
+      ];
       // receivedFirstChunk is now false (reset by status handler)
       expect(shouldAppendStreamingEvent(false, afterToolCall)).toBe(true);
 
       // Phase 4: Tool-waiting arrives — receivedFirstChunk stays false
-      const afterToolWaiting: StatusEvent[] = [...afterToolCall, { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 4000 }];
+      const afterToolWaiting: StatusEvent[] = [
+        ...afterToolCall,
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 4000,
+        },
+      ];
       expect(shouldAppendStreamingEvent(false, afterToolWaiting)).toBe(true);
 
       // Phase 5: Text resumes after tool — streaming event appended
-      const afterToolComplete: StatusEvent[] = [...afterToolWaiting, { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 }];
+      const afterToolComplete: StatusEvent[] = [
+        ...afterToolWaiting,
+        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 },
+      ];
       // After this chunk: receivedFirstChunk=true again
       expect(shouldAppendStreamingEvent(true, afterToolComplete)).toBe(false);
     });
@@ -450,11 +477,21 @@ describe('StreamingStatus utilities', () => {
         { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
         { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
         { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 },
-        { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 4000 },
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 4000,
+        },
         { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 },
         // Second tool cycle
         { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 6000 },
-        { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 7000 },
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 7000,
+        },
       ];
       // After second tool-waiting, receivedFirstChunk is false (reset by status handler)
       // Should allow streaming transition

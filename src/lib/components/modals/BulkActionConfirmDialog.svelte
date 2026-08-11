@@ -1,11 +1,7 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
   import type { ButtonVariant } from '$lib/components/ui/button';
-  import Fa from 'svelte-fa';
-  import {
-  faXmark,
-  faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+  import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -37,17 +33,8 @@
 
   const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
 
-  let dialogRef: HTMLDivElement | null = $state(null);
-
-  // Focus dialog when it opens so Escape key works. Deferred a microtask so
-  // it lands after any Portal relocation in the same flush (moving a focused
-  // node in the DOM drops focus back to <body>).
-  $effect(() => {
-    if (open && dialogRef) {
-      const el = dialogRef;
-      queueMicrotask(() => el.focus());
-    }
-  });
+  let confirmButtonRef: HTMLButtonElement | null = $state(null);
+  let confirmHasFocus = $state(false);
 
   function close() {
     open = false;
@@ -63,80 +50,66 @@
     open = false;
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      close();
-    }
+  function handleOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    confirmButtonRef?.focus();
   }
 </script>
 
-{#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="presentation"
-    onkeydown={handleKeydown}
-    onclick={close}
+<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && close()}>
+  <Dialog.Content
+    class="max-w-sm gap-0 overflow-hidden p-0"
+    closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
+    onOpenAutoFocus={handleOpenAutoFocus}
   >
-    <div
-      bind:this={dialogRef}
-      class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-      onclick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="bulk-dialog-title"
-      aria-describedby="bulk-dialog-description"
-      tabindex="-1"
-      onkeydown={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          close();
-        } else {
-          e.stopPropagation();
-        }
-      }}
-    >
-      <!-- Header -->
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class={variant === 'destructive' ? 'text-red-600 dark:text-red-500' : 'text-amber-600 dark:text-amber-500'}>
-            <Fa icon={faExclamationTriangle} size="lg" />
-          </div>
-          <h2 id="bulk-dialog-title" class="text-lg font-semibold">{title}</h2>
+    <div class="space-y-4 p-5 pr-12">
+      <Dialog.Header class="gap-2 pr-0">
+        <Dialog.Title>{title}</Dialog.Title>
+        <Dialog.Description class="leading-5">{description}</Dialog.Description>
+      </Dialog.Header>
+
+      {#if hasActiveWork}
+        <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+          {#if activeAgentCount > 0}
+            <p class="text-sm font-medium text-foreground">
+              {activeAgentCount === 1
+                ? m.modals_deleteWarning_agentsStopped_one({
+                    count: formatInteger(activeAgentCount),
+                  })
+                : m.modals_deleteWarning_agentsStopped_many({
+                    count: formatInteger(activeAgentCount),
+                  })}
+            </p>
+          {/if}
+          {#if activeHookCount > 0}
+            <p class="text-sm font-medium text-foreground">
+              {activeHookCount === 1
+                ? m.modals_deleteWarning_hooksCancelled_one({
+                    count: formatInteger(activeHookCount),
+                  })
+                : m.modals_deleteWarning_hooksCancelled_many({
+                    count: formatInteger(activeHookCount),
+                  })}
+            </p>
+          {/if}
         </div>
-        <Button variant="ghost" size="icon" onclick={close} aria-label={m.modals_bulkActionConfirm_close_ariaLabel()}>
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-6 space-y-4">
-        <p id="bulk-dialog-description" class="text-sm text-subtle">{description}</p>
-        {#if hasActiveWork}
-          <div class="rounded-xl border border-destructive-foreground/15 bg-destructive/45 p-4 space-y-1">
-            {#if activeAgentCount > 0}
-              <p class="text-sm font-medium text-foreground">
-                {activeAgentCount === 1
-                  ? m.modals_deleteWarning_agentsStopped_one({ count: formatInteger(activeAgentCount) })
-                  : m.modals_deleteWarning_agentsStopped_many({ count: formatInteger(activeAgentCount) })}
-              </p>
-            {/if}
-            {#if activeHookCount > 0}
-              <p class="text-sm font-medium text-foreground">
-                {activeHookCount === 1
-                  ? m.modals_deleteWarning_hooksCancelled_one({ count: formatInteger(activeHookCount) })
-                  : m.modals_deleteWarning_hooksCancelled_many({ count: formatInteger(activeHookCount) })}
-              </p>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>{m.modals_bulkActionConfirm_cancel_label()}</Button>
-        <Button {variant} onclick={handleConfirm}>{confirmText}</Button>
-      </div>
+      {/if}
     </div>
-  </div>
-{/if}
 
+    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
+      <Button variant="ghost-light" onclick={close}>
+        {m.modals_bulkActionConfirm_cancel_label()}
+      </Button>
+      <Button
+        {variant}
+        bind:ref={confirmButtonRef}
+        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
+        onfocus={() => (confirmHasFocus = true)}
+        onblur={() => (confirmHasFocus = false)}
+        onclick={handleConfirm}
+      >
+        {confirmText}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

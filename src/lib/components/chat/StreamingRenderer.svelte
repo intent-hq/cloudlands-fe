@@ -200,7 +200,7 @@
   }
 
   :global(.streaming-renderer .code-block) {
-    background: var(--color-surface-secondary);
+    background: hsl(var(--muted));
     border-radius: 4px;
     padding: 0.75rem;
     margin: 0.5rem 0;
@@ -208,7 +208,7 @@
   }
 
   :global(.streaming-renderer .inline-code) {
-    background: var(--color-surface-secondary);
+    background: hsl(var(--muted));
     padding: 0.125rem 0.25rem;
     border-radius: 3px;
     font-family: monospace;
@@ -218,7 +218,7 @@
   :global(.streaming-renderer .streaming-cursor) {
     display: inline-block;
     animation: blink 1s infinite;
-    color: var(--color-primary);
+    color: hsl(var(--primary));
     margin-left: 2px;
   }
 

@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import type { EnvironmentConfig, PullRequestInfo, Workspace } from '$shared/types';
+import { type EnvironmentConfig, type PullRequestInfo, type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { type WorkspaceRecencyState } from './workspace-slice';
@@ -92,6 +92,17 @@ export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state
     (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
   );
 });
+
+const NO_EAGER_WORKSPACE_HYDRATION: Workspace[] = [];
+
+/**
+ * Legacy bootstrap seeders must not eagerly hydrate workspace domains.
+ * Workspace surfaces dispatch `workspaceMounted`, whose coalesced read services
+ * own files, git, notes, tasks, terminals, scripts, skills, and events hydration.
+ */
+export const selectHydratableWorkspaceItems = store.createSelector<[], Workspace[]>(
+  () => NO_EAGER_WORKSPACE_HYDRATION,
+);
 
 export const selectWorkspaceIsEmpty = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;

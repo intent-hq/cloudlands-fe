@@ -25,7 +25,7 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
@@ -98,9 +98,7 @@ describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
     render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/No workspace found for this repository yet/),
-      ).toBeTruthy();
+      expect(screen.getByText(/No workspace found for this repository yet/)).toBeTruthy();
     });
     expect(mocks.generate).not.toHaveBeenCalled();
   });

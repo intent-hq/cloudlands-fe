@@ -108,8 +108,12 @@ export function resolveDevIntentdDataDir(
 }
 
 /**
- * Whether a dev build should default `INTENTD_DATA_DIR` to the per-port dir from
- * [[resolveDevIntentdDataDir]].
+ * Whether a dev build that explicitly spawns a sidecar should default
+ * `INTENTD_DATA_DIR` to the per-port dir from [[resolveDevIntentdDataDir]].
+ *
+ * Plain `pnpm run dev` is connect-only and adopts the global daemon, matching
+ * `shouldSpawnSidecar`; isolating that launch would point it at a socket no process
+ * creates. `INTENTD_SIDECAR=1` opts into an isolated per-port daemon.
  *
  * This only supplies a *default*: every explicit target in the environment wins. An
  * inherited `INTENTD_DATA_DIR` is honoured — `make dev` deliberately pins the sidecar to
@@ -125,6 +129,7 @@ export function resolveDevIntentdDataDir(
  */
 export function shouldIsolateDevIntentdDataDir(env: NodeJS.ProcessEnv, isDev: boolean): boolean {
   if (!isDev) return false;
+  if (env.INTENTD_SIDECAR?.trim() !== '1') return false;
   if (env.INTENTD_DATA_DIR?.trim()) return false;
   if (env.INTENTD_SOCKET?.trim()) return false;
   if (env.INTENTD_WS_URL?.trim()) return false;

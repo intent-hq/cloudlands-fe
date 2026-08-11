@@ -1,6 +1,6 @@
 <!--
-  Sequential Agent Q&A wizard rendered in the composer slot (pixel mock t2:
-  borderless grey well — no card chrome). Walks
+  Sequential Agent Q&A wizard rendered in the composer slot as a quiet,
+  transparent form with outlined controls. Walks
   the pending questions one at a time; choose-one advances on selection,
   multi-select keeps a Next button, Enter in the free-form field advances,
   Skip clears + advances, Back returns with the previous answer pre-selected.
@@ -25,13 +25,11 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faCircleQuestion,
-  faChevronLeft,
-  faArrowRight,
-  faArrowUp,
-  faCheck,
-  faPen,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronLeft,
+    faArrowRight,
+    faArrowUp,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import Button from '$lib/components/ui/button/button.svelte';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
@@ -47,13 +45,7 @@
     onDismiss?: () => void;
   }
 
-  let {
-    questions,
-    collapsed = false,
-    onToggleCollapsed,
-    onComplete,
-    onDismiss,
-  }: Props = $props();
+  let { questions, collapsed = false, onToggleCollapsed, onComplete, onDismiss }: Props = $props();
 
   interface DraftAnswer {
     sel: number[];
@@ -67,9 +59,7 @@
   // Intentional initial capture: the host remounts the wizard ({#key} on the
   // question-bearing message id) whenever a different question set pends.
   // svelte-ignore state_referenced_locally
-  let answers = $state<DraftAnswer[]>(
-    questions.map(() => ({ sel: [], text: '', skipped: false })),
-  );
+  let answers = $state<DraftAnswer[]>(questions.map(() => ({ sel: [], text: '', skipped: false })));
 
   const current = $derived(questions[idx]);
   const draft = $derived(answers[idx]);
@@ -117,9 +107,7 @@
   function selectOption(oi: number) {
     if (optionsLocked) return;
     if (isMulti) {
-      draft.sel = draft.sel.includes(oi)
-        ? draft.sel.filter((x) => x !== oi)
-        : [...draft.sel, oi];
+      draft.sel = draft.sel.includes(oi) ? draft.sel.filter((x) => x !== oi) : [...draft.sel, oi];
       draft.skipped = false;
       return;
     }
@@ -152,32 +140,29 @@
   }
 </script>
 
-<div
-  class="rounded-lg bg-muted/55 dark:bg-muted"
-  data-question-wizard
->
+<div class="rounded-(--radius-large) bg-transparent" data-question-wizard>
   {#if collapsed}
     <!-- Hide-collapsed banner: click to re-expand; Dismiss is a sibling
          button (not nested — invalid HTML) that opens the confirm dialog. -->
-    <div class="flex w-full items-center rounded-lg">
+    <div
+      class="flex w-full items-center rounded-(--radius-medium) border border-border bg-transparent"
+    >
       <button
         type="button"
-        class="flex flex-1 items-center gap-2.5 px-3.5 py-2.25 cursor-pointer rounded-l-lg bg-transparent border-none text-left font-[inherit] hover:bg-primary/5"
+        class="flex flex-1 items-center gap-2 px-3 py-2 cursor-pointer rounded-l-(--radius-medium) bg-transparent border-none text-left font-[inherit] hover:bg-accent"
         onclick={() => onToggleCollapsed?.(false)}
       >
-        <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-        <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
-        <span
-          class="text-[0.7rem] font-medium px-1.75 py-px rounded-full bg-primary/12 border border-primary/35 text-foreground"
+        <span class="type-caption font-medium text-foreground">{m.chat_questionWizard_title()}</span
         >
-          {questions.length}
-        </span>
-        <span class="ml-auto text-[0.7rem] text-subtle">{m.chat_questionWizard_clickToExpand_label()}</span>
+        <span class="type-caption text-subtle">{questions.length}</span>
+        <span class="ml-auto type-caption text-subtle"
+          >{m.chat_questionWizard_clickToExpand_label()}</span
+        >
       </button>
       {#if onDismiss}
         <button
           type="button"
-          class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-3 py-2.25 rounded-r-lg hover:bg-destructive"
+          class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-3 py-2 rounded-r-(--radius-medium) hover:bg-destructive"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}
         >
@@ -186,39 +171,19 @@
       {/if}
     </div>
   {:else}
-    <!-- Header row -->
-    <div class="flex items-center gap-2.5 px-3.5 pt-2.5">
-      <Fa icon={faCircleQuestion} class="text-xs text-primary" />
-      <span class="text-xs font-medium text-foreground">{m.chat_questionWizard_title()}</span>
+    <div class="flex min-h-7 items-center px-4 pt-3">
       {#if multiStep}
-        <span class="text-xs text-subtle"
+        <span class="type-caption text-subtle"
           >{m.chat_questionWizard_stepCounter_label({
             current: idx + 1,
             total: questions.length,
           })}</span
         >
-        <span class="flex items-center gap-1">
-          {#each questions as _, i (i)}
-            <span
-              data-progress-segment
-              class="w-3.5 h-1 rounded-[2px] {i < idx
-                ? 'bg-primary/40'
-                : i === idx
-                  ? 'bg-primary'
-                  : 'bg-muted-foreground/25'}"
-            ></span>
-          {/each}
-        </span>
       {/if}
-      {#if isMulti}
-        <span class="text-[0.7rem] px-1.75 py-px rounded-full bg-secondary text-subtle">
-          {m.chat_questionWizard_selectAll_label()}
-        </span>
-      {/if}
-      <span class="ml-auto flex items-center gap-0.5">
+      <span class="ml-auto flex items-center gap-1">
         <button
           type="button"
-          class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:text-foreground"
+          class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:text-foreground"
           title={m.chat_questionWizard_hide_tooltip()}
           onclick={() => onToggleCollapsed?.(true)}
         >
@@ -227,7 +192,7 @@
         {#if onDismiss}
           <button
             type="button"
-            class="border-none bg-transparent text-xs text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-0.5 rounded-(--radius) hover:bg-destructive"
+            class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-destructive"
             title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
           >
@@ -239,62 +204,64 @@
 
     {#key idx}
       <div in:fade={{ duration: stepDuration }}>
-        <!-- Question body -->
-        <div class="flex flex-col gap-2.5 px-3.5 pt-2.5 pb-2">
-          <div class="flex flex-col gap-0.75">
-            <span class="text-[0.7rem] font-semibold uppercase tracking-[0.05em] text-subtle">
-              {current.header}
-            </span>
-            <span class="text-[0.9rem] font-medium text-foreground tracking-[-0.01em]">
-              {current.question}
-            </span>
+        <div class="flex flex-col gap-4 px-4 pt-3 pb-3">
+          <div class="flex flex-col gap-1">
+            <p class="type-caption text-subtle">{current.header}</p>
+            <h2 class="type-title font-medium text-foreground">{current.question}</h2>
           </div>
 
-          <div class="flex flex-col gap-1.5">
+          <div class="flex flex-col gap-2">
             {#each current.options as option, oi (oi)}
               {@const selected = draft.sel.includes(oi)}
               <button
                 type="button"
                 aria-pressed={selected}
                 disabled={optionsLocked}
-                class="flex items-start gap-2.5 rounded-(--radius) px-2.5 py-2 text-left font-[inherit] {selected
-                  ? 'border border-primary bg-primary/10 cursor-pointer'
+                data-question-option
+                data-selected={selected}
+                class="flex items-start gap-3 rounded-(--radius-medium) border px-3 py-2.5 text-left font-[inherit] transition-colors {selected
+                  ? 'border-ring bg-accent cursor-pointer'
                   : optionsLocked
-                    ? 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 opacity-50 cursor-default'
-                    : 'border border-transparent bg-background shadow-xs dark:border-border/60 dark:bg-background/40 cursor-pointer hover:border-primary hover:bg-primary/6'}"
+                    ? 'border-input bg-transparent opacity-50 cursor-default'
+                    : 'border-input bg-transparent cursor-pointer hover:border-ring hover:bg-accent/50'}"
                 onclick={() => selectOption(oi)}
               >
-                {#if isMulti}
-                  <span
-                    class="inline-flex items-center justify-center w-[15px] h-[15px] rounded-[4px] mt-0.5 shrink-0 box-border {selected
-                      ? 'bg-primary'
-                      : 'border border-ghost'}"
-                  >
-                    {#if selected}
+                <span
+                  aria-hidden="true"
+                  data-option-indicator
+                  class="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center border box-border {isMulti
+                    ? 'rounded-(--radius-small)'
+                    : 'rounded-full'} {selected ? 'border-primary' : 'border-input'}"
+                >
+                  {#if isMulti && selected}
+                    <span class="inline-flex size-full items-center justify-center bg-primary">
                       <Fa icon={faCheck} class="text-[9px] text-primary-foreground a11y-ignore" />
-                    {/if}
-                  </span>
-                {/if}
-                <span class="flex flex-col gap-px">
-                  <span class="text-[0.8125rem] font-medium text-foreground">{option.label}</span>
-                  {#if option.description}
-                    <span class="text-xs text-subtle leading-normal">{option.description}</span>
+                    </span>
+                  {:else if selected}
+                    <span class="size-2 rounded-full bg-primary"></span>
                   {/if}
                 </span>
-                {#if !isMulti}
-                  <Fa icon={faArrowRight} class="ml-auto self-center text-[10px] text-ghost a11y-ignore" />
-                {/if}
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span
+                    class="type-body font-medium {selected
+                      ? 'text-accent-foreground'
+                      : 'text-foreground'}">{option.label}</span
+                  >
+                  {#if option.description}
+                    <span
+                      class="type-caption leading-normal {selected
+                        ? 'text-accent-foreground/70'
+                        : 'text-subtle'}">{option.description}</span
+                    >
+                  {/if}
+                </span>
               </button>
             {/each}
           </div>
 
-          <!-- Always-visible free-form "Other" input -->
           <div
-            class="flex items-center gap-2 pl-2.5 pr-1.5 py-1 rounded-(--radius) bg-background/70 dark:bg-background/50"
+            class="flex items-center rounded-(--radius-medium) border border-input bg-transparent px-3 py-2 focus-within:border-ring"
           >
-            <Fa icon={faPen} class="text-[10px] text-ghost a11y-ignore" />
-            <!-- Typography matches the composer editor (TipTapEditor's
-                 .tiptap-editor: 1rem / 1.5 with the inherited app font stack) -->
             <input
               bind:value={draft.text}
               oninput={() => {
@@ -304,18 +271,17 @@
               onkeydown={handleKeydown}
               aria-label={m.chat_questionWizard_ownAnswer_ariaLabel()}
               placeholder={m.chat_questionWizard_ownAnswer_placeholder()}
-              class="flex-1 border-none outline-none bg-transparent text-[1rem] leading-normal font-[inherit] text-foreground py-1"
+              class="type-body flex-1 border-none! bg-transparent font-[inherit] text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
             />
-            <span class="text-[0.7rem] text-ghost pr-1.5">↵</span>
           </div>
         </div>
 
-        <!-- Footer -->
-        <div class="flex items-center gap-2 px-3.5 pt-0.5 pb-3">
+        <div class="flex items-center gap-2 px-4 pb-4">
           {#if multiStep}
             <button
               type="button"
-              class="inline-flex items-center gap-1.25 border-none bg-transparent text-xs font-[inherit] px-2 py-1 rounded-(--radius) {idx === 0
+              class="inline-flex items-center gap-1 border-none bg-transparent type-caption font-[inherit] px-2 py-1.5 rounded-(--radius-small) {idx ===
+              0
                 ? 'text-ghost opacity-50 cursor-default'
                 : 'text-subtle cursor-pointer hover:text-foreground'}"
               disabled={idx === 0}
@@ -325,15 +291,10 @@
               {m.chat_questionWizard_back_label()}
             </button>
           {/if}
-          {#if !isMulti && !isLast}
-            <span class="text-[0.7rem] text-ghost">
-              {m.chat_questionWizard_selectionAdvances_label()}
-            </span>
-          {/if}
           <span class="ml-auto flex items-center gap-1.5">
             <button
               type="button"
-              class="border-none bg-transparent text-xs text-subtle cursor-pointer font-[inherit] px-2 py-1 rounded-(--radius) hover:text-foreground"
+              class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-2 py-1.5 rounded-(--radius-small) hover:text-foreground"
               onclick={handleSkip}
             >
               {m.chat_questionWizard_skip_label()}

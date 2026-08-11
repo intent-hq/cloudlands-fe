@@ -5,11 +5,10 @@ import Tooltip from './Tooltip.svelte';
 import TooltipRich from './TooltipRich.svelte';
 import TooltipShortcut from './TooltipShortcut.svelte';
 import LinkTooltip from './LinkTooltip.svelte';
-import {
-  showLinkTooltip,
-  hideLinkTooltip,
-  formatUrlForDisplay,
-} from './link-tooltip-state.svelte';
+import { showLinkTooltip, hideLinkTooltip, formatUrlForDisplay } from './link-tooltip-state.svelte';
+
+export { tooltipFixtures } from './tooltip.fixtures';
+export { tooltipMetadata } from './tooltip.meta';
 
 const Root = TooltipPrimitive.Root;
 const Provider = TooltipPrimitive.Provider;

@@ -1,25 +1,60 @@
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createEmbeddedBrowserNavigationSyncState,
+  navigateEmbeddedBrowserWebview,
+  reconcileEmbeddedBrowserLoadCompletion,
   reconcileEmbeddedBrowserUrlProp,
   recordEmbeddedBrowserNavigation,
 } from './embedded-browser-navigation-sync';
 
 describe('embedded browser navigation synchronization', () => {
+  it('navigates through loadURL so Electron emits did-navigate', async () => {
+    const loadURL = vi.fn().mockResolvedValue(undefined);
+
+    await navigateEmbeddedBrowserWebview({ loadURL }, 'https://example.test/next');
+
+    expect(loadURL).toHaveBeenCalledWith('https://example.test/next');
+  });
+
+  it('records load completion when Electron omits did-navigate', () => {
+    const syncState = createEmbeddedBrowserNavigationSyncState('https://example.test/start');
+
+    expect(
+      reconcileEmbeddedBrowserLoadCompletion(
+        syncState,
+        'https://example.test/requested',
+        'https://example.test/final',
+      ),
+    ).toBe('https://example.test/final');
+    expect(syncState.previousUrlProp).toBe('https://example.test/final');
+  });
+
+  it('does not duplicate a navigation event during load completion', () => {
+    const syncState = createEmbeddedBrowserNavigationSyncState('https://example.test/start');
+    recordEmbeddedBrowserNavigation(syncState, 'https://example.test/final');
+
+    expect(
+      reconcileEmbeddedBrowserLoadCompletion(
+        syncState,
+        'https://example.test/requested',
+        'https://example.test/final',
+      ),
+    ).toBeNull();
+  });
+
   it('syncs in-page SPA navigation without requesting a redundant load', () => {
     const syncState = createEmbeddedBrowserNavigationSyncState('https://example.test/app');
     const isValidBrowserUrl = vi.fn(() => true);
 
     recordEmbeddedBrowserNavigation(syncState, 'https://example.test/app/settings');
-    const decision = reconcileEmbeddedBrowserUrlProp(syncState, 'https://example.test/app/settings', {
-      webviewReady: true,
-      isValidBrowserUrl,
-    });
+    const decision = reconcileEmbeddedBrowserUrlProp(
+      syncState,
+      'https://example.test/app/settings',
+      {
+        webviewReady: true,
+        isValidBrowserUrl,
+      },
+    );
 
     expect(syncState.previousUrlProp).toBe('https://example.test/app/settings');
     expect(decision).toEqual({ shouldLoad: false, targetUrl: null });
@@ -58,10 +93,14 @@ describe('embedded browser navigation synchronization', () => {
     ).toEqual({ shouldLoad: true, targetUrl: 'https://example.test/app/profile' });
 
     recordEmbeddedBrowserNavigation(syncState, 'https://example.test/app/settings');
-    const decision = reconcileEmbeddedBrowserUrlProp(syncState, 'https://example.test/app/profile', {
-      webviewReady: true,
-      isValidBrowserUrl,
-    });
+    const decision = reconcileEmbeddedBrowserUrlProp(
+      syncState,
+      'https://example.test/app/profile',
+      {
+        webviewReady: true,
+        isValidBrowserUrl,
+      },
+    );
 
     expect(decision).toEqual({ shouldLoad: true, targetUrl: 'https://example.test/app/profile' });
     expect(syncState.previousUrlProp).toBe('https://example.test/app/profile');
@@ -113,10 +152,14 @@ describe('embedded browser navigation synchronization', () => {
     const isValidBrowserUrl = vi.fn(() => true);
 
     recordEmbeddedBrowserNavigation(syncState, 'https://example.test/app/settings');
-    const decision = reconcileEmbeddedBrowserUrlProp(syncState, 'https://example.test/app/settings', {
-      webviewReady: true,
-      isValidBrowserUrl,
-    });
+    const decision = reconcileEmbeddedBrowserUrlProp(
+      syncState,
+      'https://example.test/app/settings',
+      {
+        webviewReady: true,
+        isValidBrowserUrl,
+      },
+    );
 
     expect(decision).toEqual({ shouldLoad: false, targetUrl: null });
     expect(syncState.previousUrlProp).toBe('https://example.test/app/settings');

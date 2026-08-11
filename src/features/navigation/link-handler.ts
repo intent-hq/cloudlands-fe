@@ -60,6 +60,7 @@ const logger = new Logger('LinkHandler');
  */
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
+    const sourcePanelId = getSourcePanelId(options);
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -71,19 +72,23 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 
     // Handle intent:// links (internal navigation to notes/tasks)
     if (url.startsWith('intent://')) {
-      return await handleIntentLink(url);
+      return await handleIntentLink(url, { ...options, sourcePanelId });
     }
 
     // Handle devspace:// links (internal resources like terminals)
     if (url.startsWith('devspace://')) {
-      return await handleDevspaceLink(url, options.workspaceId);
+      return await handleDevspaceLink(url, { ...options, sourcePanelId });
     }
 
     // Route path-like targets (schemeless raw hrefs, or resolved URLs on the
     // app's own origin) to the workspace file viewer — never the browser panel
     const fileTarget = extractFilePathTarget(url, options.rawHref);
     if (fileTarget) {
-      return await openFilePathLink(fileTarget.path, options, fileTarget.fromResolvedUrl);
+      return await openFilePathLink(
+        fileTarget.path,
+        { ...options, sourcePanelId },
+        fileTarget.fromResolvedUrl,
+      );
     }
 
     // Handle HTTP/HTTPS links
@@ -102,7 +107,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
       // Cmd+Click → embedded browser panel (requires a workspace), otherwise external browser
       if (isCmdClickModifier(options)) {
         if (options.workspaceId) {
-          return await openInBrowserPanel(url, options.workspaceId);
+          return await openInBrowserPanel(url, options.workspaceId, sourcePanelId);
         }
         logger.debug('No workspaceId available, opening in external browser', { url });
         return await openInExternalBrowser(url);
@@ -161,10 +166,15 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
 /**
  * Handle intent:// links (internal navigation)
  */
-async function handleIntentLink(url: string): Promise<boolean> {
+async function handleIntentLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
     const { handleIntentLink: handleIntent } = await import('$lib/utils/workspaces-link-handler');
-    return await handleIntent(url);
+    return await handleIntent(url, {
+      workspaceId: options.workspaceId,
+      sourcePanelId: options.sourcePanelId,
+      openInAdjacentPanel: options.openInAdjacentPanel ?? isCmdClickModifier(options),
+      openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
+    });
   } catch (error) {
     logger.error('Failed to handle intent link', { url, error });
     return false;
@@ -177,17 +187,26 @@ async function handleIntentLink(url: string): Promise<boolean> {
  * Currently supports:
  * - devspace://terminal/{id} → open terminal tab
  */
-async function handleDevspaceLink(url: string, workspaceId?: WorkspaceId): Promise<boolean> {
+async function handleDevspaceLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
     const terminalMatch = url.match(/^devspace:\/\/terminal\/(.+)$/);
     if (terminalMatch) {
-      if (!workspaceId) {
+      if (!options.workspaceId) {
         logger.warn('Cannot open terminal without workspaceId', { url });
         return false;
       }
       const terminalId = decodeURIComponent(terminalMatch[1]);
-      logger.debug('Opening terminal from devspace link', { terminalId, workspaceId });
-      appStore.dispatch(openTerminalTabRequested(workspaceId, { terminalId }));
+      logger.debug('Opening terminal from devspace link', {
+        terminalId,
+        workspaceId: options.workspaceId,
+      });
+      appStore.dispatch(
+        openTerminalTabRequested(options.workspaceId, {
+          terminalId,
+          ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),
+          ...(isCmdClickModifier(options) ? { openInAdjacentPanel: true } : {}),
+        }),
+      );
       return true;
     }
 
@@ -201,6 +220,13 @@ async function handleDevspaceLink(url: string, workspaceId?: WorkspaceId): Promi
 
 /** Matches an explicit URL scheme prefix (e.g. `https:`, `intent:`, `vscode:`). */
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/;
+
+function getSourcePanelId(options: LinkHandlerOptions): string | undefined {
+  if (options.sourcePanelId) return options.sourcePanelId;
+  const target = options.event?.target;
+  if (!(target instanceof HTMLElement)) return undefined;
+  return target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId;
+}
 
 /**
  * Detect a path-like link target.
@@ -270,9 +296,8 @@ async function openFilePathLink(
     }
 
     if (path.startsWith('/')) {
-      const { selectWorkspaceById } = await import(
-        '$store/renderer/slices/workspace/workspace-selectors'
-      );
+      const { selectWorkspaceById } =
+        await import('$store/renderer/slices/workspace/workspace-selectors');
       const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
       const root = workspace?.worktreePath ?? workspace?.path;
       const normalizedRoot = root?.endsWith('/') ? root.slice(0, -1) : root;
@@ -288,7 +313,13 @@ async function openFilePathLink(
     }
 
     const openInAdjacentPanel = isCmdClickModifier(options);
-    appStore.dispatch(openWorkspaceFile(workspaceId, path, { line, openInAdjacentPanel }));
+    appStore.dispatch(
+      openWorkspaceFile(workspaceId, path, {
+        line,
+        openInAdjacentPanel,
+        ...(options.sourcePanelId ? { sourcePanelId: options.sourcePanelId } : {}),
+      }),
+    );
     logger.debug('Opened file link in workspace file viewer', { path, workspaceId, line });
     return true;
   } catch (error) {
@@ -341,11 +372,19 @@ async function openLinkActionMenu(
  * Open URL in browser panel (embedded, workspace-scoped).
  * Falls back to the external browser when the panel cannot be opened.
  */
-export async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promise<boolean> {
+export async function openInBrowserPanel(
+  url: string,
+  workspaceId: WorkspaceId,
+  sourcePanelId?: string,
+): Promise<boolean> {
   try {
     const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
-    layoutManager.openBrowserPanel(url);
+    if (sourcePanelId) {
+      layoutManager.openBrowserPanel(url, undefined, sourcePanelId);
+    } else {
+      layoutManager.openBrowserPanel(url);
+    }
     logger.debug('Opened URL in browser panel', { url, workspaceId });
     return true;
   } catch (error) {
@@ -400,6 +439,8 @@ async function openInExternalEditor(url: string): Promise<boolean> {
 export interface GlobalLinkClickHandlerOptions {
   /** Workspace ID for panel layout manager lookup. When undefined, HTTP/HTTPS links fall back to the external browser. */
   workspaceId?: WorkspaceId;
+  /** Panel where links should open when the container is rendered in a stacked layout. */
+  sourcePanelId?: string;
   /** Custom handler for specific link types */
   customHandler?: (url: string) => Promise<boolean> | boolean;
 }
@@ -432,6 +473,7 @@ export function createGlobalLinkClickHandler(
       event.stopPropagation();
       await handleLink(anchor.href, {
         workspaceId: options.workspaceId,
+        sourcePanelId: options.sourcePanelId,
         event,
         customHandler: options.customHandler,
         rawHref: anchor.getAttribute('href') ?? undefined,
@@ -512,7 +554,11 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    if (anchor?.href && !anchor.href.startsWith('intent://') && !anchor.href.startsWith('devspace://')) {
+    if (
+      anchor?.href &&
+      !anchor.href.startsWith('intent://') &&
+      !anchor.href.startsWith('devspace://')
+    ) {
       if (anchor === currentAnchor) return; // Already tracking this anchor
       currentAnchor = anchor;
 

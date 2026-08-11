@@ -5,8 +5,8 @@
    * A thin wrapper around the canonical DiffViewer for chat messages.
    * Adds apply/reject actions for interactive diff handling.
    */
-  import { DiffViewer } from '$lib/components/ui/diff';
-  import type { DiffAction } from '$lib/components/ui/diff';
+  import { DiffViewer } from '$features/file-tracking/components/diff';
+  import type { DiffAction } from '$features/file-tracking/components/diff';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
 

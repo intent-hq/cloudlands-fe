@@ -1,21 +1,21 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faPlus,
-  faGear,
-  faPencil,
-} from '@fortawesome/free-solid-svg-icons';
+    faPlus,
+    faGear,
+    faPencil,
+  } from '@fortawesome/free-solid-svg-icons';
   import {
-  filterSpecialistsByGitHubAuth,
-  selectSpecialists,
-  selectIsBuiltIn,
-  selectHasOverrides,
-  selectSpecialistSourceLabel,
-  selectUserOverrides,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    filterSpecialistsByGitHubAuth,
+    selectSpecialists,
+    selectIsBuiltIn,
+    selectHasOverrides,
+    selectSpecialistSourceLabel,
+    selectUserOverrides,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -36,11 +36,13 @@
   const specialists = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$)
+    filterSpecialistsByGitHubAuth($specialists, $isGitHubAuth$),
   );
   const userOverrides$ = selectUserOverrides();
   // Track override changes to trigger re-render (updates {@const} values in template)
-  $effect(() => { void $userOverrides$; });
+  $effect(() => {
+    void $userOverrides$;
+  });
 
   // Check if a specialist ID is a built-in type for avatar rendering
   function isBuiltInSpecialistId(
@@ -85,9 +87,7 @@
 
   <!-- Specialists section - scrollable with max height -->
   <div class="specialist-section mt-4 overflow-y-auto border-b-accent-foreground">
-    <div
-      class="px-3 py-1.5 flex items-center justify-between"
-    >
+    <div class="px-3 py-1.5 flex items-center justify-between">
       <span class="text-ui font-semibold text-muted-foreground uppercase tracking-wider">
         {m.settings_aiBehavior_sidebar_specialistsSection()}
       </span>

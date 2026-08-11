@@ -87,6 +87,9 @@ describe('editor-text-serialization (#1151)', () => {
       'a\n\nb',
       'line one\nline two\n\nsecond paragraph\nwith another line',
       '  indented line\nplain line',
+      'word ',
+      'word  ',
+      'word  gap',
     ];
 
     for (const text of cases) {

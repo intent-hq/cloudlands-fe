@@ -1,5 +1,5 @@
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * FileChangesSection - Unstaged/Staged file changes with agent grouping
    * Handles file staging,
@@ -12,28 +12,27 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
   import {
-  selectStagedWorkingChanges as selectFtStagedChanges,
-  selectUnstagedWorkingChanges as selectFtUnstagedChanges,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectStagedWorkingChanges as selectFtStagedChanges,
+    selectUnstagedWorkingChanges as selectFtUnstagedChanges,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
-  discardFiles as discardFilesViaSeam,
-  stageFiles as stageFilesViaSeam,
-  unstageFiles as unstageFilesViaSeam,
-} from '$features/git/git-write-service';
+    discardFiles as discardFilesViaSeam,
+    stageFiles as stageFilesViaSeam,
+    unstageFiles as unstageFilesViaSeam,
+  } from '$features/git/git-write-service';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
 
-
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import {
-  type AgentChangeGroup,
-  groupFilesByAgent,
-} from '$lib/components/file-tracking/accept-changes/types';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+    type AgentChangeGroup,
+    groupFilesByAgent,
+  } from '$lib/components/file-tracking/accept-changes/types';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
@@ -43,13 +42,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-  faCodeCommit,
-  faLock,
-  faMinus,
-  faPlus,
-  faSpinner,
-  faUser,
-} from '@fortawesome/free-solid-svg-icons';
+    faCodeCommit,
+    faLock,
+    faMinus,
+    faPlus,
+    faSpinner,
+    faUser,
+  } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -58,18 +57,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import { slide } from 'svelte/transition';
   import DividerButton from './DividerButton.svelte';
   import {
-  getGroupKey,
-  isFileActive as isFileActiveUtil,
-  isFileSelected as isFileSelectedUtil,
-  isFileFocused as isFileFocusedUtil,
-  isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
-  toUIFileChange,
-} from './sidebar-changes-utils';
+    getGroupKey,
+    isFileActive as isFileActiveUtil,
+    isFileSelected as isFileSelectedUtil,
+    isFileFocused as isFileFocusedUtil,
+    isAgentGroupCollapsed as isAgentGroupCollapsedUtil,
+    toUIFileChange,
+  } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
-
 
   interface Props {
     workspaceId: string;
@@ -166,7 +164,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     section: 'unstaged' | 'staged';
     group: AgentChangeGroup;
   };
-  let groupCommit = $state<{ queue: GroupCommitQueueEntry[]; active: string | null }>({ queue: [], active: null });
+  let groupCommit = $state<{ queue: GroupCommitQueueEntry[]; active: string | null }>({
+    queue: [],
+    active: null,
+  });
 
   // Clear selection on workspace switch
   $effect(() => {
@@ -567,7 +568,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
     const message = group.agentId
-      ? getAgentDisplayName(group) || group.agentName || m.workspace_fileChanges_agentChanges_label()
+      ? getAgentDisplayName(group) ||
+        group.agentName ||
+        m.workspace_fileChanges_agentChanges_label()
       : m.workspace_fileChanges_manualChanges_label();
     const otherStagedPaths = stagedChanges
       .filter((c) => !pathSet.has(c.relativePath))
@@ -632,12 +635,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             onLabel="Auto-commit"
             offLabel="Auto-commit"
             pressed={$autoCommitEnabled}
-            class="font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
+            class="border-0! font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
             onclick={() => {
               if (workspaceId) {
-                appStore.dispatch(
-                  setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
-                );
+                appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
               }
             }}
           />
@@ -656,9 +657,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div
-                class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1"
-              >
+              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
                 <button
                   type="button"
                   class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
@@ -672,19 +671,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                       <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
                     </Tooltip>
                   {/if}
-                  <span
-                    class="text-ui opacity-50 truncate flex-1 {isLocked
-                      ? 'opacity-40'
-                      : ''}"
-                  >
+                  <span class="text-ui opacity-50 truncate flex-1 {isLocked ? 'opacity-40' : ''}">
                     {getAgentDisplayName(group)}
                   </span>
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
                     <AuggieAvatar
-                      class="-mt-0.5 {hasAnyActions
-                        ? 'group-hover/agent-header:opacity-0'
-                        : ''}"
+                      class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
                       agentId={group.agentId}
                       size={15}
                     />
@@ -738,10 +731,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa
-                            icon={faSpinner}
-                            class="h-2.5! w-2.5! animate-spin text-primary"
-                          />
+                          <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}
@@ -857,12 +847,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       </DividerButton>
     {/if}
     {#if hasStaged}
-      <DividerButton
-        onclick={handleUnstageAll}
-        disabled={isStaging}
-        loading={isStaging}
-        arrowUp
-      >
+      <DividerButton onclick={handleUnstageAll} disabled={isStaging} loading={isStaging} arrowUp>
         {m.workspace_fileChanges_unstageAll_label()}
       </DividerButton>
     {/if}
@@ -888,9 +873,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             {@const queuePos = getGroupQueuePosition(group, 'staged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div
-                class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1"
-              >
+              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
                 <button
                   type="button"
                   class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
@@ -903,9 +886,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                   {#if group.agentId}
                     {@const hasAnyActions = !isLocked || getLinkedNoteId(group.agentId)}
                     <AuggieAvatar
-                      class="-mt-0.5 {hasAnyActions
-                        ? 'group-hover/agent-header:opacity-0'
-                        : ''}"
+                      class="-mt-0.5 {hasAnyActions ? 'group-hover/agent-header:opacity-0' : ''}"
                       agentId={group.agentId}
                       size={15}
                     />
@@ -959,10 +940,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa
-                            icon={faSpinner}
-                            class="h-2.5! w-2.5! animate-spin text-primary"
-                          />
+                          <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}
