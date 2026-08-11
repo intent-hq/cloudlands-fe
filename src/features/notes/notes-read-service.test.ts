@@ -26,6 +26,20 @@ import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-no
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 function makeNote(id: string, wsId: string, overrides: Partial<Note> = {}): Note {
   const now = '2026-01-01T00:00:00.000Z';
   return {
@@ -101,5 +115,88 @@ describe('notesReadService (fake seam, real store)', () => {
     expect(wsState?.notes.map['note-u']?.title).toBe('New Title');
     // notesVersion bumps on applyNoteUpdated.
     expect(wsState?.notesVersion).toBeGreaterThan(0);
+  });
+
+  it('an event arriving while a fetch is in flight triggers one trailing refetch', async () => {
+    const ws = 'ws-notes-evt-trailing';
+    const existing = makeNote('note-t', ws, { title: 'Old' });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [existing] }));
+
+    const first = deferred<Note[]>();
+    notesListMock.mockReturnValueOnce(first.promise);
+    notesListMock.mockResolvedValueOnce([makeNote('note-t', ws, { title: 'Final' })]);
+
+    applyNoteFromEvent(ws, 'note-t', 'note:updated');
+    // Second event for the same key while the first fetch is still in flight.
+    applyNoteFromEvent(ws, 'note-t', 'note:updated');
+    expect(notesListMock).toHaveBeenCalledTimes(1);
+
+    first.resolve([makeNote('note-t', ws, { title: 'Intermediate' })]);
+    await flush();
+
+    expect(notesListMock).toHaveBeenCalledTimes(2);
+    const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
+    expect(wsState?.notes.map['note-t']?.title).toBe('Final');
+  });
+
+  it('N events during an in-flight fetch collapse to a single trailing refetch', async () => {
+    const ws = 'ws-notes-evt-collapse';
+    const existing = makeNote('note-c', ws, { title: 'Old' });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [existing] }));
+
+    const first = deferred<Note[]>();
+    notesListMock.mockReturnValueOnce(first.promise);
+    notesListMock.mockResolvedValue([makeNote('note-c', ws, { title: 'Final' })]);
+
+    applyNoteFromEvent(ws, 'note-c', 'note:updated');
+    applyNoteFromEvent(ws, 'note-c', 'note:updated');
+    applyNoteFromEvent(ws, 'note-c', 'note:updated');
+    applyNoteFromEvent(ws, 'note-c', 'note:updated');
+    expect(notesListMock).toHaveBeenCalledTimes(1);
+
+    first.resolve([makeNote('note-c', ws, { title: 'Intermediate' })]);
+    await flush();
+
+    expect(notesListMock).toHaveBeenCalledTimes(2);
+    const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
+    expect(wsState?.notes.map['note-c']?.title).toBe('Final');
+  });
+
+  it('no trailing refetch when no event arrived mid-flight', async () => {
+    const ws = 'ws-notes-evt-clean';
+    const existing = makeNote('note-cl', ws, { title: 'Old' });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [existing] }));
+
+    notesListMock.mockResolvedValue([makeNote('note-cl', ws, { title: 'New' })]);
+
+    applyNoteFromEvent(ws, 'note-cl', 'note:updated');
+    await flush();
+    await flush();
+
+    expect(notesListMock).toHaveBeenCalledTimes(1);
+    const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
+    expect(wsState?.notes.map['note-cl']?.title).toBe('New');
+  });
+
+  it('trailing refetch still runs when the in-flight fetch rejects', async () => {
+    const ws = 'ws-notes-evt-reject';
+    const existing = makeNote('note-r', ws, { title: 'Old' });
+    appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [existing] }));
+
+    const first = deferred<Note[]>();
+    notesListMock.mockReturnValueOnce(first.promise);
+    notesListMock.mockResolvedValueOnce([makeNote('note-r', ws, { title: 'Final' })]);
+
+    applyNoteFromEvent(ws, 'note-r', 'note:updated');
+    // Event arrives while the (about to fail) fetch is in flight.
+    applyNoteFromEvent(ws, 'note-r', 'note:updated');
+    expect(notesListMock).toHaveBeenCalledTimes(1);
+
+    first.reject(new Error('daemon unavailable'));
+    await flush();
+
+    expect(notesListMock).toHaveBeenCalledTimes(2);
+    const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
+    expect(wsState?.notes.map['note-r']?.title).toBe('Final');
   });
 });
