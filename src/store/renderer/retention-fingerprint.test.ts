@@ -349,17 +349,38 @@ describe('startRetentionFingerprint', () => {
     stop();
   });
 
-  it('keeps sampling when the collector itself throws', () => {
+  it('keeps sampling when collection itself throws', () => {
     // Collection failure is best-effort and can be transient, so unlike an
-    // unreadable store it must not throw or disable the timer.
+    // unreadable store it must neither throw nor disable the timer.
+    //
+    // The throw has to come from reading a slice. Mocking a diff inspector to
+    // throw would NOT reach emit's catch: the collector wraps those in
+    // safeInspect and degrades them to -1 (covered separately above).
+    const info = spyOnInfo();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    inspectDiffCaches.mockImplementation(() => {
-      throw new Error('caches exploded');
+    let reads = 0;
+    const stop = startRetentionFingerprint({
+      state: {
+        get workspace(): unknown {
+          reads += 1;
+          if (reads === 1) throw new Error('slice access exploded');
+          return { workspaces: collection(['w1']) };
+        },
+      },
     });
 
-    const stop = startRetentionFingerprint({ state: {} });
     expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).not.toThrow();
-    expect(warn.mock.calls.map(String).join(' ')).not.toContain('disabled');
+    expect(linesFrom(info)).toHaveLength(0);
+    const warned = warn.mock.calls.map(String).join(' ');
+    expect(warned).toContain('Failed to emit retention fingerprint');
+    expect(warned).not.toContain('disabled');
+
+    // The next tick must still sample — a transient collection failure must not
+    // quietly stop the timer, which is the whole failure class this PR is about.
+    vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS);
+    expect(linesFrom(info)).toHaveLength(1);
+    expect(linesFrom(info)[0]).toContain('workspaces=1');
+
     stop();
   });
 
