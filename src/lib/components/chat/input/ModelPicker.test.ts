@@ -353,11 +353,11 @@ describe('ModelPicker multi-provider mode', () => {
       },
     });
 
-    // Wait for the debounced $effect to run (50ms debounce + microtask)
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
-    expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
+    // Wait for the debounced $effect (50ms) to fire the fetches.
+    await waitFor(() => {
+      expect(getModelsForProvider).toHaveBeenCalledWith('auggie');
+      expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
+    });
   });
 
   it('renders the active provider models while another provider is still loading', async () => {
@@ -469,9 +469,19 @@ describe('ModelPicker multi-provider mode', () => {
     modelsByProvider.codex = [];
     // Force the component to re-fetch by changing the provider list (busts the
     // dedup cache inside fetchAllProviderModels which skips when the sorted key
-    // matches the previous fetch).
-    enabledProviderIds$.set([]);
-    await new Promise((r) => setTimeout(r, 60));
+    // matches the previous fetch). Use an intermediate list whose debounced
+    // fetch is observable — ['codex'] sorts to a key different from
+    // 'auggie,codex', so the fetch actually runs — and wait for it, proving
+    // the dedup key moved off 'auggie,codex' before restoring the full list.
+    // A fixed sleep here races the 50ms debounce: if the intermediate timer is
+    // cleared by the re-set before firing, the dedup check would skip the
+    // refetch entirely and the final waitFor could never pass.
+    enabledProviderIds$.set(['codex']);
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('codex');
+    });
+
+    vi.mocked(getModelsForProvider).mockClear();
     enabledProviderIds$.set(['auggie', 'codex']);
 
     await rerender({
@@ -479,11 +489,14 @@ describe('ModelPicker multi-provider mode', () => {
       silentFallback: true,
     });
 
-    await waitFor(() => {
-      expect(
-        vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
-      ).toHaveLength(2);
-    });
+    await waitFor(
+      () => {
+        expect(
+          vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'codex'),
+        ).toHaveLength(2);
+      },
+      { timeout: 5000 },
+    );
     expect(
       vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
     ).toHaveLength(1);
@@ -935,9 +948,13 @@ describe('ModelPicker availability gating', () => {
       expect(vi.mocked(toast.error).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
-    // Flicker the condition false -> true to re-fire the toast.
+    // Flicker the condition false -> true to re-fire the toast. Wait for the
+    // intermediate true state to be observable (both pickers drop the notice)
+    // so the flicker registers before flipping back.
     availableProviderOverride$.set(['auggie']);
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => {
+      expect(screen.queryAllByText('No provider available')).toHaveLength(0);
+    });
     availableProviderOverride$.set([]);
 
     const callsSoFar = vi.mocked(toast.error).mock.calls.length;
@@ -2033,13 +2050,15 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     expect(button.querySelector('.animate-pulse')).toBeNull();
     expect(button.querySelector('[role="status"]')).toBeNull();
 
-    // Still resolved after the debounced background revalidation kicks off.
-    await new Promise((r) => setTimeout(r, 100));
+    // The background revalidation fetch did start (stale-while-revalidate).
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    // Still resolved after the debounced background revalidation kicked off.
     expect(button.textContent).toContain('Claude Sonnet 4.6');
     expect(button.querySelector('.animate-pulse')).toBeNull();
     expect(button.querySelector('[role="status"]')).toBeNull();
-    // The background revalidation fetch did start (stale-while-revalidate).
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
   });
 
   it('keeps the skeleton on the uncached first-boot path while the fetch is pending', async () => {
@@ -2292,16 +2311,20 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       },
     });
 
-    // Past the debounce: the all-provider fetch has pruned codex from its
-    // local map, so a resolved label + no spinner proves the agent path
-    // rendered the cached catalog instead of flipping to loading.
-    await new Promise((r) => setTimeout(r, 100));
+    // Past the debounce: the 'auggie' call proves the all-provider fetch ran
+    // (it prunes codex from its local map synchronously before fetching), and
+    // the 'codex' call proves the agent-provider revalidation still fired.
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    // A resolved label + no spinner proves the agent path rendered the cached
+    // catalog instead of flipping to loading.
     const button = screen.getByRole('button');
     expect(button.textContent).toContain('GPT-5 Codex');
     expect(button.querySelector('.animate-pulse')).toBeNull();
     expect(button.querySelector('[role="status"]')).toBeNull();
-    // The background revalidation for the agent's provider still fired.
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
 
     mockAgentSession$.set(undefined);
   });
