@@ -40,6 +40,41 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
 }
 
 /**
+ * Fan-outs that currently hold at least one subscriber.
+ *
+ * `createChannelFanout` collapses N subscribers onto ONE bridge listener, so
+ * the preload listener registry — the only per-channel source the renderer can
+ * read — now reports at most 1 per channel however many modules subscribe.
+ * That turns the IPC count into a *tripwire* (more than 1 means the fan-out
+ * broke) rather than a subscriber gauge, and moves the accumulation it was
+ * added to catch (intent-hq/monorepo#2034) inside the handler Set, where
+ * nothing outside this module can see it. This registry is the gauge.
+ *
+ * Membership tracks live subscriptions, not constructed transports: a fan-out
+ * joins with its first subscriber and leaves with its last, so the registry is
+ * bounded by what is actually subscribed and never accumulates entries for
+ * transports that have gone idle.
+ */
+const subscribedFanouts = new Set<{ channel: string; size: () => number }>();
+
+/**
+ * Per-channel subscriber counts across every live channel fan-out, for the
+ * renderer retention fingerprint.
+ *
+ * Read-only and O(live channels) — one `Set.size` read per entry, nothing is
+ * traversed. Channels with no subscribers are absent rather than reported as
+ * 0, since a fan-out only exists in the registry while it is subscribed to.
+ * Keys are sorted so the emitted fingerprint field order is stable.
+ */
+export function inspectChannelFanoutSubscribers(): Record<string, number> {
+  const counts = new Map<string, number>();
+  for (const fanout of subscribedFanouts) {
+    counts.set(fanout.channel, (counts.get(fanout.channel) ?? 0) + fanout.size());
+  }
+  return Object.fromEntries([...counts].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
  * Multiplex one preload-bridge listener for `channel` across any number of
  * subscribers.
  *
@@ -55,6 +90,8 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
 function createChannelFanout<TPayload>(channel: string, label: string) {
   const handlers = new Set<(payload: TPayload) => void>();
   let listener: { api: NonNullable<Window["electronAPI"]>; id: string } | null = null;
+  // Identity for `subscribedFanouts`; `size` is read there, never here.
+  const registration = { channel, size: () => handlers.size };
 
   return {
     subscribe(
@@ -74,12 +111,15 @@ function createChannelFanout<TPayload>(channel: string, label: string) {
         listener = { api, id };
       }
       handlers.add(handler);
+      subscribedFanouts.add(registration);
       let disposed = false;
       return () => {
         if (disposed) return;
         disposed = true;
         handlers.delete(handler);
-        if (handlers.size === 0 && listener) {
+        if (handlers.size > 0) return;
+        subscribedFanouts.delete(registration);
+        if (listener) {
           listener.api.offById(channel, listener.id);
           listener = null;
         }
