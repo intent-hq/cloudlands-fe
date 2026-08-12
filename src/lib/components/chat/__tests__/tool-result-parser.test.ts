@@ -492,5 +492,16 @@ describe('tool-result-parser', () => {
       expect(result.type).toBe('delegate-task');
       expect(result.agentId).toBe(AGENT_ID);
     });
+
+    it('never captures a partial id from truncated pretty-printed JSON', () => {
+      // JSON.parse fails on the cut-off object, so the text falls through to
+      // the prose path with a partial agent id inside — the strict bare-id
+      // regex must not match it (the old regex captured the fragment).
+      const truncated = `{\n  "ok": true,\n  "agentId": "${AGENT_ID.slice(0, 20)}`;
+      const result = parseToolResult('create_agent', {}, truncated);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+    });
   });
 });
