@@ -218,6 +218,64 @@ Has content.
       expect(html).not.toContain('task-block-pending');
     });
 
+    it('should render @@@task block with header attributes as skeleton loader', async () => {
+      const markdown = `@@@task key=auth dependsOn=db,api conflictsWith=migrations effort=2h
+# My Task
+Task content here.
+@@@`;
+
+      const html = await processMarkdownToHTML(markdown);
+
+      // Attribute-carrying fences must still be detected as task blocks
+      expect(html).toContain('data-type="task-block"');
+      expect(html).toContain('task-block-pending');
+      expect(html).toContain('task-block-checkbox');
+      expect(html).toContain('task-block-title-skeleton');
+      expect(html).not.toContain('@@@task');
+      expect(html).not.toContain('dependsOn');
+    });
+
+    it('should render @@@task block with malformed attribute values as skeleton loader', async () => {
+      // Attribute-shaped but semantically wrong headers keep the fence valid
+      // (the daemon converts these blocks with warnings)
+      const markdown = `@@@task unknownAttr=x key=
+# My Task
+Task content here.
+@@@`;
+
+      const html = await processMarkdownToHTML(markdown);
+
+      expect(html).toContain('data-type="task-block"');
+      expect(html).toContain('task-block-pending');
+      expect(html).not.toContain('@@@task');
+    });
+
+    it('should NOT render prose mentioning @@@task as a task block', async () => {
+      const markdown = `@@@task is the fence syntax
+Some explanation.
+@@@`;
+
+      const html = await processMarkdownToHTML(markdown);
+
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('task-block-pending');
+    });
+
+    it('should render @@@task block with header attributes as readable content in content mode', async () => {
+      const markdown = `@@@task key=auth dependsOn=db,api
+# My Task
+Task content here.
+@@@`;
+
+      const html = await processMarkdownToHTML(markdown, { taskBlockRenderMode: 'content' });
+
+      expect(html).toContain('My Task');
+      expect(html).toContain('Task content here.');
+      expect(html).not.toContain('data-type="task-block"');
+      expect(html).not.toContain('@@@task');
+      expect(html).not.toContain('dependsOn');
+    });
+
     it('should not include script tags in output', async () => {
       const markdown = `\`\`\`task
 # Task with <script>alert('xss')</script>
