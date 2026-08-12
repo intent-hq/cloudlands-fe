@@ -693,9 +693,12 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
   "panelLayout/updateTabFavicon",
 );
 
-export const updateFileTabPath = createAction<[wsId: string, oldPath: string, newPath: string]>(
-  "panelLayout/updateFileTabPath",
-);
+// `tabId` scopes the retarget to one specific tab (e.g. a candidate click in
+// that tab's not-found panel); without it, every file tab at `oldPath`
+// retargets (file renames and the read saga, which has no tab identity).
+export const updateFileTabPath = createAction<
+  [wsId: string, oldPath: string, newPath: string, tabId?: string]
+>("panelLayout/updateFileTabPath");
 
 // ============================================================================
 // Initial State
@@ -1130,14 +1133,14 @@ panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, favic
     return state;
   });
   // --- Update File Tab Path ---
-panelLayoutReducer.with(updateFileTabPath, (state, { payload: [wsId, oldPath, newPath] }) => {
+panelLayoutReducer.with(updateFileTabPath, (state, { payload: [wsId, oldPath, newPath, tabId] }) => {
     const ws = getWorkspaceState(state, wsId);
     const newFileName = newPath.split("/").pop() || newPath;
     let updated = false;
     const newPanels: Record<string, PanelState> = {};
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const newTabs = panel.tabs.map((t) => {
-        if (t.type === "file" && t.filePath === oldPath) {
+        if (t.type === "file" && t.filePath === oldPath && (!tabId || t.id === tabId)) {
           updated = true;
           return { ...t, filePath: newPath, title: newFileName };
         }

@@ -240,12 +240,13 @@
 
   // Retarget this tab to a suffix-resolution candidate (mirrors the read
   // saga's unique-match flow): drop the stale not-found entry, then update
-  // the tab path — the load effect re-issues the read against it.
+  // the tab path — the load effect re-issues the read against it. Scoped to
+  // this tab's id so other tabs open on the same path resolve independently.
   function openNotFoundCandidate(candidate: string) {
     const currentPath = tab.filePath;
     if (!currentPath || !workspaceId) return;
     appStore.dispatch(removeFileContentEntry(workspaceId, currentPath));
-    appStore.dispatch(updateFileTabPath(workspaceId, currentPath, candidate));
+    appStore.dispatch(updateFileTabPath(workspaceId, currentPath, candidate, tab.id));
   }
 
   // Fetch line changes for diff indicators

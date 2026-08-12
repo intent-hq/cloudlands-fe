@@ -120,6 +120,34 @@ describe('filesReadSaga', () => {
     await task.toPromise();
   });
 
+  it('does not retarget on a single candidate when the search result was truncated', async () => {
+    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    vi.mocked(backendRequest).mockResolvedValue({
+      files: ['packages/intentd/crates/res/common.md'],
+      truncated: true,
+    });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(
+      loadFileContentRequested('ws-1', 'crates/res/common.md', '/repo/crates/res/common.md'),
+    );
+    await settle();
+
+    expect(actions).toEqual([
+      loadFileContentFailed(
+        'ws-1',
+        'crates/res/common.md',
+        '/repo/crates/res/common.md',
+        m.files_read_notFound_error(),
+        ['packages/intentd/crates/res/common.md'],
+      ),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('keeps the failure state with all candidates when the match is ambiguous', async () => {
     vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
     vi.mocked(backendRequest).mockResolvedValue({

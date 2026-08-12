@@ -781,7 +781,7 @@ describe('FileTabType Redux integration', () => {
     });
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'panelLayout/updateFileTabPath',
-      payload: ['ws-1', 'src/app.ts', 'packages/b/src/app.ts'],
+      payload: ['ws-1', 'src/app.ts', 'packages/b/src/app.ts', 'tab-err'],
     });
   });
 

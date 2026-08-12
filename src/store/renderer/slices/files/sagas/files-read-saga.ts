@@ -28,10 +28,15 @@ function* loadFileContentWorker(workspaceId: string, path: string, absolutePath:
     if (!entry) {
       // Not found at the workspace root — the path may be submodule- or
       // worktree-relative (see monorepo#2059). Attempt suffix resolution.
-      const candidates = yield* call(resolveFileBySuffix, workspaceId, path);
-      if (candidates.length === 1 && candidates[0] !== path) {
-        // Unique match: retarget open file tabs to the resolved path; the tab
-        // component re-issues the read (and future saves) against it.
+      const { candidates, truncated } = yield* call(resolveFileBySuffix, workspaceId, path);
+      if (!truncated && candidates.length === 1 && candidates[0] !== path) {
+        // Provably unique match (search not truncated): retarget open file
+        // tabs to the resolved path; the tab component re-issues the read
+        // (and future saves) against it. A truncated search may hide further
+        // matches, so it is treated as ambiguous below instead.
+        // The read request carries no tab identity, so this retarget is
+        // path-scoped: every tab showing the not-found path shares the same
+        // failed read and moves to the resolved path together.
         yield* put(removeFileContentEntry(workspaceId, path));
         yield* put(updateFileTabPath(workspaceId, path, candidates[0]));
         return;
