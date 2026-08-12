@@ -64,6 +64,67 @@ let idleTerminationTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const DIFF_WORKER_POOL_IDLE_TERMINATION_MS = 30_000;
 
+/**
+ * Size of each rendered-AST LRU held by the pool manager.
+ *
+ * This is a *renderer-heap* cost, not a worker cost: the manager keeps two
+ * LRUMaps of this size — one for file renders, one for diff renders — holding
+ * fully themed hast trees. Measured against 250 real diffs from this repo
+ * (node, post-GC): ~0.67 MB of live heap per rendered diff AST (70 KB
+ * serialized; p90 164 KB, max 602 KB). At the previous value of 250 the two
+ * caches could retain ~330 MB before evicting anything; at 64 they cap at
+ * ~85 MB while still keeping a whole review session's files warm.
+ */
+export const DIFF_AST_LRU_CACHE_SIZE = 64;
+
+// Lifecycle accounting. Each pool creation spawns `poolSize` workers, each with
+// its own Shiki highlighter, so a create that is never paired with a terminate
+// is a multi-hundred-MB leak. These counters make create/terminate pairs
+// greppable in console-output.log (and in a debug bundle).
+let poolGeneration = 0;
+let poolsCreated = 0;
+let poolsTerminated = 0;
+let currentPoolSize = 0;
+let poolCreatedAtMs = 0;
+
+export type DiffWorkerPoolTerminationReason = 'idle' | 'unload' | 'manual';
+
+export interface DiffWorkerPoolLifecycleStats {
+  /** Monotonic id of the current (or most recent) pool. */
+  generation: number;
+  /** Total pools created in this renderer session. */
+  created: number;
+  /** Total pools terminated in this renderer session. */
+  terminated: number;
+  /** Pools created but not yet terminated — should never exceed 1. */
+  live: number;
+  /** Outstanding viewer leases; returns to 0 when every diff viewer unmounts. */
+  activeLeases: number;
+  /** Whether a pool object is currently held. */
+  alive: boolean;
+  /** Worker count of the current pool (0 when no pool is alive). */
+  poolSize: number;
+}
+
+/**
+ * Snapshot of worker-pool lifecycle accounting.
+ *
+ * Exposed for diagnostics and regression tests: `created === terminated + live`
+ * always holds, and `activeLeases` must return to 0 once all diff viewers have
+ * unmounted.
+ */
+export function inspectDiffWorkerPoolLifecycle(): DiffWorkerPoolLifecycleStats {
+  return {
+    generation: poolGeneration,
+    created: poolsCreated,
+    terminated: poolsTerminated,
+    live: poolsCreated - poolsTerminated,
+    activeLeases: activeWorkerPoolLeases,
+    alive: workerPool !== null,
+    poolSize: workerPool === null ? 0 : currentPoolSize,
+  };
+}
+
 function clearIdleTerminationTimer(): void {
   if (idleTerminationTimer !== null) {
     clearTimeout(idleTerminationTimer);
@@ -76,9 +137,37 @@ function scheduleIdleTermination(): void {
   idleTerminationTimer = setTimeout(() => {
     idleTerminationTimer = null;
     if (activeWorkerPoolLeases === 0) {
-      terminateDiffWorkerPool();
+      terminateDiffWorkerPool('idle');
     }
   }, DIFF_WORKER_POOL_IDLE_TERMINATION_MS);
+}
+
+let unloadListenerRegistered = false;
+
+function handlePageHide(event: PageTransitionEvent): void {
+  // A persisted (bfcache) pagehide means the page may come straight back —
+  // terminating there would just force a rebuild of the pool.
+  if (event.persisted) return;
+  terminateDiffWorkerPool('unload');
+}
+
+/**
+ * Terminate the pool when the renderer goes away.
+ *
+ * `pagehide` (not `beforeunload`) is used deliberately: `beforeunload` also
+ * fires for cancelled navigations and HMR, where tearing the pool down would be
+ * wasted work.
+ */
+function registerUnloadTermination(): void {
+  if (unloadListenerRegistered || typeof window === 'undefined') return;
+  window.addEventListener('pagehide', handlePageHide);
+  unloadListenerRegistered = true;
+}
+
+function unregisterUnloadTermination(): void {
+  if (!unloadListenerRegistered || typeof window === 'undefined') return;
+  window.removeEventListener('pagehide', handlePageHide);
+  unloadListenerRegistered = false;
 }
 
 /**
@@ -120,7 +209,7 @@ export function getDiffWorkerPool(): WorkerPoolManager {
     poolOptions: {
       workerFactory,
       poolSize,
-      totalASTLRUCacheSize: 250, // Chat-heavy sessions can touch many diffs; larger LRU keeps repeats warm.
+      totalASTLRUCacheSize: DIFF_AST_LRU_CACHE_SIZE,
     },
     highlighterOptions: {
       theme: THEMES,
@@ -128,8 +217,26 @@ export function getDiffWorkerPool(): WorkerPoolManager {
     },
   });
 
+  poolGeneration += 1;
+  poolsCreated += 1;
+  currentPoolSize = poolSize;
+  poolCreatedAtMs = startTime;
+  registerUnloadTermination();
+
   const duration = performance.now() - startTime;
-  logger.info(`Diff highlighter worker pool created in ${duration.toFixed(0)}ms (poolSize=${poolSize})`);
+  logger.info(
+    `Diff highlighter worker pool created in ${duration.toFixed(0)}ms ` +
+      `(generation=${poolGeneration}, poolSize=${poolSize}, leases=${activeWorkerPoolLeases}, ` +
+      `created=${poolsCreated}, terminated=${poolsTerminated})`,
+  );
+
+  // A pool created outside `acquireDiffWorkerPool` (the idle preload path) has
+  // no lease to release, so nothing would ever arm the idle timer and the
+  // workers would live for the whole session. Arm it here; `acquire` clears the
+  // timer as soon as a real viewer takes a lease.
+  if (activeWorkerPoolLeases === 0) {
+    scheduleIdleTermination();
+  }
 
   return workerPool;
 }
@@ -140,8 +247,10 @@ export function getDiffWorkerPool(): WorkerPoolManager {
  * terminated after a short idle window to preserve warm-cache repeated use.
  */
 export function acquireDiffWorkerPool(): WorkerPoolManager {
-  clearIdleTerminationTimer();
+  // Clear *after* the pool is resolved: creating a pool with no lease arms the
+  // idle timer, and this lease supersedes it.
   const pool = getDiffWorkerPool();
+  clearIdleTerminationTimer();
   activeWorkerPoolLeases += 1;
   return pool;
 }
@@ -246,14 +355,31 @@ export async function waitForDiffHighlighterPreload(): Promise<void> {
  * Terminate the worker pool and clean up resources.
  * Call this when the app is closing or navigating away.
  */
-export function terminateDiffWorkerPool(): void {
+export function terminateDiffWorkerPool(reason: DiffWorkerPoolTerminationReason = 'manual'): void {
   clearIdleTerminationTimer();
+  const leasesAtTermination = activeWorkerPoolLeases;
   activeWorkerPoolLeases = 0;
 
   if (workerPool) {
     terminateWorkerPoolSingleton();
     workerPool = null;
     initPromise = null;
-    logger.info('Diff highlighter worker pool terminated');
+    poolsTerminated += 1;
+    unregisterUnloadTermination();
+
+    const lifetimeMs = performance.now() - poolCreatedAtMs;
+    logger.info(
+      `Diff highlighter worker pool terminated ` +
+        `(generation=${poolGeneration}, poolSize=${currentPoolSize}, reason=${reason}, ` +
+        `leases=${leasesAtTermination}, lifetimeMs=${lifetimeMs.toFixed(0)}, ` +
+        `created=${poolsCreated}, terminated=${poolsTerminated})`,
+    );
+    if (leasesAtTermination > 0) {
+      logger.warn(
+        `Diff highlighter worker pool terminated with ${leasesAtTermination} active lease(s) ` +
+          `(generation=${poolGeneration}, reason=${reason})`,
+      );
+    }
+    currentPoolSize = 0;
   }
 }
