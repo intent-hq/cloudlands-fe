@@ -292,6 +292,7 @@ import { registerWorkspaceTransferHandlers } from '../features/backend/main/work
 import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
+import { startMemoryMonitor, stopMemoryMonitor } from './memory-monitor';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 
 import { registerSetupScriptsHandlers } from '../features/setup-scripts/main/setup-scripts.ipc';
@@ -415,6 +416,11 @@ async function gracefulShutdown() {
 
 async function performGracefulShutdown() {
   try {
+    // Stop memory sampling first: it is pure instrumentation, and clearing its
+    // interval here means no timer survives any of the quit paths (before-quit,
+    // SIGTERM, SIGINT) that funnel through this function.
+    stopMemoryMonitor();
+
     // Ask renderers to clear hardware-console lighting FIRST, while the
     // windows (which own the WebHID connection) are still alive. Bounded
     // (750ms overall ack timeout) and fail-soft — never throws, never delays
@@ -1484,6 +1490,11 @@ app.whenReady().then(async () => {
   // JSON-RPC client connection attempt. Adoption logic (probe socket first)
   // ensures we don't spawn when an external daemon is already running.
   await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
+
+  // Per-process memory sampling → console-output.log, so a debug bundle can
+  // name the process that grew. Started after the daemon so the very first
+  // sample already sees the sidecar and its agent children.
+  startMemoryMonitor();
 
   // The daemon owns PATH discovery. Seed only after starting/adopting it, and
   // retry briefly while a newly spawned sidecar creates its socket.
