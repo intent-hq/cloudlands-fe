@@ -54,61 +54,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('electron-ipc-transport onNotification fan-out', () => {
-  it('registers one IPC listener and fans the exact notification out to every subscriber', () => {
-    const api = installFakeApi();
-    const transport = createElectronIpcBackendTransport();
-    const handlers = Array.from({ length: 20 }, () => vi.fn());
-    const disposers = handlers.map((handler) => transport.onNotification(handler));
-    const notification = { method: 'events.event', params: { event: { type: 'agent:idle' } } };
-
-    expect(api.listenerCount(NOTIFICATION)).toBe(1);
-    api.emit(NOTIFICATION, notification);
-    for (const handler of handlers) expect(handler.mock.calls[0]?.[0]).toBe(notification);
-
-    disposers.forEach((dispose) => dispose());
-    expect(api.listenerCount(NOTIFICATION)).toBe(0);
-  });
-
-  it('keeps duplicate subscriptions and their idempotent disposers independent', () => {
-    const api = installFakeApi();
-    const transport = createElectronIpcBackendTransport();
-    const handler = vi.fn();
-    const disposeFirst = transport.onNotification(handler);
-    const disposeSecond = transport.onNotification(handler);
-
-    api.emit(NOTIFICATION, { method: 'events.event' });
-    expect(handler).toHaveBeenCalledTimes(2);
-
-    disposeFirst();
-    disposeFirst();
-    api.emit(NOTIFICATION, { method: 'events.event' });
-    expect(handler).toHaveBeenCalledTimes(3);
-    expect(api.listenerCount(NOTIFICATION)).toBe(1);
-
-    disposeSecond();
-    expect(api.listenerCount(NOTIFICATION)).toBe(0);
-  });
-
-  it('isolates a throwing subscriber so later subscribers still receive the notification', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const api = installFakeApi();
-    const transport = createElectronIpcBackendTransport();
-    const disposeFirst = transport.onNotification(() => {
-      throw new Error('boom');
-    });
-    const second = vi.fn();
-    const disposeSecond = transport.onNotification(second);
-
-    api.emit(NOTIFICATION, { method: 'events.event' });
-    expect(second).toHaveBeenCalledOnce();
-    expect(warn).toHaveBeenCalledOnce();
-
-    disposeFirst();
-    disposeSecond();
-  });
-});
-
 describe('electron-ipc-transport onReconnected fan-out', () => {
   it('registers a single backend:status listener for many subscribers and fans out', () => {
     const api = installFakeApi();
@@ -318,6 +263,8 @@ describe('electron-ipc-transport onNotification fan-out', () => {
     api.emit(NOTIFICATION, notification('events.event'));
     expect(handler).toHaveBeenCalledTimes(2);
 
+    // Double-dispose of one duplicate must not drop the other subscription.
+    disposeFirst();
     disposeFirst();
     api.emit(NOTIFICATION, notification('events.event'));
     expect(handler).toHaveBeenCalledTimes(3);
