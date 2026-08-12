@@ -17,9 +17,10 @@ export interface HookWakeAttribution {
   /** Display name for the hook (localized fallback, truncated to ~20 chars). */
   displayName: string;
   /**
-   * Raw untruncated hook name from metadata (empty when absent). Used for
-   * the exact-prefix strip in {@link stripHookWakePrefix} so names containing
-   * double quotes strip correctly.
+   * Verbatim hook name from metadata (empty when absent) — untrimmed and
+   * untruncated, exactly as the daemon used it in the literal wake prefix.
+   * Used for the exact-prefix strip in {@link stripHookWakePrefix} so names
+   * containing double quotes or edge whitespace strip correctly.
    */
   rawName: string;
   /** Wake reason (`dispatched` / `evicted` / …; empty when absent). */
@@ -44,8 +45,8 @@ export function getHookWakeAttribution(metadata: unknown): HookWakeAttribution |
   if (md.type !== 'hook_wake') return null;
 
   const hookId = typeof md.hookId === 'string' ? md.hookId.trim() : '';
-  const rawName = typeof md.hookName === 'string' ? md.hookName.trim() : '';
-  const name = rawName || m.chat_hookWakeAttribution_fallbackName_label();
+  const rawName = typeof md.hookName === 'string' ? md.hookName : '';
+  const name = rawName.trim() || m.chat_hookWakeAttribution_fallbackName_label();
   const displayName =
     name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
   const reason = typeof md.reason === 'string' ? md.reason : '';
@@ -62,11 +63,11 @@ export function getHookWakeAttribution(metadata: unknown): HookWakeAttribution |
  * `[Background hook "<name>"] `. Display-only strip — the stored message
  * text is never mutated. Returns the input unchanged when no prefix matches.
  *
- * When the raw (untruncated) hook name from metadata is available, the exact
- * literal prefix built from it is stripped first — this handles names
- * containing double quotes, which the regex fallback cannot match. Without a
- * raw name (or when the literal prefix does not match), the regex fallback
- * preserves the previous behavior.
+ * When the verbatim (untrimmed, untruncated) hook name from metadata is
+ * available, the exact literal prefix built from it is stripped first — this
+ * handles names containing double quotes or edge whitespace, which the regex
+ * fallback cannot match. Without a raw name (or when the literal prefix does
+ * not match), the regex fallback preserves the previous behavior.
  */
 const HOOK_WAKE_PREFIX = /^\[Background hook "[^"]*"\]\s*/;
 

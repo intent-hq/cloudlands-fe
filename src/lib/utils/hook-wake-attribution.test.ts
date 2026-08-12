@@ -51,11 +51,21 @@ describe('getHookWakeAttribution', () => {
     expect(getHookWakeAttribution({ type: 'event_notification' })).toBeNull();
   });
 
-  it('falls back to "Hook" when hookName is missing or blank', () => {
+  it('falls back to "Hook" when hookName is missing or blank, keeping rawName verbatim', () => {
     expect(getHookWakeAttribution({ type: 'hook_wake', hookId: 'h1' })?.displayName).toBe('Hook');
-    expect(
-      getHookWakeAttribution({ type: 'hook_wake', hookId: 'h1', hookName: '   ' })?.displayName,
-    ).toBe('Hook');
+    const blank = getHookWakeAttribution({ type: 'hook_wake', hookId: 'h1', hookName: '   ' });
+    expect(blank?.displayName).toBe('Hook');
+    expect(blank?.rawName).toBe('   ');
+  });
+
+  it('keeps edge whitespace in rawName while trimming displayName', () => {
+    const attr = getHookWakeAttribution({
+      type: 'hook_wake',
+      hookId: 'h1',
+      hookName: ' my "quoted" hook ',
+    });
+    expect(attr?.rawName).toBe(' my "quoted" hook ');
+    expect(attr?.displayName).toBe('my "quoted" hook');
   });
 
   it('truncates long hook names to ~20 chars with an ellipsis, keeping rawName untruncated', () => {
@@ -98,6 +108,16 @@ describe('stripHookWakePrefix', () => {
     expect(
       stripHookWakePrefix('[Background hook "my "quoted" hook"] CI is red', 'my "quoted" hook'),
     ).toBe('CI is red');
+  });
+
+  it('strips the exact prefix for names with edge whitespace and quotes', () => {
+    expect(
+      stripHookWakePrefix('[Background hook " my "quoted" hook "] CI is red', ' my "quoted" hook '),
+    ).toBe('CI is red');
+  });
+
+  it('strips the literal prefix of a whitespace-only rawName', () => {
+    expect(stripHookWakePrefix('[Background hook "   "] CI is red', '   ')).toBe('CI is red');
   });
 
   it('leaves quoted-name prefixes intact without rawName (regex fallback cannot match)', () => {
