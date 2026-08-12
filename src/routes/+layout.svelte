@@ -58,6 +58,7 @@
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
+  import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
@@ -1104,6 +1105,9 @@
 
   <!-- Redux-owned Transfer/Download wizard host (global for all workspace entrypoints) -->
   <TransferWorkspaceModalHost />
+
+  <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->
+  <ImportWorkspaceModalHost />
 
   <!-- Remote-backend "Go through setup?" prompt (self-gates on the setup-prompt slice) -->
   <SetupPromptDialog />

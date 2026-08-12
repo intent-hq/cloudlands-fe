@@ -5639,5 +5639,19 @@
   "workspace_transfer_finalizing_message": "正在收尾…",
   "workspace_transfer_finalizeFailed_error": "無法完成傳輸：{error}",
   "workspace_transfer_unknown_error": "未知錯誤",
-  "workspace_transfer_close_label": "關閉"
+  "workspace_transfer_close_label": "關閉",
+  "menu_import_workspace": "從檔案匯入空間…",
+  "workspace_import_modal_title": "匯入空間",
+  "workspace_import_importing_title": "正在從檔案匯入空間…",
+  "workspace_import_phase_reading": "正在讀取封存檔…",
+  "workspace_import_phase_uploading": "正在上傳封存檔…",
+  "workspace_import_phase_committing": "正在伺服器上匯入…",
+  "workspace_import_progress_ariaLabel": "匯入進度",
+  "workspace_import_result_success_title": "匯入完成",
+  "workspace_import_result_success_message": "「{title}」已成功匯入。",
+  "workspace_import_result_interrupted_one": "建立封存檔時有 1 個代理正在執行任務。請在空間中恢復它。",
+  "workspace_import_result_interrupted_many": "建立封存檔時有 {count} 個代理正在執行任務。請在空間中恢復它們。",
+  "workspace_import_result_failed_title": "匯入失敗",
+  "workspace_import_result_failed_message": "匯入未完成：{error}",
+  "workspace_import_openWorkspace_label": "開啟空間"
 }

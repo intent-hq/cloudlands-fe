@@ -5639,5 +5639,19 @@
   "workspace_transfer_finalizing_message": "Wird abgeschlossen…",
   "workspace_transfer_finalizeFailed_error": "Die Übertragung konnte nicht abgeschlossen werden: {error}",
   "workspace_transfer_unknown_error": "Unbekannter Fehler",
-  "workspace_transfer_close_label": "Schließen"
+  "workspace_transfer_close_label": "Schließen",
+  "menu_import_workspace": "Space aus Datei importieren…",
+  "workspace_import_modal_title": "Space importieren",
+  "workspace_import_importing_title": "Space wird aus der Datei importiert…",
+  "workspace_import_phase_reading": "Archiv wird gelesen…",
+  "workspace_import_phase_uploading": "Archiv wird hochgeladen…",
+  "workspace_import_phase_committing": "Import auf dem Server…",
+  "workspace_import_progress_ariaLabel": "Importfortschritt",
+  "workspace_import_result_success_title": "Import abgeschlossen",
+  "workspace_import_result_success_message": "„{title}“ wurde erfolgreich importiert.",
+  "workspace_import_result_interrupted_one": "1 Agent war bei der Erstellung des Archivs mitten in einer Aufgabe. Setze ihn im Space fort.",
+  "workspace_import_result_interrupted_many": "{count} Agenten waren bei der Erstellung des Archivs mitten in einer Aufgabe. Setze sie im Space fort.",
+  "workspace_import_result_failed_title": "Import fehlgeschlagen",
+  "workspace_import_result_failed_message": "Der Import wurde nicht abgeschlossen: {error}",
+  "workspace_import_openWorkspace_label": "Space öffnen"
 }

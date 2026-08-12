@@ -100,3 +100,54 @@ export interface TransferCancelResult {
   success: boolean;
   error?: string;
 }
+
+/**
+ * Push-event channel (main → renderer) for the import-from-file flow.
+ * Mirrored as a literal in `EVENT_CHANNELS` (ipc-registry.ts).
+ */
+export const TRANSFER_IMPORT_PROGRESS_EVENT = 'transfer:import-progress';
+
+/** `transfer:import-start` params. */
+export interface ImportStartParams {
+  /** Re-run against the previously picked file (retry) instead of a dialog. */
+  reuseLastFile?: boolean;
+}
+
+/**
+ * Import phase, for the wizard's progress UI:
+ *  - `reading` — hashing the local archive + reading its manifest.
+ *  - `uploading` — base64 chunks are moving file → main → current backend.
+ *  - `committing` — the backend is reassembling/committing the import.
+ */
+export type ImportRelayPhase = 'reading' | 'uploading' | 'committing';
+
+/** `transfer:import-progress` push payload (counters only — never bytes). */
+export interface ImportProgressEvent {
+  phase: ImportRelayPhase;
+  /** Archive size on disk. */
+  bytesTotal: number;
+  /** Bytes uploaded to the backend so far. */
+  bytesUp: number;
+  chunksTotal?: number;
+  chunksDone: number;
+}
+
+/** `transfer:import-start` result (success envelope). */
+export interface ImportStartResult {
+  success: boolean;
+  /** True when the user dismissed the open dialog or cancelled the run. */
+  canceled?: boolean;
+  /** Daemon error, verbatim (e.g. version mismatch names both versions). */
+  error?: string;
+  /** The imported workspace's id + title, on success. */
+  workspaceId?: string;
+  workspaceTitle?: string;
+  /** Agent ids the import marked interrupted on the backend. */
+  interruptedAgents?: string[];
+}
+
+/** `transfer:import-cancel` result. */
+export interface ImportCancelResult {
+  success: boolean;
+  error?: string;
+}

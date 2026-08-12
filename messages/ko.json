@@ -5639,5 +5639,19 @@
   "workspace_transfer_finalizing_message": "마무리 중…",
   "workspace_transfer_finalizeFailed_error": "전송을 마칠 수 없습니다: {error}",
   "workspace_transfer_unknown_error": "알 수 없는 오류",
-  "workspace_transfer_close_label": "닫기"
+  "workspace_transfer_close_label": "닫기",
+  "menu_import_workspace": "파일에서 스페이스 가져오기…",
+  "workspace_import_modal_title": "스페이스 가져오기",
+  "workspace_import_importing_title": "파일에서 스페이스를 가져오는 중…",
+  "workspace_import_phase_reading": "아카이브 읽는 중…",
+  "workspace_import_phase_uploading": "아카이브 업로드 중…",
+  "workspace_import_phase_committing": "서버에서 가져오는 중…",
+  "workspace_import_progress_ariaLabel": "가져오기 진행률",
+  "workspace_import_result_success_title": "가져오기 완료",
+  "workspace_import_result_success_message": "“{title}”을(를) 성공적으로 가져왔습니다.",
+  "workspace_import_result_interrupted_one": "아카이브 생성 시 1개의 에이전트가 작업 중이었습니다. 스페이스에서 다시 시작하세요.",
+  "workspace_import_result_interrupted_many": "아카이브 생성 시 {count}개의 에이전트가 작업 중이었습니다. 스페이스에서 다시 시작하세요.",
+  "workspace_import_result_failed_title": "가져오기 실패",
+  "workspace_import_result_failed_message": "가져오기를 완료하지 못했습니다: {error}",
+  "workspace_import_openWorkspace_label": "스페이스 열기"
 }

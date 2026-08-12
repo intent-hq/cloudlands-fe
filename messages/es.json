@@ -5639,5 +5639,19 @@
   "workspace_transfer_finalizing_message": "Finalizando…",
   "workspace_transfer_finalizeFailed_error": "No se pudo finalizar la transferencia: {error}",
   "workspace_transfer_unknown_error": "Error desconocido",
-  "workspace_transfer_close_label": "Cerrar"
+  "workspace_transfer_close_label": "Cerrar",
+  "menu_import_workspace": "Importar espacio desde archivo…",
+  "workspace_import_modal_title": "Importar espacio",
+  "workspace_import_importing_title": "Importando el espacio desde el archivo…",
+  "workspace_import_phase_reading": "Leyendo el archivo…",
+  "workspace_import_phase_uploading": "Subiendo el archivo…",
+  "workspace_import_phase_committing": "Importando en el servidor…",
+  "workspace_import_progress_ariaLabel": "Progreso de la importación",
+  "workspace_import_result_success_title": "Importación completada",
+  "workspace_import_result_success_message": "“{title}” se importó correctamente.",
+  "workspace_import_result_interrupted_one": "1 agente estaba en plena tarea cuando se creó el archivo. Reanúdalo desde el espacio.",
+  "workspace_import_result_interrupted_many": "{count} agentes estaban en plena tarea cuando se creó el archivo. Reanúdalos desde el espacio.",
+  "workspace_import_result_failed_title": "Error de importación",
+  "workspace_import_result_failed_message": "La importación no se completó: {error}",
+  "workspace_import_openWorkspace_label": "Abrir espacio"
 }
