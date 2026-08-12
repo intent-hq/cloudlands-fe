@@ -37,6 +37,9 @@ interface FileReadIpcResult {
   error?: { code: string; message: string };
 }
 
+const UNEXPECTED_READ_RESPONSE_MESSAGE = 'file:read returned an unexpected response'; // i18n-ignore (internal error, filtered from detail — surfaced via generic toast)
+const READ_FAILED_MESSAGE = 'file:read failed'; // i18n-ignore (fallback for missing IPC error message, filtered from detail)
+
 /** Read a host-local file as base64 via the main-process `file:read` IPC. */
 async function readFileBase64(path: string): Promise<string> {
   const result = await invoke<FileReadIpcResult>('file:read', {
@@ -46,13 +49,27 @@ async function readFileBase64(path: string): Promise<string> {
     truncateIfLarge: false,
   });
   if (!result || typeof result !== 'object' || !('success' in result)) {
-    throw new Error('file:read returned an unexpected response'); // i18n-ignore (internal error, surfaced via generic toast)
+    throw new Error(UNEXPECTED_READ_RESPONSE_MESSAGE);
   }
   if (!result.success || result.data?.content === undefined) {
-    throw new Error(result.error?.message ?? 'file:read failed'); // i18n-ignore (fallback for missing IPC error message)
+    throw new Error(result.error?.message ?? READ_FAILED_MESSAGE);
   }
   return result.data.content;
 }
+
+/**
+ * Messages too generic to render as the user-visible failure reason: the
+ * daemon's bare `-32603` message, the electron-ipc-transport fallback for a
+ * payload-less IPC failure, and this module's own `file:read` envelope
+ * fallbacks. Filtering them keeps the tooltip/toast detail daemon-reasons
+ * (or informative IPC reasons) only, so untranslated fallbacks never render.
+ */
+const GENERIC_PLACEMENT_MESSAGES = new Set([
+  'Internal error', // i18n-ignore (verbatim daemon -32603 message, filtered)
+  'Backend request failed', // i18n-ignore (verbatim electron-ipc-transport fallback, filtered)
+  UNEXPECTED_READ_RESPONSE_MESSAGE,
+  READ_FAILED_MESSAGE,
+]);
 
 /**
  * Place an attachment picking the arm by backend locality: `sourcePath`
@@ -83,7 +100,8 @@ export async function placeAttachmentViaTransport(
  * `error.data.detail` (the transport maps a plain-string JSON-RPC `data`
  * there), then a non-generic error message (`-32602` messages carry the
  * classified reason, e.g. "sourcePath is a directory"); returns undefined
- * when nothing informative is available so callers keep the generic copy.
+ * for generic transport/daemon fallbacks so callers keep the localized
+ * generic copy.
  */
 export function extractPlacementErrorDetail(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined;
@@ -96,7 +114,7 @@ export function extractPlacementErrorDetail(error: unknown): string | undefined 
   if (
     typeof message === 'string' &&
     message.trim().length > 0 &&
-    message.trim() !== 'Internal error' // i18n-ignore (verbatim daemon -32603 message)
+    !GENERIC_PLACEMENT_MESSAGES.has(message.trim())
   ) {
     return message.trim();
   }

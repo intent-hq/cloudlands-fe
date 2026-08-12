@@ -147,6 +147,10 @@ export function setupFileIPC() {
           // But skip binary detection for known text extensions
           const isBinaryByContent =
             !isBinaryByExtension && !isKnownTextExtension && detectBinaryContent(buffer);
+          // NOTE: `isBinary` reflects extension/content sniffing only. With an
+          // explicit `encoding: 'base64'` request, `content` is base64 even when
+          // `isBinary` is false — callers that passed an encoding must not use
+          // `isBinary` to decide how to decode `content`.
           const isBinary = isBinaryByExtension || isBinaryByContent;
 
           if (isBinaryByContent) {

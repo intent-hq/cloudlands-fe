@@ -139,4 +139,12 @@ describe('extractPlacementErrorDetail', () => {
     expect(extractPlacementErrorDetail(undefined)).toBeUndefined();
     expect(extractPlacementErrorDetail('boom')).toBeUndefined();
   });
+
+  it('filters transport-generic fallback messages, not just the daemon -32603', () => {
+    expect(extractPlacementErrorDetail(new Error('Backend request failed'))).toBeUndefined();
+    expect(
+      extractPlacementErrorDetail(new Error('file:read returned an unexpected response')),
+    ).toBeUndefined();
+    expect(extractPlacementErrorDetail(new Error('file:read failed'))).toBeUndefined();
+  });
 });
