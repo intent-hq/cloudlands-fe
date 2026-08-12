@@ -264,8 +264,9 @@
    * name as an attribution chip, and the internal state note must stay out of
    * the user-visible preview (same display-only treatment as ChatMessage).
    */
-  function queuedHookWakeDisplayText(content: string): string {
-    return stripHookWakeStateNote(stripHookWakePrefix(content));
+  function queuedHookWakeDisplayText(message: QueuedMessage): string {
+    const attribution = queuedHookWakeAttribution(message);
+    return stripHookWakeStateNote(stripHookWakePrefix(message.content, attribution?.rawName));
   }
 
   /**
@@ -520,11 +521,11 @@
               <div
                 class="flex-1 min-w-0 truncate"
                 transition:safeSlide={{ axis: 'y', duration: 200 }}
-                title={queuedHookWakeDisplayText(message.content)}
+                title={queuedHookWakeDisplayText(message)}
               >
                 <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
                 <span class="type-caption opacity-70">
-                  — {queuedHookWakeDisplayText(message.content)}</span
+                  — {queuedHookWakeDisplayText(message)}</span
                 >
               </div>
               {#if !disabled}
