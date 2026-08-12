@@ -366,6 +366,16 @@ export const openWorkspaceNote = createAction<
   ]
 >('workspaceNavigation/openWorkspaceNote');
 
+/**
+ * Resolve an attachment-registry row by UUID (`file.getAttachmentInfo`,
+ * PROTOCOL §5.9) and open its stored workspace-relative path in a file tab.
+ * The lookup runs in the workspace-navigation tab saga; a missing file or a
+ * failed lookup surfaces a toast (`fileName` labels the failure toast).
+ */
+export const openWorkspaceAttachment = createAction<
+  [wsId: string, attachmentId: string, fileName: string]
+>('workspaceNavigation/openWorkspaceAttachment');
+
 export const openWorkspaceBrowser = createAction<[wsId: string, url: string]>(
   'workspaceNavigation/openWorkspaceBrowser',
 );

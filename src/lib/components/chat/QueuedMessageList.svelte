@@ -21,13 +21,11 @@
   faFile,
 } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
   import { safeSlide } from '$lib/utils/animations';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
-  import { getAttachmentInfo } from './input/context-api';
-  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -91,26 +89,17 @@
     lightboxOpen = true;
   }
 
-  // Click on a queued attachment-reference file chip: resolve the registry
-  // row by attachmentId (file.getAttachmentInfo, PROTOCOL §5.9) and open the
-  // stored workspace-relative path in a file tab; missing file → toast.
-  // The workspace id is read lazily at click time (not at component init) so
-  // the component renders fine without a live store (e.g. in tests).
-  async function openQueuedFileAttachment(
+  // Click on a queued attachment-reference file chip: the workspace-navigation
+  // tab saga resolves the registry row by attachmentId (file.getAttachmentInfo,
+  // PROTOCOL §5.9) and opens the stored path in a file tab; missing file →
+  // toast. The workspace id is read lazily at click time (not at component
+  // init) so the component renders fine without a live store (e.g. in tests).
+  function openQueuedFileAttachment(
     block: NonNullable<QueuedMessage['fileBlocks']>[number],
   ) {
     const wsId = selectActiveWorkspaceId.select(appStore.state);
     if (!wsId) return;
-    try {
-      const info = await getAttachmentInfo(block.attachmentId);
-      if (!info.exists) {
-        toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
-        return;
-      }
-      appStore.dispatch(openWorkspaceFile(wsId, info.path));
-    } catch {
-      toast.error(m.chat_chatMessage_attachmentOpenFailed_error({ name: block.fileName }));
-    }
+    appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName));
   }
 
   // Auto-resize textarea to fit content

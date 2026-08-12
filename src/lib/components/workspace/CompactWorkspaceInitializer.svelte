@@ -2550,15 +2550,28 @@
 
     if (pending.agentId && (pending.content || redemption.fileBlocks.length > 0)) {
       try {
-        await backendRequest('agent.sendMessage', {
-          agentId: pending.agentId,
-          workspaceId: pending.workspaceId,
-          content: pending.content,
-          imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-          fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-          contextReferences:
-            pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
-        });
+        // `backendRequest` resolves normal daemon send failures as
+        // `{ success: false, error }` rather than rejecting — check it, or a
+        // failed send would silently drop the held message and its retry path.
+        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
+          'agent.sendMessage',
+          {
+            agentId: pending.agentId,
+            workspaceId: pending.workspaceId,
+            content: pending.content,
+            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+            contextReferences:
+              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+          },
+        );
+        if (sendResult?.success === false) {
+          logger.error('First-message send rejected after attachment placement', {
+            error: sendResult.error,
+          });
+          error = m.workspace_compactInitializer_firstMessageSendFailed_error();
+          return false;
+        }
       } catch (err) {
         logger.error('First-message send failed after attachment placement', { error: err });
         error = m.workspace_compactInitializer_firstMessageSendFailed_error();

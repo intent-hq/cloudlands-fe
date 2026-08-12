@@ -25,13 +25,11 @@
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeSlide } from '$lib/utils/animations';
   import type { ContextItem } from './input/context-api';
-  import { getAttachmentInfo } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
-  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { formatFileSize } from '$lib/utils/file-utils';
-  import { toast } from 'svelte-sonner';
-  import { createLogger } from '$lib/utils/client-logger';
+
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
@@ -68,7 +66,6 @@
   import { formatInteger } from '$lib/i18n/format';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
-  const logger = createLogger('ChatMessage');
 
   // Type for parsed context items (pills shown before text)
   interface ContextPill {
@@ -770,26 +767,15 @@
     return parts.join(' • '); // i18n-ignore (mime type + formatted size separator)
   }
 
-  // Click on an attachment-reference chip: resolve the registry row by
-  // attachmentId (file.getAttachmentInfo, PROTOCOL §5.9) and open the stored
-  // workspace-relative path in a file tab. A missing file (deleted from disk
-  // out-of-band) or a failed lookup surfaces a toast — never a crash.
-  async function openAttachmentReference(block: ContentBlock & { attachmentId?: string }) {
+  // Click on an attachment-reference chip: the workspace-navigation tab saga
+  // resolves the registry row by attachmentId (file.getAttachmentInfo,
+  // PROTOCOL §5.9) and opens the stored workspace-relative path in a file
+  // tab. A missing file (deleted from disk out-of-band) or a failed lookup
+  // surfaces a toast — never a crash.
+  function openAttachmentReference(block: ContentBlock & { attachmentId?: string }) {
     const wsId = workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? '');
     if (!block.attachmentId || !wsId) return;
-    try {
-      const info = await getAttachmentInfo(block.attachmentId);
-      if (!info.exists) {
-        toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
-        return;
-      }
-      appStore.dispatch(openWorkspaceFile(wsId, info.path));
-    } catch (error) {
-      logger.error('Failed to resolve attachment', { attachmentId: block.attachmentId, error });
-      toast.error(
-        m.chat_chatMessage_attachmentOpenFailed_error({ name: block.fileName ?? '' }),
-      );
-    }
+    appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
   }
 
   // Download a legacy inline-data file block via a data URL.

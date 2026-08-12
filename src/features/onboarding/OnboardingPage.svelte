@@ -72,6 +72,7 @@
     parseInlineImages,
     extractLinearIssue,
     extractSentryIssue,
+    type ContextReference,
   } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -318,6 +319,7 @@
     agentId?: string;
     prompt: string;
     imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
+    contextReferences: ContextReference[];
   } | null>(null);
 
   // §5.31 gate — enhance is auggie-only; the daemon derives the effective
@@ -831,13 +833,24 @@
         return;
       }
       if (pending.agentId) {
-        await backendRequest('agent.sendMessage', {
-          agentId: pending.agentId,
-          workspaceId: pending.workspaceId,
-          content: pending.prompt,
-          imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-          fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-        });
+        // `backendRequest` resolves normal daemon send failures as
+        // `{ success: false, error }` rather than rejecting — check it, or a
+        // failed send would silently drop the held prompt and its retry path.
+        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
+          'agent.sendMessage',
+          {
+            agentId: pending.agentId,
+            workspaceId: pending.workspaceId,
+            content: pending.prompt,
+            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+            contextReferences:
+              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+          },
+        );
+        if (sendResult?.success === false) {
+          throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
+        }
       }
       onboardingPendingSend = null;
       onboardingStagedItems = [];
@@ -987,7 +1000,8 @@
           specialist: specialistId,
           behaviorPrompt,
           provider,
-          contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
+          contextReferences:
+            !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
           imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
           metadata: {
             source: 'onboarding',
@@ -1016,7 +1030,13 @@
       // `onboardingPendingSend` makes the Create button resume this flow —
       // the created workspace is never rolled back or duplicated.
       if (hasStagedFiles) {
-        onboardingPendingSend = { workspaceId: workspace.id, agentId, prompt, imageBlocks };
+        onboardingPendingSend = {
+          workspaceId: workspace.id,
+          agentId,
+          prompt,
+          imageBlocks,
+          contextReferences,
+        };
         const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
         onboardingStagedItems = redemption.items;
         if (redemption.failedCount > 0) {
@@ -1024,13 +1044,25 @@
           throw new Error(m.onboarding_page_attachmentPlacementFailed_error());
         }
         if (agentId) {
-          await backendRequest('agent.sendMessage', {
-            agentId,
-            workspaceId: workspace.id,
-            content: prompt,
-            imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
-            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-          });
+          // `backendRequest` resolves normal daemon send failures as
+          // `{ success: false, error }` rather than rejecting — check it, or
+          // a failed send would silently drop the held prompt/attachments
+          // and their retry path (`onboardingPendingSend` must stay set).
+          const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
+            'agent.sendMessage',
+            {
+              agentId,
+              workspaceId: workspace.id,
+              content: prompt,
+              imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
+              fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+              contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
+            },
+          );
+          if (sendResult?.success === false) {
+            onboardingCreationErrorCode = null;
+            throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
+          }
         }
         onboardingPendingSend = null;
         onboardingStagedItems = [];
