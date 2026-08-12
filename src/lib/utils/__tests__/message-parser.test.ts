@@ -916,9 +916,13 @@ Valid prompt
   });
 
   it('should handle CRLF line endings', () => {
-    const content = ['Here is the response.', '', '<!-- suggested-prompts', 'Run tests', '-->'].join(
-      '\r\n',
-    );
+    const content = [
+      'Here is the response.',
+      '',
+      '<!-- suggested-prompts',
+      'Run tests',
+      '-->',
+    ].join('\r\n');
 
     const result = parseSuggestedPrompts(content);
 
@@ -1782,7 +1786,7 @@ describe('groupContentBlocks - think tag handling', () => {
   });
 });
 
-describe('groupContentBlocks - partial group tags', () => {
+describe('groupContentBlocks - partial group and think tags', () => {
   function textBlock(text: string): ContentBlock {
     return { type: 'text', text } as ContentBlock;
   }
@@ -1848,7 +1852,10 @@ describe('groupContentBlocks - partial group tags', () => {
     // Symptom B: the model drops the closing `>` and the block ends there.
     // Previously this fell through to literal text with the tool call ungrouped.
     const result = groupContentBlocks(
-      [textBlock('Here we go.\n\n<group:Investigating auto-commit'), toolUseBlock('view', 'tool-1')],
+      [
+        textBlock('Here we go.\n\n<group:Investigating auto-commit'),
+        toolUseBlock('view', 'tool-1'),
+      ],
       false,
     );
     expect(result.length).toBe(2);
@@ -1906,5 +1913,93 @@ describe('groupContentBlocks - partial group tags', () => {
     // A fragment that never became a tag reappears as literal text on settle.
     const input = 'Comparing a <';
     expect((groupContentBlocks([textBlock(input)], false)[0] as ContentBlock).text).toBe(input);
+  });
+
+  it('should withhold every prefix state of a think tag as it streams in', () => {
+    // Both spellings, one delta at a time: <think> and <thinking>.
+    const prefixes = [
+      '<',
+      '<t',
+      '<th',
+      '<thi',
+      '<thin',
+      '<think',
+      '<thinki',
+      '<thinkin',
+      '<thinking',
+    ];
+
+    for (const prefix of prefixes) {
+      const result = groupContentBlocks([textBlock(`Let me work this out.\n\n${prefix}`)], true);
+      const text = renderedText(result);
+      expect(text).toBe('Let me work this out.');
+      expect(text).not.toContain('<');
+    }
+  });
+
+  it('should withhold every prefix state of a closing think tag as it streams in', () => {
+    const prefixes = [
+      '<',
+      '</',
+      '</t',
+      '</th',
+      '</thi',
+      '</thin',
+      '</think',
+      '</thinki',
+      '</thinkin',
+      '</thinking',
+    ];
+
+    for (const prefix of prefixes) {
+      const result = groupContentBlocks([textBlock(`<think>weighing the options${prefix}`)], true);
+      const text = renderedText(result);
+      // The reasoning still renders as a thinking block; the fragment does not.
+      expect(text).toBe('weighing the options');
+      expect(text).not.toContain('<');
+    }
+  });
+
+  it('should withhold a partial think tag that is the whole streaming block', () => {
+    expect(groupContentBlocks([textBlock('<thinki')], true)).toEqual([]);
+  });
+
+  it('should render the think tag as a thinking block once it completes', () => {
+    for (const [open, close] of [
+      ['<think>', '</think>'],
+      ['<thinking>', '</thinking>'],
+    ]) {
+      const result = groupContentBlocks(
+        [textBlock(`${open}weighing the options${close}Here is the answer.`)],
+        true,
+      );
+      expect(result.map((block) => block.type)).toEqual(['thinking', 'text']);
+      expect((result[0] as ContentBlock).content).toBe('weighing the options');
+      expect((result[1] as ContentBlock).text).toBe('Here is the answer.');
+    }
+  });
+
+  it('should keep a non-tag fragment starting with "<thi" as literal text', () => {
+    // `<thin` could still become `<think`, but `<thing` and `<threshold` cannot,
+    // so they must not stay withheld past the character that rules the tag out.
+    for (const input of ['Comparing a <thing', 'Raising the <threshold']) {
+      const result = groupContentBlocks([textBlock(input)], true);
+      expect(result.length).toBe(1);
+      expect((result[0] as ContentBlock).text).toBe(input);
+    }
+  });
+
+  it('should never leak a tag fragment while a think tag streams in character by character', () => {
+    // The exact delta sequence the symptom in #2057 comes from.
+    const full = 'Let me work this out.\n\n<think>weighing the options</think>Here is the answer.';
+
+    for (let i = 1; i <= full.length; i++) {
+      const text = renderedText(groupContentBlocks([textBlock(full.slice(0, i))], true));
+      expect(text).not.toContain('<');
+    }
+
+    // Settled, the tags have all resolved into a thinking block plus prose.
+    const settled = groupContentBlocks([textBlock(full)], false);
+    expect(settled.map((block) => block.type)).toEqual(['text', 'thinking', 'text']);
   });
 });
