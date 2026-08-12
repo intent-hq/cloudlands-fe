@@ -293,24 +293,74 @@ describe('startRetentionFingerprint', () => {
     expect(linesFrom(info)).toHaveLength(1);
   });
 
-  it('does not throw when the store cannot report state', () => {
+  it('fails loudly, not silently, when the store state cannot be read', () => {
+    // The defect class this guards: a defensive `return` on an unreadable store
+    // made a fingerprint that never emitted look exactly like a healthy one.
+    // Dev builds throw; every build warns, and warnings do reach
+    // console-output.log, so a bundle says the fingerprint is off and why.
     const info = spyOnInfo();
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const stop = startRetentionFingerprint({} as unknown as { state: unknown });
-    vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS * 2);
-    expect(linesFrom(info)).toHaveLength(0);
-    stop();
+    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).toThrow(
+      /Retention fingerprint disabled: store\.state is undefined/,
+    );
 
-    // themis throws from the `state` getter if it is read before Store.init().
-    const throwing = startRetentionFingerprint({
+    expect(linesFrom(info)).toHaveLength(0);
+    expect(warn.mock.calls.map(String).join(' ')).toContain('Retention fingerprint disabled');
+    stop();
+  });
+
+  it('reports an unreadable store once, not on every interval', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let reads = 0;
+    const stop = startRetentionFingerprint({
+      get state(): unknown {
+        reads += 1;
+        return undefined;
+      },
+    });
+
+    // First tick reports (and throws in dev); later ticks stay quiet.
+    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).toThrow();
+    const afterFirst = warn.mock.calls.length;
+    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS * 3)).not.toThrow();
+
+    expect(reads).toBeGreaterThan(1);
+    expect(warn.mock.calls.length).toBe(afterFirst);
+    stop();
+  });
+
+  it('reports a throwing state getter rather than swallowing it', () => {
+    const info = spyOnInfo();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const stop = startRetentionFingerprint({
       get state(): unknown {
         throw new Error('Cannot access Store.state before Store.init() has been called.');
       },
     });
-    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).not.toThrow();
+
+    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).toThrow(
+      /reading store\.state threw/,
+    );
     expect(linesFrom(info)).toHaveLength(0);
-    throwing();
+    expect(warn.mock.calls.map(String).join(' ')).toContain('before Store.init()');
+    stop();
+  });
+
+  it('keeps sampling when the collector itself throws', () => {
+    // Collection failure is best-effort and can be transient, so unlike an
+    // unreadable store it must not throw or disable the timer.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    inspectDiffCaches.mockImplementation(() => {
+      throw new Error('caches exploded');
+    });
+
+    const stop = startRetentionFingerprint({ state: {} });
+    expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).not.toThrow();
+    expect(warn.mock.calls.map(String).join(' ')).not.toContain('disabled');
+    stop();
   });
 
   it('reads state through the `state` getter themis actually exposes', () => {
