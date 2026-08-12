@@ -42,10 +42,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faTriangleExclamation: { iconName: 'triangle-exclamation' },
-}));
-
-vi.mock('$lib/icons/faSettings', () => ({
-  faSettings: { iconName: 'settings' },
+  faSettings: { iconName: 'gear' },
 }));
 
 vi.mock('$lib/components/ui/button/button.svelte', async () => {

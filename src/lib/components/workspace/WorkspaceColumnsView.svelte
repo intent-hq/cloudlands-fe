@@ -5,7 +5,6 @@
   import { goto } from '$app/navigation';
   import WorkspaceSurface from '../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte';
   import { getWorkspaceViewTransitionName } from './workspace-view-transition';
-  import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
   import ResizablePanelGroup from '$lib/components/layout/ResizablePanelGroup.svelte';
   import { resize } from '$lib/components/layout/size-transition';
   import { store as appStore } from '$store/renderer/store';
@@ -24,15 +23,7 @@
     selectFocusedPanelTargetsByWorkspaceId,
     selectPanelCanvasWidthsByWorkspaceId,
     selectPanelColumnCountsByWorkspaceId,
-    selectPanelLayoutRoot,
-    selectPanelRestoreStatusesByWorkspaceId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import {
-    resizePanelLayoutAtHorizontalPanel,
-    resizePanelLayoutRightEdge,
-  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { findRootHorizontalPanelIndex } from '$store/renderer/slices/panel-layout/panel-layout-tabless';
-  import { setResizablePanelSize } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
     findAdjacentWorkspaceWithPanels,
     type PanelCycleBoundaryTarget,
@@ -51,32 +42,26 @@
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
-  let { globalSidebarOpen = false }: { globalSidebarOpen?: boolean } = $props();
-
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
   const workspaceStacks$ = selectWorkspaceStacks();
   const panelCanvasWidthsByWorkspaceId$ = selectPanelCanvasWidthsByWorkspaceId();
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
-  const panelRestoreStatusesByWorkspaceId$ = selectPanelRestoreStatusesByWorkspaceId();
   const focusedPanelTargetsByWorkspaceId$ = selectFocusedPanelTargetsByWorkspaceId();
   const LAYOUT_WIDTH_SETTLE_MS = 340;
   let sidebarWidths = $state<Record<string, number>>({});
-  let workspaceColumnWidths = $state<Record<string, number>>({});
+  let livePanelCanvasWidths = $state<Record<string, number>>({});
   let columnsScroller = $state<HTMLDivElement | null>(null);
   let panelPreviewWidthRatios = $state<Record<string, number>>({});
   let draggedWorkspaceId = $state<string | null>(null);
   let dragOverWorkspaceId = $state<string | null>(null);
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let lifecycleMotionReady = $state(false);
-  let isResizingWorkspaceColumn = $state(false);
   let lastScrolledWorkspaceId: string | null = null;
   let previousPanelColumnCounts: Record<string, number> = {};
   let panelColumnCountsInitialized = false;
   let revealFrame: number | null = null;
   let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
-  const layoutMotionDuration = $derived(
-    lifecycleMotionReady && !isResizingWorkspaceColumn ? 180 : 0,
-  );
+  const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
 
   onMount(() => {
     const frame = requestAnimationFrame(() => {
@@ -228,39 +213,9 @@
     panelPreviewWidthRatios = { ...panelPreviewWidthRatios, [workspaceId]: ratio };
   }
 
-  function persistWorkspaceColumnWidth(workspaceId: string, width: number) {
-    if (workspaceColumnWidths[workspaceId] === width) return;
-    workspaceColumnWidths[workspaceId] = width;
-    appStore.dispatch(setResizablePanelSize(`workspace-panel-columns-width:${workspaceId}`, width));
-  }
-
-  function resizeFocusedPanelColumn(
-    workspaceId: string,
-    previousWorkspaceWidth: number,
-    nextWorkspaceWidth: number,
-  ) {
-    if (previousWorkspaceWidth === nextWorkspaceWidth) return;
-    const sidebarWidth = sidebarWidths[workspaceId] ?? 360;
-    const previousContentWidth = Math.max(1, previousWorkspaceWidth - sidebarWidth);
-    const nextContentWidth = Math.max(1, nextWorkspaceWidth - sidebarWidth);
-    const focusedPanelId = $focusedPanelTargetsByWorkspaceId$[workspaceId]?.panelId;
-    const root = focusedPanelId ? selectPanelLayoutRoot.select(appStore.state, workspaceId) : null;
-    const focusedIndex =
-      root && focusedPanelId ? findRootHorizontalPanelIndex(root, focusedPanelId) : -1;
-    if (focusedIndex >= 0) {
-      appStore.dispatch(
-        resizePanelLayoutAtHorizontalPanel(
-          workspaceId,
-          previousContentWidth,
-          nextContentWidth,
-          focusedIndex,
-        ),
-      );
-      return;
-    }
-    appStore.dispatch(
-      resizePanelLayoutRightEdge(workspaceId, previousContentWidth, nextContentWidth),
-    );
+  function updatePanelCanvasWidth(workspaceId: string, width: number) {
+    if (livePanelCanvasWidths[workspaceId] === width) return;
+    livePanelCanvasWidths = { ...livePanelCanvasWidths, [workspaceId]: width };
   }
 
   function activateWorkspace(workspaceId: string) {
@@ -367,7 +322,7 @@
   }
 </script>
 
-{#snippet workspaceColumn(workspaceId: string, titlebarClearance: boolean)}
+{#snippet workspaceColumn(workspaceId: string)}
   <section
     class="relative h-full min-h-0 w-full overflow-hidden rounded-md bg-sidebar shadow-md transition-[opacity,transform,box-shadow] duration-(--motion-fast) {draggedWorkspaceId ===
     workspaceId
@@ -377,7 +332,6 @@
     aria-label={m.workspace_columns_workspaceColumn_ariaLabel({ workspaceId })}
     data-workspace-column={workspaceId}
     data-active={$currentWorkspaceId$ === workspaceId}
-    data-titlebar-clearance={titlebarClearance ? '' : undefined}
     data-dragging={draggedWorkspaceId === workspaceId}
     data-workspace-drop-placement={dragOverWorkspaceId === workspaceId
       ? dragOverPlacement
@@ -408,17 +362,13 @@
       onSidebarWidthChange={(width) => updateSidebarWidth(workspaceId, width)}
       onPanelMovePreviewWidthRatioChange={(ratio) =>
         updatePanelPreviewWidthRatio(workspaceId, ratio)}
+      onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth(workspaceId, width)}
       onCyclePanelBoundary={(direction) => handlePanelCycleBoundary(workspaceId, direction)}
     />
   </section>
 {/snippet}
 
-{#snippet workspaceStackItem(
-  workspaceId: string,
-  index: number,
-  stackLength: number,
-  titlebarClearance: boolean,
-)}
+{#snippet workspaceStackItem(workspaceId: string, index: number, stackLength: number)}
   <div
     class="h-full min-h-0 {index > 0 ? 'pt-1' : ''} {index < stackLength - 1 ? 'pb-1' : ''}"
     data-workspace-column-motion={workspaceId}
@@ -426,49 +376,14 @@
       ? ''
       : undefined}
   >
-    {@render workspaceColumn(workspaceId, titlebarClearance)}
+    {@render workspaceColumn(workspaceId)}
   </div>
 {/snippet}
 
-{#snippet resizableWorkspaceStackItem(
-  workspaceId: string,
-  index: number,
-  stackLength: number,
-  stackIndex: number,
-  titlebarClearance: boolean,
-)}
-  {@const panelColumnCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0}
-  {@const panelCanvasWidth = $panelCanvasWidthsByWorkspaceId$[workspaceId] ?? 480}
-  {@const panelDefaultWidth =
-    (sidebarWidths[workspaceId] ?? 360) + (panelColumnCount > 0 ? panelCanvasWidth : 0)}
-  {@const panelPreviewDefaultWidth =
-    (sidebarWidths[workspaceId] ?? 360) +
-    (panelColumnCount > 0 ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) : 0)}
-  {@const restoreStatus = $panelRestoreStatusesByWorkspaceId$[workspaceId] ?? 'idle'}
-  <ResizablePanel
-    storageKey={`workspace-panel-columns-width:${workspaceId}`}
-    minWidth={100}
-    maxWidth={panelColumnCount > 0 ? panelDefaultWidth + 2560 : 2560}
-    defaultWidth={panelDefaultWidth}
-    restoreStoredWidth={false}
-    transientWidthDelta={panelPreviewDefaultWidth - panelDefaultWidth}
-    syncWithDefaultWidth={restoreStatus !== 'idle' &&
-      restoreStatus !== 'pending' &&
-      sidebarWidths[workspaceId] !== undefined}
-    doSkipResize={stackLength > 1 && panelColumnCount === 0}
-    resizeScrollContainer={stackIndex === $workspaceStacks$.length - 1 ? columnsScroller : null}
-    side="left"
-    onWidthChange={(width) => persistWorkspaceColumnWidth(workspaceId, width)}
-    onResizeStart={() => (isResizingWorkspaceColumn = true)}
-    onResizeEnd={(previousWidth, nextWidth) => {
-      resizeFocusedPanelColumn(workspaceId, previousWidth, nextWidth);
-      isResizingWorkspaceColumn = false;
-    }}
-    className="h-full min-h-0 mx-0!"
-    showHandleIndicator={true}
-  >
-    {@render workspaceStackItem(workspaceId, index, stackLength, titlebarClearance)}
-  </ResizablePanel>
+{#snippet resizableWorkspaceStackItem(workspaceId: string, index: number, stackLength: number)}
+  <div class="h-full min-h-0 w-full">
+    {@render workspaceStackItem(workspaceId, index, stackLength)}
+  </div>
 {/snippet}
 
 <div
@@ -478,14 +393,17 @@
   data-workspace-columns
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
-    {#each $workspaceStacks$ as stack, stackIndex (stack[0])}
+    {#each $workspaceStacks$ as stack (stack[0])}
       {@const stackWidth = Math.max(
         ...stack.map((workspaceId) => {
           const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
+          const panelCanvasWidth =
+            livePanelCanvasWidths[workspaceId] ??
+            $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
+            480;
           return (
-            workspaceColumnWidths[workspaceId] ??
             (sidebarWidths[workspaceId] ?? 360) +
-              (panelCount > 0 ? ($panelCanvasWidthsByWorkspaceId$[workspaceId] ?? 480) : 0)
+            (panelCount > 0 ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) : 0)
           );
         }),
       )}
@@ -505,24 +423,12 @@
               className="h-full min-h-0"
             >
               {#snippet children(panel, index)}
-                {@render resizableWorkspaceStackItem(
-                  panel.id,
-                  index,
-                  stack.length,
-                  stackIndex,
-                  stackIndex === 0 && index === 0 && !globalSidebarOpen,
-                )}
+                {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
               {/snippet}
             </ResizablePanelGroup>
           </div>
         {:else}
-          {@render resizableWorkspaceStackItem(
-            stack[0],
-            0,
-            1,
-            stackIndex,
-            stackIndex === 0 && !globalSidebarOpen,
-          )}
+          {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
         {/if}
       </div>
     {/each}
@@ -560,7 +466,5 @@
     cursor: grabbing;
   }
 
-  [data-workspace-column][data-titlebar-clearance] :global([data-workspace-title-region]) {
-    padding-top: calc(1.25rem + 35px);
-  }
+
 </style>

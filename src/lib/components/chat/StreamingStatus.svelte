@@ -9,7 +9,12 @@
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import { faRotateRight, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faRotateRight,
+    faExclamationTriangle,
+    faCopy,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils/cn';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
@@ -117,6 +122,18 @@
   // Error surface copy: recreate-aware when the daemon flagged the session
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
+  let errorExpanded = $state(false);
+  let errorCopied = $state(false);
+
+  async function handleCopyError() {
+    if (!errorDisplay) return;
+    const fullError = [errorDisplay.title, errorDisplay.message, errorDisplay.detail]
+      .filter(Boolean)
+      .join('\n\n');
+    await navigator.clipboard.writeText(fullError);
+    errorCopied = true;
+    setTimeout(() => (errorCopied = false), 2000);
+  }
 </script>
 
 {#if visible}
@@ -127,16 +144,16 @@
       role={status === 'error' ? 'alert' : undefined}
       aria-live={status === 'error' ? 'assertive' : undefined}
       class={cn(
-        'type-caption flex flex-col gap-0 rounded-md py-2 pl-2 pr-3',
-        status === 'error' && 'bg-destructive/10 border border-destructive/30',
-        status === 'model-unavailable' && 'border border-warning/20 bg-warning/5',
+        'type-caption flex flex-col gap-0 py-2 pr-1',
+        status === 'model-unavailable' &&
+          'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
       in:fade={{ duration: 200, easing: cubicOut }}
       out:fade={{ duration: 150, easing: cubicOut }}
     >
-      <div class="flex items-center gap-3">
-        <div class="flex-1 flex items-center gap-2">
+      <div class="flex items-start gap-2">
+        <div class="flex min-w-0 flex-1 items-start gap-2">
           {#if status === 'model-unavailable' && modelUnavailable}
             <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
             <span class="text-warning">
@@ -147,27 +164,52 @@
               {m.chat_streamingStatus_modelUnavailable_after()}
             </span>
           {:else if status === 'error' && errorDisplay}
-            <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
-            <div class="flex flex-col gap-0.5">
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
               <span class="font-medium text-destructive-foreground" data-testid="error-title"
                 >{errorDisplay.title}{#if failedAt}
                   <span
-                    class="text-destructive-foreground/60 text-xs font-normal"
+                    class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"
                     data-testid="error-failed-at"
                   >
-                    <!-- i18n-ignore (punctuation separator) -->
-                    · <RelativeTime date={failedAt} />
+                    <RelativeTime date={failedAt} />
                   </span>
                 {/if}</span
               >
-              <span class="text-destructive-foreground" data-testid="error-message"
-                >{errorDisplay.message}</span
-              >
-              {#if errorDisplay.detail}
-                <span class="text-destructive-foreground/60 text-xs" data-testid="error-detail"
-                  >{errorDisplay.detail}</span
+              <div class="relative flex min-h-5 w-full min-w-0 items-start gap-1.5 py-0">
+                <Button
+                  variant="plain"
+                  size="icon-xs"
+                  onclick={handleCopyError}
+                  iconOnly
+                  tooltip={m.error_boundary_copyDetails_tooltip()}
+                  aria-label={m.error_boundary_copyDetails_tooltip()}
+                  class="size-4! shrink-0 p-0! text-muted-foreground opacity-30 hover:opacity-100"
                 >
-              {/if}
+                  <Fa icon={errorCopied ? faCheck : faCopy} size="xs" class="w-4 shrink-0" />
+                </Button>
+                <div class="flex min-w-0 flex-1 flex-col">
+                  <Button
+                    variant="plain"
+                    class="type-caption h-auto! min-w-0 max-w-full justify-start text-left leading-4 text-muted-foreground"
+                    onclick={() => (errorExpanded = !errorExpanded)}
+                    aria-expanded={errorExpanded}
+                  >
+                    <span
+                      class={cn(
+                        'block min-w-0 max-w-full text-left',
+                        errorExpanded ? 'whitespace-pre-wrap break-words' : 'truncate',
+                      )}
+                      data-testid="error-message">{errorDisplay.message}</span
+                    >
+                  </Button>
+                  {#if errorDisplay.detail && errorExpanded}
+                    <span
+                      class="type-caption leading-4 whitespace-pre-wrap break-words text-muted-foreground"
+                      data-testid="error-detail">{errorDisplay.detail}</span
+                    >
+                  {/if}
+                </div>
+              </div>
             </div>
           {/if}
         </div>
@@ -187,13 +229,15 @@
             </Button>
           {:else if status === 'error' && onRetry && !isStreaming && !isProcessing}
             <Button
-              variant="ghost"
-              size="sm"
+              variant="ghost-light"
+              size="icon-xs"
               onclick={onRetry}
-              class="type-caption h-7 gap-1.5 px-2"
+              iconOnly
+              tooltip={m.chat_streamingStatus_tryAgain_label()}
+              aria-label={m.chat_streamingStatus_tryAgain_label()}
+              class="shrink-0 text-muted-foreground"
             >
               <Fa icon={faRotateRight} class="size-3" />
-              {m.chat_streamingStatus_tryAgain_label()}
             </Button>
           {/if}
         </div>

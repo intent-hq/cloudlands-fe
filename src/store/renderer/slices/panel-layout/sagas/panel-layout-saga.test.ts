@@ -103,6 +103,7 @@ const layout: WorkspacePanelLayout = {
   root: { type: 'panel', panelId: 'panel-1' },
   panels: { 'panel-1': { id: 'panel-1', tabs: [tab], activeTabId: tab.id } },
   focusedPanelId: 'panel-1',
+  canvasWidth: null,
 };
 const snapshot: LayoutSnapshot = { ...layout, timestamp: 10 };
 
@@ -206,6 +207,9 @@ describe('panelLayoutSaga', () => {
 
   it('validates stored tree references, focus, tabs, and active tab ids', () => {
     expect(isStoredLayoutValid(layout)).toBe(true);
+    expect(isStoredLayoutValid({ ...layout, canvasWidth: 1080 })).toBe(true);
+    expect(isStoredLayoutValid({ ...layout, canvasWidth: 0 })).toBe(false);
+    expect(isStoredLayoutValid({ ...layout, canvasWidth: Number.NaN })).toBe(false);
     expect(isStoredLayoutValid(null)).toBe(false);
     expect(isStoredLayoutValid({ ...layout, root: { type: 'panel', panelId: 'missing' } })).toBe(
       false,

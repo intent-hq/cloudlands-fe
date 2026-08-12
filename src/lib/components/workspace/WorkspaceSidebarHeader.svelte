@@ -539,7 +539,7 @@
             data-sidebar-branch-icon
             aria-hidden="true"
           >
-            <GitBranchIcon size={14} class="block size-3.5" />
+            <GitBranchIcon size={16} class="block size-4" />
           </span>
           {#if isEditingBranch}
             <input

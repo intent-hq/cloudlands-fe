@@ -16,6 +16,7 @@
   import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { isCombinedWorkspacePanelItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { Button } from '$lib/components/ui/button';
+  import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
 
   import {
@@ -173,20 +174,20 @@
             ? 'text-sidebar-accent-foreground'
             : isHovered
               ? 'text-sidebar-accent-foreground hover:bg-transparent hover:border-transparent'
-              : 'text-muted-foreground hover:text-sidebar-accent-foreground hover:bg-transparent hover:border-transparent'}"
+              : 'text-foreground hover:text-sidebar-accent-foreground hover:bg-transparent hover:border-transparent'}"
           onclick={() => handleClick(item.id)}
           onmouseenter={() => handleMouseEnter(item.id)}
           onmouseleave={handleMouseLeave}
           aria-label={item.label}
           data-nav-item={item.id}
         >
-          <svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5!" aria-hidden="true">
-            <path
-              fill-rule="evenodd"
-              d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z"
-              clip-rule="evenodd"
-            />
-          </svg>
+          <AsteriskIcon
+            size={14}
+            weight="bold"
+            class="pointer-events-none size-3.5!"
+            data-icon="asterisk"
+            aria-hidden="true"
+          />
         </Button>
       {/each}
     </div>

@@ -5,10 +5,7 @@
  * that will be displayed in the Panel's content header.
  */
 
-import {
-  getContext,
-  setContext,
-} from 'svelte';
+import { getContext, setContext, untrack } from 'svelte';
 import type { Snippet } from 'svelte';
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 
@@ -31,11 +28,18 @@ export interface PanelHeaderState {
   isSaving?: boolean;
 }
 
+export interface PanelHeaderActions {
+  /** Presentation and view controls shown in the Display section. */
+  display?: Snippet;
+  /** Commands that act on the current content shown in the Actions section. */
+  actions?: Snippet;
+}
+
 export interface PanelHeaderContext {
   /** Register header state from content component */
   registerState: (state: PanelHeaderState) => void;
-  /** Register an actions snippet from content component */
-  registerActions: (actions: Snippet) => void;
+  /** Register content-specific items for the panel's grouped action menu. */
+  registerActions: (actions: PanelHeaderActions) => void;
   /** Unregister when component unmounts */
   unregister: () => void;
 }
@@ -44,19 +48,19 @@ export interface PanelHeaderContext {
 export function createPanelHeaderContext(): {
   context: PanelHeaderContext;
   state: { current: PanelHeaderState | null };
-  actions: { current: Snippet | null };
-  } {
+  actions: { current: PanelHeaderActions | null };
+} {
   const state = $state<{ current: PanelHeaderState | null }>({ current: null });
-  const actions = $state<{ current: Snippet | null }>({ current: null });
+  const actions = $state<{ current: PanelHeaderActions | null }>({ current: null });
 
   const context: PanelHeaderContext = {
     registerState(newState: PanelHeaderState) {
-      if (state.current !== newState) {
+      if (untrack(() => state.current) !== newState) {
         state.current = newState;
       }
     },
-    registerActions(newActions: Snippet) {
-      if (actions.current !== newActions) {
+    registerActions(newActions: PanelHeaderActions) {
+      if (untrack(() => actions.current) !== newActions) {
         actions.current = newActions;
       }
     },

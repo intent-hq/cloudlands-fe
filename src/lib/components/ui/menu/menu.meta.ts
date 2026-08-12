@@ -26,6 +26,7 @@ export const menuMetadata = {
     'SubTrigger',
     'SubContent',
     'Separator',
+    'StackedContent',
   ],
   category: 'primitive',
   owner: '007-B5',

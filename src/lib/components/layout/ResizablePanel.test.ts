@@ -183,6 +183,25 @@ describe('ResizablePanel reactive defaults', () => {
     });
   });
 
+  it('does not apply a direct drag delta again when its committed default catches up', async () => {
+    const props = {
+      defaultWidth: 1000,
+      minWidth: 500,
+      maxWidth: 2000,
+      side: 'left' as const,
+      syncWithDefaultWidth: true,
+    };
+    const { container, rerender } = render(ResizablePanel, { props });
+    const handle = container.querySelector('button')!;
+
+    await fireEvent.mouseDown(handle, { clientX: 1000 });
+    await fireEvent.mouseMove(document, { clientX: 1100 });
+    await fireEvent.mouseUp(document);
+    await rerender({ ...props, defaultWidth: 1100 });
+
+    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 1100px');
+  });
+
   it('can keep width changes instantaneous for nested column sidebars', () => {
     const { container } = render(ResizablePanel, {
       props: { defaultWidth: 360, disableWidthTransition: true },

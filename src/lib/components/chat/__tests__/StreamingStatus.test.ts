@@ -66,10 +66,49 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
     expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
     expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
-    expect(container.firstElementChild?.className).toContain('bg-destructive/10');
+    expect(screen.getByTestId('error-message').className).toContain('truncate');
+    expect(screen.getByTestId('error-message').parentElement?.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(screen.getByTestId('error-message').parentElement?.className).toContain('type-caption');
+    expect(container.firstElementChild?.className).not.toContain('pl-2');
+    expect(container.firstElementChild?.className).not.toContain('bg-destructive');
+    expect(container.firstElementChild?.className).not.toContain('border-destructive');
 
-    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    expect(copyButton).toBeTruthy();
+    expect(copyButton.className).toContain('text-muted-foreground');
+    expect(copyButton.className).toContain('opacity-30');
+    expect(copyButton.parentElement?.className).toContain('gap-1.5');
+    expect(copyButton.parentElement?.className).toContain('min-h-5');
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    expect(retry.textContent?.trim()).toBe('');
+    expect(retry.className).toContain('shrink-0');
+    expect(retry.className).toContain('text-muted-foreground');
+    await fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('copies the full error to clipboard when copy button is clicked', async () => {
+    const writeTextMock = vi.fn();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+      },
+    });
+
+    const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    await fireEvent.click(copyButton);
+    expect(writeTextMock).toHaveBeenCalledOnce();
+    expect(writeTextMock).toHaveBeenCalledWith(
+      'Response failed\n\nStream timeout after 10 minutes',
+    );
   });
 
   it('renders recreate-aware corrupted-session copy with the raw error as secondary detail (monorepo#940)', async () => {
@@ -86,12 +125,14 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByTestId('error-message').textContent).toBe(
       'Try again will start a fresh session and carry over the conversation history',
     );
+    expect(screen.queryByTestId('error-detail')).toBeNull();
+    await fireEvent.click(screen.getByTestId('error-message'));
+    expect(screen.getByTestId('error-message').className).toContain('whitespace-pre-wrap');
     expect(screen.getByTestId('error-detail').textContent).toBe(
       'JSON-RPC error -32603: prompt rejected by provider',
     );
 
-    // The Retry affordance itself is unchanged
-    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
@@ -192,7 +233,7 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
   });
 
-  it('applies text-destructive-foreground class to error title for contrast compliance', () => {
+  it('uses a red title with muted error details', () => {
     render(StreamingStatus, {
       props: {
         error: 'Stream timeout',
@@ -201,6 +242,7 @@ describe('StreamingStatus rendered UI', () => {
 
     const errorTitle = screen.getByTestId('error-title');
     expect(errorTitle.className).toContain('text-destructive-foreground');
+    expect(errorTitle.className).not.toContain('text-xs');
   });
 
   it('renders a live "failed X ago" span next to the error title when failedAt is set', () => {
@@ -213,6 +255,10 @@ describe('StreamingStatus rendered UI', () => {
 
     const failedAtEl = screen.getByTestId('error-failed-at');
     expect(failedAtEl).toBeTruthy();
+    expect(failedAtEl.className).toContain('text-muted-foreground');
+    expect(failedAtEl.className).toContain('type-caption');
+    expect(failedAtEl.className).toContain('leading-4');
+    expect(screen.getByTestId('error-title').textContent).not.toContain('·');
     expect(screen.getByTestId('error-title').textContent).toContain('Response failed');
   });
 

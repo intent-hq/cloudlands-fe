@@ -37,10 +37,12 @@ describe('BrowserTabType panel layout routing', () => {
         },
         workspaceId: 'workspace-1',
         layoutId: 'workspace-1',
-        isActive: true,
+        isActive: false,
         isPanelFocused: true,
       },
     });
+
+    expect(screen.getByTestId('embedded-browser').getAttribute('data-is-active')).toBe('false');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Navigate' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Change title' }));

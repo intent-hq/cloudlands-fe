@@ -144,12 +144,13 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(changesActions);
+    headerContext.registerActions({ display: changesDisplayActions });
   });
 </script>
 
-{#snippet changesActions()}
+{#snippet changesDisplayActions()}
   <ViewSettingsDropdown
+    embedded
     showExpand
     expanded={changesAllExpanded}
     onToggleExpand={() => {

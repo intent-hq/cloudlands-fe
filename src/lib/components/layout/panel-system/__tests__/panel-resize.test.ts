@@ -21,22 +21,22 @@ describe('resizeAdjacentPanels', () => {
 });
 
 describe('getPanelReferenceSize', () => {
-  it('uses the panel minimums when they exceed the viewport', () => {
-    expect(getPanelReferenceSize(1350, 3, 450, 16)).toBe(1350);
+  it('subtracts the total gutter width from the available size', () => {
+    expect(getPanelReferenceSize(1350, 16)).toBe(1334);
   });
 
-  it('uses available panel space when the viewport is wider than the minimums', () => {
-    expect(getPanelReferenceSize(1600, 3, 450, 16)).toBe(1584);
+  it('never returns a non-positive reference size', () => {
+    expect(getPanelReferenceSize(8, 16)).toBe(1);
   });
 });
 
 describe('getPanelFlexValue', () => {
-  it('uses percentages in contained layouts and stable pixel bases in overflowing layouts', () => {
-    expect(getPanelFlexValue(40, 1200, true)).toBe('40 1 0%');
-    expect(getPanelFlexValue(40, 1200, false)).toBe('0 0 480px');
+  it('uses percentages before measurement and stable pixel bases afterward', () => {
+    expect(getPanelFlexValue(40, null)).toBe('40 1 0%');
+    expect(getPanelFlexValue(40, 1200)).toBe('0 0 480px');
   });
 
   it('retains a measured singleton width when a split collapses', () => {
-    expect(getPanelFlexValue(100, 1062, true, 450)).toBe('0 0 450px');
+    expect(getPanelFlexValue(100, 1062, 450)).toBe('0 0 450px');
   });
 });

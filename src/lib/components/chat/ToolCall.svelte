@@ -117,7 +117,7 @@
   <ContextEngineToolCall {toolUse} {toolState} {result} />
 {:else if !toolDisplay.hidden}
   <div
-    class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-muted-foreground/65 transition-all duration-[var(--motion-fast)] ease-out hover:text-muted-foreground focus-within:text-muted-foreground"
+    class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-foreground/75 transition-all duration-[var(--motion-fast)] ease-out hover:text-foreground focus-within:text-foreground"
     data-tool-use-id={toolUse.id}
     data-tool-call-id={toolUse.toolCallId || undefined}
   >
@@ -126,17 +126,17 @@
       <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
       {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
         <div
-          class="flex w-4 shrink-0 items-center justify-center opacity-30 {toolState === 'running'
+          class="flex w-4 shrink-0 items-center justify-center opacity-60 {toolState === 'running'
             ? 'animate-pulse'
             : ''}"
         >
-          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={14} />
+          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
         </div>
       {:else}
         <Fa
           icon={toolDisplay.icon}
-          size="xs"
-          class="w-4 shrink-0 text-muted-foreground opacity-30 {toolState === 'running'
+          size={14}
+          class="w-4 shrink-0 text-foreground/60 {toolState === 'running'
             ? 'animate-pulse'
             : ''}"
         />
@@ -154,7 +154,7 @@
       >
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
-          <span class="shrink-0 whitespace-nowrap text-muted-foreground"
+          <span class="shrink-0 whitespace-nowrap text-foreground/75"
             >{m.chat_toolCall_message_label()}</span
           >
           <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
@@ -162,7 +162,7 @@
             {targetAgentName}
           </span>
           {#if parsedResult.messageContent}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
+            <span class="min-w-0 truncate whitespace-nowrap text-foreground/70">
               "{parsedResult.messageContent.slice(0, 30)}{parsedResult.messageContent.length > 30
                 ? '...'
                 : ''}"
@@ -172,14 +172,14 @@
           <!-- Standard tool display -->
           <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
           {#if toolDisplay.verb}
-            <span class="shrink-0 whitespace-nowrap text-muted-foreground">
+            <span class="shrink-0 whitespace-nowrap text-foreground/75">
               {toolDisplay.verb}
             </span>
           {/if}
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
+            <span class="min-w-0 truncate whitespace-nowrap text-foreground/75">
               {toolDisplay.subject}
             </span>
           {/if}
@@ -190,7 +190,7 @@
       {#if toolDisplay.subject && toolDisplay.noteId}
         <a
           href={noteUrl(toolDisplay.noteId)}
-          class="min-w-0 truncate whitespace-nowrap text-muted-foreground/65 hover:text-foreground hover:underline"
+          class="min-w-0 truncate whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
           style="flex: 0 0.01 auto;"
           onclick={async (e) => {
             e.preventDefault();
@@ -212,11 +212,11 @@
       {#if toolDisplay.subject && toolDisplay.filePath && !toolDisplay.noteId}
         {#if toolDisplay.isDirectory}
           <span class="flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden text-left">
-            <span class="truncate text-muted-foreground" style="flex: 0 0.01 auto;">
+            <span class="truncate text-foreground/75" style="flex: 0 0.01 auto;">
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-foreground/60">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -242,13 +242,13 @@
             }}
           >
             <span
-              class="truncate text-muted-foreground group-hover/button:underline"
+              class="truncate text-foreground/75 group-hover/button:underline"
               style="flex: 0 0.01 auto;"
             >
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-foreground/60">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -258,7 +258,7 @@
 
       <!-- Path (muted, truncated, takes remaining space) - only when NOT a file link -->
       {#if toolDisplay.path && !toolDisplay.filePath}
-        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
+        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-foreground/60">
           {toolDisplay.path}
         </span>
       {/if}
@@ -268,9 +268,9 @@
         {#if toolState === 'running'}
           <!-- No spinner — the animate-pulse on the icon indicates running state -->
         {:else if toolState === 'completed' && expanded}
-          <Fa icon={faCheckCircle} size="xs" class="text-success opacity-60" />
+          <Fa icon={faCheckCircle} size={14} class="text-success opacity-60" />
         {:else if toolState === 'error'}
-          <Fa icon={faExclamationTriangle} size="xs" class="text-destructive" />
+          <Fa icon={faExclamationTriangle} size={14} class="text-destructive" />
         {/if}
       </div>
     </div>

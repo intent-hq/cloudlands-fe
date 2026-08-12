@@ -13,6 +13,7 @@
 
   import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faXmark,
     faFile,
@@ -24,7 +25,6 @@
     faCopy,
     faFolderOpen,
     faArrowUpRightFromSquare,
-    faEllipsisVertical,
     faExpand,
     faCompress,
     faTableColumns,
@@ -39,7 +39,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { getContext, tick, type Snippet } from 'svelte';
+  import { getContext, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -90,6 +90,7 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelHeaderActions } from './panel-header-context.svelte';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -117,8 +118,8 @@
     workspaceId: string;
     layoutId?: string;
     isFocused?: boolean;
-    /** Content actions snippet to show in header */
-    contentActions?: Snippet | null;
+    /** Content-specific items to merge into the grouped panel action menu. */
+    contentActions?: PanelHeaderActions | null;
     /** Legacy tab strip; the tabless shell renders only the content header. */
     showTabStrip?: boolean;
     /** Callbacks for creating new items */
@@ -1163,17 +1164,17 @@
 </script>
 
 {#snippet panelActionsDropdown()}
-  <DropdownMenu align="end" side="bottom" contentClass="w-52">
+  <DropdownMenu align="end" side="bottom" contentClass="w-56">
     {#snippet trigger({ toggle }: { toggle: () => void })}
       <Tooltip content={m.ui_breadcrumb_more_label()} side="bottom" delayDuration={300}>
         <Button
           variant="ghost-light"
-          size="icon-xs"
+          size="icon-sm"
           onclick={toggle}
           aria-label={m.ui_breadcrumb_more_label()}
           data-testid="panel-actions-trigger"
         >
-          <Fa icon={faEllipsisVertical} size="xs" />
+          <KebabIcon class="pointer-events-none size-4" />
         </Button>
       </Tooltip>
     {/snippet}
@@ -1182,6 +1183,7 @@
         {m.layout_panelTabBar_displaySection_label()}
       </div>
       <div data-panel-actions-section="display">
+        {@render contentActions?.display?.()}
         <Menu.CommandItem
           icon={isZoomed ? faCompress : faExpand}
           label={isZoomed
@@ -1202,6 +1204,7 @@
         {m.layout_panelTabBar_actionsSection_label()}
       </div>
       <div data-panel-actions-section="actions">
+        {@render contentActions?.actions?.()}
         <Menu.CommandItem
           icon={faTableColumns}
           label={m.layout_panelTabBar_splitRight_label()}
@@ -1232,12 +1235,12 @@
     <Tooltip content={m.layout_panelTabBar_closePanel_label()} side="bottom" delayDuration={300}>
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-sm"
         onclick={onClosePanel}
         aria-label={m.layout_panelTabBar_closePanel_label()}
         data-testid="panel-close-button"
       >
-        <Fa icon={faXmark} size="xs" />
+        <Fa icon={faXmark} size={16} class="size-4" />
       </Button>
     </Tooltip>
   {/if}
@@ -1688,17 +1691,8 @@
         <div class="flex-1"></div>
       {/if}
 
-      <!-- Right: Content controls (focus-gated) + panel action menu -->
+      <!-- Right: all controls live in the action menu; Close remains directly available. -->
       <div class="flex items-center gap-0.5 shrink-0">
-        {#if contentActions}
-          <div
-            class="flex items-center gap-0.5 transition-opacity duration-150 {isFocused
-              ? 'opacity-100'
-              : 'opacity-0 pointer-events-none'}"
-          >
-            {@render contentActions()}
-          </div>
-        {/if}
         {@render panelActionsDropdown()}
         {@render panelCloseButton()}
       </div>

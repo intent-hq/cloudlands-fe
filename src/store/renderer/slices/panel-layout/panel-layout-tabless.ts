@@ -1,8 +1,10 @@
 import type { PanelLayoutNode, PanelState, WorkspacePanelLayout } from './panel-layout-types';
+import {
+  DEFAULT_PANEL_WIDTH,
+  getAutomaticPanelCanvasWidth,
+} from '../../../../shared/panel-layout-sizing';
 
-type LayoutShape = Pick<WorkspacePanelLayout, 'root' | 'panels' | 'focusedPanelId'>;
-
-export const DEFAULT_PANEL_COLUMN_WIDTH = 480;
+type LayoutShape = Pick<WorkspacePanelLayout, 'root' | 'panels' | 'focusedPanelId' | 'canvasWidth'>;
 
 export function getPanelOrder(node: PanelLayoutNode): string[] {
   if (node.type === 'panel') return [node.panelId];
@@ -131,15 +133,19 @@ export function insertHorizontalPanelInLayout(
   root: PanelLayoutNode,
   panelId: string,
   afterPanelId: string,
-  existingCanvasWidth = countHorizontalPanelColumns(root) * DEFAULT_PANEL_COLUMN_WIDTH,
+  existingCanvasWidth: number | null | undefined = getAutomaticPanelCanvasWidth(
+    countHorizontalPanelColumns(root),
+    'content',
+  ),
 ): PanelLayoutNode | null {
   const panelNode: PanelLayoutNode = { type: 'panel', panelId };
   const safeCanvasWidth =
-    Number.isFinite(existingCanvasWidth) && existingCanvasWidth > 0
+    typeof existingCanvasWidth === 'number' &&
+    Number.isFinite(existingCanvasWidth) &&
+    existingCanvasWidth > 0
       ? existingCanvasWidth
-      : countHorizontalPanelColumns(root) * DEFAULT_PANEL_COLUMN_WIDTH;
-  const newColumnSize =
-    (DEFAULT_PANEL_COLUMN_WIDTH / (safeCanvasWidth + DEFAULT_PANEL_COLUMN_WIDTH)) * 100;
+      : getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(root), 'content');
+  const newColumnSize = (DEFAULT_PANEL_WIDTH / (safeCanvasWidth + DEFAULT_PANEL_WIDTH)) * 100;
 
   if (root.type !== 'split' || root.direction !== 'horizontal') {
     return {
@@ -156,10 +162,10 @@ export function insertHorizontalPanelInLayout(
   if (targetColumnIndex < 0) return null;
 
   const children = [...root.children];
+  children.splice(targetColumnIndex + 1, 0, panelNode);
   const sizes = normalizeSizes(root.sizes, root.children.length).map(
     (size) => size * (1 - newColumnSize / 100),
   );
-  children.splice(targetColumnIndex + 1, 0, panelNode);
   sizes.splice(targetColumnIndex + 1, 0, newColumnSize);
   return { ...root, children, sizes };
 }
@@ -302,6 +308,7 @@ export function removeForeignWorkspaceTabs(layout: LayoutShape, workspaceId: str
   return {
     root,
     panels,
+    canvasWidth: layout.canvasWidth ?? null,
     focusedPanelId:
       layout.focusedPanelId && panels[layout.focusedPanelId]
         ? layout.focusedPanelId
@@ -576,6 +583,7 @@ export function normalizeTablessPanelLayout(layout: LayoutShape): LayoutShape {
   return {
     root,
     panels,
+    canvasWidth: layout.canvasWidth ?? null,
     focusedPanelId: focusedPanelId ?? getPanelOrder(root)[0],
   };
 }
@@ -591,6 +599,7 @@ export function insertHorizontalPanel(
 
   if (root.type !== 'split' || root.direction !== 'horizontal') {
     return {
+      ...normalized,
       root: {
         type: 'split',
         direction: 'horizontal',
@@ -616,6 +625,7 @@ export function insertHorizontalPanel(
   sizes.splice(insertIndex, 0, newColumnSize);
 
   return {
+    ...normalized,
     root: { ...root, children, sizes },
     panels: { ...normalized.panels, [panel.id]: panel },
     focusedPanelId: panel.id,
@@ -629,6 +639,7 @@ export function appendHorizontalColumn(layout: LayoutShape, panel: PanelState): 
 
   if (root.type !== 'split' || root.direction !== 'horizontal') {
     return {
+      ...normalized,
       root: {
         type: 'split',
         direction: 'horizontal',
@@ -645,6 +656,7 @@ export function appendHorizontalColumn(layout: LayoutShape, panel: PanelState): 
     (size) => size * (1 - newColumnSize / 100),
   );
   return {
+    ...normalized,
     root: {
       ...root,
       children: [...root.children, panelNode],

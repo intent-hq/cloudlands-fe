@@ -108,6 +108,7 @@
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
+    onPanelCanvasWidthChange?: (width: number) => void;
     onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
@@ -119,6 +120,7 @@
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
+    onPanelCanvasWidthChange,
     onCyclePanelBoundary,
   }: Props = $props();
   const panelLayoutId = $derived(workspaceId);
@@ -979,12 +981,14 @@
             layoutId={panelLayoutId}
             {active}
             contained={columnMode}
+            canvasSizing={columnMode ? 'content' : 'viewport'}
             hideEmptyLayout={columnMode}
             allowCloseLastPanel={columnMode}
             onCreateAgent={handleCreateAgent}
             onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
             {onPanelMovePreviewWidthRatioChange}
+            {onPanelCanvasWidthChange}
             {onCyclePanelBoundary}
           />
         </div>

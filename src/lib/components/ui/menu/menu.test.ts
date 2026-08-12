@@ -87,11 +87,13 @@ describe('Menu command state behavior', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('runs a destructive command with semantic styling and closes normally', async () => {
+  it('runs a destructive command with neutral menu styling and closes normally', async () => {
     render(MenuTestHarness);
     await openMenu();
     const item = screen.getByRole('menuitem', { name: 'Delete item' });
-    expect(item.className).toContain('data-[destructive]:text-destructive');
+    expect(item.hasAttribute('data-destructive')).toBe(true);
+    expect(item.className).toContain('data-[destructive]:text-foreground');
+    expect(item.className).not.toContain('data-[destructive]:text-destructive');
     await fireEvent.click(item);
     expect(screen.getByTestId('selected').textContent).toBe('delete');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
@@ -104,6 +106,34 @@ describe('Menu command state behavior', () => {
     expect(command.getAttribute('data-slot')).toBe('menu-command-item');
     expect(command.querySelector('svg')).toBeTruthy();
     expect(command.querySelector('kbd')?.textContent).toBe('⇧⌘A');
+  });
+});
+
+describe('Menu stacked content', () => {
+  it('renders config-driven sections, shortcuts, and disabled commands', async () => {
+    render(MenuTestHarness, { props: { stacked: true } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open stacked menu' }));
+
+    expect(screen.getByRole('group', { name: 'My Account' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Team' })).toBeTruthy();
+    expect(
+      screen.getByRole('menuitem', { name: 'Profile' }).querySelector('kbd')?.textContent,
+    ).toBe('⇧⌘P');
+    expect(screen.getByRole('menuitem', { name: 'Billing' }).getAttribute('aria-disabled')).toBe(
+      'true',
+    );
+    expect(document.querySelectorAll('[data-slot="menu-separator"]')).toHaveLength(1);
+  });
+
+  it('opens and selects a config-driven submenu', async () => {
+    render(MenuTestHarness, { props: { stacked: true } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open stacked menu' }));
+    const invite = screen.getByRole('menuitem', { name: 'Invite users' });
+    await fireEvent.keyDown(invite, { key: 'ArrowRight' });
+    const email = await screen.findByRole('menuitem', { name: 'Email' });
+    expect(email.querySelector('svg')).toBeTruthy();
+    await fireEvent.click(email);
+    expect(screen.getByTestId('selected').textContent).toBe('email');
   });
 });
 

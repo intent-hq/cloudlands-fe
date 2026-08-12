@@ -31,7 +31,7 @@
     selectCounterScale,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateBackFromSettings, navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { faSettings } from '$lib/icons/faSettings';
+  import { faSettings } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
@@ -242,11 +242,11 @@
     });
   });
 
-  function handleSettings() {
+  async function handleSettings() {
     if (page.url.pathname.startsWith('/settings')) {
-      navigateBackFromSettings();
+      await navigateBackFromSettings();
     } else {
-      navigateToSettings();
+      await navigateToSettings();
     }
   }
 </script>
@@ -261,15 +261,15 @@
       size="icon-xs"
       iconOnly
       class={cn(
-        'text-muted-foreground hover:text-foreground',
+        'text-foreground hover:text-foreground',
         page.url.pathname.startsWith('/settings') && 'text-accent-foreground',
       )}
-      onclick={handleSettings}
+      onclick={() => void handleSettings()}
       aria-label={m.layout_sidebarNav_settings_label()}
       aria-current={page.url.pathname.startsWith('/settings') ? 'page' : undefined}
       data-titlebar-settings
     >
-      <Fa icon={faSettings} class="size-3.5!" />
+      <Fa icon={faSettings} class="pointer-events-none size-3.5!" />
     </Button>
   </Tooltip>
 {/snippet}
@@ -344,9 +344,9 @@
     {/if}
     {#if activeTabBounds && $workspaceViewMode$ === 'single'}
       <div
-        class="pointer-events-none absolute -bottom-px z-[60] h-0.5 bg-sidebar motion-reduce:transition-none"
-        style:left={`${activeTabBounds.left + panelOffset - 8}px`}
-        style:width={`${Math.max(0, activeTabBounds.width + 16)}px`}
+        class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
+        style:left={`${activeTabBounds.left + panelOffset - 6}px`}
+        style:width={`${Math.max(0, activeTabBounds.width + 13)}px`}
         style:transition={activeTabTracking
           ? 'none'
           : 'left 200ms cubic-bezier(0.215, 0.61, 0.355, 1)'}

@@ -13,11 +13,9 @@ const currentWorkspaceId = writable('ws-2');
 const workspaceStacks = writable([['ws-1'], ['ws-2'], ['ws-3']]);
 const panelCounts = writable<Record<string, number>>({});
 const panelCanvasWidths = writable<Record<string, number>>({});
-const panelRestoreStatuses = writable<Record<string, string>>({});
 const focusedPanelTargets = writable<
   Record<string, { panelId: string | null; activeTabId: string | null }>
 >({});
-const panelLayoutRoots: Record<string, unknown> = {};
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch, state: {} } }));
@@ -30,17 +28,10 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelCanvasWidthsByWorkspaceId: () => panelCanvasWidths,
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
-  selectPanelRestoreStatusesByWorkspaceId: () => panelRestoreStatuses,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
-  selectPanelLayoutRoot: Object.assign(() => writable(null), {
-    select: (_state: unknown, wsId: string) => panelLayoutRoots[wsId] ?? null,
-  }),
 }));
 vi.mock('../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceSurface.svelte')).default,
-}));
-vi.mock('$lib/components/layout/ResizablePanel.svelte', async () => ({
-  default: (await import('./__tests__/mocks/MockResizablePanel.svelte')).default,
 }));
 vi.mock('$lib/components/layout/ResizablePanelGroup.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockResizablePanelGroup.svelte')).default,
@@ -65,23 +56,17 @@ describe('WorkspaceColumnsView', () => {
     workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
     panelCounts.set({});
     panelCanvasWidths.set({});
-    panelRestoreStatuses.set({
-      'ws-1': 'restored',
-      'ws-2': 'restored',
-      'ws-3': 'restored',
-    });
     focusedPanelTargets.set({});
-    for (const key of Object.keys(panelLayoutRoots)) delete panelLayoutRoots[key];
   });
 
-  it('renders vertically stacked workspaces in one resizable column', () => {
+  it('renders vertically stacked workspaces in one content-sized column', () => {
     workspaceStacks.set([['ws-1', 'ws-2'], ['ws-3']]);
     render(WorkspaceColumnsView);
 
     expect(
       screen.getAllByTestId('mock-workspace-surface').map((column) => column.dataset.workspaceId),
     ).toEqual(['ws-1', 'ws-2', 'ws-3']);
-    expect(screen.getAllByTestId('mock-resizable-panel')).toHaveLength(3);
+    expect(screen.queryAllByTestId('mock-resizable-panel')).toHaveLength(0);
     expect(document.querySelector('[data-workspace-stack="ws-1,ws-2"]')).toBeTruthy();
     const stackResizeGroup = screen.getByTestId('mock-resizable-panel-group');
     expect(stackResizeGroup.dataset.orientation).toBe('vertical');
@@ -103,47 +88,38 @@ describe('WorkspaceColumnsView', () => {
   });
 
   it('keeps each workspace width independent when stack membership changes', async () => {
+    panelCounts.set({ 'ws-2': 1 });
     render(WorkspaceColumnsView);
-    const ws2Panel = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-2')!;
+
+    await fireEvent.click(document.querySelector('[data-mock-panel-resize-preview="ws-2"]')!);
+    await tick();
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-1"]')?.style.width).toBe(
+      '360px',
+    );
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-2"]')?.style.width).toBe(
+      '1440px',
+    );
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
+      '360px',
+    );
 
     workspaceStacks.set([['ws-1'], ['ws-2', 'ws-3']]);
     await tick();
 
-    const stackedPanel = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-2')!;
-    expect(stackedPanel.dataset.defaultWidth).toBe(ws2Panel.dataset.defaultWidth);
-
-    mocks.dispatch.mockClear();
-    await fireEvent.click(stackedPanel.querySelector('[data-mock-width-change]')!);
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'uiLayout/setResizablePanelSize',
-      payload: ['workspace-panel-columns-width:ws-2', 720],
-    });
-    expect(mocks.dispatch).not.toHaveBeenCalledWith({
-      type: 'uiLayout/setResizablePanelSize',
-      payload: ['workspace-panel-columns-width:ws-3', 720],
-    });
+    expect(
+      document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
+    ).toBe('1440px');
   });
 
-  it('gives vertically stacked workspaces independent panel widths', () => {
+  it('sizes a vertical stack to its widest workspace', () => {
     workspaceStacks.set([['ws-1', 'ws-2']]);
     panelCounts.set({ 'ws-1': 1, 'ws-2': 2 });
     panelCanvasWidths.set({ 'ws-1': 480, 'ws-2': 960 });
     render(WorkspaceColumnsView);
 
-    const panels = screen.getAllByTestId('mock-resizable-panel');
-    const ws1 = panels.find(
-      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-1',
-    );
-    const ws2 = panels.find(
-      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-2',
-    );
-
-    expect(ws1?.dataset.defaultWidth).toBe('840');
-    expect(ws2?.dataset.defaultWidth).toBe('1320');
+    expect(
+      document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')?.style.width,
+    ).toBe('1320px');
   });
 
   it('fills the shared stack width after the final panel closes', async () => {
@@ -151,20 +127,12 @@ describe('WorkspaceColumnsView', () => {
     panelCounts.set({ 'ws-1': 1, 'ws-2': 2 });
     panelCanvasWidths.set({ 'ws-1': 480, 'ws-2': 960 });
     render(WorkspaceColumnsView);
-    const panels = screen.getAllByTestId('mock-resizable-panel');
-    const ws1 = panels.find(
-      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-1',
-    )!;
-    const ws2 = panels.find(
-      (panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-2',
-    )!;
-
-    expect(ws1.dataset.skipResize).toBe('false');
-    panelCounts.set({ 'ws-1': 0, 'ws-2': 2 });
+    const stack = document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')!;
+    expect(stack.style.width).toBe('1320px');
+    panelCounts.set({ 'ws-1': 1, 'ws-2': 0 });
     await tick();
 
-    expect(ws1.dataset.skipResize).toBe('true');
-    expect(ws2.dataset.skipResize).toBe('false');
+    expect(stack.style.width).toBe('840px');
   });
 
   it('uses the shared top and horizontal zones for stack and reorder drops', async () => {
@@ -241,7 +209,7 @@ describe('WorkspaceColumnsView', () => {
     expect(columns.map((column) => column.dataset.active)).toEqual(['false', 'true', 'false']);
     expect(columns.every((column) => column.dataset.manageTab === 'false')).toBe(true);
     expect(columns.every((column) => column.dataset.columnMode === 'true')).toBe(true);
-    expect(screen.getAllByTestId('mock-resizable-panel')).toHaveLength(3);
+    expect(screen.queryAllByTestId('mock-resizable-panel')).toHaveLength(0);
   });
 
   it('renders a searchable three-recent workspace directory as the final column', () => {
@@ -267,28 +235,19 @@ describe('WorkspaceColumnsView', () => {
     expect(workspaceList.dataset.showLoadingText).toBe('false');
   });
 
-  it('makes compact workspace columns resizable from their existing 360px default', () => {
+  it('renders compact workspace columns at their 360px content width', () => {
     render(WorkspaceColumnsView);
 
     const compactColumns = document.querySelectorAll('[data-compact-workspace-column]');
     const workspaceColumns = document.querySelectorAll('[data-workspace-column]');
-    const resizablePanels = screen.getAllByTestId('mock-resizable-panel');
+    const workspaceStacks = document.querySelectorAll<HTMLElement>('[data-workspace-stack]');
     expect(compactColumns).toHaveLength(3);
-    expect(resizablePanels.map((panel) => panel.dataset.storageKey)).toEqual([
-      'workspace-panel-columns-width:ws-1',
-      'workspace-panel-columns-width:ws-2',
-      'workspace-panel-columns-width:ws-3',
-    ]);
-    expect(resizablePanels.every((panel) => panel.dataset.minWidth === '100')).toBe(true);
-    expect(resizablePanels.every((panel) => panel.dataset.maxWidth === '2560')).toBe(true);
-    expect(resizablePanels.every((panel) => panel.dataset.defaultWidth === '360')).toBe(true);
-    expect(resizablePanels.every((panel) => panel.dataset.restoreStoredWidth === 'false')).toBe(
-      true,
-    );
+    expect([...workspaceStacks].every((stack) => stack.style.width === '360px')).toBe(true);
+    expect(screen.queryAllByTestId('mock-resizable-panel')).toHaveLength(0);
     expect(document.querySelectorAll('[data-workspace-column-motion]')).toHaveLength(3);
     expect(
-      screen.getAllByRole('button', { name: 'Resize panel (double-click to reset)' }),
-    ).toHaveLength(3);
+      screen.queryAllByRole('button', { name: 'Resize panel (double-click to reset)' }),
+    ).toHaveLength(0);
     expect(
       [...workspaceColumns].every(
         (column) =>
@@ -303,55 +262,42 @@ describe('WorkspaceColumnsView', () => {
     expect(columnsLayout?.classList.contains('pt-2')).toBe(true);
   });
 
-  it('grows a panel-bearing workspace by 480px for each horizontal panel column', () => {
+  it('adds the intrinsic panel canvas width to the measured sidebar width', () => {
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
 
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3');
-    expect(panelColumn?.dataset.minWidth).toBe('100');
-    expect(panelColumn?.dataset.maxWidth).toBe('3880');
-    expect(panelColumn?.dataset.defaultWidth).toBe('1320');
-    expect(panelColumn?.dataset.restoreStoredWidth).toBe('false');
-    expect(panelColumn?.dataset.syncWithDefaultWidth).toBe('true');
-    expect(panelColumn?.dataset.showHandleIndicator).toBe('true');
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
+      '1320px',
+    );
   });
 
   it('temporarily resizes the workspace to the projected drag column count', async () => {
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3')!;
+    const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
 
-    expect(panelColumn.dataset.transientWidthDelta).toBe('0');
+    expect(panelColumn.style.width).toBe('1320px');
     await fireEvent.click(document.querySelector('[data-mock-panel-preview="ws-3"]')!);
     await tick();
-    expect(panelColumn.dataset.transientWidthDelta).toBe('-480');
+    expect(panelColumn.style.width).toBe('840px');
 
     await fireEvent.click(document.querySelector('[data-mock-panel-preview-clear="ws-3"]')!);
     await tick();
-    expect(panelColumn.dataset.transientWidthDelta).toBe('0');
+    expect(panelColumn.style.width).toBe('1320px');
   });
 
-  it('defers reactive width growth until the panel layout finishes restoring', async () => {
-    panelRestoreStatuses.set({});
+  it('reactively adopts a restored intrinsic canvas width', async () => {
     render(WorkspaceColumnsView);
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3')!;
-    expect(panelColumn.dataset.syncWithDefaultWidth).toBe('false');
+    const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
+    expect(panelColumn.style.width).toBe('360px');
 
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
-    panelRestoreStatuses.set({ 'ws-3': 'restored' });
     await tick();
 
-    expect(panelColumn.dataset.defaultWidth).toBe('1320');
-    expect(panelColumn.dataset.syncWithDefaultWidth).toBe('true');
+    expect(panelColumn.style.width).toBe('1320px');
   });
 
   it('uses measured sidebar pixels instead of persisted percentage values', async () => {
@@ -359,77 +305,38 @@ describe('WorkspaceColumnsView', () => {
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
 
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3');
-    expect(panelColumn?.dataset.defaultWidth).toBe('1320');
+    const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
+    expect(panelColumn.style.width).toBe('1320px');
 
     await fireEvent.click(document.querySelector('[data-mock-sidebar-width="ws-3"]')!);
     await tick();
 
-    expect(panelColumn?.dataset.defaultWidth).toBe('1380');
+    expect(panelColumn.style.width).toBe('1380px');
   });
 
-  it('routes the workspace edge delta to the rightmost panel column when no panel is focused', async () => {
+  it('lets the inner panel canvas own resize updates without a competing dispatch', async () => {
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3')!;
+    const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
+    await fireEvent.click(document.querySelector('[data-mock-panel-resize-preview="ws-3"]')!);
+    await tick();
 
-    await fireEvent.click(panelColumn.querySelector('[data-mock-resize-handle]')!);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'panelLayout/resizePanelLayoutRightEdge',
-      payload: ['ws-3', 960, 1080],
-    });
+    expect(panelColumn.style.width).toBe('1440px');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
-  it('routes the workspace edge delta to the focused panel column when one is focused', async () => {
-    panelCounts.set({ 'ws-3': 3 });
-    panelCanvasWidths.set({ 'ws-3': 960 });
-    focusedPanelTargets.set({
-      'ws-3': { panelId: 'p2', activeTabId: null },
-    });
-    panelLayoutRoots['ws-3'] = {
-      type: 'split',
-      direction: 'horizontal',
-      sizes: [33, 34, 33],
-      children: [
-        { type: 'panel', panelId: 'p1' },
-        { type: 'panel', panelId: 'p2' },
-        { type: 'panel', panelId: 'p3' },
-      ],
-    };
-    render(WorkspaceColumnsView);
-    const panelColumn = screen
-      .getAllByTestId('mock-resizable-panel')
-      .find((panel) => panel.dataset.storageKey === 'workspace-panel-columns-width:ws-3')!;
-
-    await fireEvent.click(panelColumn.querySelector('[data-mock-resize-handle]')!);
-
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'panelLayout/resizePanelLayoutAtHorizontalPanel',
-      payload: ['ws-3', 960, 1080, 1],
-    });
-  });
-
-  it('keeps the final workspace resize handle inside the scrollable right gutter', () => {
+  it('keeps the scrollable right gutter without an outer workspace resize handle', () => {
     render(WorkspaceColumnsView);
 
     const scroller = document.querySelector('[data-workspace-columns]');
     const columnsTrack = document.querySelector('[data-workspace-columns]')?.firstElementChild;
-    const finalStack = document.querySelector('[data-workspace-stack="ws-3"]');
 
     expect(scroller?.classList.contains('scrollbar-none')).toBe(true);
     expect(scroller?.classList.contains('overflow-x-auto')).toBe(true);
     expect(columnsTrack?.classList.contains('pr-2')).toBe(true);
-    expect(finalStack?.querySelector('[data-mock-resize-handle]')).toBeTruthy();
-    expect(finalStack?.querySelector('[data-resize-scroll-container="true"]')).toBeTruthy();
-    expect(
-      document.querySelector('[data-workspace-stack="ws-2"] [data-resize-scroll-container="true"]'),
-    ).toBeNull();
+    expect(document.querySelector('[data-mock-resize-handle]')).toBeNull();
+    expect(document.querySelector('[data-resize-scroll-container="true"]')).toBeNull();
   });
 
   it('activates an inactive column while leaving the active column alone', async () => {

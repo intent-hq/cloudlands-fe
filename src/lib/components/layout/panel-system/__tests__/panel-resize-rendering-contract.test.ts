@@ -29,20 +29,22 @@ describe('panel resize rendering', () => {
     // right-edge drags share one source of truth.
     expect(canvas).toContain('storageKey={null}');
     expect(canvas).toContain('side="left"');
+    expect(canvas).toContain('handleClassName="right-0! panel-canvas-resize-handle"');
     expect(layout).toContain('canvasWidth={$panelCanvasWidth$}');
     expect(layout).toContain('scrollContainer={panelWorkspaceInset}');
     expect(layout).toContain('onResizeEnd={handlePanelCanvasResizeEnd}');
-    expect(layout).toContain('resizePanelLayoutRightEdge(effectiveLayoutId');
+    expect(layout).toContain('onResizePreview={handlePanelOuterResizePreview}');
+    expect(layout).toContain('resizePanelLayoutRightEdge(');
+    expect(layout).toContain('effectiveLayoutId,');
     expect(container).toContain('rootPanelReferenceSize !== null');
   });
 
-  it('keeps default split children shrinkable until the canvas is explicitly resized', () => {
+  it('keeps split children shrinkable and delegates overflow to the canvas', () => {
     const container = source('PanelContainer.svelte');
     const panel = source('Panel.svelte');
 
-    expect(container).toContain('Default split');
     expect(container).not.toContain('min-width: 30em');
-    expect(container).toContain('min-width: 30rem');
+    expect(container).toContain('min-width: 0');
     expect(container).toContain('overflow: hidden');
     expect(panel).not.toContain('min-width: 30em');
   });
@@ -52,9 +54,12 @@ describe('panel resize rendering', () => {
     const canvas = source('PanelCanvasFrame.svelte');
 
     expect(layout).toContain('panelColumnCount={$panelColumnCount$}');
-    expect(canvas).toContain('getPanelCanvasWidths(viewportWidth, panelColumnCount)');
-    expect(canvas).toContain('doSkipResize={contained}');
-    expect(canvas).toContain('resizeWithDefaultWidth={true}');
+    expect(canvas).toContain(
+      'getPanelCanvasWidths(viewportWidth, panelColumnCount, sizing, canvasWidth)',
+    );
+    expect(layout).toContain('sizing={canvasSizing}');
+    expect(canvas).not.toContain('doSkipResize');
+    expect(canvas).toContain('syncWithDefaultWidth={true}');
   });
 
   it('grows the canvas on root horizontal middle-handle drags in both tab and columns mode', () => {
@@ -77,7 +82,30 @@ describe('panel resize rendering', () => {
     // through Redux. Without this pin, siblings visibly shrink for a frame
     // between the dispatch and the ResizeObserver remeasure.
     expect(container).toContain('canvasResizeStartChildWidths');
+    expect(container).toContain('canvasResizeTargetIndex');
     expect(container).toContain('applyLiveCanvasResizeChildWidths');
     expect(container).toMatch(/style\.flex = `0 0 \$\{pinnedWidth\}px`/);
+    expect(container).toContain('return `0 0 ${pinnedWidth}px`;');
+  });
+
+  it('applies outer canvas resize preview only to the final root panel', () => {
+    const container = source('PanelContainer.svelte');
+
+    expect(container).toContain("node.direction === 'horizontal'");
+    expect(container).toContain('rootCanvasResizeDelta !== 0');
+    expect(container).toContain('index === node.children.length - 1');
+    expect(container).toContain('previousWidth + rootCanvasResizeDelta');
+  });
+
+  it('suppresses layout motion through the Redux resize commit frame', () => {
+    const container = source('PanelContainer.svelte');
+    const layout = source('PanelLayout.svelte');
+
+    expect(container).toContain('suppressMotionThroughResizeCommit()');
+    expect(container).toContain('!suppressResizeCommitMotion');
+    expect(layout.indexOf('handlePanelCanvasResizePreview(0);')).toBeLessThan(
+      layout.indexOf('layoutManager.growCanvasAtHorizontalPanel('),
+    );
+    expect(container).not.toContain('panelElement.style.flex = getPanelChildFlex(child, index);');
   });
 });

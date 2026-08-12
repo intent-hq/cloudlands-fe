@@ -74,29 +74,24 @@ describe('workspace column layout contract', () => {
     );
 
     expect(columns).toContain('overflow-hidden rounded-md bg-sidebar');
-    expect(columns).toContain('minWidth={100}');
-    expect(columns).toContain('maxWidth={panelColumnCount > 0 ? panelDefaultWidth + 2560 : 2560}');
-    expect(columns).toContain('defaultWidth={panelDefaultWidth}');
-    expect(columns).toContain('restoreStoredWidth={false}');
+    expect(columns).not.toContain(
+      "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
+    );
     expect(columns).not.toContain('w-[22.5rem]');
     expect(columns).toContain('gap-2');
     expect(columns).toContain('pl-2 pr-2 pt-2');
     expect(columns).toContain('scrollbar-none h-full min-h-0 w-full overflow-x-auto');
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
-    expect(columns).toContain('panelColumnCount > 0 ? panelCanvasWidth : 0');
+    expect(columns).toContain('livePanelCanvasWidths[workspaceId]');
+    expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
     expect(columns).not.toContain('$resizablePanelSizes$[`workspace-left-panel-width:');
-    expect(columns).toContain('storageKey={`workspace-panel-columns-width:${workspaceId}`}');
-    expect(columns).toContain(
-      'onWidthChange={(width) => persistWorkspaceColumnWidth(workspaceId, width)}',
-    );
-    expect(columns).toContain("syncWithDefaultWidth={restoreStatus !== 'idle' &&");
-    expect(columns).toContain("restoreStatus !== 'pending' &&");
-    expect(columns).toContain('sidebarWidths[workspaceId] !== undefined');
+    expect(columns).not.toContain('workspace-panel-columns-width:');
+    expect(surface).toContain("canvasSizing={columnMode ? 'content' : 'viewport'}");
     expect(columns).not.toContain("{#key stack.join(':')}");
     expect(surface).toContain('onDestroy(() => {');
     expect(surface).not.toContain('onDestroy(async () => {');
     expect(surface).not.toContain('flushPendingAgentDeletionsRequested');
-    expect(panelLayout).toContain("contained ? 'overflow-hidden p-2'");
+    expect(panelLayout).toContain("contained ? 'overflow-hidden py-2 pl-2'");
     expect(panelLayout).toContain('panelLayoutScopeMounted(mountedLayoutId)');
     expect(panelLayout).toContain('panelLayoutScopeUnmounted(mountedLayoutId)');
     expect(noteTab).toContain('class="h-full bg-background text-foreground"');
@@ -121,18 +116,20 @@ describe('workspace column layout contract', () => {
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
     expect(titleBar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
-    expect(titleBar).toContain('<Fa icon={faSettings} class="size-3.5!" />');
-    expect(viewModeToggle).toContain('<Fa icon={faColumns} class="size-3.5!" />');
+    expect(titleBar).toContain('<Fa icon={faSettings} class="pointer-events-none size-3.5!" />');
+    expect(viewModeToggle).toContain('<ColumnsPlusRightIcon');
+    expect(viewModeToggle).toContain('<TabsIcon');
     expect(appLayout).toContain('overlayWorkspaceColumns={showWorkspaceColumns}');
     expect(appLayout).toContain('style:padding-top={showWorkspaceColumns');
-    expect(columns).toContain("data-titlebar-clearance={titlebarClearance ? '' : undefined}");
-    expect(appLayout).toContain(
-      '<WorkspaceColumnsView globalSidebarOpen={$panelItem$ !== null} />',
-    );
+    expect(columns).not.toContain('data-titlebar-clearance');
+    expect(columns).not.toContain('globalSidebarOpen');
+    expect(columns).not.toContain('titlebarClearance');
+    expect(appLayout).toContain('<WorkspaceColumnsView />');
+    expect(appLayout).not.toContain('globalSidebarOpen');
+    expect(appLayout).not.toContain('selectPanelItem');
     expect(appLayout).toContain('useSelectedWorkspace: showWorkspaceColumns');
     expect(appLayout).toContain('selectedWorkspaceId: $currentWorkspaceTabId');
-    expect(columns).toContain('stackIndex === 0 && index === 0 && !globalSidebarOpen');
-    expect(columns).toContain('padding-top: calc(1.25rem + 35px)');
+    expect(columns).not.toContain('padding-top: calc(1.25rem + 35px)');
     expect(appLayout).toContain("showWorkspaceColumns\n              ? ''");
   });
 });

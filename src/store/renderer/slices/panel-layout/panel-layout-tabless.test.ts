@@ -55,6 +55,7 @@ describe('tabless panel layout', () => {
           },
         },
         focusedPanelId: 'foreign',
+        canvasWidth: 1200,
       },
       'ws-1',
     );
@@ -62,6 +63,7 @@ describe('tabless panel layout', () => {
     expect(result.root).toEqual({ type: 'panel', panelId: 'owned' });
     expect(Object.keys(result.panels)).toEqual(['owned']);
     expect(result.focusedPanelId).toBe('owned');
+    expect(result.canvasWidth).toBe(1200);
   });
 
   it('keeps global tabs and repairs active selection in mixed panels', () => {

@@ -239,9 +239,20 @@ export class PanelLayoutAdapter {
   updateSplitSizes(sizes: number[], splitPath?: number[]) {
     this.dispatch(updateSplitSizes(this.workspaceId, sizes, splitPath));
   }
-  growCanvasAtHorizontalPanel(previousWidth: number, nextWidth: number, panelIndex: number) {
+  growCanvasAtHorizontalPanel(
+    previousWidth: number,
+    nextWidth: number,
+    panelIndex: number,
+    nextCanvasWidth: number,
+  ) {
     this.dispatch(
-      resizePanelLayoutAtHorizontalPanel(this.workspaceId, previousWidth, nextWidth, panelIndex),
+      resizePanelLayoutAtHorizontalPanel(
+        this.workspaceId,
+        previousWidth,
+        nextWidth,
+        panelIndex,
+        nextCanvasWidth,
+      ),
     );
   }
   toggleExpandPanel(panelId: string) {
@@ -303,7 +314,7 @@ export class PanelLayoutAdapter {
   }
 
   // --- Initialization ---
-  initializeLayout(layout?: Pick<any, 'root' | 'panels' | 'focusedPanelId'>) {
+  initializeLayout(layout?: Pick<any, 'root' | 'panels' | 'focusedPanelId' | 'canvasWidth'>) {
     const l = layout ?? createDefaultLayout();
     this.dispatch(initializeLayout(this.workspaceId, l));
   }

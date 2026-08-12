@@ -24,13 +24,11 @@ function* openWorkspaceTab(
   tab: Omit<PanelTab, 'id'>,
   adjacent: boolean,
   sourcePanelId?: string,
-  openInNewAdjacentPanel = false,
 ): SagaGenerator<void> {
   if (adjacent) {
     yield* put(
       openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {
         force: true,
-        alwaysSplit: openInNewAdjacentPanel,
       }),
     );
     return;
@@ -102,7 +100,6 @@ function* openNote(action: ReturnType<typeof openWorkspaceNote>): SagaGenerator<
     },
     adjacent,
     options?.sourcePanelId,
-    options?.openInNewAdjacentPanel ?? false,
   );
 }
 

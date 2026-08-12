@@ -468,14 +468,15 @@ export default defineConfig(({ mode }) => {
         { find: '$features', replacement: join(__dirname, './src/features') },
         { find: '$shared', replacement: join(__dirname, './src/shared') },
 
-        // Icon library wrapper for Svelte 5 compatibility
+        // Low-churn compatibility aliases: existing icon identifiers now resolve
+        // to the Phosphor-backed catalog and renderer.
+        {
+          find: /^@fortawesome\/(?:fontawesome-common-types|fontawesome-svg-core|free-brands-svg-icons|free-regular-svg-icons|free-solid-svg-icons)$/,
+          replacement: join(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
         {
           find: /^svelte-fa$/,
           replacement: join(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
-        },
-        {
-          find: /^svelte-fa-original$/,
-          replacement: join(__dirname, './node_modules/svelte-fa/dist/index.js'),
         },
       ],
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
@@ -568,8 +569,6 @@ export default defineConfig(({ mode }) => {
         'd3',
         // Mermaid diagram rendering (dynamically imported, must be pre-bundled to avoid reload)
         'mermaid',
-        // FontAwesome icons
-        '@fortawesome/free-regular-svg-icons',
         // TipTap extensions (not core, but specific extensions used lazily)
         '@tiptap/extension-code',
         'svelte-tiptap',

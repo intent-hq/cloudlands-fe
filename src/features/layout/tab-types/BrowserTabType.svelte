@@ -28,6 +28,7 @@
     url={browserUrl}
     {workspaceId}
     tabId={tab.id}
+    {isActive}
     focusUrlBarOnMount={isActive}
     isFocused={isPanelFocused}
     onNavigate={(newUrl: string) => {

@@ -173,6 +173,7 @@
       panel.activeTabId,
       Date.now(),
       PANEL_TAB_CACHE_TTL_MS,
+      panel.tabs,
     );
     if (delay === null) return;
 

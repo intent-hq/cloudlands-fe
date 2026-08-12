@@ -162,7 +162,7 @@
     <Button
       bind:ref={triggerRef}
       variant="ghost-light"
-      size="xs"
+      size="icon-sm"
       onclick={toggleOpen}
       disabled={disabled || !workspaceId}
       aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: currentLabel })}

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
 
@@ -10,10 +10,6 @@ vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } })
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectWorkspaceViewMode: () => viewMode,
 }));
-vi.mock('svelte-fa', async () => ({
-  default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
-}));
-
 import WorkspaceViewModeToggle from './WorkspaceViewModeToggle.svelte';
 
 describe('WorkspaceViewModeToggle', () => {
@@ -24,8 +20,9 @@ describe('WorkspaceViewModeToggle', () => {
 
   it('toggles between single and column workspace views', async () => {
     render(WorkspaceViewModeToggle);
-    const toggle = screen.getByRole('button', { name: 'Show open spaces as columns' });
+    const toggle = screen.getByRole('button', { name: 'Open spaces in columns' });
     expect(toggle.getAttribute('data-state')).toBe('off');
+    expect(toggle.querySelector('[data-icon="columns-plus-right"]')).toBeTruthy();
 
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenCalledWith({
@@ -34,6 +31,7 @@ describe('WorkspaceViewModeToggle', () => {
     });
 
     viewMode.set('columns');
+    await waitFor(() => expect(toggle.querySelector('[data-icon="tabs"]')).toBeTruthy());
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenLastCalledWith({
       type: 'tabState/setWorkspaceViewMode',
@@ -45,7 +43,7 @@ describe('WorkspaceViewModeToggle', () => {
     viewMode.set('columns');
     render(WorkspaceViewModeToggle);
 
-    expect(screen.getByRole('button', { name: 'Show open spaces as columns' }).className).toContain(
+    expect(screen.getByRole('button', { name: 'Open spaces' }).className).toContain(
       'data-[state=on]:bg-transparent!',
     );
   });

@@ -1,6 +1,6 @@
 declare module 'svelte-fa' {
   import type { SvelteComponent } from 'svelte';
-  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+  import type { IconDefinition } from '$lib/icons/phosphor-icons';
 
   type IconSize = 'xs' | 'sm' | 'lg' | `${number}x`;
   type FlipDir = 'horizontal' | 'vertical' | 'both';
@@ -32,6 +32,4 @@ declare module 'svelte-fa' {
 
   export class Fa extends SvelteComponent<FaProps> {}
   export default Fa;
-  export class FaLayers extends SvelteComponent<Record<string, any>> {}
-  export class FaLayersText extends SvelteComponent<Record<string, any>> {}
 }

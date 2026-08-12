@@ -17,6 +17,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('size="icon-xs"');
     expect(navigation).toContain("? 'text-sidebar-accent-foreground'");
     expect(navigation).toContain('data-nav-item={item.id}');
+    expect(navigation).toContain('<AsteriskIcon');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<ChiefTrigger />')).toBeLessThan(titleBar.indexOf('<SidebarNav />'));
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));

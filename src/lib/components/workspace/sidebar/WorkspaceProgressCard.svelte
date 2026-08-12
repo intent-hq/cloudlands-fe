@@ -11,7 +11,6 @@
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import Fa from 'svelte-fa';
   import {
-    faEllipsisV,
     faArrowRight,
     faCodeBranch,
     faCodePullRequest,
@@ -78,6 +77,7 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -930,7 +930,7 @@
                   class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
                 ></div>
               {:else}
-                <Fa icon={faEllipsisV} size="sm" />
+                <KebabIcon class="size-4" />
               {/if}
             </Button>
           {/snippet}
@@ -969,7 +969,7 @@
             onpointerdown={(event) => event.stopPropagation()}
             onclick={onCloseWorkspace}
           >
-            <Fa icon={faXmark} size="sm" />
+            <Fa icon={faXmark} size={16} class="size-4" />
           </Button>
         {/if}
       </div>
@@ -1051,7 +1051,7 @@
               data-sidebar-branch-control
               aria-hidden="true"
             >
-              <GitBranchIcon size={14} class="block size-3.5" />
+              <GitBranchIcon size={16} class="block size-4" />
             </span>
             <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
               {$workspace.branch}

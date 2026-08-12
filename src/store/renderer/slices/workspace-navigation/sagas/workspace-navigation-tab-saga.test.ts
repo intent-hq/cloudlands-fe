@@ -108,7 +108,7 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
-  it('requests a fresh split for note links that must not reuse an existing neighbor', async () => {
+  it('requests a fresh adjacent split for note links', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
@@ -123,7 +123,6 @@ describe('workspaceNavigationTabSaga', () => {
       openWorkspaceNote('ws-1', 'note-1', {
         sourcePanelId: 'panel-note',
         openInAdjacentPanel: true,
-        openInNewAdjacentPanel: true,
       }),
     );
     await settle();
@@ -132,7 +131,6 @@ describe('workspaceNavigationTabSaga', () => {
       type: 'panelLayout/openTabInAdjacentOrSplit',
       payload: {
         sourcePanelId: 'panel-note',
-        alwaysSplit: true,
         tab: { type: 'note', noteId: 'note-1' },
       },
     });
@@ -478,19 +476,30 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     channel.put(
-      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }, { file: 'src/c.ts' }], 'Changes from Task A', {
-        isAggregate: true,
-        scopeId: 'note-1',
-      }),
+      openWorkspaceChatChanges(
+        'ws-1',
+        [{ file: 'src/a.ts' }, { file: 'src/c.ts' }],
+        'Changes from Task A',
+        {
+          isAggregate: true,
+          scopeId: 'note-1',
+        },
+      ),
     );
     await settle();
 
     const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
-    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    const chatChangesTabs = panels
+      .flatMap((panel) => panel.tabs)
+      .filter((tab) => tab.type === 'chat-changes');
     expect(chatChangesTabs).toHaveLength(2);
-    const note1Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:note:note-1')!;
+    const note1Tab = chatChangesTabs.find(
+      (tab) => tab.data?.messageId === 'aggregate:note:note-1',
+    )!;
     expect(note1Tab.data?.changes).toEqual([{ file: 'src/a.ts' }, { file: 'src/c.ts' }]);
-    const note2Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:note:note-2')!;
+    const note2Tab = chatChangesTabs.find(
+      (tab) => tab.data?.messageId === 'aggregate:note:note-2',
+    )!;
     expect(note2Tab.data?.changes).toEqual([{ file: 'src/b.ts' }]);
     task.cancel();
     await task.toPromise();
@@ -515,19 +524,28 @@ describe('workspaceNavigationTabSaga', () => {
     );
     await settle();
     channel.put(
-      openWorkspaceChatChanges('ws-1', [{ file: 'src/a.ts' }, { file: 'src/b.ts' }], '2 files changed', {
-        isAggregate: true,
-        agentId: 'agent-1',
-      }),
+      openWorkspaceChatChanges(
+        'ws-1',
+        [{ file: 'src/a.ts' }, { file: 'src/b.ts' }],
+        '2 files changed',
+        {
+          isAggregate: true,
+          agentId: 'agent-1',
+        },
+      ),
     );
     await settle();
 
     const afterReclick = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
-    const mergedTabs = afterReclick.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    const mergedTabs = afterReclick
+      .flatMap((panel) => panel.tabs)
+      .filter((tab) => tab.type === 'chat-changes');
     expect(mergedTabs).toHaveLength(1);
     expect(mergedTabs[0]!.data?.messageId).toBe('aggregate:agent-1');
     expect(mergedTabs[0]!.data?.changes).toEqual([{ file: 'src/a.ts' }, { file: 'src/b.ts' }]);
-    const mergedPanel = afterReclick.find((panel) => panel.tabs.some((tab) => tab.id === mergedTabs[0]!.id))!;
+    const mergedPanel = afterReclick.find((panel) =>
+      panel.tabs.some((tab) => tab.id === mergedTabs[0]!.id),
+    )!;
     expect(mergedPanel.activeTabId).toBe(mergedTabs[0]!.id);
 
     channel.put(
@@ -539,7 +557,9 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
-    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    const chatChangesTabs = panels
+      .flatMap((panel) => panel.tabs)
+      .filter((tab) => tab.type === 'chat-changes');
     expect(chatChangesTabs).toHaveLength(2);
     const agent2Tab = chatChangesTabs.find((tab) => tab.data?.messageId === 'aggregate:agent-2')!;
     expect(agent2Tab.data?.changes).toEqual([{ file: 'src/c.ts' }]);
@@ -581,7 +601,9 @@ describe('workspaceNavigationTabSaga', () => {
     await settle();
 
     const panels = Object.values(layoutState.byWorkspaceId['ws-1']!.panels);
-    const chatChangesTabs = panels.flatMap((panel) => panel.tabs).filter((tab) => tab.type === 'chat-changes');
+    const chatChangesTabs = panels
+      .flatMap((panel) => panel.tabs)
+      .filter((tab) => tab.type === 'chat-changes');
     expect(chatChangesTabs.map((tab) => tab.data?.messageId).sort()).toEqual(['msg-1', 'msg-2']);
     task.cancel();
     await task.toPromise();

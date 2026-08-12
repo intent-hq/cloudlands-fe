@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import type { Component } from 'svelte';
 
   let {
@@ -20,7 +21,12 @@
 <Content {tab} {workspaceId} {isActive} />
 
 {#if header.actions.current}
-  <div data-testid="header-actions">
-    {@render header.actions.current()}
-  </div>
+  <Menu.Root>
+    <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
+    <Menu.Content portal={false} data-testid="header-actions">
+      {@render header.actions.current.display?.()}
+      <Menu.Separator />
+      {@render header.actions.current.actions?.()}
+    </Menu.Content>
+  </Menu.Root>
 {/if}

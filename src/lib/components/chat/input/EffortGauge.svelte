@@ -19,8 +19,9 @@
 
   const progress = $derived(centered ? 0.5 : max > 0 ? Math.min(1, Math.max(0, value / max)) : 0.5);
   const needleAngle = $derived(-65 + progress * 130);
-  const width = $derived(size === 'prominent' ? 28 : 20);
-  const height = $derived(size === 'prominent' ? 20 : 14);
+  const width = $derived(size === 'prominent' ? 28 : 16);
+  const height = $derived(size === 'prominent' ? 20 : 16);
+  const strokeWidth = $derived(size === 'prominent' ? 1.5 : 2);
 </script>
 
 <svg
@@ -38,9 +39,9 @@
     d="M3 11a7 7 0 0 1 14 0"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.5"
+    stroke-width={strokeWidth}
     stroke-linecap="round"
-    opacity="0.35"
+    opacity="0.6"
   />
   <line
     class="transition-transform duration-(--motion-slow) ease-(--ease-emphasized-out) motion-reduce:transition-none"
@@ -50,7 +51,7 @@
     x2="10"
     y2="4.5"
     stroke="currentColor"
-    stroke-width="1.5"
+    stroke-width={strokeWidth}
     stroke-linecap="round"
     style:transform={`rotate(${needleAngle}deg)`}
     style:transform-origin="10px 11px"

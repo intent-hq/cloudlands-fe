@@ -36,10 +36,9 @@
   import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
-  import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
   import {
     selectLineWrapping,
     selectDiffIndicators,
@@ -52,8 +51,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
-  import Fa from 'svelte-fa';
-  import { faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
@@ -101,6 +99,13 @@
   const isFileBinary = $derived($isFileBinaryStore);
   const isFileDirty = $derived($isFileDirtyStore);
   const fileLastUpdated = $derived($fileLastUpdatedStore);
+  const saveStatusLabel = $derived(
+    fileSaving
+      ? m.ui_saveIndicator_saving_tooltip()
+      : isFileDirty
+        ? m.ui_saveIndicator_autoSaving_tooltip()
+        : m.ui_saveIndicator_saved_tooltip(),
+  );
 
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
   let isMounted = $state(true);
@@ -321,29 +326,24 @@
   // Register header state and actions
   $effect(() => {
     if (!headerContext || !isActive) return;
+    const headerState = { isDirty: isFileDirty, isSaving: fileSaving };
     untrack(() => {
-      headerContext.registerActions(fileActions);
-      headerContext.registerState({ isDirty: isFileDirty, isSaving: fileSaving });
+      headerContext.registerActions({ display: fileDisplayActions, actions: fileActions });
+      headerContext.registerState(headerState);
     });
   });
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
 
-{#snippet fileActions()}
+{#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
   {#if !isOutsideWorkspace}
-    <SaveIndicator
-      isDirty={isFileDirty}
-      isSaving={fileSaving}
-      isAutoSaving={isFileDirty && !fileSaving}
-      onSave={saveFileContent}
-      size="sm"
-    />
+    <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
   {#if tab.filePath && !isOutsideWorkspace}
-    <div class="w-px h-4 bg-border mx-1"></div>
     <ViewSettingsDropdown
+      embedded
       showFold={false}
       showSplit={false}
       showPreview={isMarkdownFile}
@@ -356,31 +356,28 @@
       diffEnabled={$diffIndicators}
       onToggleDiff={() => appStore.dispatch(toggleDiffIndicators())}
     />
+  {/if}
+{/snippet}
+
+{#snippet fileActions()}
+  {#if tab.filePath && !isOutsideWorkspace}
     {#if fileHasChanges}
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
+      <Menu.CommandItem
+        icon={faPencil}
+        label={m.layout_fileTab_goToChanges_tooltip()}
         onclick={handleGoToChanges}
-        tooltip={m.layout_fileTab_goToChanges_tooltip()}
-        tooltipSide="bottom"
-      >
-        <Fa icon={faPencil} size="xs" />
-      </Button>
+      />
     {/if}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
+    <Menu.CommandItem
+      icon={faTrash}
+      label={m.layout_fileTab_deleteFile_tooltip()}
       onclick={handleDeleteFile}
-      tooltip={m.layout_fileTab_deleteFile_tooltip()}
-      tooltipSide="bottom"
-      class="text-muted-foreground hover:text-destructive-foreground"
-    >
-      <Fa icon={faTrash} size="xs" />
-    </Button>
+      destructive
+    />
     <OpenComboButton
       filePath={tab.filePath}
       isDirectory={false}
-      compact
+      embedded
       workspaceFolderPath={repoPath ?? undefined}
     />
   {/if}

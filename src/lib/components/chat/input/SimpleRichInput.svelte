@@ -24,20 +24,20 @@
   import { agentClient } from '$features/agent/agent.client';
 
   import { getAgentProvider } from '$shared/types/agent-session';
-  import Fa from 'svelte-fa';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import {
     faMicrophone,
     faPaperclip,
-    faPaperPlane,
+    faArrowRight,
     faSpinner,
     faXmark,
     faStop,
-    faEllipsisVertical,
+    faPlus,
     faClock,
     faWandMagicSparkles,
     faRotateLeft,
     faAt,
-  } from '@fortawesome/free-solid-svg-icons';
+  } from '$lib/icons/phosphor-icons';
   import {
     selectPttRecording,
     selectVoiceTranscribing,
@@ -61,6 +61,7 @@
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
   import * as Menu from '$lib/components/ui/menu';
+  import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
 
   import {
@@ -1196,6 +1197,65 @@
       };
     }
   });
+
+  const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
+    const groups: StackedMenuGroup[] = [
+      {
+        id: 'context',
+        items: [
+          {
+            id: 'add-context',
+            icon: faAt,
+            label: m.chat_contextPicker_addContext_ariaLabel(),
+            shortcut: '@',
+            onSelect: (event) => {
+              void contextPickerRef?.open(event.currentTarget as HTMLElement);
+            },
+          },
+          {
+            id: 'attach-files',
+            icon: faPaperclip,
+            label: m.chat_richInput_attachFiles_label(),
+            shortcut: '⇧⌘A',
+            onSelect: handleFileSelect,
+          },
+        ],
+      },
+    ];
+
+    if (enhanceAvailable) {
+      groups.push({
+        id: 'enhance',
+        items: [
+          isEnhancing
+            ? {
+                id: 'stop-enhancing',
+                icon: faXmark,
+                label: m.chat_richInput_stopEnhancing_label(),
+                shortcut: 'Esc',
+                onSelect: handleCancelEnhance,
+              }
+            : enhancementUndoValue !== null
+              ? {
+                  id: 'undo-enhance',
+                  icon: faRotateLeft,
+                  label: m.chat_richInput_undoEnhance_label(),
+                  onSelect: handleUndoEnhance,
+                }
+              : {
+                  id: 'enhance-prompt',
+                  icon: faWandMagicSparkles,
+                  label: m.chat_richInput_enhancePrompt_label(),
+                  shortcut: '⌘/',
+                  disabled: value.trim().length < 3,
+                  onSelect: () => void handleEnhancePrompt(),
+                },
+        ],
+      });
+    }
+
+    return groups;
+  });
 </script>
 
 <svelte:window onkeydowncapture={handleMicEscape} />
@@ -1392,7 +1452,7 @@
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
+    class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
     data-chat-input-action-bar
   >
     <div class="flex items-center gap-1 min-w-0" data-chat-input-primary-actions>
@@ -1401,7 +1461,7 @@
         {selectedModel}
         variant="ghost-light"
         size="xs"
-        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground"
+        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-4"
         isLocked={isModelLocked}
         confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
@@ -1453,57 +1513,16 @@
               <Button
                 {...props}
                 variant="ghost-light"
-                size="icon-xs"
+                size="icon-sm"
                 {disabled}
                 aria-label={m.ui_breadcrumb_more_label()}
                 data-testid="prompt-actions-trigger"
               >
-                <Fa icon={faEllipsisVertical} size="sm" />
+                <Fa icon={faPlus} size={16} class="size-4" />
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.Content align="start" side="top" class="w-52">
-            <Menu.CommandItem
-              icon={faAt}
-              label={m.chat_contextPicker_addContext_ariaLabel()}
-              shortcut="@"
-              onclick={(event) => {
-                void contextPickerRef?.open(event.currentTarget as HTMLElement);
-              }}
-            />
-            <Menu.CommandItem
-              icon={faPaperclip}
-              label={m.chat_richInput_attachFiles_label()}
-              shortcut="⇧⌘A"
-              onclick={handleFileSelect}
-            />
-
-            {#if enhanceAvailable}
-              <Menu.Separator />
-              {#if isEnhancing}
-                <Menu.CommandItem
-                  icon={faXmark}
-                  label={m.chat_richInput_stopEnhancing_label()}
-                  shortcut="Esc"
-                  onclick={handleCancelEnhance}
-                />
-              {:else if enhancementUndoValue !== null}
-                <Menu.CommandItem
-                  icon={faRotateLeft}
-                  label={m.chat_richInput_undoEnhance_label()}
-                  onclick={handleUndoEnhance}
-                />
-              {:else}
-                <Menu.CommandItem
-                  icon={faWandMagicSparkles}
-                  label={m.chat_richInput_enhancePrompt_label()}
-                  shortcut="⌘/"
-                  disabled={value.trim().length < 3}
-                  onclick={() => void handleEnhancePrompt()}
-                />
-              {/if}
-            {/if}
-          </Menu.Content>
+          <Menu.StackedContent groups={promptActionGroups} align="start" side="top" class="w-52" />
         </Menu.Root>
       </div>
     </div>
@@ -1597,7 +1616,7 @@
                 aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
                 data-testid="interrupt-btn"
               >
-                <Fa icon={faPaperPlane} size="sm" />
+                <Fa icon={faArrowRight} size="sm" />
               </Button>
             </TooltipShortcut>
           </div>
@@ -1624,7 +1643,7 @@
               onclick={handleSubmit}
               disabled={disabled || inputLocked || !canSend || isEnhancing}
             >
-              <Fa icon={faPaperPlane} class="mr-1" size="sm" />
+              <Fa icon={faArrowRight} class="mr-1" size="sm" />
             </Button>
           </TooltipShortcut>
         </div>
@@ -1637,7 +1656,7 @@
             disabled={disabled || inputLocked || !canSend || isEnhancing}
             aria-label={m.chat_richInput_sendMessage_ariaLabel()}
           >
-            <Fa icon={faPaperPlane} size="sm" />
+            <Fa icon={faArrowRight} size="sm" />
           </Button>
         </TooltipShortcut>
       {/if}

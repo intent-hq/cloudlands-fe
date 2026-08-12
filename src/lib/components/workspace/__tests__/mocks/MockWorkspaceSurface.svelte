@@ -10,6 +10,7 @@
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
+    onPanelCanvasWidthChange,
     onCyclePanelBoundary,
   }: {
     workspaceId: string;
@@ -20,6 +21,7 @@
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
+    onPanelCanvasWidthChange?: (width: number) => void;
     onCyclePanelBoundary?: (
       direction: 'next' | 'prev',
     ) => { workspaceId: string; layoutId: string } | null;
@@ -43,6 +45,18 @@
     type="button"
     aria-label={`Cycle next panel from ${workspaceId}`}
     onclick={() => onCyclePanelBoundary?.('next')}
+  ></button>
+  <button
+    type="button"
+    aria-label="Report wider panel canvas"
+    data-mock-panel-resize-preview={workspaceId}
+    onclick={() => onPanelCanvasWidthChange?.(1080)}
+  ></button>
+  <button
+    type="button"
+    aria-label="Report restored panel canvas"
+    data-mock-panel-resize-preview-clear={workspaceId}
+    onclick={() => onPanelCanvasWidthChange?.(960)}
   ></button>
   <button
     type="button"

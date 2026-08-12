@@ -9,6 +9,7 @@
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
   import {
@@ -86,6 +87,8 @@
     branchName?: string;
     /** Compact mode - shows only an external link icon instead of full button */
     compact?: boolean;
+    /** Render as a labeled submenu inside an existing action menu. */
+    embedded?: boolean;
     children?: Snippet;
   }
 
@@ -100,6 +103,7 @@
     variant = 'default',
     branchName,
     compact = false,
+    embedded = false,
     children = undefined,
   }: Props = $props();
 
@@ -328,131 +332,166 @@
   // to prevent duplicate toasts when multiple OpenComboButton instances exist
 </script>
 
-<div class="inline-flex items-center {className}">
-  <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
-    {#snippet trigger({ toggle })}
-      {#if children}
-        <!-- With a single action there is no dropdown to show; run it directly. -->
-        <button
-          type="button"
-          onclick={actions.length > 1 ? toggle : handlePrimaryClick}
-          class="cursor-pointer"
-          title={primaryTitle}
-        >
-          {@render children()}
-        </button>
-      {:else if compact}
-        <!-- Compact mode: single icon button with dropdown -->
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={toggle}
-          tooltip={m.ui_openCombo_openInApp_tooltip()}
-          tooltipSide="bottom"
-        >
-          <Fa icon={faArrowUpRightFromSquare} size="xs" />
-        </Button>
-      {:else}
-        <!-- Full mode: icon + "Open" text + dropdown chevron -->
-        <div
-          class="inline-flex gap-px items-stretch rounded-md borderx border-border overflow-hidden"
-        >
+{#if embedded}
+  <Menu.Sub>
+    <Menu.SubTrigger>
+      <Fa icon={faArrowUpRightFromSquare} size="xs" class="w-4 text-muted-foreground opacity-70" />
+      <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+    </Menu.SubTrigger>
+    <Menu.SubContent class="w-60">
+      {#each actions as action (action.id)}
+        <Menu.Item onclick={() => handleActionClick(action.id)}>
+          {#if action.iconBase64}
+            <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
+          {:else if action.icon}
+            {@const Icon = action.icon}
+            <Icon size={16} />
+          {:else if action.faIcon}
+            <Fa icon={action.faIcon} class="size-4 text-muted-foreground opacity-70" />
+          {:else if action.category === 'terminal'}
+            <Fa icon={faTerminal} class="size-4 text-muted-foreground opacity-70" />
+          {:else if action.category === 'finder'}
+            <Fa icon={faFolder} class="size-4 text-muted-foreground opacity-70" />
+          {:else}
+            <Fa icon={faCode} class="size-4 text-muted-foreground opacity-70" />
+          {/if}
+          <span class="min-w-0 flex-1 truncate">{action.label}</span>
+          {#if action.shortcut}
+            <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true">
+              {action.shortcut}
+            </kbd>
+          {/if}
+        </Menu.Item>
+      {/each}
+    </Menu.SubContent>
+  </Menu.Sub>
+{:else}
+  <div class="inline-flex items-center {className}">
+    <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
+      {#snippet trigger({ toggle })}
+        {#if children}
+          <!-- With a single action there is no dropdown to show; run it directly. -->
           <button
             type="button"
-            class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
-            onpointerdown={keepPrimaryActionOutsideDropdown}
-            onkeydown={keepPrimaryActionOutsideDropdown}
-            onclick={handlePrimaryClick}
+            onclick={actions.length > 1 ? toggle : handlePrimaryClick}
+            class="cursor-pointer"
             title={primaryTitle}
           >
-            {#if currentAction.iconBase64}
-              <img
-                src="data:image/png;base64,{currentAction.iconBase64}"
-                alt={currentAction.label}
-                class="w-4 h-4"
-              />
-            {:else if currentAction.icon}
-              {@const Icon = currentAction.icon}
-              <Icon size={14} />
-            {:else if currentAction.faIcon}
-              <Fa icon={currentAction.faIcon} class="w-3.5 h-3.5 opacity-60" />
-            {:else if currentAction.category === 'terminal'}
-              <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
-            {:else if currentAction.category === 'finder'}
-              <Fa icon={faFolder} class="w-3.5 h-3.5 opacity-60" />
-            {:else}
-              <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
-            {/if}
-            <span class="text-subtle"
-              >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
-            >
+            {@render children()}
           </button>
-          {#if actions.length > 1}
+        {:else if compact}
+          <!-- Compact mode: single icon button with dropdown -->
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            onclick={toggle}
+            tooltip={m.ui_openCombo_openInApp_tooltip()}
+            tooltipSide="bottom"
+          >
+            <Fa icon={faArrowUpRightFromSquare} size="xs" />
+          </Button>
+        {:else}
+          <!-- Full mode: icon + "Open" text + dropdown chevron -->
+          <div
+            class="inline-flex gap-px items-stretch rounded-md borderx border-border overflow-hidden"
+          >
             <button
               type="button"
-              class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
-              onclick={toggle}
+              class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
+              onpointerdown={keepPrimaryActionOutsideDropdown}
+              onkeydown={keepPrimaryActionOutsideDropdown}
+              onclick={handlePrimaryClick}
+              title={primaryTitle}
             >
-              <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
+              {#if currentAction.iconBase64}
+                <img
+                  src="data:image/png;base64,{currentAction.iconBase64}"
+                  alt={currentAction.label}
+                  class="w-4 h-4"
+                />
+              {:else if currentAction.icon}
+                {@const Icon = currentAction.icon}
+                <Icon size={14} />
+              {:else if currentAction.faIcon}
+                <Fa icon={currentAction.faIcon} class="w-3.5 h-3.5 opacity-60" />
+              {:else if currentAction.category === 'terminal'}
+                <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
+              {:else if currentAction.category === 'finder'}
+                <Fa icon={faFolder} class="w-3.5 h-3.5 opacity-60" />
+              {:else}
+                <Fa icon={faCode} class="w-3.5 h-3.5 opacity-60" />
+              {/if}
+              <span class="text-subtle"
+                >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
+              >
             </button>
-          {/if}
-        </div>
-      {/if}
-    {/snippet}
-
-    {#snippet content()}
-      <div class="max-w-60">
-        {#if headerText}
-          <div class="px-2 py-1.5 text-sm text-subtle">
-            {headerText}
+            {#if actions.length > 1}
+              <button
+                type="button"
+                class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
+                onclick={toggle}
+              >
+                <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
+              </button>
+            {/if}
           </div>
         {/if}
-        <!-- <div class="w-full h-px bg-border mb-1"></div> -->
-        {#each actions as action (action.id)}
-          {#if action.id === 'copy'}
-            <!-- <div class="my-1 w-full h-px bg-border"></div> -->
-          {/if}
-          <button
-            type="button"
-            class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
-            onclick={() => handleActionClick(action.id)}
-          >
-            <div class="w-full flex items-center gap-2">
-              {#if action.iconBase64}
-                <!-- Use dynamic icon extracted from app bundle -->
-                <img
-                  src="data:image/png;base64,{action.iconBase64}"
-                  alt={action.label}
-                  class="w-5 h-5"
-                />
-              {:else if action.icon}
-                {@const Icon = action.icon}
-                <Icon size={16} />
-              {:else if action.faIcon}
-                <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-              {:else if action.category === 'terminal'}
-                <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-              {:else if action.category === 'finder'}
-                <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-              {:else}
-                <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-              {/if}
-              <span class="flex-1">{action.label}</span>
-              {#if action.shortcut}
-                <span class="text-xs text-subtle">{action.shortcut}</span>
-              {/if}
+      {/snippet}
+
+      {#snippet content()}
+        <div class="max-w-60">
+          {#if headerText}
+            <div class="px-2 py-1.5 text-sm text-subtle">
+              {headerText}
             </div>
-            {#if action.description}
-              <div
-                class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-subtle truncate"
-                title={action.description}
-              >
-                {action.description}
-              </div>
+          {/if}
+          <!-- <div class="w-full h-px bg-border mb-1"></div> -->
+          {#each actions as action (action.id)}
+            {#if action.id === 'copy'}
+              <!-- <div class="my-1 w-full h-px bg-border"></div> -->
             {/if}
-          </button>
-        {/each}
-      </div>
-    {/snippet}
-  </DropdownMenu>
-</div>
+            <button
+              type="button"
+              class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
+              onclick={() => handleActionClick(action.id)}
+            >
+              <div class="w-full flex items-center gap-2">
+                {#if action.iconBase64}
+                  <!-- Use dynamic icon extracted from app bundle -->
+                  <img
+                    src="data:image/png;base64,{action.iconBase64}"
+                    alt={action.label}
+                    class="w-5 h-5"
+                  />
+                {:else if action.icon}
+                  {@const Icon = action.icon}
+                  <Icon size={16} />
+                {:else if action.faIcon}
+                  <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                {:else if action.category === 'terminal'}
+                  <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                {:else if action.category === 'finder'}
+                  <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                {:else}
+                  <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                {/if}
+                <span class="flex-1">{action.label}</span>
+                {#if action.shortcut}
+                  <span class="text-xs text-subtle">{action.shortcut}</span>
+                {/if}
+              </div>
+              {#if action.description}
+                <div
+                  class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-subtle truncate"
+                  title={action.description}
+                >
+                  {action.description}
+                </div>
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/snippet}
+    </DropdownMenu>
+  </div>
+{/if}

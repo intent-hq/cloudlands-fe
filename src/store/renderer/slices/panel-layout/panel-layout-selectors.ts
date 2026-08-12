@@ -6,7 +6,8 @@
 
 import { store } from '../../store';
 import { emptyWorkspaceState } from './panel-layout-slice';
-import { countHorizontalPanelColumns, DEFAULT_PANEL_COLUMN_WIDTH } from './panel-layout-tabless';
+import { countHorizontalPanelColumns } from './panel-layout-tabless';
+import { getAutomaticPanelCanvasWidth } from '../../../../shared/panel-layout-sizing';
 import type {
   WorkspacePanelLayoutState,
   PanelLayoutNode,
@@ -145,7 +146,8 @@ export const selectPanelCanvasWidthsByWorkspaceId = store.createSelector((state)
   return Object.fromEntries(
     Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
       workspaceId,
-      layout.canvasWidth ?? countHorizontalPanelColumns(layout.root) * DEFAULT_PANEL_COLUMN_WIDTH,
+      layout.canvasWidth ??
+        getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(layout.root), 'content'),
     ]),
   );
 });

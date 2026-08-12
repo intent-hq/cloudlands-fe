@@ -206,11 +206,11 @@ describe('editorial conversation presentation contract', () => {
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
     expect(toolCall).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(toolCall).toContain('text-muted-foreground/65');
-    expect(toolCall.match(/opacity-30/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(toolCall).toContain('text-foreground/75');
+    expect(toolCall).toContain('text-foreground/60');
     expect(reasoning).toContain('tool-call-container');
     expect(reasoning).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(reasoning).toContain('opacity-30');
+    expect(reasoning).toContain('text-foreground/60');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
     expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });

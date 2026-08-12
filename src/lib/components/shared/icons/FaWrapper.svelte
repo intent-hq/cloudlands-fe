@@ -1,11 +1,13 @@
 <script lang="ts">
-  import RealFa from 'svelte-fa-original';
-  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-  // Local minimal copies of svelte-fa types to avoid subpath imports during typecheck
+  import {
+    getPhosphorIconComponent,
+    type IconDefinition,
+  } from '$lib/icons/phosphor-icons';
+
   type IconSize = 'xs' | 'sm' | 'lg' | `${number}x`;
   type FlipDir = 'horizontal' | 'vertical' | 'both';
   type PullDir = 'left' | 'right';
-  type NormalizedSize = string; // allow values like "12px", "1rem", "2em", or "2x"
+  type NormalizedSize = string;
 
   interface Props {
     class?: string;
@@ -55,63 +57,63 @@
     swapOpacity,
   }: Props = $props();
 
-  function toEmFromPx(px: number): NormalizedSize {
-    const em = px / 16;
-    // limit to 4 decimals and strip trailing zeros
-    const val = Number(em.toFixed(4));
-    return `${val}em` as NormalizedSize;
-  }
-
   function normalizeSize(s?: number | string): NormalizedSize | undefined {
     if (s == null || s === '') return undefined;
-    if (typeof s === 'number') return toEmFromPx(s);
+    if (typeof s === 'number') return `${s}px`;
     const str = String(s).trim();
 
-    // Known FA keywords or Nx multiplier -> pass-through
-    if (str === 'xs' || str === 'sm' || str === 'lg' || /^(\d+(?:\.\d+)?)x$/.test(str)) {
-      return str as NormalizedSize;
-    }
-
-    // "12px" -> convert to em to avoid svelte-fa's internal "x" replacement breaking "px"
-    const pxMatch = str.match(/^(\d+(?:\.\d+)?)px$/i);
-    if (pxMatch) {
-      return toEmFromPx(parseFloat(pxMatch[1]));
-    }
-
-    // Bare number -> interpret as pixels and convert to em
-    if (/^\d+(?:\.\d+)?$/.test(str)) {
-      return toEmFromPx(parseFloat(str));
-    }
-
-    // Any other CSS length or value (e.g., 1rem, 1.25em, clamp(...)) -> pass-through
-    return str as NormalizedSize;
+    if (str === 'xs') return '0.75em';
+    if (str === 'sm') return '0.875em';
+    if (str === 'lg') return '1.333em';
+    const multiplier = str.match(/^(\d+(?:\.\d+)?)x$/);
+    if (multiplier) return `${multiplier[1]}em`;
+    if (/^\d+(?:\.\d+)?$/.test(str)) return `${str}px`;
+    return str;
   }
 
   const normalizedSize = $derived(normalizeSize(size as any));
+  const Icon = $derived(getPhosphorIconComponent(icon));
+  const iconWeight = $derived(
+    secondaryColor || secondaryOpacity || primaryOpacity || swapOpacity ? 'duotone' : 'bold',
+  );
+  const mirrored = $derived(flip === 'horizontal' || flip === 'both');
+  const transform = $derived.by(() => {
+    const transforms: string[] = [];
+    if (translateX || translateY)
+      transforms.push(`translate(${translateX ?? 0}px, ${translateY ?? 0}px)`);
+    if (scale) transforms.push(`scale(${scale})`);
+    if (flip === 'vertical' || flip === 'both') transforms.push('scaleY(-1)');
+    if (rotate)
+      transforms.push(`rotate(${typeof rotate === 'number' ? `${rotate}deg` : rotate})`);
+    return transforms.join(' ');
+  });
+  const computedStyle = $derived(
+    [
+      style,
+      fw ? 'width: 1.25em' : '',
+      pull ? `float: ${pull}` : '',
+      transform ? `transform: ${transform}; transform-origin: center` : '',
+    ]
+      .filter(Boolean)
+      .join('; '),
+  );
+  const computedClass = $derived(
+    [className, spin ? 'animate-spin' : '', pulse ? 'animate-pulse' : '']
+      .filter(Boolean)
+      .join(' '),
+  );
 </script>
 
-<RealFa
-  {...{
-    class: className,
-    id,
-    style,
-    icon,
-    title,
-    color,
-    fw,
-    pull,
-    scale,
-    translateX,
-    translateY,
-    rotate,
-    flip,
-    spin,
-    pulse,
-    primaryColor,
-    secondaryColor,
-    primaryOpacity,
-    secondaryOpacity,
-    swapOpacity,
-  }}
+<Icon
+  class={computedClass || undefined}
+  {id}
+  style={computedStyle || undefined}
   size={normalizedSize}
+  color={color ?? primaryColor ?? secondaryColor}
+  weight={iconWeight}
+  {mirrored}
+  data-icon={icon.iconName}
+  data-weight={iconWeight}
+  aria-label={title}
+  aria-hidden={title ? undefined : 'true'}
 />

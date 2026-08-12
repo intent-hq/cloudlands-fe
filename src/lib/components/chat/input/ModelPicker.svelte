@@ -17,7 +17,7 @@
   import ProviderIcon, {
     hasProviderIcon,
   } from '$features/agent/components/AgentProviderIcon.svelte';
-  import { faSettings } from '$lib/icons/faSettings';
+  import { faSettings } from '$lib/icons/phosphor-icons';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
   import ModelPickerProviderNotice, {

@@ -364,6 +364,7 @@ export const openWorkspaceNote = createAction<
     noteId: string,
     options?: {
       openInAdjacentPanel?: boolean;
+      /** @deprecated Adjacent opens now always create a fresh panel. */
       openInNewAdjacentPanel?: boolean;
       sourcePanelId?: string;
     },

@@ -812,7 +812,10 @@
 
 <style>
   /* Adjacent tool_use blocks should have reduced spacing */
-  .content-block--tool_use + .content-block--tool_use {
+  .content-block--tool_use + .content-block--tool_use,
+  .content-block--tool_use + .content-block--thinking,
+  .content-block--thinking + .content-block--tool_use,
+  .content-block--thinking + .content-block--thinking {
     margin-top: -0.5rem;
   }
   /* Adjacent tool_use blocks should have reduced spacing */

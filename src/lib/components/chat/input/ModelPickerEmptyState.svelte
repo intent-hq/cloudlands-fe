@@ -3,7 +3,7 @@
   import { faArrowsRotate, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
-  import { faSettings } from '$lib/icons/faSettings';
+  import { faSettings } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import type { ProviderLoadError } from './model-picker-provider-errors';
   import { m } from '$shared/paraglide/messages.js';

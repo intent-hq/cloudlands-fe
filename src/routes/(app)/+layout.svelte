@@ -107,10 +107,7 @@
     togglePanel,
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import {
-    selectPanelItem,
-    selectShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -133,7 +130,6 @@
   const workspaceViewMode = selectWorkspaceViewMode();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
-  const panelItem$ = selectPanelItem();
   const showCreateModal$ = selectShowCreateModal();
 
   // Register all tab types early
@@ -971,7 +967,7 @@
               class:overflow-auto={!showWorkspaceColumns}
             >
               {#if showWorkspaceColumns}
-                <WorkspaceColumnsView globalSidebarOpen={$panelItem$ !== null} />
+                <WorkspaceColumnsView />
               {:else}
                 {@render children?.()}
               {/if}

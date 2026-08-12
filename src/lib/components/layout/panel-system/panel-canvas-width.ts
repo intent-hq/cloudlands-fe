@@ -1,22 +1,35 @@
-const DEFAULT_PANEL_COLUMN_WIDTH = 480;
+import { getResolvedPanelCanvasWidth, type PanelCanvasSizing } from '$shared/panel-layout-sizing';
+
+/** Convert a padding-inclusive DOM client width to the usable canvas viewport. */
+export function getPanelViewportContentWidth(
+  clientWidth: number,
+  paddingLeft: number,
+  paddingRight: number,
+): number {
+  return Math.max(0, clientWidth - paddingLeft - paddingRight);
+}
 
 /**
  * Compute default and minimum widths for the horizontal panel canvas.
  *
- * The default width fills the viewport when it is at least
- * `panelColumnCount * DEFAULT_PANEL_COLUMN_WIDTH`, and otherwise falls back to
- * that preferred pixel width so panels do not fall below their default column
- * width. The result is: single-panel layouts stretch to fill a wide viewport,
- * and multi-panel layouts overflow the viewport horizontally when necessary
- * (the canvas is horizontally scrollable in tab mode).
+ * The default width resolves one intrinsic canvas through the active mode:
+ * tab view fills at least the viewport and overflows when content is wider;
+ * deck view always hugs the intrinsic content width.
  */
-export function getPanelCanvasWidths(viewportWidth: number, panelColumnCount: number) {
-  const preferredWidth = Math.max(1, panelColumnCount) * DEFAULT_PANEL_COLUMN_WIDTH;
-  if (viewportWidth <= 0) {
-    return { defaultWidth: preferredWidth, minWidth: 0 };
-  }
+export function getPanelCanvasWidths(
+  viewportWidth: number,
+  panelColumnCount: number,
+  sizing: PanelCanvasSizing,
+  persistedWidth: number | null,
+) {
+  const defaultWidth = getResolvedPanelCanvasWidth(
+    panelColumnCount,
+    sizing,
+    viewportWidth,
+    persistedWidth,
+  );
   return {
-    defaultWidth: Math.max(viewportWidth, preferredWidth),
-    minWidth: 0,
+    defaultWidth,
+    minWidth: sizing === 'viewport' ? Math.max(1, viewportWidth) : 1,
   };
 }

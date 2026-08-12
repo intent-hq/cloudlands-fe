@@ -106,6 +106,30 @@ export default defineConfig(async () => {
         $features: path.resolve(__dirname, './src/features'),
         $shared: path.resolve(__dirname, './src/shared'),
         $app: path.resolve(__dirname, './src/__mocks__/$app'),
+        '@fortawesome/fontawesome-common-types': path.resolve(
+          __dirname,
+          './src/lib/icons/phosphor-icons.ts',
+        ),
+        '@fortawesome/fontawesome-svg-core': path.resolve(
+          __dirname,
+          './src/lib/icons/phosphor-icons.ts',
+        ),
+        '@fortawesome/free-brands-svg-icons': path.resolve(
+          __dirname,
+          './src/lib/icons/phosphor-icons.ts',
+        ),
+        '@fortawesome/free-regular-svg-icons': path.resolve(
+          __dirname,
+          './src/lib/icons/phosphor-icons.ts',
+        ),
+        '@fortawesome/free-solid-svg-icons': path.resolve(
+          __dirname,
+          './src/lib/icons/phosphor-icons.ts',
+        ),
+        'svelte-fa': path.resolve(
+          __dirname,
+          './src/lib/components/shared/icons/fa-proxy.ts',
+        ),
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
         'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain

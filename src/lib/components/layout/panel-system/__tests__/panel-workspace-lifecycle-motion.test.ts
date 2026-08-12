@@ -6,7 +6,7 @@ function source(relativePath: string) {
 }
 
 describe('panel and workspace lifecycle motion', () => {
-  it('animates keyed workspace tabs and resizable columns', () => {
+  it('animates keyed workspace tabs and content-sized columns', () => {
     const tabs = source('../../WorkspaceTabStrip.svelte');
     const columns = source('../../../workspace/WorkspaceColumnsView.svelte');
 
@@ -15,15 +15,12 @@ describe('panel and workspace lifecycle motion', () => {
     expect(tabs).not.toContain('in:fly=');
     expect(tabs).not.toContain('out:fly=');
     expect(columns).toContain('data-workspace-column-motion={workspaceId}');
-    expect(columns).toContain('lifecycleMotionReady && !isResizingWorkspaceColumn ? 180 : 0');
+    expect(columns).toContain('lifecycleMotionReady ? 180 : 0');
     expect(columns).toContain("transition:resize={{ axis: 'x', duration: layoutMotionDuration }}");
-    expect(columns).toContain('onResizeStart={() => (isResizingWorkspaceColumn = true)}');
-    expect(columns).toContain('onResizeEnd={(previousWidth, nextWidth) => {');
-    expect(columns).not.toContain('onResize={(previousWidth, nextWidth) =>');
+    expect(columns).not.toContain('isResizingWorkspaceColumn');
+    expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
+    expect(columns).not.toContain('workspace-panel-columns-width:');
     expect(columns).toContain(':global(body.panel-resizing) [data-workspace-stack]');
-    expect(columns).toContain("syncWithDefaultWidth={restoreStatus !== 'idle' &&");
-    expect(columns).toContain("restoreStatus !== 'pending' &&");
-    expect(columns).toContain('sidebarWidths[workspaceId] !== undefined}');
     expect(columns).not.toContain('transition:fade');
   });
 
@@ -48,7 +45,7 @@ describe('panel and workspace lifecycle motion', () => {
       'animate:translatePanel={{ duration: layoutMotionDuration, easing: cubicOut }}',
     );
     expect(container).toContain(
-      'lifecycleMotionReady && !isResizing && !suppressLayoutMotion ? 180 : 0',
+      'lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion',
     );
     expect(container).toContain('onResizeStart={handleResizeStart}');
     expect(container).toContain('onUpdateSizes?.(nodePath, committedSizes)');

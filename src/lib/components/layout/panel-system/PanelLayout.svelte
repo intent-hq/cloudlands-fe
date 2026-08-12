@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { setContext, onMount, onDestroy, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
@@ -20,6 +21,7 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
+  import { getPanelViewportContentWidth } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
@@ -82,6 +84,7 @@
     resizePanelLayoutRightEdge,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelCanvasSizing } from '$shared/panel-layout-sizing';
 
   const logger = createLogger('PanelLayout');
 
@@ -90,6 +93,7 @@
     layoutId?: string;
     active?: boolean;
     contained?: boolean;
+    canvasSizing?: PanelCanvasSizing;
     hideEmptyLayout?: boolean;
     allowCloseLastPanel?: boolean;
     /** Callbacks for creating new items (passed to panel tab bars) */
@@ -97,6 +101,7 @@
     onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
+    onPanelCanvasWidthChange?: (width: number) => void;
     onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
@@ -105,12 +110,14 @@
     layoutId,
     active = true,
     contained = false,
+    canvasSizing = 'viewport',
     hideEmptyLayout = false,
     allowCloseLastPanel = false,
     onCreateAgent,
     onCreateAgentWithSpecialist,
     onCreateNote,
     onPanelMovePreviewWidthRatioChange,
+    onPanelCanvasWidthChange,
     onCyclePanelBoundary,
   }: Props = $props();
 
@@ -166,7 +173,26 @@
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   let panelViewportWidth = $state(0);
   let panelCanvasWidth = $state(0);
+  let panelRootReferenceSize = $state(0);
+  let panelCanvasResizeDelta = $state(0);
+  let panelOuterResizeDelta = $state(0);
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
+
+  function measurePanelViewportWidth(node: HTMLElement) {
+    function update() {
+      const styles = getComputedStyle(node);
+      panelViewportWidth = getPanelViewportContentWidth(
+        node.clientWidth,
+        Number.parseFloat(styles.paddingLeft) || 0,
+        Number.parseFloat(styles.paddingRight) || 0,
+      );
+    }
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
   const retainedRootPanelWidth = $derived(
     $root$.type === 'panel' && retainedRootPanel?.panelId === $root$.panelId
       ? retainedRootPanel.width
@@ -178,7 +204,17 @@
 
   function handlePanelCanvasResizeEnd(previousWidth: number, nextWidth: number) {
     if (previousWidth === nextWidth) return;
-    appStore.dispatch(resizePanelLayoutRightEdge(effectiveLayoutId, previousWidth, nextWidth));
+    const gutterWidth =
+      panelRootReferenceSize > 0 ? Math.max(0, panelCanvasWidth - panelRootReferenceSize) : 0;
+    panelOuterResizeDelta = 0;
+    appStore.dispatch(
+      resizePanelLayoutRightEdge(
+        effectiveLayoutId,
+        Math.max(1, previousWidth - gutterWidth),
+        Math.max(1, nextWidth - gutterWidth),
+        nextWidth,
+      ),
+    );
   }
   let panelDragPreviewElement = $state.raw<HTMLDivElement | null>(null);
   let panelPreviewStartPositions = new Map<string, DOMRect>();
@@ -579,8 +615,31 @@
     previousWidth: number,
     nextWidth: number,
     panelIndex: number,
+    nextCanvasWidth: number,
   ) {
-    layoutManager.growCanvasAtHorizontalPanel(previousWidth, nextWidth, panelIndex);
+    // Remove the visual delta before committing its equivalent persisted width.
+    // Both writes are synchronous and Svelte batches their render, so the canvas
+    // stays at `nextWidth` without briefly applying the drag delta twice.
+    handlePanelCanvasResizePreview(0);
+    layoutManager.growCanvasAtHorizontalPanel(
+      previousWidth,
+      nextWidth,
+      panelIndex,
+      nextCanvasWidth,
+    );
+  }
+
+  function handlePanelCanvasResizePreview(delta: number) {
+    panelCanvasResizeDelta = delta;
+  }
+
+  function handlePanelCanvasWidthChange(width: number) {
+    panelCanvasWidth = width;
+    onPanelCanvasWidthChange?.(width);
+  }
+
+  function handlePanelOuterResizePreview(delta: number) {
+    panelOuterResizeDelta = delta;
   }
 
   function handleTabDropToSplit(
@@ -1083,7 +1142,8 @@
           {contained}
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
-          rootPanelReferenceSize={contained || panelCanvasWidth <= 0 ? null : panelCanvasWidth}
+          rootPanelReferenceSize={panelCanvasWidth > 0 ? panelCanvasWidth : null}
+          rootCanvasResizeDelta={panelOuterResizeDelta}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}
@@ -1096,6 +1156,8 @@
           onClosePanel={handleClosePanel}
           onZoomToggle={handleZoomToggle}
           onUpdateSizes={handleUpdateSizes}
+          onRootReferenceSizeChange={(width) => (panelRootReferenceSize = width)}
+          onCanvasResizePreview={handlePanelCanvasResizePreview}
           onGrowCanvasAtHorizontalPanel={handleGrowCanvasAtHorizontalPanel}
           onTabDropToSplit={handleTabDropToSplit}
           onTabMoveToPanel={handleTabMoveToPanel}
@@ -1139,13 +1201,13 @@
   <!-- Main panel area -->
   <div
     bind:this={panelWorkspaceInset}
-    bind:clientWidth={panelViewportWidth}
+    use:measurePanelViewportWidth
     class={cn(
       'flex-1 min-h-0 overflow-y-hidden scrollbar-none',
-      contained ? 'overflow-hidden p-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+      contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
     )}
     data-testid="panel-workspace-inset"
-    use:scrollFade={{ axis: 'x' }}
+    use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
   >
     <!-- Content-sized wrapper so the container's right padding is preserved
          at the end of the horizontal scroll range (padding after a w-full
@@ -1153,12 +1215,14 @@
     <div class={contained ? 'h-full w-full min-w-0' : 'h-full w-max min-w-full'}>
       {#key effectiveLayoutId}
         <PanelCanvasFrame
-          {contained}
+          sizing={canvasSizing}
           viewportWidth={panelViewportWidth}
           panelColumnCount={$panelColumnCount$}
           canvasWidth={$panelCanvasWidth$}
+          transientWidthDelta={panelCanvasResizeDelta}
           scrollContainer={panelWorkspaceInset}
-          onWidthChange={(width) => (panelCanvasWidth = width)}
+          onWidthChange={handlePanelCanvasWidthChange}
+          onResizePreview={handlePanelOuterResizePreview}
           onResizeEnd={handlePanelCanvasResizeEnd}
         >
           {@render panelCanvas()}

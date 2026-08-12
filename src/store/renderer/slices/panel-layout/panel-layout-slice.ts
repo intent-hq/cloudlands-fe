@@ -32,13 +32,16 @@ import {
   movePanelInLayout,
   movePanelToRootEdgeInLayout,
   countHorizontalPanelColumns,
-  DEFAULT_PANEL_COLUMN_WIDTH,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
   resizePanelTreeAtHorizontalIndex,
   resizePanelTreeRightEdge,
   type PanelMovePosition,
 } from './panel-layout-tabless';
+import {
+  DEFAULT_PANEL_WIDTH,
+  getAutomaticPanelCanvasWidth,
+} from '../../../../shared/panel-layout-sizing';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -60,7 +63,7 @@ function generateTabId(): string {
 
 export function createDefaultLayout(): Pick<
   WorkspacePanelLayoutState,
-  'root' | 'panels' | 'focusedPanelId'
+  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth'
 > {
   const panelId = generatePanelId();
   return {
@@ -69,6 +72,7 @@ export function createDefaultLayout(): Pick<
       [panelId]: { id: panelId, tabs: [], activeTabId: null },
     },
     focusedPanelId: panelId,
+    canvasWidth: null,
   };
 }
 
@@ -102,7 +106,9 @@ export const initializeLayout = createAction(
   'panelLayout/initializeLayout',
   (
     wsId: string,
-    layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'focusedPanelId'>,
+    layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'focusedPanelId'> & {
+      canvasWidth?: number | null;
+    },
   ) => ({
     wsId,
     layout,
@@ -156,7 +162,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId: string,
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
-    options?: { animated?: boolean; force?: boolean; alwaysSplit?: boolean },
+    options?: { animated?: boolean; force?: boolean },
     timestamp?: number,
   ) => ({
     wsId,
@@ -164,7 +170,6 @@ export const openTabInAdjacentOrSplit = createAction(
     sourcePanelId,
     animated: options?.animated ?? false,
     force: options?.force ?? false,
-    alwaysSplit: options?.alwaysSplit ?? false,
     newTabId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -405,18 +410,23 @@ export const updateSplitSizes = createAction<[wsId: string, sizes: number[], spl
 );
 
 export const resizePanelLayoutRightEdge = createAction<
-  [wsId: string, previousWidth: number, nextWidth: number]
+  [wsId: string, previousWidth: number, nextWidth: number, nextCanvasWidth: number]
 >('panelLayout/resizePanelLayoutRightEdge');
 
 /**
  * Grow a specific root-level horizontal panel by the delta implied by
  * `nextWidth - previousWidth` while preserving every other root-level
- * horizontal sibling's pixel width. Used by middle split-handle drags in
- * contained (columns) mode so resizing a middle panel grows the workspace
- * instead of stealing width from a neighbour.
+ * horizontal sibling's pixel width. Used by root middle-handle drags so a
+ * panel can grow the intrinsic canvas instead of stealing width from a neighbour.
  */
 export const resizePanelLayoutAtHorizontalPanel = createAction<
-  [wsId: string, previousWidth: number, nextWidth: number, panelIndex: number]
+  [
+    wsId: string,
+    previousWidth: number,
+    nextWidth: number,
+    panelIndex: number,
+    nextCanvasWidth: number,
+  ]
 >('panelLayout/resizePanelLayoutAtHorizontalPanel');
 
 export const toggleExpandPanel = createAction<[wsId: string, panelId: string]>(
@@ -613,9 +623,6 @@ function closePanelHelper(
 
   const removal = removePanelPreservingHorizontalWidths(ws.root, panelId);
   if (!removal.node || !removal.removed) return ws;
-  const previousCanvasWidth =
-    ws.canvasWidth ?? countHorizontalPanelColumns(ws.root) * DEFAULT_PANEL_COLUMN_WIDTH;
-
   const { [panelId]: removedPanel, ...remainingPanels } = ws.panels;
   const focusedPanelId =
     ws.focusedPanelId === panelId ? (Object.keys(remainingPanels)[0] ?? null) : ws.focusedPanelId;
@@ -638,7 +645,7 @@ function closePanelHelper(
     root: removal.node,
     panels: remainingPanels,
     focusedPanelId,
-    canvasWidth: previousCanvasWidth * removal.remainingWidthRatio,
+    canvasWidth: ws.canvasWidth === null ? null : ws.canvasWidth * removal.remainingWidthRatio,
     expandedPanelId: null,
     savedSizesBeforeExpand: [],
     recentlyClosed: newRecentlyClosed,
@@ -696,6 +703,7 @@ function saveToHistory(
     root: JSON.parse(JSON.stringify(ws.root)),
     panels: JSON.parse(JSON.stringify(ws.panels)),
     focusedPanelId: ws.focusedPanelId,
+    canvasWidth: ws.canvasWidth,
     timestamp,
   };
   layoutHistory.push(snapshot);
@@ -794,7 +802,7 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     root: layout.root,
     panels: layout.panels,
     focusedPanelId: layout.focusedPanelId,
-    canvasWidth: null,
+    canvasWidth: layout.canvasWidth ?? null,
   });
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
@@ -1358,17 +1366,17 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   const newPanel: PanelState = { id: newPanelId, tabs: [], activeTabId: null };
 
   if (direction === 'horizontal') {
-    const previousCanvasWidth =
-      ws.canvasWidth ?? countHorizontalPanelColumns(ws.root) * DEFAULT_PANEL_COLUMN_WIDTH;
-    const root = insertHorizontalPanelInLayout(ws.root, newPanelId, panelId, previousCanvasWidth);
+    const root = insertHorizontalPanelInLayout(ws.root, newPanelId, panelId, ws.canvasWidth);
     if (!root) return state;
-    const canvasWidth = previousCanvasWidth + DEFAULT_PANEL_COLUMN_WIDTH;
     return setWorkspaceState(state, wsId, {
       ...ws,
       root,
       panels: { ...ws.panels, [newPanelId]: newPanel },
       focusedPanelId: newPanelId,
-      canvasWidth,
+      canvasWidth:
+        (ws.canvasWidth ??
+          getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(ws.root), 'content')) +
+        DEFAULT_PANEL_WIDTH,
     });
   }
 
@@ -1495,37 +1503,41 @@ panelLayoutReducer.with(updateSplitSizes, (state, { payload: [wsId, sizes, split
 });
 panelLayoutReducer.with(
   resizePanelLayoutRightEdge,
-  (state, { payload: [wsId, previousWidth, nextWidth] }) => {
-    if (
-      previousWidth <= 0 ||
-      nextWidth <= 0 ||
-      !Number.isFinite(previousWidth) ||
-      !Number.isFinite(nextWidth)
-    ) {
-      return state;
-    }
-    const ws = getWorkspaceState(state, wsId);
-    const root = resizePanelTreeRightEdge(ws.root, previousWidth, nextWidth);
-    if (root === ws.root && ws.canvasWidth === nextWidth) return state;
-    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextWidth });
-  },
-);
-panelLayoutReducer.with(
-  resizePanelLayoutAtHorizontalPanel,
-  (state, { payload: [wsId, previousWidth, nextWidth, panelIndex] }) => {
+  (state, { payload: [wsId, previousWidth, nextWidth, nextCanvasWidth] }) => {
     if (
       previousWidth <= 0 ||
       nextWidth <= 0 ||
       !Number.isFinite(previousWidth) ||
       !Number.isFinite(nextWidth) ||
-      !Number.isFinite(panelIndex)
+      !Number.isFinite(nextCanvasWidth) ||
+      nextCanvasWidth <= 0
+    ) {
+      return state;
+    }
+    const ws = getWorkspaceState(state, wsId);
+    const root = resizePanelTreeRightEdge(ws.root, previousWidth, nextWidth);
+    if (root === ws.root && ws.canvasWidth === nextCanvasWidth) return state;
+    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextCanvasWidth });
+  },
+);
+panelLayoutReducer.with(
+  resizePanelLayoutAtHorizontalPanel,
+  (state, { payload: [wsId, previousWidth, nextWidth, panelIndex, nextCanvasWidth] }) => {
+    if (
+      previousWidth <= 0 ||
+      nextWidth <= 0 ||
+      !Number.isFinite(previousWidth) ||
+      !Number.isFinite(nextWidth) ||
+      !Number.isFinite(panelIndex) ||
+      !Number.isFinite(nextCanvasWidth) ||
+      nextCanvasWidth <= 0
     ) {
       return state;
     }
     const ws = getWorkspaceState(state, wsId);
     const root = resizePanelTreeAtHorizontalIndex(ws.root, previousWidth, nextWidth, panelIndex);
-    if (root === ws.root && ws.canvasWidth === nextWidth) return state;
-    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextWidth });
+    if (root === ws.root && ws.canvasWidth === nextCanvasWidth) return state;
+    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextCanvasWidth });
   },
 );
 // --- Toggle Expand Panel ---
@@ -1614,6 +1626,7 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
       root: JSON.parse(JSON.stringify(ws.root)),
       panels: JSON.parse(JSON.stringify(ws.panels)),
       focusedPanelId: ws.focusedPanelId,
+      canvasWidth: ws.canvasWidth,
       timestamp,
     });
   }
@@ -1631,6 +1644,7 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
     root: JSON.parse(JSON.stringify(snapshot.root)),
     panels,
     focusedPanelId: snapshot.focusedPanelId,
+    canvasWidth: snapshot.canvasWidth ?? null,
     layoutHistory,
     historyIndex,
   });
@@ -1652,6 +1666,7 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
     root: JSON.parse(JSON.stringify(snapshot.root)),
     panels,
     focusedPanelId: snapshot.focusedPanelId,
+    canvasWidth: snapshot.canvasWidth ?? null,
     historyIndex,
   });
 });
@@ -1768,7 +1783,7 @@ panelLayoutReducer.with(clearPanelLayout, (state, { payload: [wsId] }) => {
 });
 // --- Open Tab In Adjacent Or Split ---
 panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
-  const { wsId, tab, sourcePanelId, animated, force, alwaysSplit, newTabId, timestamp } = payload;
+  const { wsId, tab, sourcePanelId, animated, force, newTabId, timestamp } = payload;
   if (tab.workspaceId && tab.workspaceId !== wsId) return state;
   const ws = getWorkspaceState(state, wsId);
 
@@ -1776,7 +1791,6 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   if (ws.deferSpecTab && tab.type === 'note' && tab.noteId === 'spec' && !force) return state;
 
   const effectiveSourcePanelId = sourcePanelId ?? ws.focusedPanelId;
-  const panelIds = Object.keys(ws.panels);
   const sourcePanel = effectiveSourcePanelId ? ws.panels[effectiveSourcePanelId] : undefined;
 
   if (sourcePanel && sourcePanel.tabs.length === 0) {
@@ -1788,21 +1802,8 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
   }
 
-  const otherPanelId =
-    !alwaysSplit && panelIds.length >= 2
-      ? (panelIds.find((id) => id !== effectiveSourcePanelId) ?? null)
-      : null;
-
-  if (otherPanelId) {
-    // Open in existing other panel
-    let result = selfDispatch(state, openTab(wsId, tab, otherPanelId, newTabId, force, timestamp));
-    result = selfDispatch(result, focusPanel(wsId, otherPanelId));
-    // Set pending focus
-    const updatedWs = getWorkspaceState(result, wsId);
-    return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
-  }
-
-  // Need to split
+  // Adjacent tabs always receive a fresh column. Reusing an arbitrary neighbor
+  // makes the result depend on object insertion order and replaces its content.
   if (!effectiveSourcePanelId) {
     const result = selfDispatch(state, openTab(wsId, tab, undefined, newTabId, force, timestamp));
     const updatedWs = getWorkspaceState(result, wsId);

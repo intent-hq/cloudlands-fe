@@ -145,8 +145,9 @@ describe('EffortPicker', () => {
     expect(screen.getByTestId('effort-gauge-needle').getAttribute('style')).toContain(
       'rotate(0deg)',
     );
-    expect(screen.getByTestId('effort-gauge').getAttribute('width')).toBe('20');
-    expect(screen.getByTestId('effort-gauge').getAttribute('height')).toBe('14');
+    expect(trigger().dataset.size).toBe('icon-sm');
+    expect(screen.getByTestId('effort-gauge').getAttribute('width')).toBe('16');
+    expect(screen.getByTestId('effort-gauge').getAttribute('height')).toBe('16');
   });
 
   it('represents the current effort level on the gauge', () => {

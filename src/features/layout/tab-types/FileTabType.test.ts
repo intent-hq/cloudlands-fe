@@ -298,7 +298,7 @@ describe('FileTabType Redux integration', () => {
   it('groups editor presentation toggles into one view settings menu', async () => {
     renderFileTab();
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'View settings' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
 
     expect(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' })).toBeTruthy();
@@ -513,11 +513,17 @@ describe('FileTabType Redux integration', () => {
       payload: ['ws-1', 'src/main.ts', 'console.log("edited");'],
     });
 
-    const saveIndicator = await screen.findByTestId('save-indicator');
-    await waitFor(() => expect(saveIndicator.getAttribute('data-dirty')).toBe('true'));
+    const headerState = await screen.findByTestId('header-state');
+    await waitFor(() => expect(headerState.getAttribute('data-dirty')).toBe('true'));
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    const saveStatus = await screen.findByRole('menuitem', {
+      name: m.ui_saveIndicator_autoSaving_tooltip(),
+    });
+    expect(saveStatus.getAttribute('aria-disabled')).toBe('true');
 
     dispatchMock.mockClear();
-    await fireEvent.click(saveIndicator);
+    await fireEvent.keyDown(window, { key: 's', metaKey: true });
 
     expect(dispatchMock).toHaveBeenCalledWith({
       type: 'files/saveFileContentRequested',
@@ -561,13 +567,14 @@ describe('FileTabType Redux integration', () => {
 
     renderFileTab();
 
-    const saveIndicator = await screen.findByTestId('save-indicator');
     const headerState = await screen.findByTestId('header-state');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    const saveStatus = await screen.findByRole('menuitem', {
+      name: m.ui_saveIndicator_saving_tooltip(),
+    });
 
     await waitFor(() => {
-      expect(saveIndicator.getAttribute('data-dirty')).toBe('true');
-      expect(saveIndicator.getAttribute('data-saving')).toBe('true');
-      expect(saveIndicator.getAttribute('data-auto-saving')).toBe('false');
+      expect(saveStatus.getAttribute('aria-disabled')).toBe('true');
       expect(headerState.getAttribute('data-dirty')).toBe('true');
       expect(headerState.getAttribute('data-saving')).toBe('true');
     });

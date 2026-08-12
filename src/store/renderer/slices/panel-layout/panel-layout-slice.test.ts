@@ -20,6 +20,7 @@ import {
   closeTabsByType,
   reopenClosedTab,
   pruneRecentlyClosed,
+  resizePanelLayoutAtHorizontalPanel,
   resizePanelLayoutRightEdge,
   setDeferSpecTab,
   updateTabTitle,
@@ -243,7 +244,7 @@ describe('panelLayoutReducer', () => {
       });
     });
 
-    it('creates a new adjacent panel instead of reusing an existing neighbor when requested', () => {
+    it('creates a third adjacent panel instead of reusing an existing neighbor', () => {
       const state = emptyState();
       state.byWorkspaceId[WS] = {
         ...emptyWorkspaceState,
@@ -277,13 +278,16 @@ describe('panelLayoutReducer', () => {
           WS,
           { type: 'note', title: 'Linked', noteId: 'linked', closable: true },
           'p1',
-          { alwaysSplit: true },
+          undefined,
           1234,
         ),
       );
       const panels = Object.values(result.byWorkspaceId[WS].panels);
+      const root = result.byWorkspaceId[WS].root;
 
       expect(panels).toHaveLength(3);
+      expect(root).toMatchObject({ type: 'split', direction: 'horizontal' });
+      expect(root.type === 'split' ? root.children : []).toHaveLength(3);
       expect(result.byWorkspaceId[WS].panels.p2.tabs).toHaveLength(1);
       expect(
         panels.find((panel) => panel.tabs.some((tab) => tab.noteId === 'linked')),
@@ -347,7 +351,7 @@ describe('panelLayoutReducer', () => {
         focusedPanelId: 'p1',
       };
 
-      const resized = panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 960, 1000));
+      const resized = panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 960, 1000, 1000));
       expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1000);
       const result = panelLayoutReducer(
         resized,
@@ -785,7 +789,7 @@ describe('panelLayoutReducer', () => {
         },
       };
 
-      const result = panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 1000, 1200));
+      const result = panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 1000, 1200, 1200));
       const root = result.byWorkspaceId[WS].root;
 
       expect(root.type).toBe('split');
@@ -793,7 +797,76 @@ describe('panelLayoutReducer', () => {
         expect(root.sizes[0]).toBeCloseTo(41.67, 1);
         expect(root.sizes[1]).toBeCloseTo(58.33, 1);
       }
-      expect(panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 0, 1200))).toBe(state);
+      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1200);
+      expect(panelLayoutReducer(state, resizePanelLayoutRightEdge(WS, 0, 1200, 1200))).toBe(state);
+    });
+
+    it('grows only the selected root column and includes its width in later snapshots', () => {
+      const state = stateWithPanel('p1');
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+            { type: 'panel', panelId: 'p3' },
+          ],
+          sizes: [30, 40, 30],
+        },
+        panels: {
+          p1: { id: 'p1', tabs: [], activeTabId: null },
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+          p3: { id: 'p3', tabs: [], activeTabId: null },
+        },
+        canvasWidth: 1000,
+      };
+
+      const resized = panelLayoutReducer(
+        state,
+        resizePanelLayoutAtHorizontalPanel(WS, 1000, 1200, 1, 1200),
+      );
+
+      expect(resized.byWorkspaceId[WS].canvasWidth).toBe(1200);
+      expect(resized.byWorkspaceId[WS].root).toMatchObject({ sizes: [25, 50, 25] });
+      const snapshotted = panelLayoutReducer(
+        resized,
+        splitPanel(WS, 'p1', 'vertical', undefined, 1234),
+      );
+      expect(snapshotted.byWorkspaceId[WS].layoutHistory[0].canvasWidth).toBe(1200);
+    });
+
+    it('persists the full canvas width without folding gutters into sibling sizes', () => {
+      const state = stateWithPanel('p1');
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [(645 / 1042) * 100, (397 / 1042) * 100],
+        },
+        panels: {
+          p1: { id: 'p1', tabs: [], activeTabId: null },
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+        },
+        canvasWidth: 1050,
+      };
+
+      const result = panelLayoutReducer(
+        state,
+        resizePanelLayoutAtHorizontalPanel(WS, 1042, 1142, 0, 1150),
+      );
+      const root = result.byWorkspaceId[WS].root;
+
+      expect(result.byWorkspaceId[WS].canvasWidth).toBe(1150);
+      if (root.type !== 'split') throw new Error('Expected horizontal split');
+      expect((root.sizes[0] / 100) * 1142).toBeCloseTo(745);
+      expect((root.sizes[1] / 100) * 1142).toBeCloseTo(397);
     });
   });
 

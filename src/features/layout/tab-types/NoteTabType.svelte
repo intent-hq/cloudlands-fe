@@ -28,15 +28,13 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
   import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
-  import Fa from 'svelte-fa';
   import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
-  import { faNote } from '$lib/icons/faNote';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -200,28 +198,22 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(noteActions);
+    headerContext.registerActions({ display: noteDisplayActions, actions: noteActions });
   });
 </script>
 
-{#snippet noteActions()}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={handleCopyNote}
-    tooltip={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
-    tooltipSide="bottom"
-    aria-label={m.layout_noteTab_copyFullNote_tooltip()}
-  >
-    {#if noteCopyFeedback}
-      <Fa icon={faCheck} size="xs" class="text-green-500" />
-    {:else}
-      <Fa icon={faCopy} size="xs" />
-    {/if}
-  </Button>
+{#snippet noteDisplayActions()}
   {#if tab.noteId}
-    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} />
+    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} embedded />
   {/if}
+{/snippet}
+
+{#snippet noteActions()}
+  <Menu.CommandItem
+    icon={noteCopyFeedback ? faCheck : faCopy}
+    label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
+    onclick={handleCopyNote}
+  />
   <!-- Version history toggle hidden for now -->
   <!-- <Button
     variant="ghost-light"
@@ -236,19 +228,16 @@
     <Fa icon={faClockRotateLeft} size="xs" />
   </Button> -->
   {#if noteFilePath}
-    <OpenComboButton filePath={noteFilePath} isDirectory={false} compact />
+    <OpenComboButton filePath={noteFilePath} isDirectory={false} embedded />
   {/if}
   {#if tab.noteId && !isSpecNote(tab.noteId)}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
+    <Menu.CommandItem
+      icon={faTrash}
+      label={m.layout_noteTab_deleteNote_tooltip()}
       onclick={handleDeleteNote}
-      tooltip={m.layout_noteTab_deleteNote_tooltip()}
-      tooltipSide="bottom"
       disabled={isNoteDeleting}
-    >
-      <Fa icon={faTrash} size="xs" />
-    </Button>
+      destructive
+    />
   {/if}
 {/snippet}
 

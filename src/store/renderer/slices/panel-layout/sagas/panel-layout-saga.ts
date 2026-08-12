@@ -221,6 +221,13 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     if (!value || typeof value !== 'object') return false;
     const layout = value as WorkspacePanelLayout;
     if (!layout.root || !layout.panels || typeof layout.panels !== 'object') return false;
+    if (
+      layout.canvasWidth !== undefined &&
+      layout.canvasWidth !== null &&
+      (!Number.isFinite(layout.canvasWidth) || layout.canvasWidth <= 0)
+    ) {
+      return false;
+    }
     const panelIds = new Set<string>();
     if (!collectPanelIds(layout.root, panelIds) || panelIds.size === 0) return false;
     for (const panelId of panelIds) {
@@ -292,6 +299,7 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
       root: workspace.root,
       panels: workspace.panels,
       focusedPanelId: workspace.focusedPanelId,
+      canvasWidth: workspace.canvasWidth,
     };
     if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(layout)) {
       const stored = yield* call(loadLayoutFromStorage, wsId);

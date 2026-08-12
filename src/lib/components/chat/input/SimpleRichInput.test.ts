@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
-vi.mock('svelte-fa', async () => {
+vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('$lib/icons/phosphor-icons', () => ({
   faFile: { iconName: 'file' },
   faFileAlt: { iconName: 'file-alt' },
   faFileCode: { iconName: 'file-code' },
@@ -15,7 +15,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faMagicWandSparkles: { iconName: 'magic-wand' },
   faMicrophone: { iconName: 'microphone' },
   faPaperclip: { iconName: 'paperclip' },
-  faPaperPlane: { iconName: 'paper-plane' },
+  faArrowRight: { iconName: 'arrow-right' },
   faSpinner: { iconName: 'spinner' },
   faXmark: { iconName: 'xmark' },
   faLayerGroup: { iconName: 'layer-group' },
@@ -23,7 +23,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronRight: { iconName: 'chevron-right' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
-  faEllipsisVertical: { iconName: 'ellipsis-vertical' },
+  faPlus: { iconName: 'plus' },
   faClock: { iconName: 'clock' },
   faWandMagicSparkles: { iconName: 'wand-magic-sparkles' },
   faRotateLeft: { iconName: 'rotate-left' },
@@ -350,9 +350,12 @@ describe('SimpleRichInput action bar layout', () => {
     const micButton = screen.getByTestId('composer-mic-button');
 
     expect(actionBar?.className).toContain('items-center');
+    expect(actionBar?.className).toContain('pr-1.5!');
     expect(primaryActions?.className).toContain('items-center');
     expect(submitActions?.className).toContain('items-center');
     expect(primaryActions?.contains(promptMenu)).toBe(true);
+    expect(promptMenu.dataset.size).toBe('icon-sm');
+    expect(promptMenu.querySelector('[data-icon="plus"]')).toBeTruthy();
     expect(submitActions?.contains(micButton)).toBe(true);
     await fireEvent.click(promptMenu);
     expect(await screen.findByRole('menuitem', { name: /Add Context/i })).toBeTruthy();
@@ -833,13 +836,13 @@ describe('SimpleRichInput Stop-button visibility', () => {
   // The mocked Button component strips aria-label, so locate the Send/Stop
   // affordances via the Fa icon's data-icon attribute instead. The icon mocks
   // above render `data-icon="stop"` for the Stop button and
-  // `data-icon="paper-plane"` for the Send button.
+  // `data-icon="arrow-right"` for the Send button.
   function stopButton(): HTMLButtonElement | null {
     const icon = document.body.querySelector('[data-icon="stop"]');
     return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
   }
   function sendButton(): HTMLButtonElement | null {
-    const icons = document.body.querySelectorAll('[data-icon="paper-plane"]');
+    const icons = document.body.querySelectorAll('[data-icon="arrow-right"]');
     for (const icon of icons) {
       const btn = icon.closest('button') as HTMLButtonElement | null;
       // Skip the interrupt-and-send split button inside the Stop block; that
@@ -1277,7 +1280,7 @@ describe('SimpleRichInput input lock while enhancing', () => {
   }
 
   function sendButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="paper-plane"]');
+    const icon = document.body.querySelector('[data-icon="arrow-right"]');
     return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
   }
 

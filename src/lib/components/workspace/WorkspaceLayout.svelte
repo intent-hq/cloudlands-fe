@@ -71,7 +71,7 @@
     sidebarMaxWidth = 800,
     sidebarDefaultWidth = 360,
     sidebarDefaultExpandedWidth = 600,
-    sidebarPercentageWeight = 0.5,
+    sidebarPercentageWeight = 0,
     sidebarSide = 'left',
     startCollapsed = false,
     sidebarFillsAvailableWidth = false,

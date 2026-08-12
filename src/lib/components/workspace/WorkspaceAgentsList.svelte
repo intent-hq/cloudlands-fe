@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AgentSession } from '$shared/types';
-  import AgentCard from '$lib/components/chat/AgentCard.svelte';
+  import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import { ListEmpty } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -111,12 +111,12 @@
 
 {#snippet agentTree(agentList: AgentSession[])}
   {#each agentList as agent (agent.id)}
-    <AgentCard
+    <LazyAgentCard
+      cacheKey={agent.id}
       agentId={agent.id}
       agentName={agent.name}
       isBackground={isBackgroundAgent(agent)}
       selected={agent.id === selectedAgentId}
-      variant="workspace-list"
       onclick={() => handleAgentClick(agent.id)}
     />
 
@@ -125,8 +125,9 @@
       {@const isExpanded = expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
       <div class="mb-2" style="padding-left: 26px;">
-        <button
-          type="button"
+        <Button
+          variant="ghost-light"
+          size="sm"
           class="container flex w-full cursor-pointer items-center gap-2 py-1 pr-3 pl-1.75 text-sm text-muted-foreground transition-colors hover:text-foreground"
           onclick={(event) => {
             event.stopPropagation();
@@ -169,7 +170,7 @@
               ? ''
               : '-rotate-90'}"
           />
-        </button>
+        </Button>
 
         {#if isExpanded}
           <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', duration: 150 }}>
@@ -179,12 +180,12 @@
           <div class="flex flex-col gap-0.5">
             {#each runningChildren as child (child.id)}
               <div transition:slide={{ axis: 'y', duration: 150 }}>
-                <AgentCard
+                <LazyAgentCard
+                  cacheKey={child.id}
                   agentId={child.id}
                   agentName={child.name}
                   isBackground={isBackgroundAgent(child)}
                   selected={child.id === selectedAgentId}
-                  variant="workspace-list"
                   onclick={() => handleAgentClick(child.id)}
                 />
               </div>
@@ -299,12 +300,12 @@
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {#if showBackgroundAgents || isAgentRunning(agent.id)}
         <div transition:slide={{ axis: 'y', duration: 150 }}>
-          <AgentCard
+          <LazyAgentCard
+            cacheKey={agent.id}
             agentId={agent.id}
             agentName={agent.name}
             isBackground
             selected={agent.id === selectedAgentId}
-            variant="workspace-list"
             onclick={() => handleAgentClick(agent.id)}
           />
         </div>

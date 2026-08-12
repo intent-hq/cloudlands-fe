@@ -305,7 +305,7 @@
 
 {#if $workspaceTabOrder$.length > 0}
   <div
-    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pr-0.5 scrollbar-none"
+    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-3 pr-3 -mr-2.5 scrollbar-none"
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     data-workspace-tab-strip
@@ -421,33 +421,33 @@
               {#if isCurrent}
                 <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
                      so the active tab appears to flow into the panel below (Chrome-tab style).
-                     Left flare: filled square minus a quarter-circle carved from the top-right
-                     (the corner that meets the tab's bottom-left). The stroke arc uses a 7.5
-                     radius (endpoints shifted 0.5px inward) so its 1px stroke sits INSIDE the
-                     filled region — otherwise the outer half of the stroke bleeds past the fill
-                     edge and reads as a dark tick under each tab corner. -->
+                     Uses a 12x12 quarter-arc dropped 2px past the tab bottom so the concave
+                     curve terminates on the panel's top border. The right flare's `-12.5px`
+                     offset + 1px seam-fill rect compensates for the arc-stroke straddling the
+                     right-edge pixel boundary so no gap shows between flare and tab side. -->
                 <svg
-                  class="pointer-events-none absolute -left-2 bottom-0 size-2 overflow-visible text-sidebar"
-                  viewBox="0 0 8 8"
+                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                  viewBox="0 0 12 12"
                   aria-hidden="true"
                 >
-                  <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
+                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
                   <path
                     class="stroke-border"
-                    d="M 8 0.5 A 7.5 7.5 0 0 1 0.5 8"
+                    d="M 12 0 A 12 12 0 0 1 0 12"
                     fill="none"
                     stroke-width="1"
                   />
                 </svg>
                 <svg
-                  class="pointer-events-none absolute -right-2 bottom-0 size-2 overflow-visible text-sidebar"
-                  viewBox="0 0 8 8"
+                  class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                  viewBox="0 0 12 12"
                   aria-hidden="true"
                 >
-                  <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
+                  <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
+                  <rect x="-1" width="1" height="100%" fill="currentColor" />
                   <path
                     class="stroke-border"
-                    d="M 0 0.5 A 7.5 7.5 0 0 0 7.5 8"
+                    d="M 0 0 A 12 12 0 0 0 12 12"
                     fill="none"
                     stroke-width="1"
                   />
@@ -518,27 +518,28 @@
           >
             {#if isCurrent}
               <svg
-                class="pointer-events-none absolute -left-2 bottom-0 size-2 overflow-visible text-sidebar"
-                viewBox="0 0 8 8"
+                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
                 aria-hidden="true"
               >
-                <path d="M 0 8 L 8 8 L 8 0 A 8 8 0 0 1 0 8 Z" fill="currentColor" />
+                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
                 <path
                   class="stroke-border"
-                  d="M 8 0.5 A 7.5 7.5 0 0 1 0.5 8"
+                  d="M 12 0 A 12 12 0 0 1 0 12"
                   fill="none"
                   stroke-width="1"
                 />
               </svg>
               <svg
-                class="pointer-events-none absolute -right-2 bottom-0 size-2 overflow-visible text-sidebar"
-                viewBox="0 0 8 8"
+                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
                 aria-hidden="true"
               >
-                <path d="M 8 8 L 0 8 L 0 0 A 8 8 0 0 0 8 8 Z" fill="currentColor" />
+                <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
+                <rect x="-1" width="1" height="100%" fill="currentColor" />
                 <path
                   class="stroke-border"
-                  d="M 0 0.5 A 7.5 7.5 0 0 0 7.5 8"
+                  d="M 0 0 A 12 12 0 0 0 12 12"
                   fill="none"
                   stroke-width="1"
                 />

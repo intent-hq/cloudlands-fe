@@ -9,12 +9,14 @@ import RadioItem from './menu-radio-item.svelte';
 import SubTrigger from './menu-sub-trigger.svelte';
 import SubContent from './menu-sub-content.svelte';
 import Separator from './menu-separator.svelte';
+import StackedContent from './menu-stacked-content.svelte';
 
 const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
 const RadioGroup = MenuPrimitive.RadioGroup;
 const Sub = MenuPrimitive.Sub;
 export { menuMetadata, menuSemantics } from './menu.meta';
+export type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
 
 export {
   Root,
@@ -31,6 +33,7 @@ export {
   SubTrigger,
   SubContent,
   Separator,
+  StackedContent,
   Root as Menu,
   Trigger as MenuTrigger,
   Portal as MenuPortal,
@@ -45,4 +48,5 @@ export {
   SubTrigger as MenuSubTrigger,
   SubContent as MenuSubContent,
   Separator as MenuSeparator,
+  StackedContent as MenuStackedContent,
 };

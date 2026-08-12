@@ -1,7 +1,8 @@
 export const PANEL_TAB_CACHE_TTL_MS = 30_000;
+export const BROWSER_TAB_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for browser tabs
 export const MAX_CACHED_INACTIVE_TABS = 3;
 
-export type PanelTabCacheTab = { id: string };
+export type PanelTabCacheTab = { id: string; type?: string };
 
 export type PanelTabCacheOptions = {
   ttlMs?: number;
@@ -34,6 +35,7 @@ export function updatePanelTabCache(
 ): Map<string, number> {
   const { ttlMs, maxInactiveTabs } = resolveOptions(options);
   const existingTabIds = new Set(tabs.map((tab) => tab.id));
+  const tabTypeMap = new Map(tabs.map((tab) => [tab.id, tab.type]));
   const nextCache = new Map<string, number>();
 
   for (const [tabId, timestamp] of currentCache) {
@@ -47,14 +49,24 @@ export function updatePanelTabCache(
   }
 
   for (const [tabId, timestamp] of nextCache) {
-    if (tabId !== activeTabId && now - timestamp >= ttlMs) {
-      nextCache.delete(tabId);
+    if (tabId !== activeTabId) {
+      // Use longer TTL for browser tabs to avoid unnecessary reloads
+      const tabType = tabTypeMap.get(tabId);
+      const effectiveTtl = tabType === 'browser' ? BROWSER_TAB_CACHE_TTL_MS : ttlMs;
+      if (now - timestamp >= effectiveTtl) {
+        nextCache.delete(tabId);
+      }
     }
   }
 
   const inactiveEntries = Array.from(nextCache.entries())
     .filter(([tabId]) => tabId !== activeTabId)
-    .sort((a, b) => a[1] - b[1]);
+    .sort(([aId, aTimestamp], [bId, bTimestamp]) => {
+      const aIsBrowser = tabTypeMap.get(aId) === 'browser';
+      const bIsBrowser = tabTypeMap.get(bId) === 'browser';
+      if (aIsBrowser !== bIsBrowser) return aIsBrowser ? 1 : -1;
+      return aTimestamp - bTimestamp;
+    });
 
   while (inactiveEntries.length > maxInactiveTabs) {
     const oldest = inactiveEntries.shift();
@@ -71,12 +83,16 @@ export function getNextPanelTabCacheExpiryDelay(
   activeTabId: string | null | undefined,
   now: number,
   ttlMs = PANEL_TAB_CACHE_TTL_MS,
+  tabs: readonly PanelTabCacheTab[] = [],
 ): number | null {
+  const tabTypeMap = new Map(tabs.map((tab) => [tab.id, tab.type]));
   let nextDelay: number | null = null;
 
   for (const [tabId, timestamp] of cache) {
     if (tabId === activeTabId) continue;
-    const delay = Math.max(0, ttlMs - (now - timestamp));
+    const tabType = tabTypeMap.get(tabId);
+    const effectiveTtl = tabType === 'browser' ? BROWSER_TAB_CACHE_TTL_MS : ttlMs;
+    const delay = Math.max(0, effectiveTtl - (now - timestamp));
     nextDelay = nextDelay === null ? delay : Math.min(nextDelay, delay);
   }
 

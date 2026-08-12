@@ -1,7 +1,12 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { faRotateLeft, faXmark } from '@fortawesome/free-solid-svg-icons';
+
+const TRAILING_HINT_ICON_PATHS = {
+  dismiss:
+    'M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z',
+  undo: 'M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z',
+} as const;
 
 export interface TrailingHint {
   kind: 'ready' | 'enhancing' | 'enhanced';
@@ -65,18 +70,13 @@ function bindTooltip(element: HTMLElement, label: string) {
 }
 
 function appendIcon(button: HTMLButtonElement, icon: 'dismiss' | 'undo') {
-  const definition = icon === 'dismiss' ? faXmark : faRotateLeft;
-  const [width, height, , , pathData] = definition.icon;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('viewBox', '0 0 256 256');
   svg.setAttribute('aria-hidden', 'true');
 
-  const paths = Array.isArray(pathData) ? pathData : [pathData];
-  for (const data of paths) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', data);
-    svg.append(path);
-  }
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', TRAILING_HINT_ICON_PATHS[icon]);
+  svg.append(path);
   button.append(svg);
 }
 

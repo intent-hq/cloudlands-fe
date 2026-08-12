@@ -412,6 +412,35 @@ describe('panel and tab drag MIME routing', () => {
 });
 
 describe('panel context menu routing', () => {
+  it('keeps only the kebab and Close visible while grouping panel controls in the menu', async () => {
+    const { container } = renderTabBar({ onClosePanel: vi.fn() });
+    const directActions = container.querySelector<HTMLElement>('.panel-actions')!;
+
+    expect(directActions.querySelectorAll('button')).toHaveLength(2);
+    expect(directActions.querySelector('[data-testid="panel-actions-trigger"]')).toBeTruthy();
+    expect(directActions.querySelector('[data-testid="panel-close-button"]')).toBeTruthy();
+
+    await fireEvent.click(
+      directActions.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!,
+    );
+
+    const display = document.querySelector<HTMLElement>('[data-panel-actions-section="display"]');
+    const actions = document.querySelector<HTMLElement>('[data-panel-actions-section="actions"]');
+    expect(display?.textContent).toContain('Zoom Panel');
+    expect(actions?.textContent).toContain('Split right');
+    expect(actions?.textContent).toContain('Split down');
+    expect(document.querySelector('[role="menu"]')?.textContent).not.toContain('Close panel');
+  });
+
+  it('uses a high-visibility kebab icon for panel actions', () => {
+    const { container } = renderTabBar();
+    const icon = container.querySelector<SVGElement>('[data-testid="panel-actions-trigger"] svg');
+
+    expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
+    expect(icon?.getAttribute('class')).toContain('size-4');
+    expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
+  });
+
   it('portals the tabless-header menu to viewport coordinates without tab actions', async () => {
     const { container } = renderTabBar({ showTabStrip: false });
     const header = container.querySelector<HTMLElement>('[data-panel-tabless-header]')!;

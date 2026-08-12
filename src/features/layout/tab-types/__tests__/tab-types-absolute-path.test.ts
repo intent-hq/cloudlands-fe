@@ -214,6 +214,11 @@ import LocalChangesTabType from '../LocalChangesTabType.svelte';
 import ChatChangesTabType from '../ChatChangesTabType.svelte';
 import ChangesTabType from '../ChangesTabType.svelte';
 
+async function findOpenComboButton() {
+  await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+  return screen.findByTestId('open-combo-button');
+}
+
 function setWindowsWorkspace() {
   mockReduxState.workspace = {
     id: 'ws-1',
@@ -280,13 +285,13 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       setWindowsWorkspace();
       renderActivity('C:/repo/src/x.ts');
 
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('C:/repo/src/x.ts');
     });
 
     it('still joins relative paths and passes Unix-absolute paths through', async () => {
       renderActivity('src/x.ts');
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('/repo/src/x.ts');
     });
 
@@ -294,7 +299,7 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       setUncWorkspace();
       renderActivity('\\\\server\\share\\repo\\src\\x.ts');
 
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('\\\\server\\share\\repo\\src\\x.ts');
     });
   });
@@ -321,13 +326,13 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       setWindowsWorkspace();
       renderDiff('C:/repo/src/x.ts');
 
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('C:/repo/src/x.ts');
     });
 
     it('still joins relative paths under the workspace root', async () => {
       renderDiff('src/x.ts');
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('/repo/src/x.ts');
     });
 
@@ -335,7 +340,7 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       setUncWorkspace();
       renderDiff('\\\\server\\share\\repo\\src\\x.ts');
 
-      const openButton = await screen.findByTestId('open-combo-button');
+      const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('\\\\server\\share\\repo\\src\\x.ts');
     });
   });

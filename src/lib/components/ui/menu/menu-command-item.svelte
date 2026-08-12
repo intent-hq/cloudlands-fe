@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+  import type { IconDefinition } from '$lib/icons/phosphor-icons';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import Fa from 'svelte-fa';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import Item from './menu-item.svelte';
 
   let {

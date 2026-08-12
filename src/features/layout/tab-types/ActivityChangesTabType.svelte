@@ -34,10 +34,9 @@
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { patchToContents } from '$lib/utils/diff-utils';
-  import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
-  import Fa from 'svelte-fa';
   import { faFile } from '@fortawesome/free-solid-svg-icons';
   import { createLogger } from '$lib/utils/client-logger';
   import { isAbsolutePath } from '$lib/utils/path-utils';
@@ -173,7 +172,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(diffActions);
+    headerContext.registerActions({ display: diffDisplayActions, actions: diffActions });
   });
 
   // Log what we're showing for debugging
@@ -194,17 +193,9 @@
   });
 </script>
 
-{#snippet diffActions()}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={handleGoToFile}
-    tooltip={m.layout_diffHeader_goToFile_tooltip()}
-    tooltipSide="bottom"
-  >
-    <Fa icon={faFile} size="xs" />
-  </Button>
+{#snippet diffDisplayActions()}
   <ViewSettingsDropdown
+    embedded
     foldEnabled={$foldUnchanged}
     onToggleFold={() => appStore.dispatch(toggleFoldUnchanged())}
     wrapEnabled={$lineWrapping}
@@ -212,11 +203,19 @@
     splitEnabled={$diffSideBySide}
     onToggleSplit={() => appStore.dispatch(toggleDiffSideBySide())}
   />
+{/snippet}
+
+{#snippet diffActions()}
+  <Menu.CommandItem
+    icon={faFile}
+    label={m.layout_diffHeader_goToFile_tooltip()}
+    onclick={(event) => handleGoToFile(event)}
+  />
   {#if diffAbsolutePath}
     <OpenComboButton
       filePath={diffAbsolutePath}
       isDirectory={false}
-      compact
+      embedded
       workspaceFolderPath={repoPath}
     />
   {/if}

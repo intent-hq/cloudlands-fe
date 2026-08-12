@@ -153,7 +153,9 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     expect(screen.getByRole('tablist', { name: 'Open spaces' })).toBeTruthy();
-    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain('pr-0.5');
+    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain(
+      'pl-3 -ml-3 pr-3 -mr-2.5',
+    );
     expect(screen.getAllByRole('tab')).toHaveLength(3);
     expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('[data-tooltip-delay="500"]')).toBeTruthy();

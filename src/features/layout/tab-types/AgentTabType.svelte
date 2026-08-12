@@ -19,7 +19,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
-  import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -27,7 +27,6 @@
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import Fa from 'svelte-fa';
   import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
@@ -166,47 +165,37 @@
       subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
-      headerContext.registerActions(agentActions);
+      headerContext.registerActions({ display: agentDisplayActions, actions: agentActions });
       headerContext.registerState({ subtitle });
     });
   });
 </script>
 
+{#snippet agentDisplayActions()}
+  <AgentViewSettingsDropdown embedded />
+{/snippet}
+
 {#snippet agentActions()}
   {#if agentTaskNoteId}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={handleGoToTaskNote}
-      tooltip={m.layout_agentTab_goToTaskNote_tooltip()}
-      tooltipSide="bottom"
-    >
-      <Fa icon={faNote} size="xs" />
-    </Button>
+    <Menu.CommandItem
+      icon={faNote}
+      label={m.layout_agentTab_goToTaskNote_tooltip()}
+      onclick={(event) => handleGoToTaskNote(event)}
+    />
   {/if}
-  <AgentViewSettingsDropdown />
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
+  <Menu.CommandItem
+    icon={agentCopyFeedback ? faCheck : faCopy}
+    label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
     onclick={handleCopyAgentConversation}
-    tooltip={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
-    tooltipSide="bottom"
     disabled={agentMessages.length === 0}
-    class={agentCopyFeedback ? 'text-success' : ''}
-  >
-    <Fa icon={agentCopyFeedback ? faCheck : faCopy} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
+  />
+  <Menu.CommandItem
+    icon={faTrash}
+    label={m.layout_agentTab_deleteAgent_tooltip()}
     onclick={handleDeleteAgent}
-    tooltip={m.layout_agentTab_deleteAgent_tooltip()}
-    tooltipSide="bottom"
     disabled={isAgentDeleting}
-    class="hover:text-destructive-foreground"
-  >
-    <Fa icon={faTrash} size="xs" />
-  </Button>
+    destructive
+  />
 {/snippet}
 
 {#if tab.agentId}

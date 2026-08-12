@@ -63,10 +63,12 @@ vi.mock('$features/external-editors/components/OpenComboButton.svelte', async ()
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   faCheck: { iconName: 'check' },
   faCode: { iconName: 'code' },
   faCopy: { iconName: 'copy' },
+  faFont: { iconName: 'font' },
   faSliders: { iconName: 'sliders' },
   faSpellCheck: { iconName: 'spell-check' },
   faTrash: { iconName: 'trash' },
@@ -148,12 +150,12 @@ describe('NoteTabType raw note view toggle', () => {
     vi.restoreAllMocks();
   });
 
-  it('groups the raw view toggle into an accessible view settings panel', async () => {
+  it('groups the raw view toggle into the panel action menu', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
-    const trigger = await screen.findByRole('button', { name: 'View settings' });
+    const trigger = await screen.findByRole('button', { name: 'Panel actions' });
     await fireEvent.click(trigger);
 
     const toggle = await screen.findByRole('menuitemcheckbox', {
@@ -174,17 +176,18 @@ describe('NoteTabType raw note view toggle', () => {
     });
   });
 
-  it('offers font and spellcheck controls in the same panel', async () => {
+  it('offers font and spellcheck controls in the Display section', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'View settings' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(screen.getByRole('group', { name: /Font Style/i })).toBeTruthy();
 
-    expect(screen.getByRole('radio', { name: /Sans-serif/ }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
-    await fireEvent.click(await screen.findByRole('radio', { name: /Serif/ }));
+    expect(
+      screen.getByRole('menuitemradio', { name: /Sans-serif/ }).getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Serif/ }));
     expect(mockState.dispatch).toHaveBeenCalledWith({
       type: 'fontSettings/setNoteFontStyle',
       payload: ['serif'],
@@ -207,7 +210,8 @@ describe('NoteTabType raw note view toggle', () => {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Copy full note' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('Note content'));
     const callsBeforeUnmount = clearTimeoutSpy.mock.calls.length;
 

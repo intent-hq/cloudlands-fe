@@ -31,7 +31,7 @@
     variant="ghost"
     value=""
     onchange={handleRepoChange}
-    triggerClass="size-7 min-w-7 justify-center rounded-lg p-0! text-muted-foreground hover:bg-transparent hover:text-foreground"
+    triggerClass="size-7 min-w-7 justify-center rounded-lg p-0! text-foreground hover:bg-transparent hover:text-foreground"
     triggerContentClass="justify-center"
     emptyLabel=""
     triggerIcon={faPlus}

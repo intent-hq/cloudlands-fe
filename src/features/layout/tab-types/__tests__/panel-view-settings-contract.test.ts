@@ -18,6 +18,8 @@ describe('panel header view settings consolidation', () => {
   ])('uses the shared view settings menu in %s', (fileName) => {
     const contents = source(fileName);
     expect(contents).toContain('ViewSettingsDropdown');
+    expect(contents).toContain('embedded');
+    expect(contents).toContain('registerActions({ display:');
     expect(contents).not.toContain('headerToggleActiveClass');
   });
 
@@ -26,6 +28,8 @@ describe('panel header view settings consolidation', () => {
     (fileName) => {
       const contents = source(fileName);
       expect(contents).toMatch(/(?:Note|Agent)ViewSettingsDropdown/);
+      expect(contents).toContain('embedded');
+      expect(contents).toContain('registerActions({ display:');
     },
   );
 
@@ -33,6 +37,17 @@ describe('panel header view settings consolidation', () => {
     'does not add an empty settings menu to %s',
     (fileName) => {
       expect(source(fileName)).not.toContain('ViewSettingsDropdown');
+    },
+  );
+
+  it.each(['NoteViewSettingsDropdown.svelte', 'AgentViewSettingsDropdown.svelte'])(
+    'renders embedded font controls as inline stacked content in %s',
+    (fileName) => {
+      const contents = source(fileName);
+      expect(contents).toContain('data-menu-stacked-content="font-style"');
+      expect(contents).toContain('<Menu.RadioGroup');
+      expect(contents).not.toContain('<Menu.Sub>');
+      expect(contents).not.toContain('<Menu.SubTrigger>');
     },
   );
 

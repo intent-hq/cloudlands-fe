@@ -62,6 +62,7 @@
    * keys are inert.
    */
   import { formatInteger } from '$lib/i18n/format';
+  import { getPhosphorIconComponent } from '$lib/icons/phosphor-icons';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
 
@@ -277,18 +278,6 @@
       : `${top} left: ${(((key.x + KEY_SIZE + 6) / 292) * 100).toFixed(2)}%;`;
   });
 
-  /** SVG transform centering a FontAwesome icon path at (cx, cy) at `size`. */
-  function iconTransform(icon: IconDefinition, cx: number, cy: number, size: number): string {
-    const [width, height] = icon.icon;
-    const scale = size / Math.max(width, height);
-    return `translate(${cx - (width * scale) / 2} ${cy - (height * scale) / 2}) scale(${scale})`;
-  }
-
-  function iconPath(icon: IconDefinition): string {
-    const data = icon.icon[4];
-    return Array.isArray(data) ? data.join(' ') : data;
-  }
-
   const deviceGraphicLabel = $derived(
     codex
       ? m.settings_hardware_deviceGraphicCodex_ariaLabel()
@@ -441,6 +430,7 @@
       {@const capIcon = codex ? CODEX_CAP_ICONS[key.slot] : null}
       {@const slotIcon = codex ? null : (actionSlots?.[key.slot]?.icon ?? null)}
       {@const faceIcon = slotIcon ?? capIcon}
+      {@const FaceIcon = faceIcon ? getPhosphorIconComponent(faceIcon) : null}
       {@const slotLabel = actionSlots?.[key.slot]?.label ?? null}
       <g
         role="button"
@@ -465,12 +455,15 @@
             ? 'fill-primary/25 stroke-primary'
             : 'fill-primary/10 stroke-primary/50 group-hover:fill-primary/20 group-focus-visible:stroke-primary'}
         />
-        {#if faceIcon}
-          <path
-            d={iconPath(faceIcon)}
-            transform={iconTransform(faceIcon, key.x + KEY_SIZE / 2, key.y + KEY_SIZE / 2, 20)}
+        {#if FaceIcon && faceIcon}
+          <FaceIcon
+            x={key.x + KEY_SIZE / 2 - 10}
+            y={key.y + KEY_SIZE / 2 - 10}
+            size={20}
+            data-icon={faceIcon.iconName}
+            aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
+              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70')}
           />
         {:else if codex && key.slot === 6}
           <!-- Codex logo key: terminal inside a hexagon -->
@@ -480,11 +473,15 @@
             class={'fill-none pointer-events-none ' +
               (selectedSlot === key.slot ? 'stroke-primary' : 'stroke-foreground/70')}
           />
-          <path
-            d={iconPath(faTerminal)}
-            transform={iconTransform(faTerminal, logoCenter.cx, logoCenter.cy, 13)}
+          {@const TerminalIcon = getPhosphorIconComponent(faTerminal)}
+          <TerminalIcon
+            x={logoCenter.cx - 6.5}
+            y={logoCenter.cy - 6.5}
+            size={13}
+            data-icon={faTerminal.iconName}
+            aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'fill-primary' : 'fill-foreground/70')}
+              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70')}
           />
         {/if}
       </g>
@@ -492,11 +489,15 @@
 
     <!-- Codex Micro: one mic glyph spanning the linked pair (factory 2U cap) -->
     {#if codex}
-      <path
-        d={iconPath(faMicrophone)}
-        transform={iconTransform(faMicrophone, micPairCenter.cx, micPairCenter.cy, 20)}
+      {@const MicrophoneIcon = getPhosphorIconComponent(faMicrophone)}
+      <MicrophoneIcon
+        x={micPairCenter.cx - 10}
+        y={micPairCenter.cy - 10}
+        size={20}
+        data-icon={faMicrophone.iconName}
+        aria-hidden="true"
         class={'pointer-events-none ' +
-          (selectedSlot === 4 || selectedSlot === 5 ? 'fill-primary' : 'fill-foreground/70')}
+          (selectedSlot === 4 || selectedSlot === 5 ? 'text-primary' : 'text-foreground/70')}
       />
     {/if}
   </svg>

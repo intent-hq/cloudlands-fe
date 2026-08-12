@@ -6,7 +6,7 @@
    * Handles resizing between children.
    */
 
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import type {
     PanelLayoutNode,
     PanelState,
@@ -36,6 +36,10 @@
     suppressLayoutMotion?: boolean;
     retainedRootPanelWidth?: number | null;
     rootPanelReferenceSize?: number | null;
+    /** Live outer-canvas delta; only the final root panel absorbs it. */
+    rootCanvasResizeDelta?: number;
+    /** Report the root split's gutter-exclusive content width. */
+    onRootReferenceSizeChange?: (width: number) => void;
     nodePath?: number[]; // Path to this node in the tree (for size updates)
     /** Zoom state - if set, only this panel is visible */
     zoomedPanelId?: string | null;
@@ -51,16 +55,18 @@
     onClosePanel?: (panelId: string) => void;
     onZoomToggle?: (panelId: string) => void;
     onUpdateSizes?: (nodePath: number[], sizes: number[]) => void;
+    /** Report an uncommitted root-canvas delta for smooth outer layout resizing. */
+    onCanvasResizePreview?: (delta: number) => void;
     /**
      * Handler for growing the workspace canvas by resizing a specific
-     * root-level horizontal panel. Used in `contained` (columns) mode so a
-     * middle split-handle drag expands the workspace instead of stealing width
-     * from a sibling panel.
+     * root-level horizontal panel. A middle split-handle drag expands the
+     * intrinsic canvas instead of stealing width from a sibling panel.
      */
     onGrowCanvasAtHorizontalPanel?: (
       previousWidth: number,
       nextWidth: number,
       panelIndex: number,
+      nextCanvasWidth: number,
     ) => void;
     /** Handler for dropping a tab to create a split */
     onTabDropToSplit?: (
@@ -115,6 +121,8 @@
     suppressLayoutMotion = false,
     retainedRootPanelWidth = null,
     rootPanelReferenceSize = null,
+    rootCanvasResizeDelta = 0,
+    onRootReferenceSizeChange,
     nodePath = [],
     zoomedPanelId = null,
     onFocusPanel,
@@ -129,6 +137,7 @@
     onClosePanel,
     onZoomToggle,
     onUpdateSizes,
+    onCanvasResizePreview,
     onGrowCanvasAtHorizontalPanel,
     onTabDropToSplit,
     onTabMoveToPanel,
@@ -187,11 +196,17 @@
   let panelReferenceSize = $state<number | null>(null);
   let lifecycleMotionReady = $state(false);
   let isResizing = $state(false);
+  let suppressResizeCommitMotion = $state(false);
+  let resizeCommitMotionFrame: number | null = null;
   const layoutMotionDuration = $derived(
-    lifecycleMotionReady && !isResizing && !suppressLayoutMotion ? 180 : 0,
+    lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion
+      ? 180
+      : 0,
   );
   const layoutMotionExitDuration = $derived(
-    lifecycleMotionReady && !isResizing && !suppressLayoutMotion ? 140 : 0,
+    lifecycleMotionReady && !isResizing && !suppressLayoutMotion && !suppressResizeCommitMotion
+      ? 140
+      : 0,
   );
 
   function resizePanelChild(nodeToResize: HTMLElement, params: Parameters<typeof resize>[1]) {
@@ -206,19 +221,53 @@
     return () => cancelAnimationFrame(frame);
   });
 
+  onDestroy(() => {
+    if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
+  });
+
+  function suppressMotionThroughResizeCommit() {
+    suppressResizeCommitMotion = true;
+    if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
+    resizeCommitMotionFrame = requestAnimationFrame(() => {
+      resizeCommitMotionFrame = null;
+      suppressResizeCommitMotion = false;
+    });
+  }
+
   function getPanelChildFlex(
     child: PanelLayoutNode,
     index: number,
     resizeSizes = node.type === 'split' ? node.sizes : [],
   ): string {
     if (node.type !== 'split') return '';
+    if (
+      canvasResizeStartChildWidths !== null &&
+      canvasResizeStartWidth !== null &&
+      canvasResizeNextWidth !== null &&
+      canvasResizeTargetIndex !== null
+    ) {
+      const startWidth = canvasResizeStartChildWidths[index] ?? 0;
+      const pinnedWidth =
+        index === canvasResizeTargetIndex
+          ? Math.max(1, startWidth + canvasResizeNextWidth - canvasResizeStartWidth)
+          : startWidth;
+      return `0 0 ${pinnedWidth}px`;
+    }
+    if (nodePath.length === 0 && node.direction === 'horizontal' && rootCanvasResizeDelta !== 0) {
+      const previousReferenceSize = Math.max(0, (panelReferenceSize ?? 0) - rootCanvasResizeDelta);
+      const previousWidth = previousReferenceSize * ((node.sizes[index] ?? 0) / 100);
+      const pinnedWidth =
+        index === node.children.length - 1
+          ? Math.max(1, previousWidth + rootCanvasResizeDelta)
+          : previousWidth;
+      return `0 0 ${pinnedWidth}px`;
+    }
     const hiddenByZoom = isPanelHiddenByZoom(child);
     if (zoomedPanelId && containsPanel(child, zoomedPanelId)) return '1 1 100%';
     if (hiddenByZoom) return '0 0 0%';
     return getPanelFlexValue(
       resizeSizes[index] ?? node.sizes[index],
       panelReferenceSize,
-      contained,
       nodePath.length === 0 && node.children.length === 1 ? retainedRootPanelWidth : null,
     );
   }
@@ -238,9 +287,6 @@
     if (node.type !== 'split' || !containerRef) return;
 
     const directChildren = Array.from(containerRef.children);
-    const panelChildren = directChildren.filter((child) =>
-      child.classList.contains('panel-split-child'),
-    );
     const gutterSize = directChildren
       .filter((child) => child.classList.contains('panel-split-handle-wrapper'))
       .reduce(
@@ -251,14 +297,6 @@
             : (gutter as HTMLElement).offsetHeight),
         0,
       );
-    const firstPanel = panelChildren[0];
-    const minimumPanelSize = firstPanel
-      ? Number.parseFloat(
-          node.direction === 'horizontal'
-            ? getComputedStyle(firstPanel).minWidth
-            : getComputedStyle(firstPanel).minHeight,
-        ) || 0
-      : 0;
     const rootViewport = containerRef.closest<HTMLElement>('[data-testid="panel-workspace-inset"]');
     const resizeTarget = nodePath.length === 0 ? rootViewport : containerRef.parentElement;
     const availableSize =
@@ -268,12 +306,8 @@
           : (resizeTarget?.clientWidth ?? containerRef.clientWidth)
         : (resizeTarget?.clientHeight ?? containerRef.clientHeight);
 
-    panelReferenceSize = getPanelReferenceSize(
-      availableSize,
-      panelChildren.length,
-      minimumPanelSize,
-      gutterSize,
-    );
+    panelReferenceSize = getPanelReferenceSize(availableSize, gutterSize);
+    if (nodePath.length === 0) onRootReferenceSizeChange?.(panelReferenceSize);
   }
 
   $effect(() => {
@@ -293,9 +327,8 @@
 
   // A root-level horizontal handle drag grows the workspace canvas so the
   // panel to the left of the handle absorbs the delta while sibling panels
-  // keep their pixel width. This applies to both contained (columns) mode and
-  // uncontained (tab) mode; nested splits keep the classic sibling-
-  // redistribution behaviour.
+  // keep their pixel width. The canvas resolves that intrinsic geometry for
+  // either tab or deck view; nested splits redistribute adjacent siblings.
   const growsCanvasAtRootHorizontal = $derived(
     node.type === 'split' &&
       node.direction === 'horizontal' &&
@@ -303,7 +336,9 @@
       !!onGrowCanvasAtHorizontalPanel,
   );
   let canvasResizeStartWidth: number | null = null;
-  let canvasResizeAccumulatedWidth: number | null = null;
+  let canvasResizeNextWidth: number | null = null;
+  let canvasResizeStartCanvasWidth: number | null = null;
+  let canvasResizeTargetIndex: number | null = null;
   // Frozen per-child pixel widths captured at drag start. During a canvas-grow
   // drag we imperatively pin every sibling to its start pixel width and grow
   // only the target child, so we do not rely on the percentage/reference-size
@@ -319,10 +354,9 @@
       canvasResizeStartWidth !== null &&
       canvasResizeStartChildWidths !== null
     ) {
-      // `delta` from PanelSplitHandle is incremental (per-frame). Accumulate
-      // against the last flushed canvas width so multi-frame drags grow the
-      // target child by the full drag distance, not just the final frame.
-      const previousWidth = canvasResizeAccumulatedWidth ?? canvasResizeStartWidth;
+      // `delta` is incremental. Keep the live width local so Redux receives one
+      // canonical commit at drag end instead of driving DOM layout every frame.
+      const previousWidth = canvasResizeNextWidth ?? canvasResizeStartWidth;
       const nextWidth = Math.max(1, previousWidth + delta);
       const targetChildStartWidth = canvasResizeStartChildWidths[index] ?? 0;
       const nextChildWidth = Math.max(
@@ -331,8 +365,9 @@
       );
       applyLiveCanvasResizeChildWidths(index, nextChildWidth);
       if (nextWidth === previousWidth) return;
-      canvasResizeAccumulatedWidth = nextWidth;
-      onGrowCanvasAtHorizontalPanel?.(previousWidth, nextWidth, index);
+      canvasResizeNextWidth = nextWidth;
+      canvasResizeTargetIndex = index;
+      onCanvasResizePreview?.(nextWidth - canvasResizeStartWidth);
       return;
     }
 
@@ -360,12 +395,19 @@
   }
 
   function handleResizeStart() {
+    if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
+    resizeCommitMotionFrame = null;
+    suppressResizeCommitMotion = false;
     liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
     isResizing = true;
     canvasResizeStartWidth = growsCanvasAtRootHorizontal
       ? (panelReferenceSize ?? containerRef?.offsetWidth ?? null)
       : null;
-    canvasResizeAccumulatedWidth = null;
+    canvasResizeNextWidth = canvasResizeStartWidth;
+    canvasResizeStartCanvasWidth = growsCanvasAtRootHorizontal
+      ? (rootPanelReferenceSize ?? containerRef?.offsetWidth ?? null)
+      : null;
+    canvasResizeTargetIndex = null;
     canvasResizeStartChildWidths =
       growsCanvasAtRootHorizontal && containerRef
         ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
@@ -374,30 +416,49 @@
         : null;
   }
 
-  function handleResizeEnd() {
+  function handleResizeEnd(panelIndex?: number) {
     const committedSizes = liveResizeSizes;
     const wasCanvasResize = growsCanvasAtRootHorizontal && canvasResizeStartChildWidths !== null;
+    const previousCanvasWidth = canvasResizeStartWidth;
+    const nextCanvasWidth = canvasResizeNextWidth;
+    const nextRenderedCanvasWidth =
+      canvasResizeStartCanvasWidth !== null &&
+      previousCanvasWidth !== null &&
+      nextCanvasWidth !== null
+        ? canvasResizeStartCanvasWidth + nextCanvasWidth - previousCanvasWidth
+        : null;
+    suppressMotionThroughResizeCommit();
+    if (
+      wasCanvasResize &&
+      previousCanvasWidth !== null &&
+      nextCanvasWidth !== null &&
+      nextRenderedCanvasWidth !== null &&
+      panelIndex !== undefined &&
+      previousCanvasWidth !== nextCanvasWidth
+    ) {
+      // Commit while drag-only geometry is still active. The parent clears its
+      // transient canvas delta before synchronously dispatching Redux, so this
+      // component and the canvas resolve directly to the committed geometry.
+      onGrowCanvasAtHorizontalPanel?.(
+        previousCanvasWidth,
+        nextCanvasWidth,
+        panelIndex,
+        nextRenderedCanvasWidth,
+      );
+    } else if (wasCanvasResize) {
+      onCanvasResizePreview?.(0);
+    }
     liveResizeSizes = null;
     isResizing = false;
     canvasResizeStartWidth = null;
-    canvasResizeAccumulatedWidth = null;
+    canvasResizeNextWidth = null;
+    canvasResizeStartCanvasWidth = null;
+    canvasResizeTargetIndex = null;
     canvasResizeStartChildWidths = null;
     if (wasCanvasResize) {
-      // Re-apply the reactive percentage-based flex derived from the updated
-      // node sizes. Clearing to '' is insufficient: Svelte's `style:flex`
-      // directive only re-applies when its tracked value changes, so a
-      // string that matches what Svelte last set would leave the DOM stuck
-      // on the imperative override (or on '' if we cleared it), collapsing
-      // panels to their content-only width in the flex container.
-      if (containerRef && node.type === 'split') {
-        const panelElements = Array.from(
-          containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
-        );
-        panelElements.forEach((panelElement, index) => {
-          const child = node.children[index];
-          if (child) panelElement.style.flex = getPanelChildFlex(child, index);
-        });
-      }
+      // The reducer update changes the reactive flex values. Do not write the
+      // pre-commit values back imperatively here; doing so replays movement for
+      // every sibling until the next measurement frame.
       return;
     }
     if (!committedSizes) return;
@@ -571,8 +632,8 @@
     }
   }
 
-  function handleCornerResizeEnd(_handleIndex: number) {
-    handleResizeEnd();
+  function handleCornerResizeEnd(handleIndex: number) {
+    handleResizeEnd(handleIndex);
   }
 </script>
 
@@ -645,8 +706,8 @@
         }}
       >
         {#if item.type === 'panel'}
-          <!-- Pixel bases resolve percentages against the canvas width. The default
-               canvas fits its viewport; explicit outer-edge resizing owns overflow. -->
+          <!-- Pixel bases resolve percentages against the mode-aware canvas width;
+               explicit root-handle resizing owns intrinsic overflow. -->
           <PanelContainer
             node={item.child}
             {panels}
@@ -669,6 +730,7 @@
             {onClosePanel}
             {onZoomToggle}
             {onUpdateSizes}
+            {onCanvasResizePreview}
             {onGrowCanvasAtHorizontalPanel}
             {onTabDropToSplit}
             {onTabMoveToPanel}
@@ -690,7 +752,7 @@
             handleIndex={item.index}
             onResizeStart={handleResizeStart}
             onResize={(delta) => handleResize(item.index, delta)}
-            onResizeEnd={handleResizeEnd}
+            onResizeEnd={() => handleResizeEnd(item.index)}
             onTabDropToHandle={onTabDropToSplitHandle}
           />
           <!-- Corner handles at intersection points -->
@@ -713,9 +775,9 @@
 
 <style>
   .panel-split-container {
-    /* The canvas controls intentional horizontal overflow. Default split
-       children remain shrinkable so a new layout fits its viewport. */
-    min-width: max-content;
+    /* The canvas alone owns horizontal overflow. Split containers never add a
+       second implicit content-width constraint. */
+    min-width: 0;
     min-height: 0;
     gap: 0;
   }
@@ -735,11 +797,6 @@
   .panel-split-container.contained {
     min-width: 0;
     overflow: hidden;
-  }
-
-  .panel-split-container.contained.horizontal > .panel-split-child {
-    /* Workspace columns reserve 30rem per horizontal panel at their outer edge. */
-    min-width: 30rem;
   }
 
   .panel-split-handle-wrapper {

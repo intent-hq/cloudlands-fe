@@ -5,7 +5,12 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
+/** Serializable icon descriptor understood by the renderer's icon adapter. */
+export interface PanelTabIcon {
+  iconName: string;
+  prefix?: string;
+  icon?: readonly [number, number, readonly string[], string, string | readonly string[]];
+}
 
 // ============================================================================
 // Core Panel Types
@@ -34,7 +39,7 @@ export interface PanelTab {
   id: string;
   type: PanelTabType;
   title: string;
-  icon?: IconDefinition;
+  icon?: PanelTabIcon;
   closable: boolean;
   hasUnsavedChanges?: boolean;
 
@@ -76,6 +81,8 @@ export interface WorkspacePanelLayout {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
+  canvasWidth?: number | null;
   /** Tab ID that should receive focus when it mounts (consumed when focus is applied) */
   pendingFocusTabId?: string | null;
   detachedPanels?: Record<
@@ -107,6 +114,8 @@ export interface LayoutSnapshot {
   root: PanelLayoutNode;
   panels: Record<string, PanelState>;
   focusedPanelId: string | null;
+  /** Optional for backward compatibility with existing persisted history. */
+  canvasWidth?: number | null;
   timestamp: number;
 }
 

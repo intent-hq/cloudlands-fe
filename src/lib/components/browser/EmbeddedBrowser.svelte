@@ -100,6 +100,8 @@
     focusUrlBarOnMount?: boolean;
     /** Whether this browser panel is the focused panel (for handling global shortcuts like Cmd+R) */
     isFocused?: boolean;
+    /** Whether this tab is visible; inactive cached tabs remain mounted but muted. */
+    isActive?: boolean;
   }
 
   let {
@@ -113,6 +115,7 @@
     onFocus,
     focusUrlBarOnMount = false,
     isFocused = false,
+    isActive = true,
   }: Props = $props();
 
   // Reactive readable for per-tab pending zoom requests dispatched by the
@@ -188,6 +191,7 @@
         setZoomLevel: (level: number) => void;
         getZoomFactor: () => number;
         setZoomFactor: (factor: number) => void;
+        setAudioMuted?: (muted: boolean) => void;
       })
     | null = $state(null);
   // displayUrl tracks the URL shown in the URL bar - can differ from prop `url` after navigation
@@ -209,6 +213,17 @@
   // This ensures the webview starts with the correct URL on first render
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
+
+  // Cached browser tabs stay mounted to preserve page state. Keep inactive
+  // guests silent while Chromium applies its normal background throttling.
+  $effect(() => {
+    if (!webviewRef) return;
+    try {
+      webviewRef.setAudioMuted?.(!isActive);
+    } catch {
+      // WebView may have been detached between the reactive update and call.
+    }
+  });
 
   // Track the previous URL prop value to detect when it changes externally.
   // This is intentionally non-reactive: navigation event handlers update it as
@@ -471,8 +486,8 @@
       // Clean up webview listeners
       cleanupWebviewListeners();
       // NOTE: We intentionally do NOT unregister the tab from CDP here.
-      // The component may unmount due to tab caching (Panel.svelte evicts
-      // inactive tabs after 30s), but the webview/tab still exists.
+      // The component may unmount when its panel cache entry expires, but the
+      // backend filters destroyed webContents from tab discovery.
       // The backend's listTabs() filters out destroyed webContents,
       // so stale entries are automatically cleaned up.
     };

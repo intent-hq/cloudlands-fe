@@ -10,8 +10,9 @@ describe('editorial workspace shell presentation contract', () => {
     const layout = source('../PanelLayout.svelte');
 
     expect(layout).toContain(
-      "contained ? 'overflow-hidden p-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
+      "contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
     );
+    expect(layout).toContain("use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}");
     expect(layout).toContain('data-testid="panel-workspace-inset"');
     expect(layout).toContain('w-max min-w-full');
     expect(layout).not.toMatch(/\bpr-0\b/);
@@ -53,9 +54,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(container).toContain(
       "data-split-gutter={item.type === 'gutter' ? node.direction : undefined}",
     );
-    expect(container).toContain('.panel-split-container.contained.horizontal > .panel-split-child');
     expect(container).not.toContain('min-width: 30em');
-    expect(container).toContain('min-width: 30rem');
+    expect(container).not.toContain('min-width: 30rem');
+    expect(container).toContain('.panel-split-container {');
+    expect(container).toContain('min-width: 0');
     expect(container).toContain('overflow: hidden');
     expect(handle).toContain('width: 16px');
     expect(handle).toContain('height: 16px');
@@ -78,6 +80,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).toContain('data-panel-actions-section="actions"');
     expect(tabBar).toContain('m.layout_panelTabBar_displaySection_label()');
     expect(tabBar).toContain('m.layout_panelTabBar_actionsSection_label()');
+    expect(tabBar).toContain('{@render contentActions?.display?.()}');
+    expect(tabBar).toContain('{@render contentActions?.actions?.()}');
+    expect(tabBar).not.toContain('{@render contentActions()}');
     expect(tabBar).toContain('<Menu.Separator />');
     expect(tabBar).toContain('<Menu.CommandItem');
     expect(tabBar).not.toContain('color-mix');
@@ -113,6 +118,7 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(workspace).toContain('sidebarMinWidth = 280');
     expect(workspace).toContain('sidebarDefaultWidth = 360');
+    expect(workspace).toContain('sidebarPercentageWeight = 0');
     expect(tabDefinitions).toContain("label: 'Context'");
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
@@ -162,7 +168,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain(
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
-    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 8');
+    expect(titlebar).toContain('activeTabBounds.left + panelOffset - 6');
     expect(titlebar).toContain('.titlebar-drag-handle');
     expect(titlebar).toContain('.titlebar-left-drag-surface');
     expect(titlebar).toContain('.titlebar-left-drag-handle');
@@ -177,7 +183,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(tabs).toContain('onActiveTabBoundsChange?.({');
     expect(titlebar).toContain('data-active-tab-border-mask');
-    expect(titlebar).toContain('absolute -bottom-px z-[60] h-0.5 bg-sidebar');
+    expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(chiefTrigger).toContain("togglePanel('chief')");

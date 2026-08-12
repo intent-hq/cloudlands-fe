@@ -36,14 +36,6 @@
     const element = splitElement;
     const measure = () => {
       const children = [...element.children] as HTMLElement[];
-      const firstChild = children[0];
-      const minimumPanelSize = firstChild
-        ? Number.parseFloat(
-            node.direction === 'horizontal'
-              ? getComputedStyle(firstChild).minWidth
-              : getComputedStyle(firstChild).minHeight,
-          ) || 0
-        : 0;
       const resizeTarget = isRoot
         ? element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')
         : element.parentElement;
@@ -54,8 +46,6 @@
       const gap = Number.parseFloat(getComputedStyle(element).gap) || 0;
       panelReferenceSize = getPanelReferenceSize(
         availableSize,
-        children.length,
-        minimumPanelSize,
         gap * Math.max(0, children.length - 1),
       );
     };
@@ -112,11 +102,7 @@
 
 <style>
   .panel-drag-preview-split {
-    min-width: max-content;
-  }
-
-  .panel-drag-preview-split.horizontal > .panel-drag-preview-child {
-    min-width: 30em;
+    min-width: 0;
   }
 
   .panel-drag-preview-split.contained,

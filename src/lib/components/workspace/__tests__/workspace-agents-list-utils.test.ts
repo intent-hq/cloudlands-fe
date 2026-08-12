@@ -74,7 +74,7 @@ describe('getFlatWorkspaceAgentRows', () => {
     expect(list).toContain('m.workspace_agentsList_delegatedRunning_label');
     expect(list).toContain('m.workspace_overviewTimeline_yourAgents_label');
     expect(list).toContain('m.workspace_overviewTimeline_coordinatorDelegates_description');
-    expect(list).toContain('variant="workspace-list"');
+    expect(list).toContain('<LazyAgentCard');
     expect(list).not.toContain('View agent tree');
     expect(sidebar).not.toContain('Agent orchestration');
     expect(sidebar).toContain("{#if tabId !== 'agents'}");
