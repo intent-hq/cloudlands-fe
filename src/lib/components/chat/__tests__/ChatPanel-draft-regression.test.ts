@@ -362,6 +362,42 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(onSaveError).toHaveBeenCalledWith(failure);
   });
 
+  // The save path writes the switch-back cache synchronously (before the wire
+  // save settles) so a flush-at-unmount is visible to an immediate remount. A
+  // rejected drafts.set must roll that optimistic write back to the last
+  // persisted state, so a reopen hydrates what the daemon actually holds.
+  it('rolls the switch-back cache back to the persisted text when drafts.set fails', async () => {
+    const drafts = makeDrafts(() => Promise.resolve(null));
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    // First save succeeds → daemon and cache hold "persisted text".
+    await typeInComposer('persisted text');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+    expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'persisted text', undefined);
+
+    // Second save fails → the optimistic cache write must be rolled back.
+    drafts.set.mockRejectedValueOnce(new Error('wire down'));
+    await typeInComposer('never accepted');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+
+    // Reopen the same pair with a hanging revalidation: the cache hit must
+    // hydrate the daemon-accepted text, not the failed save's text.
+    view.unmount();
+    const hang = deferred<Draft | null>();
+    render(ChatDraftHarness, {
+      props: { drafts: makeDrafts(() => hang.promise), workspaceId: WS, agentId: AGENT },
+    });
+    flushSync();
+
+    expect(composer().value).toBe('persisted text');
+    expect(composer().readOnly).toBe(false);
+  });
+
   // REGRESSION: conditionally unmounting/remounting the composer (e.g. the
   // question wizard replacing it) must not drop the draft, re-arm the gate,
   // or fire an empty save.
@@ -419,6 +455,100 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     flushSync();
 
     expect(composer().value).toBe('saved draft');
+  });
+
+  // REGRESSION: a send clears the composer (and issues drafts.clear) while
+  // the initial drafts.get is still pending; the stale response must not
+  // repopulate the just-sent prompt into the now-empty editor.
+  it('does not restore a stale draft after invalidatePendingRestore() (send cleared the composer)', async () => {
+    const pending = deferred<Draft | null>();
+    const drafts = makeDrafts(() => pending.promise);
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    await vi.advanceTimersByTimeAsync(5100);
+    flushSync();
+    expect(composer().readOnly).toBe(false);
+
+    await typeInComposer('prompt being sent');
+    view.component.simulateSendCleanup();
+    flushSync();
+    expect(composer().value).toBe('');
+
+    pending.resolve({ text: 'prompt being sent', updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(60);
+    flushSync();
+
+    expect(composer().value).toBe('');
+    expect(screen.getByTestId('context-count').textContent).toBe('0');
+  });
+
+  // REGRESSION: send-cleanup must also empty the pair's switch-back cache
+  // entry and drop the pending save, so tearing the panel down before the
+  // reactive empty save runs cannot cache-hydrate the just-sent prompt on
+  // reopen (nor flush-resurrect it to the daemon at unmount).
+  it('reopening the pair after send-cleanup hydrates empty, not the sent prompt', async () => {
+    const drafts = makeDrafts(() => Promise.resolve(null));
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+    expect(composer().readOnly).toBe(false);
+
+    // Debounced save settles, seeding the switch-back cache with the text.
+    await typeInComposer('prompt being sent');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+    expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'prompt being sent', undefined);
+    drafts.set.mockClear();
+
+    // Send clears the composer; the panel is torn down before the reactive
+    // empty save can run (user closes / switches away immediately).
+    view.component.simulateSendCleanup();
+    view.unmount();
+    // The unmount flush must not resurrect the pre-send draft on the daemon.
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    // Reopen the same pair: the cache hit hydrates synchronously (the
+    // revalidation hangs), and must yield an empty composer.
+    const hang = deferred<Draft | null>();
+    render(ChatDraftHarness, {
+      props: { drafts: makeDrafts(() => hang.promise), workspaceId: WS, agentId: AGENT },
+    });
+    flushSync();
+
+    expect(composer().value).toBe('');
+    expect(composer().readOnly).toBe(false);
+  });
+
+  it('releases an active gate immediately when invalidatePendingRestore() is called', async () => {
+    const pending = deferred<Draft | null>();
+    const drafts = makeDrafts(() => pending.promise);
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(500);
+    flushSync();
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(composer().readOnly).toBe(true);
+
+    view.component.simulateSendCleanup();
+    flushSync();
+
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(composer().readOnly).toBe(false);
+
+    pending.resolve({ text: 'stale draft', updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(60);
+    flushSync();
+    expect(composer().value).toBe('');
   });
 
   it('does not gate or restore when workspace/agent ids are missing', async () => {

@@ -7,11 +7,13 @@
    */
   let {
     value = $bindable(''),
+    inputLocked = false,
     onsubmit,
     oncancel,
     onvaluechange,
   }: {
     value?: string;
+    inputLocked?: boolean;
     onsubmit?: (value: string) => void;
     oncancel?: () => void;
     onvaluechange?: (value: string) => void;
@@ -29,7 +31,7 @@
   }
 </script>
 
-<div data-testid="mock-rich-input" data-value={value}>
+<div data-testid="mock-rich-input" data-value={value} data-input-locked={inputLocked}>
   <input
     data-testid="mock-rich-input-editor"
     {value}
