@@ -21,6 +21,7 @@ import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
 import HudHeader from './HudHeader.svelte';
+import { HUD_SOUND_ENABLED_STORAGE_KEY, setHudSoundEnabled } from '../sound/hud-sound-state';
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 
@@ -253,5 +254,78 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('system');
     expect(themeState().name).toBe('dark');
     expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+  });
+});
+
+describe('HudHeader sound-effects toggle', () => {
+  /**
+   * The speaker button drives the shared localStorage-backed enable state
+   * (features/hud/sound/hud-sound-state.ts) the HUD sound service gates on.
+   * The state is module-global (read from localStorage once at import; the
+   * test-setup localStorage mock is a no-op vi.fn), so each test resets it
+   * to the OFF default and persistence is asserted via setItem calls.
+   */
+  beforeEach(() => {
+    setHudSoundEnabled(false);
+    vi.mocked(window.localStorage.setItem).mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders the speaker button immediately LEFT of the theme button, same styling', () => {
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    const soundBtn = screen.getByTestId('hud-header-sound-btn');
+    const themeBtn = screen.getByTestId('hud-header-theme-btn');
+    expect(soundBtn.nextElementSibling).toBe(themeBtn);
+    // Same bordered JetBrains Mono uppercase look as the theme button, and
+    // still clickable inside the frameless window's drag region.
+    expect(soundBtn.classList.contains('hud-header-sound-btn')).toBe(true);
+    expect(soundBtn.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
+  });
+
+  it('renders OFF when the shared state is off (the first-run default)', () => {
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    const soundBtn = screen.getByTestId('hud-header-sound-btn');
+    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(soundBtn.getAttribute('aria-label')).toBe('Toggle HUD sound effects');
+  });
+
+  it('click toggles ON/OFF and persists each state to localStorage', async () => {
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+    const soundBtn = screen.getByTestId('hud-header-sound-btn');
+
+    await fireEvent.click(soundBtn);
+    flushSync();
+    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(
+      HUD_SOUND_ENABLED_STORAGE_KEY,
+      'true',
+    );
+
+    await fireEvent.click(soundBtn);
+    flushSync();
+    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(
+      HUD_SOUND_ENABLED_STORAGE_KEY,
+      'false',
+    );
+  });
+
+  it('reflects a pre-existing ON state on mount (persisted-state restore path)', () => {
+    // Restart restore: hud-sound-state reads localStorage at import and the
+    // header renders whatever the shared state holds when it mounts.
+    setHudSoundEnabled(true);
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    const soundBtn = screen.getByTestId('hud-header-sound-btn');
+    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
   });
 });

@@ -29,6 +29,7 @@
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
   import { formatHudClock } from '../utils/hud-format';
+  import { hudSoundEnabled, toggleHudSoundEnabled } from '../sound/hud-sound-state';
   import HudHeaderFilters from './HudHeaderFilters.svelte';
 
   let { nowMs, controls }: { nowMs: number; controls?: Snippet } = $props();
@@ -73,6 +74,21 @@
     const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
     appStore.dispatch(requestThemePreferenceChange(next));
   }
+
+  /**
+   * HUD sound-effects toggle — the shared localStorage-backed enable state
+   * (default OFF, features/hud/sound/hud-sound-state.ts) the HUD sound
+   * service gates on. Toggling synchronously inside the click handler keeps
+   * the enable within the user gesture, so the service can unlock audio
+   * playback.
+   */
+  const soundLabel = $derived(
+    $hudSoundEnabled ? m.hud_header_soundOn_label() : m.hud_header_soundOff_label(),
+  );
+
+  function toggleSound() {
+    toggleHudSoundEnabled();
+  }
 </script>
 
 {#if isMac}
@@ -90,6 +106,15 @@
   </div>
   <div class="hud-header-clock">{clockText}</div>
   <div class="hud-header-side hud-header-side-right">
+    <button
+      class="hud-header-sound-btn"
+      data-testid="hud-header-sound-btn"
+      aria-label={m.hud_header_soundToggle_ariaLabel()}
+      aria-pressed={$hudSoundEnabled}
+      onclick={toggleSound}
+    >
+      {soundLabel}
+    </button>
     <button class="hud-header-theme-btn" data-testid="hud-header-theme-btn" onclick={cycleTheme}>
       {themeLabel}
     </button>
@@ -155,7 +180,8 @@
     letter-spacing: 0.08em;
     white-space: nowrap;
   }
-  .hud-header-theme-btn {
+  .hud-header-theme-btn,
+  .hud-header-sound-btn {
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
@@ -167,7 +193,8 @@
     color: hsl(var(--text-subtle));
     text-transform: uppercase;
   }
-  .hud-header-theme-btn:hover {
+  .hud-header-theme-btn:hover,
+  .hud-header-sound-btn:hover {
     background: hsl(var(--muted) / 0.5);
   }
 </style>
