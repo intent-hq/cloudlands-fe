@@ -241,6 +241,18 @@ function defaultNow(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
+/** Dev builds fail loudly; packaged builds stay alive and leave a breadcrumb. */
+function isDevBuild(): boolean {
+  return Boolean(import.meta.env?.DEV);
+}
+
+function describeState(state: unknown): string {
+  if (state === null) return 'null';
+  if (state === undefined) return 'undefined';
+  if (Array.isArray(state)) return 'an array';
+  return `a ${typeof state}`;
+}
+
 /**
  * Start emitting fingerprints. Returns a stop handler; calling it clears both
  * the boot timer and the interval.
@@ -258,10 +270,49 @@ export function startRetentionFingerprint(
   let firstSampleTimer: ReturnType<typeof setTimeout> | null = null;
   let intervalTimer: ReturnType<typeof setInterval> | null = null;
 
+  let unreadableStoreReported = false;
+
+  /**
+   * Report a store whose state cannot be read.
+   *
+   * Deliberately loud. The first cut of this module read `store.getState()`,
+   * which themis does not define, and a defensive `return` turned that into a
+   * fingerprint that never emitted once — indistinguishable, from the outside,
+   * from a healthy one. A diagnostic that quietly stops diagnosing is the worst
+   * possible failure mode, so: WARN once (warnings reach console-output.log, so
+   * a bundle shows that the fingerprint is off and why), and throw in dev builds
+   * so it cannot survive a single run on a developer's machine.
+   *
+   * Once-only because the alternative is one line per interval forever, and the
+   * condition is structural — it will not fix itself.
+   */
+  const reportUnreadableStore = (reason: string): void => {
+    if (unreadableStoreReported) return;
+    unreadableStoreReported = true;
+    const detail = `Retention fingerprint disabled: ${reason}`;
+    logger.warn(detail);
+    if (isDevBuild()) throw new Error(detail);
+  };
+
   const emit = (): void => {
+    let state: unknown;
     try {
-      const state = store?.state;
-      if (!isRecord(state)) return;
+      // themis throws from this getter until Store.init() has run. We start
+      // after initAppStore(), so a throw here is a real anomaly, not a race.
+      state = store?.state;
+    } catch (error) {
+      reportUnreadableStore(
+        `reading store.state threw (${error instanceof Error ? error.message : String(error)})`,
+      );
+      return;
+    }
+
+    if (!isRecord(state)) {
+      reportUnreadableStore(`store.state is ${describeState(state)}, expected an object`);
+      return;
+    }
+
+    try {
       sampleCount += 1;
       const sample = collectRetentionFingerprint(state, {
         sample: sampleCount,
@@ -269,15 +320,19 @@ export function startRetentionFingerprint(
       });
       logger.info(formatRetentionFingerprint(sample));
     } catch (error) {
-      // A diagnostic must never take the renderer down with it.
+      // Collecting is best-effort: a diagnostic must never take the renderer
+      // down with it. Unlike an unreadable store, this can be transient.
       logger.warn('Failed to emit retention fingerprint', error);
     }
   };
 
   firstSampleTimer = setTimeout(() => {
     firstSampleTimer = null;
-    emit();
+    // Arm the interval before the first sample, not after: in dev builds the
+    // boot sample can throw by design, and that must not leave the schedule
+    // unarmed (or make dev and packaged builds sample differently).
     intervalTimer = setInterval(emit, intervalMs);
+    emit();
   }, firstSampleMs);
 
   return () => {
