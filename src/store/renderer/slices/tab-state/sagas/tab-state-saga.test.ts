@@ -35,6 +35,7 @@ import {
   toggleWorkspaceTabPin,
   unmarkWorkspaceTabOptimistic,
   WORKSPACE_TABS_STORAGE_KEY,
+  workspaceTabsHydrated,
 } from '../tab-state-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
@@ -92,12 +93,13 @@ describe('tabStateSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       loadScrollPositions({ 'ws-1-note': 42 }),
       loadWorkspaceTabsState(persistedTabs),
+      workspaceTabsHydrated(LOCAL_CONNECTION_ID),
     ]);
     task.cancel();
     await task.toPromise();
   });
 
-  it('ignores missing and malformed storage without dispatching hydration', async () => {
+  it('ignores missing and malformed storage but still marks hydration settled', async () => {
     storage.getJSON.mockImplementation((key: string) =>
       key === TAB_SCROLL_POSITIONS_STORAGE_KEY ? { tab: Number.NaN } : { openTabs: 'bad' },
     );
@@ -105,7 +107,9 @@ describe('tabStateSaga', () => {
     const task = runSaga({ channel: stdChannel(), dispatch, getState: () => state }, tabStateSaga);
     await settle();
 
-    expect(dispatch.mock.calls).toEqual([]);
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      workspaceTabsHydrated(LOCAL_CONNECTION_ID),
+    ]);
     task.cancel();
     await task.toPromise();
   });
@@ -222,6 +226,7 @@ describe('tabStateSaga', () => {
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
         loadScrollPositions({}),
         loadWorkspaceTabsState(persistedTabs),
+        workspaceTabsHydrated(REMOTE_ID),
       ]);
       task.cancel();
       await task.toPromise();

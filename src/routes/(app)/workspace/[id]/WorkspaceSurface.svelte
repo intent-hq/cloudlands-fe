@@ -31,6 +31,8 @@
   import { CleanupManager } from '$features/optimization/memory-manager';
 
   import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
+  import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
+  import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
     selectActiveWorkspaceId,
@@ -230,10 +232,19 @@
     return newState;
   }
 
-  // Show the full-page workspace onboarding whenever the route is /workspace/new
-  // or while the crossfade hold is active after workspace creation.
+  // Boot-route anti-flash: when this page load booted on a gated route, the
+  // (app) layout may still be deciding whether to redirect to an existing
+  // workspace instead of onboarding. Hold the onboarding render until that
+  // decision resolves so the wizard never flashes before a redirect.
+  const bootGateResolved = selectBootRouteGateResolved();
+  const bootGateHolding = $derived(isBootRouteLoad() && !$bootGateResolved);
 
-  const showOnboarding = $derived(workspaceId === 'new' || onboardingHoldActive);
+  // Show the full-page workspace onboarding whenever the route is /workspace/new
+  // (and the boot-route gate is not holding) or while the crossfade hold is
+  // active after workspace creation.
+  const showOnboarding = $derived(
+    (workspaceId === 'new' && !bootGateHolding) || onboardingHoldActive,
+  );
 
   // Reactive writable store that mirrors workspaceId so the Redux selector
   // re-evaluates whenever the route param changes.
@@ -289,6 +300,11 @@
   // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
   // the toggle event to animate it open after workspace creation.
   $effect(() => {
+    // While the boot-route gate is holding, showOnboarding is suppressed but
+    // onboarding has not "ended" — skip so the hold is not misread as an
+    // onboarding→workspace transition (which would expand an empty sidebar
+    // next to the wizard when the gate resolves to stay on onboarding).
+    if (bootGateHolding) return;
     if (prevShowOnboarding && !showOnboarding) {
       // Onboarding just ended — expand sidebar with animation
       dispatchWindowEvent('workspace:toggle-left-sidebar', {

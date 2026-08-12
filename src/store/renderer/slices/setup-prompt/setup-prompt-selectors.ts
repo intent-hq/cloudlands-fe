@@ -13,6 +13,11 @@ export const selectSetupEvaluation = store.createSelector(
   (state) => state.setupPrompt.evaluation,
 );
 
+/** True once this page load's boot-route gate decision has been made. */
+export const selectBootRouteGateResolved = store.createSelector(
+  (state) => state.setupPrompt.bootRouteGateResolved,
+);
+
 /**
  * The evaluation for the CURRENTLY-ACTIVE backend, or null. Gated on the
  * active connection id so a stale evaluation from a previous backend never

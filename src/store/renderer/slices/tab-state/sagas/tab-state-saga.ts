@@ -36,6 +36,7 @@ import {
   toggleWorkspaceTabPin,
   unmarkWorkspaceTabOptimistic,
   WORKSPACE_TABS_STORAGE_KEY,
+  workspaceTabsHydrated,
 } from '../tab-state-slice';
 
 const TAB_PERSIST_ACTIONS = [
@@ -110,8 +111,8 @@ function isScrollPositionsMap(value: unknown): value is Record<string, number> {
 }
 
 export function* hydrateTabState(): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
   try {
-    const backendId = yield* selectActiveBackendId();
     const scrollPositions = yield* call(getLocalStorageJSON<unknown>, scrollKey(backendId));
     if (isScrollPositionsMap(scrollPositions)) {
       yield* put(loadScrollPositions(scrollPositions));
@@ -124,6 +125,9 @@ export function* hydrateTabState(): SagaGenerator<void> {
   } catch {
     // Hydration is best-effort; persistence remains available after a read failure.
   }
+  // Always mark hydration settled (even when nothing/garbage was stored) so
+  // boot-time consumers of currentTabId don't wait forever.
+  yield* put(workspaceTabsHydrated(backendId));
 }
 
 function* persistWorkspaceTabs(): SagaGenerator<void> {
@@ -183,6 +187,7 @@ export function* watchBackendSwitch(): SagaGenerator<void> {
     } catch {
       // Backend-specific hydration is best-effort; keep watching future switches.
     }
+    yield* put(workspaceTabsHydrated(backendId));
   }
 }
 

@@ -29,11 +29,11 @@ describe('root route removal', () => {
     ).toBe(false);
   });
 
-  it('redirects legacy root loads to a workspace or workspace creation', () => {
-    expect(layoutSource).toContain("window.location.pathname !== '/'");
-    expect(layoutSource).toContain("'/workspace/new'");
-    expect(layoutSource).toContain('openWorkspaceTab(targetWorkspace.id)');
-    expect(layoutSource).toContain('goto(target, { replaceState: true })');
+  it('routes boot and legacy root loads through the backend-derived setup gate', () => {
+    expect(layoutSource).toContain('decideBootRoute({');
+    expect(layoutSource).toContain('openWorkspaceTab(decision.openTabWorkspaceId)');
+    expect(layoutSource).toContain('bootRouteGateResolved()');
+    expect(layoutSource).toContain('goto(decision.target, { replaceState: true })');
   });
 
   it('opens fresh and legacy root windows on the workspace bootstrap route', () => {
