@@ -7,15 +7,23 @@
  * bounded read scheduler queues that fan-out; this gate stops most of it from
  * being issued at all — a card the user has not scrolled to asks for nothing.
  *
- * `IntersectionObserver` clips against ancestor overflow, so the default
- * (document) root already reports cards scrolled out of the grid's own
- * scroll container and no explicit root wiring is needed. Where the API is
- * missing (non-DOM environments) every observed card is reported immediately,
- * which is the pre-gate behaviour — degrade to more reads, never to none.
+ * The observer is rooted at the grid's own scroll container, which it must be
+ * for the preload margin to do anything: `IntersectionObserver` intersects the
+ * target against every clipping ancestor *unexpanded* and applies `rootMargin`
+ * only to the root's rectangle. Under the implicit (document) root the grid's
+ * `overflow-y: auto` clip therefore discards a below-the-fold card before the
+ * margin is ever consulted, and the preload silently never happens. Hence
+ * `setRoot`: the observer is not created until the scroller is known, and
+ * cards observed before then wait rather than being observed against the
+ * wrong root.
+ *
+ * Where `IntersectionObserver` is missing (non-DOM environments) every
+ * observed card is reported immediately, which is the pre-gate behaviour —
+ * degrade to more reads, never to none.
  */
 
 /**
- * Cards this far outside the viewport count as visible, so a card is already
+ * How far outside the scroller a card counts as visible, so a card is already
  * loaded by the time a scroll brings it into view.
  */
 export const CARD_VISIBILITY_ROOT_MARGIN = '200px 0px';
@@ -27,6 +35,14 @@ export interface CardVisibilityHandle {
 }
 
 export interface CardVisibilityGate {
+  /**
+   * Points the gate at the scroll container the cards live in. Until this is
+   * called with an element, observed cards are held pending — they are never
+   * measured against the document root, whose margin would not apply to them.
+   * Passing a different element rebuilds the observer; passing `null` (the
+   * scroller unmounted) tears it down.
+   */
+  setRoot(root: Element | null): void;
   /**
    * Svelte action for a card slot: reports the slot's workspace the first time
    * the slot enters the viewport, and on every re-entry after that (callers
@@ -41,48 +57,76 @@ export function createCardVisibilityGate(
   onVisible: (workspaceId: string) => void,
 ): CardVisibilityGate {
   const workspaceIds = new Map<Element, string>();
+  /** Observed cards still waiting for a root (or for the fallback report). */
+  const pending = new Set<Element>();
   let observer: IntersectionObserver | null = null;
+  let root: Element | null = null;
   let destroyed = false;
 
-  function ensureObserver(): IntersectionObserver | null {
-    if (observer || destroyed) return observer;
-    if (typeof IntersectionObserver === 'undefined') return null;
-    observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const workspaceId = workspaceIds.get(entry.target);
-          if (workspaceId) onVisible(workspaceId);
-        }
-      },
-      { rootMargin: CARD_VISIBILITY_ROOT_MARGIN },
-    );
-    return observer;
+  function report(node: Element): void {
+    const workspaceId = workspaceIds.get(node);
+    if (workspaceId) onVisible(workspaceId);
+  }
+
+  function flush(): void {
+    if (destroyed || pending.size === 0) return;
+    // No IntersectionObserver at all: fall back to reading every card.
+    if (typeof IntersectionObserver === 'undefined') {
+      for (const node of pending) report(node);
+      pending.clear();
+      return;
+    }
+    if (!observer) return;
+    for (const node of pending) observer.observe(node);
+    pending.clear();
   }
 
   return {
+    setRoot(next: Element | null): void {
+      if (destroyed || next === root) return;
+      root = next;
+      observer?.disconnect();
+      observer = null;
+      if (next && typeof IntersectionObserver !== 'undefined') {
+        observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) report(entry.target);
+            }
+          },
+          { root: next, rootMargin: CARD_VISIBILITY_ROOT_MARGIN },
+        );
+        // Everything already mounted has to be re-observed under the new root.
+        for (const node of workspaceIds.keys()) pending.add(node);
+      }
+      flush();
+    },
+
     observe(node: HTMLElement, workspaceId: string): CardVisibilityHandle {
       workspaceIds.set(node, workspaceId);
-      const active = ensureObserver();
-      if (active) active.observe(node);
-      else onVisible(workspaceId);
+      pending.add(node);
+      flush();
       return {
         update(next: string) {
           if (workspaceIds.get(node) === next) return;
           workspaceIds.set(node, next);
-          if (!active) onVisible(next);
+          if (pending.has(node)) flush();
         },
         destroy() {
           workspaceIds.delete(node);
-          active?.unobserve(node);
+          pending.delete(node);
+          observer?.unobserve(node);
         },
       };
     },
+
     destroy() {
       destroyed = true;
       workspaceIds.clear();
+      pending.clear();
       observer?.disconnect();
       observer = null;
+      root = null;
     },
   };
 }

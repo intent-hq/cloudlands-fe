@@ -22,6 +22,7 @@ import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 
 import HudWorkspaceGrid from './HudWorkspaceGrid.svelte';
+import { CARD_VISIBILITY_ROOT_MARGIN } from './hud-card-visibility';
 
 const TASKS_READ = ensureWorkspaceTasksLoaded('probe').type;
 const TOKENS_READ = fetchWorkspaceTokenUsage('probe').type;
@@ -29,13 +30,19 @@ const TOKENS_READ = fetchWorkspaceTokenUsage('probe').type;
 /** Captured IntersectionObserver instances so tests can fire intersections. */
 const observers: Array<{
   callback: IntersectionObserverCallback;
+  options: IntersectionObserverInit | undefined;
   elements: Element[];
   instance: IntersectionObserver;
 }> = [];
 
 class MockIntersectionObserver {
-  constructor(callback: IntersectionObserverCallback) {
-    observers.push({ callback, elements: [], instance: this as unknown as IntersectionObserver });
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    observers.push({
+      callback,
+      options,
+      elements: [],
+      instance: this as unknown as IntersectionObserver,
+    });
   }
   private get entry() {
     return observers.find((o) => o.instance === (this as unknown as IntersectionObserver));
@@ -134,6 +141,22 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
     expect(observedElements()).toHaveLength(3);
     expect(readsOf(TASKS_READ)).toEqual([]);
     expect(readsOf(TOKENS_READ)).toEqual([]);
+  });
+
+  it('roots the observer at the grid scroller so the preload margin applies', () => {
+    const { container } = render(HudWorkspaceGrid);
+    flushSync();
+
+    // `IntersectionObserver` clips against every ancestor unexpanded and
+    // applies `rootMargin` only to the ROOT's rect. Rooted at the document,
+    // `.hud-ws-grid`'s `overflow-y: auto` clip discards a below-the-fold card
+    // before the margin is consulted and the preload silently never happens —
+    // so the root must be the scroller itself.
+    const scroller = container.querySelector('.hud-ws-grid');
+    expect(scroller).not.toBeNull();
+    expect(observers).toHaveLength(1);
+    expect(observers[0].options?.root).toBe(scroller);
+    expect(observers[0].options?.rootMargin).toBe(CARD_VISIBILITY_ROOT_MARGIN);
   });
 
   it('issues exactly one read pair for a card scrolled into view, and only for it', () => {

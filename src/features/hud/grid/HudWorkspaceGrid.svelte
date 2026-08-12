@@ -66,9 +66,12 @@
 
   // A card only asks for its rollups once it is on screen: on a ~130-workspace
   // profile the eager fan-out was ~260 reads in one tick, of which the user
-  // could see a dozen.
+  // could see a dozen. The gate is rooted at the grid's scroll container (the
+  // element that actually clips the cards) — see `hud-card-visibility`.
+  let gridEl = $state<HTMLDivElement | undefined>();
   const cardVisibility = createCardVisibilityGate(requestRollups);
   const observeCard = cardVisibility.observe;
+  $effect(() => cardVisibility.setRoot(gridEl ?? null));
   onDestroy(() => cardVisibility.destroy());
 
   // The active workspace is exempt: its rollups feed the rest of the UI, so it
@@ -85,7 +88,7 @@
     {#if visibleCards.length === 0}
       <div class="hud-ws-grid-empty">{m.hud_grid_empty_label()}</div>
     {:else}
-      <div class="hud-ws-grid">
+      <div class="hud-ws-grid" bind:this={gridEl}>
         {#each visibleCards as card (card.workspaceId)}
           <div
             class="hud-ws-grid-slot"
