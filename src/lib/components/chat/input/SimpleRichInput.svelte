@@ -165,7 +165,11 @@
   }
 
   // Import ContextItem from context-api.ts
-  import { hasBlockingAttachments, placeAttachment, type ContextItem } from './context-api';
+  import { hasBlockingAttachments, type ContextItem } from './context-api';
+  import {
+    extractPlacementErrorDetail,
+    placeAttachmentViaTransport,
+  } from './attachment-placement';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -1019,9 +1023,10 @@
 
   /**
    * Run (or re-run, on retry) `file.placeAttachment` for a staged context
-   * item using its captured `sourcePath`. Mutates the item's placement
-   * status in place: `placing` → `placed` (with attachment metadata) or
-   * `failed` (pill shows retry; send stays blocked).
+   * item using its captured `sourcePath` (transport-aware: the data arm
+   * carries the bytes when the backend is remote). Mutates the item's
+   * placement status in place: `placing` → `placed` (with attachment
+   * metadata) or `failed` (pill shows retry; send stays blocked).
    */
   async function runPlacement(itemId: string) {
     const item = contextItems.find((i) => i.id === itemId);
@@ -1033,7 +1038,7 @@
 
     if (!workspace?.id || !item.sourcePath) {
       // No resolvable source path (e.g. pasted bytes without a backing file)
-      // or no workspace — placement cannot proceed; base64 is not a fallback.
+      // or no workspace — placement cannot proceed without a source to read.
       logger.error('Attachment placement not possible', {
         fileName: item.label,
         hasWorkspace: !!workspace?.id,
@@ -1044,9 +1049,9 @@
       return;
     }
 
-    patchItem({ placementStatus: 'placing' });
+    patchItem({ placementStatus: 'placing', placementError: undefined });
     try {
-      const result = await placeAttachment(workspace.id, item.label, {
+      const result = await placeAttachmentViaTransport(workspace.id, item.label, {
         sourcePath: item.sourcePath,
         mimeType: item.attachmentMimeType,
       });
@@ -1069,8 +1074,13 @@
       toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
       logger.error('Failed to place attachment', { fileName: item.label, error });
-      patchItem({ placementStatus: 'failed' });
-      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
+      const detail = extractPlacementErrorDetail(error);
+      patchItem({ placementStatus: 'failed', placementError: detail });
+      toast.error(
+        detail
+          ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
+          : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
+      );
     }
   }
 
@@ -1344,6 +1354,7 @@
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
             placementStatus={item.placementStatus}
+            placementError={item.placementError}
             onRetry={(id) => void runPlacement(id)}
             variant="chip"
           />

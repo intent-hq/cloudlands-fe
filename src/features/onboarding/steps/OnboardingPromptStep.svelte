@@ -516,6 +516,7 @@
                 onRemove={removeStagedItem}
                 variant="chip"
                 placementStatus={item.placementStatus}
+                placementError={item.placementError}
               />
             {/each}
           </div>

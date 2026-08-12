@@ -1924,6 +1924,7 @@
   "chat_richInput_addedImages_toast_one": "1 Bild zum Kontext hinzugefügt",
   "chat_richInput_addedImages_toast_many": "{count} Bilder zum Kontext hinzugefügt",
   "chat_richInput_attachmentPlaceFailed_error": "{name} konnte nicht im Workspace abgelegt werden",
+  "chat_richInput_attachmentPlaceFailedDetail_error": "{name} konnte nicht im Workspace abgelegt werden: {detail}",
   "chat_richInput_askAnything_placeholder": "Fragen Sie etwas oder tippen Sie @ für Kontext",
   "chat_richInput_attachFiles_label": "Dateien anhängen",
   "chat_richInput_cancel_label": "Abbrechen",

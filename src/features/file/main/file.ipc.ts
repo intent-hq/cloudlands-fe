@@ -159,8 +159,9 @@ export function setupFileIPC() {
           let content: string;
           let truncated = false;
 
-          if (isBinary) {
-            // For binary files, convert to base64
+          if (validated.encoding === 'base64' || isBinary) {
+            // Explicit base64 requests (e.g. attachment bytes for the remote
+            // placeAttachment data arm) and binary files return base64.
             // Apply truncation if needed for binary files
             if (validated.truncateIfLarge && buffer.length > effectiveMaxSize) {
               content = buffer.subarray(0, effectiveMaxSize).toString('base64');

@@ -1924,6 +1924,7 @@
   "chat_richInput_addedImages_toast_one": "已将 1 张图片添加到上下文",
   "chat_richInput_addedImages_toast_many": "已将 {count} 张图片添加到上下文",
   "chat_richInput_attachmentPlaceFailed_error": "无法将 {name} 放入工作区",
+  "chat_richInput_attachmentPlaceFailedDetail_error": "无法将 {name} 放入工作区：{detail}",
   "chat_richInput_askAnything_placeholder": "随便问，或输入 @ 添加上下文",
   "chat_richInput_attachFiles_label": "附加文件",
   "chat_richInput_cancel_label": "取消",
