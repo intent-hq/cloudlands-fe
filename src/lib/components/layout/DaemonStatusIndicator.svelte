@@ -318,7 +318,7 @@
   side="bottom"
   bind:open={dropdownOpen}
   contentClass="px-0"
-  contentMaxHeight="calc(100dvh - 1rem)"
+  contentMaxHeight="var(--bits-dropdown-menu-content-available-height)"
   portal={true}
 >
   {#snippet trigger({ toggle }: { toggle: () => void })}
@@ -640,7 +640,7 @@
                 </Menu.Item>
                 {#if !conn.isLocal}
                   <Menu.Item
-                    class="cursor-pointer text-xs text-red-500"
+                    class="cursor-pointer text-xs text-red-500 data-[highlighted]:text-red-500"
                     onSelect={() => handleForgetConnection(conn.id)}
                   >
                     {m.layout_daemonStatus_forget_action()}

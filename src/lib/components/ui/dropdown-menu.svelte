@@ -11,7 +11,7 @@
     trigger,
     content,
     contentClass = '',
-    contentMaxHeight = undefined,
+    contentMaxHeight,
     class: className = '',
   }: {
     open?: boolean;

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import MenuTestHarness from './MenuTestHarness.svelte';
 import LegacyMenuHarness from './LegacyMenuHarness.svelte';
+import DropdownMenu from '../dropdown-menu.svelte';
 import { menuMetadata, menuSemantics } from './menu.meta';
 
 afterEach(cleanup);
@@ -193,6 +194,15 @@ describe('Menu metadata and compatibility', () => {
     await openMenu();
     const menu = screen.getByRole('menu');
     // jsdom's CSSOM drops the nested calc() keyword when serializing min().
+    expect(menu.getAttribute('style')).toMatch(
+      /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
+    );
+  });
+
+  it('keeps the 24rem default cap through the DropdownMenu wrapper when contentMaxHeight is not passed', async () => {
+    render(DropdownMenu, { props: { open: true } });
+    await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+    const menu = screen.getByRole('menu');
     expect(menu.getAttribute('style')).toMatch(
       /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
     );

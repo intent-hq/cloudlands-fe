@@ -339,7 +339,7 @@ describe('DaemonStatusIndicator', () => {
   });
 
   describe('menu height', () => {
-    it('lets the dropdown grow to the viewport height instead of the 24rem default cap', async () => {
+    it('lets the dropdown grow to the bits-ui available height instead of the 24rem default cap', async () => {
       mockStoreState = {
         daemonHealth: {
           health: 'healthy',
@@ -363,7 +363,7 @@ describe('DaemonStatusIndicator', () => {
 
       const menu = screen.getByRole('menu');
       const style = menu.getAttribute('style') ?? '';
-      expect(style).toContain('max-height: calc(100dvh - 1rem)');
+      expect(style).toContain('max-height: var(--bits-dropdown-menu-content-available-height)');
       expect(style).not.toContain('24rem');
     });
   });
