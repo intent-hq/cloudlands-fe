@@ -52,7 +52,7 @@ export const HUD_SOUND_CUE_VOLUMES: Readonly<Record<HudSoundCue, number>> = {
   'agent-started': 0.5,
   'agent-failed': 0.7,
   'question-asked': 0.6,
-  'blocker-raised': 0.7,
+  'blocker-raised': 1.0,
   'discussion-requested': 0.6,
   'task-complete': 0.5,
   'workspace-complete': 0.55,
