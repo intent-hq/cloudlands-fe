@@ -78,6 +78,18 @@ describe("fuzzyScore", () => {
     expect(fuzzyScore("hud", "hud")).toBe(1000);
     expect(fuzzyScore("hud", "hud")).toBeGreaterThan(fuzzyScore("hud panel", "hud"));
   });
+
+  it("prefers a later word-boundary occurrence over an earlier plain occurrence", () => {
+    expect(fuzzyScore("shud HUD", "hud")).toBe(122);
+    expect(fuzzyScore("shud HUD", "hud")).toBeGreaterThan(fuzzyScore("shudder", "hud"));
+  });
+
+  it("ranks a contiguous substring above any pure subsequence match for long needles", () => {
+    const contiguous = fuzzyScore("zzabcdefghijklmnop", "abcdefghijklmnop");
+    const scattered = fuzzyScore("za b c d e f g h i j k l m n o p", "abcdefghijklmnop");
+    expect(contiguous).toBeGreaterThan(scattered);
+    expect(scattered).toBeLessThan(50);
+  });
 });
 // ── parseQueryFilter ───────────────────────────────────────────────────────
 
