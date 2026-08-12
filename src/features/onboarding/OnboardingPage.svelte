@@ -873,7 +873,12 @@
       await resumeOnboardingPendingSend();
       return;
     }
-    if (hasBlockingAttachments(onboardingStagedItems)) return;
+    if (hasBlockingAttachments(onboardingStagedItems)) {
+      // The error banner's Retry also lands here — surface why nothing
+      // happened instead of a silent no-op (pills must be retried/removed).
+      toast.error(m.onboarding_page_blockingAttachments_toast());
+      return;
+    }
 
     isOnboardingCreating = true;
     onboardingCreationError = null;

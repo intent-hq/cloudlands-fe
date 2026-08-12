@@ -3256,6 +3256,7 @@
   "onboarding_page_enhanceUnavailable_error": "La mejora de prompts no está disponible con el proveedor actual",
   "onboarding_page_pullFailed_error": "Error al hacer pull de los cambios",
   "onboarding_page_attachmentPlacementFailed_error": "El espacio de trabajo se creó, pero algunos adjuntos fallaron — reintenta o elimínalos y pulsa Crear de nuevo",
+  "onboarding_page_blockingAttachments_toast": "Algunos adjuntos siguen subiéndose o fallaron — reintenta o elimínalos primero",
   "onboarding_page_createFailed_error": "No se pudo crear el espacio de trabajo",
   "onboarding_page_unexpected_error": "Se produjo un error inesperado",
   "onboarding_page_yourProject_label": "su proyecto",
