@@ -7,7 +7,7 @@
 
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { closeTab, updateFileTabPath } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectFileContent,
@@ -16,10 +16,12 @@
     selectFileIsDirty,
     selectFileLastUpdated,
     selectFileLoading,
+    selectFileNotFoundCandidates,
     selectFileSaving,
   } from '$store/renderer/slices/files/files-selectors';
   import {
     loadFileContentRequested,
+    removeFileContentEntry,
     saveFileContentRequested,
     updateFileContent,
   } from '$store/renderer/slices/files/files-slice';
@@ -76,6 +78,8 @@
   // svelte-ignore state_referenced_locally
   const fileErrorStore = selectFileError(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
+  const fileNotFoundCandidatesStore = selectFileNotFoundCandidates(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
   const isFileBinaryStore = selectFileIsBinary(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
   const isFileDirtyStore = selectFileIsDirty(workspaceId, filePathStore);
@@ -96,6 +100,12 @@
   const fileLoading = $derived($fileLoadingStore);
   const fileSaving = $derived($fileSavingStore);
   const fileError = $derived($fileErrorStore);
+  // Suffix-resolution candidates recorded by the read saga on a not-found
+  // error (see files-read-saga); capped for display in the error panel.
+  const MAX_NOT_FOUND_CANDIDATES = 5;
+  const fileNotFoundCandidates = $derived(
+    ($fileNotFoundCandidatesStore ?? []).slice(0, MAX_NOT_FOUND_CANDIDATES),
+  );
   const isFileBinary = $derived($isFileBinaryStore);
   const isFileDirty = $derived($isFileDirtyStore);
   const fileLastUpdated = $derived($fileLastUpdatedStore);
@@ -227,6 +237,17 @@
     appStore.dispatch(
       saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent),
     );
+  }
+
+  // Retarget this tab to a suffix-resolution candidate (mirrors the read
+  // saga's unique-match flow): drop the stale not-found entry, then update
+  // the tab path — the load effect re-issues the read against it. Scoped to
+  // this tab's id so other tabs open on the same path resolve independently.
+  function openNotFoundCandidate(candidate: string) {
+    const currentPath = tab.filePath;
+    if (!currentPath || !workspaceId) return;
+    appStore.dispatch(removeFileContentEntry(workspaceId, currentPath));
+    appStore.dispatch(updateFileTabPath(workspaceId, currentPath, candidate, tab.id));
   }
 
   // Fetch line changes for diff indicators
@@ -405,6 +426,23 @@
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
         <p class="text-destructive-foreground">{m.layout_fileTab_errorLoading_label()}</p>
         <p class="text-xs">{fileError}</p>
+        <p class="text-xs font-mono">{tab.filePath}</p>
+        {#if fileNotFoundCandidates.length > 0}
+          <p class="text-xs mt-2">{m.layout_fileTab_didYouMean_label()}</p>
+          <ul class="flex flex-col items-center gap-1">
+            {#each fileNotFoundCandidates as candidate (candidate)}
+              <li>
+                <button
+                  type="button"
+                  class="text-xs font-mono text-primary cursor-pointer hover:underline"
+                  onclick={() => openNotFoundCandidate(candidate)}
+                >
+                  {candidate}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
     {:else if fileContent !== null}
       {@const isSvgFile = tab.filePath?.toLowerCase().endsWith('.svg')}

@@ -24,6 +24,7 @@ import {
   resizePanelLayoutRightEdge,
   setDeferSpecTab,
   updateTabTitle,
+  updateFileTabPath,
   clearPanelLayout,
 } from './panel-layout-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
@@ -39,7 +40,7 @@ function emptyState(): PanelLayoutSliceState {
 /** Create state with a single panel containing some tabs */
 function stateWithPanel(
   panelId = 'p1',
-  tabs: Array<{ id: string; type: string; title: string }> = [],
+  tabs: Array<{ id: string; type: string; title: string; filePath?: string }> = [],
 ) {
   const state = emptyState();
   state.byWorkspaceId[WS] = {
@@ -586,6 +587,47 @@ describe('panelLayoutReducer', () => {
       const state = stateWithPanel('p1', [{ id: 't1', type: 'note', title: 'Old Title' }]);
       const result = panelLayoutReducer(state, updateTabTitle(WS, 't1', 'New Title'));
       expect(result.byWorkspaceId[WS].panels.p1.tabs[0].title).toBe('New Title');
+    });
+  });
+
+  describe('updateFileTabPath', () => {
+    const twoTabsSamePath = () =>
+      stateWithPanel('p1', [
+        { id: 't1', type: 'file', title: 'app.ts', filePath: 'src/app.ts' },
+        { id: 't2', type: 'file', title: 'app.ts', filePath: 'src/app.ts' },
+      ]);
+
+    it('retargets only the identified tab when tabId is provided', () => {
+      const result = panelLayoutReducer(
+        twoTabsSamePath(),
+        updateFileTabPath(WS, 'src/app.ts', 'packages/b/src/app.ts', 't2'),
+      );
+      const tabs = result.byWorkspaceId[WS].panels.p1.tabs;
+      expect(tabs[0].filePath).toBe('src/app.ts');
+      expect(tabs[0].title).toBe('app.ts');
+      expect(tabs[1].filePath).toBe('packages/b/src/app.ts');
+      expect(tabs[1].title).toBe('app.ts');
+    });
+
+    it('retargets every tab matching the old path when tabId is omitted', () => {
+      const result = panelLayoutReducer(
+        twoTabsSamePath(),
+        updateFileTabPath(WS, 'src/app.ts', 'packages/b/src/app.ts'),
+      );
+      const tabs = result.byWorkspaceId[WS].panels.p1.tabs;
+      expect(tabs[0].filePath).toBe('packages/b/src/app.ts');
+      expect(tabs[1].filePath).toBe('packages/b/src/app.ts');
+    });
+
+    it('is a no-op when the identified tab does not match the old path', () => {
+      const state = stateWithPanel('p1', [
+        { id: 't1', type: 'file', title: 'app.ts', filePath: 'src/app.ts' },
+      ]);
+      const result = panelLayoutReducer(
+        state,
+        updateFileTabPath(WS, 'other/app.ts', 'packages/b/src/app.ts', 't1'),
+      );
+      expect(result).toBe(state);
     });
   });
 

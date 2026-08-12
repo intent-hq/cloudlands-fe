@@ -51,6 +51,11 @@ export const selectFileError = store.createSelector(
     selectFileContentEntry.select(state, wsId, path)?.error ?? null,
 );
 
+export const selectFileNotFoundCandidates = store.createSelector(
+  (state, wsId: string, path: string | null | undefined): string[] | null =>
+    selectFileContentEntry.select(state, wsId, path)?.notFoundCandidates ?? null,
+);
+
 export const selectFileIsBinary = store.createSelector(
   (state, wsId: string, path: string | null | undefined): boolean =>
     selectFileContentEntry.select(state, wsId, path)?.isBinary ?? false,

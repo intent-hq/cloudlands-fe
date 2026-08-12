@@ -19,6 +19,7 @@ import {
   selectFileIsDirty,
   selectFileLastUpdated,
   selectFileLoading,
+  selectFileNotFoundCandidates,
   selectFileSaving,
   selectOriginalFileContent,
 } from "./files-selectors";
@@ -82,6 +83,13 @@ describe("files selectors", () => {
     expect(selectFileIsDirty.select(state, WS_ID, PATH)).toBe(true);
   });
 
+  it("selects not-found candidates when present", () => {
+    const candidates = ["packages/a/src/app.ts", "packages/b/src/app.ts"];
+    const state = stateWithFiles([fileEntry({ notFoundCandidates: candidates })]);
+
+    expect(selectFileNotFoundCandidates.select(state, WS_ID, PATH)).toEqual(candidates);
+  });
+
   it("returns original content for clean files", () => {
     const state = stateWithFiles([fileEntry({ originalContent: "clean", localContent: "clean" })]);
 
@@ -116,6 +124,7 @@ describe("files selectors", () => {
     expect(selectFileLoading.select(state, WS_ID, "missing.ts")).toBe(false);
     expect(selectFileSaving.select(state, WS_ID, "missing.ts")).toBe(false);
     expect(selectFileError.select(state, WS_ID, "missing.ts")).toBeNull();
+    expect(selectFileNotFoundCandidates.select(state, WS_ID, "missing.ts")).toBeNull();
     expect(selectFileIsBinary.select(state, WS_ID, "missing.ts")).toBe(false);
     expect(selectFileIsDirty.select(state, WS_ID, "missing.ts")).toBe(false);
   });
