@@ -3,6 +3,11 @@
  *
  * Clean, secure bridge between renderer and main process.
  * Uses contextBridge for security.
+ *
+ * ⚠️  src/preload/index.ts is GENERATED from src/preload/index.template.ts by
+ *     scripts/inline-ipc-channels.ts, which runs on every 'npm run dev' and
+ *     every 'npm run build'. Edit the TEMPLATE. Anything written directly into
+ *     index.ts is overwritten at build time and never reaches a packaged app.
  */
 
 import {
@@ -789,6 +794,22 @@ const electronAPI = {
     } else {
       logger.warn(`[Preload] Blocked removeAllListeners on unauthorized channel: ${channel}`);
     }
+  },
+
+  // Diagnostics: current listener registrations per channel.
+  //
+  // The renderer cannot see ipcRenderer's own emitter, so this is the only
+  // truthful source for "how many subscriptions are live" — used by the
+  // renderer retention fingerprint to spot accumulation (e.g. the
+  // backend:notification pile-up) without a heap snapshot. Channels with no
+  // listeners are omitted; once() listeners are not tracked by the registry
+  // and so are not counted. Read-only: returns a plain snapshot object.
+  getIpcListenerCounts: (): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const [channel, entries] of listenerRegistry) {
+      if (entries.size > 0) counts[channel] = entries.size;
+    }
+    return counts;
   },
 
   // IPC once (listen once)
