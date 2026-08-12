@@ -18,6 +18,10 @@
  * for a previous pair is discarded. A debounced save still pending at a pair
  * change or unmount is flushed (persisting the final keystrokes); all other
  * timers are torn down so no editor writes fire after destroy.
+ * `invalidatePendingRestore()` discards an in-flight restore for the current
+ * pair without rebinding it — the send path calls it after clearing the
+ * composer so a stale `drafts.get` response cannot repopulate the just-sent
+ * prompt.
  *
  * A process-lifetime `chat-draft-cache` (per `(workspaceId, agentId)`) makes
  * switch-back instant: a cache hit hydrates the composer synchronously with
@@ -54,6 +58,14 @@ export interface ChatDraftManager {
    * drives the loading indicator so a fast restore renders no spinner at all.
    */
   readonly gateVisible: boolean;
+  /**
+   * Discard any in-flight restore/revalidation for the current pair and
+   * release the gate, without touching the composer. Call when the empty
+   * composer takes ownership (a send just cleared it and `drafts.clear` was
+   * issued) so a stale `drafts.get` response cannot restore the just-sent
+   * prompt into the editor.
+   */
+  invalidatePendingRestore(): void;
 }
 
 /** Delay before pushing restored text into the editor (lets it mount). */
@@ -74,6 +86,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   let lastPersisted: { text: string; attachmentsJson: string } | null = null;
   // (workspaceId, agentId) pair whose restore is current (in flight or done).
   let restoreKey: string | null = null;
+  // Bumped per restore run and by invalidatePendingRestore(): async restore
+  // continuations from a superseded generation are discarded.
+  let restoreGeneration = 0;
   let destroyed = false;
   let gateTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let gateVisibleTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -110,6 +125,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     if (restoreKey === key) return;
     const isPairChange = restoreKey !== null;
     restoreKey = key;
+    const generation = ++restoreGeneration;
 
     untrack(() => {
       // A previous pair's restore/hydration no longer applies.
@@ -145,8 +161,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         options.drafts
           .get(workspaceId, agentId)
           .then((draft) => {
-            // Discard late revalidations after unmount or a pair change.
-            if (destroyed || restoreKey !== key) return;
+            // Discard late revalidations after unmount, a pair change, or an
+            // invalidation (the composer's current state won the race).
+            if (destroyed || restoreKey !== key || restoreGeneration !== generation) return;
             const freshText = draft?.text ?? '';
             const freshAttachments = draft?.attachments ?? [];
             const freshAttachmentsJson = JSON.stringify(freshAttachments);
@@ -186,7 +203,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         clearGateVisible();
       }, GATE_TIMEOUT_MS);
       const release = () => {
-        if (restoreKey !== key) return;
+        if (restoreKey !== key || restoreGeneration !== generation) return;
         if (gateTimeoutId) clearTimeout(gateTimeoutId);
         gateActive = false;
         clearGateVisible();
@@ -195,8 +212,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       options.drafts
         .get(workspaceId, agentId)
         .then((draft) => {
-          // Discard late restores after unmount or a pair change.
-          if (destroyed || restoreKey !== key) return;
+          // Discard late restores after unmount, a pair change, or an
+          // invalidation (the composer's current state won the race).
+          if (destroyed || restoreKey !== key || restoreGeneration !== generation) return;
           // User typing is authoritative — never overwrite a non-empty
           // composer with restored text or attachments.
           const userHasTyped = !!options.inputValue();
@@ -263,6 +281,13 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     const doSave = () => {
       saveTimeoutId = null;
       pendingSave = null;
+      // Refresh the switch-back cache synchronously: a flush-at-unmount must
+      // be visible to an immediate remount of the same pair, which hydrates
+      // from this cache before the wire save settles.
+      setCachedDraft(workspaceId, agentId, {
+        text: currentValue,
+        attachments: currentAttachments,
+      });
       options.drafts
         .set(
           workspaceId,
@@ -274,10 +299,6 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
             lastPersisted = { text: currentValue, attachmentsJson };
-            setCachedDraft(workspaceId, agentId, {
-              text: currentValue,
-              attachments: currentAttachments,
-            });
           }
         })
         .catch((err) => {
@@ -306,6 +327,19 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     },
     get gateVisible() {
       return gateVisible;
+    },
+    invalidatePendingRestore() {
+      restoreGeneration += 1;
+      if (gateTimeoutId) {
+        clearTimeout(gateTimeoutId);
+        gateTimeoutId = null;
+      }
+      if (hydrateTimeoutId) {
+        clearTimeout(hydrateTimeoutId);
+        hydrateTimeoutId = null;
+      }
+      gateActive = false;
+      clearGateVisible();
     },
   };
 }

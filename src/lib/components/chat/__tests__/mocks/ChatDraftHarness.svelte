@@ -41,6 +41,18 @@
     applyEditorContent: (text) => composer?.setContent(text),
     onSaveError: (error) => onSaveError?.(error),
   });
+
+  /**
+   * Mirrors ChatPanel's performLocalSendCleanup: a send empties the composer
+   * and invalidates the pending restore so a stale response can't repopulate
+   * the just-sent prompt.
+   */
+  export function simulateSendCleanup() {
+    manager.invalidatePendingRestore();
+    contextItems = [];
+    inputValue = '';
+    composer?.setContent('');
+  }
 </script>
 
 {#if manager.gateVisible}

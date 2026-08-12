@@ -142,8 +142,12 @@ vi.mock('../questions/QuestionWizard.svelte', async () => ({
 vi.mock('../questions/wizard-gate', () => ({
   deriveWizardPendingQuestions: () => mocks.pendingQuestions,
 }));
+vi.mock('svelte-fa', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 
 import ChatPanel from '../ChatPanel.svelte';
+import { clearDraftCacheForTests } from '../chat-draft-cache';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
@@ -208,6 +212,8 @@ beforeEach(() => {
     },
   );
   vi.clearAllMocks();
+  clearDraftCacheForTests();
+  mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   mocks.dispatch.mockImplementation((action) => {
     if (action?.type !== 'transientUi/setChatDraft') return action;
@@ -229,7 +235,15 @@ afterEach(() => {
 
 describe('ChatPanel mounted lifecycle', () => {
   it('restores active typing synchronously when the whole chat panel is recreated', async () => {
-    mocks.draftGet.mockResolvedValue(null);
+    // Stateful mock daemon: the flush-at-unmount save is issued before the
+    // remount's get on the same ordered connection, so the daemon answers
+    // the revalidation with the saved draft, not a stale null.
+    let daemonDraft: { text: string } | null = null;
+    mocks.draftGet.mockImplementation(() => Promise.resolve(daemonDraft));
+    mocks.draftSet.mockImplementation((_ws: string, _agent: string, text: string) => {
+      daemonDraft = text ? { text } : null;
+      return Promise.resolve({ ok: true as const, updatedAt: '2026-01-01T00:00:00.000Z' });
+    });
     const firstView = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
@@ -348,15 +362,109 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('draft from B');
 
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'draft from B plus typing' },
+    });
     await vi.advanceTimersByTimeAsync(550);
     expect(mocks.draftSet).toHaveBeenCalledWith(
       'workspace-b',
       'agent-b',
-      'draft from B',
+      'draft from B plus typing',
       undefined,
     );
     expect(mocks.draftSet).not.toHaveBeenCalledWith('workspace-b', 'agent-b', 'draft from A');
     expect(mocks.draftSet).not.toHaveBeenCalledWith('workspace-a', 'agent-a', expect.anything());
+  });
+
+  it('flushes the pending debounced draft save on unmount instead of dropping it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'final keystrokes' },
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mocks.draftSet).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    expect(mocks.draftSet).toHaveBeenCalledWith(
+      'workspace-a',
+      'agent-a',
+      'final keystrokes',
+      undefined,
+    );
+  });
+
+  it('flushes the pending debounced draft save when rebinding to another agent', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'typed just before switching' },
+    });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mocks.draftSet).not.toHaveBeenCalled();
+
+    await view.rerender({ workspace: workspace('workspace-b'), agentId: 'agent-b' });
+    await tick();
+
+    expect(mocks.draftSet).toHaveBeenCalledWith(
+      'workspace-a',
+      'agent-a',
+      'typed just before switching',
+      undefined,
+    );
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+  });
+
+  it('gates the composer during a slow first restore and shows the indicator after 500ms', async () => {
+    const draft = deferred<{ text: string } | null>();
+    mocks.draftGet.mockReturnValue(draft.promise);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe('true');
+    expect(screen.queryByTestId('chat-draft-loading-gate')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(screen.getByTestId('chat-draft-loading-gate')).not.toBeNull();
+
+    draft.resolve({ text: 'restored draft' });
+    await Promise.resolve();
+    await tick();
+
+    expect(screen.queryByTestId('chat-draft-loading-gate')).toBeNull();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe('false');
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('restored draft');
+  });
+
+  it('releases the composer gate after 5s if the draft restore hangs', async () => {
+    mocks.draftGet.mockReturnValue(new Promise(() => {}));
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(screen.getByTestId('chat-draft-loading-gate')).not.toBeNull();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe('true');
+
+    await vi.advanceTimersByTimeAsync(4500);
+    expect(screen.queryByTestId('chat-draft-loading-gate')).toBeNull();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe('false');
   });
 
   it('settles only a current-owner restore error and saves after the user edits', async () => {

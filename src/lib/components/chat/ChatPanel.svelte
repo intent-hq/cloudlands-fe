@@ -111,7 +111,8 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
-  import { deserializeDraftAttachments, serializeDraftAttachments } from './chat-draft-attachments';
+  import { createChatDraftManager } from './chat-panel-draft.svelte';
+  import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import ChatMessage from './ChatMessage.svelte';
   import NewMessagesDivider from './NewMessagesDivider.svelte';
@@ -960,119 +961,24 @@
     }
   });
 
-  // Restore drafts per workspace/agent identity. A mounted panel can be rebound,
-  // so stale responses and delayed editor updates must not cross that boundary.
-  let restoredDraftIdentity = $state<string | null>(null);
-  let failedDraftRestoreIdentity = $state<string | null>(null);
-  let failedDraftInitialValue = $state('');
-  let failedDraftSaveEnabled = false;
-  let draftRestoreGeneration = 0;
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    const currentAgentId = agentId;
-    if (!workspaceId || !currentAgentId) return;
-
-    const identity = `${workspaceId}::${currentAgentId}`;
-    const restoreGeneration = ++draftRestoreGeneration;
-    let active = true;
-    let applyDraftTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    restoredDraftIdentity = null;
-    failedDraftRestoreIdentity = null;
-    failedDraftSaveEnabled = false;
-    const cachedDraft = selectChatDraft.select(appStore.state, workspaceId, currentAgentId);
-    inputValue = cachedDraft;
-    untrack(() => inputComponent?.setContent?.(cachedDraft));
-    const initialValue = untrack(() => inputValue);
-
-    untrack(async () => {
-      try {
-        const draft = await appClient.drafts.get(workspaceId, currentAgentId);
-        if (
-          !active ||
-          restoreGeneration !== draftRestoreGeneration ||
-          isComponentDestroyed ||
-          workspace?.id !== workspaceId ||
-          agentId !== currentAgentId
-        ) {
-          return;
-        }
-
-        if (draft?.attachments?.length && contextItems.length === 0) {
-          contextItems = deserializeDraftAttachments(draft.attachments);
-        }
-        if (draft?.text && !inputValue) {
-          inputValue = draft.text;
-          applyDraftTimeoutId = setTimeout(() => {
-            if (
-              active &&
-              restoreGeneration === draftRestoreGeneration &&
-              !isComponentDestroyed &&
-              workspace?.id === workspaceId &&
-              agentId === currentAgentId &&
-              inputValue === draft.text
-            ) {
-              inputComponent?.setContent?.(draft.text);
-            }
-          }, 50);
-        }
-
-        restoredDraftIdentity = identity;
-      } catch {
-        if (
-          !active ||
-          restoreGeneration !== draftRestoreGeneration ||
-          isComponentDestroyed ||
-          workspace?.id !== workspaceId ||
-          agentId !== currentAgentId
-        ) {
-          return;
-        }
-
-        // Settle the current owner so a later local edit can be saved, but
-        // preserve an unseen remote draft by suppressing the untouched value.
-        failedDraftInitialValue = initialValue;
-        failedDraftRestoreIdentity = identity;
-        restoredDraftIdentity = identity;
-      }
-    });
-
-    return () => {
-      active = false;
-      if (applyDraftTimeoutId !== null) clearTimeout(applyDraftTimeoutId);
-    };
-  });
-
-  // Save draft to backend (debounced)
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    const currentAgentId = agentId;
-    if (!workspaceId || !currentAgentId) return;
-
-    const identity = `${workspaceId}::${currentAgentId}`;
-    if (restoredDraftIdentity !== identity) return;
-
-    const currentValue = inputValue;
-    if (failedDraftRestoreIdentity === identity && !failedDraftSaveEnabled) {
-      if (currentValue === failedDraftInitialValue) return;
-      failedDraftSaveEnabled = true;
-    }
-
-    const currentAttachments = serializeDraftAttachments(contextItems);
-    const saveTimeoutId = setTimeout(() => {
-      void Promise.resolve(
-        appClient.drafts.set(
-          workspaceId,
-          currentAgentId,
-          currentValue,
-          currentAttachments.length > 0 ? currentAttachments : undefined,
-        ),
-      ).catch((err) => {
-        logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
-      });
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(saveTimeoutId);
+  // Draft restore/save lifecycle (gated restore + debounced save); see
+  // chat-panel-draft.svelte.ts. While gateActive the composer rejects focus
+  // and typing; the ChatDraftLoadingGate indicator only appears once the
+  // restore is slow enough for gateVisible to flip. The Redux transient-ui
+  // draft (initial inputValue + setChatDraft on value change) stays alongside
+  // it as the synchronous same-process remount cache.
+  const draftManager = createChatDraftManager({
+    drafts: appClient.drafts,
+    workspaceId: () => workspace?.id,
+    agentId: () => agentId,
+    inputValue: () => inputValue,
+    setInputValue: (text) => (inputValue = text),
+    contextItems: () => contextItems,
+    setContextItems: (items) => (contextItems = items),
+    applyEditorContent: (text) => inputComponent?.setContent?.(text),
+    onSaveError: (err) => {
+      logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
+    },
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -2741,7 +2647,7 @@
       // A drafts.get request may still be pending while the composer is usable.
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
-      draftRestoreGeneration += 1;
+      draftManager.invalidatePendingRestore();
       contextItems = [];
       inputValue = '';
       inputComponent?.clear();
@@ -4048,6 +3954,9 @@
       {/key}
     {/if}
     {#if !pendingQuestions || questionWizardCollapsed}
+      {#if draftManager.gateVisible}
+        <ChatDraftLoadingGate />
+      {/if}
       <SimpleRichInput
         bind:this={inputComponent}
         bind:contextItems
@@ -4063,6 +3972,7 @@
         onHistoryPrev={handleHistoryPrev}
         onHistoryNext={handleHistoryNext}
         disabled={!workspace || !$agentSession$}
+        inputLocked={draftManager.gateActive}
         isStreaming={$agentSessionIsStreaming$}
         isResponding={$agentIsResponding$}
         {workspace}

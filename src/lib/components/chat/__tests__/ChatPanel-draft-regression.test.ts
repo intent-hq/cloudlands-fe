@@ -421,6 +421,62 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(composer().value).toBe('saved draft');
   });
 
+  // REGRESSION: a send clears the composer (and issues drafts.clear) while
+  // the initial drafts.get is still pending; the stale response must not
+  // repopulate the just-sent prompt into the now-empty editor.
+  it('does not restore a stale draft after invalidatePendingRestore() (send cleared the composer)', async () => {
+    const pending = deferred<Draft | null>();
+    const drafts = makeDrafts(() => pending.promise);
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    await vi.advanceTimersByTimeAsync(5100);
+    flushSync();
+    expect(composer().readOnly).toBe(false);
+
+    await typeInComposer('prompt being sent');
+    view.component.simulateSendCleanup();
+    flushSync();
+    expect(composer().value).toBe('');
+
+    pending.resolve({ text: 'prompt being sent', updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(60);
+    flushSync();
+
+    expect(composer().value).toBe('');
+    expect(screen.getByTestId('context-count').textContent).toBe('0');
+  });
+
+  it('releases an active gate immediately when invalidatePendingRestore() is called', async () => {
+    const pending = deferred<Draft | null>();
+    const drafts = makeDrafts(() => pending.promise);
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(500);
+    flushSync();
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(composer().readOnly).toBe(true);
+
+    view.component.simulateSendCleanup();
+    flushSync();
+
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(composer().readOnly).toBe(false);
+
+    pending.resolve({ text: 'stale draft', updatedAt: '2026-01-01T00:00:00.000Z' });
+    await flushMicrotasks();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(60);
+    flushSync();
+    expect(composer().value).toBe('');
+  });
+
   it('does not gate or restore when workspace/agent ids are missing', async () => {
     const drafts = makeDrafts();
     render(ChatDraftHarness, { props: { drafts } });
