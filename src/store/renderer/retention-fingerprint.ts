@@ -225,8 +225,16 @@ export interface RetentionFingerprintOptions {
   now?: () => number;
 }
 
+/**
+ * Minimal view of the themis store.
+ *
+ * `state` — not `getState()` — is the accessor themis exposes; it proxies
+ * straight through to the underlying redux `getState()` with no cloning, so
+ * reading it is free. It throws if touched before `Store.init()`, which is why
+ * every read below is inside the guarded emit path.
+ */
 export interface RetentionFingerprintStoreLike {
-  getState: () => unknown;
+  readonly state: unknown;
 }
 
 function defaultNow(): number {
@@ -241,10 +249,6 @@ export function startRetentionFingerprint(
   store: RetentionFingerprintStoreLike,
   options: RetentionFingerprintOptions = {},
 ): () => void {
-  if (typeof store?.getState !== 'function') {
-    return () => {};
-  }
-
   const intervalMs = options.intervalMs ?? RETENTION_FINGERPRINT_INTERVAL_MS;
   const firstSampleMs = options.firstSampleMs ?? RETENTION_FINGERPRINT_FIRST_SAMPLE_MS;
   const now = options.now ?? defaultNow;
@@ -256,7 +260,7 @@ export function startRetentionFingerprint(
 
   const emit = (): void => {
     try {
-      const state = store.getState();
+      const state = store?.state;
       if (!isRecord(state)) return;
       sampleCount += 1;
       const sample = collectRetentionFingerprint(state, {

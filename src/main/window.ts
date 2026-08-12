@@ -120,26 +120,58 @@ function buildWindowOptions(opts: {
 const RENDERER_CONSOLE_MAX_MESSAGE_CHARS = 4096;
 
 /**
+ * Renderer INFO breadcrumbs that are forwarded despite the info-level filter.
+ *
+ * Info is dropped by default to keep the log bounded, but a diagnostic whose
+ * entire purpose is to populate a debug bundle is useless if it never reaches
+ * the file. Entries here must be low-rate and periodic — `[RetentionFingerprint]`
+ * emits one line per five minutes. Anything chatty belongs at debug instead.
+ */
+const FORWARDED_RENDERER_INFO_MARKERS = ['[RetentionFingerprint]'] as const;
+
+function isForwardedInfoMessage(level: string, message: string): boolean {
+  return level === 'info' && FORWARDED_RENDERER_INFO_MARKERS.some((m) => message.includes(m));
+}
+
+/**
+ * Logger for forwarded renderer breadcrumbs.
+ *
+ * A separate category from `Main` because it is pinned to INFO in
+ * logging-config: the production defaultLevel is WARN, so routing the
+ * allowlisted info lines through `Main` would silently drop them in packaged
+ * builds — the exact machines debug bundles come from. Note that `Logger`
+ * re-reads the level from config on every call and ignores its constructor
+ * `level` option, so registering the category is the only thing that works.
+ */
+const rendererConsoleLogger = new Logger('RendererConsole');
+
+/**
  * Forward renderer console warnings/errors into the main-process log so they
  * land in {userData}/logs/console-output.log (via setupConsoleLogCapture) and
  * debug exports. Closes the diagnosability gap where renderer-only breadcrumbs
  * (e.g. failed comment.add evidence) were invisible in persistent logs.
- * Info/debug/verbose messages are intentionally not forwarded, messages are
- * truncated to a few KB, and consecutive duplicates are counted instead of
- * re-written, to keep the log file bounded.
+ * Debug/verbose messages are never forwarded, info only for the explicit
+ * allowlist above, messages are truncated to a few KB, and consecutive
+ * duplicates are counted instead of re-written, to keep the log file bounded.
  */
 export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
   let lastLine = '';
   let suppressed = 0;
   window.webContents.on('console-message', (details) => {
     const { level, message, sourceId, lineNumber } = details;
-    if (level !== 'warning' && level !== 'error') return;
+    const forwardedInfo = isForwardedInfoMessage(level, message);
+    if (level !== 'warning' && level !== 'error' && !forwardedInfo) return;
     const origin = `${sourceId || 'renderer'}:${lineNumber}`;
     const bounded =
       message.length > RENDERER_CONSOLE_MAX_MESSAGE_CHARS
         ? `${message.slice(0, RENDERER_CONSOLE_MAX_MESSAGE_CHARS)}… [truncated ${message.length - RENDERER_CONSOLE_MAX_MESSAGE_CHARS} chars]`
         : message;
-    const line = `[RendererConsole] ${bounded} (${origin})`;
+    // Warn/error keep the literal tag because they log under the `Main`
+    // category; the info path already carries `RendererConsole` as its logger
+    // context, so repeating it would stutter in the file.
+    const line = forwardedInfo
+      ? `${bounded} (${origin})`
+      : `[RendererConsole] ${bounded} (${origin})`;
     if (line === lastLine) {
       suppressed += 1;
       return;
@@ -151,6 +183,8 @@ export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void
     lastLine = line;
     if (level === 'error') {
       logger.error(line);
+    } else if (forwardedInfo) {
+      rendererConsoleLogger.info(line);
     } else {
       logger.warn(line);
     }

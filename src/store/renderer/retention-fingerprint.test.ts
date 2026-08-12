@@ -250,7 +250,7 @@ describe('startRetentionFingerprint', () => {
 
   it('samples inside the boot window, before the steady-state interval', () => {
     const info = spyOnInfo();
-    const stop = startRetentionFingerprint({ getState: () => ({}) });
+    const stop = startRetentionFingerprint({ state: {} });
 
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS - 1);
     expect(linesFrom(info)).toHaveLength(0);
@@ -264,7 +264,7 @@ describe('startRetentionFingerprint', () => {
 
   it('keeps sampling on the interval and numbers each sample', () => {
     const info = spyOnInfo();
-    const stop = startRetentionFingerprint({ getState: () => ({}) });
+    const stop = startRetentionFingerprint({ state: {} });
 
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS);
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS * 2);
@@ -280,12 +280,12 @@ describe('startRetentionFingerprint', () => {
   it('stops both the boot timer and the interval', () => {
     const info = spyOnInfo();
 
-    const stopBeforeFirst = startRetentionFingerprint({ getState: () => ({}) });
+    const stopBeforeFirst = startRetentionFingerprint({ state: {} });
     stopBeforeFirst();
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS * 3);
     expect(linesFrom(info)).toHaveLength(0);
 
-    const stopAfterFirst = startRetentionFingerprint({ getState: () => ({}) });
+    const stopAfterFirst = startRetentionFingerprint({ state: {} });
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS);
     expect(linesFrom(info)).toHaveLength(1);
     stopAfterFirst();
@@ -297,18 +297,40 @@ describe('startRetentionFingerprint', () => {
     const info = spyOnInfo();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const stop = startRetentionFingerprint({} as unknown as { getState: () => unknown });
+    const stop = startRetentionFingerprint({} as unknown as { state: unknown });
     vi.advanceTimersByTime(RETENTION_FINGERPRINT_INTERVAL_MS * 2);
     expect(linesFrom(info)).toHaveLength(0);
     stop();
 
+    // themis throws from the `state` getter if it is read before Store.init().
     const throwing = startRetentionFingerprint({
-      getState: () => {
-        throw new Error('store disposed');
+      get state(): unknown {
+        throw new Error('Cannot access Store.state before Store.init() has been called.');
       },
     });
     expect(() => vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS)).not.toThrow();
     expect(linesFrom(info)).toHaveLength(0);
     throwing();
+  });
+
+  it('reads state through the `state` getter themis actually exposes', () => {
+    // Regression guard: the first cut called store.getState(), which themis does
+    // not define. The runtime guard turned that into a silent no-op — the
+    // fingerprint never emitted at all — and only the stricter tsc pass caught
+    // it. Assert the accessor is really used, not just that a line appears.
+    const info = spyOnInfo();
+    let reads = 0;
+    const stop = startRetentionFingerprint({
+      get state(): unknown {
+        reads += 1;
+        return { workspace: { workspaces: collection(['w1', 'w2']) } };
+      },
+    });
+
+    vi.advanceTimersByTime(RETENTION_FINGERPRINT_FIRST_SAMPLE_MS);
+
+    expect(reads).toBe(1);
+    expect(linesFrom(info)[0]).toContain('workspaces=2');
+    stop();
   });
 });

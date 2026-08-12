@@ -119,6 +119,12 @@ export const LOGGING_CONFIG: LoggingConfig = {
     GlobalCleanup: LogLevel.WARN,
     App: LogLevel.INFO,
 
+    // Allowlisted renderer diagnostics forwarded into console-output.log by
+    // forwardRendererConsoleToMainLog(). Pinned to INFO so these survive the
+    // production defaultLevel of WARN — they exist to populate debug bundles,
+    // so filtering them out in packaged builds would defeat the purpose.
+    RendererConsole: LogLevel.INFO,
+
     // UI components - reduce noise during normal operation
     TipTapEditor: LogLevel.WARN,
     ContextPicker: LogLevel.WARN,
