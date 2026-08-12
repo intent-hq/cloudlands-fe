@@ -27,7 +27,7 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
     await fs.mkdir(tempDir, { recursive: true });
 
     // Collect all debug files (including workspace-specific if provided)
-    const { files: debugFiles, omissions } = await collectDebugFiles(workspaceId);
+    const { files: debugFiles, omissions, memorySnapshot } = await collectDebugFiles(workspaceId);
     logger.info('Collected debug files', {
       count: debugFiles.length,
       omissions: omissions.length,
@@ -54,8 +54,9 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
       }
     }
 
-    // Generate and add system info
-    const systemInfo = generateSystemInfo();
+    // Generate and add system info, describing the same processes the memory
+    // collector already sampled rather than reading the process table twice
+    const systemInfo = generateSystemInfo(memorySnapshot);
     const systemInfoPath = path.join(tempDir, 'system-info.json');
     await fs.writeFile(systemInfoPath, JSON.stringify(systemInfo, null, 2));
 

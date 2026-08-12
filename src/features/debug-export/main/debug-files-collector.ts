@@ -9,6 +9,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { Logger } from '../../../shared/logger';
+import {
+  allSamples,
+  getMemoryHistory,
+  logMemorySample,
+  summarizeSnapshot,
+  type MemorySnapshot,
+} from '../../../main/memory-monitor';
 
 const logger = new Logger('DebugFilesCollector');
 
@@ -112,7 +119,16 @@ export interface DebugFilesResult {
    * workspace files is explainable rather than silently incomplete.
    */
   omissions: string[];
+  /**
+   * The capture-time memory reading, so the caller can describe the same
+   * processes in `system-info.json` without paying for a second process-table
+   * read. `null` when the sample could not be taken.
+   */
+  memorySnapshot: MemorySnapshot | null;
 }
+
+/** Bumped when the shape of `memory-metrics.json` changes incompatibly. */
+export const MEMORY_METRICS_SCHEMA_VERSION = 1;
 
 /**
  * Collect all debug files from various locations
@@ -292,6 +308,71 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
     omissions.push(`intentd/sidecar-run-log.json: collection failed — ${message}`);
   }
 
+  // Memory timeline: the sampler's retained window (see main/memory-monitor)
+  // plus a snapshot taken now. The peaks matter more than the snapshot — an
+  // overshoot has usually drained back to normal by the time a user reaches
+  // for "export debug bundle", so a capture-time reading alone reports nothing.
+  let memorySnapshot: MemorySnapshot | null = null;
+  try {
+    const capturedAt = new Date().toISOString();
+    // Samples, retains and logs in one go, so the capture-time reading is also
+    // the newest entry in the retained window below.
+    memorySnapshot = await logMemorySample();
+    const history = getMemoryHistory();
+
+    // The window can be empty while peaks are not: peaks outlive the retention
+    // window, so a session suspended past the 24 h cap keeps "how big did this
+    // get" long after the timeline itself has expired. Emit the file for either.
+    if (history.samples.length === 0 && !history.peaks.total) {
+      // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+      omissions.push(
+        'memory-metrics.json: skipped — no memory samples retained (sampler never ran and the capture-time sample failed)',
+      );
+    } else {
+      if (history.samples.length === 0) {
+        // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+        omissions.push(
+          'memory-metrics.json: retained timeline is empty (every sample aged out of the 24 h window) — peaks are still reported',
+        );
+      }
+      const captured = memorySnapshot ? summarizeSnapshot(memorySnapshot, capturedAt) : null;
+      files.push({
+        relativePath: 'memory-metrics.json',
+        content: JSON.stringify(
+          {
+            schemaVersion: MEMORY_METRICS_SCHEMA_VERSION,
+            ...history,
+            // Unlike a retained sample, the capture-time entry keeps every
+            // process rather than only the largest few.
+            capturedAt: captured
+              ? {
+                  at: captured.at,
+                  totalRssBytes: captured.totalRssBytes,
+                  processCount: captured.processCount,
+                  byKind: captured.byKind,
+                  processTableUnavailable: captured.processTableUnavailable,
+                  processes: allSamples(memorySnapshot as MemorySnapshot),
+                }
+              : null,
+          },
+          null,
+          2,
+        ),
+      });
+      if (!captured) {
+        // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+        omissions.push(
+          'memory-metrics.json: capture-time snapshot unavailable — the file holds the retained window and peaks only',
+        );
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Failed to collect memory metrics', { error: message });
+    // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+    omissions.push(`memory-metrics.json: collection failed — ${message}`);
+  }
+
   // Workspace-specific files — the checkout directory comes from the daemon
   // only (monorepo#1759); when no local checkout is known (virtual/unknown
   // workspace or remote backend), the section is skipped and the omission is
@@ -345,6 +426,6 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
   }
 
   logger.info('Collected debug files', { count: files.length, workspaceId });
-  return { files, omissions };
+  return { files, omissions, memorySnapshot };
 }
 
