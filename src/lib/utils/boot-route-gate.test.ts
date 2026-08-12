@@ -59,6 +59,7 @@ function input(overrides: Partial<BootRouteDecisionInput> = {}): BootRouteDecisi
     localSetupGate: 'pending',
     workspaceHasLoaded: false,
     workspaces: [],
+    tabsHydrated: true,
     currentTabId: undefined,
     ...overrides,
   };
@@ -143,6 +144,45 @@ describe('decideBootRoute', () => {
     expect(
       decideBootRoute(input({ localSetupGate: 'none', workspaceHasLoaded: false })),
     ).toEqual({ kind: 'hold' });
+  });
+
+  it("holds until the active backend's persisted tabs are hydrated (tab-rehydration race)", () => {
+    // The boot connections:list can flip the active backend after the initial
+    // tab hydration; the workspace list winning that race must not resolve the
+    // gate against a stale/empty currentTabId.
+    expect(
+      decideBootRoute(
+        input({
+          localSetupGate: 'none',
+          workspaceHasLoaded: true,
+          workspaces: [
+            { id: 'ws-1', status: 'Active' },
+            { id: 'ws-2', status: 'Active' },
+          ],
+          tabsHydrated: false,
+        }),
+      ),
+    ).toEqual({ kind: 'hold' });
+  });
+
+  it('lands on the rehydrated persisted tab once tab hydration settles', () => {
+    const decision = decideBootRoute(
+      input({
+        localSetupGate: 'none',
+        workspaceHasLoaded: true,
+        workspaces: [
+          { id: 'ws-1', status: 'Active' },
+          { id: 'ws-2', status: 'Active' },
+        ],
+        tabsHydrated: true,
+        currentTabId: 'ws-2',
+      }),
+    );
+    expect(decision).toEqual({
+      kind: 'resolve',
+      target: '/workspace/ws-2',
+      openTabWorkspaceId: 'ws-2',
+    });
   });
 
   it('stays on /workspace/new when the local backend needs first-run setup', () => {

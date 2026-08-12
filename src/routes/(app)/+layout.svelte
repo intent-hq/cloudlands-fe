@@ -69,6 +69,7 @@
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
+    selectWorkspaceTabsHydrated,
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
@@ -133,6 +134,7 @@
   const bootGateResolved = selectBootRouteGateResolved();
   const zoomFactor = selectZoomFactor();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const workspaceViewMode = selectWorkspaceViewMode();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
@@ -221,6 +223,7 @@
       localSetupGate: $localSetupGate,
       workspaceHasLoaded: $workspaceHasLoaded,
       workspaces: $workspaceItems,
+      tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
     });
     if (decision.kind !== 'resolve') return;

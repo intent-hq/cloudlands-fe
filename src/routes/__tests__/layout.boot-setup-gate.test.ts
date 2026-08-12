@@ -133,9 +133,11 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { workspaceTabsHydrated } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
 import { setBootRoutePathnameForTesting } from '$lib/utils/boot-route-gate';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import Layout from '../(app)/+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
@@ -169,6 +171,7 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
       ]),
     );
     appStore.dispatch(setWorkspaceHasLoaded(true));
+    appStore.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
 
     render(Layout, { props: { children: childrenSnippet } });
     await tick();

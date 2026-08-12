@@ -59,6 +59,13 @@ export interface BootRouteDecisionInput {
   workspaceHasLoaded: boolean;
   /** Workspace list (`selectWorkspaceItems`). */
   workspaces: ReadonlyArray<{ id: string; status: string }>;
+  /**
+   * Whether the persisted tab strip has been (re)hydrated for the ACTIVE
+   * backend (`selectWorkspaceTabsHydrated`). Until then `currentTabId` may be
+   * stale — the boot `connections:list` can flip the active backend after the
+   * initial hydration, and the workspace list can win that race.
+   */
+  tabsHydrated: boolean;
   /** Persisted current workspace tab id, if any. */
   currentTabId: string | null | undefined;
 }
@@ -92,6 +99,7 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
     localSetupGate,
     workspaceHasLoaded,
     workspaces,
+    tabsHydrated,
     currentTabId,
   } = input;
   if (bootPathname === null || !BOOT_GATE_ROUTES.has(bootPathname) || gateResolved) {
@@ -114,10 +122,13 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
       openTabWorkspaceId: null,
     };
   }
-  // 'none': no forced onboarding. Wait for the workspace list, then land on
-  // the persisted tab or the first available workspace; without any
-  // workspace, /workspace/new (creation) is the only surface left.
-  if (!workspaceHasLoaded) {
+  // 'none': no forced onboarding. Wait for the workspace list AND the
+  // active backend's persisted tab strip (the workspace-list response can win
+  // the race against per-backend tab rehydration, which would land on the
+  // first workspace instead of the persisted tab), then land on the persisted
+  // tab or the first available workspace; without any workspace,
+  // /workspace/new (creation) is the only surface left.
+  if (!workspaceHasLoaded || !tabsHydrated) {
     return { kind: 'hold' };
   }
   const available = workspaces.filter(

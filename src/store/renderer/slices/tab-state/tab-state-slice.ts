@@ -53,6 +53,14 @@ export type TabState = {
   recentlyClosedTabAt: Record<string, number>;
   viewMode: WorkspaceViewMode;
   version: number;
+  /**
+   * Backend id whose persisted tab strip has been (re)hydrated by the tab
+   * saga, or null before the first hydration settles. The boot-route gate
+   * compares it to the active backend id so a boot decision never reads a
+   * stale/empty `currentTabId` while a backend switch's rehydration is still
+   * in flight.
+   */
+  hydratedBackendId: string | null;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -201,6 +209,7 @@ const initialState: TabState = {
   recentlyClosedTabAt: {},
   viewMode: 'single',
   version: 0,
+  hydratedBackendId: null,
 };
 
 const pruneClosedTabAt = (
@@ -273,8 +282,21 @@ export const setWorkspaceViewMode = createAction<[viewMode: WorkspaceViewMode]>(
 export const loadWorkspaceTabsState = createAction<[state: PersistedWorkspaceTabsState]>(
   'tabState/loadWorkspaceTabsState',
 );
+/**
+ * The tab saga finished (re)hydrating the persisted tab strip for `backendId`
+ * (dispatched after `loadWorkspaceTabsState`, and also when the backend had
+ * nothing persisted). Consumers that read `currentTabId` at boot gate on this
+ * matching the active backend id.
+ */
+export const workspaceTabsHydrated = createAction<[backendId: string]>(
+  'tabState/workspaceTabsHydrated',
+);
 
 export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(workspaceTabsHydrated, (state, { payload: [backendId] }) => {
+  if (state.hydratedBackendId === backendId) return state;
+  return { ...state, hydratedBackendId: backendId };
+});
 tabStateReducer.with(startDrag, (state) => {
   if (state.isDragging) return state;
   return { ...state, isDragging: true };
