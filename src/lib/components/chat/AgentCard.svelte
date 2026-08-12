@@ -91,6 +91,12 @@
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /**
+     * Optional ACP provider id (auggie, claude-code, codex, ...). Takes
+     * precedence over the agent-session store lookup — used to render the
+     * provider icon before the session loads (e.g. delegate-task results).
+     */
+    provider?: string;
     /** Optional actions rendered in the header row, before the relative timestamp */
     headerActions?: Snippet;
   }
@@ -111,6 +117,7 @@
     statusLabel,
     workspace = null,
     isCompleted = false,
+    provider = undefined,
     headerActions,
   }: Props = $props();
 
@@ -609,6 +616,7 @@
           size={20}
           state={avatarState}
           specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
+          {provider}
         />
       </div>
 

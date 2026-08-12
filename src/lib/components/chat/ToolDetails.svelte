@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { writable } from 'svelte/store';
   import type { ParsedToolResult } from './tool-result-parser';
   import { extractPayloadText } from './tool-result-pairing';
   import Fa from 'svelte-fa';
@@ -16,7 +17,10 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
 
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
@@ -41,6 +45,17 @@
   }
 
   const { input, result, parsedResult, isError = false, workspaceId }: Props = $props();
+
+  // This tool result's workspace (resolved from the workspaceId prop, not the
+  // globally active workspace — the result may render outside the active
+  // workspace) — passed to AgentCard so it can dispatch
+  // ensureAgentSessionLoaded and resolve the delegated agent.
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const toolWorkspaceIdStore = writable(workspaceId ?? '');
+  $effect(() => {
+    toolWorkspaceIdStore.set(workspaceId ?? '');
+  });
+  const toolWorkspace = selectWorkspaceById(toolWorkspaceIdStore);
 
   let copied = $state(false);
   let showRaw = $state(false);
@@ -525,7 +540,12 @@
                 </div>
               {/if}
               {#if parsedResult.agentId}
-                <AgentCard agentId={parsedResult.agentId} />
+                <AgentCard
+                  agentId={parsedResult.agentId}
+                  agentName={parsedResult.delegatedAgentName}
+                  provider={parsedResult.delegatedAgentProvider}
+                  workspace={$toolWorkspace ?? null}
+                />
               {:else}
                 <div class="text-xs text-subtle italic">
                   {m.chat_toolDetails_agentSpawned_label()}

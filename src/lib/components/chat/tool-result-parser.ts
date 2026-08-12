@@ -58,6 +58,8 @@ export interface ParsedToolResult {
   taskContent?: string;
   // For delegate-task
   delegatedTaskName?: string;
+  delegatedAgentName?: string;
+  delegatedAgentProvider?: string;
   agentId?: string;
   taskNoteId?: string;
   // For directory listing
@@ -1262,9 +1264,38 @@ function parseDirectoryListingResult(
 }
 
 /**
+ * Extract agent fields from a JSON tool result (daemon shape:
+ * `{ "ok": true, "agentId": "agent-<uuid>", "name": "...", "taskNoteId": "...", "provider": "..." }`).
+ * Returns null when the result is not a JSON object.
+ */
+function parseAgentResultJson(result: string): {
+  agentId?: string;
+  name?: string;
+  taskNoteId?: string;
+  provider?: string;
+} | null {
+  const trimmed = result.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const data = JSON.parse(trimmed);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    return {
+      agentId: typeof data.agentId === 'string' ? data.agentId : undefined,
+      name: typeof data.name === 'string' ? data.name : undefined,
+      taskNoteId: typeof data.taskNoteId === 'string' ? data.taskNoteId : undefined,
+      provider: typeof data.provider === 'string' ? data.provider : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse delegate task result
  *
- * Format:
+ * JSON format (daemon):
+ *   '{ "ok": true, "agentId": "agent-<uuid>", "name": "...", "taskNoteId": "...", "provider": "..." }'
+ * Legacy prose format:
  *   'Task "{name}" delegated to new agent.\nAgent ID: {agentId}\nTask Note ID: {noteId}'
  */
 function parseDelegateTaskResult(
@@ -1288,7 +1319,18 @@ function parseDelegateTaskResult(
 
   if (!result) return parsed;
 
-  // Parse task name from result: Task "{name}" delegated
+  // JSON-first: the daemon returns a JSON object with agentId/name/taskNoteId/provider
+  const json = parseAgentResultJson(result);
+  if (json) {
+    if (json.agentId) parsed.agentId = json.agentId;
+    if (json.name) parsed.delegatedAgentName = json.name;
+    if (json.taskNoteId) parsed.taskNoteId = json.taskNoteId;
+    if (json.provider) parsed.delegatedAgentProvider = json.provider;
+    parsed.content = result;
+    return parsed;
+  }
+
+  // Legacy prose fallback: Task "{name}" delegated
   const taskMatch = result.match(/Task\s+"([^"]+)"\s+delegated/);
   if (taskMatch) {
     parsed.delegatedTaskName = taskMatch[1];
@@ -1986,9 +2028,11 @@ function parseGitResult(
 
 /**
  * Parse agent creation / wake_or_create results → delegate-task display.
- * Extracts agentId and task name from the result text.
+ * Extracts agentId, agent name, and task name from the result.
  *
- * Result format examples:
+ * JSON format (daemon):
+ *   '{ "ok": true, "agentId": "agent-<uuid>", "name": "AgentName", "provider": "..." }'
+ * Legacy prose format examples:
  *   "Created new agent "AgentName" for task "TaskTitle".\nAgent ID: agent-uuid\n..."
  *   "Woke existing agent "agent-uuid" for task "TaskTitle".\n..."
  *   "Agent created successfully.\n\nAgent ID: agent-uuid\nName: AgentName\n..."
@@ -2003,8 +2047,30 @@ function parseAgentCreationResult(
 
   if (!result) return parsed;
 
-  // Extract agent ID from result
-  const idMatch = result.match(/Agent ID:\s*(\S+)/i) || result.match(/agentId[":\s]*([a-f0-9-]+)/i);
+  // JSON-first: the daemon returns a JSON object with agentId/name/taskNoteId/provider
+  const json = parseAgentResultJson(result);
+  if (json) {
+    if (json.agentId) parsed.agentId = json.agentId;
+    if (json.name) parsed.delegatedAgentName = json.name;
+    if (json.provider) parsed.delegatedAgentProvider = json.provider;
+    if (json.taskNoteId) {
+      parsed.taskNoteId = json.taskNoteId;
+    } else if (typeof input.taskNoteId === 'string') {
+      parsed.taskNoteId = input.taskNoteId;
+    }
+    if (typeof input.name === 'string') {
+      parsed.delegatedTaskName = input.name;
+    } else if (typeof input.taskText === 'string') {
+      parsed.delegatedTaskName = input.taskText.slice(0, 80);
+    }
+    return parsed;
+  }
+
+  // Legacy prose fallback. The bare-id fallback matches full `agent-<uuid>` ids
+  // only, so it can never capture a truncated id.
+  const idMatch =
+    result.match(/Agent ID:\s*(\S+)/i) ||
+    result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
   if (idMatch) {
     parsed.agentId = idMatch[1];
   }

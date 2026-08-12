@@ -415,4 +415,121 @@ describe('tool-result-parser', () => {
       expect(result.content).toBe('{"output": broken');
     });
   });
+
+  describe('agent delegate/create JSON results', () => {
+    const AGENT_ID = 'agent-12345678-1234-1234-1234-123456789abc';
+    const delegateInput = {
+      code: 'return await ws.agent.delegate({ taskNoteId: "note-1" })',
+      summary: 'Delegate task',
+    };
+    const createInput = {
+      code: 'return await ws.agent.create("Helper", "Do the thing")',
+      summary: 'Create agent',
+    };
+
+    it('parses the daemon pretty-printed JSON delegate result', () => {
+      const json = JSON.stringify(
+        {
+          ok: true,
+          agentId: AGENT_ID,
+          name: 'Implementor #1',
+          taskNoteId: 'note-1',
+          provider: 'claude-code',
+        },
+        null,
+        2,
+      );
+      const result = parseToolResult('workspace_api_workspace-mcp', delegateInput, json);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('Implementor #1');
+      expect(result.taskNoteId).toBe('note-1');
+      expect(result.delegatedAgentProvider).toBe('claude-code');
+    });
+
+    it('parses a JSON delegate result without the optional provider field', () => {
+      const json = JSON.stringify({ ok: true, agentId: AGENT_ID, name: 'X' });
+      const result = parseToolResult('workspace_api_workspace-mcp', delegateInput, json);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('X');
+      expect(result.delegatedAgentProvider).toBeUndefined();
+    });
+
+    it('still parses the legacy prose delegate result', () => {
+      const prose = `Task "Fix the parser" delegated to new agent.\nAgent ID: ${AGENT_ID}\nTask Note ID: note-1`;
+      const result = parseToolResult('workspace_api_workspace-mcp', delegateInput, prose);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.delegatedTaskName).toBe('Fix the parser');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.taskNoteId).toBe('note-1');
+    });
+
+    it('parses the daemon pretty-printed JSON agent.create result', () => {
+      const json = JSON.stringify(
+        {
+          ok: true,
+          id: AGENT_ID,
+          agentId: AGENT_ID,
+          name: 'Helper',
+          provider: 'auggie',
+          subscriptionId: 'sub-1',
+        },
+        null,
+        2,
+      );
+      const result = parseToolResult('workspace_api_workspace-mcp', createInput, json);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('Helper');
+      expect(result.delegatedAgentProvider).toBe('auggie');
+    });
+
+    it('falls back to input for task name/note id on JSON create results', () => {
+      const json = JSON.stringify({ ok: true, agentId: AGENT_ID, name: 'Helper' });
+      const result = parseToolResult(
+        'create_agent',
+        { name: 'Helper', taskNoteId: 'note-2' },
+        json,
+      );
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedAgentName).toBe('Helper');
+      expect(result.delegatedTaskName).toBe('Helper');
+      expect(result.taskNoteId).toBe('note-2');
+    });
+
+    it('still parses the legacy prose agent creation result', () => {
+      const prose = `Created new agent "Helper" for task "TaskTitle".\nAgent ID: ${AGENT_ID}`;
+      const result = parseToolResult('create_agent', {}, prose);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+      expect(result.delegatedTaskName).toBe('TaskTitle');
+    });
+
+    it('captures a full agent id from bare prose instead of truncating it', () => {
+      const prose = `Agent started. agentId: ${AGENT_ID}`;
+      const result = parseToolResult('create_agent', {}, prose);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBe(AGENT_ID);
+    });
+
+    it('never captures a partial id from truncated pretty-printed JSON', () => {
+      // JSON.parse fails on the cut-off object, so the text falls through to
+      // the prose path with a partial agent id inside — the strict bare-id
+      // regex must not match it (the old regex captured the fragment).
+      const truncated = `{\n  "ok": true,\n  "agentId": "${AGENT_ID.slice(0, 20)}`;
+      const result = parseToolResult('create_agent', {}, truncated);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+    });
+  });
 });
