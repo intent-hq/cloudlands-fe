@@ -65,7 +65,102 @@ describe('IntentSlugGenerator', () => {
       expect(result).toBeNull();
     });
 
-    it('generates valid slug from good LLM response', async () => {
+    it('requests JSON output in the prompt', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '{"slug": "dark-mode"}',
+      });
+
+      await generateCompleteIntentSlug('add dark mode to the app');
+      expect(mockMakeBackgroundRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: expect.stringContaining('{"slug": "word-word"}'),
+          systemPrompt: expect.stringContaining('{"slug": "word-word"}'),
+        }),
+      );
+    });
+
+    it('generates valid slug from a JSON reply', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '{"slug": "dark-mode"}',
+      });
+
+      const result = await generateCompleteIntentSlug('add dark mode to the app');
+      expect(result).toBe('dark-mode');
+    });
+
+    it('generates valid slug from a fenced JSON reply', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '```json\n{"slug": "auth-fix"}\n```',
+      });
+
+      const result = await generateCompleteIntentSlug('fix authentication bug');
+      expect(result).toBe('auth-fix');
+    });
+
+    it('generates valid slug from a JSON reply with surrounding prose', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: 'Here is the slug:\n{"slug": "api-perf"}\nHope that helps!',
+      });
+
+      const result = await generateCompleteIntentSlug('improve api performance');
+      expect(result).toBe('api-perf');
+    });
+
+    it('finds the slug object past an earlier non-slug brace run', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: 'Two options: {"a": 1} but the best fit is {"slug": "dark-mode"}',
+      });
+
+      const result = await generateCompleteIntentSlug('add dark mode to the app');
+      expect(result).toBe('dark-mode');
+    });
+
+    it('sanitizes the slug extracted from JSON', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '{"slug": "Dark Mode"}',
+      });
+
+      const result = await generateCompleteIntentSlug('add dark mode to the app');
+      expect(result).toBe('dark-mode');
+    });
+
+    it('rejects a JSON reply whose slug fails validation', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '{"slug": "error-response"}',
+      });
+
+      const result = await generateCompleteIntentSlug('handle errors');
+      expect(result).toBeNull();
+    });
+
+    it('rejects a JSON reply without a string slug field', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '{"slug": 42}',
+      });
+
+      const result = await generateCompleteIntentSlug('some task');
+      expect(result).toBeNull();
+    });
+
+    it('rejects a garbage reply', async () => {
+      mockMakeBackgroundRequest.mockResolvedValue({
+        success: true,
+        content: '!!! ??? 123',
+      });
+
+      const result = await generateCompleteIntentSlug('some task');
+      expect(result).toBeNull();
+    });
+
+    it('generates valid slug from legacy bare-text response (fallback)', async () => {
       mockMakeBackgroundRequest.mockResolvedValue({
         success: true,
         content: 'dark-mode',

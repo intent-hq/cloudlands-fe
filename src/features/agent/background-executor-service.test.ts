@@ -106,9 +106,9 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     appStore.dispatch(setDefaultModel(''));
   });
 
-  it('sends the §5.32 request and lands the tagged result as success', async () => {
+  it('sends the §5.32 request and lands the JSON result as success', async () => {
     completeOnceSpy.mockResolvedValueOnce({
-      text: 'preamble <<<COMMIT_MESSAGE>>>feat: add thing<<</COMMIT_MESSAGE>>> trailer',
+      text: 'preamble {"subject": "feat: add thing"} trailer',
     });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
@@ -141,9 +141,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
   it('never sends `model`, even when quick-action settings are configured', async () => {
     appStore.dispatch(setDefaultModel('auggie:haiku4.5'));
     appStore.dispatch(setTypeOverride({ type: 'commit', model: 'auggie:sonnet4.5' }));
-    completeOnceSpy.mockResolvedValueOnce({
-      text: '<<<COMMIT_MESSAGE>>>fix: x<<</COMMIT_MESSAGE>>>',
-    });
+    completeOnceSpy.mockResolvedValueOnce({ text: '{"subject": "fix: x"}' });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
     await waitForSettled('commit', ['success', 'error']);
@@ -238,8 +236,8 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     expect(toastErrorSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('errors when the expected result tag is missing from the reply', async () => {
-    completeOnceSpy.mockResolvedValueOnce({ text: 'no tags here' });
+  it('errors when the commit reply carries no JSON object', async () => {
+    completeOnceSpy.mockResolvedValueOnce({ text: 'no JSON here' });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
     await waitForSettled('commit', ['error']);
@@ -247,7 +245,47 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     const executor = readExecutor('commit');
     expect(executor?.status).toBe('error');
     expect(executor?.result).toBeNull();
-    expect(executor?.error).toContain('COMMIT_MESSAGE');
+    expect(executor?.error).toContain('JSON object');
+  });
+
+  it('errors when the expected result tag is missing from the review reply', async () => {
+    completeOnceSpy.mockResolvedValueOnce({ text: 'no tags here' });
+
+    appStore.dispatch(executeBackgroundAgent(WS, 'review'));
+    await waitForSettled('review', ['error']);
+
+    const executor = readExecutor('review');
+    expect(executor?.status).toBe('error');
+    expect(executor?.result).toBeNull();
+    expect(executor?.error).toContain('CODE_REVIEW');
+  });
+
+  it('lands the fenced commit JSON with a body as subject\\n\\nbody', async () => {
+    completeOnceSpy.mockResolvedValueOnce({
+      text: '```json\n{"subject": "feat: add thing", "body": "Explains why."}\n```',
+    });
+
+    appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
+    await waitForSettled('commit', ['success']);
+
+    expect(readExecutor('commit')).toMatchObject({
+      status: 'success',
+      result: 'feat: add thing\n\nExplains why.',
+    });
+  });
+
+  it('lands the PR JSON reply in the first-line-heading shape', async () => {
+    completeOnceSpy.mockResolvedValueOnce({
+      text: '{"title": "Add retry logic", "body": "Implements retry with backoff."}',
+    });
+
+    appStore.dispatch(executeBackgroundAgent(WS, 'pr'));
+    await waitForSettled('pr', ['success']);
+
+    expect(readExecutor('pr')).toMatchObject({
+      status: 'success',
+      result: '# Add retry logic\n\nImplements retry with backoff.',
+    });
   });
 
   it('accepts the untagged JSON reply for the walkthrough executor', async () => {
@@ -275,7 +313,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     appStore.dispatch(cancelExecution(WS, 'commit'));
     expect(readExecutor('commit')?.status).toBe('cancelled');
 
-    resolveCompletion({ text: '<<<COMMIT_MESSAGE>>>late<<</COMMIT_MESSAGE>>>' });
+    resolveCompletion({ text: '{"subject": "late"}' });
     await flush();
     await flush();
 
@@ -290,7 +328,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     Object.assign(firstCompletion, { [CANCEL]: cancelFirst });
     completeOnceSpy
       .mockReturnValueOnce(firstCompletion)
-      .mockResolvedValueOnce({ text: '<<<COMMIT_MESSAGE>>>new<<</COMMIT_MESSAGE>>>' });
+      .mockResolvedValueOnce({ text: '{"subject": "new"}' });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
     await waitForSettled('commit', ['running']);
@@ -298,7 +336,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     await waitForSettled('commit', ['success']);
     expect(cancelFirst).toHaveBeenCalledTimes(1);
 
-    resolveFirst({ text: '<<<COMMIT_MESSAGE>>>stale<<</COMMIT_MESSAGE>>>' });
+    resolveFirst({ text: '{"subject": "stale"}' });
     await flush();
     await flush();
 
@@ -311,7 +349,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     const commitCompletion = new Promise((resolve) => (resolveCommit = resolve));
     Object.assign(commitCompletion, { [CANCEL]: cancelCommit });
     completeOnceSpy.mockReturnValueOnce(commitCompletion).mockResolvedValueOnce({
-      text: '<<<PR_DESCRIPTION>>>new pr description<<</PR_DESCRIPTION>>>',
+      text: '{"title": "New PR title", "body": "new pr description"}',
     });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
@@ -320,7 +358,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     await waitForSettled('pr', ['success']);
     expect(cancelCommit).not.toHaveBeenCalled();
 
-    resolveCommit({ text: '<<<COMMIT_MESSAGE>>>concurrent commit<<</COMMIT_MESSAGE>>>' });
+    resolveCommit({ text: '{"subject": "concurrent commit"}' });
     await waitForSettled('commit', ['success']);
 
     expect(completeOnceSpy).toHaveBeenCalledTimes(2);
@@ -328,7 +366,10 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
       status: 'success',
       result: 'concurrent commit',
     });
-    expect(readExecutor('pr')).toMatchObject({ status: 'success', result: 'new pr description' });
+    expect(readExecutor('pr')).toMatchObject({
+      status: 'success',
+      result: '# New PR title\n\nnew pr description',
+    });
   });
 
   it('runs the same executor type concurrently in different workspaces', async () => {
@@ -338,7 +379,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     Object.assign(firstCompletion, { [CANCEL]: cancelFirst });
     completeOnceSpy
       .mockReturnValueOnce(firstCompletion)
-      .mockResolvedValueOnce({ text: '<<<COMMIT_MESSAGE>>>other workspace<<</COMMIT_MESSAGE>>>' });
+      .mockResolvedValueOnce({ text: '{"subject": "other workspace"}' });
 
     appStore.dispatch(executeBackgroundAgent(WS, 'commit'));
     await waitForSettled('commit', ['running']);
@@ -346,7 +387,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     await vi.waitFor(() => expect(readExecutor('commit', OTHER_WS)?.status).toBe('success'));
     expect(cancelFirst).not.toHaveBeenCalled();
 
-    resolveFirst({ text: '<<<COMMIT_MESSAGE>>>first workspace<<</COMMIT_MESSAGE>>>' });
+    resolveFirst({ text: '{"subject": "first workspace"}' });
     await waitForSettled('commit', ['success']);
 
     expect(readExecutor('commit')).toMatchObject({ status: 'success', result: 'first workspace' });
