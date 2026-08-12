@@ -53,6 +53,14 @@ export interface QueuedMessage {
   contextItems?: QueuedMessageContextItem[];
   /** Optional image blocks attached to the message */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Optional attachment-reference file blocks attached to the message */
+  fileBlocks?: Array<{
+    type: 'file';
+    attachmentId: string;
+    fileName: string;
+    mimeType?: string;
+    size?: number;
+  }>;
   /** Position in queue (0 = next to be sent) */
   position: number;
   /**

@@ -94,6 +94,65 @@ describe('editRegenerateSaga', () => {
     await task.toPromise();
   });
 
+  it('threads imageBlocks and fileBlocks through to agent.editAndRegenerate and the retry record', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: true });
+    const imageBlocks = [{ type: 'image' as const, data: 'aGk=', mimeType: 'image/png' }];
+    const fileBlocks = [
+      {
+        type: 'file' as const,
+        attachmentId: 'att-uuid-1',
+        fileName: 'report.pdf',
+        mimeType: 'application/pdf',
+        size: 2048,
+      },
+    ];
+    const { channel, dispatched, task } = start();
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm3', 'edited', {
+      imageBlocks,
+      fileBlocks,
+    });
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    // Attachment blocks ride the wire call (PROTOCOL §5.5) — model omitted
+    // when not supplied.
+    expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: 'm3',
+      content: 'edited',
+      imageBlocks,
+      fileBlocks,
+    });
+    // The "Try again" record carries the same blocks so a retry resends them.
+    expect(dispatched).toContainEqual(
+      chatLastAttemptedMessageSet(AGENT, {
+        text: 'edited',
+        options: { imageBlocks, fileBlocks },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('omits imageBlocks/fileBlocks from the wire call when the edit carries none', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: true });
+    const { channel, dispatched, task } = start();
+    const action = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm3', 'edited');
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(mocks.editAndRegenerate).toHaveBeenCalledWith({
+      agentId: AGENT,
+      workspaceId: WS,
+      messageId: 'm3',
+      content: 'edited',
+    });
+    expect(dispatched).toContainEqual(chatLastAttemptedMessageSet(AGENT, { text: 'edited' }));
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('rejects and leaves transcript/chat actions untouched on daemon failure', async () => {
     mocks.editAndRegenerate.mockResolvedValue({ success: false, error: 'bad message' });
     const { channel, dispatched, task } = start();

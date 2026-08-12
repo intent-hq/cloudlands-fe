@@ -159,11 +159,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Import ContextItem from context-api.ts
   import {
+    hasBlockingAttachments,
     placeAttachment,
     type ContextItem,
-    type PlaceAttachmentResult,
   } from './context-api';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -224,8 +223,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let previousInputLocked = $state(inputLocked);
   let hasInlineImages = $state(false);
 
-  // Derived state: whether there's content to send (text, context items, or inline images)
-  let canSend = $derived(value.trim() || contextItems.length > 0 || hasInlineImages);
+  // Derived state: whether there's content to send (text, context items, or inline images).
+  // Blocked while any attachment placement is in flight or failed — a failed
+  // pill must be retried or removed before the message can go out.
+  let canSend = $derived(
+    (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+      !hasBlockingAttachments(contextItems),
+  );
 
   // Separate image attachments from other context items for Slack-style layout
   // An item is an image attachment only if we can actually render a thumbnail:
@@ -893,21 +897,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const oversizedFiles: string[] = [];
 
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        // Oversized images stay rejected — the inline limit is what the model
-        // can ingest. Oversized non-image files are placed into the workspace
-        // via the daemon instead (file.placeAttachment, PROTOCOL §5.9).
-        if (file.type.startsWith('image/')) {
-          oversizedFiles.push(file.name);
-        } else {
-          await placeOversizedFile(file);
-        }
+      // Non-image files of ANY size are placed into the workspace via the
+      // daemon (file.placeAttachment, PROTOCOL §5.9) and referenced by an
+      // attachment block — never inlined, never dropped.
+      if (!file.type.startsWith('image/')) {
+        await placeNonImageFile(file);
         continue;
       }
 
-      // Non-image files go to context items via the non-image path
-      if (!file.type.startsWith('image/')) {
-        await processNonImageFile(file);
+      if (file.size > MAX_FILE_SIZE) {
+        // Oversized images stay rejected — the inline limit is what the model
+        // can ingest.
+        oversizedFiles.push(file.name);
         continue;
       }
 
@@ -958,16 +959,31 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   /**
-   * Process non-image files by adding them to context items
+   * Place a non-image attachment of any size into the workspace via the
+   * daemon (`file.placeAttachment`, PROTOCOL §5.9) and hold the returned
+   * `attachmentId` + metadata on a context item. The send path builds an
+   * attachment-reference file block from the item — no bytes, no mentions,
+   * no host paths in the message.
+   *
+   * Placement is sourcePath-only (never base64): the item is added
+   * immediately in the `placing` state, then flips to `placed` or `failed`.
+   * A failed item shows a retry affordance in the pill and blocks send until
+   * retried or removed.
    */
-  async function processNonImageFile(file: File) {
+  async function placeNonImageFile(file: File) {
     const fileName =
-      file.name === 'image.png' || file.name === 'image.jpg'
+      file.name === 'image.png' || file.name === 'image.jpg' || !file.name
         ? `pasted-file-${Date.now()}.${file.type.split('/')[1] || 'bin'}`
         : file.name;
 
+    const sourcePath =
+      (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
+        .electronAPI?.getPathForFile?.(file) ?? '';
+
+    const mimeType = file.type || undefined;
+    const itemId = `attachment-pending-${Date.now()}-${fileName}`;
     const contextItem: ContextItem = {
-      id: `file-upload-${Date.now()}-${fileName}`,
+      id: itemId,
       type: 'file',
       label: fileName,
       description: m.chat_richInput_fileTypeSize_description({
@@ -975,89 +991,70 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         size: formatFileSize(file.size),
       }),
       path: fileName,
-      file: file,
+      attachmentMimeType: mimeType,
+      attachmentSize: file.size,
+      placementStatus: 'placing',
+      sourcePath,
     };
-
     contextItems = [...contextItems, contextItem];
-    oncontextAdd?.(contextItem);
-    toast.success(m.chat_richInput_addedFile_toast({ name: fileName }));
+
+    await runPlacement(itemId);
   }
 
-  // Base64 inflates bytes by 4/3 and the daemon caps inbound messages at
-  // 40 MiB (PROTOCOL §1.3), so the wire `data` variant is only safe below
-  // this raw-size ceiling. Larger files need the same-host sourcePath copy.
-  const MAX_WIRE_ATTACHMENT_SIZE = 25 * 1024 * 1024;
-
   /**
-   * Place an oversized (>10MB) non-image attachment into the workspace via
-   * the daemon (`file.placeAttachment`, PROTOCOL §5.9, v6.5) and reference it
-   * in the message as a file mention instead of an inline upload.
+   * Run (or re-run, on retry) `file.placeAttachment` for a staged context
+   * item using its captured `sourcePath`. Mutates the item's placement
+   * status in place: `placing` → `placed` (with attachment metadata) or
+   * `failed` (pill shows retry; send stays blocked).
    */
-  async function placeOversizedFile(file: File) {
-    if (!workspace?.id) {
-      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));
+  async function runPlacement(itemId: string) {
+    const item = contextItems.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const patchItem = (patch: Partial<ContextItem>) => {
+      contextItems = contextItems.map((i) => (i.id === itemId ? { ...i, ...patch } : i));
+    };
+
+    if (!workspace?.id || !item.sourcePath) {
+      // No resolvable source path (e.g. pasted bytes without a backing file)
+      // or no workspace — placement cannot proceed; base64 is not a fallback.
+      logger.error('Attachment placement not possible', {
+        fileName: item.label,
+        hasWorkspace: !!workspace?.id,
+        hasSourcePath: !!item.sourcePath,
+      });
+      patchItem({ placementStatus: 'failed' });
+      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
       return;
     }
 
+    patchItem({ placementStatus: 'placing' });
     try {
-      // Same-host fast path: hand the daemon the absolute source path so the
-      // bytes never cross the wire. Only valid when the daemon runs on this
-      // machine; remote daemons get the base64 payload (within the wire cap).
-      const isDaemonLocal = selectIsDaemonLocal.select(appStore.state);
-      const sourcePath = isDaemonLocal
-        ? ((window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-            .electronAPI?.getPathForFile?.(file) ?? '')
-        : '';
+      const result = await placeAttachment(workspace.id, item.label, {
+        sourcePath: item.sourcePath,
+        mimeType: item.attachmentMimeType,
+      });
 
-      let result: PlaceAttachmentResult;
-      if (sourcePath) {
-        result = await placeAttachment(workspace.id, file.name, { sourcePath });
-      } else {
-        if (file.size > MAX_WIRE_ATTACHMENT_SIZE) {
-          toast.error(m.chat_richInput_attachmentTooLargeForWire_error({ name: file.name }));
-          return;
-        }
-        const dataUrl = await fileToDataUrl(file);
-        result = await placeAttachment(workspace.id, file.name, { data: dataUrl });
-      }
-
-      // Reference the placed file as a mention chip so the message text
-      // carries the workspace-relative path the agent can read directly.
-      // `fullPath` is what the chip click-to-open handler resolves against.
-      const inserted = tiptap?.insertMention?.({
-        id: `attachment-${result.path}`,
+      patchItem({
+        placementStatus: 'placed',
         label: result.fileName,
-        type: 'file',
-        uri: `devspace://file/${encodeURIComponent(result.path)}`,
-        meta: {
-          path: result.path,
-          fullPath: result.path,
-          name: result.fileName,
-          size: result.size,
-          type: file.type,
-        },
-      });
-
-      logger.debug('Placed oversized attachment in workspace', {
-        fileName: result.fileName,
         path: result.path,
-        size: result.size,
-        viaSourcePath: !!sourcePath,
+        attachmentId: result.attachmentId,
+        attachmentMimeType: result.mimeType ?? item.attachmentMimeType,
+        attachmentSize: result.size,
       });
-      if (inserted) {
-        toast.success(
-          m.chat_richInput_attachmentPlaced_toast({ name: result.fileName, path: result.path }),
-        );
-      } else {
-        // The file is placed either way; only the chip failed to land, so
-        // don't claim the message references it.
-        logger.warn('Placed attachment but could not insert its mention chip', {
-          path: result.path,
-        });
-      }
+      const placed = contextItems.find((i) => i.id === itemId);
+      if (placed) oncontextAdd?.(placed);
+      logger.debug('Placed attachment in workspace', {
+        fileName: result.fileName,
+        attachmentId: result.attachmentId,
+        size: result.size,
+      });
+      toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
-      logger.error('Failed to place oversized attachment', { fileName: file.name, error });
-      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: file.name }));
+      logger.error('Failed to place attachment', { fileName: item.label, error });
+      patchItem({ placementStatus: 'failed' });
+      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
     }
   }
 
@@ -1254,17 +1251,21 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               </div>
             {/snippet}
           </TooltipRich>
-        {:else if item.type === 'file' && (item.file || item.imageData)}
-          <!-- Non-image file with chip preview -->
+        {:else if item.type === 'file' && (item.file || item.imageData || item.attachmentId || item.placementStatus)}
+          <!-- Non-image file with chip preview (placed attachments render
+               from their registry metadata — no File handle, no bytes).
+               Staged/placing/failed items render their placement state. -->
           <AttachmentPreview
             id={item.id}
             name={item.label}
-            type={item.file?.type || item.imageMimeType || ''}
-            size={item.file?.size}
+            type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+            size={item.file?.size ?? item.attachmentSize}
             file={item.file}
             imageData={item.imageData}
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
+            placementStatus={item.placementStatus}
+            onRetry={(id) => void runPlacement(id)}
             variant="chip"
           />
         {:else}

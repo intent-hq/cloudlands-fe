@@ -18,12 +18,18 @@
   faBell,
   faBolt,
   faCircleQuestion,
+  faFile,
 } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
+  import { toast } from 'svelte-sonner';
   import { safeSlide } from '$lib/utils/animations';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { getAttachmentInfo } from './input/context-api';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { store as appStore } from '$store/renderer/store';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import {
@@ -83,6 +89,28 @@
     lightboxImageName = m.chat_chatMessage_attachedImage_alt({ number: formatInteger(index + 1) });
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
+  }
+
+  // Click on a queued attachment-reference file chip: resolve the registry
+  // row by attachmentId (file.getAttachmentInfo, PROTOCOL §5.9) and open the
+  // stored workspace-relative path in a file tab; missing file → toast.
+  // The workspace id is read lazily at click time (not at component init) so
+  // the component renders fine without a live store (e.g. in tests).
+  async function openQueuedFileAttachment(
+    block: NonNullable<QueuedMessage['fileBlocks']>[number],
+  ) {
+    const wsId = selectActiveWorkspaceId.select(appStore.state);
+    if (!wsId) return;
+    try {
+      const info = await getAttachmentInfo(block.attachmentId);
+      if (!info.exists) {
+        toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
+        return;
+      }
+      appStore.dispatch(openWorkspaceFile(wsId, info.path));
+    } catch {
+      toast.error(m.chat_chatMessage_attachmentOpenFailed_error({ name: block.fileName }));
+    }
   }
 
   // Auto-resize textarea to fit content
@@ -315,6 +343,28 @@
   {/if}
 {/snippet}
 
+{#snippet fileChips(message: QueuedMessage)}
+  {#if message.fileBlocks && message.fileBlocks.length > 0}
+    <div class="inline-flex items-center gap-1 shrink-0">
+      {#each message.fileBlocks as block, i (i)}
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
+          data-testid="queued-file-chip"
+          onclick={(e) => {
+            e.stopPropagation();
+            openQueuedFileAttachment(block);
+          }}
+          title={m.chat_chatMessage_openAttachment_title({ name: block.fileName })}
+        >
+          <Fa icon={faFile} class="w-2.5 h-2.5" />
+          <span class="truncate max-w-[120px]">{block.fileName}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
 {#if messages.length > 0}
   <div class="relative border-t border-border/50 pt-3 pb-2 px-2 z-20" transition:safeSlide={{ duration: 200 }}>
     <div class="flex items-center gap-1.5 text-xs text-subtle mb-2 px-2.5">
@@ -459,6 +509,7 @@
                   <AuggieAvatar agentId={agentAttr.fromAgentId} size={14} />
                 </div>
                 {@render imageThumbnails(message)}
+                {@render fileChips(message)}
                 <div
                   class="flex-1 min-w-0 truncate"
                   transition:safeSlide={{ axis: 'y', duration: 200 }}
@@ -559,6 +610,7 @@
                   </div>
                 {/if}
                 {@render imageThumbnails(message)}
+                {@render fileChips(message)}
                 <button
                   class="flex-1 text-left truncate cursor-pointer"
                   transition:safeSlide={{ axis: 'y', duration: 200 }}

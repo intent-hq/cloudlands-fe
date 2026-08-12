@@ -238,6 +238,77 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
+  it('threads attachment-reference fileBlocks through direct send, busy-agent queue, and retry', async () => {
+    const fileBlocks = [
+      {
+        type: 'file' as const,
+        attachmentId: 'att-uuid-1',
+        fileName: 'dump.har',
+        mimeType: 'application/json',
+        size: 12_582_912,
+      },
+    ];
+
+    // Direct send: fileBlocks reach sendAgentMessage's options verbatim.
+    mocks.send.mockResolvedValue(undefined);
+    const directRun = harness();
+    directRun.channel.put(sendMessage(AGENT, { wsId: WS, text: 'see file', fileBlocks }));
+    await settle();
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'see file',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ fileBlocks }),
+    );
+    directRun.task.cancel();
+    await directRun.task.toPromise();
+    vi.clearAllMocks();
+
+    // Busy agent: fileBlocks ride the daemon queue payload and the recorded
+    // retry attempt.
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-queued',
+      queuedMessage: { id: 'queued-1', content: 'later file', timestamp: 1 },
+    });
+    const queueRun = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    queueRun.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later file', fileBlocks }));
+    await settle();
+    expect(mocks.queue).toHaveBeenCalledWith(AGENT, 'later file', { fileBlocks });
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(queueRun.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(
+        AGENT,
+        'queued-1',
+        { text: 'later file', options: { fileBlocks } },
+        'turn-queued',
+      ),
+    );
+    queueRun.task.cancel();
+    await queueRun.task.toPromise();
+    vi.clearAllMocks();
+
+    // Retry: the recorded attempt's fileBlocks are resent.
+    mocks.send.mockResolvedValue(undefined);
+    const retryRun = harness();
+    retryRun.setChat(
+      chatLastAttemptedMessageSet(AGENT, { text: 'see file', options: { fileBlocks } }),
+    );
+    const retry = agentSessionRetryLastMessageRequested(AGENT, WS);
+    retryRun.channel.put(retry);
+    await expect(retry.promise).resolves.toBeUndefined();
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'see file',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ fileBlocks }),
+    );
+    retryRun.task.cancel();
+    await retryRun.task.toPromise();
+  });
+
   it('retries with the requested model and handles exact stop results and payloads', async () => {
     mocks.send.mockResolvedValue(undefined);
     mocks.stop

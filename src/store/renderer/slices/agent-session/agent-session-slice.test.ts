@@ -1197,6 +1197,46 @@ describe('agent-session-slice reducer', () => {
       ]);
     });
 
+    it('preserves attachment-reference file blocks from canonical cross-client user message events', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const fileBlocks = [
+        {
+          type: 'file' as const,
+          attachmentId: 'att-uuid-1',
+          fileName: 'dump.har',
+          mimeType: 'application/json',
+          size: 12_582_912,
+        },
+      ];
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-user-message-file',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:02.500Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg-user-file',
+            content: 'See attached',
+            fileBlocks,
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')[0].contentBlocks).toEqual([
+        { type: 'text', text: 'See attached' },
+        {
+          type: 'file',
+          attachmentId: 'att-uuid-1',
+          fileName: 'dump.har',
+          mimeType: 'application/json',
+          size: 12_582_912,
+        },
+      ]);
+    });
+
     it('does not duplicate a user message already persisted before workspace event delivery', () => {
       const existingMessage = makeUniqueMessage('msg-existing', 'user');
       let state = agentSessionReducer(

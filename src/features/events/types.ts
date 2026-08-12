@@ -900,6 +900,8 @@ export interface AgentUserMessageSentEvent extends WorkspaceEventBase {
     appMessageId?: string;
     content: string;
     imageBlocks?: any[];
+    /** Attachment-reference file blocks attached to the message (PROTOCOL §5.9). */
+    fileBlocks?: any[];
   };
 }
 

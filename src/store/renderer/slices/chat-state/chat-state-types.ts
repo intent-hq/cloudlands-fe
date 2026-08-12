@@ -60,6 +60,17 @@ export interface SendMessageOptions {
    */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   /**
+   * Attachment-reference file blocks the original send carried, recorded so
+   * "Try again" resends them. UUID + metadata only — no bytes.
+   */
+  fileBlocks?: Array<{
+    type: 'file';
+    attachmentId: string;
+    fileName: string;
+    mimeType?: string;
+    size?: number;
+  }>;
+  /**
    * Opaque per-message tag the original send carried (PROTOCOL §5.5), recorded
    * so "Try again" resends it: an untagged retry of a wizard answer would leave
    * the daemon's question hold pending and re-surface the answered wizard.
@@ -189,6 +200,14 @@ export interface SendMessagePayload {
   noteIds?: string[];
   /** Image blocks extracted from serialized context items */
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  /** Attachment-reference file blocks extracted from context items */
+  fileBlocks?: Array<{
+    type: 'file';
+    attachmentId: string;
+    fileName: string;
+    mimeType?: string;
+    size?: number;
+  }>;
   /**
    * Queued entry id for the atomic "Send now" path
    * (`agent.sendQueuedMessageNow`): when present, the send middleware makes

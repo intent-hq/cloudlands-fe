@@ -38,6 +38,10 @@ function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
       messageId,
       content: newText,
       ...(options?.model !== undefined ? { model: options.model } : {}),
+      // Attachment blocks ride the regenerated message (PROTOCOL §5.5) so an
+      // edit does not silently drop the original message's attachments.
+      ...(options?.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
+      ...(options?.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
     });
     if (!result.success) throw new Error(result.error || m.agent_editRegenerate_failed_error());
 
@@ -48,7 +52,22 @@ function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
     }
     yield* put(chatQueuedRetryRecordsCleared(agentId));
     yield* put(chatSendStarted(agentId, wsId));
-    yield* put(chatLastAttemptedMessageSet(agentId, { text: newText }));
+    const hasBlocks =
+      (options?.imageBlocks?.length ?? 0) > 0 || (options?.fileBlocks?.length ?? 0) > 0;
+    yield* put(
+      chatLastAttemptedMessageSet(agentId, {
+        text: newText,
+        // Record the attachment blocks so "Try again" resends them verbatim.
+        ...(hasBlocks
+          ? {
+              options: {
+                ...(options?.imageBlocks?.length ? { imageBlocks: options.imageBlocks } : {}),
+                ...(options?.fileBlocks?.length ? { fileBlocks: options.fileBlocks } : {}),
+              },
+            }
+          : {}),
+      }),
+    );
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {

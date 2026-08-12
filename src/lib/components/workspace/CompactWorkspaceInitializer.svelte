@@ -131,7 +131,15 @@
   import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import type { ContextItem } from '$lib/components/chat/input/context-api';
+  import {
+  hasBlockingAttachments,
+  type ContextItem,
+} from '$lib/components/chat/input/context-api';
+  import {
+  hasStagedFileItems,
+  redeemStagedAttachments,
+} from './initializer/staged-attachments';
+  import { backendRequest } from '$lib/client/live/backend-transport';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
   clearNewWorkspaceDraft,
@@ -452,7 +460,8 @@
   // Prompt text drafts live in the daemon (drafts.*, PROTOCOL §5.16) and are
   // restored asynchronously below so they survive full app restarts
   let initialPrompt = $state('');
-  // Context items for image attachments (images become attachment items, not inline nodes)
+  // Context items for attachments: images (thumbnail pills) and staged
+  // non-image files (path-only until placed at workspace.create redemption)
   let contextItems = $state<ContextItem[]>([]);
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
@@ -1362,12 +1371,14 @@
   // For GitHub repos, also require successful branch fetch (no auth issues)
   // `gitAvailable === 'unknown'` (probe couldn't run) does NOT block: only a
   // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
+  // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
     (gitAvailable === true || gitAvailable === 'unknown') &&
       !!repoPath &&
       isValidPath &&
       (isNewRepo || !!branch || repoType === 'remote') &&
-      (repoType !== 'github' || githubAuthNeeded === 'none'),
+      (repoType !== 'github' || githubAuthNeeded === 'none') &&
+      !hasBlockingAttachments(contextItems),
   );
 
   // Derived GitHub repo info for IssueSuggestions
@@ -1579,6 +1590,15 @@
 
   async function handleSubmit() {
     if (!isValid || isCreating || isEnhancing) return;
+    // Attachments still placing or failed block the create: a failed pill
+    // must be retried or removed first (no silent drop, no base64 fallback).
+    if (hasBlockingAttachments(contextItems)) return;
+    // A previous submit already created the workspace but attachment
+    // placement failed — resume that flow instead of creating again.
+    if (pendingFirstMessage) {
+      await retryPendingFirstMessage();
+      return;
+    }
 
     isCreating = true;
     error = null;
@@ -1934,6 +1954,14 @@
         $defaultProviderId$,
       );
 
+      // Staged non-image attachments cannot ride the create request: the
+      // daemon's attachment registry needs the workspace to exist before
+      // `file.placeAttachment` can run. When staged items exist, hold the
+      // whole first message (prompt + images + context) out of initialAgent
+      // and send it via `agent.sendMessage` with the attachment-reference
+      // fileBlocks after placement succeeds (create → place → send).
+      const hasStagedFiles = hasStagedFileItems(contextItems);
+
       // No client-minted agentId: the daemon assigns the initial agent's id
       // and returns it on the create result (supersedes the fresh-id-per-
       // attempt fix — with no client id there is nothing to poison retries).
@@ -1942,11 +1970,12 @@
         model: resolvedModel,
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
         behaviorPrompt: resolvedBehaviorPrompt, // Pass to IPC for workspace creation
-        prompt: initialPrompt.trim() || undefined,
+        prompt: hasStagedFiles ? undefined : initialPrompt.trim() || undefined,
         agentType: createAgentTypeId('workspace'),
         provider: submitProvider, // ACP provider ID (auggie, claude-code, codex)
-        contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
-        imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
+        contextReferences:
+          !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
+        imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
         metadata: {
           source: 'compact-initializer',
           isInitialAgent: true,
@@ -2009,6 +2038,26 @@
       // The daemon assigns the initial agent's id and returns it on the
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
+
+      // Redeem staged attachments now that the workspace exists: place each
+      // from its sourcePath, then send the held-back first message with the
+      // attachment-reference file blocks. A placement failure keeps the modal
+      // open with failed pills (retry/remove) and the create button resumes
+      // this flow — the created workspace itself is never rolled back.
+      if (hasStagedFiles) {
+        pendingFirstMessage = {
+          workspaceId: workspace.id,
+          agentId: initialAgentId,
+          content: initialPrompt.trim(),
+          imageBlocks,
+          contextReferences,
+        };
+        const sent = await placeAndSendFirstMessage();
+        if (!sent) {
+          isCreating = false;
+          return;
+        }
+      }
 
       // Register a picked repo as a path-less GitHub recent so re-picking it
       // prefills the tab (keyed by the owner/repo shorthand, no local path).
@@ -2353,7 +2402,10 @@
     }
 
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
+      // The inline size cap only applies to images (they cross the wire as
+      // base64) — staged non-image files are placed daemon-side from their
+      // sourcePath, so any size is fine.
+      if (file.type.startsWith('image/') && file.size > MAX_FILE_SIZE) {
         oversizedFiles.push(file.name);
         continue;
       }
@@ -2387,25 +2439,33 @@
           toast.error(m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }));
         }
       } else {
-        // Non-image files are inserted as mentions
-        // Use Electron's webUtils.getPathForFile (exposed via preload) to get the full filesystem path
-        // This works with contextIsolation: true, unlike the deprecated File.path property
-        const fullPath = (window as any).electronAPI?.getPathForFile?.(file) || '';
-        const displayName = file.name;
+        // Non-image files are STAGED as path-only context items: no workspace
+        // exists yet, so `file.placeAttachment` (PROTOCOL §5.9) runs at
+        // workspace.create redemption in handleSubmit, and the first message
+        // carries the resulting attachment-reference block. No bytes are ever
+        // read or kept — sourcePath only. A drop with no resolvable host path
+        // (e.g. clipboard bytes without a backing file) is a failed pill
+        // immediately: it blocks create until retried or removed.
+        const sourcePath = (window as any).electronAPI?.getPathForFile?.(file) || '';
+        const fileName = file.name || `pasted-file-${Date.now()}`;
 
-        richTextarea?.insertMention({
-          id: fullPath ? `file-${fullPath}` : `file-${displayName}-${Date.now()}`,
-          label: displayName,
+        const contextItem: ContextItem = {
+          id: `staged-file-${Date.now()}-${contextItems.length}`,
           type: 'file',
-          uri: fullPath ? `file:${fullPath}` : `devspace://file/${encodeURIComponent(displayName)}`,
-          meta: {
-            fullPath: fullPath || undefined,
-            path: displayName,
-            name: displayName,
-            size: file.size,
-            type: file.type,
-          },
-        });
+          label: fileName,
+          description: `${file.type || 'file'} • ${formatFileSize(file.size)}`,
+          path: fileName,
+          attachmentMimeType: file.type || undefined,
+          attachmentSize: file.size,
+          sourcePath,
+          placementStatus: sourcePath ? undefined : 'failed',
+        };
+        contextItems = [...contextItems, contextItem];
+        if (!sourcePath) {
+          toast.error(
+            m.workspace_compactInitializer_attachmentNoPath_error({ fileName }),
+          );
+        }
         insertedFileCount.value++;
       }
     }
@@ -2415,7 +2475,7 @@
     }
 
     if (insertedFileCount.value > 0) {
-      logger.debug(`Attached ${insertedFileCount.value} file(s) as mentions`);
+      logger.debug(`Staged ${insertedFileCount.value} file(s) for placement at create`);
     }
 
     if (oversizedFiles.length > 0) {
@@ -2435,6 +2495,132 @@
   // Remove a context item (for attachment removal)
   function removeContextItem(id: string) {
     contextItems = contextItems.filter((item) => item.id !== id);
+  }
+
+  // A context item the attachment strip should render: image attachments
+  // (thumbnails) plus staged/placed/failed non-image files (chips with
+  // placement state).
+  function isPreviewableAttachment(item: ContextItem): boolean {
+    if (item.type !== 'file') return false;
+    if (item.imageData && item.imageMimeType) return true;
+    if (item.file && item.file.type?.startsWith('image/')) return true;
+    return (
+      item.sourcePath !== undefined ||
+      item.placementStatus !== undefined ||
+      item.attachmentId !== undefined
+    );
+  }
+
+  function isImageAttachment(item: ContextItem): boolean {
+    return Boolean(
+      (item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'),
+    );
+  }
+
+  // Set when workspace.create succeeded but staged-attachment placement (or
+  // the first-message send) failed: the workspace exists, the modal stays
+  // open with failed pills, and the create button resumes this flow instead
+  // of creating a second workspace.
+  let pendingFirstMessage = $state<{
+    workspaceId: string;
+    agentId?: string;
+    content: string;
+    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
+    contextReferences: any[];
+  } | null>(null);
+
+  /**
+   * Place all staged attachments into the created workspace (sourcePath-only,
+   * `file.placeAttachment` PROTOCOL §5.9) and send the held-back first
+   * message with the resulting attachment-reference file blocks. Returns
+   * false when any placement failed — the failed pills stay visible with
+   * retry/remove, `pendingFirstMessage` stays set, and the caller must NOT
+   * proceed with navigation/cleanup.
+   */
+  async function placeAndSendFirstMessage(): Promise<boolean> {
+    const pending = pendingFirstMessage;
+    if (!pending) return true;
+
+    const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    contextItems = redemption.items;
+    if (redemption.failedCount > 0) {
+      error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
+      return false;
+    }
+
+    if (pending.agentId && (pending.content || redemption.fileBlocks.length > 0)) {
+      try {
+        await backendRequest('agent.sendMessage', {
+          agentId: pending.agentId,
+          workspaceId: pending.workspaceId,
+          content: pending.content,
+          imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+          fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+          contextReferences:
+            pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+        });
+      } catch (err) {
+        logger.error('First-message send failed after attachment placement', { error: err });
+        error = m.workspace_compactInitializer_firstMessageSendFailed_error();
+        return false;
+      }
+    }
+    pendingFirstMessage = null;
+    return true;
+  }
+
+  /**
+   * Resume a create whose staged-attachment placement failed: re-place the
+   * remaining failed items and send the held first message, then run the
+   * normal post-create navigation (the workspace already exists).
+   */
+  async function retryPendingFirstMessage(): Promise<void> {
+    const pending = pendingFirstMessage;
+    if (!pending) return;
+    isCreating = true;
+    error = null;
+    try {
+      const sent = await placeAndSendFirstMessage();
+      if (!sent) return;
+      clearForm({ preserveRepo: stayOnHomePage });
+      if (!stayOnHomePage) {
+        oncreate?.();
+        await goto(`/workspace/${pending.workspaceId}`);
+      }
+    } finally {
+      isCreating = false;
+    }
+  }
+
+  /**
+   * Retry a single failed attachment pill. Before the workspace exists the
+   * failure means no resolvable sourcePath was captured — nothing to retry
+   * against, so the pill stays failed (remove is the way out). After a
+   * create whose placement failed (`pendingFirstMessage` set), retry
+   * re-runs the redemption + held first-message send.
+   */
+  async function retryStagedItem(id: string) {
+    const item = contextItems.find((i) => i.id === id);
+    if (!item) return;
+    if (pendingFirstMessage) {
+      // Workspace exists: reset this pill to staged and re-run the flow.
+      contextItems = contextItems.map((i) =>
+        i.id === id ? { ...i, placementStatus: undefined } : i,
+      );
+      await retryPendingFirstMessage();
+      return;
+    }
+    if (!item.sourcePath) {
+      toast.error(
+        m.workspace_compactInitializer_attachmentNoPath_error({ fileName: item.label }),
+      );
+      return;
+    }
+    // Pre-create failure with a sourcePath (shouldn't normally happen):
+    // clear the failed state — the path is re-validated at create.
+    contextItems = contextItems.map((i) =>
+      i.id === id ? { ...i, placementStatus: undefined } : i,
+    );
   }
 
   // Track the last PR identifier we attempted to fetch branch info for
@@ -2735,20 +2921,23 @@
       {/if}
     </div>
 
-    <!-- Attachment previews (images only, Slack-style thumbnails) -->
-    {#if contextItems.some((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/'))))}
-      <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2">
-        {#each contextItems.filter((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))) as item (item.id)}
+    <!-- Attachment previews: image thumbnails plus staged non-image file
+         chips (placed at workspace.create; failed pills show retry) -->
+    {#if contextItems.some(isPreviewableAttachment)}
+      <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center">
+        {#each contextItems.filter(isPreviewableAttachment) as item (item.id)}
           <AttachmentPreview
             id={item.id}
             name={item.label}
-            type={item.file?.type || item.imageMimeType || ''}
-            size={item.file?.size}
+            type={item.file?.type || item.imageMimeType || item.attachmentMimeType || ''}
+            size={item.file?.size ?? item.attachmentSize}
             file={item.file}
             imageData={item.imageData}
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
-            variant="thumbnail"
+            variant={isImageAttachment(item) ? 'thumbnail' : 'chip'}
+            placementStatus={item.placementStatus}
+            onRetry={retryStagedItem}
           />
         {/each}
       </div>

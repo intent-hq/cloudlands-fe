@@ -44,6 +44,30 @@ export interface ContextItem {
   // For base64 file data (e.g., from loaded messages)
   fileData?: string; // Base64 encoded file data
   fileMimeType?: string; // MIME type of the file
+  // For placed workspace attachments (file.placeAttachment, PROTOCOL §5.9):
+  // the UUID registry key plus the metadata needed to build the
+  // attachment-reference file block — no bytes are kept on the item.
+  attachmentId?: string; // UUID from the daemon's attachment registry
+  attachmentMimeType?: string; // MIME type recorded at placement
+  attachmentSize?: number; // Placed byte length
+  // Placement lifecycle for non-image attachments. Placement is
+  // sourcePath-only (never base64): `placing` while file.placeAttachment is
+  // in flight, `failed` when it errored (no resolvable path, daemon error,
+  // stale/missing source). Absent/'placed' means the item is ready to send.
+  // Send/create is blocked while any item is placing or failed.
+  placementStatus?: 'placing' | 'failed' | 'placed';
+  // Absolute host-local source path captured at drop/pick time — what
+  // placeAttachment copies from and what a retry re-places from. Also the
+  // staging key for pre-workspace surfaces (modal/onboarding), where
+  // placement is deferred until workspace.create returns.
+  sourcePath?: string;
+}
+
+/** True when any attachment item still blocks sending: placement in flight or failed. */
+export function hasBlockingAttachments(items: ContextItem[]): boolean {
+  return items.some(
+    (item) => item.placementStatus === 'placing' || item.placementStatus === 'failed',
+  );
 }
 
 export interface SymbolInfo {
@@ -84,7 +108,7 @@ export async function searchFiles(
   }
 }
 
-/** Result of `file.placeAttachment` (PROTOCOL §5.9, v6.5). */
+/** Result of `file.placeAttachment` (PROTOCOL §5.9, v6.5 + registry fields). */
 export interface PlaceAttachmentResult {
   ok: boolean;
   /** Workspace-relative path under `.intent/attachments/`. */
@@ -93,6 +117,12 @@ export interface PlaceAttachmentResult {
   fileName: string;
   /** Placed byte length. */
   size: number;
+  /** UUID key of the attachment registry row. */
+  attachmentId: string;
+  /** MIME type recorded in the registry (when the caller supplied one). */
+  mimeType?: string;
+  /** ISO timestamp of the registry row. */
+  uploadedAt: string;
 }
 
 /**
@@ -100,12 +130,13 @@ export interface PlaceAttachmentResult {
  * directory via the daemon (`file.placeAttachment`, PROTOCOL §5.9, v6.5).
  * Exactly one of `data` (base64, `data:` URL prefix tolerated) or
  * `sourcePath` (absolute host-local path the daemon copies directly) must be
- * provided. Errors propagate to the caller.
+ * provided; optional `mimeType` is recorded in the attachment registry.
+ * Errors propagate to the caller.
  */
 export async function placeAttachment(
   workspaceId: string,
   fileName: string,
-  source: { data?: string; sourcePath?: string },
+  source: { data?: string; sourcePath?: string; mimeType?: string },
 ): Promise<PlaceAttachmentResult> {
   logger.debug('Placing attachment', {
     workspaceId,
@@ -117,7 +148,32 @@ export async function placeAttachment(
     fileName,
     ...(source.data !== undefined ? { data: source.data } : {}),
     ...(source.sourcePath !== undefined ? { sourcePath: source.sourcePath } : {}),
+    ...(source.mimeType !== undefined && source.mimeType !== ''
+      ? { mimeType: source.mimeType }
+      : {}),
   });
+}
+
+/** Result of `file.getAttachmentInfo` (PROTOCOL §5.9, v6.12). */
+export interface AttachmentInfo {
+  attachmentId: string;
+  fileName: string;
+  mimeType?: string;
+  size: number;
+  uploadedAt: string;
+  /** Workspace-relative path under `.intent/attachments/`. */
+  path: string;
+  /** Whether the file is still on disk at read time (the registry row survives an out-of-band delete). */
+  exists: boolean;
+}
+
+/**
+ * Look up an attachment-registry row by UUID via the daemon
+ * (`file.getAttachmentInfo`, PROTOCOL §5.9, v6.12). Unknown ids reject with
+ * -32602; errors propagate to the caller.
+ */
+export async function getAttachmentInfo(attachmentId: string): Promise<AttachmentInfo> {
+  return await backendRequest<AttachmentInfo>('file.getAttachmentInfo', { attachmentId });
 }
 
 /** Maximum file size for context (1MB) - prevents crashes with large files */

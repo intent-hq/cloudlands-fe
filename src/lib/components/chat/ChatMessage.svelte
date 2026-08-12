@@ -25,7 +25,13 @@
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeSlide } from '$lib/utils/animations';
   import type { ContextItem } from './input/context-api';
+  import { getAttachmentInfo } from './input/context-api';
+  import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { navigateToFile, navigateToNote, navigateToSpec } from '$lib/utils/workspace-navigation';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { formatFileSize } from '$lib/utils/file-utils';
+  import { toast } from 'svelte-sonner';
+  import { createLogger } from '$lib/utils/client-logger';
   import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
@@ -62,6 +68,7 @@
   import { formatInteger } from '$lib/i18n/format';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
+  const logger = createLogger('ChatMessage');
 
   // Type for parsed context items (pills shown before text)
   interface ContextPill {
@@ -146,8 +153,16 @@
     sessionMetadata?: any; // Session metadata containing applied rules
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
-    /** Called when user wants to edit and resend the message */
-    onEditSubmit?: (newText: string, model?: string) => void;
+    /**
+     * Called when user wants to edit and resend the message. `blocks`
+     * carries the attachment content blocks restored/edited in the edit
+     * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
+     */
+    onEditSubmit?: (
+      newText: string,
+      model?: string,
+      blocks?: { imageBlocks?: ImageBlock[]; fileBlocks?: FileBlock[] },
+    ) => void;
     /** Model to pre-select in the model picker when editing */
     editModel?: string | null;
     /** Called when user wants to regenerate the assistant response */
@@ -734,15 +749,59 @@
     lightboxOpen = true;
   }
 
-  // Extract file blocks from contentBlocks
+  // Extract file blocks from contentBlocks — both the legacy inline-data
+  // variant (data + mimeType) and attachment-reference blocks (attachmentId,
+  // no bytes; PROTOCOL §5.5 v6.12).
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
     return message.contentBlocks.filter(
-      (block: any) => block.type === 'file' && block.data && block.fileName,
+      (block: any) => block.type === 'file' && (block.data || block.attachmentId) && block.fileName,
     );
   });
+
+  // Secondary text for a file chip: size and/or mime from the block's inline
+  // metadata; empty string when neither is present.
+  function fileChipSecondaryText(block: ContentBlock): string {
+    const parts: string[] = [];
+    if (typeof block.size === 'number') parts.push(formatFileSize(block.size));
+    if (block.mimeType) parts.push(block.mimeType);
+    return parts.join(' • '); // i18n-ignore (mime type + formatted size separator)
+  }
+
+  // Click on an attachment-reference chip: resolve the registry row by
+  // attachmentId (file.getAttachmentInfo, PROTOCOL §5.9) and open the stored
+  // workspace-relative path in a file tab. A missing file (deleted from disk
+  // out-of-band) or a failed lookup surfaces a toast — never a crash.
+  async function openAttachmentReference(block: ContentBlock & { attachmentId?: string }) {
+    const wsId = workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? '');
+    if (!block.attachmentId || !wsId) return;
+    try {
+      const info = await getAttachmentInfo(block.attachmentId);
+      if (!info.exists) {
+        toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
+        return;
+      }
+      appStore.dispatch(openWorkspaceFile(wsId, info.path));
+    } catch (error) {
+      logger.error('Failed to resolve attachment', { attachmentId: block.attachmentId, error });
+      toast.error(
+        m.chat_chatMessage_attachmentOpenFailed_error({ name: block.fileName ?? '' }),
+      );
+    }
+  }
+
+  // Download a legacy inline-data file block via a data URL.
+  function downloadInlineFileBlock(block: ContentBlock, index: number) {
+    const dataUrl = `data:${block.mimeType || 'application/octet-stream'};base64,${block.data}`;
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = block.fileName || `file-${index}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
@@ -937,6 +996,18 @@
             imageData: block.data,
             imageMimeType: block.mimeType,
           });
+        } else if (block.type === 'file' && block.attachmentId && block.fileName) {
+          // Attachment-reference block: restore as a placed-attachment item
+          // (UUID + metadata only) so the re-send builds the same reference.
+          contextItemsForEdit.push({
+            id: `attachment-${block.attachmentId}`,
+            type: 'file',
+            label: block.fileName,
+            description: block.mimeType || m.chat_shared_file_fallback(),
+            attachmentId: block.attachmentId,
+            attachmentMimeType: block.mimeType,
+            attachmentSize: block.size,
+          });
         } else if (block.type === 'file' && block.data && block.fileName) {
           contextItemsForEdit.push({
             id: `file-${message.id}-${index}`,
@@ -965,11 +1036,37 @@
   // Editing regenerates from this message onward — a destructive daemon-side
   // truncation (agent.editAndRegenerate, PROTOCOL §5.5) — so gate the dispatch
   // behind an explicit confirmation; cancel keeps edit mode + draft intact.
-  // Confirm sends just the edited text + selected model (context is re-managed
-  // by the chat service on re-send), then handleCancelEdit exits edit mode.
+  // Confirm sends the edited text + selected model plus the attachment blocks
+  // rebuilt from the edit strip's context items (image blocks and
+  // attachment-reference file blocks — §5.5 accepts both on
+  // agent.editAndRegenerate), so attachments survive edit/regenerate; then
+  // handleCancelEdit exits edit mode.
   function handleConfirmEditSubmit() {
     showEditConfirm = false;
-    onEditSubmit?.(editValue, editSelectedModel ?? undefined);
+    const imageBlocks: ImageBlock[] = editContextItems
+      .filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData!,
+        mimeType: item.imageMimeType!,
+      }));
+    const fileBlocks: FileBlock[] = editContextItems
+      .filter((item) => item.attachmentId)
+      .map((item) => ({
+        type: 'file' as const,
+        attachmentId: item.attachmentId!,
+        fileName: item.label,
+        ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
+        ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
+      }));
+    const blocks =
+      imageBlocks.length > 0 || fileBlocks.length > 0
+        ? {
+            ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+            ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+          }
+        : undefined;
+    onEditSubmit?.(editValue, editSelectedModel ?? undefined, blocks);
     handleCancelEdit();
   }
 
@@ -1254,26 +1351,33 @@
             </div>
           {/if}
 
-          <!-- Attached files -->
+          <!-- Attached files: attachment-reference chips open the file in a
+               tab (resolved by attachmentId); legacy inline-data chips keep
+               the data-URL download behavior. -->
           {#if fileBlocks.length > 0}
             <div class="flex flex-wrap gap-1.5 mt-2">
               {#each fileBlocks as fileBlock, i (i)}
+                {@const secondary = fileChipSecondaryText(fileBlock)}
                 <button
                   type="button"
+                  data-testid="chat-message-file-chip"
                   class="flex items-center gap-1.5 px-2 py-1 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                   onclick={() => {
-                    const dataUrl = `data:${fileBlock.mimeType || 'application/octet-stream'};base64,${fileBlock.data}`;
-                    const link = document.createElement('a');
-                    link.href = dataUrl;
-                    link.download = fileBlock.fileName || `file-${i}`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    if (fileBlock.attachmentId) {
+                      openAttachmentReference(fileBlock);
+                    } else {
+                      downloadInlineFileBlock(fileBlock, i);
+                    }
                   }}
-                  title={m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
+                  title={fileBlock.attachmentId
+                    ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
+                    : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
                 >
                   <Fa icon={faFile} class="w-3 h-3" />
                   <span class="truncate max-w-[150px]">{fileBlock.fileName}</span>
+                  {#if secondary}
+                    <span class="opacity-60 shrink-0">{secondary}</span>
+                  {/if}
                 </button>
               {/each}
             </div>

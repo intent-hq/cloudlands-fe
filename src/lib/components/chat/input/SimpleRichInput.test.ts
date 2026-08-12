@@ -37,6 +37,9 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faImage: { iconName: 'image' },
   faFileCode: { iconName: 'file-code' },
   faFileAlt: { iconName: 'file-alt' },
+  // Placement lifecycle pill icons (placing spinner / failed + retry)
+  faCircleExclamation: { iconName: 'circle-exclamation' },
+  faRotateRight: { iconName: 'rotate-right' },
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -1192,7 +1195,7 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
   });
 });
 
-describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () => {
+describe('SimpleRichInput non-image attachment placement (unified flow)', () => {
   const baseProps = () => ({
     value: '',
     contextItems: [],
@@ -1235,8 +1238,7 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     document.body.innerHTML = '';
   });
 
-  it('places an oversized non-image file via the daemon sourcePath fast path (local daemon)', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+  it('places a non-image file via the sourcePath — attachmentId context item, no mention, no bytes on the wire', async () => {
     const getPathForFile = vi.fn(() => '/home/user/Downloads/dump.har');
     (window as any).electronAPI.getPathForFile = getPathForFile;
     placeAttachmentMock.mockResolvedValueOnce({
@@ -1244,54 +1246,55 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
       path: '.intent/attachments/dump.har',
       fileName: 'dump.har',
       size: 12_582_912,
+      attachmentId: 'att-uuid-1',
+      mimeType: 'application/json',
+      uploadedAt: '2026-08-12T00:00:00Z',
     });
 
-    render(SimpleRichInput, { props: baseProps() });
+    const oncontextAdd = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), oncontextAdd } });
     await dropFiles([makeFile('dump.har', 'application/json', 12 * 1024 * 1024)]);
 
     await waitFor(() => {
       expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'dump.har', {
         sourcePath: '/home/user/Downloads/dump.har',
+        mimeType: 'application/json',
       });
     });
-    // The placed file is referenced as a mention chip carrying the
-    // workspace-relative path — never an inline upload.
+    // The placed file becomes a context item carrying the registry UUID +
+    // metadata — never a mention chip, never an inline upload. oncontextAdd
+    // fires only after placement succeeds.
     await waitFor(() => {
-      expect(insertMentionCalls()).toHaveLength(1);
+      expect(oncontextAdd).toHaveBeenCalledTimes(1);
     });
-    const mention = insertMentionCalls()[0];
-    expect(mention.label).toBe('dump.har');
-    expect((mention.meta as Record<string, unknown>).path).toBe('.intent/attachments/dump.har');
-    // fullPath drives the chip click-to-open handler in editor-config.ts.
-    expect((mention.meta as Record<string, unknown>).fullPath).toBe(
-      '.intent/attachments/dump.har',
-    );
-    // No rejection toast — the user gets a confirmation instead.
+    const item = oncontextAdd.mock.calls[0][0];
+    expect(item.attachmentId).toBe('att-uuid-1');
+    expect(item.label).toBe('dump.har');
+    expect(item.attachmentMimeType).toBe('application/json');
+    expect(item.attachmentSize).toBe(12_582_912);
+    expect(item.placementStatus).toBe('placed');
+    expect(item.file).toBeUndefined();
+    expect(insertMentionCalls()).toHaveLength(0);
     const { toast } = await import('svelte-sonner');
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to the base64 data variant when the daemon is remote', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
-    placeAttachmentMock.mockResolvedValueOnce({
-      ok: true,
-      path: '.intent/attachments/big.log',
-      fileName: 'big.log',
-      size: 11 * 1024 * 1024,
-    });
+  it('never sends base64 bytes: a file with no resolvable sourcePath becomes a failed pill', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '');
 
     render(SimpleRichInput, { props: baseProps() });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
+    const { toast } = await import('svelte-sonner');
     await waitFor(() => {
-      expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
+      expect(toast.error).toHaveBeenCalledTimes(1);
     });
-    const [wsId, fileName, source] = placeAttachmentMock.mock.calls[0];
-    expect(wsId).toBe('ws-1');
-    expect(fileName).toBe('big.log');
-    expect(source).toHaveProperty('data');
-    expect(source).not.toHaveProperty('sourcePath');
+    // No wire call at all — base64 is not a fallback.
+    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    const chip = document.querySelector('[data-placement-status="failed"]');
+    expect(chip).not.toBeNull();
+    expect(screen.getByTestId('attachment-retry')).toBeTruthy();
   });
 
   it('still rejects oversized images with the too-large toast (inline limit kept)', async () => {
@@ -1306,55 +1309,133 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     expect(insertMentionCalls()).toHaveLength(0);
   });
 
-  it('keeps small non-image files on the inline context-item path', async () => {
-    render(SimpleRichInput, { props: baseProps() });
+  it('places small non-image files too — the byte-dropping inline path is gone', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/small.txt');
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/small.txt',
+      fileName: 'small.txt',
+      size: 1024,
+      attachmentId: 'att-uuid-3',
+      mimeType: 'text/plain',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
+
+    const oncontextAdd = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), oncontextAdd } });
     await dropFiles([makeFile('small.txt', 'text/plain', 1024)]);
 
-    await waitFor(async () => {
-      const { toast } = await import('svelte-sonner');
-      expect(toast.success).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledTimes(1);
     });
-    expect(placeAttachmentMock).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(oncontextAdd).toHaveBeenCalledTimes(1);
+    });
+    expect(oncontextAdd.mock.calls[0][0].attachmentId).toBe('att-uuid-3');
   });
 
-  it('surfaces a placement failure without inserting a reference', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+  it('placement failure renders a failed pill with retry, blocks send, and retry unblocks', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/big.log');
     placeAttachmentMock.mockRejectedValueOnce(new Error('daemon down'));
 
-    render(SimpleRichInput, { props: baseProps() });
+    const oncontextAdd = vi.fn();
+    const onsubmit = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), value: 'hello', oncontextAdd, onsubmit } });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
     const { toast } = await import('svelte-sonner');
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledTimes(1);
     });
-    expect(insertMentionCalls()).toHaveLength(0);
-  });
+    // The item stays visible as a failed pill (not silently dropped)…
+    const chip = document.querySelector('[data-placement-status="failed"]');
+    expect(chip).not.toBeNull();
+    // …oncontextAdd never fired for the failed item…
+    expect(oncontextAdd).not.toHaveBeenCalled();
+    // …and send is blocked while the failed pill is present.
+    const sendButton = document.querySelector(
+      'button[aria-label="Send message"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton).not.toBeNull();
+    expect(sendButton!.disabled).toBe(true);
 
-  it('rejects a remote file above the wire cap without calling placeAttachment', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
-
-    render(SimpleRichInput, { props: baseProps() });
-    await dropFiles([makeFile('giant.bin', 'application/octet-stream', 26 * 1024 * 1024)]);
-
-    const { toast } = await import('svelte-sonner');
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+    // Retry re-places from the captured sourcePath and unblocks send.
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/big.log',
+      fileName: 'big.log',
+      size: 11 * 1024 * 1024,
+      attachmentId: 'att-uuid-5',
+      mimeType: 'text/plain',
+      uploadedAt: '2026-08-12T00:00:00Z',
     });
-    expect(placeAttachmentMock).not.toHaveBeenCalled();
-    expect(insertMentionCalls()).toHaveLength(0);
+    await fireEvent.click(screen.getByTestId('attachment-retry'));
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledTimes(2);
+    });
+    expect(placeAttachmentMock).toHaveBeenLastCalledWith('ws-1', 'big.log', {
+      sourcePath: '/home/user/big.log',
+      mimeType: 'text/plain',
+    });
+    await waitFor(() => {
+      expect(oncontextAdd).toHaveBeenCalledTimes(1);
+    });
+    expect(oncontextAdd.mock.calls[0][0].attachmentId).toBe('att-uuid-5');
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="failed"]')).toBeNull();
+    });
+    await waitFor(() => {
+      expect(sendButton!.disabled).toBe(false);
+    });
   });
 
-  it('places an oversized non-image file arriving via clipboard paste', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+  it('send stays blocked while a placement is in flight', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/slow.bin');
+    let resolvePlacement!: (v: unknown) => void;
+    placeAttachmentMock.mockImplementationOnce(
+      () => new Promise((resolve) => (resolvePlacement = resolve)),
+    );
+
+    render(SimpleRichInput, { props: { ...baseProps(), value: 'hello' } });
+    await dropFiles([makeFile('slow.bin', 'application/octet-stream', 1024)]);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="placing"]')).not.toBeNull();
+    });
+    const sendButton = document.querySelector(
+      'button[aria-label="Send message"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton).not.toBeNull();
+    expect(sendButton!.disabled).toBe(true);
+
+    resolvePlacement({
+      ok: true,
+      path: '.intent/attachments/slow.bin',
+      fileName: 'slow.bin',
+      size: 1024,
+      attachmentId: 'att-uuid-6',
+      mimeType: 'application/octet-stream',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
+    await waitFor(() => {
+      expect(sendButton!.disabled).toBe(false);
+    });
+  });
+
+  it('places a non-image file arriving via clipboard paste (backed by a real file path)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/trace.log');
     placeAttachmentMock.mockResolvedValueOnce({
       ok: true,
       path: '.intent/attachments/trace.log',
       fileName: 'trace.log',
       size: 11 * 1024 * 1024,
+      attachmentId: 'att-uuid-4',
+      mimeType: 'text/plain',
+      uploadedAt: '2026-08-12T00:00:00Z',
     });
 
-    render(SimpleRichInput, { props: baseProps() });
+    const oncontextAdd = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), oncontextAdd } });
     const file = makeFile('trace.log', 'text/plain', 11 * 1024 * 1024);
     const dropZone = screen.getByTestId('message-input');
     await fireEvent.paste(dropZone, {
@@ -1370,7 +1451,107 @@ describe('SimpleRichInput oversized attachment placement (monorepo#1948)', () =>
     expect(wsId).toBe('ws-1');
     expect(fileName).toBe('trace.log');
     await waitFor(() => {
-      expect(insertMentionCalls()).toHaveLength(1);
+      expect(oncontextAdd).toHaveBeenCalledTimes(1);
     });
+    expect(oncontextAdd.mock.calls[0][0].attachmentId).toBe('att-uuid-4');
+    expect(insertMentionCalls()).toHaveLength(0);
+  });
+
+  it('a draft-restored placing/failed item rehydrates as a blocking failed pill whose retry re-places', async () => {
+    // Round-trip a mid-placement item through the draft serializer (what a
+    // reload does): the restored item must render a failed pill that blocks
+    // send, and retry must re-attempt placement from the persisted
+    // sourcePath — never a silent drop.
+    const { serializeDraftAttachments, deserializeDraftAttachments } = await import(
+      '../chat-draft-attachments'
+    );
+    const restored = deserializeDraftAttachments(
+      serializeDraftAttachments([
+        {
+          id: 'attachment-pending-1721650000000-crash.log',
+          type: 'file',
+          label: 'crash.log',
+          path: 'crash.log',
+          attachmentMimeType: 'text/plain',
+          attachmentSize: 2048,
+          sourcePath: '/home/user/crash.log',
+          placementStatus: 'placing',
+        },
+      ]),
+    );
+    expect(restored[0].placementStatus).toBe('failed');
+
+    const oncontextAdd = vi.fn();
+    render(SimpleRichInput, {
+      props: { ...baseProps(), value: 'hello', contextItems: restored, oncontextAdd },
+    });
+
+    // Restored as a visible failed pill (not a generic chip, not dropped)…
+    const chip = document.querySelector('[data-placement-status="failed"]');
+    expect(chip).not.toBeNull();
+    // …which blocks send until retried or removed.
+    const sendButton = document.querySelector(
+      'button[aria-label="Send message"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton).not.toBeNull();
+    expect(sendButton!.disabled).toBe(true);
+
+    // Retry re-places from the persisted sourcePath and unblocks send.
+    placeAttachmentMock.mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/crash.log',
+      fileName: 'crash.log',
+      size: 2048,
+      attachmentId: 'att-uuid-7',
+      mimeType: 'text/plain',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
+    await fireEvent.click(screen.getByTestId('attachment-retry'));
+    await waitFor(() => {
+      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'crash.log', {
+        sourcePath: '/home/user/crash.log',
+        mimeType: 'text/plain',
+      });
+    });
+    await waitFor(() => {
+      expect(oncontextAdd).toHaveBeenCalledTimes(1);
+    });
+    expect(oncontextAdd.mock.calls[0][0].attachmentId).toBe('att-uuid-7');
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="failed"]')).toBeNull();
+    });
+    await waitFor(() => {
+      expect(sendButton!.disabled).toBe(false);
+    });
+  });
+
+  it('a draft-restored failed pill with a stale sourcePath fails again on retry and stays blocking', async () => {
+    const { deserializeDraftAttachments } = await import('../chat-draft-attachments');
+    const restored = deserializeDraftAttachments([
+      {
+        id: 'attachment-pending-1721650000000-gone.log',
+        type: 'file',
+        label: 'gone.log',
+        sourcePath: '/home/user/gone.log',
+        placementStatus: 'failed',
+      },
+    ]);
+
+    render(SimpleRichInput, { props: { ...baseProps(), value: 'hello', contextItems: restored } });
+    expect(document.querySelector('[data-placement-status="failed"]')).not.toBeNull();
+
+    placeAttachmentMock.mockRejectedValueOnce(new Error('source file not found'));
+    await fireEvent.click(screen.getByTestId('attachment-retry'));
+
+    const { toast } = await import('svelte-sonner');
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+    // Still a failed pill, still blocking — the stale path surfaced visibly.
+    expect(document.querySelector('[data-placement-status="failed"]')).not.toBeNull();
+    const sendButton = document.querySelector(
+      'button[aria-label="Send message"]',
+    ) as HTMLButtonElement | null;
+    expect(sendButton!.disabled).toBe(true);
   });
 });
