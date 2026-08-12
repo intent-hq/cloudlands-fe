@@ -300,6 +300,11 @@
   // ResizablePanel only reads initiallyCollapsed at init time, so we dispatch
   // the toggle event to animate it open after workspace creation.
   $effect(() => {
+    // While the boot-route gate is holding, showOnboarding is suppressed but
+    // onboarding has not "ended" — skip so the hold is not misread as an
+    // onboarding→workspace transition (which would expand an empty sidebar
+    // next to the wizard when the gate resolves to stay on onboarding).
+    if (bootGateHolding) return;
     if (prevShowOnboarding && !showOnboarding) {
       // Onboarding just ended — expand sidebar with animation
       dispatchWindowEvent('workspace:toggle-left-sidebar', {
