@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { Logger } from '../../../shared/logger';
+import { resolveIntentdDataDir } from '../../backend/main/intentd-data-dir';
 import {
   allSamples,
   getMemoryHistory,
@@ -41,27 +42,10 @@ export const INTENTD_LOG_FILE_COUNT = 2;
 /**
  * The intentd daemon data dir where its tracing file appender writes
  * daily-rotated `intentd.<YYYY-MM-DD>.log` files (see intentd `init_tracing`).
- * Honors `INTENTD_DATA_DIR` (the sidecar spawns intentd with the same env);
- * the defaults mirror the daemon's
- * `directories::ProjectDirs::from("", "", "intentd").data_dir()`.
+ * Re-exported from the shared resolver (`features/backend/main/intentd-data-dir.ts`)
+ * so the platform defaults exist in exactly one place.
  */
-export function resolveIntentdDataDir(
-  env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  const dataDir = env.INTENTD_DATA_DIR?.trim();
-  if (dataDir) return dataDir;
-  if (platform === 'win32') {
-    const appData = env.APPDATA?.trim() || path.win32.join(os.homedir(), 'AppData', 'Roaming');
-    return path.win32.join(appData, 'intentd', 'data');
-  }
-  if (platform === 'darwin') {
-    // i18n-ignore (filesystem path)
-    return path.join(os.homedir(), 'Library', 'Application Support', 'intentd');
-  }
-  const xdgDataHome = env.XDG_DATA_HOME?.trim() || path.join(os.homedir(), '.local', 'share');
-  return path.join(xdgDataHome, 'intentd');
-}
+export { resolveIntentdDataDir };
 
 /**
  * Materialize one collected [[DebugFile]] at `destPath`: writes `content`
