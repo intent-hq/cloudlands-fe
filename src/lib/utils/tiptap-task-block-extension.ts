@@ -1,5 +1,9 @@
 import type { Marked } from 'marked';
-import { parseTaskBlockContent } from '../../features/notes/utils/task-block-parser';
+import {
+  isValidTaskFenceHeader,
+  parseTaskBlockContent,
+  scanTaskBlocks,
+} from '../../features/notes/utils/task-block-parser';
 
 /**
  * Extend the marked instance to handle task blocks (singular)
@@ -46,15 +50,23 @@ function renderTaskBlock(text: string): string {
 }
 
 export function renderTaskBlocksAsReadableMarkdown(markdown: string): string {
-  return markdown.replace(/@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/g, (_match, blockContent: string) => {
-    const task = parseTaskBlockContent(blockContent);
+  const blocks = scanTaskBlocks(markdown);
+  if (blocks.length === 0) {
+    return markdown;
+  }
 
-    if (!task) {
-      return blockContent.trim();
-    }
-
-    return [`### ${task.title}`, task.content.trim()].filter(Boolean).join('\n\n');
-  });
+  let out = '';
+  let cursor = 0;
+  for (const block of blocks) {
+    out += markdown.slice(cursor, block.start);
+    const task = parseTaskBlockContent(block.body);
+    out += task
+      ? [`### ${task.title}`, task.content.trim()].filter(Boolean).join('\n\n')
+      : block.body.trim();
+    cursor = block.end;
+  }
+  out += markdown.slice(cursor);
+  return out;
 }
 
 export function addTasksBlockSupport(markedInstance: Marked) {
@@ -65,19 +77,20 @@ export function addTasksBlockSupport(markedInstance: Marked) {
         name: 'taskBlock',
         level: 'block',
         start(src: string) {
-          // Find the start of @@@task or @@@tasks
-          const match = src.match(/^@@@tasks?[ \t]*\r?\n/);
-          return match ? 0 : undefined;
+          // Find the start of @@@task or @@@tasks (optional header attributes allowed)
+          const match = src.match(/^@@@tasks?((?:[ \t][^\n]*)?)\r?\n/);
+          return match && isValidTaskFenceHeader(match[1]) ? 0 : undefined;
         },
         tokenizer(src: string) {
-          // Match @@@task...@@@ or @@@tasks...@@@
-          const rule = /^(@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@)/;
+          // Match @@@task...@@@ or @@@tasks...@@@; the fence line may carry
+          // optional header attributes (validated like the daemon parser)
+          const rule = /^(@@@tasks?((?:[ \t][^\n]*)?)\r?\n([\s\S]*?)@@@)/;
           const match = rule.exec(src);
-          if (match) {
+          if (match && isValidTaskFenceHeader(match[2])) {
             return {
               type: 'taskBlock',
               raw: match[1],
-              text: match[2],
+              text: match[3],
               tokens: [],
             };
           }
