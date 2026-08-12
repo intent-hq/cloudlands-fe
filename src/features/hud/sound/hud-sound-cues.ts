@@ -110,13 +110,16 @@ export function cueForTakeoverTrigger(
 
 /**
  * Cues for one queue-state transition (prev → next), oldest-first:
+ *  - entering 'blinking' on an EVENT entry → the blink-tick garnish (the
+ *    card pre-roll flashes; reduced motion skips the phase, so no tick);
  *  - entering 'opening' on an EVENT entry → the open transient plus the
  *    newest trigger's kind cue (the banner the overlay leads with);
  *  - entering 'closing' on an EVENT entry → the close transient;
  *  - VIEWER entries (manual card-click) are silent throughout (spec);
  *  - same-phase re-applies (e.g. a coalescing enqueue) never re-fire.
- * Blink-tick / banner-typewriter garnish cues are intentionally not wired
- * (task spec: optional; assets exist for future use).
+ * The banner-typewriter garnish is NOT a phase-transition cue: the wipe-in
+ * starts mid-'opening' after the CSS `--banner-in-delay`, so the overlay
+ * arms a matching timer instead (see HudTakeoverOverlay.svelte).
  */
 export function cuesForTakeoverTransition(
   prev: HudTakeoverQueueState,
@@ -125,6 +128,7 @@ export function cuesForTakeoverTransition(
   if (prev.phase === next.phase) return [];
   const entry = next.active;
   if (!entry || entry.isViewer) return [];
+  if (next.phase === 'blinking') return ['blink-tick'];
   if (next.phase === 'opening') {
     const newest = entry.triggers[entry.triggers.length - 1];
     const kindCue = newest ? cueForTakeoverTrigger(newest) : null;
