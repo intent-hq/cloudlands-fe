@@ -31,7 +31,11 @@ export function resolveIntentdDataDir(
     // i18n-ignore (filesystem path)
     return path.join(os.homedir(), 'Library', 'Application Support', 'intentd');
   }
-  const xdgDataHome = env.XDG_DATA_HOME?.trim() || path.join(os.homedir(), '.local', 'share');
+  // Match the daemon (`directories` crate / XDG spec): a relative
+  // XDG_DATA_HOME is ignored in favor of the `~/.local/share` fallback.
+  const xdg = env.XDG_DATA_HOME?.trim();
+  const xdgDataHome =
+    xdg && path.isAbsolute(xdg) ? xdg : path.join(os.homedir(), '.local', 'share');
   return path.join(xdgDataHome, 'intentd');
 }
 

@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { Logger } from '../../../shared/logger';
+import { resolveIntentdDataDir } from '../../backend/main/intentd-data-dir';
 import {
   allSamples,
   getMemoryHistory,
@@ -44,7 +45,6 @@ export const INTENTD_LOG_FILE_COUNT = 2;
  * Re-exported from the shared resolver (`features/backend/main/intentd-data-dir.ts`)
  * so the platform defaults exist in exactly one place.
  */
-import { resolveIntentdDataDir } from '../../backend/main/intentd-data-dir';
 export { resolveIntentdDataDir };
 
 /**
