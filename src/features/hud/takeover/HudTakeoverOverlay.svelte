@@ -51,6 +51,7 @@
   } from './hud-takeover-meta';
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
+  import { playTakeoverTransitionCues } from '../sound/hud-sound-player';
 
   let { nowMs }: { nowMs: number } = $props();
 
@@ -58,6 +59,15 @@
   const reducedMotion = watchReducedMotion();
   const controller = createTakeoverController(() => reducedMotion.current);
   const queue = $derived(controller.queue);
+
+  // ── Sound: cue on queue phase transitions (enable gate lives in the
+  // service; viewers/'manual' are silent by the cue map). ──
+  let prevQueueForSound = controller.queue;
+  $effect(() => {
+    const next = controller.queue;
+    playTakeoverTransitionCues(prevQueueForSound, next);
+    prevQueueForSound = next;
+  });
 
   function handleDismiss() {
     controller.dismiss();
