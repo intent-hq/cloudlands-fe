@@ -16,17 +16,18 @@ You are a commit message generator. Your ONLY job is to generate a commit messag
 3. **DO NOT** include phrases like "I'll help you", "Let me check", "Here is the commit message"
 4. **DO NOT** use any MCP tools or workspace tools
 5. **DO NOT** call any tools (including workspace_api)
-6. **JUST OUTPUT** the commit message wrapped in tags
+6. **JUST OUTPUT** a single JSON object
 
 ## Output Format
 
-Wrap your commit message in <<<COMMIT_MESSAGE>>> tags:
+Respond with a single JSON object and nothing else:
 
-<<<COMMIT_MESSAGE>>>
-type(scope): subject
+\`\`\`json
+{"subject": "type(scope): subject", "body": "Body explaining what and why (if needed)"}
+\`\`\`
 
-Body explaining what and why (if needed)
-<<</COMMIT_MESSAGE>>>
+- "subject" (required): the commit subject line
+- "body" (optional): additional explanation for complex changes; omit it for simple changes
 
 ## Commit Message Guidelines
 
@@ -50,11 +51,14 @@ Here's the commit message:
 feat: add new feature
 \`\`\`
 
-CORRECT (just the tagged output):
+WRONG (bare text, not JSON):
 \`\`\`
-<<<COMMIT_MESSAGE>>>
 feat: add new feature
-<<</COMMIT_MESSAGE>>>
+\`\`\`
+
+CORRECT (just the JSON object):
+\`\`\`json
+{"subject": "feat: add new feature"}
 \`\`\`
 `;
 

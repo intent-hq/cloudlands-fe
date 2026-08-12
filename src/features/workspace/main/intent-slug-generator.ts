@@ -12,6 +12,7 @@
  */
 
 import { Logger } from '$shared/logger';
+import { parseJsonObject } from '$shared/utils/json-object-extraction';
 import {
   makeBackgroundRequest,
   type BackgroundRequestResult,
@@ -44,20 +45,20 @@ export async function generateIntentBasedSlug(intent: string): Promise<string | 
       // i18n-ignore (LLM prompt content)
       prompt: `Task: "${truncatedIntent}"
 
-Extract a 2-word slug that describes this task. Output ONLY two lowercase words separated by a hyphen.
+Extract a 2-word slug that describes this task. Respond with a JSON object of the form {"slug": "word-word"} where the value is two lowercase words separated by a hyphen.
 
 Examples:
-- "add dark mode" -> "dark-mode"
-- "fix authentication bug" -> "auth-fix"
-- "refactor the payment service" -> "payment-refactor"
-- "add user dashboard" -> "user-dashboard"
-- "improve api performance" -> "api-perf"
+- "add dark mode" -> {"slug": "dark-mode"}
+- "fix authentication bug" -> {"slug": "auth-fix"}
+- "refactor the payment service" -> {"slug": "payment-refactor"}
+- "add user dashboard" -> {"slug": "user-dashboard"}
+- "improve api performance" -> {"slug": "api-perf"}
 
-Output only the slug, nothing else.`,
+Output only the JSON object, nothing else.`,
       // i18n-ignore (LLM prompt content)
       systemPrompt:
         // i18n-ignore (LLM prompt content)
-        'You extract 2-word slugs from task descriptions. Output ONLY the slug in format "word-word". No explanations, no quotes, just the slug.',
+        'You extract 2-word slugs from task descriptions. Respond with a single JSON object {"slug": "word-word"}. No explanations, no code fences, just the JSON object.',
       timeoutMs: SLUG_GENERATION_TIMEOUT_MS,
     });
 
@@ -66,7 +67,9 @@ Output only the slug, nothing else.`,
       return null;
     }
 
-    const slug = parseSlugResponse(result.content);
+    const jsonSlug = extractJsonSlug(result.content);
+    const slug =
+      jsonSlug !== null ? parseSlugResponse(jsonSlug) : parseSlugResponse(result.content);
     if (slug) {
       logger.info('Generated intent-based slug', { intent: truncatedIntent, slug });
     }
@@ -92,6 +95,17 @@ const INVALID_SLUG_WORDS = new Set([
   'undefined',
   'exception',
 ]);
+
+/**
+ * Extract the slug string from a JSON reply of the form {"slug": "word-word"}.
+ * Tolerates code fences and surrounding prose (shared balanced-brace scanner).
+ * Returns null if no JSON object with a string `slug` field can be found -
+ * caller falls back to sanitizing the raw text.
+ */
+function extractJsonSlug(response: string): string | null {
+  const json = parseJsonObject(response.trim(), (obj) => typeof obj.slug === 'string');
+  return json && typeof json.slug === 'string' ? json.slug : null;
+}
 
 /**
  * Parse and validate the LLM response into a valid slug base.

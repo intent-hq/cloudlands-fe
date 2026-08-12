@@ -108,24 +108,23 @@ export const emptyWorkspaceState: BackgroundAgentExecutorWorkspaceState = {
 /** Default config for each executor type (keyed by string for flexibility) */
 const COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS = 300_000;
 
+// The commit, commit-merge, pr, and walkthrough executors use JSON output
+// contracts (no `resultTag`); review keeps its tag contract.
 export const EXECUTOR_CONFIGS: Record<
   string,
-  { resultTag: string; timeout: number; name: string; agentType: string }
+  { resultTag?: string; timeout: number; name: string; agentType: string }
 > = {
   commit: {
-    resultTag: 'COMMIT_MESSAGE',
     timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
     name: 'Commit Message Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'commit-message',
   },
   'commit-merge': {
-    resultTag: 'COMMIT_MESSAGE',
     timeout: COMMIT_MESSAGE_EXECUTOR_TIMEOUT_MS,
     name: 'Merge Commit Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'commit-message',
   },
   pr: {
-    resultTag: 'PR_DESCRIPTION',
     timeout: 180000,
     name: 'PR Description Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'pr-description',
@@ -137,7 +136,6 @@ export const EXECUTOR_CONFIGS: Record<
     agentType: 'code-review',
   },
   walkthrough: {
-    resultTag: 'CODE_WALKTHROUGH',
     timeout: 120000,
     name: 'Code Walkthrough Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'code-walkthrough',
