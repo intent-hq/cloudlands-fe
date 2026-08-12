@@ -11,10 +11,12 @@
     portal = true,
     portalProps,
     sideOffset = 4,
+    maxHeight = 'min(24rem, calc(100dvh - 1rem))',
     ...restProps
   }: MenuPrimitive.ContentProps & {
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
+    maxHeight?: string;
   } = $props();
 
   const contentClass = $derived(
@@ -39,7 +41,7 @@
       data-slot="menu-content"
       class={contentClass}
       {sideOffset}
-      style="max-height: min(24rem, calc(100dvh - 1rem))"
+      style="max-height: {maxHeight}"
       {...restProps}
     />
   </MenuPrimitive.Portal>
@@ -50,7 +52,7 @@
     data-slot="menu-content"
     class={contentClass}
     {sideOffset}
-    style="max-height: min(24rem, calc(100dvh - 1rem))"
+    style="max-height: {maxHeight}"
     {...restProps}
   />
 {/if}

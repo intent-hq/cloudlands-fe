@@ -187,4 +187,15 @@ describe('Menu metadata and compatibility', () => {
     expect(checkbox.className).toContain('data-[state=checked]:bg-accent/60');
     expect(menu.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
   });
+
+  it('caps content height at the 24rem default when no maxHeight override is provided', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const menu = screen.getByRole('menu');
+    // jsdom's CSSOM drops the nested calc() keyword when serializing min().
+    expect(menu.getAttribute('style')).toMatch(
+      /max-height: min\(24rem, (calc\()?100dvh - 1rem\)?\)/,
+    );
+  });
+
 });

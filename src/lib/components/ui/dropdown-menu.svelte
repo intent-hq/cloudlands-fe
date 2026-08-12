@@ -11,6 +11,7 @@
     trigger,
     content,
     contentClass = '',
+    contentMaxHeight = undefined,
     class: className = '',
   }: {
     open?: boolean;
@@ -20,6 +21,7 @@
     trigger?: Snippet<[{ toggle: () => void; open: boolean }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
+    contentMaxHeight?: string;
     class?: string;
   } = $props();
 
@@ -49,6 +51,7 @@
       {side}
       {portal}
       class={contentClass}
+      maxHeight={contentMaxHeight}
       aria-label={m.ui_dropdownMenu_ariaLabel()}
     >
       {@render content?.({ close })}
