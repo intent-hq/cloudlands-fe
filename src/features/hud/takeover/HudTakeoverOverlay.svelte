@@ -52,6 +52,7 @@
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
   import { playTakeoverTransitionCues } from '../sound/hud-sound-player';
+  import { createTypewriterCue } from '../sound/hud-typewriter-cue.svelte';
 
   let { nowMs }: { nowMs: number } = $props();
 
@@ -67,6 +68,14 @@
     const next = controller.queue;
     playTakeoverTransitionCues(prevQueueForSound, next);
     prevQueueForSound = next;
+  });
+
+  // ── Sound: banner-typewriter garnish — a timer aligned with the first
+  // banner's wipe-in start (see hud-typewriter-cue.svelte.ts). ──
+  const typewriterCue = createTypewriterCue({
+    queue: () => controller.queue,
+    motion: () => !reducedMotion.current,
+    needsPan: () => needsPan,
   });
 
   function handleDismiss() {
@@ -95,6 +104,7 @@
       controller.destroy();
       drag.destroy();
       reducedMotion.cleanup();
+      typewriterCue.destroy();
     };
   });
 

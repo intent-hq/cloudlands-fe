@@ -27,6 +27,14 @@ import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
 import { HUD_TAKEOVER_BLINK_MS } from './hud-takeover-queue';
 import { HUD_TAKEOVER_PITCH_PX } from './hud-takeover-layout';
+import { playHudSoundCue } from '../sound/hud-sound-player';
+
+// The typewriter-cue suite asserts the overlay's timer-armed garnish call;
+// playback itself is covered by hud-sound-player.test.ts.
+vi.mock('../sound/hud-sound-player', () => ({
+  playHudSoundCue: vi.fn(),
+  playTakeoverTransitionCues: vi.fn(),
+}));
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 const WS = 'ws-1';
@@ -849,5 +857,98 @@ describe('HudTakeoverOverlay headline overflow marquee', () => {
     vi.advanceTimersByTime(1250);
     flushSync();
     expect(returnLabel()).toBe('RETURN 00:11');
+  });
+});
+
+describe('HudTakeoverOverlay banner-typewriter sound cue', () => {
+  beforeEach(() => {
+    vi.mocked(playHudSoundCue).mockClear();
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW_MS);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  it('fires once when the banner wipe-in starts (1.0s after opening, no pan)', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // No source card → instant open.
+
+    vi.advanceTimersByTime(950);
+    expect(playHudSoundCue).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(playHudSoundCue).toHaveBeenCalledExactlyOnceWith('banner-typewriter');
+
+    // Dwelling never re-arms the fired timer.
+    vi.advanceTimersByTime(2000);
+    flushSync();
+    expect(playHudSoundCue).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the 3.5s map pan pre-roll when the changed cell is far', () => {
+    // 12 tasks: task-12 sits at seed coord (0,−2) — |y| ≥ 2 needs pan, so
+    // the banner (and its cue) start at 3.5s, mid-'dwelling'.
+    seedTasks(
+      Array.from({ length: 12 }, (_, i) => ({
+        id: `task-${i + 1}`,
+        title: `Task ${i + 1}`,
+        status: 'in_progress',
+      })),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Task 12',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 'task-12',
+    });
+    flushSync();
+
+    vi.advanceTimersByTime(3400); // Past opening→dwelling (1.2s); before 3.5s.
+    flushSync();
+    expect(playHudSoundCue).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(200);
+    expect(playHudSoundCue).toHaveBeenCalledExactlyOnceWith('banner-typewriter');
+  });
+
+  it('cancels the pending cue when the display is dismissed before the wipe', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    screen.getByTestId('hud-takeover-dismiss').click();
+    flushSync();
+    vi.advanceTimersByTime(1500);
+    expect(playHudSoundCue).not.toHaveBeenCalled();
+  });
+
+  // NOTE: manual VIEWER silence is not renderable here — the redux
+  // card-click request flows through an argument-less cached selector
+  // readable that freezes across this file's store dispose/init cycles
+  // (viewer choreography is queue-tested in hud-takeover-queue.test.ts).
+  // The overlay's isViewer guard plus the cue-map viewer tests cover it.
+
+  it('stays silent under reduced motion (banners render with no wipe)', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    vi.advanceTimersByTime(4000);
+    expect(playHudSoundCue).not.toHaveBeenCalled();
   });
 });

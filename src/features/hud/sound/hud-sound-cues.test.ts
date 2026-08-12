@@ -118,8 +118,19 @@ describe('cuesForTakeoverTransition', () => {
     ]);
   });
 
-  it('keeps manual viewers silent on open and close', () => {
+  it('plays the blink tick on entering the pre-roll (fresh open and chained next entry)', () => {
+    const active = entry();
+    expect(cuesForTakeoverTransition(state('idle', null), state('blinking', active))).toEqual([
+      'blink-tick',
+    ]);
+    expect(cuesForTakeoverTransition(state('closing', active), state('blinking', active))).toEqual(
+      ['blink-tick'],
+    );
+  });
+
+  it('keeps manual viewers silent on blink, open and close', () => {
     const viewer = entry({ isViewer: true, triggers: [trigger({ kind: 'manual', detail: '' })] });
+    expect(cuesForTakeoverTransition(state('idle', null), state('blinking', viewer))).toEqual([]);
     expect(cuesForTakeoverTransition(state('blinking', viewer), state('opening', viewer))).toEqual(
       [],
     );
@@ -131,14 +142,16 @@ describe('cuesForTakeoverTransition', () => {
   it('never re-fires on same-phase re-applies (coalescing enqueue)', () => {
     const active = entry();
     const grown = entry({ triggers: [trigger(), trigger({ kind: 'agent_started' })] });
+    expect(cuesForTakeoverTransition(state('blinking', active), state('blinking', grown))).toEqual(
+      [],
+    );
     expect(cuesForTakeoverTransition(state('opening', active), state('opening', grown))).toEqual(
       [],
     );
   });
 
-  it('is silent on non-open/close transitions', () => {
+  it('is silent on non-blink/open/close transitions', () => {
     const active = entry();
-    expect(cuesForTakeoverTransition(state('idle', null), state('blinking', active))).toEqual([]);
     expect(cuesForTakeoverTransition(state('opening', active), state('dwelling', active))).toEqual(
       [],
     );
