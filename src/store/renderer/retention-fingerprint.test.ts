@@ -11,10 +11,15 @@ import {
 
 const inspectDiffCaches = vi.hoisted(() => vi.fn());
 const inspectDiffWorkerPoolLifecycle = vi.hoisted(() => vi.fn());
+const inspectChannelFanoutSubscribers = vi.hoisted(() => vi.fn());
 
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({
   inspectDiffCaches,
   inspectDiffWorkerPoolLifecycle,
+}));
+
+vi.mock('$lib/client/live/electron-ipc-transport', () => ({
+  inspectChannelFanoutSubscribers,
 }));
 
 function collection(ids: string[]) {
@@ -43,6 +48,7 @@ const NO_POOL = {
 beforeEach(() => {
   inspectDiffCaches.mockReturnValue(null);
   inspectDiffWorkerPoolLifecycle.mockReturnValue(NO_POOL);
+  inspectChannelFanoutSubscribers.mockReturnValue({});
 });
 
 afterEach(() => {
@@ -194,6 +200,46 @@ describe('collectRetentionFingerprint', () => {
     expect(counts.ipcBackendListeners).toBe(-1);
   });
 
+  it('reports fan-out subscribers per channel, separately from the IPC listener count', () => {
+    // The distinction the two field families exist to keep straight: 51
+    // subscribers behind ONE shared bridge listener per channel. Reading the
+    // IPC number as a subscriber gauge would call this session idle.
+    (window as unknown as { electronAPI: unknown }).electronAPI = {
+      getIpcListenerCounts: () => ({ 'backend:notification': 1, 'backend:status': 1 }),
+    };
+    inspectChannelFanoutSubscribers.mockReturnValue({
+      'backend:notification': 40,
+      'backend:status': 11,
+    });
+
+    const counts = fields({});
+
+    expect(counts.ipcBackendListeners).toBe(2);
+    expect(counts.fanoutChannels).toBe(2);
+    expect(counts.fanoutSubscribers).toBe(51);
+    expect(counts['fanout.backend:notification']).toBe(40);
+    expect(counts['fanout.backend:status']).toBe(11);
+  });
+
+  it('reports no subscribers as an unambiguous zero, with no per-channel fields', () => {
+    const counts = fields({});
+
+    expect(counts.fanoutChannels).toBe(0);
+    expect(counts.fanoutSubscribers).toBe(0);
+    expect(Object.keys(counts).some((key) => key.startsWith('fanout.'))).toBe(false);
+  });
+
+  it('reports -1 for fan-out counts when the inspector throws', () => {
+    inspectChannelFanoutSubscribers.mockImplementation(() => {
+      throw new Error('fan-out registry exploded');
+    });
+
+    const counts = fields({});
+
+    expect(counts.fanoutChannels).toBe(-1);
+    expect(counts.fanoutSubscribers).toBe(-1);
+  });
+
   it('survives an inspector that throws', () => {
     inspectDiffWorkerPoolLifecycle.mockImplementation(() => {
       throw new Error('pool exploded');
@@ -226,6 +272,21 @@ describe('formatRetentionFingerprint', () => {
       collectRetentionFingerprint(state, { sample: 1, uptimeMs: 0 }).map(([key]) => key);
 
     expect(keysOf({})).toEqual(keysOf({ workspace: { workspaces: collection(['w1']) } }));
+  });
+
+  it('carries the per-channel fan-out fields as a trailing suffix', () => {
+    // The fixed fields keep their positions; only the fan-out breakout varies
+    // with which channels are subscribed, and it is appended in the order the
+    // transport reports (sorted by channel), never interleaved.
+    inspectChannelFanoutSubscribers.mockReturnValue({
+      'backend:notification': 2,
+      'backend:status': 1,
+    });
+
+    const keys = collectRetentionFingerprint({}, { sample: 1, uptimeMs: 0 }).map(([key]) => key);
+
+    expect(keys.slice(-2)).toEqual(['fanout.backend:notification', 'fanout.backend:status']);
+    expect(keys.filter((key) => key.startsWith('fanout.'))).toHaveLength(2);
   });
 });
 

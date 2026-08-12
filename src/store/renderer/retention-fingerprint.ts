@@ -7,6 +7,18 @@
  * growing renderer heap in a user's `console-output.log` can be attributed to
  * a collection without asking that user for a heap snapshot.
  *
+ * Two IPC-shaped numbers are reported and they measure different things — the
+ * line labels them apart because confusing one for the other reads a healthy
+ * session as broken, or a leaking one as fine:
+ *
+ * - `ipcBackendListeners` counts *bridge listener registrations*. The transport
+ *   fans every subscriber out from one shared listener per channel, so this is
+ *   a tripwire pinned at 0 or 1 per live channel; a climbing value means the
+ *   fan-out regressed, not that subscribers accumulated.
+ * - `fanoutSubscribers` (and the per-channel `fanout.<channel>` fields) counts
+ *   the *renderer subscribers* behind that shared listener. This is the gauge
+ *   the pile-up in monorepo#2034 would move today.
+ *
  * Two properties matter and are load-bearing:
  *
  * - **Counts only.** Every reader below is a `.length`, a `.size` or an
@@ -23,6 +35,7 @@
  * This module only measures. Changing what the renderer retains is a separate
  * decision; nothing here evicts, trims or unsubscribes.
  */
+import { inspectChannelFanoutSubscribers } from '$lib/client/live/electron-ipc-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   inspectDiffCaches,
@@ -46,6 +59,9 @@ export const RETENTION_FINGERPRINT_FIRST_SAMPLE_MS = 10_000;
 
 /** Channel prefix whose listener registrations are broken out individually. */
 const BACKEND_CHANNEL_PREFIX = 'backend:';
+
+/** Field-name prefix for the per-channel fan-out subscriber counts. */
+const FANOUT_FIELD_PREFIX = 'fanout.';
 
 /**
  * Structural view of the slices the fingerprint reads.
@@ -108,7 +124,12 @@ function sumScopes(value: unknown, per: (entry: Record<string, unknown>) => numb
  * diagnostic, which is reported as `ipc*=-1` rather than a misleading 0.
  * Note the preload registry does not track `once()` listeners, so these counts
  * are a floor for short-lived subscriptions and exact for `on()`/`offById()`
- * ones — which is where accumulation happens.
+ * ones.
+ *
+ * These are *not* the renderer's subscriber count on `backend:*` channels —
+ * see the `fanout*` fields for that. The transport multiplexes every
+ * subscriber onto one bridge listener per channel, so a growing subscriber set
+ * does not move these numbers at all.
  */
 function readIpcListenerCounts(): Record<string, number> | null {
   if (typeof window === 'undefined') return null;
@@ -142,6 +163,10 @@ export function collectRetentionFingerprint(
   const caches = safeInspect(inspectDiffCaches, null);
   const pool = safeInspect(inspectDiffWorkerPoolLifecycle, null);
   const ipcCounts = readIpcListenerCounts();
+  const fanoutCounts = safeInspect<Record<string, number> | null>(
+    inspectChannelFanoutSubscribers,
+    null,
+  );
 
   let ipcTotal = -1;
   let ipcBackend = -1;
@@ -155,6 +180,22 @@ export function collectRetentionFingerprint(
       ipcChannels += 1;
       ipcTotal += count;
       if (channel.startsWith(BACKEND_CHANNEL_PREFIX)) ipcBackend += count;
+    }
+  }
+
+  // Fan-out subscribers, broken out per channel. Unlike the IPC counts above
+  // these have no bridge to be absent, so -1 means only "the inspector threw".
+  let fanoutChannels = -1;
+  let fanoutSubscribers = -1;
+  const fanoutPerChannel: RetentionFingerprintSample = [];
+  if (fanoutCounts) {
+    fanoutChannels = 0;
+    fanoutSubscribers = 0;
+    for (const [channel, count] of Object.entries(fanoutCounts)) {
+      if (typeof count !== 'number') continue;
+      fanoutChannels += 1;
+      fanoutSubscribers += count;
+      fanoutPerChannel.push([`${FANOUT_FIELD_PREFIX}${channel}`, count]);
     }
   }
 
@@ -194,10 +235,23 @@ export function collectRetentionFingerprint(
     ['diffPoolLeases', pool ? pool.activeLeases : -1],
     ['diffPoolSize', pool ? pool.poolSize : -1],
 
-    // IPC subscriptions: -1 when the preload bridge cannot report them.
+    // IPC listener registrations: -1 when the preload bridge cannot report
+    // them. `ipcBackendListeners` is a fan-out TRIPWIRE, not a subscriber
+    // gauge — the transport multiplexes all subscribers onto one bridge
+    // listener per channel, so anything above one listener per live `backend:*`
+    // channel means the fan-out itself regressed.
     ['ipcChannels', ipcChannels],
     ['ipcListeners', ipcTotal],
     ['ipcBackendListeners', ipcBackend],
+
+    // Renderer subscribers behind that fan-out — the real gauge, and where
+    // subscriber accumulation (monorepo#2034) is now visible. A channel with no
+    // subscribers has no `fanout.*` field at all, so `fanoutSubscribers=0` is
+    // the unambiguous idle reading and the per-channel fields are a
+    // sorted-by-channel suffix.
+    ['fanoutChannels', fanoutChannels],
+    ['fanoutSubscribers', fanoutSubscribers],
+    ...fanoutPerChannel,
   ];
 }
 
