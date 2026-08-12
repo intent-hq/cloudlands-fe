@@ -451,6 +451,44 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(screen.getByTestId('context-count').textContent).toBe('0');
   });
 
+  // REGRESSION: send-cleanup must also empty the pair's switch-back cache
+  // entry and drop the pending save, so tearing the panel down before the
+  // reactive empty save runs cannot cache-hydrate the just-sent prompt on
+  // reopen (nor flush-resurrect it to the daemon at unmount).
+  it('reopening the pair after send-cleanup hydrates empty, not the sent prompt', async () => {
+    const drafts = makeDrafts(() => Promise.resolve(null));
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+    expect(composer().readOnly).toBe(false);
+
+    // Debounced save settles, seeding the switch-back cache with the text.
+    await typeInComposer('prompt being sent');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+    expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'prompt being sent', undefined);
+    drafts.set.mockClear();
+
+    // Send clears the composer; the panel is torn down before the reactive
+    // empty save can run (user closes / switches away immediately).
+    view.component.simulateSendCleanup();
+    view.unmount();
+    // The unmount flush must not resurrect the pre-send draft on the daemon.
+    expect(drafts.set).not.toHaveBeenCalled();
+
+    // Reopen the same pair: the cache hit hydrates synchronously (the
+    // revalidation hangs), and must yield an empty composer.
+    const hang = deferred<Draft | null>();
+    render(ChatDraftHarness, {
+      props: { drafts: makeDrafts(() => hang.promise), workspaceId: WS, agentId: AGENT },
+    });
+    flushSync();
+
+    expect(composer().value).toBe('');
+    expect(composer().readOnly).toBe(false);
+  });
+
   it('releases an active gate immediately when invalidatePendingRestore() is called', async () => {
     const pending = deferred<Draft | null>();
     const drafts = makeDrafts(() => pending.promise);

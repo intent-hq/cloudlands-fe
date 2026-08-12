@@ -63,7 +63,9 @@ export interface ChatDraftManager {
    * release the gate, without touching the composer. Call when the empty
    * composer takes ownership (a send just cleared it and `drafts.clear` was
    * issued) so a stale `drafts.get` response cannot restore the just-sent
-   * prompt into the editor.
+   * prompt into the editor. Also drops a pending debounced save of the
+   * pre-send text and empties the pair's switch-back cache entry, so neither
+   * a flush-at-unmount nor a reopen can resurrect the sent prompt.
    */
   invalidatePendingRestore(): void;
 }
@@ -340,6 +342,21 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       }
       gateActive = false;
       clearGateVisible();
+      // The send made the pre-send draft obsolete everywhere: discard a
+      // pending debounced save of it (flushing at unmount would resurrect it
+      // on the daemon) and reflect the cleared state in the switch-back
+      // cache and dirty-tracking, so an unmount/rebind before the reactive
+      // empty save cannot cache-hydrate the just-sent prompt on reopen.
+      if (saveTimeoutId) {
+        clearTimeout(saveTimeoutId);
+        saveTimeoutId = null;
+      }
+      pendingSave = null;
+      if (restoreKey !== null) {
+        const [workspaceId, agentId] = restoreKey.split('\u0000');
+        setCachedDraft(workspaceId, agentId, { text: '', attachments: [] });
+        lastPersisted = { text: '', attachmentsJson: '[]' };
+      }
     },
   };
 }
