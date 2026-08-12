@@ -32,7 +32,7 @@ interface GitCommit {
 export async function prepareContext(
   workspace: Workspace,
   type: string,
-  resultTag: string,
+  resultTag?: string,
   context?: AgentExecutorContext,
 ): Promise<string> {
   switch (type) {
@@ -40,11 +40,11 @@ export async function prepareContext(
     case 'commit-merge':
       return await prepareCommitContext(workspace, resultTag, context);
     case 'pr':
-      return await preparePRContext(workspace, resultTag, context);
+      return await preparePRContext(workspace, context);
     case 'review':
       return await prepareReviewContext(workspace, resultTag, context);
     case 'walkthrough':
-      return await prepareWalkthroughContext(workspace, resultTag, context);
+      return await prepareWalkthroughContext(workspace, context);
     default:
       return typeof context?.message === 'string'
         ? context.message
@@ -173,7 +173,7 @@ async function getStagedDiffs(
  */
 async function prepareCommitContext(
   workspace: Workspace,
-  resultTag: string,
+  resultTag?: string,
 
   _context?: AgentExecutorContext,
 ): Promise<string> {
@@ -243,7 +243,13 @@ Guidelines:
 - Include a body for complex changes
 - Focus on WHY the change was made, not just what changed
 
-Wrap your final commit message in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
+${
+  // The review executor's no-files fallback reuses this context with its tag
+  // contract; the commit executors themselves use the JSON contract.
+  resultTag
+    ? `Wrap your final commit message in <<<${resultTag}>>> and <<</${resultTag}>>> tags.`
+    : 'Respond with a single JSON object: {"subject": "...", "body": "..."} ("body" optional).'
+}
 
 Files changed (${stagedFiles.length}):
 `;
@@ -304,7 +310,6 @@ Files changed (${stagedFiles.length}):
  */
 async function preparePRContext(
   workspace: Workspace,
-  resultTag: string,
   context?: AgentExecutorContext,
 ): Promise<string> {
   // Commit list via the daemon (`git.commits`, PROTOCOL §5.6). Items carry
@@ -347,7 +352,7 @@ async function preparePRContext(
 
 Please provide a comprehensive PR description with sections for Summary, Changes, Testing, and Checklist.
 
-Wrap your final PR description in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
+Respond with a single JSON object: {"title": "...", "body": "..."}.
 
 `;
 
@@ -392,7 +397,7 @@ Use this context to write a PR description that explains how these changes fulfi
  */
 async function prepareReviewContext(
   workspace: Workspace,
-  resultTag: string,
+  resultTag?: string,
   context?: AgentExecutorContext,
 ): Promise<string> {
   const filesToReview = context?.reviewFiles || context?.files;
@@ -455,8 +460,6 @@ Wrap your final review in <<<${resultTag}>>> and <<</${resultTag}>>> tags.
  */
 async function prepareWalkthroughContext(
   workspace: Workspace,
-
-  _resultTag: string,
 
   _context?: AgentExecutorContext,
 ): Promise<string> {

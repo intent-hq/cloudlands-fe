@@ -45,7 +45,11 @@ import {
 import { EXECUTOR_CONFIGS } from '$store/renderer/slices/background-agent-executor/background-agent-executor-types';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { prepareContext } from '$store/renderer/slices/background-agent-executor/utils/context-preparation';
-import { extractResultFromText } from '$store/renderer/slices/background-agent-executor/utils/result-extraction';
+import {
+  extractCommitResultFromText,
+  extractPrResultFromText,
+  extractResultFromText,
+} from '$store/renderer/slices/background-agent-executor/utils/result-extraction';
 import commitMessageInstruction from './instructions/background/commit-message';
 import prDescriptionInstruction from './instructions/background/pr-description';
 import codeReviewInstruction from './instructions/background/code-review';
@@ -203,9 +207,11 @@ function* handleExecute(
     }
 
     const text = typeof response.text === 'string' ? response.text : '';
-    // Walkthrough prompts request raw JSON (no tags) — extract untagged.
-    const resultTag = executorType === 'walkthrough' ? undefined : config.resultTag;
-    const { result, error: extractError } = extractResultFromText(text, resultTag);
+    const { result, error: extractError } = extractExecutorResult(
+      executorType,
+      config.resultTag,
+      text,
+    );
 
     yield* put(
       setExecutorState(workspaceId, executorType, {
@@ -229,6 +235,26 @@ function* handleExecute(
       yield* put(setExecutorState(workspaceId, executorType, { status: 'cancelled' }));
     }
   }
+}
+
+/**
+ * Extract the executor result from the completion text. Commit and PR
+ * executors use JSON contracts ({"subject", "body"?} / {"title", "body"})
+ * formatted back into the legacy downstream shapes (`subject\n\nbody`,
+ * `# {title}\n\n{body}`) so consumers are unchanged. Review keeps its
+ * <<<CODE_REVIEW>>> tag contract, and walkthrough prompts request raw JSON
+ * (no tags, no `resultTag` config) — extract untagged.
+ */
+function extractExecutorResult(
+  executorType: string,
+  resultTag: string | undefined,
+  text: string,
+): { result: string | null; error: string | null } {
+  if (executorType === 'commit' || executorType === 'commit-merge') {
+    return extractCommitResultFromText(text);
+  }
+  if (executorType === 'pr') return extractPrResultFromText(text);
+  return extractResultFromText(text, resultTag);
 }
 
 /**
