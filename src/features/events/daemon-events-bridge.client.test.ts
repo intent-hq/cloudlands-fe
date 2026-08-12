@@ -3619,6 +3619,23 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     });
   });
 
+  it.each(['created', 'updated', 'removed'] as const)(
+    'refreshes script.list after a script definition is %s',
+    async (action) => {
+      await primeBridge();
+      const refreshScripts = await import('$store/renderer/slices/scripts/scripts-slice').then(
+        (module) => module.refreshScripts,
+      );
+      const dispatchSpy = vi.fn();
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+
+      capturedHandlers[0]!(notification('script:changed', { scriptId: SCRIPT_ID, action }));
+
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS));
+      dispatchGetterSpy.mockRestore();
+    },
+  );
+
   it('mirrors detectedUrl from script:state into the runtime state', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

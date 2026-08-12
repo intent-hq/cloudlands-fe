@@ -222,6 +222,7 @@ import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-ass
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import {
   appendScriptOutput,
+  refreshScripts,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
 import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
@@ -3077,11 +3078,13 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
   }
-  // Script output/state (§6.5) — script:output feeds the live buffer the
-  // `ScriptOutputViewer` xterm reads from, script:state mirrors the
-  // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
-  // through to the storage dispatch below so the activity timeline still
-  // records that they happened.
+  // Script definition/output/state (§6.5) — definition mutations trigger a
+  // canonical list refetch, output feeds the live buffer, and state mirrors
+  // the recomputed runtime into the scripts slice.
+  if (type === 'script:changed') {
+    appStore.dispatch(refreshScripts(workspaceId));
+    // fall through so the activity timeline records the mutation
+  }
   if (type === 'script:output') {
     handleScriptOutputEvent(event, workspaceId);
     // Chunks are noise for the activity timeline (one per PTY read); skip
