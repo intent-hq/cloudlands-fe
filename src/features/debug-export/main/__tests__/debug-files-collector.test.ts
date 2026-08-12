@@ -316,6 +316,29 @@ describe('memory metrics collection', () => {
     ).toBe(true);
   });
 
+  it('still reports peaks when every retained sample has aged out', async () => {
+    const { recordMemorySample } = await import('../../../../main/memory-monitor');
+    vi.useFakeTimers();
+    try {
+      recordMemorySample(snapshotWith([processSample(90, 'agent', 16_000, 'claude')]), '2026-08-12T00:00:00.000Z');
+      // Suspended well past the retention window, and the capture also fails
+      vi.setSystemTime(new Date(Date.parse('2026-08-12T00:00:00.000Z') + 48 * 60 * 60 * 1000));
+      memoryMock.snapshot = null;
+
+      const { metrics, omissions } = await collectMemoryMetrics();
+
+      expect(metrics.samples).toEqual([]);
+      expect(metrics.capturedAt).toBeNull();
+      // The whole point of the file survives an expired timeline
+      expect(metrics.peaks.singleProcess).toMatchObject({ pid: 90, rssBytes: 16_000 * MB });
+      expect(
+        omissions.some((o) => o.startsWith('memory-metrics.json: retained timeline is empty')),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('omits the file entirely when nothing was ever sampled', async () => {
     memoryMock.snapshot = null;
 

@@ -320,12 +320,21 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
     memorySnapshot = await logMemorySample();
     const history = getMemoryHistory();
 
-    if (history.samples.length === 0) {
+    // The window can be empty while peaks are not: peaks outlive the retention
+    // window, so a session suspended past the 24 h cap keeps "how big did this
+    // get" long after the timeline itself has expired. Emit the file for either.
+    if (history.samples.length === 0 && !history.peaks.total) {
       // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
       omissions.push(
         'memory-metrics.json: skipped — no memory samples retained (sampler never ran and the capture-time sample failed)',
       );
     } else {
+      if (history.samples.length === 0) {
+        // i18n-ignore (manifest entry inside a diagnostic zip, not UI)
+        omissions.push(
+          'memory-metrics.json: retained timeline is empty (every sample aged out of the 24 h window) — peaks are still reported',
+        );
+      }
       const captured = memorySnapshot ? summarizeSnapshot(memorySnapshot, capturedAt) : null;
       files.push({
         relativePath: 'memory-metrics.json',

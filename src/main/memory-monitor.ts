@@ -522,6 +522,14 @@ export interface MemoryPeak {
   rssBytes: number;
   /** ISO-8601 time of the sample that set this peak. */
   at: string;
+  /**
+   * Set when the sample behind this peak had no OS process table, so the daemon
+   * and its agent tree — normally the dominant term — are missing from it. The
+   * figure is then a floor, not Intent's footprint. Same reasoning as the
+   * `total=unknown` token in {@link formatSnapshot}: a partial figure must
+   * never be readable as a complete one.
+   */
+  partial?: boolean;
 }
 
 export interface ProcessPeak extends MemoryPeak {
@@ -534,12 +542,16 @@ export interface ProcessPeak extends MemoryPeak {
 export interface MemoryPeaks {
   /** Peak aggregate footprint across every sampled process. */
   total: MemoryPeak | null;
-  /** Peak group total per kind (e.g. how large the agent tree ever got). */
+  /**
+   * Peak group total per kind (e.g. how large the agent tree ever got).
+   * Never `partial`: a kind is either fully present in a sample or absent from
+   * it, so a partial sample cannot set a half-counted per-kind peak.
+   */
   byKind: Partial<Record<ProcessKind, MemoryPeak>>;
   /** Largest single process ever sampled. */
   singleProcess: ProcessPeak | null;
   /** Peak number of processes sampled at once. */
-  processCount: { count: number; at: string } | null;
+  processCount: { count: number; at: string; partial?: boolean } | null;
 }
 
 export interface MemoryHistory {
@@ -601,8 +613,13 @@ function pruneRetainedSamples(nowMs: number): void {
 }
 
 function updatePeaks(summary: RetainedMemorySample): void {
+  // A sample taken without the process table only sums the Electron processes,
+  // so its total and process count are floors. They can still legitimately set
+  // a peak (a max over floors is itself a floor), but the result must say so.
+  const partial = summary.processTableUnavailable ? { partial: true } : {};
+
   if (!peaks.total || summary.totalRssBytes > peaks.total.rssBytes) {
-    peaks.total = { rssBytes: summary.totalRssBytes, at: summary.at };
+    peaks.total = { rssBytes: summary.totalRssBytes, at: summary.at, ...partial };
   }
 
   for (const kind of Object.keys(summary.byKind) as ProcessKind[]) {
@@ -622,7 +639,7 @@ function updatePeaks(summary: RetainedMemorySample): void {
   }
 
   if (!peaks.processCount || summary.processCount > peaks.processCount.count) {
-    peaks.processCount = { count: summary.processCount, at: summary.at };
+    peaks.processCount = { count: summary.processCount, at: summary.at, ...partial };
   }
 }
 
@@ -638,8 +655,22 @@ export function recordMemorySample(
   return summary;
 }
 
-/** The retained window plus peaks, copied so callers cannot mutate sampler state. */
+/**
+ * The retained window plus peaks, copied so callers cannot mutate sampler state.
+ *
+ * Prunes on read as well as on write. Sampling stops contributing whenever the
+ * app is suspended or `logMemorySample` keeps failing, and a bundle is usually
+ * captured *after* something went wrong — precisely when sampling is most
+ * likely to have been degraded. Without this, such a bundle would serialize
+ * entries older than the advertised {@link MAX_RETAINED_AGE_MS} window and
+ * misrepresent when the reported footprint occurred; a timestamp that lies
+ * about when a 16 GB peak happened is worse than no timestamp.
+ *
+ * Peaks are untouched by pruning by design, so a fully-expired window still
+ * reports how large things got — it just no longer claims a recent timeline.
+ */
 export function getMemoryHistory(): MemoryHistory {
+  pruneRetainedSamples(Date.now());
   return {
     sampleIntervalMs: SAMPLE_INTERVAL_MS,
     retention: { maxSamples: MAX_RETAINED_SAMPLES, maxAgeMs: MAX_RETAINED_AGE_MS },

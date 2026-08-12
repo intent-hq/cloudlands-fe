@@ -632,6 +632,102 @@ describe('retained history', () => {
     expect(getMemoryHistory().samples).toHaveLength(0);
   });
 
+  it('marks a peak set by a sample with no process table as partial', () => {
+    // No process table ⇒ the daemon and its agent tree are missing entirely,
+    // so the total is a floor. The peak may still come from such a sample.
+    recordMemorySample(
+      snapshot({
+        electron: [processSample(1, 'main', 400), processSample(2, 'renderer', 700)],
+        processTableUnavailable: true,
+      }),
+      '2026-08-12T00:00:00.000Z',
+    );
+
+    const { peaks } = getMemoryHistory();
+    expect(peaks.total).toEqual({ rssBytes: 1_100 * MB, at: '2026-08-12T00:00:00.000Z', partial: true });
+    expect(peaks.processCount).toEqual({ count: 2, at: '2026-08-12T00:00:00.000Z', partial: true });
+    // A per-kind peak cannot be half-counted, so it is never flagged
+    expect(peaks.byKind.main).toEqual({ rssBytes: 400 * MB, at: '2026-08-12T00:00:00.000Z' });
+  });
+
+  it('drops the partial flag once a complete sample sets a higher peak', () => {
+    recordMemorySample(
+      snapshot({
+        electron: [processSample(1, 'main', 400)],
+        processTableUnavailable: true,
+      }),
+      '2026-08-12T00:00:00.000Z',
+    );
+    recordMemorySample(
+      snapshot({
+        electron: [processSample(1, 'main', 400)],
+        agents: [processSample(90, 'agent', 9_000, 'claude')],
+      }),
+      '2026-08-12T00:01:00.000Z',
+    );
+
+    const { peaks } = getMemoryHistory();
+    expect(peaks.total?.rssBytes).toBe(9_400 * MB);
+    expect(peaks.total?.partial).toBeUndefined();
+  });
+
+  it('leaves peaks unflagged when every sample saw the process table', () => {
+    recordMemorySample(
+      snapshot({ agents: [processSample(90, 'agent', 500, 'claude')] }),
+      '2026-08-12T00:00:00.000Z',
+    );
+
+    const { peaks } = getMemoryHistory();
+    expect(peaks.total?.partial).toBeUndefined();
+    expect(peaks.processCount?.partial).toBeUndefined();
+  });
+
+  it('prunes on read, so a stalled sampler cannot serve entries outside the window', () => {
+    // A bundle is usually captured after something went wrong — exactly when
+    // sampling may have stopped contributing. Without pruning on read these
+    // stale entries would be serialized as if they were inside the 24 h window.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-12T00:00:00.000Z'));
+      recordMemorySample(
+        snapshot({ agents: [processSample(90, 'agent', 9_000, 'claude')] }),
+        '2026-08-12T00:00:00.000Z',
+      );
+      expect(getMemoryHistory().samples).toHaveLength(1);
+
+      // No further samples recorded — only the clock moves past the age cap
+      vi.setSystemTime(new Date(Date.parse('2026-08-12T00:00:00.000Z') + MAX_RETAINED_AGE_MS + 60_000));
+
+      const history = getMemoryHistory();
+      expect(history.samples).toEqual([]);
+      expect(history.droppedSamples).toBe(1);
+      // Peaks outlive the window, so "how big did it get" survives
+      expect(history.peaks.total?.rssBytes).toBe(9_000 * MB);
+      expect(history.peaks.singleProcess).toMatchObject({ pid: 90, rssBytes: 9_000 * MB });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps in-window samples when pruning on read', () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.parse('2026-08-12T00:00:00.000Z');
+      recordMemorySample(snapshot({ agents: [processSample(1, 'agent', 100)] }), new Date(start).toISOString());
+      recordMemorySample(
+        snapshot({ agents: [processSample(1, 'agent', 200)] }),
+        new Date(start + MAX_RETAINED_AGE_MS - 60_000).toISOString(),
+      );
+      vi.setSystemTime(new Date(start + MAX_RETAINED_AGE_MS + 1_000));
+
+      const history = getMemoryHistory();
+      expect(history.samples).toHaveLength(1);
+      expect(history.samples[0].totalRssBytes).toBe(200 * MB);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns copies so callers cannot mutate sampler state', () => {
     recordMemorySample(
       snapshot({ agents: [processSample(1, 'agent', 100)] }),
