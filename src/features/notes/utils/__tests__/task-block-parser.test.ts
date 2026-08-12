@@ -8,6 +8,8 @@ import {
   extractTasksBlocks,
   hasTaskBlocks,
   hasTasksBlocks,
+  isValidTaskFenceHeader,
+  scanTaskBlocks,
 } from '../task-block-parser';
 
 describe('task-block-parser', () => {
@@ -282,6 +284,158 @@ More content.
       expect(hasTasksBlocks('@@@task\n# Task\n@@@')).toBe(true);
       expect(hasTasksBlocks('```task\n# Task\n```')).toBe(false);
       expect(hasTasksBlocks('# Regular content')).toBe(false);
+    });
+  });
+
+  describe('fence header attributes (daemon parity)', () => {
+    it('should detect a block with a full attribute header', () => {
+      const content = `@@@task key=auth dependsOn=db,api conflictsWith=migrations effort=2h
+# Authentication
+Build auth system.
+@@@`;
+
+      const result = extractTasksBlocks(content);
+
+      expect(result.blockCount).toBe(1);
+      expect(result.validTaskCount).toBe(1);
+      expect(result.tasks[0].title).toBe('Authentication');
+      expect(result.tasks[0].content).toBe('Build auth system.');
+      expect(result.contentWithoutBlocks).toBe('<!-- task-block-placeholder-0 -->');
+    });
+
+    it('should detect a block with a single attribute on the plural form', () => {
+      const content = '@@@tasks key=t1\n# Task\nBody.\n@@@';
+
+      const result = extractTasksBlocks(content);
+
+      expect(result.blockCount).toBe(1);
+      expect(result.tasks[0].title).toBe('Task');
+    });
+
+    it('should tolerate whitespace around commas in list attributes', () => {
+      for (const header of ['dependsOn=a, b', 'dependsOn=a ,b', 'dependsOn=a , b']) {
+        const content = `@@@task ${header}\n# Task\nBody.\n@@@`;
+        const result = extractTasksBlocks(content);
+        expect(result.blockCount).toBe(1);
+        expect(result.tasks[0].title).toBe('Task');
+      }
+    });
+
+    it('should handle attribute headers with CRLF line endings', () => {
+      const content = '@@@task key=t1 dependsOn=a,b\r\n# Task\r\nBody.\r\n@@@';
+
+      const result = extractTasksBlocks(content);
+
+      expect(result.blockCount).toBe(1);
+      expect(result.tasks[0].title).toBe('Task');
+    });
+
+    it('should keep a bare header working byte-for-byte as before', () => {
+      const content = 'Intro.\n\n@@@task\n# Task\nBody.\n@@@\n\nOutro.';
+
+      const result = extractTasksBlocks(content);
+
+      expect(result.blockCount).toBe(1);
+      expect(result.tasks[0].title).toBe('Task');
+      expect(result.contentWithoutBlocks).toBe(
+        'Intro.\n\n<!-- task-block-placeholder-0 -->\n\nOutro.',
+      );
+    });
+
+    it('should still detect blocks with malformed attribute values (convert-with-warnings)', () => {
+      // Attribute-shaped but semantically wrong headers keep the fence valid;
+      // the daemon converts these with warnings, so the FE must still see a block
+      const headers = [
+        'unknownAttr=x', // unknown attribute name
+        'key=a key=b', // duplicate attribute
+        'key=', // empty value
+        'key=a,b', // list value on a scalar attribute
+        'key=a=b', // stray '=' in the value
+      ];
+      for (const header of headers) {
+        const content = `@@@task ${header}\n# Task\nBody.\n@@@`;
+        const result = extractTasksBlocks(content);
+        expect(result.blockCount).toBe(1);
+        expect(result.tasks[0].title).toBe('Task');
+      }
+    });
+
+    it('should NOT treat prose mentioning @@@task as a fence', () => {
+      // Tokens without '=' (or with non-alphanumeric names) are not
+      // attribute-shaped, so the line is not a fence — matching the daemon
+      const headers = ['and some prose', 'key', '=value', '-x=1', 'key=a extra'];
+      for (const header of headers) {
+        const content = `@@@task ${header}\nnot a block body\n@@@`;
+        const result = extractTasksBlocks(content);
+        expect(result.blockCount).toBe(0);
+        expect(result.contentWithoutBlocks).toBe(content);
+        expect(hasTaskBlocks(content)).toBe(false);
+      }
+    });
+
+    it('should NOT treat @@@task glued to other characters as a fence', () => {
+      expect(hasTaskBlocks('@@@taskforce\n# Task\n@@@')).toBe(false);
+      expect(hasTaskBlocks('@@@task=1\n# Task\n@@@')).toBe(false);
+    });
+
+    it('should report hasTaskBlocks true for attribute-carrying fences', () => {
+      expect(hasTaskBlocks('@@@task key=t1\n# Task\n@@@')).toBe(true);
+      expect(hasTaskBlocks('@@@task unknownAttr=x\n# Task\n@@@')).toBe(true);
+    });
+  });
+
+  describe('isValidTaskFenceHeader', () => {
+    it('should accept empty and whitespace-only headers', () => {
+      expect(isValidTaskFenceHeader('')).toBe(true);
+      expect(isValidTaskFenceHeader('   ')).toBe(true);
+      expect(isValidTaskFenceHeader(' \t ')).toBe(true);
+    });
+
+    it('should accept attribute-shaped tokens', () => {
+      expect(isValidTaskFenceHeader(' key=t1')).toBe(true);
+      expect(isValidTaskFenceHeader(' key=t1 dependsOn=a,b effort=2h')).toBe(true);
+      expect(isValidTaskFenceHeader(' dependsOn=a, b')).toBe(true);
+      expect(isValidTaskFenceHeader(' unknownAttr=x')).toBe(true);
+      expect(isValidTaskFenceHeader(' key=')).toBe(true);
+    });
+
+    it('should reject non-attribute-shaped tokens', () => {
+      expect(isValidTaskFenceHeader(' some prose')).toBe(false);
+      expect(isValidTaskFenceHeader(' =value')).toBe(false);
+      expect(isValidTaskFenceHeader(' -x=1')).toBe(false);
+      expect(isValidTaskFenceHeader(' key.sub=1')).toBe(false);
+    });
+
+    it('should tolerate one trailing CR but reject interior CRs', () => {
+      expect(isValidTaskFenceHeader(' key=t1\r')).toBe(true);
+      expect(isValidTaskFenceHeader('\r')).toBe(true);
+      expect(isValidTaskFenceHeader(' key=t1\r\r')).toBe(false);
+      expect(isValidTaskFenceHeader(' key\r=t1')).toBe(false);
+    });
+  });
+
+  describe('scanTaskBlocks', () => {
+    it('should return block offsets and body', () => {
+      const content = 'before\n@@@task key=t1\n# Task\nBody.\n@@@\nafter';
+      const blocks = scanTaskBlocks(content);
+
+      expect(blocks).toHaveLength(1);
+      expect(content.slice(blocks[0].start, blocks[0].end)).toBe(
+        '@@@task key=t1\n# Task\nBody.\n@@@',
+      );
+      expect(blocks[0].body).toBe('# Task\nBody.\n');
+    });
+
+    it('should skip an invalid fence but find a later valid one', () => {
+      const content = '@@@task not a fence\nprose\n\n@@@task key=t1\n# Task\nBody.\n@@@';
+      const blocks = scanTaskBlocks(content);
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].body).toBe('# Task\nBody.\n');
+    });
+
+    it('should ignore an unterminated block', () => {
+      expect(scanTaskBlocks('@@@task key=t1\n# Task\nno close')).toHaveLength(0);
     });
   });
 
