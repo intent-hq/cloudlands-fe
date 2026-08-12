@@ -10,7 +10,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import type { BackendNotification } from "./backend-transport-types";
-import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
+import {
+  createElectronIpcBackendTransport,
+  inspectChannelFanoutSubscribers,
+} from "./electron-ipc-transport";
 
 const STATUS = IPC_CHANNELS.BACKEND.STATUS;
 const NOTIFICATION = IPC_CHANNELS.BACKEND.NOTIFICATION;
@@ -319,5 +322,92 @@ describe("electron-ipc-transport listener counts across mount/unmount cycles", (
       expect(api.listenerCount(NOTIFICATION)).toBe(0);
       expect(api.listenerCount(STATUS)).toBe(0);
     }
+  });
+});
+
+describe("inspectChannelFanoutSubscribers", () => {
+  it("rises and falls with subscribe/dispose, per channel", () => {
+    installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    expect(inspectChannelFanoutSubscribers()).toEqual({});
+
+    const notificationDisposers = Array.from({ length: 11 }, () =>
+      transport.onNotification(vi.fn()),
+    );
+    const statusDisposers = Array.from({ length: 5 }, () => transport.onReconnected(vi.fn()));
+
+    expect(inspectChannelFanoutSubscribers()).toEqual({
+      [NOTIFICATION]: 11,
+      [STATUS]: 5,
+    });
+    // Sorted by channel, so the fingerprint's per-channel fields keep a stable
+    // order between samples.
+    expect(Object.keys(inspectChannelFanoutSubscribers())).toEqual([NOTIFICATION, STATUS].sort());
+
+    notificationDisposers.pop()?.();
+    statusDisposers.pop()?.();
+    expect(inspectChannelFanoutSubscribers()).toEqual({
+      [NOTIFICATION]: 10,
+      [STATUS]: 4,
+    });
+
+    // The last disposer for a channel drops it from the report entirely; the
+    // aggregate the fingerprint emits reads that as 0.
+    notificationDisposers.forEach((dispose) => dispose());
+    expect(inspectChannelFanoutSubscribers()).toEqual({ [STATUS]: 4 });
+
+    statusDisposers.forEach((dispose) => dispose());
+    expect(inspectChannelFanoutSubscribers()).toEqual({});
+  });
+
+  it("sees accumulation that the IPC listener count cannot", () => {
+    // The point of the whole exercise: after the fan-out, undisposed
+    // subscribers pile up inside the handler Set while the bridge listener
+    // count sits at 1 (intent-hq/monorepo#2034). The IPC number is a tripwire,
+    // this one is the gauge.
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const leaked = Array.from({ length: 40 }, () => transport.onNotification(vi.fn()));
+
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+    expect(inspectChannelFanoutSubscribers()[NOTIFICATION]).toBe(40);
+
+    leaked.forEach((dispose) => dispose());
+  });
+
+  it("counts duplicate subscriptions of one handler separately, and ignores double-dispose", () => {
+    installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const handler = vi.fn();
+    const first = transport.onNotification(handler);
+    const second = transport.onNotification(handler);
+    expect(inspectChannelFanoutSubscribers()[NOTIFICATION]).toBe(2);
+
+    first();
+    first();
+    expect(inspectChannelFanoutSubscribers()[NOTIFICATION]).toBe(1);
+
+    second();
+    expect(inspectChannelFanoutSubscribers()).toEqual({});
+  });
+
+  it("sums subscribers across transports and reports nothing when the bridge is absent", () => {
+    installFakeApi();
+    const first = createElectronIpcBackendTransport();
+    const second = createElectronIpcBackendTransport();
+
+    const disposers = [first.onNotification(vi.fn()), second.onNotification(vi.fn())];
+    expect(inspectChannelFanoutSubscribers()[NOTIFICATION]).toBe(2);
+    disposers.forEach((dispose) => dispose());
+
+    // No bridge (web/mock builds): `onNotification` returns a no-op disposer
+    // without ever reaching the fan-out, so nothing is registered.
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+    const unavailable = createElectronIpcBackendTransport();
+    unavailable.onNotification(vi.fn());
+    expect(inspectChannelFanoutSubscribers()).toEqual({});
   });
 });

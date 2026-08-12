@@ -31,6 +31,10 @@ vi.mock('../utils/resolve-app-title', () => ({ resolveAppTitle: () => 'Intent' }
 
 const { forwardRendererConsoleToMainLog } = await import('../window');
 const { LOGGING_CONFIG, LogLevel, getLogLevel } = await import('../../shared/logging-config');
+const { collectRetentionFingerprint, formatRetentionFingerprint } =
+  await import('../../store/renderer/retention-fingerprint');
+const { createElectronIpcBackendTransport } =
+  await import('../../lib/client/live/electron-ipc-transport');
 
 type ConsoleMessage = {
   level: 'info' | 'warning' | 'error' | 'debug';
@@ -116,6 +120,37 @@ describe('renderer console forwarding', () => {
 
     expect(logged.filter((line) => line.includes('a renderer warning'))).toHaveLength(1);
     expect(logged.filter((line) => line.includes('a renderer error'))).toHaveLength(1);
+  });
+
+  it('forwards a real full-width sample whole, fan-out breakout included', () => {
+    // The per-channel `fanout.*` fields are appended at the END of the line, so
+    // they are the first thing a size cap would eat. Assert against a real
+    // collected sample rather than a hand-written fixture: this is the check
+    // that the numbers actually reach console-output.log, not just that the
+    // collector produces them.
+    const emit = attachForwarder();
+    // Minimal preload bridge so a real subscription registers in the fan-out
+    // and the sample carries a per-channel field.
+    (window as unknown as { electronAPI?: unknown }).electronAPI = {
+      on: () => 'listener-1',
+      offById: () => {},
+    };
+    const transport = createElectronIpcBackendTransport();
+    const dispose = transport.onNotification(() => {});
+    const line = formatRetentionFingerprint(
+      collectRetentionFingerprint({}, { sample: 1, uptimeMs: 10_000 }),
+    );
+    dispose();
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+
+    emit({ level: 'info', message: `[INFO] [retention-fingerprint] ${line}` });
+
+    const forwarded = logged.filter((entry) => entry.includes('[RetentionFingerprint]'));
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]).toContain('ipcBackendListeners=');
+    expect(forwarded[0]).toContain('fanoutSubscribers=1');
+    expect(forwarded[0]).toContain('fanout.backend:notification=1');
+    expect(forwarded[0]).not.toContain('truncated');
   });
 
   it('does not let a repeated fingerprint suppress later distinct samples', () => {
