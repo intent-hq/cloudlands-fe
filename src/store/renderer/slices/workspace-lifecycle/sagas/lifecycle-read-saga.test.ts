@@ -68,6 +68,7 @@ import {
 import { loadWorkspacesRequested } from '../../workspace/workspace-slice';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
+import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
 const WS = 'ws-lifecycle';
 const NOW = new Date('2026-07-31T00:00:00.000Z');
@@ -79,11 +80,11 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state() {
+function state(activeWorkspaceId: string | null = null) {
   return {
     workspaceTasks: { byWorkspaceId: {} },
     changes: { agentStats: {}, agentLineStatsRequests: {} },
-    workspace: { workspaces: createCollection('id', []) },
+    workspace: { workspaces: createCollection('id', []), activeWorkspaceId },
     agentSessions: { byAgentId: {} },
     workspaceAgents: { byWorkspaceId: {} },
     prStatus: { byWorkspaceId: {} },
@@ -1150,6 +1151,143 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.events.list.mock.calls).toEqual([[WS]]);
     expect(run.actions).toEqual([]);
     await stop(run.task);
+  });
+
+  describe('bounded read fan-out', () => {
+    const FAN_OUT = 130;
+
+    /** `tasks.list` calls that are parked until the test resolves them. */
+    function parkTaskReads() {
+      const pending: Array<{ workspaceId: string; resolve: () => void }> = [];
+      mocks.tasks.list.mockImplementation(
+        (workspaceId: string) =>
+          new Promise<{ tasks: unknown[]; stats: { total: number } }>((done) => {
+            pending.push({
+              workspaceId,
+              resolve: () => done({ tasks: [], stats: { total: 0 } }),
+            });
+          }),
+      );
+      return pending;
+    }
+
+    const issuedFor = (pending: Array<{ workspaceId: string }>) =>
+      pending.map((entry) => entry.workspaceId);
+
+    it('caps concurrent reads when every workspace refreshes in one tick', async () => {
+      const pending = parkTaskReads();
+      const run = start();
+
+      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      await settle();
+
+      // Without the scheduler this was one read per registered workspace.
+      expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
+
+      // A finished read admits exactly one queued read, in dispatch order.
+      pending[0].resolve();
+      await settle();
+      expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS + 1);
+      expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe(
+        `ws-${MAX_CONCURRENT_WORKSPACE_READS}`,
+      );
+
+      for (const entry of pending) entry.resolve();
+      await settle();
+      await stop(run.task);
+    });
+
+    it('drains the whole queue without exceeding the cap', async () => {
+      const pending = parkTaskReads();
+      const run = start();
+
+      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+
+      let resolved = 0;
+      while (resolved < FAN_OUT) {
+        await settle();
+        expect(pending.length - resolved).toBeLessThanOrEqual(MAX_CONCURRENT_WORKSPACE_READS);
+        pending[resolved].resolve();
+        resolved += 1;
+      }
+      await settle();
+
+      expect(issuedFor(pending)).toHaveLength(FAN_OUT);
+      expect(new Set(issuedFor(pending)).size).toBe(FAN_OUT);
+      await stop(run.task);
+    });
+
+    it('refreshes a newly active workspace ahead of the queued backlog', async () => {
+      const HOT = 'ws-hot';
+      const pending = parkTaskReads();
+      const run = start(state(HOT));
+
+      for (let i = 0; i < FAN_OUT; i += 1) run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      await settle();
+      expect(issuedFor(pending)).not.toContain(HOT);
+
+      // The workspace the user just opened queues ahead of the backlog.
+      run.channel.put(loadWorkspaceTasksRequested(HOT));
+      await settle();
+      expect(issuedFor(pending)).not.toContain(HOT);
+
+      pending[0].resolve();
+      await settle();
+      expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe(HOT);
+
+      for (const entry of pending) entry.resolve();
+      await settle();
+      await stop(run.task);
+    });
+
+    // Cleanup ownership is split: coalesced domains (tasks) are cancelled by
+    // their context watcher, non-coalesced ones (events) by the cleanup race in
+    // runWorkspaceRead. Both must hand the slot back.
+    it('frees the slot held by a coalesced read cancelled by workspace deletion', async () => {
+      const pending = parkTaskReads();
+      const run = start();
+
+      for (let i = 0; i < MAX_CONCURRENT_WORKSPACE_READS; i += 1) {
+        run.channel.put(loadWorkspaceTasksRequested(`ws-${i}`));
+      }
+      run.channel.put(loadWorkspaceTasksRequested('ws-queued'));
+      await settle();
+      expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
+
+      run.channel.put(workspaceDeleted('ws-0', []));
+      await settle();
+
+      expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe('ws-queued');
+      for (const entry of pending) entry.resolve();
+      await settle();
+      await stop(run.task);
+    });
+
+    it('frees the slot held by a raced read cancelled by workspace deletion', async () => {
+      const pending: Array<{ workspaceId: string; resolve: () => void }> = [];
+      mocks.events.list.mockImplementation(
+        (workspaceId: string) =>
+          new Promise<unknown[]>((done) => {
+            pending.push({ workspaceId, resolve: () => done([]) });
+          }),
+      );
+      const run = start();
+
+      for (let i = 0; i < MAX_CONCURRENT_WORKSPACE_READS; i += 1) {
+        run.channel.put(loadEventsRequested(`ws-${i}`));
+      }
+      run.channel.put(loadEventsRequested('ws-queued'));
+      await settle();
+      expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
+
+      run.channel.put(workspaceUnmounted('ws-0'));
+      await settle();
+
+      expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe('ws-queued');
+      for (const entry of pending) entry.resolve();
+      await settle();
+      await stop(run.task);
+    });
   });
 
   it('ignores malformed trigger payloads', async () => {
