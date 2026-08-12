@@ -22,7 +22,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const scriptPath = join(repoRoot, 'scripts/inline-ipc-channels.ts');
-const tsxPath = join(repoRoot, 'node_modules/.bin/tsx');
 
 const realTemplatePath = join(repoRoot, 'src/preload/index.template.ts');
 const realIndexPath = join(repoRoot, 'src/preload/index.ts');
@@ -51,7 +50,11 @@ function makeFixture(template: string, index?: string): string {
 }
 
 function runGenerator(root: string, ...flags: string[]) {
-  const result = spawnSync(tsxPath, [scriptPath, root, ...flags], {
+  // node --import tsx, not node_modules/.bin/tsx: on Windows that path is a
+  // command shim that spawnSync cannot execute without a shell, so the child
+  // would exit with status null and this suite would fail before it ever
+  // reached the generator.
+  const result = spawnSync(process.execPath, ['--import', 'tsx', scriptPath, root, ...flags], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -93,6 +96,24 @@ describe('preload generator drift guard', () => {
     expect(result.output).toContain('index.template.ts');
     // The edit must survive the refusal — the whole point is to not lose work.
     expect(generatedIndex(root)).toContain(HAND_EDIT_MARKER);
+  });
+
+  it('catches a hand edit that only moves a line, with nothing added or removed', () => {
+    // A multiset comparison calls this "unchanged" and overwrites it in
+    // silence — the same silent-discard failure the guard exists to stop.
+    const moved = '  // Remove all listeners for a channel';
+    const index = realIndex
+      .replace(`${moved}\n`, '')
+      .replace('  // IPC once (listen once)', `${moved}\n  // IPC once (listen once)`);
+    expect(index, 'fixture must actually move a line').not.toBe(realIndex);
+    const root = makeFixture(realTemplate, index);
+
+    const result = runGenerator(root);
+
+    expect(result.status, 'a reordered line is still drift').toBe(1);
+    expect(result.output).toContain('[moved]');
+    // The content is in the template, so the message must not claim it is lost.
+    expect(result.output).toContain('nothing is missing from the template');
   });
 
   it('does not fire when the template is ahead of a stale generated file', () => {
