@@ -20,6 +20,7 @@ import type { SetupEvaluation, SetupPromptState } from './setup-prompt-types';
 export const initialState: SetupPromptState = {
   evaluation: null,
   dismissedConnectionIds: [],
+  bootRouteGateResolved: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,14 @@ export const setupPromptDismissed = createAction<[connectionId: string]>(
   'setupPrompt/promptDismissed',
 );
 
+/**
+ * The boot-route gate decided where this page load should land (redirect to
+ * an existing workspace, or stay on onboarding/creation). Once resolved,
+ * WorkspaceSurface stops holding the onboarding render and later evaluation
+ * changes never re-route the window.
+ */
+export const bootRouteGateResolved = createAction('setupPrompt/bootRouteGateResolved');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -63,3 +72,7 @@ setupPromptReducer.with(setupPromptDismissed, (state, { payload: [connectionId] 
     dismissedConnectionIds: [...state.dismissedConnectionIds, connectionId],
   };
 });
+
+setupPromptReducer.with(bootRouteGateResolved, (state) =>
+  state.bootRouteGateResolved ? state : { ...state, bootRouteGateResolved: true },
+);

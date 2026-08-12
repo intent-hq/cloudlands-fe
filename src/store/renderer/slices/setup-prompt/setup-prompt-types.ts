@@ -27,4 +27,10 @@ export interface SetupPromptState {
    * session. In-memory only — resets when the window reloads.
    */
   dismissedConnectionIds: string[];
+  /**
+   * Whether this page load's boot-route decision has been made (land on an
+   * existing workspace vs. stay on onboarding). Made at most once per full
+   * page load; in-memory only — resets when the window reloads.
+   */
+  bootRouteGateResolved: boolean;
 }

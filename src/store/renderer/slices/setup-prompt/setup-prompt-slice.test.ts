@@ -8,6 +8,7 @@ import {
   setupPromptReducer,
   setupEvaluationCompleted,
   setupPromptDismissed,
+  bootRouteGateResolved,
 } from './setup-prompt-slice';
 import type { SetupEvaluation } from './setup-prompt-types';
 
@@ -19,7 +20,11 @@ const EVALUATION: SetupEvaluation = {
 
 describe('setupPromptReducer', () => {
   it('has the expected initial state', () => {
-    expect(initialState).toEqual({ evaluation: null, dismissedConnectionIds: [] });
+    expect(initialState).toEqual({
+      evaluation: null,
+      dismissedConnectionIds: [],
+      bootRouteGateResolved: false,
+    });
   });
 
   it('stores a completed evaluation', () => {
@@ -50,5 +55,22 @@ describe('setupPromptReducer', () => {
     let state = setupPromptReducer(initialState, setupPromptDismissed('remote-1'));
     state = setupPromptReducer(state, setupPromptDismissed('remote-2'));
     expect(state.dismissedConnectionIds).toEqual(['remote-1', 'remote-2']);
+  });
+
+  it('marks the boot-route gate resolved', () => {
+    const state = setupPromptReducer(initialState, bootRouteGateResolved());
+    expect(state.bootRouteGateResolved).toBe(true);
+  });
+
+  it('resolving the boot-route gate twice is a no-op', () => {
+    const once = setupPromptReducer(initialState, bootRouteGateResolved());
+    const twice = setupPromptReducer(once, bootRouteGateResolved());
+    expect(twice).toBe(once);
+  });
+
+  it('a later evaluation does not reset the resolved boot-route gate', () => {
+    const resolved = setupPromptReducer(initialState, bootRouteGateResolved());
+    const state = setupPromptReducer(resolved, setupEvaluationCompleted(EVALUATION));
+    expect(state.bootRouteGateResolved).toBe(true);
   });
 });
