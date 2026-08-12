@@ -68,14 +68,17 @@ describe('foldHookEvent (§6.5 hook:* lifecycle)', () => {
     expect(hooks[0].nextRunAt).toBeUndefined();
   });
 
-  it.each(['hook:dispatched', 'hook:evicted', 'hook:cancelled'])('%s removes the hook', (type) => {
-    const other = makeHook({ hookId: 'hook-2' });
-    const { hooks, needsRefetch } = foldHookEvent([makeHook(), other], type, {
-      hookId: 'hook-1',
-    });
-    expect(hooks).toEqual([other]);
-    expect(needsRefetch).toBe(false);
-  });
+  it.each(['hook:dispatched', 'hook:evicted', 'hook:cancelled', 'hook:expired'])(
+    '%s removes the hook',
+    (type) => {
+      const other = makeHook({ hookId: 'hook-2' });
+      const { hooks, needsRefetch } = foldHookEvent([makeHook(), other], type, {
+        hookId: 'hook-1',
+      });
+      expect(hooks).toEqual([other]);
+      expect(needsRefetch).toBe(false);
+    },
+  );
 
   it('hook:scheduled updates a known hook nextRunAt', () => {
     const { hooks, needsRefetch } = foldHookEvent([makeHook()], 'hook:scheduled', {

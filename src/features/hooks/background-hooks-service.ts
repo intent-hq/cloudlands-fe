@@ -21,7 +21,7 @@ export interface BackgroundHook {
   name: string;
   code?: string;
   delayMs: number;
-  state: 'scheduled' | 'running' | 'dispatched' | 'evicted' | 'cancelled';
+  state: 'scheduled' | 'running' | 'dispatched' | 'evicted' | 'cancelled' | 'expired';
   createdAt: string;
   /** TTL deadline (v3.1): `createdAt` + clamped `ttlMs` (≤ 60 minutes).
    * Absent only on pre-TTL legacy rows, which never expire. */
@@ -45,7 +45,12 @@ export interface HookEventData {
 }
 
 /** Event types that end a hook's life — their chips drop from the row. */
-const TERMINAL_HOOK_EVENTS = new Set(['hook:dispatched', 'hook:evicted', 'hook:cancelled']);
+const TERMINAL_HOOK_EVENTS = new Set([
+  'hook:dispatched',
+  'hook:evicted',
+  'hook:cancelled',
+  'hook:expired',
+]);
 
 export interface FoldResult {
   hooks: BackgroundHook[];

@@ -6,6 +6,14 @@ const root = (entries: string[], imports: string[] = []) => ({
   content: `${imports.join('\n')}\nexport const sagas = [${entries.join(', ')}] as const;`,
 });
 
+const actionOwner = (path: string, names: string[]) => ({
+  path,
+  content: [
+    "import { createAction } from '@augmentcode/themis/utils/store/create-action';",
+    ...names.map((name) => `export const ${name} = createAction('test/${name}');`),
+  ].join('\n'),
+});
+
 describe('saga watcher ownership guard', () => {
   it('allows native watchers, state waits, payload buffers, subscriptions, and snapshots', () => {
     const source = [
@@ -62,6 +70,7 @@ describe('saga watcher ownership guard', () => {
     const result = inspectSagaWatcherOwnership([
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['start', 'stop']),
     ]);
     expect(result.violations).toHaveLength(1);
   });
@@ -84,11 +93,170 @@ describe('saga watcher ownership guard', () => {
     const result = inspectSagaWatcherOwnership([
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['start', 'stop']),
     ]);
     expect(result.violations).toEqual([
       expect.stringContaining('manual Redux watcher loop'),
       expect.stringContaining('manual Redux watcher loop'),
     ]);
+  });
+
+  it('classifies imported take patterns by action origin instead of binding spelling', () => {
+    const source = [
+      "import * as effects from 'typed-redux-saga';",
+      "import { eventBus } from '../transport';",
+      "import * as transport from '../transport';",
+      "import { openChannel as open } from '../actions';",
+      "import * as channelActions from '../channels';",
+      'function* consumeNamedChannel() {',
+      '  while (true) { const event = yield* effects.take(eventBus); yield* effects.call(forward, event); }',
+      '}',
+      'function* consumeNamespaceChannel() {',
+      '  while (true) { const event = yield* effects.take(transport.events); yield* effects.call(forward, event); }',
+      '}',
+      'export function* badSaga() {',
+      '  while (true) {',
+      '    const openAction = yield* effects.take(open);',
+      '    yield* effects.call(openWorker, openAction);',
+      '    const refreshAction = yield* effects.takeMaybe(channelActions.refreshRequested);',
+      '    yield* effects.call(refreshWorker, refreshAction);',
+      '  }',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      {
+        path: 'src/store/renderer/slices/bad/actions.ts',
+        content: "export { launchChannel as openChannel } from './canonical-actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/bad/channels.ts',
+        content: "export { refreshRequested } from './canonical-actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/bad/canonical-actions.ts',
+        content: [
+          "import * as factory from '@augmentcode/themis/utils/store/create-action';",
+          "import { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+          "export const launchChannel = factory.createAction('test/openChannel');",
+          "const refreshRequested = defineAction('test/refreshRequested');",
+          'export { refreshRequested };',
+        ].join('\n'),
+      },
+      {
+        path: 'src/store/renderer/slices/bad/transport.ts',
+        content: 'export const eventBus = {}; export const events = {};',
+      },
+    ]);
+    expect(result.violations).toEqual([
+      expect.stringContaining('bad-saga.ts:14: manual Redux watcher loop'),
+      expect.stringContaining('bad-saga.ts:16: manual Redux watcher loop'),
+    ]);
+  });
+
+  it('rejects separated take and takeMaybe Redux watcher loops', () => {
+    const source = [
+      "import * as effects from 'typed-redux-saga';",
+      "import { call, take as waitFor } from 'typed-redux-saga';",
+      "import { eventsChannel as externalEvents } from '../channels';",
+      "import * as actions from '../slice';",
+      "import { start as begin } from '../slice';",
+      'function* consumeExternal() {',
+      '  while (true) {',
+      '    const event = yield* waitFor(externalEvents);',
+      '    yield* call(forward, event);',
+      '  }',
+      '}',
+      'export function* badSaga() {',
+      '  while (true) {',
+      '    const startAction = yield* waitFor(begin);',
+      '    yield* call(startWorker, startAction);',
+      '    const stopAction = yield* effects.takeMaybe(actions.stop);',
+      '    yield* effects.call(stopWorker, stopAction);',
+      '  }',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['start', 'stop']),
+      {
+        path: 'src/store/renderer/slices/bad/channels.ts',
+        content: 'export const eventsChannel = {};',
+      },
+    ]);
+    expect(result.violations).toEqual([
+      expect.stringContaining('manual Redux watcher loop'),
+      expect.stringContaining('manual Redux watcher loop'),
+    ]);
+  });
+
+  it('rejects assignment-form separated take and takeMaybe Redux watcher loops', () => {
+    const source = [
+      "import { call, take, takeMaybe } from '../effects';",
+      "import { start, stop } from '../slice';",
+      'export function* badSaga() {',
+      '  let startAction;',
+      '  let stopAction;',
+      '  while (true) {',
+      '    startAction = yield* take(start);',
+      '    yield* call(startWorker, startAction);',
+      '    stopAction = yield* takeMaybe(stop);',
+      '    yield* call(stopWorker, stopAction);',
+      '  }',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      {
+        path: 'src/store/renderer/slices/bad/effects.ts',
+        content: "export { call, take, takeMaybe } from 'typed-redux-saga';",
+      },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['start', 'stop']),
+    ]);
+    expect(result.violations).toEqual([
+      expect.stringContaining('bad-saga.ts:7: manual Redux watcher loop'),
+      expect.stringContaining('bad-saga.ts:9: manual Redux watcher loop'),
+    ]);
+  });
+
+  it('allows assignment-form loops for unresolved imports and resolvable channel cycles', () => {
+    const source = [
+      "import { call, take, takeEvery, takeMaybe } from 'typed-redux-saga';",
+      "import { importedChannel } from 'external-events';",
+      "import * as external from 'external-events';",
+      "import * as channels from '../channels';",
+      'export function* goodSaga() {',
+      '  let first;',
+      '  let second;',
+      '  let third;',
+      '  while (true) {',
+      '    first = yield* take(importedChannel);',
+      '    yield* call(forward, first);',
+      '    second = yield* takeMaybe(external.events);',
+      '    yield* call(forward, second);',
+      '    third = yield* take(channels.localEvents);',
+      '    yield* call(forward, third);',
+      '  }',
+      '  yield* takeEvery(importedChannel, forward);',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['goodSaga'], ["import { goodSaga } from './slices/good/sagas/good-saga';"]),
+      { path: 'src/store/renderer/slices/good/sagas/good-saga.ts', content: source },
+      {
+        path: 'src/store/renderer/slices/good/channels.ts',
+        content: "export * from './channel-cycle'; export const localEvents = {};",
+      },
+      {
+        path: 'src/store/renderer/slices/good/channel-cycle.ts',
+        content: "export * from './channels';",
+      },
+    ]);
+    expect(result.watcherCount).toBe(0);
+    expect(result.violations).toEqual([]);
   });
 
   it.each([
@@ -177,6 +345,176 @@ describe('saga watcher ownership guard', () => {
     const result = inspectSagaWatcherOwnership([
       root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
       { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['start']),
+    ]);
+    expect(result.violations).toEqual([expect.stringContaining('duplicate watcher ownership')]);
+  });
+
+  it('canonicalizes namespace action and local effect barrels across aliases and cycles', () => {
+    const first = [
+      "import * as effects from '../effects';",
+      "import * as actions from '$store/renderer/slices/shared/actions';",
+      'export function* firstSaga() { yield* effects.watch(actions.begin, firstWorker); }',
+    ].join('\n');
+    const second = [
+      "import { takeLatest } from 'typed-redux-saga';",
+      "import { start } from '$store/renderer/slices/shared/canonical-actions';",
+      'export function* secondSaga() { yield* takeLatest(start, secondWorker); }',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(
+        ['firstSaga', 'secondSaga'],
+        [
+          "import { firstSaga } from './slices/first/sagas/first-saga';",
+          "import { secondSaga } from './slices/second/sagas/second-saga';",
+        ],
+      ),
+      { path: 'src/store/renderer/slices/first/sagas/first-saga.ts', content: first },
+      { path: 'src/store/renderer/slices/second/sagas/second-saga.ts', content: second },
+      {
+        path: 'src/store/renderer/slices/first/effects.ts',
+        content:
+          "export * from './effect-cycle'; export { takeEvery as watch } from 'typed-redux-saga';",
+      },
+      {
+        path: 'src/store/renderer/slices/first/effect-cycle.ts',
+        content: "export * from './effects';",
+      },
+      {
+        path: 'src/store/renderer/slices/shared/actions.ts',
+        content:
+          "export * from './action-cycle'; export { start as begin } from './canonical-actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/shared/action-cycle.ts',
+        content: "export * from './actions';",
+      },
+      {
+        path: 'src/store/renderer/slices/shared/factory-barrel.ts',
+        content:
+          "export { createAction as defineAction } from '@augmentcode/themis/utils/store/create-action';",
+      },
+      {
+        path: 'src/store/renderer/slices/shared/canonical-actions.ts',
+        content: [
+          "import * as factories from './factory-barrel';",
+          "export const start = factories.defineAction('test/start');",
+        ].join('\n'),
+      },
+    ]);
+    expect(result.watcherCount).toBe(1);
+    expect(result.violations).toEqual([
+      expect.stringContaining(
+        'duplicate watcher ownership for src/store/renderer/slices/shared/canonical-actions.ts#start',
+      ),
+    ]);
+  });
+
+  it('recognizes contextual watcher aliases for ownership and wildcard checks', () => {
+    const source = [
+      "import { takeEveryByContextFIFO as fifo, takeLatestInContext, takeLeadingInContext as leading, takeSingleFlightInContext as singleFlight } from '$store/renderer/utils/context-saga-effects';",
+      "import { load, queue, start } from '../slice';",
+      'export function* badSaga() {',
+      '  yield* takeLatestInContext(load, getContext, loadWorker);',
+      '  yield* singleFlight(start, getContext, startWorker);',
+      '  yield* fifo(queue, getContext, queueWorker, {});',
+      "  yield* leading('*', getContext, startWorker);",
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['load', 'queue', 'start']),
+    ]);
+    expect(result.watcherCount).toBe(3);
+    expect(result.violations).toEqual([expect.stringContaining('wildcard Redux watcher')]);
+  });
+
+  it('allows a contextual FIFO watcher to route all actions in its owned command set', () => {
+    const source = [
+      "import { takeEveryByContextFIFO } from '$store/renderer/utils/context-saga-effects';",
+      "import { start, stop } from '../slice';",
+      'const commands = [start, stop];',
+      'function* route(action) {',
+      '  if (action.type === start.type) yield* call(run);',
+      '  else if (action.type === stop.type) yield* call(stopRun);',
+      '}',
+      'export function* goodSaga() {',
+      '  yield* takeEveryByContextFIFO(commands, getContext, route, {});',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['goodSaga'], ["import { goodSaga } from './slices/good/sagas/good-saga';"]),
+      { path: 'src/store/renderer/slices/good/sagas/good-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/good/slice.ts', ['start', 'stop']),
+    ]);
+    expect(result.watcherCount).toBe(2);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('recognizes workspace and agent contextual delegates as watcher owners', () => {
+    const source = [
+      "import { takeLatestByWorkspace, takeLeadingByAgent as byAgent } from '$store/renderer/utils/context-saga-effects';",
+      "import { load, start } from '../slice';",
+      'export function* badSaga() {',
+      '  yield* takeLatestByWorkspace(load, loadWorker);',
+      '  yield* byAgent(start, startWorker);',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      { path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/bad/slice.ts', ['load', 'start']),
+    ]);
+    expect(result.watcherCount).toBe(2);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('recognizes effects called through supported namespace imports', () => {
+    const source = [
+      "import * as typedEffects from 'typed-redux-saga';",
+      "import * as sagaEffects from 'redux-saga/effects';",
+      "import * as contextEffects from '$store/renderer/utils/context-saga-effects';",
+      "import { load, start, stop } from '../slice';",
+      'export function* goodSaga() {',
+      '  yield* typedEffects.takeEvery(load, loadWorker);',
+      '  yield sagaEffects.takeLatest(start, startWorker);',
+      '  yield* contextEffects.takeLeadingInContext(stop, getContext, stopWorker);',
+      '}',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(['goodSaga'], ["import { goodSaga } from './slices/good/sagas/good-saga';"]),
+      { path: 'src/store/renderer/slices/good/sagas/good-saga.ts', content: source },
+      actionOwner('src/store/renderer/slices/good/slice.ts', ['load', 'start', 'stop']),
+    ]);
+    expect(result.watcherCount).toBe(3);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('detects duplicate ownership shared by native and contextual watchers', () => {
+    const first = [
+      "import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';",
+      "import { start } from '$store/renderer/slices/shared/shared-slice';",
+      'export function* firstSaga() {',
+      '  yield* takeLatestInContext(start, getContext, firstWorker);',
+      '}',
+    ].join('\n');
+    const second = [
+      "import { takeLatest } from 'typed-redux-saga';",
+      "import { start } from '$store/renderer/slices/shared/shared-slice';",
+      'export function* secondSaga() { yield* takeLatest(start, secondWorker); }',
+    ].join('\n');
+    const result = inspectSagaWatcherOwnership([
+      root(
+        ['firstSaga', 'secondSaga'],
+        [
+          "import { firstSaga } from './slices/first/sagas/first-saga';",
+          "import { secondSaga } from './slices/second/sagas/second-saga';",
+        ],
+      ),
+      { path: 'src/store/renderer/slices/first/sagas/first-saga.ts', content: first },
+      { path: 'src/store/renderer/slices/second/sagas/second-saga.ts', content: second },
+      actionOwner('src/store/renderer/slices/shared/shared-slice.ts', ['start']),
     ]);
     expect(result.violations).toEqual([expect.stringContaining('duplicate watcher ownership')]);
   });
@@ -210,6 +548,19 @@ describe('saga watcher ownership guard', () => {
     ]);
     expect(result.violations).toEqual([
       expect.stringContaining('duplicate root saga registration'),
+    ]);
+  });
+
+  it('reports malformed source without throwing on parse diagnostics', () => {
+    const result = inspectSagaWatcherOwnership([
+      root(['badSaga'], ["import { badSaga } from './slices/bad/sagas/bad-saga';"]),
+      {
+        path: 'src/store/renderer/slices/bad/sagas/bad-saga.ts',
+        content: 'export function* badSaga() { yield*',
+      },
+    ]);
+    expect(result.violations).toEqual([
+      'src/store/renderer/slices/bad/sagas/bad-saga.ts:1: TypeScript parse failure',
     ]);
   });
 });

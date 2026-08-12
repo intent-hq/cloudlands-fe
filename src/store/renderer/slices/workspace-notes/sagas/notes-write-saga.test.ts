@@ -28,6 +28,7 @@ import {
 import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, notesWriteSaga } from './notes-write-saga';
 
 const WS = 'ws-notes-write';
+const WS2 = 'ws-notes-write-2';
 const NOTE = 'note-1';
 const NOW = '2026-01-01T00:00:00.000Z';
 const settle = async () => {
@@ -58,9 +59,14 @@ function note(overrides: Partial<Note> = {}): Note {
 function harness(seed: Note | Note[] = note()) {
   const channel = stdChannel();
   const actions: Parameters<typeof workspaceNotesReducer>[1][] = [];
+  const notesByWorkspace: Record<string, Note[]> = {};
+  for (const item of Array.isArray(seed) ? seed : [seed]) {
+    const workspaceId = String(item.workspaceId);
+    (notesByWorkspace[workspaceId] ??= []).push(item);
+  }
   let workspaceNotes = workspaceNotesReducer(
     undefined,
-    loadWorkspaceNotesSucceeded([WS], { [WS]: Array.isArray(seed) ? seed : [seed] }),
+    loadWorkspaceNotesSucceeded(Object.keys(notesByWorkspace), notesByWorkspace),
   );
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
@@ -103,21 +109,30 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
-  it('waits exactly 800 ms and uses global latest semantics across note payload keys', async () => {
+  it('debounces latest content per workspace and note while different keys proceed independently', async () => {
     vi.useFakeTimers();
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });
-    const run = harness([note(), note({ id: NoteId('note-2'), rev: 9 })]);
+    const run = harness([
+      note(),
+      note({ id: NoteId('note-2'), rev: 9 }),
+      note({ workspaceId: WorkspaceId(WS2), rev: 12 }),
+    ]);
 
     run.channel.put(updateNoteContent(WS, NOTE, 'a'));
     run.channel.put(updateNoteContent(WS, NOTE, 'ab'));
-    run.channel.put(updateNoteContent(WS, 'note-2', 'latest'));
+    run.channel.put(updateNoteContent(WS, 'note-2', 'other note'));
+    run.channel.put(updateNoteContent(WS2, NOTE, 'other workspace'));
     await settle();
 
     await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS - 1);
     expect(setContent.mock.calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     await settle();
-    expect(setContent.mock.calls).toEqual([['note-2', 'latest', 9, WS]]);
+    expect(setContent.mock.calls).toEqual([
+      [NOTE, 'ab', 4, WS],
+      ['note-2', 'other note', 9, WS],
+      [NOTE, 'other workspace', 12, WS2],
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -56,10 +56,12 @@ function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function emitNotification(params: unknown): void {
@@ -194,6 +196,124 @@ describe('backgroundHooksSaga', () => {
     await stop(task);
   });
 
+  it('coalesces overlapping bursts independently for two workspaces', async () => {
+    const firstWs1 = deferred<{ hooks: BackgroundHook[] }>();
+    const firstWs2 = deferred<{ hooks: BackgroundHook[] }>();
+    const listCalls = new Map<string, number>();
+    mocks.subscribe.mockImplementation(({ workspaceId }: { workspaceId: string }) =>
+      Promise.resolve({ subscriptionId: `sub-${workspaceId}` }),
+    );
+    mocks.request.mockImplementation((method: string, params: { workspaceId?: string }) => {
+      if (method !== 'hook.list' || !params.workspaceId) return Promise.resolve({ ok: true });
+      const workspaceId = params.workspaceId;
+      const call = listCalls.get(workspaceId) ?? 0;
+      listCalls.set(workspaceId, call + 1);
+      if (call === 0) return workspaceId === 'ws-1' ? firstWs1.promise : firstWs2.promise;
+      return Promise.resolve({
+        hooks: [
+          makeHook({
+            hookId: `hook-${workspaceId}`,
+            workspaceId,
+            runCount: 2,
+            lastLogs: `fresh-${workspaceId}`,
+          }),
+        ],
+      });
+    });
+    const { dispatch, task, getState } = createHarness();
+    dispatch(backgroundHooksSubscribeRequested('ws-1'));
+    dispatch(backgroundHooksSubscribeRequested('ws-2'));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksRefetchRequested('ws-2'));
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksRefetchRequested('ws-2'));
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+
+    firstWs2.resolve({ hooks: [makeHook({ hookId: 'stale-ws-2', workspaceId: 'ws-2' })] });
+    await vi.waitFor(() => expect(listCalls.get('ws-2')).toBe(2));
+    expect(listCalls.get('ws-1')).toBe(1);
+    await vi.waitFor(() =>
+      expect(getState().byWorkspaceId['ws-2'].hooks.map['hook-ws-2']?.lastLogs).toBe('fresh-ws-2'),
+    );
+
+    firstWs1.resolve({ hooks: [makeHook({ hookId: 'stale-ws-1' })] });
+    await vi.waitFor(() => expect(listCalls.get('ws-1')).toBe(2));
+    await vi.waitFor(() =>
+      expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-ws-1']?.lastLogs).toBe('fresh-ws-1'),
+    );
+    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-1' });
+    expect(mocks.request).toHaveBeenCalledWith('hook.list', { workspaceId: 'ws-2' });
+    await stop(task);
+  });
+
+  it('runs the trailing refetch after the in-flight hook.list fails', async () => {
+    const first = deferred<{ hooks: BackgroundHook[] }>();
+    const fresh = makeHook({ runCount: 8, lastLogs: 'recovered' });
+    mocks.request.mockReturnValueOnce(first.promise).mockResolvedValueOnce({ hooks: [fresh] });
+    const { dispatch, task, getState } = createHarness();
+    dispatch(backgroundHooksSubscribeRequested('ws-1'));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    first.reject(new Error('list failed'));
+
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(fresh),
+    );
+    await stop(task);
+  });
+
+  it('retires in-flight and trailing refetches when the last subscriber leaves', async () => {
+    const pending = deferred<{ hooks: BackgroundHook[] }>();
+    mocks.request.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = createHarness();
+    dispatch(backgroundHooksSubscribeRequested('ws-1'));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksUnsubscribeRequested('ws-1'));
+    await vi.waitFor(() => expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1'));
+    expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+
+    pending.resolve({ hooks: [makeHook({ lastLogs: 'late' })] });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+    await stop(task);
+  });
+
+  it('coalesces reconnect refetches and rejects the prior generation late result', async () => {
+    const stale = deferred<{ hooks: BackgroundHook[] }>();
+    const fresh = deferred<{ hooks: BackgroundHook[] }>();
+    mocks.subscribe
+      .mockResolvedValueOnce({ subscriptionId: 'sub-old' })
+      .mockResolvedValueOnce({ subscriptionId: 'sub-new' });
+    mocks.request.mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
+    const { dispatch, task, getState } = createHarness();
+    dispatch(backgroundHooksSubscribeRequested('ws-1'));
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+
+    emitReconnect();
+    await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(2));
+    stale.resolve({ hooks: [makeHook({ lastLogs: 'stale' })] });
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+    expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
+
+    const next = makeHook({ runCount: 9, lastLogs: 'fresh-after-reconnect' });
+    fresh.resolve({ hooks: [next] });
+    await vi.waitFor(() =>
+      expect(getState().byWorkspaceId['ws-1'].hooks.map['hook-1']).toEqual(next),
+    );
+    await stop(task);
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-new');
+  });
+
   it('releases a stale subscribe acknowledgement and resubscribes after reconnect', async () => {
     const first = deferred<{ subscriptionId: string }>();
     mocks.subscribe
@@ -227,6 +347,8 @@ describe('backgroundHooksSaga', () => {
     const { dispatch, task, getState } = createHarness();
     dispatch(backgroundHooksSubscribeRequested('ws-1'));
     await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
+    dispatch(backgroundHooksRefetchRequested('ws-1'));
 
     await stop(task);
     expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1');
@@ -237,6 +359,7 @@ describe('backgroundHooksSaga', () => {
     pending.resolve({ hooks: [makeHook()] });
     await Promise.resolve();
     await Promise.resolve();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
     expect(getState().byWorkspaceId['ws-1']).toBeUndefined();
   });
 
