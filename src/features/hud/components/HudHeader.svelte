@@ -29,7 +29,12 @@
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
   import { formatHudClock } from '../utils/hud-format';
-  import { hudSoundEnabled, toggleHudSoundEnabled } from '../sound/hud-sound-state';
+  import {
+    hudSoundEnabled,
+    hudSoundVolume,
+    setHudSoundVolume,
+    toggleHudSoundEnabled,
+  } from '../sound/hud-sound-state';
   import { playHudSoundCue } from '../sound/hud-sound-player';
   import HudHeaderFilters from './HudHeaderFilters.svelte';
 
@@ -93,6 +98,23 @@
       void playHudSoundCue('status-update');
     }
   }
+
+  /**
+   * Master-volume slider — hover-revealed next to the speaker button; also
+   * revealed on focus-within so keyboard users can Tab from the button onto
+   * the slider. The value is the shared persisted master volume (default
+   * 0.3) every cue play multiplies with its per-cue pack volume.
+   */
+  let volumeVisible = $state(false);
+
+  function hideVolumeOnFocusLeave(event: FocusEvent) {
+    const group = event.currentTarget as HTMLElement;
+    if (!group.contains(event.relatedTarget as Node | null)) volumeVisible = false;
+  }
+
+  function onVolumeInput(event: Event) {
+    setHudSoundVolume(Number((event.currentTarget as HTMLInputElement).value));
+  }
 </script>
 
 {#if isMac}
@@ -110,15 +132,39 @@
   </div>
   <div class="hud-header-clock">{clockText}</div>
   <div class="hud-header-side hud-header-side-right">
-    <button
-      class="hud-header-sound-btn"
-      data-testid="hud-header-sound-btn"
-      aria-label={m.hud_header_soundToggle_ariaLabel()}
-      aria-pressed={$hudSoundEnabled}
-      onclick={toggleSound}
+    <div
+      class="hud-header-sound-group"
+      data-testid="hud-header-sound-group"
+      role="group"
+      aria-label={m.hud_header_soundControls_ariaLabel()}
+      onmouseenter={() => (volumeVisible = true)}
+      onmouseleave={() => (volumeVisible = false)}
+      onfocusin={() => (volumeVisible = true)}
+      onfocusout={hideVolumeOnFocusLeave}
     >
-      {soundLabel}
-    </button>
+      {#if volumeVisible}
+        <input
+          class="hud-header-volume-slider"
+          data-testid="hud-header-volume-slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={$hudSoundVolume}
+          aria-label={m.hud_header_soundVolume_ariaLabel()}
+          oninput={onVolumeInput}
+        />
+      {/if}
+      <button
+        class="hud-header-sound-btn"
+        data-testid="hud-header-sound-btn"
+        aria-label={m.hud_header_soundToggle_ariaLabel()}
+        aria-pressed={$hudSoundEnabled}
+        onclick={toggleSound}
+      >
+        {soundLabel}
+      </button>
+    </div>
     <button class="hud-header-theme-btn" data-testid="hud-header-theme-btn" onclick={cycleTheme}>
       {themeLabel}
     </button>
@@ -200,5 +246,41 @@
   .hud-header-theme-btn:hover,
   .hud-header-sound-btn:hover {
     background: hsl(var(--muted) / 0.5);
+  }
+  .hud-header-sound-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  /* Themed native range input (Electron/Chromium only, so the -webkit-*
+     pseudo-elements are sufficient): a hairline border-colored track with a
+     small square thumb, matching the bordered JetBrains Mono button look and
+     tracking the HUD theme via the same CSS variables. */
+  .hud-header-volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 88px;
+    height: 12px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .hud-header-volume-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: hsl(var(--border));
+  }
+  .hud-header-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    margin-top: -4px;
+    background: hsl(var(--text-subtle));
+    border: 1px solid hsl(var(--border));
+  }
+  .hud-header-volume-slider:focus-visible {
+    outline: 1px solid hsl(var(--text-subtle));
+    outline-offset: 2px;
   }
 </style>

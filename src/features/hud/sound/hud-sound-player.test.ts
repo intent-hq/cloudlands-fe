@@ -6,7 +6,11 @@ import {
   playTakeoverTransitionCues,
   resetHudSoundServiceForTests,
 } from './hud-sound-player';
-import { setHudSoundEnabled } from './hud-sound-state';
+import {
+  HUD_SOUND_DEFAULT_VOLUME,
+  setHudSoundEnabled,
+  setHudSoundVolume,
+} from './hud-sound-state';
 
 class MockAudio {
   src: string;
@@ -49,6 +53,7 @@ describe('hud-sound-player', () => {
     );
     resetHudSoundServiceForTests();
     setHudSoundEnabled(false);
+    setHudSoundVolume(HUD_SOUND_DEFAULT_VOLUME);
   });
 
   afterEach(() => {
@@ -60,13 +65,43 @@ describe('hud-sound-player', () => {
     expect(audioInstances).toHaveLength(0);
   });
 
-  it('plays the cue at its pack volume when enabled', async () => {
+  it('plays the cue at masterVolume * cueVolume when enabled (default master 0.3)', async () => {
     setHudSoundEnabled(true);
     await playHudSoundCue('task-complete', loaders);
     expect(audioInstances).toHaveLength(1);
     expect(audioInstances[0].src).toBe('blob:task-complete');
-    expect(audioInstances[0].volume).toBe(HUD_SOUND_CUE_VOLUMES['task-complete']);
+    expect(audioInstances[0].volume).toBe(
+      HUD_SOUND_DEFAULT_VOLUME * HUD_SOUND_CUE_VOLUMES['task-complete'],
+    );
     expect(audioInstances[0].play).toHaveBeenCalledTimes(1);
+  });
+
+  it('scales the per-cue hierarchy by the master volume on every play', async () => {
+    setHudSoundEnabled(true);
+    setHudSoundVolume(0.5);
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances[0].volume).toBe(0.5 * HUD_SOUND_CUE_VOLUMES['task-complete']);
+
+    // Live change between plays applies to the cached element too.
+    setHudSoundVolume(1);
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances[0].volume).toBe(HUD_SOUND_CUE_VOLUMES['task-complete']);
+
+    // Master 0 silences every cue without touching the enable flag.
+    setHudSoundVolume(0);
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances[0].volume).toBe(0);
+  });
+
+  it('applies the master volume to the toggle-ON confirmation cue (status-update)', async () => {
+    setHudSoundEnabled(true);
+    setHudSoundVolume(0.5);
+    const statusLoaders = {
+      '../../../assets/sounds/hud/status-update.mp3': () => Promise.resolve('blob:status-update'),
+    };
+    await playHudSoundCue('status-update', statusLoaders);
+    expect(audioInstances).toHaveLength(1);
+    expect(audioInstances[0].volume).toBe(0.5 * HUD_SOUND_CUE_VOLUMES['status-update']);
   });
 
   it('silently no-ops when the asset is missing (dev tolerance)', async () => {

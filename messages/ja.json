@@ -2410,6 +2410,8 @@
   "hud_header_soundOn_label": "サウンド · オン",
   "hud_header_soundOff_label": "サウンド · オフ",
   "hud_header_soundToggle_ariaLabel": "HUDサウンドエフェクトを切り替え",
+  "hud_header_soundVolume_ariaLabel": "HUDサウンドの音量",
+  "hud_header_soundControls_ariaLabel": "HUDサウンドコントロール",
   "hud_tokRate_title": "エージェント活動 · TOK/秒",
   "hud_tokRate_window_label": "1分ウィンドウ",
   "hud_tokRate_now_label": "現在 TOK/秒",

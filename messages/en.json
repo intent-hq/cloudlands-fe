@@ -2411,6 +2411,8 @@
   "hud_header_soundOn_label": "SOUND · ON",
   "hud_header_soundOff_label": "SOUND · OFF",
   "hud_header_soundToggle_ariaLabel": "Toggle HUD sound effects",
+  "hud_header_soundVolume_ariaLabel": "HUD sound volume",
+  "hud_header_soundControls_ariaLabel": "HUD sound controls",
   "hud_tokRate_title": "AGENT ACTIVITY · TOK/S",
   "hud_tokRate_window_label": "1 MIN BUCKETS",
   "hud_tokRate_now_label": "TOK/S NOW",

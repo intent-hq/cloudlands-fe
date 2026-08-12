@@ -2410,6 +2410,8 @@
   "hud_header_soundOn_label": "SON · ACTIVÉ",
   "hud_header_soundOff_label": "SON · DÉSACTIVÉ",
   "hud_header_soundToggle_ariaLabel": "Basculer les effets sonores du HUD",
+  "hud_header_soundVolume_ariaLabel": "Volume sonore du HUD",
+  "hud_header_soundControls_ariaLabel": "Commandes sonores du HUD",
   "hud_tokRate_title": "ACTIVITÉ AGENTS · TOK/S",
   "hud_tokRate_window_label": "FENÊTRE 1MIN",
   "hud_tokRate_now_label": "TOK/S ACTUEL",

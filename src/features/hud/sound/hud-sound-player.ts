@@ -17,7 +17,7 @@ import {
   HUD_SOUND_CUE_VOLUMES,
   type HudSoundCue,
 } from './hud-sound-cues';
-import { isHudSoundEnabled } from './hud-sound-state';
+import { getHudSoundVolume, isHudSoundEnabled } from './hud-sound-state';
 
 type CueUrlLoaders = Readonly<Record<string, () => Promise<string>>>;
 
@@ -35,10 +35,12 @@ const cueUrlLoaders = import.meta.glob('../../../assets/sounds/hud/*.mp3', {
 const audioCache = new Map<HudSoundCue, Promise<HTMLAudioElement>>();
 
 /**
- * Play one cue at its pack volume. No-ops when HUD sound is disabled or the
- * asset is absent from the glob; playback failures (autoplay policy, decode)
- * never propagate, but evict the cue from the cache so the next play retries
- * the load. `loaders` is a test seam defaulting to the real glob.
+ * Play one cue at its effective volume — the persisted master volume times
+ * the cue's pack volume (the per-cue loudness hierarchy stays intact). No-ops
+ * when HUD sound is disabled or the asset is absent from the glob; playback
+ * failures (autoplay policy, decode) never propagate, but evict the cue from
+ * the cache so the next play retries the load. `loaders` is a test seam
+ * defaulting to the real glob.
  */
 export async function playHudSoundCue(
   cue: HudSoundCue,
@@ -60,7 +62,8 @@ export async function playHudSoundCue(
     const audio = await audioPromise;
     // Re-check: the user may have disabled sound while the asset loaded.
     if (!isHudSoundEnabled()) return;
-    audio.volume = HUD_SOUND_CUE_VOLUMES[cue];
+    // Both factors live in [0,1], so the product needs no extra clamping.
+    audio.volume = getHudSoundVolume() * HUD_SOUND_CUE_VOLUMES[cue];
     audio.currentTime = 0;
     await audio.play();
   } catch {

@@ -2410,6 +2410,8 @@
   "hud_header_soundOn_label": "声音 · 开",
   "hud_header_soundOff_label": "声音 · 关",
   "hud_header_soundToggle_ariaLabel": "切换 HUD 音效",
+  "hud_header_soundVolume_ariaLabel": "HUD 音效音量",
+  "hud_header_soundControls_ariaLabel": "HUD 音效控制",
   "hud_tokRate_title": "代理活动 · TOK/秒",
   "hud_tokRate_window_label": "1分钟窗口",
   "hud_tokRate_now_label": "当前 TOK/秒",
