@@ -20,7 +20,6 @@ export const listMetadata = parseUiComponentMetadata({
     'src/lib/components/notes/NotesPanel.svelte',
     'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
     'src/lib/components/terminal/TerminalSidebar.svelte',
-    'src/lib/components/workspace/OverviewTimelinePanel.svelte',
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
   ],

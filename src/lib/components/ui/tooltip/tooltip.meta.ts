@@ -80,7 +80,6 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/ui/sidebar/sidebar-menu-button.svelte',
     'src/lib/components/ui/sidebar/sidebar-provider.svelte',
     'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
-    'src/lib/components/workspace/OverviewTimelinePanel.svelte',
     'src/lib/components/workspace/TaskProgressBar.svelte',
     'src/lib/components/workspace/WorkspaceCard.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
