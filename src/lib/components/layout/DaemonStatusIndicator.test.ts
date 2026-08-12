@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
@@ -338,6 +338,36 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('menu height', () => {
+    it('lets the dropdown grow to the bits-ui available height instead of the 24rem default cap', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const menu = screen.getByRole('menu');
+      const style = menu.getAttribute('style') ?? '';
+      expect(style).toContain('max-height: var(--bits-dropdown-menu-content-available-height)');
+      expect(style).not.toContain('24rem');
+    });
+  });
+
   describe('unsloth server section', () => {
     const healthyDaemonHealth = {
       health: 'healthy' as const,
@@ -624,10 +654,10 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('This machine (local)')).toBeTruthy();
       expect(screen.getByText('desk:4180')).toBeTruthy();
 
-      // Local entry's expand toggle appears before the remote's in DOM order.
-      const toggles = screen.getAllByRole('button', { expanded: false });
-      const localIdx = toggles.findIndex((b) => b.textContent?.includes('This machine (local)'));
-      const remoteIdx = toggles.findIndex((b) => b.textContent?.includes('desk:4180'));
+      // Local entry's submenu trigger appears before the remote's in DOM order.
+      const rows = screen.getAllByRole('menuitem', { expanded: false });
+      const localIdx = rows.findIndex((b) => b.textContent?.includes('This machine (local)'));
+      const remoteIdx = rows.findIndex((b) => b.textContent?.includes('desk:4180'));
       expect(localIdx).toBeGreaterThanOrEqual(0);
       expect(remoteIdx).toBeGreaterThan(localIdx);
     });
@@ -641,7 +671,7 @@ describe('DaemonStatusIndicator', () => {
 
       // The row is a submenu trigger: collapsed with menu-popup semantics, and no
       // Switch/Forget rendered until it is opened (no inline expansion).
-      const remoteRow = screen.getByText('desk:4180').closest('button');
+      const remoteRow = screen.getByText('desk:4180').closest('[role="menuitem"]');
       expect(remoteRow?.getAttribute('aria-haspopup')).toBe('menu');
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('false');
       expect(screen.queryByText('Switch')).toBeNull();
@@ -651,6 +681,13 @@ describe('DaemonStatusIndicator', () => {
       expect(remoteRow?.getAttribute('aria-expanded')).toBe('true');
       expect(screen.getByText('Switch')).toBeTruthy();
       expect(screen.getByText('Forget')).toBeTruthy();
+
+      // The flyout is a portaled submenu, so the parent menu's overflow
+      // scroll container cannot clip it.
+      const flyout = screen.getByText('Switch').closest('[data-slot="menu-sub-content"]');
+      expect(flyout).toBeTruthy();
+      const parentContent = remoteRow!.closest('[data-slot="menu-content"]');
+      expect(parentContent?.contains(flyout)).toBe(false);
     });
 
     it('expands local to Switch only (Forget hidden); remote to Switch + Forget', async () => {
@@ -665,10 +702,11 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
-      // Remote: both Switch and Forget present.
+      // Remote: both Switch and Forget present in its flyout.
       await fireEvent.click(screen.getByText('desk:4180'));
-      expect(screen.getAllByText('Switch')).toHaveLength(2);
-      expect(screen.getByText('Forget')).toBeTruthy();
+      const forget = screen.getByText('Forget');
+      const flyout = forget.closest('[data-slot="menu-sub-content"]')!;
+      expect(within(flyout as HTMLElement).getByText('Switch')).toBeTruthy();
     });
 
     it('dispatches switchConnectionRequested when Switch is chosen on a non-active remote', async () => {
@@ -702,11 +740,17 @@ describe('DaemonStatusIndicator', () => {
       // dot — target the connections-list row (the submenu trigger).
       const menuRow = screen
         .getAllByText('desk:4180')
-        .map((el) => el.closest('button'))
-        .find((btn) => btn?.getAttribute('aria-haspopup') === 'menu');
+        .map((el) => el.closest('[role="menuitem"]'))
+        .find((row) => row?.getAttribute('aria-haspopup') === 'menu');
       await fireEvent.click(menuRow!);
-      const switchBtn = screen.getByText('Switch').closest('button');
-      expect(switchBtn?.disabled).toBe(true);
+      const switchItem = screen.getByText('Switch').closest('[role="menuitem"]');
+      expect(switchItem?.getAttribute('aria-disabled')).toBe('true');
+
+      // Selecting the disabled item dispatches nothing.
+      await fireEvent.click(switchItem!);
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'connections/switchRequested' }),
+      );
     });
 
     it('dispatches forgetConnectionRequested when Forget is chosen on a remote', async () => {

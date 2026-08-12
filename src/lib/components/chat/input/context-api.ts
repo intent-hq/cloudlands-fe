@@ -50,12 +50,18 @@ export interface ContextItem {
   attachmentId?: string; // UUID from the daemon's attachment registry
   attachmentMimeType?: string; // MIME type recorded at placement
   attachmentSize?: number; // Placed byte length
-  // Placement lifecycle for non-image attachments. Placement is
-  // sourcePath-only (never base64): `placing` while file.placeAttachment is
-  // in flight, `failed` when it errored (no resolvable path, daemon error,
-  // stale/missing source). Absent/'placed' means the item is ready to send.
-  // Send/create is blocked while any item is placing or failed.
+  // Placement lifecycle for non-image attachments. Placement copies from
+  // `sourcePath` on the local sidecar and sends base64 bytes via the `data`
+  // arm against a remote backend (attachment-placement.ts): `placing` while
+  // file.placeAttachment is in flight, `failed` when it errored (no
+  // resolvable path, daemon error, stale/missing source). Absent/'placed'
+  // means the item is ready to send. Send/create is blocked while any item
+  // is placing or failed.
   placementStatus?: 'placing' | 'failed' | 'placed';
+  // Human-readable reason for a failed placement (daemon error detail, e.g.
+  // "sourcePath is a directory"), shown in the failed pill tooltip. Absent
+  // when no informative detail was available.
+  placementError?: string;
   // Absolute host-local source path captured at drop/pick time — what
   // placeAttachment copies from and what a retry re-places from. Also the
   // staging key for pre-workspace surfaces (modal/onboarding), where

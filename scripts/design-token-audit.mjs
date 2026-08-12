@@ -95,7 +95,13 @@ for (const file of files) {
   }
 }
 
-const runtimePatterns = [/^--color-(?:white|black)$/, /^--color-[a-z]+-[0-9]{2,3}$/, /^--radix-/];
+const runtimePatterns = [
+  /^--color-(?:white|black)$/,
+  /^--color-[a-z]+-[0-9]{2,3}$/,
+  /^--radix-/,
+  // Set by bits-ui at runtime on dropdown-menu content; externally owned, not a design token.
+  /^--bits-dropdown-menu-content-available-height$/,
+];
 const exceptionFiles = new Map(
   allowlist.undefined.map((entry) => [entry.token, new Set(entry.allowedFiles ?? [])]),
 );

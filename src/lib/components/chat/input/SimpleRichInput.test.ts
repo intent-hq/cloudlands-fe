@@ -157,9 +157,9 @@ vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
 
 const placeAttachmentMock = vi.hoisted(() => vi.fn());
 
-vi.mock('./context-api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./context-api')>();
-  return { ...actual, placeAttachment: placeAttachmentMock };
+vi.mock('./attachment-placement', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./attachment-placement')>();
+  return { ...actual, placeAttachmentViaTransport: placeAttachmentMock };
 });
 
 // Mock Redux store bridge — the component reads agent sessions from Redux

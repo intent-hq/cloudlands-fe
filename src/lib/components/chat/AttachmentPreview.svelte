@@ -42,6 +42,11 @@
      * Absent/'placed' renders the normal chip.
      */
     placementStatus?: 'placing' | 'failed' | 'placed';
+    /**
+     * Human-readable reason for a failed placement (daemon error detail,
+     * e.g. "sourcePath is a directory"). Appended to the failed tooltip.
+     */
+    placementError?: string;
     /** Retry a failed placement. Rendered only when placementStatus is 'failed'. */
     onRetry?: (id: string) => void;
   }
@@ -59,6 +64,7 @@
     class: className = '',
     variant = 'chip',
     placementStatus = undefined,
+    placementError = undefined,
     onRetry,
   }: Props = $props();
 
@@ -99,12 +105,13 @@
 
   const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image/'));
 
-  // Chip tooltip: only failed placements explain themselves on hover.
-  const chipTitle = $derived(
-    placementStatus === 'failed'
-      ? m.chat_attachmentPreview_placementFailed_tooltip({ name })
-      : undefined,
-  );
+  // Chip tooltip: only failed placements explain themselves on hover; the
+  // daemon's failure detail (when captured) is appended after the generic copy.
+  const chipTitle = $derived.by(() => {
+    if (placementStatus !== 'failed') return undefined;
+    const base = m.chat_attachmentPreview_placementFailed_tooltip({ name });
+    return placementError ? `${base} — ${placementError}` : base;
+  });
 
   // Lightbox state
   let lightboxOpen = $state(false);

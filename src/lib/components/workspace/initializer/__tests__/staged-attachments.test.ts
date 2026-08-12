@@ -3,9 +3,10 @@
  *
  * Pre-workspace surfaces (new-workspace modal, onboarding) stage non-image
  * files as path-only context items; `redeemStagedAttachments` places each
- * from its `sourcePath` once the workspace exists. Failures (stale path,
- * missing path, daemon error) mark the item `failed` — visible pill, blocks
- * the first-message send — never a silent drop, never a base64 fallback.
+ * from its `sourcePath` once the workspace exists (transport-aware: the
+ * data arm carries the bytes when the backend is remote). Failures (stale
+ * path, missing path, daemon error) mark the item `failed` — visible pill,
+ * blocks the first-message send — never a silent drop.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -76,11 +77,13 @@ describe('redeemStagedAttachments', () => {
     expect(result.failedCount).toBe(1);
     expect(result.items).toHaveLength(1);
     expect(result.items[0].placementStatus).toBe('failed');
+    // The daemon's failure reason is captured for the failed pill tooltip.
+    expect(result.items[0].placementError).toBe('source file not found');
     expect(result.items[0].attachmentId).toBeUndefined();
     expect(result.fileBlocks).toEqual([]);
   });
 
-  it('an item with no sourcePath fails without calling placeAttachment (no base64 fallback)', async () => {
+  it('an item with no sourcePath fails without calling placeAttachment (nothing to read from)', async () => {
     const place = vi.fn();
 
     const result = await redeemStagedAttachments(
