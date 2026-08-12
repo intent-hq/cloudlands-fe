@@ -4,6 +4,77 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.27.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.26.0...v2.27.0) (2026-08-12)
+
+
+### 🚀 Features
+
+* add context-scoped saga effects ([#1022](https://github.com/intent-hq/cloudlands-fe/issues/1022)) ([6c3fd6e](https://github.com/intent-hq/cloudlands-fe/commit/6c3fd6e8a553ddd152a8ddd706026f4c91aa5552))
+* add relations section to task note view with linked dependsOn / depended-on-by / conflictsWith ([#1052](https://github.com/intent-hq/cloudlands-fe/issues/1052)) ([2e3fae9](https://github.com/intent-hq/cloudlands-fe/commit/2e3fae9b0966ce7fc8114363b2667a87af81c87b))
+* chat loading state + resume via sinceMessageId ([#1032](https://github.com/intent-hq/cloudlands-fe/issues/1032)) ([69d5674](https://github.com/intent-hq/cloudlands-fe/commit/69d56746d5a203c6a2518910ddbf4244ea07180e))
+* consume daemon-provided unmetDependsOn on note-shaped payloads ([#1050](https://github.com/intent-hq/cloudlands-fe/issues/1050)) ([19bb9ef](https://github.com/intent-hq/cloudlands-fe/commit/19bb9ef8f19033d9a392d7ea07f79c2e188b3c54))
+* daemon-owned delete undo for workspace and agent deletion ([#1037](https://github.com/intent-hq/cloudlands-fe/issues/1037)) ([77a6065](https://github.com/intent-hq/cloudlands-fe/commit/77a6065a1129003efa343709ac985df1c3adfe9f))
+* **debug-export:** include a memory timeline in the debug bundle ([#1073](https://github.com/intent-hq/cloudlands-fe/issues/1073)) ([2f3711c](https://github.com/intent-hq/cloudlands-fe/commit/2f3711cec88c2e82adb33e5e2213aa2ca586a4ab))
+* expose fan-out subscriber counts to the retention fingerprint ([#1082](https://github.com/intent-hq/cloudlands-fe/issues/1082)) ([8189e09](https://github.com/intent-hq/cloudlands-fe/commit/8189e09a007211cb32afcc28a9951e5fc9b6df7a))
+* HUD sound effects pack with speaker toggle ([#1071](https://github.com/intent-hq/cloudlands-fe/issues/1071)) ([470104a](https://github.com/intent-hq/cloudlands-fe/commit/470104a27ad47f07905521ab166a030fb2e28085))
+* **i18n:** introduce Chinese product name in zh catalogs ([#1018](https://github.com/intent-hq/cloudlands-fe/issues/1018)) ([12dd217](https://github.com/intent-hq/cloudlands-fe/commit/12dd21793f92eb0be182e43b68d61d6a88312811))
+* import workspace from file (File menu + wizard) ([#1079](https://github.com/intent-hq/cloudlands-fe/issues/1079)) ([650e313](https://github.com/intent-hq/cloudlands-fe/commit/650e3134f306c1dfac36f07cd74c26d57c6d7ead))
+* include intentd daemon logs in the debug bundle ([#1057](https://github.com/intent-hq/cloudlands-fe/issues/1057)) ([0d72c6d](https://github.com/intent-hq/cloudlands-fe/commit/0d72c6dbc95e50d310c55fd3ffc9cbd8dcdfdf65))
+* log a periodic renderer retention fingerprint ([#1074](https://github.com/intent-hq/cloudlands-fe/issues/1074)) ([9d7f608](https://github.com/intent-hq/cloudlands-fe/commit/9d7f608302fd6f4ec15ca28f48c1642cde9c404d))
+* **main:** sample per-process memory into console-output.log ([#1067](https://github.com/intent-hq/cloudlands-fe/issues/1067)) ([debea90](https://github.com/intent-hq/cloudlands-fe/commit/debea9008466da392fc879978dacd7e4e862c768))
+* mirror task relations (dependsOn/conflictsWith) and render dependency/conflict chips on task rows ([#1038](https://github.com/intent-hq/cloudlands-fe/issues/1038)) ([e8e2c73](https://github.com/intent-hq/cloudlands-fe/commit/e8e2c73dbb8b172c98097a3906e56adc850d26ba))
+* opportunistically warm the daemon repo cache on GitHub repo selection ([#1040](https://github.com/intent-hq/cloudlands-fe/issues/1040)) ([de0c752](https://github.com/intent-hq/cloudlands-fe/commit/de0c75282f79e94be1f267a692d75ae36eb435cb))
+* place oversized chat attachments in the workspace via file.placeAttachment ([#1034](https://github.com/intent-hq/cloudlands-fe/issues/1034)) ([dd89db7](https://github.com/intent-hq/cloudlands-fe/commit/dd89db742bc81fcb7bca92f3e70faa08fd837369))
+* rework monitored-PR chip menu to Check and Flush / Open in App / Open in External Browser / Cancel ([#1045](https://github.com/intent-hq/cloudlands-fe/issues/1045)) ([941d655](https://github.com/intent-hq/cloudlands-fe/commit/941d65582407009eb52eb165ba8687bcd40e1150))
+* route submodule (gitlink) entries to a dedicated pin presentation in the Changes tab ([#1035](https://github.com/intent-hq/cloudlands-fe/issues/1035)) ([4d8844a](https://github.com/intent-hq/cloudlands-fe/commit/4d8844a8e9a248fdbb769d81d6379eb91ca3448b))
+* select primary PR as oldest unmerged, else latest merged, incl. monitored PRs ([#1042](https://github.com/intent-hq/cloudlands-fe/issues/1042)) ([e74a661](https://github.com/intent-hq/cloudlands-fe/commit/e74a6616cc2687bf7d71e02cdf7be7c9d8e5a46a))
+* server-side branch prefix search in BranchSelector ([#1019](https://github.com/intent-hq/cloudlands-fe/issues/1019)) ([79bc9eb](https://github.com/intent-hq/cloudlands-fe/commit/79bc9eb8ffc3fed8eeb790d72b2442a9f7a84a2e))
+* show remote machine name next to daemon status dot ([#1030](https://github.com/intent-hq/cloudlands-fe/issues/1030)) ([1263849](https://github.com/intent-hq/cloudlands-fe/commit/126384955fdf83b27a417a6eb30eac289677fa6f))
+* single-transfer chat hydration from the standing subscription snapshot ([#1036](https://github.com/intent-hq/cloudlands-fe/issues/1036)) ([a9e4558](https://github.com/intent-hq/cloudlands-fe/commit/a9e4558a4f2169324c3c5557395e4ff6dd266aeb))
+* unified attachment flow with attachment-reference fileBlocks and sourcePath-only placement ([#1077](https://github.com/intent-hq/cloudlands-fe/issues/1077)) ([cdc37a5](https://github.com/intent-hq/cloudlands-fe/commit/cdc37a525ae84a593f2a4743129cc5e36c51ee36))
+* workspace Transfer/Download wizard (relay transfer + archive download) ([#1056](https://github.com/intent-hq/cloudlands-fe/issues/1056)) ([15a89a7](https://github.com/intent-hq/cloudlands-fe/commit/15a89a78bc392e1ba6104314ceb069489fa96200))
+
+
+### 🐛 Bug Fixes
+
+* accept @@[@task](https://github.com/task) fence header attributes in task block parser ([#1062](https://github.com/intent-hq/cloudlands-fe/issues/1062)) ([d0e2a33](https://github.com/intent-hq/cloudlands-fe/commit/d0e2a33ebf3a81044fc70adeb50414b0b2d0a817))
+* add trailing refetch to notes-read-service coalescer ([#1053](https://github.com/intent-hq/cloudlands-fe/issues/1053)) ([2854b33](https://github.com/intent-hq/cloudlands-fe/commit/2854b3393978c731d83b2be17bbad4c62abf85c8))
+* bound diff worker pool lifetime and rendered-AST cache ([#1066](https://github.com/intent-hq/cloudlands-fe/issues/1066)) ([0c49cc0](https://github.com/intent-hq/cloudlands-fe/commit/0c49cc0564d4bec095f2ca120599436151b9583f))
+* bound the per-workspace lifecycle read fan-out ([#1061](https://github.com/intent-hq/cloudlands-fe/issues/1061)) ([56a7a74](https://github.com/intent-hq/cloudlands-fe/commit/56a7a747dc8650fafe63d10186e02556cf33b799))
+* dedup aggregate chat-changes tabs with a synthetic messageId ([#1047](https://github.com/intent-hq/cloudlands-fe/issues/1047)) ([c24ed97](https://github.com/intent-hq/cloudlands-fe/commit/c24ed9785331dfb6a79432809040bc47f0d793ec))
+* deflake ModelPicker tests with observable waits ([#1076](https://github.com/intent-hq/cloudlands-fe/issues/1076)) ([e032787](https://github.com/intent-hq/cloudlands-fe/commit/e0327877b760f68f64e7f53f7450a9102a8c40ac))
+* distinguish git-check transport failure from missing git ([#1029](https://github.com/intent-hq/cloudlands-fe/issues/1029)) ([274062b](https://github.com/intent-hq/cloudlands-fe/commit/274062bf56fb245e70bf88ac3a6cf04bf86b4814))
+* download-mode copy in Transfer/Download wizard ([#1058](https://github.com/intent-hq/cloudlands-fe/issues/1058)) ([38c083b](https://github.com/intent-hq/cloudlands-fe/commit/38c083ba31fee83325d7d0d3b8aad22ca33d97f5))
+* fail loudly when the retention fingerprint cannot read store state ([#1081](https://github.com/intent-hq/cloudlands-fe/issues/1081)) ([f68d1f9](https://github.com/intent-hq/cloudlands-fe/commit/f68d1f9b6e24607aeaeda649bf22e5717ed37564))
+* fall back to top-level transport when building first stats ([#1023](https://github.com/intent-hq/cloudlands-fe/issues/1023)) ([166bbd7](https://github.com/intent-hq/cloudlands-fe/commit/166bbd7e7a4628335b60453cc01e54f71fd1a3b8))
+* handle expired hook state in background-hooks service ([#1059](https://github.com/intent-hq/cloudlands-fe/issues/1059)) ([0b3a95f](https://github.com/intent-hq/cloudlands-fe/commit/0b3a95fd1986e2f1ad21631b9e7f6408113cb7f3))
+* keep provider enablement across boot settings hydration races ([#1044](https://github.com/intent-hq/cloudlands-fe/issues/1044)) ([fbae6ef](https://github.com/intent-hq/cloudlands-fe/commit/fbae6ef944dc84a63f1e8be7ff22735bc2785414))
+* preserve last-known provider availability on transient probe failures ([#1046](https://github.com/intent-hq/cloudlands-fe/issues/1046)) ([9e22c57](https://github.com/intent-hq/cloudlands-fe/commit/9e22c57789d9453e351bcb3d3d25dface967620a))
+* preserve unmetDependsOn on mutation-response note upserts ([#1055](https://github.com/intent-hq/cloudlands-fe/issues/1055)) ([34d874f](https://github.com/intent-hq/cloudlands-fe/commit/34d874fbdd65757ba3240cad02bb84c8aa6a2905))
+* prevent silent exit-1 in release notifier on stale runner tags ([#1028](https://github.com/intent-hq/cloudlands-fe/issues/1028)) ([4f2f6a4](https://github.com/intent-hq/cloudlands-fe/commit/4f2f6a4319a2d2b0e458774455f518e135dc7113))
+* reflow monitored-PR hover card to line-per-fact layout ([#1020](https://github.com/intent-hq/cloudlands-fe/issues/1020)) ([80a1885](https://github.com/intent-hq/cloudlands-fe/commit/80a18853fa55cf97acbbca3c48f889b7343d2b8f))
+* rehydrate initialAgentId from agent metadata ([#1026](https://github.com/intent-hq/cloudlands-fe/issues/1026)) ([2022b08](https://github.com/intent-hq/cloudlands-fe/commit/2022b08d3ca49a70dffb17ea6d396aa56ad3c9ea))
+* remove hardcoded ~/intent WORKSPACE_BASE constants and path helpers ([#1025](https://github.com/intent-hq/cloudlands-fe/issues/1025)) ([233b0bf](https://github.com/intent-hq/cloudlands-fe/commit/233b0bff0efdb514d18154cb3514cbb2172fa731))
+* render delegated agent card from workspace_api JSON results ([#1063](https://github.com/intent-hq/cloudlands-fe/issues/1063)) ([7fb0779](https://github.com/intent-hq/cloudlands-fe/commit/7fb0779a4de14da6a8a06b577bb76d6c63061ba8))
+* resolve file links with submodule/worktree-relative paths instead of bare "File not found" ([#1070](https://github.com/intent-hq/cloudlands-fe/issues/1070)) ([bbb5953](https://github.com/intent-hq/cloudlands-fe/commit/bbb5953f68532d386b4cc306f68f914bf8f5791f))
+* respect pendingDeleteAt on direct agent reads and handle delete-cancelled events ([#1039](https://github.com/intent-hq/cloudlands-fe/issues/1039)) ([2af3592](https://github.com/intent-hq/cloudlands-fe/commit/2af35926d04da772248dab1a711fbe2f3ce3b75c))
+* restore chat-changes and local-changes tab opening in workspace-navigation tab saga ([#1043](https://github.com/intent-hq/cloudlands-fe/issues/1043)) ([287bfd6](https://github.com/intent-hq/cloudlands-fe/commit/287bfd61d1160b44ff7cfc8fc5de248a7366e033))
+* restore stale-banner clear on redrive and parentAgentId failure-toast gate ([#1049](https://github.com/intent-hq/cloudlands-fe/issues/1049)) ([e9f8389](https://github.com/intent-hq/cloudlands-fe/commit/e9f83892ba810b05c5d198121f053f1101a89259))
+* reword +N PR badge tooltip to "workspace PRs" ([#1033](https://github.com/intent-hq/cloudlands-fe/issues/1033)) ([37783fc](https://github.com/intent-hq/cloudlands-fe/commit/37783fc65f4928ac732484e23aaf2f6500a6d947))
+* route command-shaped ACP tool calls to the terminal renderer ([#1048](https://github.com/intent-hq/cloudlands-fe/issues/1048)) ([5093496](https://github.com/intent-hq/cloudlands-fe/commit/50934962baf397a00432789c15fae81089dc699f))
+* route hardware-console input to a single last-focused owner window ([#1041](https://github.com/intent-hq/cloudlands-fe/issues/1041)) ([76ea3bf](https://github.com/intent-hq/cloudlands-fe/commit/76ea3bf5ca5b18d105774fe996fe9d0dde7c7e72))
+* share one backend:notification IPC listener across subscribers ([#1072](https://github.com/intent-hq/cloudlands-fe/issues/1072)) ([1a0f1de](https://github.com/intent-hq/cloudlands-fe/commit/1a0f1de1f9f3f9f52327e98a8cc9b6e3e4dd36fa))
+* strip hook-wake prefix using exact metadata hook name ([#1060](https://github.com/intent-hq/cloudlands-fe/issues/1060)) ([11cc6f9](https://github.com/intent-hq/cloudlands-fe/commit/11cc6f90850c6236c886198a4424fb0607e6df55))
+* switch completeOnce quick-action and slug contracts to JSON ([#1065](https://github.com/intent-hq/cloudlands-fe/issues/1065)) ([bc2b5f3](https://github.com/intent-hq/cloudlands-fe/commit/bc2b5f34824ba8ea7955965c9e052a68d84bd2d4))
+* vendor @inlang/plugin-message-format locally instead of fetching from CDN ([#1024](https://github.com/intent-hq/cloudlands-fe/issues/1024)) ([da07c62](https://github.com/intent-hq/cloudlands-fe/commit/da07c620f35f0ad5e53bf32c04d34af7d1ff9419))
+* withhold partial group tags from the streaming transcript ([#1068](https://github.com/intent-hq/cloudlands-fe/issues/1068)) ([344189d](https://github.com/intent-hq/cloudlands-fe/commit/344189dfad7c2e06aff648170cbf960f86be1e13))
+* withhold partial think tags from the streaming transcript ([#1080](https://github.com/intent-hq/cloudlands-fe/issues/1080)) ([f8d0bc8](https://github.com/intent-hq/cloudlands-fe/commit/f8d0bc8f28447d494703cd2cd0c963725f1548ce))
+
+
+### ⚡ Performance
+
+* gate per-workspace HUD reads on card visibility ([#1075](https://github.com/intent-hq/cloudlands-fe/issues/1075)) ([475e8d7](https://github.com/intent-hq/cloudlands-fe/commit/475e8d70008cde1ff98e70838c86c703b0838162))
+
 ## [2.26.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.25.0...v2.26.0) (2026-08-11)
 
 
