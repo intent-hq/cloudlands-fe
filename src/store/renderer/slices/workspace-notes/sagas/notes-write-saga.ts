@@ -8,7 +8,6 @@ import {
   race,
   take,
   takeEvery,
-  takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
@@ -20,6 +19,7 @@ import { ContentType, NoteVisibility } from '$shared/types';
 import type { CreateNoteRequest, Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 import { toast } from 'svelte-sonner';
+import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   createNoteRequested,
   markNoteRead,
@@ -151,7 +151,9 @@ function* reconcileConflict(
     // Mutation-response notes omit the transient `unmetDependsOn` projection
     // (monorepo#2001); keep the cached value so "Waits on" doesn't flicker.
     const cached = yield* selectNoteById.effect(workspaceId, canonicalId);
-    yield* put(applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)));
+    yield* put(
+      applyNoteUpdated(workspaceId, canonicalId, withPreservedUnmetDependsOn(note, cached)),
+    );
   } else {
     yield* call(refetchWorkspaceNotes, workspaceId);
   }
@@ -478,7 +480,12 @@ export function* notesWriteSaga() {
   const queue = channel<MutationEnvelope>(buffers.expanding());
   noteMutationQueue = queue;
   try {
-    yield* takeLatest(updateNoteContent, handleContentAction, queue);
+    yield* takeLatestInContext(
+      updateNoteContent,
+      (action) => noteKey(action.payload[0], action.payload[1]),
+      handleContentAction,
+      queue,
+    );
     yield* takeEvery(updateNoteTitle, handleTitleAction, queue);
     yield* takeEvery(updateNote, handleMetadataAction, queue);
     yield* takeEvery(deleteNote, handleDeleteAction, queue);
