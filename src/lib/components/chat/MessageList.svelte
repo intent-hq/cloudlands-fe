@@ -12,20 +12,13 @@
 
   import type { AgentMessage } from '$shared/types';
   import type { SearchResult } from '$lib/utils/messageSearch';
-  import {
-  groupMessagesByDate,
-  shouldShowTimeSeparator,
-} from '$lib/utils/timeFormatting';
+  import { groupMessagesByDate, shouldShowTimeSeparator } from '$lib/utils/timeFormatting';
   import { formatTime as formatClockTime } from '$lib/i18n/format';
   import ChatMessage from './ChatMessage.svelte';
   import DateSeparator from './DateSeparator.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
   import StreamingTypingIndicator from './StreamingTypingIndicator.svelte';
-  import {
-  onMount,
-  onDestroy,
-  tick,
-} from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
 
   // untrack available if needed for future optimizations
 
@@ -338,7 +331,7 @@
   }
 
   .message-wrapper.highlighted {
-    background-color: var(--highlight-color, rgba(255, 235, 59, 0.2));
+    background-color: hsl(var(--warning) / 0.2);
     border-radius: 0.5rem;
     padding: 0.5rem;
     margin: -0.5rem;
@@ -358,16 +351,16 @@
     left: 0;
     right: 0;
     height: 1px;
-    background: var(--border-color);
+    background: hsl(var(--border));
     opacity: 0.3;
   }
 
   .time-label {
-    background: var(--background-primary);
+    background: hsl(var(--background));
     padding: 0.25rem 0.75rem;
     border-radius: 1rem;
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: hsl(var(--muted-foreground));
     position: relative;
     z-index: 1;
   }
@@ -397,11 +390,11 @@
   }
 
   .message-list::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
+    background: hsl(var(--muted-foreground) / 0.3);
     border-radius: 4px;
   }
 
   .message-list::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 </style>

@@ -1,17 +1,12 @@
 <!--
   ThinkingBlock.svelte
 
-  A collapsible display for AI reasoning/thinking content.
-  Shows a summary when collapsed and full content when expanded.
+  Tool-call-style display for AI reasoning/thinking content.
 -->
 <script lang="ts">
   import { safeSlide } from '$lib/utils/animations';
-  import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import {
-  faChevronRight,
-  faBrain,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -20,6 +15,7 @@
     isStreaming?: boolean;
     /** Auto-expand while streaming */
     autoExpandWhileStreaming?: boolean;
+    workspaceId?: string;
     class?: string;
   }
 
@@ -27,6 +23,7 @@
     content,
     isStreaming = false,
     autoExpandWhileStreaming = true,
+    workspaceId,
     class: className = '',
   }: Props = $props();
 
@@ -49,7 +46,7 @@
 
   // Generate a brief summary from the content
   const summary = $derived.by(() => {
-    if (!content) return 'Processing...';
+    if (!content) return m.chat_shared_processing_fallback();
     // Take first 100 chars, clean up
     const cleaned = content.replace(/\n+/g, ' ').trim();
     if (cleaned.length <= 80) return cleaned;
@@ -57,43 +54,45 @@
   });
 </script>
 
-<div class="rounded-lg border border-border/40 overflow-hidden {className}">
-  <button
-    type="button"
-    class="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-left text-muted-foreground text-xs transition-colors duration-150 hover:bg-muted/30"
-    onclick={toggle}
-    aria-expanded={isExpanded}
-  >
-    <div
-      class="flex items-center justify-center text-subtle {isStreaming
-        ? 'animate-pulse'
-        : ''}"
+<div
+  class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-foreground/75 transition-all duration-[var(--motion-fast)] ease-out hover:text-foreground focus-within:text-foreground {className}"
+  data-testid="reasoning-tool-call"
+>
+  <div class="relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0">
+    <Fa
+      icon={faBrain}
+      size={14}
+      class="a11y-ignore w-4 shrink-0 text-foreground/60 {isStreaming ? 'animate-pulse' : ''}"
+    />
+    <button
+      class="flex min-w-0 items-center gap-1 overflow-hidden border-0 bg-transparent p-0 text-left cursor-pointer"
+      style="flex: 0 0.01 auto;"
+      onclick={toggle}
+      aria-expanded={isExpanded}
     >
-      <Fa icon={faBrain} class="w-3.5 h-3.5" />
-    </div>
-    <span class="font-medium text-muted-foreground shrink-0">
-      {isStreaming ? m.chat_thinkingBlock_thinking_label() : m.chat_thinkingBlock_reasoning_label()}
-    </span>
-    <div
-      class="flex items-center justify-center shrink-0 transition-transform duration-200 {isExpanded
-        ? 'rotate-90'
-        : ''}"
-    >
-      <Fa icon={faChevronRight} class="w-3 h-3" />
-    </div>
-    {#if !isExpanded}
-      <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap opacity-70 text-xs"
-        >{summary}</span
-      >
-    {/if}
-  </button>
+      <span class="shrink-0 whitespace-nowrap text-muted-foreground">
+        {isStreaming
+          ? m.chat_thinkingBlock_thinking_label()
+          : m.chat_thinkingBlock_reasoning_label()}
+      </span>
+      {#if !isExpanded}
+        <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">{summary}</span>
+      {/if}
+    </button>
+  </div>
 
   {#if isExpanded}
     <div
-      class="px-3 pb-3 text-xs leading-relaxed text-subtle [&_.markdown-viewer]:text-xs! [&_.markdown-viewer]:text-subtle! [&_p]:my-2 [&_p:first-child]:mt-0"
-      transition:safeSlide={{ duration: 200, easing: cubicOut }}
+      class="type-caption ml-5 pt-1 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      transition:safeSlide={{ duration: 150 }}
     >
-      <MarkdownViewer {content} {isStreaming} />
+      <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />
     </div>
   {/if}
 </div>
+
+<style>
+  .tool-call-container {
+    contain: layout style;
+  }
+</style>

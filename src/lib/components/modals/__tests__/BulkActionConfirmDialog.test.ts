@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -96,5 +96,20 @@ describe('BulkActionConfirmDialog', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it('uses the canonical icon-free surface and visibly focuses the confirm action', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: { open: true, title: 'Archive spaces?', confirmText: 'Archive' },
+    });
+
+    const dialog = screen.getByRole('dialog');
+    const confirm = screen.getByRole('button', { name: 'Archive' });
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+    expect(confirm.className).toContain('ring-[3px]');
+    expect(dialog.className).toContain('max-w-sm');
+    expect(dialog.querySelector('.svelte-fa')).toBeNull();
   });
 });

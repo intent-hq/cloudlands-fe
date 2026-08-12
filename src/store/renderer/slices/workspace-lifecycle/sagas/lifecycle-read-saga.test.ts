@@ -1025,6 +1025,20 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('converges to an authoritative empty daemon agent snapshot', async () => {
+    mocks.agents.list.mockResolvedValue([]);
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+    ]);
+    await stop(run.task);
+  });
+
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
     const otherWorkspaceId = 'ws-other';
     const resolvers: Record<string, (value: AgentSession[]) => void> = {};
@@ -1099,7 +1113,10 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([setAgentsLoaded(WS, true)]);
+    expect(run.actions).toEqual([
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+    ]);
     await stop(run.task);
   });
 
@@ -1129,7 +1146,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
     expect(mocks.agents.list.mock.calls).toEqual([[WS], [WS]]);
-    expect(run.actions).toEqual([setAgentsLoaded(WS, true)]);
+    expect(run.actions).toEqual([
+      setAgentsLoaded(WS, true),
+      { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+    ]);
     await stop(run.task);
   });
 

@@ -10,7 +10,7 @@ vi.mock('../../ui/button/button.svelte', async () => ({
   default: (await import('./mocks/Button.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/AuggieAvatar.svelte')).default,
 }));
 

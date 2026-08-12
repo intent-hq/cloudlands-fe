@@ -20,18 +20,17 @@
 // Suppress a deliberate literal by putting `i18n-ignore` in a comment on the
 // same line or the line above.
 //
-// Usage: node scripts/check-hardcoded-strings.mjs [dir ...]
-//   With no args, scans ENFORCED_DIRS below. Explicit dirs override the list
-//   (used by the self-test).
+// Usage: node scripts/check-hardcoded-strings.mjs [dir ...] [--baseline path]
+//   With no dirs, scans ENFORCED_DIRS and applies the checked-in debt baseline.
+//   Explicit dirs have no baseline unless --baseline is provided (used by tests).
+//   --update-baseline rewrites the selected baseline from the current scan.
 //
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
-// Enforced directories or individual files (relative to the repo root). Each
-// extraction task adds its migrated directories here. The list starts EMPTY;
-// the settings pilot extraction adds the first entry. Individual files are
-// listed while their parent directory is only partially migrated.
+// Full migration inventory. Existing debt is recorded in the checked-in
+// baseline; every path remains scanned so new or changed violations fail.
 const ENFORCED_DIRS = [
   'src/lib/components',
   'src/lib/constants',
@@ -39,19 +38,19 @@ const ENFORCED_DIRS = [
   'src/hooks.client.ts',
   'src/lib/components/settings',
   'src/features/settings',
-  'src/routes/settings',
+  'src/routes/(app)/settings',
   'src/lib/components/ui',
   'src/lib/components/workspace',
   'src/lib/components/chat',
   'src/lib/components/layout',
   'src/features/layout',
-  'src/routes/workspace',
-  'src/routes/agent',
+  'src/routes/(app)/workspace',
+  'src/routes/(app)/agent',
   'src/routes/hud',
   'src/lib/components/tiptap',
-  'src/routes/+page.svelte',
+  'src/routes/(app)/+layout.svelte',
   'src/routes/+layout.svelte',
-  'src/routes/+error.svelte',
+  'src/routes/(app)/+error.svelte',
   'src/features/onboarding',
   'src/features/github-auth',
   'src/features/linear-auth',
@@ -99,7 +98,6 @@ const ENFORCED_DIRS = [
   'src/features/agent/agent-failure-registry.ts',
   'src/features/agent/agent-read-service.ts',
   'src/features/agent/agent-send.ts',
-  'src/features/agent/agent-subscription-read-service.ts',
   'src/features/agent/agent-types.ts',
   'src/features/agent/agent.client.ts',
   'src/features/agent/chat-read-service.ts',
@@ -175,6 +173,7 @@ const ENFORCED_DIRS = [
 ];
 
 const ROOT = process.cwd();
+const DEFAULT_BASELINE = resolve(ROOT, 'scripts/hardcoded-strings-baseline.json');
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -641,30 +640,90 @@ function findViolations(relPath, src) {
   return violations.filter((v) => !ignored.has(v.line));
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  const dirs = args.length > 0 ? args : ENFORCED_DIRS;
-
-  console.log(`${CYAN}=== Hardcoded user-facing string gate (i18n) ===${NC}`);
-  if (dirs.length === 0) {
-    console.log('No enforced directories yet — nothing to scan.');
-    console.log(`${CYAN}✓ No hardcoded-string violations found.${NC}`);
-    return;
+function parseArgs(args) {
+  const dirs = [];
+  let baselinePath = null;
+  let updateBaseline = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--baseline') {
+      if (!args[i + 1]) throw new Error('--baseline requires a path');
+      baselinePath = resolve(ROOT, args[++i]);
+    } else if (args[i] === '--update-baseline') {
+      updateBaseline = true;
+    } else if (args[i].startsWith('--')) {
+      throw new Error(`Unknown option: ${args[i]}`);
+    } else {
+      dirs.push(args[i]);
+    }
   }
+  return { dirs, baselinePath, updateBaseline };
+}
 
-  let total = 0;
-  const lines = [];
+function violationKey(violation) {
+  return JSON.stringify([violation.path, violation.kind, violation.snippet]);
+}
+
+function baselineEntries(violations) {
+  const byKey = new Map();
+  for (const violation of violations) {
+    const key = violationKey(violation);
+    const current = byKey.get(key);
+    if (current) current.count++;
+    else {
+      byKey.set(key, {
+        path: violation.path,
+        kind: violation.kind,
+        snippet: violation.snippet,
+        count: 1,
+      });
+    }
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const left = `${a.path}\0${a.kind}\0${a.snippet}`;
+    const right = `${b.path}\0${b.kind}\0${b.snippet}`;
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
+}
+
+function loadBaseline(path) {
+  const parsed = JSON.parse(readFileSync(path, 'utf8'));
+  if (parsed.version !== 1 || !Array.isArray(parsed.violations)) {
+    throw new Error(`Invalid hardcoded-string baseline: ${path}`);
+  }
+  const byKey = new Map();
+  for (const entry of parsed.violations) {
+    if (
+      typeof entry.path !== 'string' ||
+      typeof entry.kind !== 'string' ||
+      typeof entry.snippet !== 'string' ||
+      !Number.isInteger(entry.count) ||
+      entry.count < 1
+    ) {
+      throw new Error(`Invalid hardcoded-string baseline entry: ${path}`);
+    }
+    const key = violationKey(entry);
+    if (byKey.has(key)) throw new Error(`Duplicate hardcoded-string baseline entry: ${key}`);
+    byKey.set(key, entry);
+  }
+  return byKey;
+}
+
+async function collectViolations(dirs) {
+  const violations = [];
+  const seenFiles = new Set();
   const checkFile = (file) => {
+    const canonical = resolve(file);
+    if (seenFiles.has(canonical)) return;
+    seenFiles.add(canonical);
     let src;
     try {
-      src = readFileSync(file, 'utf8');
+      src = readFileSync(canonical, 'utf8');
     } catch {
       return;
     }
-    const rel = relative(ROOT, file).split('\\').join('/');
+    const rel = relative(ROOT, canonical).split('\\').join('/');
     for (const v of findViolations(rel, src)) {
-      total++;
-      lines.push(`  ${YELLOW}${rel}:${v.line}${NC}  [${v.kind}] "${v.snippet}"`);
+      violations.push({ path: rel, ...v });
     }
   };
   for (const dir of dirs) {
@@ -689,20 +748,90 @@ async function main() {
       if (isCheckedFile(abs)) checkFile(abs);
     }
   }
+  return violations;
+}
+
+function formatViolation(violation) {
+  return `  ${YELLOW}${violation.path}:${violation.line}${NC}  [${violation.kind}] "${violation.snippet}"`;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const useDefaultDirs = options.dirs.length === 0;
+  const dirs = useDefaultDirs ? ENFORCED_DIRS : options.dirs;
+  const baselinePath =
+    options.baselinePath ?? (useDefaultDirs || options.updateBaseline ? DEFAULT_BASELINE : null);
+
+  console.log(`${CYAN}=== Hardcoded user-facing string gate (i18n) ===${NC}`);
+  const violations = await collectViolations(dirs);
+
+  if (options.updateBaseline) {
+    const entries = baselineEntries(violations);
+    const baseline = {
+      version: 1,
+      generatedBy: 'node scripts/check-hardcoded-strings.mjs --update-baseline',
+      violations: entries,
+    };
+    writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`);
+    console.log('');
+    console.log(
+      `${CYAN}Updated baseline with ${violations.length} violation(s) in ${entries.length} stable entr${entries.length === 1 ? 'y' : 'ies'}.${NC}`,
+    );
+    console.log(`Baseline: ${relative(ROOT, baselinePath)}`);
+    return;
+  }
+
+  const baseline = baselinePath ? loadBaseline(baselinePath) : new Map();
+  const current = new Map();
+  for (const violation of violations) {
+    const key = violationKey(violation);
+    const matches = current.get(key) ?? [];
+    matches.push(violation);
+    current.set(key, matches);
+  }
+
+  const newViolations = [];
+  let knownDebt = 0;
+  const knownFiles = new Set();
+  for (const [key, matches] of current) {
+    const allowed = baseline.get(key)?.count ?? 0;
+    const known = Math.min(matches.length, allowed);
+    knownDebt += known;
+    if (known > 0) knownFiles.add(matches[0].path);
+    newViolations.push(...matches.slice(allowed));
+  }
+  let resolvedDebt = 0;
+  for (const [key, entry] of baseline) {
+    resolvedDebt += Math.max(0, entry.count - (current.get(key)?.length ?? 0));
+  }
 
   console.log('');
-  if (total > 0) {
-    console.log(`${RED}[Hardcoded user-facing strings]${NC} — ${total} violation(s):`);
-    console.log('  These directories are i18n-migrated: use Paraglide messages (m.some_message())');
+  if (baselinePath) {
+    console.log(
+      `${YELLOW}Known i18n debt:${NC} ${knownDebt} violation(s) across ${knownFiles.size} file(s); ${baseline.size} stable baseline entries.`,
+    );
+    if (resolvedDebt > 0) {
+      console.log(
+        `${CYAN}Debt reduced by ${resolvedDebt} violation(s); run with --update-baseline to record the reduction.${NC}`,
+      );
+    }
+  }
+  if (newViolations.length > 0) {
+    console.log(
+      `${RED}[New or changed hardcoded user-facing strings]${NC} — ${newViolations.length} violation(s):`,
+    );
+    console.log('  Use Paraglide messages (m.some_message())');
     console.log('  instead of literal UI strings. Add keys to messages/en.json.');
     console.log('  For deliberate non-translatable literals, add an `i18n-ignore` comment on the');
     console.log('  same line or the line above.');
-    for (const line of lines) console.log(line);
+    for (const violation of newViolations) console.log(formatViolation(violation));
     console.log('');
-    console.log(`${RED}✗ Found ${total} hardcoded-string violation(s).${NC}`);
+    console.log(
+      `${RED}✗ Found ${newViolations.length} new or changed hardcoded-string violation(s).${NC}`,
+    );
     process.exit(1);
   }
-  console.log(`${CYAN}✓ No hardcoded-string violations found.${NC}`);
+  console.log(`${CYAN}✓ No new or changed hardcoded-string violations found.${NC}`);
 }
 
 main().catch((err) => {

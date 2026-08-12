@@ -1,17 +1,14 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import {
-  onMount,
-  onDestroy,
-} from 'svelte';
-  import {
-  requestResizablePanelGroupLayout,
-  setResizablePanelGroupLayout,
-  type ResizablePanelGroupLayoutState,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    requestResizablePanelGroupLayout,
+    setResizablePanelGroupLayout,
+    type ResizablePanelGroupLayoutState,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { selectResizablePanelGroupLayout } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Panel {
     id: string;
@@ -36,7 +33,12 @@
     children?: any;
   } = $props();
 
-  const persistedLayout = selectResizablePanelGroupLayout(storageKey ?? '');
+  const storageKeyStore = writable(storageKey ?? '');
+  const persistedLayout = selectResizablePanelGroupLayout(storageKeyStore);
+
+  $effect(() => {
+    storageKeyStore.set(storageKey ?? '');
+  });
 
   function isPersistedLayoutCompatible(): boolean {
     return !!$persistedLayout?.sizes && $persistedLayout.sizes.length === panels.length;
@@ -113,18 +115,40 @@
 
   function savePanelSizes() {
     if (storageKey) {
-      appStore.dispatch(setResizablePanelGroupLayout(storageKey, {
-        sizes: [...panelSizes],
-        collapsed: Array.from(collapsedPanels),
-      }));
+      appStore.dispatch(
+        setResizablePanelGroupLayout(storageKey, {
+          sizes: [...panelSizes],
+          collapsed: Array.from(collapsedPanels),
+        }),
+      );
     }
   }
 
   let appliedPersistedLayout = $state<ResizablePanelGroupLayoutState | undefined>(undefined);
+  let panelConfiguration = $state('');
+
+  $effect(() => {
+    const nextStorageKey = storageKey ?? '';
+    const nextConfiguration = `${nextStorageKey}\0${panels.map((panel) => panel.id).join('\0')}`;
+    if (nextConfiguration === panelConfiguration) return;
+
+    panelConfiguration = nextConfiguration;
+    appliedPersistedLayout = undefined;
+    if (nextStorageKey) {
+      appStore.dispatch(requestResizablePanelGroupLayout(nextStorageKey));
+    }
+    initializePanelSizes();
+  });
 
   $effect(() => {
     const layout = $persistedLayout;
-    if (!storageKey || !layout || !isPersistedLayoutCompatible() || layout === appliedPersistedLayout) return;
+    if (
+      !storageKey ||
+      !layout ||
+      !isPersistedLayoutCompatible() ||
+      layout === appliedPersistedLayout
+    )
+      return;
     panelSizes = normalizeSizes(layout.sizes);
     collapsedPanels = new Set(layout.collapsed);
     appliedPersistedLayout = layout;
@@ -230,6 +254,7 @@
     startPosition = orientation === 'vertical' ? e.clientY : e.clientX;
     startSizes = [...panelSizes];
 
+    document.body.classList.add('panel-resizing');
     document.body.style.cursor = orientation === 'vertical' ? 'ns-resize' : 'ew-resize';
     document.body.style.userSelect = 'none';
 
@@ -311,6 +336,7 @@
 
     isResizing = false;
     resizingIndex = -1;
+    document.body.classList.remove('panel-resizing');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 
@@ -355,13 +381,9 @@
     });
   }
 
-  // Initialize on mount
+  // Initialize DOM-only resources on mount. Panel configuration and persisted
+  // sizes are reactive so keyed child panels can survive membership changes.
   onMount(() => {
-    if (storageKey) {
-      appStore.dispatch(requestResizablePanelGroupLayout(storageKey));
-    }
-    initializePanelSizes();
-    // Set up resize observer
     resizeObserver = new ResizeObserver(handleContainerResize);
     if (containerRef) {
       resizeObserver.observe(containerRef);
@@ -411,9 +433,11 @@
       {#if !isCollapsed && !nextCollapsed}
         <button
           type="button"
-          class="relative {orientation === 'vertical'
-            ? 'h-px w-full cursor-ns-resize'
-            : 'w-px h-full cursor-ew-resize'} hover:bg-primary active:bg-primary transition-colors group z-30"
+          class="app-resize-handle relative z-30 {orientation === 'vertical'
+            ? '-my-[7.5px] h-4 w-full'
+            : '-mx-[7.5px] h-full w-4'}"
+          data-resize-axis={orientation === 'vertical' ? 'y' : 'x'}
+          data-resizing={isResizing && resizingIndex === index}
           onmousedown={(e) => startResize(index, e)}
           ondblclick={() => {
             // Reset to equal sizes on double-click
@@ -439,13 +463,6 @@
           title={m.layout_resizable_dragToResize_tooltip()}
           aria-label={m.layout_resizable_resizePanels_ariaLabel()}
         >
-          <!-- Visual indicator on hover (matching ResizablePanel style) -->
-          <div
-            class="absolute {orientation === 'vertical'
-              ? 'inset-x-0 -top-1 h-2'
-              : 'inset-y-0 -left-1 w-2'} opacity-0 group-hover:opacity-100 transition-opacity bg-primary/20"
-          ></div>
-
           <!-- Optional grip indicator (uncomment to show grip dots) -->
           <!-- <div
             class="absolute {orientation === 'vertical'

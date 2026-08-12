@@ -15,6 +15,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { webContents } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { safeResolvePath } from '../../../main/utils/safe-resolve-path';
+import { validateWorkspaceId } from '../../../main/utils/workspace-validation';
 import { WorkspaceConfigConstants } from '../../../shared/config-constants';
 import { workspaceStateDir } from '../../../shared/main/workspace-state-paths';
 import { getActiveId } from '../../backend/main/connections-store';
@@ -66,33 +68,46 @@ function sanitizePathName(name: string): string {
   return sanitized || 'unnamed';
 }
 
+async function getCaptureRoot(workspaceId: string): Promise<string> {
+  const errors = validateWorkspaceId(workspaceId);
+  if (errors.length > 0) {
+    throw new Error(`Invalid workspace ID: ${errors.join('. ')}`);
+  }
+  const backendId = await getActiveId();
+  return path.resolve(
+    workspaceStateDir(workspaceId, backendId),
+    WorkspaceConfigConstants.BROWSER_SNAPSHOTS_FOLDER,
+  );
+}
+
+async function resolveCaptureDirectory(
+  workspaceId: string,
+  domain: string,
+  captureName: string,
+): Promise<{ captureId: string; outputDir: string }> {
+  const captureRoot = await getCaptureRoot(workspaceId);
+  const captureId = path.posix.join(domain, captureName);
+  const outputDir = safeResolvePath(captureRoot, captureId);
+  if (!outputDir || outputDir === captureRoot) {
+    throw new Error('Capture output must stay within the workspace capture directory');
+  }
+  return { captureId, outputDir };
+}
+
+function resolveCaptureArtifact(root: string, artifactName: string): string {
+  const artifactPath = safeResolvePath(root, artifactName);
+  if (!artifactPath || artifactPath === path.resolve(root)) {
+    throw new Error('Capture artifact must stay within its capture directory');
+  }
+  return artifactPath;
+}
+
 /**
  * Generate timestamp string for directory names
  */
 function generateTimestamp(): string {
   const now = new Date();
   return now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-}
-
-/**
- * Output directory for a snapshot/session:
- * `<userData>/workspace-state/<backendKey>/<workspaceId>/browser-snapshots/<domain>/<name>`.
- *
- * FE-local debug state keyed by the active backend + workspace id
- * (intent-hq/monorepo#1760) — snapshots never land in the workspace checkout.
- */
-async function snapshotSessionDir(
-  workspaceId: string,
-  domain: string,
-  name: string,
-): Promise<string> {
-  const backendId = await getActiveId();
-  return path.join(
-    workspaceStateDir(workspaceId, backendId),
-    WorkspaceConfigConstants.BROWSER_SNAPSHOTS_FOLDER,
-    domain,
-    name,
-  );
 }
 
 /**
@@ -193,9 +208,7 @@ function generateSummary(
   }
 
   // Sort and take top 5 slowest
-  const slowest = requestsWithDuration
-    .sort((a, b) => b.duration - a.duration)
-    .slice(0, 5);
+  const slowest = requestsWithDuration.sort((a, b) => b.duration - a.duration).slice(0, 5);
 
   return {
     capturedAt: metadata.timestamp,
@@ -251,10 +264,14 @@ class BrowserCaptureService {
     }
 
     const url = tab.url || 'about:blank';
-    const domain = extractDomain(url);
+    const domain = sanitizePathName(extractDomain(url));
     // Sanitize user-provided name to prevent path traversal
     const snapshotName = sanitizePathName(name || generateTimestamp());
-    const outputDir = await snapshotSessionDir(workspaceId, domain, snapshotName);
+    const { captureId, outputDir } = await resolveCaptureDirectory(
+      workspaceId,
+      domain,
+      snapshotName,
+    );
 
     // Create output directory
     await fs.mkdir(outputDir, { recursive: true });
@@ -327,6 +344,7 @@ class BrowserCaptureService {
     logger.info('Snapshot captured', { outputDir, domain });
 
     return {
+      captureId,
       dir: outputDir,
       a11y: a11yPath,
       screenshot: screenshotPath,
@@ -358,17 +376,22 @@ class BrowserCaptureService {
     }
 
     const url = tab.url || 'about:blank';
-    const domain = extractDomain(url);
+    const domain = sanitizePathName(extractDomain(url));
     // Sanitize user-provided name to prevent path traversal
     const sessionName = sanitizePathName(name || generateTimestamp());
     const sessionId = `session-${randomUUID()}`;
-    const outputDir = await snapshotSessionDir(workspaceId, domain, sessionName);
+    const { captureId, outputDir } = await resolveCaptureDirectory(
+      workspaceId,
+      domain,
+      sessionName,
+    );
 
     // Create output directory
     await fs.mkdir(outputDir, { recursive: true });
 
     const session: CaptureSession = {
       id: sessionId,
+      captureId,
       tabId: tab.tabId,
       workspaceId,
       name: sessionName,
@@ -390,11 +413,8 @@ class BrowserCaptureService {
   /**
    * Start capturing console/network events within a session
    */
-  async startCapture(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+  async startCapture(sessionId: string, workspaceId: string): Promise<void> {
+    const session = this.getOwnedSession(sessionId, workspaceId);
 
     if (session.captureActive) {
       logger.warn('Capture already active for session', { sessionId });
@@ -425,11 +445,8 @@ class BrowserCaptureService {
   /**
    * Stop capturing console/network events within a session
    */
-  async endCapture(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+  async endCapture(sessionId: string, workspaceId: string): Promise<void> {
+    const session = this.getOwnedSession(sessionId, workspaceId);
 
     if (!session.captureActive) {
       logger.warn('Capture not active for session', { sessionId });
@@ -457,13 +474,11 @@ class BrowserCaptureService {
    */
   async captureStep(
     sessionId: string,
+    workspaceId: string,
     stepName: string,
     options?: CaptureStepOptions,
   ): Promise<string> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+    const session = this.getOwnedSession(sessionId, workspaceId);
 
     session.stepCount++;
     // Sanitize user-provided stepName to prevent path traversal
@@ -476,14 +491,14 @@ class BrowserCaptureService {
       // If capture wasn't active, start it temporarily
       const wasActive = session.captureActive;
       if (!wasActive) {
-        await this.startCapture(sessionId);
+        await this.startCapture(sessionId, workspaceId);
       }
 
       await embeddedBrowserCdp.evaluate(session.tabId, 'location.reload()');
       await this.waitForConditions(session.tabId, options.waitFor);
 
       if (!wasActive) {
-        await this.endCapture(sessionId);
+        await this.endCapture(sessionId, workspaceId);
       }
     } else if (options?.waitFor) {
       await this.waitForConditions(session.tabId, options.waitFor);
@@ -495,7 +510,10 @@ class BrowserCaptureService {
 
     // Capture screenshot
     const screenshot = await embeddedBrowserCdp.screenshot(session.tabId);
-    await fs.writeFile(path.join(stepDir, 'screenshot.jpg'), Buffer.from(screenshot.base64, 'base64'));
+    await fs.writeFile(
+      path.join(stepDir, 'screenshot.jpg'),
+      Buffer.from(screenshot.base64, 'base64'),
+    );
 
     // Write step metadata
     const tabs = await embeddedBrowserCdp.listAllTabs();
@@ -522,14 +540,12 @@ class BrowserCaptureService {
   /**
    * Start a performance trace (named, like setTimeout/clearTimeout)
    */
-  async startTrace(sessionId: string, traceName: string): Promise<string> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+  async startTrace(sessionId: string, workspaceId: string, traceName: string): Promise<string> {
+    const session = this.getOwnedSession(sessionId, workspaceId);
+    const traceId = sanitizePathName(traceName).slice(0, 120);
 
-    if (session.activeTraces.has(traceName)) {
-      throw new Error(`Trace '${traceName}' is already active`);
+    if (session.activeTraces.has(traceId)) {
+      throw new Error(`Trace '${traceId}' is already active`);
     }
 
     // Get webContentsId for the tab
@@ -574,27 +590,25 @@ class BrowserCaptureService {
       }
     }
 
-    session.activeTraces.set(traceName, {
-      name: traceName,
+    session.activeTraces.set(traceId, {
+      name: traceId,
       startTime: Date.now(),
     });
 
-    logger.info('Trace started', { sessionId, traceName });
-    return traceName;
+    logger.info('Trace started', { sessionId, traceId });
+    return traceId;
   }
 
   /**
    * Stop a performance trace and save to file
    */
-  async stopTrace(sessionId: string, traceName: string): Promise<string> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+  async stopTrace(sessionId: string, workspaceId: string, traceName: string): Promise<string> {
+    const session = this.getOwnedSession(sessionId, workspaceId);
+    const traceId = sanitizePathName(traceName).slice(0, 120);
 
-    const traceState = session.activeTraces.get(traceName);
+    const traceState = session.activeTraces.get(traceId);
     if (!traceState) {
-      throw new Error(`Trace '${traceName}' is not active`);
+      throw new Error(`Trace '${traceId}' is not active`);
     }
 
     // Get webContentsId for the tab
@@ -638,11 +652,11 @@ class BrowserCaptureService {
     });
 
     // Write trace file
-    const tracePath = path.join(session.outputDir, `${traceName}.json`);
+    const tracePath = resolveCaptureArtifact(session.outputDir, `${traceId}.json`);
     await fs.writeFile(tracePath, JSON.stringify(traceData, null, 2));
 
-    session.activeTraces.delete(traceName);
-    logger.info('Trace stopped', { sessionId, traceName, tracePath });
+    session.activeTraces.delete(traceId);
+    logger.info('Trace stopped', { sessionId, traceId, tracePath });
 
     return tracePath;
   }
@@ -650,20 +664,17 @@ class BrowserCaptureService {
   /**
    * End a capture session and write final files
    */
-  async endSession(sessionId: string): Promise<SessionResult> {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
+  async endSession(sessionId: string, workspaceId: string): Promise<SessionResult> {
+    const session = this.getOwnedSession(sessionId, workspaceId);
 
     // Stop capture if active
     if (session.captureActive) {
-      await this.endCapture(sessionId);
+      await this.endCapture(sessionId, workspaceId);
     }
 
     // Stop any active traces
     for (const traceName of session.activeTraces.keys()) {
-      await this.stopTrace(sessionId, traceName);
+      await this.stopTrace(sessionId, workspaceId, traceName);
     }
 
     // Write console logs
@@ -704,7 +715,11 @@ class BrowserCaptureService {
     // Collect trace files
     const traces: string[] = [];
     for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith('.json') && !['session.json', 'metadata.json', 'summary.json'].includes(entry.name)) {
+      if (
+        entry.isFile() &&
+        entry.name.endsWith('.json') &&
+        !['session.json', 'metadata.json', 'summary.json'].includes(entry.name)
+      ) {
         traces.push(path.join(session.outputDir, entry.name));
       }
     }
@@ -715,7 +730,10 @@ class BrowserCaptureService {
       title: metadata.title,
       timestamp: metadata.endTime,
     });
-    await fs.writeFile(path.join(session.outputDir, 'summary.json'), JSON.stringify(summary, null, 2));
+    await fs.writeFile(
+      path.join(session.outputDir, 'summary.json'),
+      JSON.stringify(summary, null, 2),
+    );
 
     // Note: We don't detach the debugger here anymore.
     // The centralized EmbeddedBrowserCdpService manages debugger lifecycle.
@@ -725,6 +743,7 @@ class BrowserCaptureService {
     logger.info('Session ended', { sessionId, outputDir: session.outputDir });
 
     return {
+      captureId: session.captureId,
       dir: session.outputDir,
       steps,
       console: consolePath,
@@ -824,7 +843,10 @@ class BrowserCaptureService {
         const text = args.map((a) => a.value ?? a.description ?? '').join(' ');
         onConsole({
           timestamp: new Date().toISOString(),
-          level: (p.type as string) === 'warning' ? 'warn' : ((p.type as string) as ConsoleMessage['level']),
+          level:
+            (p.type as string) === 'warning'
+              ? 'warn'
+              : (p.type as string as ConsoleMessage['level']),
           text,
         });
       }
@@ -845,13 +867,16 @@ class BrowserCaptureService {
       if (method === 'Network.requestWillBeSent') {
         const request = p.request as { method: string; url: string };
         const now = Date.now();
-        pendingRequests.set(p.requestId as string, {
-          timestamp: new Date(now).toISOString(),
-          requestId: p.requestId as string,
-          method: request.method,
-          url: request.url,
-          _startTime: now, // Internal field for duration calculation
-        } as NetworkRequest & { _startTime: number });
+        pendingRequests.set(
+          p.requestId as string,
+          {
+            timestamp: new Date(now).toISOString(),
+            requestId: p.requestId as string,
+            method: request.method,
+            url: request.url,
+            _startTime: now, // Internal field for duration calculation
+          } as NetworkRequest & { _startTime: number },
+        );
       }
 
       // Network response received
@@ -868,8 +893,7 @@ class BrowserCaptureService {
       // Network request finished
       if (method === 'Network.loadingFinished') {
         const pending = pendingRequests.get(p.requestId as string) as
-          | (NetworkRequest & { _startTime?: number })
-          | undefined;
+          (NetworkRequest & { _startTime?: number }) | undefined;
         if (pending) {
           pending.size = (p.encodedDataLength as number) || 0;
           // Calculate duration from start time
@@ -885,8 +909,7 @@ class BrowserCaptureService {
       // Network request failed
       if (method === 'Network.loadingFailed') {
         const pending = pendingRequests.get(p.requestId as string) as
-          | (NetworkRequest & { _startTime?: number })
-          | undefined;
+          (NetworkRequest & { _startTime?: number }) | undefined;
         if (pending) {
           pending.failed = true;
           // i18n-ignore (agent-facing trace data, not user-facing)
@@ -991,7 +1014,11 @@ class BrowserCaptureService {
   /**
    * Wait for network to be idle
    */
-  private async waitForNetworkIdle(tabId: string, idleTime: number, timeout: number): Promise<void> {
+  private async waitForNetworkIdle(
+    tabId: string,
+    idleTime: number,
+    timeout: number,
+  ): Promise<void> {
     const tabs = await embeddedBrowserCdp.listAllTabs();
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab || !tab.mounted) {
@@ -1060,21 +1087,38 @@ class BrowserCaptureService {
   /**
    * Get a session by ID (for internal use)
    */
-  getSession(sessionId: string): CaptureSession | undefined {
-    return this.sessions.get(sessionId);
+  getSession(sessionId: string, workspaceId: string): CaptureSession | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.workspaceId === workspaceId ? session : undefined;
   }
 
   /**
-   * Read a capture summary from a snapshot/session directory
+   * Read a capture summary by its workspace-relative capture identifier.
    */
-  async getSummary(captureDir: string): Promise<CaptureSummary | null> {
-    const summaryPath = path.join(captureDir, 'summary.json');
+  async getSummary(workspaceId: string, captureId: string): Promise<CaptureSummary | null> {
+    if (!captureId || path.isAbsolute(captureId)) {
+      throw new Error('Invalid capture identifier');
+    }
+    const captureRoot = await getCaptureRoot(workspaceId);
+    const captureDir = safeResolvePath(captureRoot, captureId);
+    if (!captureDir || captureDir === captureRoot) {
+      throw new Error('Capture identifier must stay within the workspace capture directory');
+    }
+    const summaryPath = resolveCaptureArtifact(captureDir, 'summary.json');
     try {
       const content = await fs.readFile(summaryPath, 'utf-8');
       return JSON.parse(content) as CaptureSummary;
     } catch {
       return null;
     }
+  }
+
+  private getOwnedSession(sessionId: string, workspaceId: string): CaptureSession {
+    const session = this.getSession(sessionId, workspaceId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found for workspace ${workspaceId}`);
+    }
+    return session;
   }
 }
 

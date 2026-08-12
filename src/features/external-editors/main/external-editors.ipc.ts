@@ -665,10 +665,10 @@ export function registerExternalEditorsHandlers(): void {
     IPC_CHANNELS.EXTERNAL_EDITORS.OPEN_WITH_OTHER,
     createSafeValidatedHandler(
       OpenWithOtherSchema,
-      async (_event, { path }) => {
+      async (event, { path }) => {
         try {
           // Import dialog here to avoid issues with module loading
-          const { dialog: electronDialog } = await import('electron');
+          const { BrowserWindow, dialog: electronDialog } = await import('electron');
 
           // Platform-specific dialog configuration
           let dialogOptions: Electron.OpenDialogOptions;
@@ -713,7 +713,10 @@ export function registerExternalEditorsHandlers(): void {
             };
           }
 
-          const result = await electronDialog.showOpenDialog(dialogOptions);
+          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          const result = ownerWindow
+            ? await electronDialog.showOpenDialog(ownerWindow, dialogOptions)
+            : await electronDialog.showOpenDialog(dialogOptions);
 
           if (result.canceled || result.filePaths.length === 0) {
             return { success: false, error: m.externalEditors_ipc_noApplicationSelected_error() };

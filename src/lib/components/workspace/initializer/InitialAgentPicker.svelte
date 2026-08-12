@@ -1,32 +1,29 @@
 <script lang="ts">
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
 
   import {
-  selectSpecialists,
-  selectCustomSpecialistsLoaded,
-  selectFileSpecialistsLoaded,
-  filterPickableSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectCustomSpecialistsLoaded,
+    selectFileSpecialistsLoaded,
+    filterPickableSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import {
-  faPlus,
-  faChevronDown,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import {
-  getProviderAvailability,
-  type ProviderAvailabilityResult,
-} from '$features/providers/provider-availability.client';
+    getProviderAvailability,
+    type ProviderAvailabilityResult,
+  } from '$features/providers/provider-availability.client';
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
-  selectEffectiveDefaultProviderId,
-  selectProviderCatalogEntries,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -305,8 +302,6 @@
     }
   });
 
-
-
   // Specialist dropdown state
   let specialistDropdownOpen = $state(false);
 
@@ -351,7 +346,8 @@
     currentSpecialistInfo?.name ?? m.workspace_initialAgentPicker_general_label(),
   );
   const specialistDisplayDescription = $derived(
-    currentSpecialistInfo?.description ?? m.workspace_initialAgentPicker_noSpecializedBehavior_description(),
+    currentSpecialistInfo?.description ??
+      m.workspace_initialAgentPicker_noSpecializedBehavior_description(),
   );
 
   function selectTeamMode() {
@@ -446,14 +442,27 @@
 </script>
 
 <!-- Agent mode cards -->
-<div class="grid grid-cols-[1fr_1fr] gap-px overflow-hidden">
+<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
   <!-- Team orchestration card -->
-  <button
-    type="button"
-    class="agent-card min-w-0 {isTeamMode ? 'agent-card-selected' : 'grayscale opacity-50'}"
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="agent-card min-w-0 {isTeamMode
+      ? 'border-input bg-accent/60'
+      : 'border-border bg-card hover:bg-muted/50'}"
     onclick={selectTeamMode}
+    onkeydown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectTeamMode();
+      }
+    }}
+    role="button"
+    tabindex="0"
+    aria-pressed={isTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_teamMode_label()}</div>
+    <div class="text-sm font-medium text-foreground">
+      {m.workspace_initialAgentPicker_teamMode_label()}
+    </div>
     <div class="flex items-center gap-1 py-1.5">
       <AuggieAvatar seed="blank" size={22} specialist="spec-writer" />
       <span class="text-subtle text-xs mx-0.5">→</span>
@@ -474,7 +483,7 @@
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
+          triggerClass="inline-flex items-center rounded-md border border-border bg-background px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle"
           showManageLink={true}
           defaultModelId={teamModeModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
@@ -483,18 +492,28 @@
         />
       {/key}
     </div>
-  </button>
+  </div>
 
   <!-- Single agent card -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="agent-card min-w-0 {!isTeamMode ? 'agent-card-selected' : 'grayscale opacity-50'}"
+    class="agent-card min-w-0 {!isTeamMode
+      ? 'border-input bg-accent/60'
+      : 'border-border bg-card hover:bg-muted/50'}"
     onclick={selectSingleAgentMode}
-    onkeydown={(e) => e.key === 'Enter' && selectSingleAgentMode()}
+    onkeydown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        selectSingleAgentMode();
+      }
+    }}
     role="button"
     tabindex="0"
+    aria-pressed={!isTeamMode}
   >
-    <div class="text-sm font-medium text-foreground">{m.workspace_initialAgentPicker_singleAgent_label()}</div>
+    <div class="text-sm font-medium text-foreground">
+      {m.workspace_initialAgentPicker_singleAgent_label()}
+    </div>
     <!-- Specialist selector dropdown -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -555,8 +574,12 @@
             >
               <AuggieAvatar seed="blank" size={20} />
               <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground text-sm">{m.workspace_initialAgentPicker_general_label()}</span>
-                <span class="text-xs text-subtle">{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span>
+                <span class="font-medium text-foreground text-sm"
+                  >{m.workspace_initialAgentPicker_general_label()}</span
+                >
+                <span class="text-xs text-subtle"
+                  >{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span
+                >
               </div>
             </button>
 
@@ -571,11 +594,7 @@
                     : ''}"
                   onclick={() => handleSpecialistSelect(specialist.id)}
                 >
-                  <AuggieAvatar
-                    seed="blank"
-                    size={20}
-                    specialist={specialist.id}
-                  />
+                  <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
                   <div class="flex flex-col min-w-0">
                     <span class="font-medium text-foreground text-sm">{specialist.name}</span>
                     <span class="text-xs text-subtle truncate">{specialist.description}</span>
@@ -591,7 +610,8 @@
               onclick={openSpecialistSettings}
             >
               <Fa icon={faPlus} class="ml-0.5 mr-0.5 opacity-60" size={10} />
-              <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span>
+              <span class="text-sm">{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
+              >
             </button>
           </div>
         {/snippet}
@@ -613,7 +633,7 @@
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center bg-sidebar px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle rounded-none"
+          triggerClass="inline-flex items-center rounded-md border border-border bg-background px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle"
           showManageLink={true}
           defaultModelId={singleAgentModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
@@ -631,18 +651,22 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
-    padding: 0.875rem 1rem;
-    border: none;
+    min-height: 9.75rem;
+    padding: 1rem;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: var(--radius-lg);
     cursor: pointer;
     text-align: left;
+    transition:
+      background-color var(--motion-fast),
+      border-color var(--motion-fast),
+      box-shadow var(--motion-fast);
   }
 
-  .agent-card:hover {
-    /* background: var(--color-sidebar, hsl(var(--sidebar))); */
-  }
-
-  .agent-card-selected {
-    background: var(--color-background, hsl(var(--popover)));
+  .agent-card:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ring) 40%, transparent);
   }
 
   .model-picker-row {
@@ -663,12 +687,15 @@
     gap: 0.5rem;
     width: 100%;
     padding: 0.375rem 0.5rem;
-    background: var(--color-sidebar, hsl(var(--sidebar)));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
     cursor: pointer;
     text-align: left;
   }
 
   .specialist-trigger:hover {
+    background: var(--color-muted);
   }
 
   .specialist-option {

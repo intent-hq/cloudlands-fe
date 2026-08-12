@@ -1,18 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  Editor,
-  type JSONContent,
-} from '@tiptap/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Editor, type JSONContent } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import { CustomTaskItem } from '$lib/components/tiptap/CustomTaskItem';
@@ -30,13 +20,15 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectWorkspaceNotesState: () => mockReadable({ initialized: true }),
   selectNoteById: Object.assign(() => mockReadable(undefined), { select: () => undefined }),
   selectSelectedNoteId: Object.assign(() => mockReadable(null), { select: () => null }),
   selectNotesVersion: () => mockReadable(0),
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -45,7 +37,9 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')
+  >()),
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -95,7 +89,9 @@ describe('TaskListShortcuts', () => {
   };
 
   const getFirstTaskItem = () => {
-    const taskList = getEditor().getJSON().content?.find((node) => node.type === 'taskList');
+    const taskList = getEditor()
+      .getJSON()
+      .content?.find((node) => node.type === 'taskList');
     expect(taskList).toBeDefined();
     return taskList?.content?.[0];
   };
@@ -175,9 +171,15 @@ describe('TaskListShortcuts', () => {
         {
           type: 'bulletList',
           content: [
-            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'before' }] }] },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'before' }] }],
+            },
             { type: 'listItem', content: [{ type: 'paragraph' }] },
-            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'after' }] }] },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'after' }] }],
+            },
           ],
         },
         { type: 'paragraph', content: [{ type: 'text', text: 'tail' }] },
@@ -191,7 +193,12 @@ describe('TaskListShortcuts', () => {
     const content = getEditor().getJSON().content;
     const taskItem = getFirstTaskItem();
 
-    expect(content?.map((node) => node.type)).toEqual(['bulletList', 'taskList', 'bulletList', 'paragraph']);
+    expect(content?.map((node) => node.type)).toEqual([
+      'bulletList',
+      'taskList',
+      'bulletList',
+      'paragraph',
+    ]);
     expect(content?.[0]?.content?.[0]?.content?.[0]?.content?.[0]?.text).toBe('before');
     expect(getTaskItemText(taskItem)).toBe('middle');
     expect(content?.[2]?.content?.[0]?.content?.[0]?.content?.[0]?.text).toBe('after');

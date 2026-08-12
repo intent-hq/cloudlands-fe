@@ -28,9 +28,9 @@
       <span class="text-subtle"> {hint}</span>
     {/if}
   {:else}
-    <div class="text-xs font-medium text-foreground leading-tight">{displayText}</div>
+    <div class="type-caption font-medium leading-tight text-foreground">{displayText}</div>
     {#if hint}
-      <div class="text-xs text-subtle mt-0.5 leading-tight">{hint}</div>
+      <div class="type-caption mt-0.5 leading-tight text-subtle">{hint}</div>
     {/if}
   {/if}
 </div>

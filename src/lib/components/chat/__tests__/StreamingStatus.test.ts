@@ -2,19 +2,8 @@
  * @vitest-environment jsdom
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/svelte';
-import {
-  afterEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('./mocks/Button.svelte')).default,
@@ -46,6 +35,25 @@ afterEach(() => {
 });
 
 describe('StreamingStatus rendered UI', () => {
+  it('renders the compact legacy spinner and Thinking row while active', () => {
+    const { container } = render(StreamingStatus, {
+      props: { isProcessing: true, seed: 'agent-1' },
+    });
+
+    const row = container.firstElementChild as HTMLElement;
+    const spinner = screen.getByRole('status');
+    const label = screen.getByTestId('streaming-status-thinking');
+
+    expect(row.className).toContain('py-1');
+    expect(row.className).toContain('pl-2');
+    expect(row.className).not.toContain('pr-3');
+    expect(spinner.className).toContain('legacy-streaming-spinner');
+    expect(spinner.getAttribute('style')).toContain('--size: 5px');
+    expect(label.textContent).toBe('Thinking');
+    expect(label.className).toContain('text-xs');
+    expect(label.className).toContain('font-medium');
+  });
+
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
     const onRetry = vi.fn();
     const { container } = render(StreamingStatus, {
@@ -58,10 +66,49 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
     expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
     expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
-    expect(container.firstElementChild?.className).toContain('bg-destructive/10');
+    expect(screen.getByTestId('error-message').className).toContain('truncate');
+    expect(screen.getByTestId('error-message').parentElement?.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(screen.getByTestId('error-message').parentElement?.className).toContain('type-caption');
+    expect(container.firstElementChild?.className).not.toContain('pl-2');
+    expect(container.firstElementChild?.className).not.toContain('bg-destructive');
+    expect(container.firstElementChild?.className).not.toContain('border-destructive');
 
-    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    expect(copyButton).toBeTruthy();
+    expect(copyButton.className).toContain('text-muted-foreground');
+    expect(copyButton.className).toContain('opacity-30');
+    expect(copyButton.parentElement?.className).toContain('gap-1.5');
+    expect(copyButton.parentElement?.className).toContain('min-h-5');
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    expect(retry.textContent?.trim()).toBe('');
+    expect(retry.className).toContain('shrink-0');
+    expect(retry.className).toContain('text-muted-foreground');
+    await fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('copies the full error to clipboard when copy button is clicked', async () => {
+    const writeTextMock = vi.fn();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    });
+
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+      },
+    });
+
+    const copyButton = screen.getByRole('button', { name: /copy error details/i });
+    await fireEvent.click(copyButton);
+    expect(writeTextMock).toHaveBeenCalledOnce();
+    expect(writeTextMock).toHaveBeenCalledWith(
+      'Response failed\n\nStream timeout after 10 minutes',
+    );
   });
 
   it('renders recreate-aware corrupted-session copy with the raw error as secondary detail (monorepo#940)', async () => {
@@ -78,12 +125,14 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByTestId('error-message').textContent).toBe(
       'Try again will start a fresh session and carry over the conversation history',
     );
+    expect(screen.queryByTestId('error-detail')).toBeNull();
+    await fireEvent.click(screen.getByTestId('error-message'));
+    expect(screen.getByTestId('error-message').className).toContain('whitespace-pre-wrap');
     expect(screen.getByTestId('error-detail').textContent).toBe(
       'JSON-RPC error -32603: prompt rejected by provider',
     );
 
-    // The Retry affordance itself is unchanged
-    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
@@ -180,11 +229,11 @@ describe('StreamingStatus rendered UI', () => {
       seed: 'agent-1',
     });
 
-    expect(screen.queryByTestId('error-title')).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId('error-title')).toBeNull());
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
   });
 
-  it('applies text-destructive-foreground class to error title for contrast compliance', () => {
+  it('uses a red title with muted error details', () => {
     render(StreamingStatus, {
       props: {
         error: 'Stream timeout',
@@ -193,6 +242,7 @@ describe('StreamingStatus rendered UI', () => {
 
     const errorTitle = screen.getByTestId('error-title');
     expect(errorTitle.className).toContain('text-destructive-foreground');
+    expect(errorTitle.className).not.toContain('text-xs');
   });
 
   it('renders a live "failed X ago" span next to the error title when failedAt is set', () => {
@@ -205,6 +255,10 @@ describe('StreamingStatus rendered UI', () => {
 
     const failedAtEl = screen.getByTestId('error-failed-at');
     expect(failedAtEl).toBeTruthy();
+    expect(failedAtEl.className).toContain('text-muted-foreground');
+    expect(failedAtEl.className).toContain('type-caption');
+    expect(failedAtEl.className).toContain('leading-4');
+    expect(screen.getByTestId('error-title').textContent).not.toContain('·');
     expect(screen.getByTestId('error-title').textContent).toContain('Response failed');
   });
 
@@ -422,25 +476,44 @@ describe('StreamingStatus utilities', () => {
   describe('tool→streaming lifecycle (state transitions)', () => {
     it('full lifecycle: streaming → tool-call → tool-waiting → streaming again', () => {
       // Phase 1: Initial text chunk (receivedFirstChunk=false, has prompt event)
-      const initialEvents: StatusEvent[] = [{ phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 }];
+      const initialEvents: StatusEvent[] = [
+        { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
+      ];
       expect(shouldAppendStreamingEvent(false, initialEvents)).toBe(true);
       // After first chunk: receivedFirstChunk=true, events include streaming
 
       // Phase 2: More text chunks (receivedFirstChunk=true) — no more streaming events
-      const afterFirstChunk: StatusEvent[] = [...initialEvents, { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 }];
+      const afterFirstChunk: StatusEvent[] = [
+        ...initialEvents,
+        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
+      ];
       expect(shouldAppendStreamingEvent(true, afterFirstChunk)).toBe(false);
 
       // Phase 3: Tool-call arrives — receivedFirstChunk reset to false by status handler
-      const afterToolCall: StatusEvent[] = [...afterFirstChunk, { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 }];
+      const afterToolCall: StatusEvent[] = [
+        ...afterFirstChunk,
+        { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 },
+      ];
       // receivedFirstChunk is now false (reset by status handler)
       expect(shouldAppendStreamingEvent(false, afterToolCall)).toBe(true);
 
       // Phase 4: Tool-waiting arrives — receivedFirstChunk stays false
-      const afterToolWaiting: StatusEvent[] = [...afterToolCall, { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 4000 }];
+      const afterToolWaiting: StatusEvent[] = [
+        ...afterToolCall,
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 4000,
+        },
+      ];
       expect(shouldAppendStreamingEvent(false, afterToolWaiting)).toBe(true);
 
       // Phase 5: Text resumes after tool — streaming event appended
-      const afterToolComplete: StatusEvent[] = [...afterToolWaiting, { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 }];
+      const afterToolComplete: StatusEvent[] = [
+        ...afterToolWaiting,
+        { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 },
+      ];
       // After this chunk: receivedFirstChunk=true again
       expect(shouldAppendStreamingEvent(true, afterToolComplete)).toBe(false);
     });
@@ -450,11 +523,21 @@ describe('StreamingStatus utilities', () => {
         { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
         { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 2000 },
         { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 3000 },
-        { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 4000 },
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 4000,
+        },
         { phase: 'streaming', message: 'Streaming response…', level: 'info', timestamp: 5000 },
         // Second tool cycle
         { phase: 'tool-call', message: 'Calling tool', level: 'info', timestamp: 6000 },
-        { phase: 'tool-waiting', message: 'Awaiting tool response', level: 'info', timestamp: 7000 },
+        {
+          phase: 'tool-waiting',
+          message: 'Awaiting tool response',
+          level: 'info',
+          timestamp: 7000,
+        },
       ];
       // After second tool-waiting, receivedFirstChunk is false (reset by status handler)
       // Should allow streaming transition

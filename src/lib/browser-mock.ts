@@ -94,10 +94,26 @@ function mockBackendMethodResult(method: string): unknown {
   if (method === 'repo.list') return { repos: [] };
   if (method === 'settings.list') return { settings: [] };
   if (method === 'agent.list') return { agents: [] };
+  if (method === 'agent.listInterrupted') return { agents: [] };
   if (method === 'models.list') return { models: [] };
   if (method === 'skill.list') return { skills: [] };
-  if (method === 'task.list') return { tasks: [] };
+  if (method === 'search.fileNames') return { files: [] };
+  if (method === 'comment.list') return { threads: [] };
+  if (method === 'task.list') {
+    return { tasks: [], stats: { total: 0, completed: 0, inProgress: 0 } };
+  }
   if (method === 'note.list') return { notes: [] };
+  if (method === 'git.status') {
+    return {
+      branch: '',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    };
+  }
   // `event.query` (§5.10) returns a bare newest→oldest array.
   if (method === 'event.query') return [];
   // The daemon-events-bridge firehose issues `events.subscribe` over
@@ -327,7 +343,6 @@ const browserElectronAPI = {
     return mockInvoke(channel, data);
   },
 
-
   send: (_channel: string, ..._args: any[]) => {
     // No-op in browser
   },
@@ -338,7 +353,6 @@ const browserElectronAPI = {
     return id;
   },
 
-   
   off: (_channel: string, _callback: (...args: any[]) => void) => {
     // No-op (use offById for reliable removal)
   },
@@ -366,7 +380,6 @@ const browserElectronAPI = {
     eventListeners.push({ id, channel, callback: wrappedCallback });
   },
 
-   
   getPathForFile: (_file: File): string => '',
 
   platform: 'darwin' as string,
@@ -450,4 +463,3 @@ function installWebDaemonStatusBridge(): void {
 
 // Auto-install on import
 installBrowserMock();
-

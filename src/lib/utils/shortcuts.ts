@@ -99,6 +99,12 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_settings_label();
     },
   },
+  NEW_SPACE_TAB: {
+    key: 'mod+n',
+    get label() {
+      return m.workspace_page_newSpace_title();
+    },
+  },
   NEW_TAB: {
     key: 'mod+t',
     get label() {
@@ -135,6 +141,20 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_goToTab_label();
     },
   },
+  NEXT_SPACE: {
+    key: 'ctrl+tab',
+    get label() {
+      return m.ui_shortcuts_nextSpace_label();
+    },
+  },
+  PREVIOUS_SPACE: {
+    key: 'ctrl+shift+tab',
+    get label() {
+      return m.ui_shortcuts_prevSpace_label();
+    },
+  },
+  MOVE_SPACE_TAB_LEFT: { key: 'alt+shift+left', label: 'Move Space Tab Left' },
+  MOVE_SPACE_TAB_RIGHT: { key: 'alt+shift+right', label: 'Move Space Tab Right' },
   SEARCH: {
     key: 'mod+f',
     get label() {
@@ -146,7 +166,7 @@ export const SHORTCUTS = {
   // Dock / Agent Navigation
   // ============================================================================
   NEW_AGENT: {
-    key: 'mod+n',
+    key: 'mod+t',
     get label() {
       return m.ui_shortcuts_newAgent_label();
     },
@@ -515,7 +535,7 @@ export const SHORTCUT_CATEGORIES: Record<
       {
         key: 'mod+n',
         get label() {
-          return m.ui_shortcuts_newAgent_label();
+          return m.workspace_page_newSpace_title();
         },
         contexts: ['global'],
       },

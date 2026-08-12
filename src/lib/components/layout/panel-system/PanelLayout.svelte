@@ -1,113 +1,356 @@
 <script lang="ts">
-  /**
-   * PanelLayout - Root component for the panel system
-   *
-   * Manages the panel tree for a workspace and provides the context
-   * for opening tabs, splitting panels, etc.
-   */
-
-  import {
-  setContext,
-  onMount,
-  onDestroy,
-  untrack,
-} from 'svelte';
+  /* eslint-disable max-lines */
+  import { setContext, onMount, onDestroy, tick, untrack } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { getPanelLayoutManager, type PanelTab } from '$features/layout/panel-layout-adapter';
   import {
-  getPanelLayoutManager,
-  type PanelTab,
-} from '$features/layout/panel-layout-adapter';
+    getPanelMovePreview,
+    getPanelMovePreviewWidthRatio,
+    getPanelRootEdgeMovePreview,
+  } from '$features/layout/panel-move-preview';
   import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
   import {
-  createPanelKeyboardShortcuts,
-  registerPanelKeyboardShortcuts,
-  unregisterPanelKeyboardShortcuts,
-} from '$features/layout/panel-keyboard-shortcuts.svelte';
-  import PanelContainer from './PanelContainer.svelte';
+    createPanelKeyboardShortcuts,
+    registerPanelKeyboardShortcuts,
+    unregisterPanelKeyboardShortcuts,
+  } from '$features/layout/panel-keyboard-shortcuts.svelte';
   import {
-  EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
-  isLayoutSettledNow,
-  shouldRenderPanelContainer as computeShouldRenderPanelContainer,
-} from './panel-render-gate';
+    resolveLocalPanelCycleTarget,
+    type PanelCycleBoundaryTarget,
+    type PanelCycleDirection,
+  } from '$features/layout/panel-cycle-navigation';
+  import PanelContainer from './PanelContainer.svelte';
+  import PanelCanvasFrame from './PanelCanvasFrame.svelte';
+  import { getPanelViewportContentWidth } from './panel-canvas-width';
+  import PanelDragPreview from './PanelDragPreview.svelte';
+  import {
+    EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
+    isLayoutSettledNow,
+    shouldRenderPanelContainer as computeShouldRenderPanelContainer,
+  } from './panel-render-gate';
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
   import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
-  import {
-  get,
-  writable,
-} from 'svelte/store';
+  import { get, writable } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
+  import { resize } from '$lib/components/layout/size-transition';
   import { fade } from 'svelte/transition';
-  import {
-  selectIsCollapsed,
-  selectSidebarSide,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
-  import {
-  flattenPanels,
-  openTabFromConfig,
-} from './panel-ai-layout-helpers';
+  import { flattenPanels, openTabFromConfig } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
   import { updateNoteTitle } from '$features/notes/notes-write-service';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { invoke, listenSync } from '$lib/electron-bridge';
+  import { scrollFade } from '$lib/actions/scroll-fade';
+  import { cn } from '$lib/utils';
+  import { createBrowserFocusOwnershipReporter } from './browser-focus-ownership';
+  import { closePanelWithLastPanelPolicy } from './close-panel';
   import {
-  invoke,
-  listenSync,
-} from '$lib/electron-bridge';
+    clearDraggedPanelState,
+    getDraggedPanelId,
+    getPanelLayoutEdgePlacement,
+    type PanelDragPlacement,
+  } from './panel-drag';
+  import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { animatePanelPreviewPositions, capturePanelPositions } from './panel-reorder-animation';
 
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
-  selectPanelLayoutRoot,
-  selectPanels,
-  selectFocusedPanelId,
-  selectFocusedPanel,
-  selectActiveTab,
-  selectAllTabs,
-  selectPanelIds,
-  selectRestoreStatus,
-} from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+    selectPanelLayoutRoot,
+    selectPanels,
+    selectFocusedPanelId,
+    selectFocusedPanel,
+    selectActiveTab,
+    selectAllTabs,
+    selectPanelColumnCount,
+    selectPanelIds,
+    selectPanelCanvasWidth,
+    selectRestoreStatus,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { closeActiveTerminalRequested, removeTerminal, terminalCreated } from '$store/renderer/slices/terminals/terminals-slice';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    movePanelToRootEdge,
+    panelLayoutScopeMounted,
+    panelLayoutScopeUnmounted,
+    resizePanelLayoutRightEdge,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelCanvasSizing } from '$shared/panel-layout-sizing';
 
   const logger = createLogger('PanelLayout');
-  const isCollapsed = selectIsCollapsed();
-  const sidebarSide$ = selectSidebarSide();
 
   interface Props {
     workspaceId: string;
+    layoutId?: string;
+    active?: boolean;
+    contained?: boolean;
+    canvasSizing?: PanelCanvasSizing;
+    hideEmptyLayout?: boolean;
+    allowCloseLastPanel?: boolean;
     /** Callbacks for creating new items (passed to panel tab bars) */
     onCreateAgent?: () => void;
     onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
     onCreateNote?: () => void;
+    onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
+    onPanelCanvasWidthChange?: (width: number) => void;
+    onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
-  let { workspaceId, onCreateAgent, onCreateAgentWithSpecialist, onCreateNote }: Props = $props();
+  let {
+    workspaceId,
+    layoutId,
+    active = true,
+    contained = false,
+    canvasSizing = 'viewport',
+    hideEmptyLayout = false,
+    allowCloseLastPanel = false,
+    onCreateAgent,
+    onCreateAgentWithSpecialist,
+    onCreateNote,
+    onPanelMovePreviewWidthRatioChange,
+    onPanelCanvasWidthChange,
+    onCyclePanelBoundary,
+  }: Props = $props();
 
-  // Reactive writable store that mirrors workspaceId so Redux selectors
-  // re-evaluate whenever the prop changes (called at component init time).
-  // svelte-ignore state_referenced_locally
-  const workspaceIdStore = writable(workspaceId);
+  const effectiveLayoutId = $derived(layoutId ?? workspaceId);
+
   $effect(() => {
-    workspaceIdStore.set(workspaceId);
+    const mountedLayoutId = effectiveLayoutId;
+    appStore.dispatch(panelLayoutScopeMounted(mountedLayoutId));
+    return () => appStore.dispatch(panelLayoutScopeUnmounted(mountedLayoutId));
+  });
+
+  // Reactive writable store that mirrors the layout scope so Redux selectors
+  // re-evaluate whenever the prop changes (called at component init time).
+  const layoutIdStore = writable(layoutId ?? workspaceId);
+  $effect(() => {
+    layoutIdStore.set(effectiveLayoutId);
   });
 
   // Reactive selector subscriptions for template rendering
-  const root$ = selectPanelLayoutRoot(workspaceIdStore);
-  const panels$ = selectPanels(workspaceIdStore);
-  const focusedPanelId$ = selectFocusedPanelId(workspaceIdStore);
-  const activeTab$ = selectActiveTab(workspaceIdStore);
-  const allTabs$ = selectAllTabs(workspaceIdStore);
-  const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
+  const root$ = selectPanelLayoutRoot(layoutIdStore);
+  const panels$ = selectPanels(layoutIdStore);
+  const focusedPanelId$ = selectFocusedPanelId(layoutIdStore);
+  const activeTab$ = selectActiveTab(layoutIdStore);
+  const allTabs$ = selectAllTabs(layoutIdStore);
+  const panelColumnCount$ = selectPanelColumnCount(layoutIdStore);
+  const panelCanvasWidth$ = selectPanelCanvasWidth(layoutIdStore);
+  const restoreStatus$ = selectRestoreStatus(layoutIdStore);
+  const isDragging$ = selectIsDragging();
+  // Keep the root renderer on the split branch when the first adjacent panel
+  // opens. The existing panel then retains its keyed component instance while
+  // only the new child mounts and runs its enter transition.
+  const stableContainerRoot = $derived(
+    $root$.type === 'panel'
+      ? {
+          type: 'split' as const,
+          direction: 'horizontal' as const,
+          children: [$root$],
+          sizes: [100],
+        }
+      : $root$,
+  );
+  let panelMovePreview = $state<
+    | {
+        kind: 'panel';
+        draggedPanelId: string;
+        targetPanelId: string;
+        position: PanelDragPlacement;
+      }
+    | { kind: 'edge'; draggedPanelId: string; position: PanelDragPlacement }
+    | null
+  >(null);
+  let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
+  let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
+  let panelViewportWidth = $state(0);
+  let panelCanvasWidth = $state(0);
+  let panelRootReferenceSize = $state(0);
+  let panelCanvasResizeDelta = $state(0);
+  let panelOuterResizeDelta = $state(0);
+  let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
+
+  function measurePanelViewportWidth(node: HTMLElement) {
+    function update() {
+      const styles = getComputedStyle(node);
+      panelViewportWidth = getPanelViewportContentWidth(
+        node.clientWidth,
+        Number.parseFloat(styles.paddingLeft) || 0,
+        Number.parseFloat(styles.paddingRight) || 0,
+      );
+    }
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
+  const retainedRootPanelWidth = $derived(
+    $root$.type === 'panel' && retainedRootPanel?.panelId === $root$.panelId
+      ? retainedRootPanel.width
+      : null,
+  );
+  $effect(() => {
+    if (retainedRootPanel && $root$.type !== 'panel') retainedRootPanel = null;
+  });
+
+  function handlePanelCanvasResizeEnd(previousWidth: number, nextWidth: number) {
+    if (previousWidth === nextWidth) return;
+    const gutterWidth =
+      panelRootReferenceSize > 0 ? Math.max(0, panelCanvasWidth - panelRootReferenceSize) : 0;
+    panelOuterResizeDelta = 0;
+    appStore.dispatch(
+      resizePanelLayoutRightEdge(
+        effectiveLayoutId,
+        Math.max(1, previousWidth - gutterWidth),
+        Math.max(1, nextWidth - gutterWidth),
+        nextWidth,
+      ),
+    );
+  }
+  let panelDragPreviewElement = $state.raw<HTMLDivElement | null>(null);
+  let panelPreviewStartPositions = new Map<string, DOMRect>();
+  let panelPreviewAnimationVersion = 0;
+  let panelMovePreviewClearFrame: number | null = null;
+  let panelMoveCommitVersion = 0;
+  let panelMoveCommitReleaseFrame: number | null = null;
+  let suppressCommittedPanelMoveMotion = $state(false);
+  const panelMovePreviewRoot = $derived(
+    panelMovePreview
+      ? panelMovePreview.kind === 'edge'
+        ? getPanelRootEdgeMovePreview(
+            $root$,
+            panelMovePreview.draggedPanelId,
+            panelMovePreview.position,
+          )
+        : getPanelMovePreview(
+            $root$,
+            panelMovePreview.draggedPanelId,
+            panelMovePreview.targetPanelId,
+            panelMovePreview.position,
+          )
+      : null,
+  );
+  const panelMovePreviewWidthRatio = $derived(
+    panelMovePreviewRoot ? getPanelMovePreviewWidthRatio($root$, panelMovePreviewRoot) : 1,
+  );
+  let reportedPanelMovePreviewWidthRatio = 1;
+
+  $effect(() => {
+    const nextRatio = panelMovePreviewWidthRatio;
+    if (nextRatio === reportedPanelMovePreviewWidthRatio) return;
+    reportedPanelMovePreviewWidthRatio = nextRatio;
+    onPanelMovePreviewWidthRatioChange?.(nextRatio);
+  });
+
+  function clearPanelMovePreviewNow() {
+    if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
+    panelMovePreviewClearFrame = null;
+    panelMovePreview = null;
+  }
+
+  function commitPanelMoveWithoutReplay(commit: () => void) {
+    if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
+    panelMovePreviewClearFrame = null;
+    if (panelMoveCommitReleaseFrame !== null) cancelAnimationFrame(panelMoveCommitReleaseFrame);
+    panelMoveCommitReleaseFrame = null;
+    const version = ++panelMoveCommitVersion;
+    suppressCommittedPanelMoveMotion = true;
+    commit();
+
+    void tick().then(() => {
+      if (version !== panelMoveCommitVersion) return;
+      clearPanelMovePreviewNow();
+      panelMoveCommitReleaseFrame = requestAnimationFrame(() => {
+        panelMoveCommitReleaseFrame = null;
+        if (version === panelMoveCommitVersion) suppressCommittedPanelMoveMotion = false;
+      });
+    });
+  }
+
+  function handlePanelMovePreview(
+    draggedPanelId: string,
+    targetPanelId: string,
+    position: PanelDragPlacement | null,
+  ) {
+    if (panelMovePreviewClearFrame !== null) cancelAnimationFrame(panelMovePreviewClearFrame);
+    panelMovePreviewClearFrame = null;
+    if (!position) {
+      panelMovePreviewClearFrame = requestAnimationFrame(() => {
+        panelMovePreviewClearFrame = null;
+        panelMovePreview = null;
+      });
+      return;
+    }
+    panelMovePreview = { kind: 'panel', draggedPanelId, targetPanelId, position };
+  }
+
+  function handleLayoutEdgeDragOver(event: DragEvent) {
+    const draggedPanelId = getDraggedPanelId();
+    if (!draggedPanelId || !panelLayoutMotionElement) return;
+    const position = getPanelLayoutEdgePlacement(
+      event.clientX,
+      event.clientY,
+      panelLayoutMotionElement.getBoundingClientRect(),
+    );
+    if (!position) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    panelMovePreview = { kind: 'edge', draggedPanelId, position };
+  }
+
+  function handleLayoutEdgeDrop(event: DragEvent) {
+    const draggedPanelId = getDraggedPanelId();
+    if (!draggedPanelId || !panelLayoutMotionElement) return;
+    const position = getPanelLayoutEdgePlacement(
+      event.clientX,
+      event.clientY,
+      panelLayoutMotionElement.getBoundingClientRect(),
+    );
+    if (!position) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    commitPanelMoveWithoutReplay(() => {
+      clearDraggedPanelState();
+      appStore.dispatch(endDrag());
+      appStore.dispatch(movePanelToRootEdge(effectiveLayoutId, draggedPanelId, position));
+    });
+  }
+
+  $effect.pre(() => {
+    if (!panelMovePreviewRoot || suppressCommittedPanelMoveMotion) return;
+    const previewElement = untrack(() => panelDragPreviewElement);
+    const motionElement = untrack(() => panelLayoutMotionElement);
+    panelPreviewStartPositions = previewElement
+      ? capturePanelPositions(previewElement)
+      : capturePanelPositions(motionElement, '[data-panel-id]');
+  });
+
+  $effect(() => {
+    if (!panelMovePreviewRoot || suppressCommittedPanelMoveMotion) return;
+    const version = ++panelPreviewAnimationVersion;
+    void tick().then(() => {
+      const previewElement = untrack(() => panelDragPreviewElement);
+      if (version === panelPreviewAnimationVersion && previewElement) {
+        animatePanelPreviewPositions(previewElement, panelPreviewStartPositions);
+      }
+    });
+  });
+
+  $effect(() => {
+    if (!$isDragging$ && !suppressCommittedPanelMoveMotion) clearPanelMovePreviewNow();
+  });
 
   // Per-workspace "settled" latch: once the layout has been considered
   // resolved for a workspace (backend restored it, tabs appeared, or the
@@ -116,17 +359,17 @@
   // window and unmounted <PanelContainer> for the fallback duration, causing
   // a blank content area before the empty state reappeared.
   let settledForWorkspaceId = $state<string | null>(null);
-  const isSettled = $derived(settledForWorkspaceId === workspaceId);
+  const isSettled = $derived(settledForWorkspaceId === effectiveLayoutId);
 
   $effect(() => {
-    if (untrack(() => settledForWorkspaceId) === workspaceId) return;
+    if (untrack(() => settledForWorkspaceId) === effectiveLayoutId) return;
 
     if (isLayoutSettledNow($restoreStatus$, $allTabs$.length)) {
-      settledForWorkspaceId = workspaceId;
+      settledForWorkspaceId = effectiveLayoutId;
       return;
     }
 
-    const currentWorkspaceId = workspaceId;
+    const currentWorkspaceId = effectiveLayoutId;
     const timeoutId = window.setTimeout(() => {
       settledForWorkspaceId = currentWorkspaceId;
     }, EMPTY_LAYOUT_LOADING_TIMEOUT_MS);
@@ -143,29 +386,50 @@
       hasSettled: isSettled,
     }),
   );
+  let lifecycleMotionReadyForLayoutId = $state<string | null>(null);
+  const layoutMotionDuration = $derived(
+    lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion
+      ? 220
+      : 0,
+  );
+
+  $effect(() => {
+    const layoutId = effectiveLayoutId;
+    if (!shouldRenderPanelContainer || lifecycleMotionReadyForLayoutId === layoutId) return;
+
+    const frame = requestAnimationFrame(() => {
+      if (effectiveLayoutId === layoutId) lifecycleMotionReadyForLayoutId = layoutId;
+    });
+    return () => cancelAnimationFrame(frame);
+  });
 
   // Get or create the panel layout manager for this workspace (action methods only)
-  let layoutManager = $derived(getPanelLayoutManager(workspaceId));
+  let layoutManager = $derived(getPanelLayoutManager(effectiveLayoutId));
 
   // Create keyboard shortcuts manager and register it globally
-  const keyboardShortcuts = createPanelKeyboardShortcuts(() => layoutManager);
+  const keyboardShortcuts = createPanelKeyboardShortcuts(
+    () => layoutManager,
+    (direction) => focusCycledPanel(direction),
+  );
 
   // Register keyboard shortcuts in cache so they can be accessed from outside
   $effect(() => {
-    registerPanelKeyboardShortcuts(workspaceId, keyboardShortcuts);
+    registerPanelKeyboardShortcuts(effectiveLayoutId, keyboardShortcuts);
     return () => {
-      unregisterPanelKeyboardShortcuts(workspaceId);
+      unregisterPanelKeyboardShortcuts(effectiveLayoutId);
     };
   });
 
   // Notify main process when a browser panel becomes the active/focused panel.
-  // The main process uses this to route zoom shortcuts (Cmd+=/-/0) to the webview
-  // instead of the main app when the browser panel is active.
+  // Ownership tokens let teardown clear only the browser identity it claimed.
+  const browserFocusOwnership = createBrowserFocusOwnershipReporter(invoke);
   $effect(() => {
-    const isBrowser = $activeTab$?.type === 'browser';
-    invoke(IPC_CHANNELS.WINDOW.SET_BROWSER_FOCUSED, { browserFocused: !!isBrowser }).catch(() => {
-      // Silently ignore errors (e.g., if main process handler not ready)
-    });
+    const activeTab = $activeTab$;
+    const browserIdentity =
+      active && activeTab?.type === 'browser'
+        ? `${effectiveLayoutId}:${$focusedPanelId$ ?? ''}:${activeTab.id}`
+        : null;
+    browserFocusOwnership.update(browserIdentity);
   });
 
   // Terminal list state
@@ -256,10 +520,6 @@
         // any daemon-provided name and only falls back to 'Terminal'.
         terminalManager.saveTerminalMetadata(result.id, workspaceId);
 
-        // Correct any in-flight terminal.list snapshot that predates the
-        // create (coalesced post-create refetch in lifecycle-read-service).
-        appStore.dispatch(terminalCreated(workspaceId));
-
         // Reload terminals to include the new one
         loadTerminals(workspaceId);
 
@@ -322,17 +582,24 @@
   }
 
   function handleCloseAllOthersEverywhere(panelId: string, tabId: string) {
+    if (panelLayoutMotionElement) {
+      const panelElement = Array.from(
+        panelLayoutMotionElement.querySelectorAll<HTMLElement>('[data-panel-id]'),
+      ).find((element) => element.dataset.panelId === panelId);
+      const width = panelElement?.getBoundingClientRect().width ?? 0;
+      retainedRootPanel = width > 0 ? { panelId, width } : null;
+    }
     layoutManager.closeAllOthersEverywhere(tabId, panelId);
   }
 
   function handleSplitPanel(panelId: string, direction: 'horizontal' | 'vertical') {
+    retainedRootPanel = null;
     layoutManager.splitPanel(panelId, direction);
   }
 
   function handleClosePanel(panelId: string) {
-    layoutManager.closePanel(panelId);
+    closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
   }
-
 
   function handleZoomToggle(_panelId: string) {
     keyboardShortcuts.executeAction('zoom-toggle');
@@ -342,6 +609,37 @@
     // nodePath represents the path to the split node whose sizes are being updated
     // Empty path means root
     layoutManager.updateSizes(nodePath, sizes);
+  }
+
+  function handleGrowCanvasAtHorizontalPanel(
+    previousWidth: number,
+    nextWidth: number,
+    panelIndex: number,
+    nextCanvasWidth: number,
+  ) {
+    // Remove the visual delta before committing its equivalent persisted width.
+    // Both writes are synchronous and Svelte batches their render, so the canvas
+    // stays at `nextWidth` without briefly applying the drag delta twice.
+    handlePanelCanvasResizePreview(0);
+    layoutManager.growCanvasAtHorizontalPanel(
+      previousWidth,
+      nextWidth,
+      panelIndex,
+      nextCanvasWidth,
+    );
+  }
+
+  function handlePanelCanvasResizePreview(delta: number) {
+    panelCanvasResizeDelta = delta;
+  }
+
+  function handlePanelCanvasWidthChange(width: number) {
+    panelCanvasWidth = width;
+    onPanelCanvasWidthChange?.(width);
+  }
+
+  function handlePanelOuterResizePreview(delta: number) {
+    panelOuterResizeDelta = delta;
   }
 
   function handleTabDropToSplit(
@@ -375,6 +673,16 @@
     direction: 'horizontal' | 'vertical',
   ) {
     layoutManager.moveTabToSplitLevel(tabId, fromPanelId, nodePath, position, direction);
+  }
+
+  function handlePanelMove(
+    draggedPanelId: string,
+    targetPanelId: string,
+    position: 'before' | 'after' | 'above' | 'below',
+  ) {
+    commitPanelMoveWithoutReplay(() => {
+      layoutManager.movePanel(draggedPanelId, targetPanelId, position);
+    });
   }
 
   /**
@@ -480,8 +788,12 @@
    * and focus their main input element accordingly.
    * For other tab types, blur any currently focused element.
    */
-  function dispatchFocusPanelContent(panelId: string) {
-    const panel = layoutManager.getPanel(panelId);
+  function dispatchFocusPanelContent(
+    panelId: string,
+    targetLayoutManager = layoutManager,
+    targetWorkspaceId = workspaceId,
+  ) {
+    const panel = targetLayoutManager.getPanel(panelId);
     if (!panel || !panel.activeTabId) {
       // No active tab, blur any currently focused element
       if (document.activeElement instanceof HTMLElement) {
@@ -507,7 +819,7 @@
           tabType: activeTab.type,
           agentId: activeTab.agentId,
           noteId: activeTab.noteId,
-          workspaceId,
+          workspaceId: targetWorkspaceId,
         });
       } else {
         // For other tab types (terminal, file, diff, browser, etc.),
@@ -519,6 +831,37 @@
     }, 100);
   }
 
+  function focusCycledPanel(direction: PanelCycleDirection): boolean {
+    const panelIds = selectPanelIds.select(appStore.state, effectiveLayoutId);
+    const focusedPanelId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
+    const localTargetId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
+    if (localTargetId) {
+      layoutManager.focusPanel(localTargetId);
+      dispatchFocusPanelContent(localTargetId);
+      return true;
+    }
+
+    const boundaryTarget = onCyclePanelBoundary?.(direction);
+    if (boundaryTarget) {
+      const targetPanelIds = selectPanelIds.select(appStore.state, boundaryTarget.layoutId);
+      const targetPanelId =
+        direction === 'next' ? targetPanelIds[0] : targetPanelIds[targetPanelIds.length - 1];
+      if (targetPanelId) {
+        const targetLayoutManager = getPanelLayoutManager(boundaryTarget.layoutId);
+        targetLayoutManager.focusPanel(targetPanelId);
+        dispatchFocusPanelContent(targetPanelId, targetLayoutManager, boundaryTarget.workspaceId);
+        return true;
+      }
+    }
+
+    const wrappedPanelId = direction === 'next' ? panelIds[0] : panelIds[panelIds.length - 1];
+    if (!wrappedPanelId || (panelIds.length === 1 && wrappedPanelId === focusedPanelId))
+      return false;
+    layoutManager.focusPanel(wrappedPanelId);
+    dispatchFocusPanelContent(wrappedPanelId);
+    return true;
+  }
+
   const terminalOverlayOpen = selectIsTerminalOverlayOpen();
 
   const isMac =
@@ -526,6 +869,7 @@
 
   // Keyboard shortcuts
   function handleKeyDown(e: KeyboardEvent) {
+    if (!active) return;
     // First, let the leader key system handle it
     if (keyboardShortcuts.handleKeyDown(e)) {
       return;
@@ -538,31 +882,22 @@
     // Note: Mod+/ for keyboard shortcuts cheat sheet is handled globally in +layout.svelte
     // Do NOT add a handler here or it will toggle twice (once per handler)
 
-    // Mod+Shift+T - Reopen last closed tab
-    if (isMod && e.shiftKey && (e.key === 't' || e.key === 'T')) {
-      e.preventDefault();
-      e.stopPropagation();
-      layoutManager.reopenClosedTab();
-      logger.debug('Reopened last closed tab');
-      return;
-    }
-
     // Mod+\ - Split horizontally
     if (isMod && e.key === '\\' && !e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
       if (focusedId) {
         handleSplitPanel(focusedId, 'horizontal');
       }
       return;
     }
 
-    // Mod+Shift+\ - Split vertically
+    // Mod+Shift+\ also inserts into the horizontal stack.
     if (isMod && e.key === '\\' && e.shiftKey) {
       e.preventDefault();
-      const focusedId = selectFocusedPanelId.select(appStore.state, workspaceId);
+      const focusedId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
       if (focusedId) {
-        handleSplitPanel(focusedId, 'vertical');
+        handleSplitPanel(focusedId, 'horizontal');
       }
       return;
     }
@@ -583,68 +918,10 @@
       return;
     }
 
-    // Mod+W - Close current tab or empty panel (must use capture to intercept before browser)
-    if (isMod && (e.key === 'w' || e.key === 'W') && !e.shiftKey) {
-      // When a terminal is focused and Ctrl (not Cmd/Meta) is pressed, let the
-      // event propagate to xterm so the shell receives Ctrl+W (delete word
-      // backward). This applies on all platforms: on macOS Cmd+W is the standard
-      // close-tab shortcut (metaKey), and on Linux/Windows Ctrl+W in a terminal
-      // should also reach the shell.
-      if (e.ctrlKey && !e.metaKey && isFocusInTerminal(e.target as HTMLElement)) {
-        return;
-      }
-
-      // When the terminal overlay is open and focus is in the terminal area
-      // (or the terminal overlay itself), close the active terminal tab
-      // instead of a panel tab. isFocusInTerminal checks xterm focus;
-      // we also check if focus is within the terminal overlay container
-      // (e.g., right after creating a terminal before xterm gets focus).
-      const terminalAreaFocused =
-        isFocusInTerminal(e.target as HTMLElement) ||
-        (e.target as HTMLElement)?.closest?.('.terminal-overlay');
-      if (get(terminalOverlayOpen) && terminalAreaFocused) {
-        e.preventDefault();
-        e.stopPropagation();
-        const activeWsId = selectActiveWorkspaceId.select(appStore.state);
-        if (activeWsId) {
-          appStore.dispatch(closeActiveTerminalRequested(activeWsId));
-        }
-        return;
-      }
-
-      // Always prevent default first to stop browser from closing the tab
-      e.preventDefault();
-      e.stopPropagation();
-
-      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
-      logger.debug('Cmd+W pressed', {
-        hasFocusedPanel: !!panel,
-        activeTabId: panel?.activeTabId,
-        tabCount: panel?.tabs.length,
-      });
-
-      if (panel) {
-        if (panel.activeTabId) {
-          // Close the active tab
-          const tab = panel.tabs.find((t) => t.id === panel.activeTabId);
-          // Default to closable unless explicitly set to false
-          if (tab && tab.closable !== false) {
-            logger.debug('Closing tab', { tabId: tab.id, title: tab.title });
-            handleTabClose(panel.id, panel.activeTabId);
-          }
-        } else if (panel.tabs.length === 0) {
-          // Panel is empty - close the panel itself
-          logger.debug('Closing empty panel', { panelId: panel.id });
-          handleClosePanel(panel.id);
-        }
-      }
-      return;
-    }
-
     // Cmd+PageDown - Next tab in focused panel
     // Cmd+PageUp - Previous tab in focused panel
     if (e.metaKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
-      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
+      const panel = selectFocusedPanel.select(appStore.state, effectiveLayoutId);
       if (panel && panel.tabs.length > 1) {
         e.preventDefault();
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
@@ -687,48 +964,13 @@
         return;
       }
 
-      // Handle panel cycling
-      const panelIds = selectPanelIds.select(appStore.state, workspaceId);
-      if (panelIds.length > 1) {
-        e.preventDefault();
-        const currentFocusedId = selectFocusedPanelId.select(
-          appStore.state,
-          workspaceId,
-        );
-        const currentIndex = currentFocusedId ? panelIds.indexOf(currentFocusedId) : -1;
-
-        // Determine direction: ] or PageDown = next, [ or PageUp = previous
-        const isNext = e.key === ']' || e.key === '}' || e.key === 'PageDown';
-        const newIndex = isNext
-          ? currentIndex >= panelIds.length - 1
-            ? 0
-            : currentIndex + 1
-          : currentIndex <= 0
-            ? panelIds.length - 1
-            : currentIndex - 1;
-
-        const newPanelId = panelIds[newIndex];
-        layoutManager.focusPanel(newPanelId);
-        dispatchFocusPanelContent(newPanelId);
-      }
+      const direction = e.key === ']' || e.key === '}' || e.key === 'PageDown' ? 'next' : 'prev';
+      if (focusCycledPanel(direction)) e.preventDefault();
       return;
-    }
-
-    // Mod+1-9 - Switch to tab by index (only if tab exists)
-    if (isMod && e.key >= '1' && e.key <= '9') {
-      const panel = selectFocusedPanel.select(appStore.state, workspaceId);
-      if (panel) {
-        const tabIndex = parseInt(e.key) - 1;
-        if (tabIndex < panel.tabs.length) {
-          e.preventDefault();
-          layoutManager.setActiveTab(panel.tabs[tabIndex].id, panel.id);
-        }
-        // Don't prevent default if no tab at that index - allow other handlers
-      }
     }
   }
 
-  // Use capture phase for Cmd+W to intercept before browser handles it
+  // Use capture phase for panel-specific shortcuts.
   onMount(() => {
     window.addEventListener('keydown', handleKeyDown, true);
 
@@ -743,6 +985,7 @@
 
     // Listen for layout:configure-panels events from AI-generated layouts
     const handleConfigurePanels = async (event: Event) => {
+      if (!active) return;
       const detail = (event as CustomEvent)?.detail;
       const panels = detail?.panels as Array<{
         tabs: Array<{
@@ -821,6 +1064,7 @@
     // Listen for browser tab focus requests from main process (CDP agent).
     // Translate the IPC payload into a Redux action handled by the app-layout saga.
     const unsubBrowserFocus = listenSync('browser:focus-tab', (event: any) => {
+      if (!active) return;
       const tabId = event?.payload?.tabId;
       if (!tabId) {
         logger.warn('browser:focus-tab received without tabId', { event });
@@ -831,13 +1075,14 @@
 
     // Listen for browser tab list requests from main process
     const unsubBrowserListTabs = listenSync('browser:list-tabs-request', (event: any) => {
+      if (!active) return;
       // Echo the requestId back so the main process resolves the matching
       // pending request (concurrent requests must not consume each other's
       // replies).
       const requestId = event?.payload?.requestId;
       // Collect all browser tabs from the panel layout
       const browserTabs = selectAllTabs
-        .select(appStore.state, workspaceId)
+        .select(appStore.state, effectiveLayoutId)
         .filter((t) => t.type === 'browser')
         .map((t) => ({
           tabId: t.id,
@@ -866,72 +1111,148 @@
   });
 
   onDestroy(() => {
+    panelMoveCommitVersion += 1;
+    if (panelMoveCommitReleaseFrame !== null) cancelAnimationFrame(panelMoveCommitReleaseFrame);
+    clearPanelMovePreviewNow();
+    if (reportedPanelMovePreviewWidthRatio !== 1) onPanelMovePreviewWidthRatioChange?.(1);
+    browserFocusOwnership.destroy();
     window.removeEventListener('keydown', handleKeyDown, true);
     keyboardShortcuts.cleanup();
   });
 </script>
 
+{#snippet panelCanvas()}
+  {#if shouldRenderPanelContainer && (!hideEmptyLayout || $allTabs$.length > 0)}
+    <div
+      bind:this={panelLayoutMotionElement}
+      class="relative h-full w-full min-w-0"
+      data-panel-layout-motion
+      ondragovercapture={handleLayoutEdgeDragOver}
+      ondropcapture={handleLayoutEdgeDrop}
+      transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+    >
+      <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
+        <PanelContainer
+          node={stableContainerRoot}
+          panels={$panels$}
+          focusedPanelId={active ? $focusedPanelId$ : null}
+          zoomedPanelId={keyboardShortcuts.zoomedPanelId}
+          {workspaceId}
+          layoutId={effectiveLayoutId}
+          {contained}
+          suppressLayoutMotion={suppressCommittedPanelMoveMotion}
+          {retainedRootPanelWidth}
+          rootPanelReferenceSize={panelCanvasWidth > 0 ? panelCanvasWidth : null}
+          rootCanvasResizeDelta={panelOuterResizeDelta}
+          onFocusPanel={handleFocusPanel}
+          onTabClick={handleTabClick}
+          onTabClose={handleTabClose}
+          onTabReorder={handleTabReorder}
+          onCloseOtherTabs={handleCloseOtherTabs}
+          onCloseTabsToRight={handleCloseTabsToRight}
+          onCloseAllTabs={handleCloseAllTabs}
+          onCloseAllOthersEverywhere={handleCloseAllOthersEverywhere}
+          onSplitPanel={handleSplitPanel}
+          onClosePanel={handleClosePanel}
+          onZoomToggle={handleZoomToggle}
+          onUpdateSizes={handleUpdateSizes}
+          onRootReferenceSizeChange={(width) => (panelRootReferenceSize = width)}
+          onCanvasResizePreview={handlePanelCanvasResizePreview}
+          onGrowCanvasAtHorizontalPanel={handleGrowCanvasAtHorizontalPanel}
+          onTabDropToSplit={handleTabDropToSplit}
+          onTabMoveToPanel={handleTabMoveToPanel}
+          onPanelMove={handlePanelMove}
+          onPanelMovePreview={handlePanelMovePreview}
+          onTabDropToSplitHandle={handleTabDropToSplitHandle}
+          onTabRename={handleTabRename}
+          {onCreateAgent}
+          {onCreateAgentWithSpecialist}
+          {onCreateNote}
+          onCreateTerminal={handleCreateTerminal}
+          onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
+        />
+      </div>
+      {#if panelMovePreviewRoot}
+        <div
+          bind:this={panelDragPreviewElement}
+          class="pointer-events-none absolute inset-y-0 left-0 z-40"
+          style:width={`${
+            (contained && !onPanelMovePreviewWidthRatioChange ? panelMovePreviewWidthRatio : 1) *
+            100
+          }%`}
+          data-panel-layout-drag-preview={panelMovePreview?.position}
+          data-panel-layout-edge-preview={panelMovePreview?.kind === 'edge'
+            ? panelMovePreview.position
+            : undefined}
+          aria-hidden="true"
+        >
+          <PanelDragPreview
+            node={panelMovePreviewRoot}
+            draggedPanelId={panelMovePreview?.draggedPanelId ?? ''}
+            {contained}
+          />
+        </div>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 <div class="panel-layout h-full w-full flex flex-col" aria-label={m.layout_panelLayout_ariaLabel()}>
   <!-- Main panel area -->
   <div
-    class="flex-1 min-h-0 overflow-hidden {$isCollapsed
-      ? 'p-3'
-      : $sidebarSide$ === 'left'
-        ? 'p-3 pl-0'
-        : 'p-3 pr-0'}"
+    bind:this={panelWorkspaceInset}
+    use:measurePanelViewportWidth
+    class={cn(
+      'flex-1 min-h-0 overflow-y-hidden scrollbar-none',
+      contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+    )}
+    data-testid="panel-workspace-inset"
+    use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
   >
-    {#if shouldRenderPanelContainer}
-      <PanelContainer
-        node={$root$}
-        panels={$panels$}
-        focusedPanelId={$focusedPanelId$}
-        zoomedPanelId={keyboardShortcuts.zoomedPanelId}
-        {workspaceId}
-        onFocusPanel={handleFocusPanel}
-        onTabClick={handleTabClick}
-        onTabClose={handleTabClose}
-        onTabReorder={handleTabReorder}
-        onCloseOtherTabs={handleCloseOtherTabs}
-        onCloseTabsToRight={handleCloseTabsToRight}
-        onCloseAllTabs={handleCloseAllTabs}
-        onCloseAllOthersEverywhere={handleCloseAllOthersEverywhere}
-        onSplitPanel={handleSplitPanel}
-        onClosePanel={handleClosePanel}
-        onZoomToggle={handleZoomToggle}
-        onUpdateSizes={handleUpdateSizes}
-        onTabDropToSplit={handleTabDropToSplit}
-        onTabMoveToPanel={handleTabMoveToPanel}
-        onTabDropToSplitHandle={handleTabDropToSplitHandle}
-        onTabRename={handleTabRename}
-        {onCreateAgent}
-        {onCreateAgentWithSpecialist}
-        {onCreateNote}
-        onCreateTerminal={handleCreateTerminal}
-        onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
-      />
-    {/if}
+    <!-- Content-sized wrapper so the container's right padding is preserved
+         at the end of the horizontal scroll range (padding after a w-full
+         child is otherwise swallowed by descendant overflow). -->
+    <div class={contained ? 'h-full w-full min-w-0' : 'h-full w-max min-w-full'}>
+      {#key effectiveLayoutId}
+        <PanelCanvasFrame
+          sizing={canvasSizing}
+          viewportWidth={panelViewportWidth}
+          panelColumnCount={$panelColumnCount$}
+          canvasWidth={$panelCanvasWidth$}
+          transientWidthDelta={panelCanvasResizeDelta}
+          scrollContainer={panelWorkspaceInset}
+          onWidthChange={handlePanelCanvasWidthChange}
+          onResizePreview={handlePanelOuterResizePreview}
+          onResizeEnd={handlePanelCanvasResizeEnd}
+        >
+          {@render panelCanvas()}
+        </PanelCanvasFrame>
+      {/key}
+    </div>
   </div>
 </div>
-
 <!-- Leader key indicator -->
-{#if keyboardShortcuts.leaderActive}
+{#if active && keyboardShortcuts.leaderActive}
   <div
     class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-popover border border-border rounded-lg shadow-lg px-4 py-2 z-50"
     transition:fade={{ duration: 100 }}
   >
     <div class="text-sm font-medium text-foreground">
       {#if keyboardShortcuts.showPanelNumbers}
-        <span class="text-primary">{m.layout_panelLayout_pressKeys_before()}</span> {m.layout_panelLayout_jumpToPanel_after()}
+        <span class="text-primary">{m.layout_panelLayout_pressKeys_before()}</span>
+        {m.layout_panelLayout_jumpToPanel_after()}
       {:else}
-        <span class="text-primary">⌘K</span> {m.layout_panelLayout_leaderActivated_label()}
+        <span class="text-primary">⌘K</span>
+        {m.layout_panelLayout_leaderActivated_label()}
         <span class="text-subtle ml-2"> {m.layout_panelLayout_leaderHints_label()} </span>
       {/if}
     </div>
   </div>
 {/if}
-
 <!-- Global overlay for split handle drop zones (renders outside overflow:hidden containers) -->
-<HandleDropOverlay />
+{#if active}
+  <HandleDropOverlay />
+{/if}
 
 <style>
   .panel-layout {

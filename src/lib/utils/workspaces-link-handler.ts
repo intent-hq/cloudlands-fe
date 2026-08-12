@@ -15,6 +15,7 @@ import { selectCurrentWorkspace } from '$store/renderer/slices/workspace/workspa
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 // URL-pattern examples shown in parse errors; passed as message params because
 // literal `{`/`}` inside a Paraglide message would parse as a parameter.
@@ -151,7 +152,17 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
  * Navigate to an intent:// URL
  * Returns true if handled, false if not an intent:// link
  */
-export async function handleIntentLink(url: string): Promise<boolean> {
+export interface IntentLinkNavigationOptions {
+  workspaceId?: string;
+  sourcePanelId?: string;
+  openInAdjacentPanel?: boolean;
+  openInNewAdjacentPanel?: boolean;
+}
+
+export async function handleIntentLink(
+  url: string,
+  options: IntentLinkNavigationOptions = {},
+): Promise<boolean> {
   if (!url.startsWith('intent://')) {
     return false;
   }
@@ -170,7 +181,7 @@ export async function handleIntentLink(url: string): Promise<boolean> {
       case 'note':
       case 'task':
         // Both note and task links navigate to notes (task notes are notes with task metadata)
-        await navigateToNote(info);
+        await navigateToNote(info, options);
         break;
       default:
         toast.error(m.ui_linkHandler_unsupportedLink_title(), {
@@ -233,16 +244,18 @@ export const createWorkspacesLinkClickHandler = createIntentLinkClickHandler;
 /**
  * Private: Navigate to a note
  */
-async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
-  const { navigateToNote: navigateToNoteUtil } = await import('./workspace-navigation');
+async function navigateToNote(
+  info: WorkspacesLinkInfo,
+  options: IntentLinkNavigationOptions,
+): Promise<void> {
   const { navigateToRoute } = await import('./navigation.client');
 
   const currentWorkspace = selectCurrentWorkspace.select(appStore.state);
+  const sourceWorkspaceId = options.workspaceId ?? currentWorkspace?.id;
 
-  // If the link includes a workspace ID, we can navigate even without a current workspace
-  // (e.g., clicking a cross-workspace link from the home page)
+  // If the link includes a workspace ID, we can navigate even without a current workspace.
   if (info.workspaceId) {
-    const isCrossWorkspace = !currentWorkspace || info.workspaceId !== currentWorkspace.id;
+    const isCrossWorkspace = !sourceWorkspaceId || info.workspaceId !== sourceWorkspaceId;
 
     // Check if note exists in target workspace
     const noteExists = await checkNoteExists(info.workspaceId, info.resourceId);
@@ -261,18 +274,24 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
       await navigateToRoute(`/workspace/${info.workspaceId}?note=${info.resourceId}`);
     } else {
       // Same workspace - navigate to the note directly
-      await navigateToNoteUtil(info.resourceId);
+      appStore.dispatch(
+        openWorkspaceNote(info.workspaceId, info.resourceId, {
+          openInAdjacentPanel: options.openInAdjacentPanel ?? false,
+          openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
+          sourcePanelId: options.sourcePanelId,
+        }),
+      );
     }
     return;
   }
 
   // Short-form link (no workspace ID) - requires current workspace
-  if (!currentWorkspace) {
+  if (!sourceWorkspaceId) {
     throw new NotFoundError(m.ui_linkHandler_noSpaceOpen_error());
   }
 
   // Check if note exists in current workspace
-  const noteExists = await checkNoteExists(currentWorkspace.id, info.resourceId);
+  const noteExists = await checkNoteExists(sourceWorkspaceId, info.resourceId);
   if (!noteExists) {
     throw new NotFoundError(
       m.ui_linkHandler_noteNotFoundCurrent_error({ noteId: info.resourceId }),
@@ -280,7 +299,13 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
   }
 
   // Navigate to the note in current workspace
-  await navigateToNoteUtil(info.resourceId);
+  appStore.dispatch(
+    openWorkspaceNote(sourceWorkspaceId, info.resourceId, {
+      openInAdjacentPanel: options.openInAdjacentPanel ?? false,
+      openInNewAdjacentPanel: options.openInNewAdjacentPanel ?? false,
+      sourcePanelId: options.sourcePanelId,
+    }),
+  );
 }
 
 /**

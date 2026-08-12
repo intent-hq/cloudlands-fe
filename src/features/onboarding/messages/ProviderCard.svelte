@@ -15,8 +15,8 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
-  import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -287,10 +287,12 @@
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
-            {m.onboarding_providerCard_requiresNpx_before()} <button
+            {m.onboarding_providerCard_requiresNpx_before()}
+            <button
               type="button"
               class="underline hover:no-underline"
-              onclick={() => shell.open('https://nodejs.org')}>{m.onboarding_providerCard_installFromNodejs_label()}</button
+              onclick={() => shell.open('https://nodejs.org')}
+              >{m.onboarding_providerCard_installFromNodejs_label()}</button
             >
           </span>
         </div>

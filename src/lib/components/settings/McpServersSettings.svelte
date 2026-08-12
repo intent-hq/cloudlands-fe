@@ -4,11 +4,11 @@
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
   import {
-  mcpOptions,
-  isServerInstalled,
-  normalizeServerName,
-  type McpInstallOption,
-} from './mcp/mcp-options';
+    mcpOptions,
+    isServerInstalled,
+    normalizeServerName,
+    type McpInstallOption,
+  } from './mcp/mcp-options';
   import McpServerCard from './mcp/McpServerCard.svelte';
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
@@ -18,12 +18,7 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
-  import {
-  faCheck,
-  faCopy,
-  faPlus,
-  faRotateRight,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCopy, faPlus, faRotateRight } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
@@ -33,26 +28,26 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
-  selectMcpServersWithStatus,
-  selectMcpLoading,
-  selectMcpError,
-  selectMcpEnabled,
-  selectMcpServers,
-  selectMcpLastImportedCount,
-  selectMcpAdvancedSaveStatus,
-  selectMcpAdvancedSaveError,
-} from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+    selectMcpServersWithStatus,
+    selectMcpLoading,
+    selectMcpError,
+    selectMcpEnabled,
+    selectMcpServers,
+    selectMcpLastImportedCount,
+    selectMcpAdvancedSaveStatus,
+    selectMcpAdvancedSaveError,
+  } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import {
-  loadServers,
-  toggleEnabled,
-  toggleServer,
-  addServer,
-  removeServer,
-  updateServer,
-  importFromJson,
-  restartServer,
-  saveAdvancedJson,
-} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+    loadServers,
+    toggleEnabled,
+    toggleServer,
+    addServer,
+    removeServer,
+    updateServer,
+    importFromJson,
+    restartServer,
+    saveAdvancedJson,
+  } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
   const servers$ = selectMcpServersWithStatus();
@@ -82,6 +77,8 @@
   // Advanced editor state (content is seeded from the daemon-backed slice, not a raw file)
   let userMcpSettingsContent = $state('');
   let showAdvanced = $state(false);
+  // i18n-ignore (configuration example)
+  const mcpJsonPlaceholder = '{"mcpServers": {}}';
 
   const diagnosticCommand = 'auggie mcp list';
 
@@ -105,7 +102,15 @@
     const servers = selectMcpServersWithStatus.select(appStore.state);
     const mcpServers: Record<string, unknown> = {};
     for (const server of servers) {
-      const { name, status: _status, tools: _tools, toolCount: _toolCount, errorMessage: _err, disabled, ...config } = server;
+      const {
+        name,
+        status: _status,
+        tools: _tools,
+        toolCount: _toolCount,
+        errorMessage: _err,
+        disabled,
+        ...config
+      } = server;
       mcpServers[name] = disabled ? { ...config, disabled: true } : config;
     }
     userMcpSettingsContent = JSON.stringify({ mcpServers }, null, 2);
@@ -341,7 +346,7 @@
 
 <div class="flex flex-col gap-6">
   <!-- Enable User MCP Servers Toggle -->
-  <section class="bg-card rounded-xl px-6 py-5">
+  <section>
     <div class="flex items-center justify-between">
       <div>
         <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_title()}</p>
@@ -352,7 +357,7 @@
             class="text-primary hover:underline cursor-pointer"
             onclick={(e) => {
               handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
-                  workspaceId: $activeWorkspaceId ?? undefined,
+                workspaceId: $activeWorkspaceId ?? undefined,
                 event: e,
               });
             }}>{m.settings_mcpServers_learnMore()}</button
@@ -388,7 +393,9 @@
         <!-- Header with Add button -->
         <div class="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
-            <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_sectionTitle()}</p>
+            <p class="text-sm font-medium text-foreground">
+              {m.settings_mcpServers_sectionTitle()}
+            </p>
             <p class="text-xs text-subtle">
               {$servers$.length === 1
                 ? m.settings_mcpServers_serverCount_one()
@@ -509,12 +516,16 @@
           {:else if $error$}
             <div class="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <div class="space-y-1">
-                <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_loadError()}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {m.settings_mcpServers_loadError()}
+                </p>
                 <p class="text-sm text-destructive">{$error$}</p>
               </div>
 
               <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
-                <p class="text-xs text-muted-foreground">{m.settings_mcpServers_diagnosticCommand()}</p>
+                <p class="text-xs text-muted-foreground">
+                  {m.settings_mcpServers_diagnosticCommand()}
+                </p>
                 <code class="mt-1 block break-all text-xs text-foreground">{diagnosticCommand}</code
                 >
               </div>
@@ -570,7 +581,9 @@
           <!-- Easy MCP Installation (below configured servers) -->
           <div class="pt-4 border-t border-border">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-sm font-medium text-foreground">{m.settings_mcpServers_quickInstall()}</span>
+              <span class="text-sm font-medium text-foreground"
+                >{m.settings_mcpServers_quickInstall()}</span
+              >
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
               {#each mcpOptions as option (option.label)}
@@ -694,7 +707,9 @@
           onclick={handleToggleAdvanced}
         >
           <div class="text-left">
-            <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_advancedTitle()}</p>
+            <p class="text-sm font-medium text-foreground">
+              {m.settings_mcpServers_advancedTitle()}
+            </p>
             <p class="text-xs text-subtle">
               {m.settings_mcpServers_advancedDescription_before()}
               <!-- i18n-ignore (config key) -->
@@ -714,15 +729,16 @@
           >
             <textarea
               class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              placeholder={'{"mcpServers": {}}' /* i18n-ignore (JSON config example) */}
+              placeholder={mcpJsonPlaceholder}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
-              bind:value={userMcpSettingsContent}
-            ></textarea>
+              bind:value={userMcpSettingsContent}></textarea>
 
             <div class="flex items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 {#if $advancedSaveStatus$ === 'saved'}
-                  <span class="text-xs text-green-500">{m.settings_mcpServers_savedIndicator()}</span>
+                  <span class="text-xs text-green-500"
+                    >{m.settings_mcpServers_savedIndicator()}</span
+                  >
                 {:else if $advancedSaveStatus$ === 'error'}
                   <span class="text-xs text-destructive-foreground"
                     >✗ {$advancedSaveError$ || m.settings_mcpServers_saveFailed()}</span

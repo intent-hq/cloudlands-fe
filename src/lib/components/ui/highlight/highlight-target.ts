@@ -1,4 +1,4 @@
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
 import {
   selectUiHighlightDurationMs,
   selectUiHighlightToken,
@@ -24,24 +24,27 @@ export function highlightTarget(node: HTMLElement, params: HighlightTargetParams
     node.classList.remove(HIGHLIGHT_CLASS);
   }
 
-  function applyPulse() {
+  function applyPulse(durationMs?: number) {
     node.classList.remove(HIGHLIGHT_CLASS);
     void node.offsetWidth;
     node.classList.add(HIGHLIGHT_CLASS);
 
     if (timeout) clearTimeout(timeout);
-    const durationMs = highlightId
-      ? selectUiHighlightDurationMs.select(appStore.state, highlightId)
-      : undefined;
     timeout = setTimeout(clearPulse, durationMs ?? UI_HIGHLIGHT_DURATION_MS);
   }
 
   function syncHighlight() {
     if (!highlightId) return;
-    const token = selectUiHighlightToken.select(appStore.state, highlightId);
+    let state: typeof appStore.state;
+    try {
+      state = appStore.state;
+    } catch {
+      return;
+    }
+    const token = selectUiHighlightToken.select(state, highlightId);
     if (token > 0 && token !== lastToken) {
       lastToken = token;
-      applyPulse();
+      applyPulse(selectUiHighlightDurationMs.select(state, highlightId));
     }
   }
 

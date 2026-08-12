@@ -7,21 +7,24 @@
   export let deferUpdate: boolean = false;
   export let onModelChange: ((model: string) => void) | undefined = undefined;
   export let confirmModelChange:
-    | ((from: string | null | undefined, to: string) => boolean | Promise<boolean>)
-    | undefined = undefined;
+    ((from: string | null | undefined, to: string) => boolean | Promise<boolean>) | undefined =
+    undefined;
   export let workspaceId: string | undefined = undefined;
   export let agentId: string | undefined = undefined;
   export let portal: boolean = false;
   export let updateGlobalStore: boolean = false;
   export let variant: string | undefined = undefined;
   export let size: string | undefined = undefined;
+  export let triggerClass: string | undefined = undefined;
 
   export function open() {}
   export function clearFallbackWarning() {}
   export function clearPendingUpdate() {}
 
   async function handleTriggerModelChange() {
-    const input = document.querySelector('[data-testid="model-picker-trigger-input"]') as HTMLInputElement;
+    const input = document.querySelector(
+      '[data-testid="model-picker-trigger-input"]',
+    ) as HTMLInputElement;
     if (!input || !onModelChange) return;
     if (confirmModelChange) {
       const confirmed = await confirmModelChange(selectedModel, input.value);
@@ -32,6 +35,7 @@
 </script>
 
 <div
+  class={triggerClass}
   data-testid="model-picker"
   data-locked={isLocked ? 'true' : 'false'}
   data-show-lock-icon={showLockIconWhenLocked ? 'true' : 'false'}
@@ -40,5 +44,7 @@
   <span data-testid="model-picker-provider">{providerId}</span>
   <span data-testid="model-picker-model">{selectedModel}</span>
   <input data-testid="model-picker-trigger-input" type="hidden" />
-  <button data-testid="model-picker-trigger" on:click={handleTriggerModelChange}>Change Model</button>
+  <button data-testid="model-picker-trigger" on:click={handleTriggerModelChange}
+    >Change Model</button
+  >
 </div>

@@ -1,24 +1,6 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
-import {
-  derived,
-  get,
-  readable,
-  writable,
-} from 'svelte/store';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
   selectedModel: 'gpt5.4',
@@ -60,10 +42,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faTriangleExclamation: { iconName: 'triangle-exclamation' },
-}));
-
-vi.mock('$lib/icons/faSettings', () => ({
-  faSettings: { iconName: 'settings' },
+  faSettings: { iconName: 'gear' },
 }));
 
 vi.mock('$lib/components/ui/button/button.svelte', async () => {
@@ -80,13 +59,14 @@ vi.mock('$features/agent/agent.client', () => ({
 vi.mock('$features/agent/browser', () => ({}));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   // Seed a hydrated §5.38 catalog so the real provider-catalog selectors
   // (display names, id normalization, compound-id parsing) resolve.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
-  const { MOCK_PROVIDER_CATALOG } = await import('../../../../test/fixtures/provider-catalog.fixture');
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } =
+    await import('../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -109,31 +89,33 @@ vi.mock('$store/renderer/store', async () => {
 
 const providerWarnings$ = writable<Record<string, string>>({});
 const providerStaleFlags$ = writable<Record<string, boolean>>({});
-const mockSvelteDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
-  if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
-    const [payload] = action.payload as [
-      { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
-        string,
-        unknown
-      >,
-    ];
-    providerWarnings$.update((warnings) => {
-      const { [payload.providerId]: _cleared, ...remaining } = warnings;
-      if (payload.status === 'success' && payload.warning) {
-        return { ...remaining, [payload.providerId]: payload.warning };
-      }
-      return remaining;
-    });
-    providerStaleFlags$.update((flags) => {
-      const { [payload.providerId]: _cleared, ...remaining } = flags;
-      if (payload.status === 'success' && payload.stale) {
-        return { ...remaining, [payload.providerId]: true };
-      }
-      return remaining;
-    });
-  }
-  return action;
-}));
+const mockSvelteDispatch = vi.hoisted(() =>
+  vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
+      const [payload] = action.payload as [
+        { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
+          string,
+          unknown
+        >,
+      ];
+      providerWarnings$.update((warnings) => {
+        const { [payload.providerId]: _cleared, ...remaining } = warnings;
+        if (payload.status === 'success' && payload.warning) {
+          return { ...remaining, [payload.providerId]: payload.warning };
+        }
+        return remaining;
+      });
+      providerStaleFlags$.update((flags) => {
+        const { [payload.providerId]: _cleared, ...remaining } = flags;
+        if (payload.status === 'success' && payload.stale) {
+          return { ...remaining, [payload.providerId]: true };
+        }
+        return remaining;
+      });
+    }
+    return action;
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', async () => {
   const { readable } = await import('svelte/store');
@@ -202,13 +184,15 @@ const mockAgentSession$ = writable<
 >(undefined);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviderIds: () => enabledProviderIds$,
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
 vi.mock('$shared/types/agent-session', () => ({
   getAgentProvider: vi.fn((session?: { provider?: string }) => session?.provider),
-  isPendingAgentSession: vi.fn((session: { isPending?: boolean; status?: string }) =>
-    session?.isPending === true || session?.status === 'pending',
+  isPendingAgentSession: vi.fn(
+    (session: { isPending?: boolean; status?: string }) =>
+      session?.isPending === true || session?.status === 'pending',
   ),
 }));
 
@@ -377,7 +361,9 @@ describe('ModelPicker multi-provider mode', () => {
   });
 
   it('renders the active provider models while another provider is still loading', async () => {
-    let resolveCodex: ((result: { models: { value: string; label: string; description: string }[] }) => void) | undefined;
+    let resolveCodex:
+      | ((result: { models: { value: string; label: string; description: string }[] }) => void)
+      | undefined;
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation((providerId) => {
       if (providerId === 'auggie') {
         return Promise.resolve({
@@ -893,7 +879,27 @@ describe('ModelPicker availability gating', () => {
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
-  it('shows a failure notice and fires a toast when no provider is available', async () => {
+  it('loads enabled provider models while the availability check is still pending', async () => {
+    hasCheckedOnce$.set(false);
+    availableProviderOverride$.set([]);
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: 'Smart model' }],
+    });
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByText('Sonnet 4.6')).toBeTruthy();
+    expect(screen.queryByText('No models available')).toBeNull();
+  });
+
+  it('shows the no-provider state only inside the dropdown and fires a toast', async () => {
     const { toast } = await import('svelte-sonner');
     availableProviderOverride$.set([]);
 
@@ -904,7 +910,28 @@ describe('ModelPicker availability gating', () => {
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalled();
     });
-    expect(screen.getByText('No provider available')).toBeTruthy();
+    expect(screen.queryByText('No provider available')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByText('No provider available')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Settings' })).toBeTruthy();
+  });
+
+  it('opens provider settings from the dropdown no-provider state', async () => {
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockResolvedValue(undefined);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, { props: { portal: false } });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Open Settings' }));
+
+    expect(vi.mocked(navigateToSettings)).toHaveBeenCalledWith({
+      tab: 'accounts',
+      hash: 'providers',
+    });
   });
 
   it('passes a stable toast id so no-provider toasts from multiple instances or re-fires collapse into one', async () => {
@@ -955,8 +982,7 @@ describe('ModelPicker availability gating', () => {
     });
 
     const options = vi.mocked(toast.error).mock.calls[0][1] as
-      | { action?: { label: string; onClick: () => void } }
-      | undefined;
+      { action?: { label: string; onClick: () => void } } | undefined;
     expect(options?.action?.label).toBe('Open Settings');
 
     options?.action?.onClick();
@@ -988,13 +1014,32 @@ describe('ModelPicker availability gating', () => {
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
 
     // Once the daemon connects, a still-empty availability map is a real
-    // confirmed failure — the notice and toast surface as before.
+    // confirmed failure — the toast fires and the dropdown owns the visible state.
     daemonHealth$.set('healthy');
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalled();
     });
-    expect(screen.getByText('No provider available')).toBeTruthy();
+    expect(screen.queryByText('No provider available')).toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
+    expect(await screen.findByText('No provider available')).toBeTruthy();
+  });
+
+  it('suppresses the no-provider notice and toast while daemon heartbeat health is degraded', async () => {
+    const { toast } = await import('svelte-sonner');
+    daemonHealth$.set('degraded');
+    hasCheckedOnce$.set(true);
+    availableProviderOverride$.set([]);
+
+    render(ModelPicker, {
+      props: { portal: false },
+    });
+
+    await screen.findByRole('button');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
   it('does not show the no-provider failure notice or toast when a provider is available', async () => {
@@ -1045,9 +1090,8 @@ describe('ModelPicker availability gating', () => {
   });
 
   it('dispatches ensureProvidersChecked on mount so availability is populated outside onboarding', async () => {
-    const { ensureProvidersChecked } = await import(
-      '$store/renderer/slices/agent-availability/agent-availability-slice'
-    );
+    const { ensureProvidersChecked } =
+      await import('$store/renderer/slices/agent-availability/agent-availability-slice');
 
     render(ModelPicker, {
       props: { portal: false },
@@ -1168,6 +1212,27 @@ describe('ModelPicker selected-model loading state', () => {
     });
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
     expect(trigger.textContent).toContain('Sonnet 4.6');
+  });
+
+  it('treats a bare selected model as available when its provider catalog uses a compound id', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'auggie:gpt5.6-sol', label: 'GPT 5.6', description: 'Smart' }],
+    });
+
+    render(ModelPicker, {
+      props: { selectedModel: 'gpt5.6-sol', agentId: 'test-agent', portal: false },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
   it('shows the warning once the selected model provider has settled without the model', async () => {
@@ -1758,7 +1823,9 @@ describe('ModelPicker confirmModelChange gate', () => {
     await waitFor(() => {
       const trigger = screen
         .getAllByRole('button')
-        .find((b) => b.textContent?.includes('Default model') || b.textContent?.includes('Model 1'));
+        .find(
+          (b) => b.textContent?.includes('Default model') || b.textContent?.includes('Model 1'),
+        );
       expect(trigger?.textContent).toContain('Default model');
     });
   });
@@ -1849,9 +1916,7 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
     });
 
     await waitFor(() => {
-      const trigger = screen
-        .getAllByRole('button')
-        .find((b) => b.textContent?.includes('Default'));
+      const trigger = screen.getAllByRole('button').find((b) => b.textContent?.includes('Default'));
       expect(trigger?.textContent).toContain('Default (Model 1)');
     });
   });
@@ -1868,9 +1933,7 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
     });
 
     await waitFor(() => {
-      const trigger = screen
-        .getAllByRole('button')
-        .find((b) => b.textContent?.includes('Model'));
+      const trigger = screen.getAllByRole('button').find((b) => b.textContent?.includes('Model'));
       expect(trigger?.textContent).toContain('Model 2');
       expect(trigger?.textContent).not.toContain('Default');
     });
@@ -1889,7 +1952,9 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
 
     await fireEvent.click(screen.getByRole('button'));
 
-    const inheritOption = await screen.findByRole('option', { name: /Use the global default model/ });
+    const inheritOption = await screen.findByRole('option', {
+      name: /Use the global default model/,
+    });
     expect(inheritOption.textContent).toContain('Default');
   });
 
@@ -1967,9 +2032,7 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
   it('renders the cached model label immediately with no skeleton while the fetch is pending', async () => {
     seedCache();
     // Revalidation fetch never settles — only the cache can resolve the label.
-    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
-      () => new Promise(() => {}),
-    );
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
 
     render(ModelPicker, {
       props: {
@@ -1999,9 +2062,7 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
   });
 
   it('keeps the skeleton on the uncached first-boot path while the fetch is pending', async () => {
-    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
-      () => new Promise(() => {}),
-    );
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
 
     render(ModelPicker, {
       props: {
@@ -2094,7 +2155,9 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     // The initial background revalidation settles.
     await waitFor(() => {
       expect(
-        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([pid]) => pid === 'auggie'),
+        vi
+          .mocked(getModelsForProviderForLoadingState)
+          .mock.calls.filter(([pid]) => pid === 'auggie'),
       ).toHaveLength(1);
     });
 
@@ -2108,7 +2171,9 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
     await waitFor(() => {
       expect(
-        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([pid]) => pid === 'auggie'),
+        vi
+          .mocked(getModelsForProviderForLoadingState)
+          .mock.calls.filter(([pid]) => pid === 'auggie'),
       ).toHaveLength(2);
     });
   });
@@ -2235,9 +2300,7 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     mockModelState.selectedModel = 'codex:gpt-5-codex';
     enabledProviderIds$.set(['auggie']);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
-    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
-      () => new Promise(() => {}),
-    );
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
 
     render(ModelPicker, {
       props: {

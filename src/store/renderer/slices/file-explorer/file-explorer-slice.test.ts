@@ -1,10 +1,6 @@
-import type { FileGitStatus, FileNode } from "$shared/types";
-import { getItem } from "@augmentcode/themis/utils/collections/collection-utils";
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
+import type { FileGitStatus, FileNode } from '$shared/types';
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { describe, expect, it } from 'vitest';
 import {
   addExpandedPath,
   emptyFileExplorerWorkspaceState,
@@ -14,34 +10,50 @@ import {
   removeAgentFileEditsEntries,
   removeGitStatusEntries,
   setChildrenAtPathAction,
+  setFileExplorerError,
+  setFileExplorerLoading,
   setFileExplorerWorkspacePath,
   setGitStatusMap,
   setRootNode,
   updateAgentFileEditsEntries,
   updateGitStatusEntries,
-} from "./file-explorer-slice";
+} from './file-explorer-slice';
 
-const WS_ID = "ws-1";
-const WS_PATH = "/a/repo";
+const WS_ID = 'ws-1';
+const WS_PATH = '/a/repo';
 
-const MODIFIED: FileGitStatus = { status: " M", additions: 2, deletions: 1 };
-const MODIFIED_SAME_SHAPE: FileGitStatus = { status: " M", additions: 2, deletions: 1 };
-const ADDED: FileGitStatus = { status: "A ", additions: 5, deletions: 0 };
+const MODIFIED: FileGitStatus = { status: ' M', additions: 2, deletions: 1 };
+const MODIFIED_SAME_SHAPE: FileGitStatus = { status: ' M', additions: 2, deletions: 1 };
+const ADDED: FileGitStatus = { status: 'A ', additions: 5, deletions: 0 };
+
+describe('fileExplorerReducer — initialization error', () => {
+  it('stores a serializable error and clears it when retry loading starts', () => {
+    const failed = fileExplorerReducer(
+      initialState,
+      setFileExplorerError(WS_ID, 'Unable to load files.'),
+    );
+    expect(failed.byWorkspaceId[WS_ID].error).toBe('Unable to load files.');
+
+    const retrying = fileExplorerReducer(failed, setFileExplorerLoading(WS_ID, true));
+    expect(retrying.byWorkspaceId[WS_ID].error).toBeNull();
+    expect(retrying.byWorkspaceId[WS_ID].isLoading).toBe(true);
+  });
+});
 
 function directory(path: string, children?: FileNode[]): FileNode {
   return {
-    name: path.split("/").pop() || "",
+    name: path.split('/').pop() || '',
     path,
-    type: "directory",
+    type: 'directory',
     ...(children ? { children } : {}),
   };
 }
 
 function file(path: string): FileNode {
   return {
-    name: path.split("/").pop() || "",
+    name: path.split('/').pop() || '',
     path,
-    type: "file",
+    type: 'file',
   };
 }
 
@@ -49,90 +61,87 @@ function seeded(): ReturnType<typeof fileExplorerReducer> {
   let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(WS_ID, WS_PATH));
   state = fileExplorerReducer(
     state,
-    setGitStatusMap(WS_ID, { "src/lib/foo.ts": MODIFIED, "README.md": ADDED }),
+    setGitStatusMap(WS_ID, { 'src/lib/foo.ts': MODIFIED, 'README.md': ADDED }),
   );
   return state;
 }
 
-describe("fileExplorerReducer — updateGitStatusEntries", () => {
-  it("returns identical state reference when entries are empty", () => {
+describe('fileExplorerReducer — updateGitStatusEntries', () => {
+  it('returns identical state reference when entries are empty', () => {
     const state = seeded();
     const next = fileExplorerReducer(state, updateGitStatusEntries(WS_ID, {}));
     expect(next).toBe(state);
   });
 
-  it("returns identical state reference when every entry deep-equals existing", () => {
+  it('returns identical state reference when every entry deep-equals existing', () => {
     const state = seeded();
     const next = fileExplorerReducer(
       state,
       updateGitStatusEntries(WS_ID, {
-        "src/lib/foo.ts": MODIFIED_SAME_SHAPE,
-        "README.md": ADDED,
+        'src/lib/foo.ts': MODIFIED_SAME_SHAPE,
+        'README.md': ADDED,
       }),
     );
     expect(next).toBe(state);
   });
 
-  it("updates only changed entries when a value differs and keeps unchanged refs stable", () => {
+  it('updates only changed entries when a value differs and keeps unchanged refs stable', () => {
     const state = seeded();
-    const prevFoo = state.byWorkspaceId[WS_ID].gitStatus["src/lib/foo.ts"];
-    const prevReadme = state.byWorkspaceId[WS_ID].gitStatus["README.md"];
-    const nextFoo: FileGitStatus = { status: " M", additions: 10, deletions: 0 };
+    const prevFoo = state.byWorkspaceId[WS_ID].gitStatus['src/lib/foo.ts'];
+    const prevReadme = state.byWorkspaceId[WS_ID].gitStatus['README.md'];
+    const nextFoo: FileGitStatus = { status: ' M', additions: 10, deletions: 0 };
     const next = fileExplorerReducer(
       state,
       updateGitStatusEntries(WS_ID, {
-        "src/lib/foo.ts": nextFoo,
+        'src/lib/foo.ts': nextFoo,
       }),
     );
     expect(next).not.toBe(state);
     const ws = next.byWorkspaceId[WS_ID];
-    expect(ws.gitStatus["src/lib/foo.ts"]).toBe(nextFoo);
-    expect(ws.gitStatus["src/lib/foo.ts"]).not.toBe(prevFoo);
+    expect(ws.gitStatus['src/lib/foo.ts']).toBe(nextFoo);
+    expect(ws.gitStatus['src/lib/foo.ts']).not.toBe(prevFoo);
     // Unchanged entries must retain the exact same object reference.
-    expect(ws.gitStatus["README.md"]).toBe(prevReadme);
+    expect(ws.gitStatus['README.md']).toBe(prevReadme);
   });
 
-  it("does not bump treeVersion on change", () => {
+  it('does not bump treeVersion on change', () => {
     const state = seeded();
     const prevVersion = state.byWorkspaceId[WS_ID].treeVersion;
     const next = fileExplorerReducer(
       state,
       updateGitStatusEntries(WS_ID, {
-        "src/lib/foo.ts": { status: " M", additions: 99, deletions: 0 },
+        'src/lib/foo.ts': { status: ' M', additions: 99, deletions: 0 },
       }),
     );
     expect(next.byWorkspaceId[WS_ID].treeVersion).toBe(prevVersion);
   });
 
-  it("adds a brand-new key without removing others", () => {
+  it('adds a brand-new key without removing others', () => {
     const state = seeded();
-    const next = fileExplorerReducer(
-      state,
-      updateGitStatusEntries(WS_ID, { "src/new.ts": ADDED }),
-    );
+    const next = fileExplorerReducer(state, updateGitStatusEntries(WS_ID, { 'src/new.ts': ADDED }));
     const ws = next.byWorkspaceId[WS_ID];
-    expect(ws.gitStatus["src/new.ts"]).toBe(ADDED);
-    expect(ws.gitStatus["src/lib/foo.ts"]).toBeDefined();
-    expect(ws.gitStatus["README.md"]).toBeDefined();
+    expect(ws.gitStatus['src/new.ts']).toBe(ADDED);
+    expect(ws.gitStatus['src/lib/foo.ts']).toBeDefined();
+    expect(ws.gitStatus['README.md']).toBeDefined();
   });
 });
 
-describe("fileExplorerReducer — normalized tree state", () => {
-  it("starts with a serializable empty normalized tree", () => {
+describe('fileExplorerReducer — normalized tree state', () => {
+  it('starts with a serializable empty normalized tree', () => {
     expect(emptyFileExplorerWorkspaceState.rootPath).toBeNull();
     expect(emptyFileExplorerWorkspaceState.nodes).toEqual({
-      idField: "path",
+      idField: 'path',
       ids: [],
       map: {},
       refsCount: {},
     });
-    expect(Object.hasOwn(emptyFileExplorerWorkspaceState, "environmentConfig")).toBe(false);
+    expect(Object.hasOwn(emptyFileExplorerWorkspaceState, 'environmentConfig')).toBe(false);
     expect(JSON.parse(JSON.stringify(emptyFileExplorerWorkspaceState))).toEqual(
       emptyFileExplorerWorkspaceState,
     );
   });
 
-  it("normalizes a root FileNode tree into a path-keyed Collection", () => {
+  it('normalizes a root FileNode tree into a path-keyed Collection', () => {
     const root = directory(WS_PATH, [
       directory(`${WS_PATH}/src`, [file(`${WS_PATH}/src/index.ts`)]),
       file(`${WS_PATH}/README.md`),
@@ -152,16 +161,14 @@ describe("fileExplorerReducer — normalized tree state", () => {
       `${WS_PATH}/src`,
       `${WS_PATH}/README.md`,
     ]);
-    expect(getItem(ws.nodes, `${WS_PATH}/src`)?.children).toEqual([
-      `${WS_PATH}/src/index.ts`,
-    ]);
+    expect(getItem(ws.nodes, `${WS_PATH}/src`)?.children).toEqual([`${WS_PATH}/src/index.ts`]);
   });
 
-  it("replaces an existing root tree and removes old root descendants", () => {
+  it('replaces an existing root tree and removes old root descendants', () => {
     const initialRoot = directory(WS_PATH, [
       directory(`${WS_PATH}/src`, [file(`${WS_PATH}/src/old.ts`)]),
     ]);
-    const replacementPath = "/replacement/repo";
+    const replacementPath = '/replacement/repo';
     const replacementRoot = directory(replacementPath, [
       directory(`${replacementPath}/app`, [file(`${replacementPath}/app/new.ts`)]),
     ]);
@@ -187,7 +194,7 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(ws.treeVersion).toBe(state.byWorkspaceId[WS_ID].treeVersion + 1);
   });
 
-  it("preserves expanded paths when a replacement tree omits them", () => {
+  it('preserves expanded paths when a replacement tree omits them', () => {
     const initialRoot = directory(WS_PATH, [directory(`${WS_PATH}/src`)]);
     const replacementRoot = directory(WS_PATH, [file(`${WS_PATH}/README.md`)]);
 
@@ -202,7 +209,7 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(getItem(ws.nodes, `${WS_PATH}/src`)).toBeUndefined();
   });
 
-  it("replaces directory children while preserving sibling node references", () => {
+  it('replaces directory children while preserving sibling node references', () => {
     const root = directory(WS_PATH, [directory(`${WS_PATH}/src`), file(`${WS_PATH}/README.md`)]);
     const state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
     const readmeBefore = getItem(state.byWorkspaceId[WS_ID].nodes, `${WS_PATH}/README.md`);
@@ -216,14 +223,14 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(getItem(ws.nodes, `${WS_PATH}/src`)?.children).toEqual([`${WS_PATH}/src/index.ts`]);
     expect(getItem(ws.nodes, `${WS_PATH}/src/index.ts`)).toMatchObject({
       path: `${WS_PATH}/src/index.ts`,
-      type: "file",
+      type: 'file',
       children: [],
     });
     expect(getItem(ws.nodes, `${WS_PATH}/README.md`)).toBe(readmeBefore);
     expect(ws.treeVersion).toBe(state.byWorkspaceId[WS_ID].treeVersion + 1);
   });
 
-  it("returns the same state reference when replacing children is a no-op", () => {
+  it('returns the same state reference when replacing children is a no-op', () => {
     const root = directory(WS_PATH, [file(`${WS_PATH}/README.md`)]);
     const state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
 
@@ -235,7 +242,7 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(next).toBe(state);
   });
 
-  it("ignores child replacement for paths absent from the normalized tree", () => {
+  it('ignores child replacement for paths absent from the normalized tree', () => {
     const root = directory(WS_PATH, [file(`${WS_PATH}/README.md`)]);
     const state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
 
@@ -248,7 +255,7 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(getItem(next.byWorkspaceId[WS_ID].nodes, `${WS_PATH}/src/index.ts`)).toBeUndefined();
   });
 
-  it("removes stale descendants when a directory refresh changes child paths", () => {
+  it('removes stale descendants when a directory refresh changes child paths', () => {
     let state = fileExplorerReducer(
       initialState,
       setRootNode(WS_ID, directory(WS_PATH, [directory(`${WS_PATH}/src`)])),
@@ -274,93 +281,88 @@ describe("fileExplorerReducer — normalized tree state", () => {
     expect(getItem(ws.nodes, `${WS_PATH}/src/lib/old.ts`)).toBeUndefined();
   });
 
-  it("clears normalized nodes when the workspace path changes", () => {
+  it('clears normalized nodes when the workspace path changes', () => {
     const state = fileExplorerReducer(
       initialState,
       setRootNode(WS_ID, directory(WS_PATH, [file(`${WS_PATH}/README.md`)])),
     );
 
-    const next = fileExplorerReducer(state, setFileExplorerWorkspacePath(WS_ID, "/other/repo"));
+    const next = fileExplorerReducer(state, setFileExplorerWorkspacePath(WS_ID, '/other/repo'));
     const ws = next.byWorkspaceId[WS_ID];
 
-    expect(ws.workspacePath).toBe("/other/repo");
+    expect(ws.workspacePath).toBe('/other/repo');
     expect(ws.rootPath).toBeNull();
     expect(ws.nodes.ids).toEqual([]);
   });
 });
 
-describe("fileExplorerReducer — removeGitStatusEntries", () => {
-  it("returns identical state when none of the paths exist", () => {
+describe('fileExplorerReducer — removeGitStatusEntries', () => {
+  it('returns identical state when none of the paths exist', () => {
     const state = seeded();
     const next = fileExplorerReducer(
       state,
-      removeGitStatusEntries(WS_ID, ["nope.ts", "also-nope.ts"]),
+      removeGitStatusEntries(WS_ID, ['nope.ts', 'also-nope.ts']),
     );
     expect(next).toBe(state);
   });
 
-  it("removes matching paths and leaves others intact", () => {
+  it('removes matching paths and leaves others intact', () => {
     const state = seeded();
-    const next = fileExplorerReducer(
-      state,
-      removeGitStatusEntries(WS_ID, ["src/lib/foo.ts"]),
-    );
+    const next = fileExplorerReducer(state, removeGitStatusEntries(WS_ID, ['src/lib/foo.ts']));
     const ws = next.byWorkspaceId[WS_ID];
-    expect(ws.gitStatus["src/lib/foo.ts"]).toBeUndefined();
-    expect(ws.gitStatus["README.md"]).toBeDefined();
+    expect(ws.gitStatus['src/lib/foo.ts']).toBeUndefined();
+    expect(ws.gitStatus['README.md']).toBeDefined();
     // treeVersion unchanged.
     expect(ws.treeVersion).toBe(state.byWorkspaceId[WS_ID].treeVersion);
   });
 });
 
-describe("fileExplorerReducer — updateAgentFileEditsEntries / removeAgentFileEditsEntries", () => {
+describe('fileExplorerReducer — updateAgentFileEditsEntries / removeAgentFileEditsEntries', () => {
   function seededEdits() {
     let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(WS_ID, WS_PATH));
     state = fileExplorerReducer(
       state,
       updateAgentFileEditsEntries(WS_ID, {
-        "src/a.ts": ["agent-1"],
-        "src/b.ts": ["agent-2"],
+        'src/a.ts': ['agent-1'],
+        'src/b.ts': ['agent-2'],
       }),
     );
     return state;
   }
 
-  it("no-op when every array shallowEquals existing", () => {
+  it('no-op when every array shallowEquals existing', () => {
     const state = seededEdits();
     const next = fileExplorerReducer(
       state,
       updateAgentFileEditsEntries(WS_ID, {
-        "src/a.ts": ["agent-1"],
-        "src/b.ts": ["agent-2"],
+        'src/a.ts': ['agent-1'],
+        'src/b.ts': ['agent-2'],
       }),
     );
     expect(next).toBe(state);
   });
 
-  it("updates only when the array content differs", () => {
+  it('updates only when the array content differs', () => {
     const state = seededEdits();
-    const prevB = state.byWorkspaceId[WS_ID].agentFileEdits["src/b.ts"];
+    const prevB = state.byWorkspaceId[WS_ID].agentFileEdits['src/b.ts'];
     const next = fileExplorerReducer(
       state,
-      updateAgentFileEditsEntries(WS_ID, { "src/a.ts": ["agent-1", "agent-9"] }),
+      updateAgentFileEditsEntries(WS_ID, { 'src/a.ts': ['agent-1', 'agent-9'] }),
     );
     expect(next).not.toBe(state);
-    expect(next.byWorkspaceId[WS_ID].agentFileEdits["src/a.ts"]).toEqual(["agent-1", "agent-9"]);
-    expect(next.byWorkspaceId[WS_ID].agentFileEdits["src/b.ts"]).toBe(prevB);
+    expect(next.byWorkspaceId[WS_ID].agentFileEdits['src/a.ts']).toEqual(['agent-1', 'agent-9']);
+    expect(next.byWorkspaceId[WS_ID].agentFileEdits['src/b.ts']).toBe(prevB);
   });
 
-  it("removeAgentFileEditsEntries is a no-op when path absent", () => {
+  it('removeAgentFileEditsEntries is a no-op when path absent', () => {
     const state = seededEdits();
-    const next = fileExplorerReducer(state, removeAgentFileEditsEntries(WS_ID, ["nope"]));
+    const next = fileExplorerReducer(state, removeAgentFileEditsEntries(WS_ID, ['nope']));
     expect(next).toBe(state);
   });
 });
 
-
-
-describe("fileExplorerReducer — folder-first sorting", () => {
-  it("sorts root children: directories first (alphabetical) then files (alphabetical)", () => {
+describe('fileExplorerReducer — folder-first sorting', () => {
+  it('sorts root children: directories first (alphabetical) then files (alphabetical)', () => {
     const interleaved = directory(WS_PATH, [
       file(`${WS_PATH}/zeta.txt`),
       directory(`${WS_PATH}/Beta`),
@@ -381,7 +383,7 @@ describe("fileExplorerReducer — folder-first sorting", () => {
     ]);
   });
 
-  it("sorts at every nested depth in setRootNode", () => {
+  it('sorts at every nested depth in setRootNode', () => {
     const interleaved = directory(WS_PATH, [
       file(`${WS_PATH}/z.txt`),
       directory(`${WS_PATH}/src`, [
@@ -411,7 +413,7 @@ describe("fileExplorerReducer — folder-first sorting", () => {
     ]);
   });
 
-  it("sorts lazily-loaded children via setChildrenAtPathAction at root and nested depth", () => {
+  it('sorts lazily-loaded children via setChildrenAtPathAction at root and nested depth', () => {
     const root = directory(WS_PATH, [directory(`${WS_PATH}/src`)]);
     let state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
 
@@ -443,7 +445,7 @@ describe("fileExplorerReducer — folder-first sorting", () => {
     ]);
   });
 
-  it("is idempotent — re-applying the same already-sorted children is a no-op", () => {
+  it('is idempotent — re-applying the same already-sorted children is a no-op', () => {
     const root = directory(WS_PATH, [directory(`${WS_PATH}/src`)]);
     let state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
     state = fileExplorerReducer(
@@ -474,12 +476,12 @@ describe("fileExplorerReducer — folder-first sorting", () => {
   });
 });
 
-describe("refreshDirectoryRequested", () => {
-  it("is a pure saga-trigger action — reducer does not mutate state for it", () => {
+describe('refreshDirectoryRequested', () => {
+  it('is a pure saga-trigger action — reducer does not mutate state for it', () => {
     const seededState = seeded();
     const next = fileExplorerReducer(
       seededState,
-      refreshDirectoryRequested(WS_ID, "/a/repo/src/new.ts"),
+      refreshDirectoryRequested(WS_ID, '/a/repo/src/new.ts'),
     );
     expect(next).toBe(seededState);
   });

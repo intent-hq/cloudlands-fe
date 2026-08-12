@@ -1,4 +1,4 @@
-import { call, put, takeEvery, takeLeading, type SagaGenerator } from 'typed-redux-saga';
+import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   namespaceBackendKey,
@@ -21,11 +21,14 @@ import {
   loadWorkspaceTabsState,
   markWorkspaceTabOptimistic,
   markWorkspaceTabUnsaved,
+  moveWorkspace,
   openWorkspaceTab,
   type PersistedWorkspaceTabsState,
   removeScrollPosition,
   reorderWorkspaceTabs,
+  reopenLastClosedWorkspaceTab,
   saveScrollPosition,
+  setWorkspaceViewMode,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
@@ -38,16 +41,19 @@ import {
 const TAB_PERSIST_ACTIONS = [
   openWorkspaceTab,
   closeWorkspaceTab,
+  reopenLastClosedWorkspaceTab,
   clearCurrentWorkspaceTab,
   toggleWorkspaceTabPin,
   markWorkspaceTabUnsaved,
   reorderWorkspaceTabs,
+  moveWorkspace,
   markWorkspaceTabOptimistic,
   unmarkWorkspaceTabOptimistic,
   handleOptimisticWorkspaceTabTransition,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
+  setWorkspaceViewMode,
 ];
 
 const SCROLL_PERSIST_ACTIONS = [saveScrollPosition, removeScrollPosition, clearForWorkspace];
@@ -77,6 +83,10 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+function isOptionalStringArrayArray(value: unknown): value is string[][] | undefined {
+  return value === undefined || (Array.isArray(value) && value.every(isStringArray));
+}
+
 function isPersistedWorkspaceTabsState(value: unknown): value is PersistedWorkspaceTabsState {
   if (!value || typeof value !== 'object') return false;
   const stored = value as Record<string, unknown>;
@@ -86,7 +96,9 @@ function isPersistedWorkspaceTabsState(value: unknown): value is PersistedWorksp
     isStringArray(stored.pinnedTabs) &&
     isStringArray(stored.unsavedTabs) &&
     isStringArray(stored.optimisticTabs) &&
-    isStringArray(stored.tabOrder)
+    isStringArray(stored.tabOrder) &&
+    isOptionalStringArrayArray(stored.workspaceStacks) &&
+    (stored.viewMode === undefined || stored.viewMode === 'single' || stored.viewMode === 'columns')
   );
 }
 
@@ -149,32 +161,35 @@ function* persistScrollPositions(): SagaGenerator<void> {
  * Backend switched (activeId flips via the boot connections:list refresh after
  * the window reloads): re-hydrate the incoming backend's tab strip + scroll
  * positions, resetting to empty when it has none so the previous backend's
- * tabs don't linger.
+ * tabs don't linger. Also clears backend-local recently-closed workspace-tab
+ * state to prevent cross-namespace reopens.
  */
-function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
-  const backendId = yield* selectActiveBackendId();
-  if (backendId === lastBackend.id) return;
-  lastBackend.id = backendId;
-  try {
-    const scrollPositions = yield* call(getLocalStorageJSON<unknown>, scrollKey(backendId));
-    yield* put(loadScrollPositions(isScrollPositionsMap(scrollPositions) ? scrollPositions : {}));
-    const workspaceTabs = yield* call(getLocalStorageJSON<unknown>, tabsKey(backendId));
-    yield* put(
-      loadWorkspaceTabsState(
-        isPersistedWorkspaceTabsState(workspaceTabs) ? workspaceTabs : EMPTY_WORKSPACE_TABS,
-      ),
-    );
-  } catch {
-    // Backend-specific hydration is best-effort.
+export function* watchBackendSwitch(): SagaGenerator<void> {
+  let lastBackendId = yield* selectActiveBackendId();
+  while (true) {
+    yield* take(connectionsListReceived);
+    const backendId = yield* selectActiveBackendId();
+    if (backendId === lastBackendId) continue;
+    lastBackendId = backendId;
+    try {
+      const scrollPositions = yield* call(getLocalStorageJSON<unknown>, scrollKey(backendId));
+      yield* put(loadScrollPositions(isScrollPositionsMap(scrollPositions) ? scrollPositions : {}));
+      const workspaceTabs = yield* call(getLocalStorageJSON<unknown>, tabsKey(backendId));
+      yield* put(
+        loadWorkspaceTabsState(
+          isPersistedWorkspaceTabsState(workspaceTabs) ? workspaceTabs : EMPTY_WORKSPACE_TABS,
+        ),
+      );
+    } catch {
+      // Backend-specific hydration is best-effort; keep watching future switches.
+    }
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* tabStateSaga(): SagaGenerator<void> {
   yield* call(hydrateTabState);
-  yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
-    id: yield* selectActiveBackendId(),
-  });
+  yield* fork(watchBackendSwitch);
   yield* takeEvery(TAB_PERSIST_ACTIONS, persistWorkspaceTabs);
   yield* takeEvery(cleanupInvalidWorkspaceTabs, persistCleanedWorkspaceTabs);
   yield* takeEvery(SCROLL_PERSIST_ACTIONS, persistScrollPositions);

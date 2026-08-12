@@ -59,6 +59,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   // Called when DOM or size changes
   function scrollIfNeeded() {
+    if (document.body.classList.contains('panel-resizing')) return;
     // Only auto-scroll if following and not actively user-scrolling
     // Note: We check isAtBottom (the "following" state), not the actual scroll position.
     // This is important because when content first becomes scrollable, the actual position

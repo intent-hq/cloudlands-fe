@@ -2,20 +2,15 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
+  import { ListContainer, ListItem, ListSection, ListEmpty } from './index';
   import {
-  ListContainer,
-  ListItem,
-  ListSection,
-  ListEmpty,
-} from './index';
-  import {
-  faStickyNote,
-  faFile,
-  faTerminal,
-  faPlus,
-  faStar,
-} from '@fortawesome/free-solid-svg-icons';
-  import AuggieAvatar from '../auggie-avatar/AuggieAvatar.svelte';
+    faStickyNote,
+    faFile,
+    faTerminal,
+    faPlus,
+    faStar,
+  } from '@fortawesome/free-solid-svg-icons';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { faNote } from '$lib/icons/faNote';
 
   // Example data
@@ -87,7 +82,7 @@
     onToggleCollapse={() => toggleSection('notes')}
   >
     {#if notes.length === 0}
-      <ListEmpty message="No notes yet" icon={faStickyNote} />
+      <ListEmpty message="No notes yet" />
     {:else}
       <ListContainer spacing="compact">
         {#each notes as note (note.id)}
@@ -122,7 +117,7 @@
             title={agent.name}
             subtitle={agent.lastMessage}
             badge={agent.status}
-            badgeClass={agent.status === 'Active' ? 'bg-green-500/20 text-green-500' : undefined}
+            badgeClass={agent.status === 'Active' ? 'bg-success/20 text-success' : undefined}
             onclick={() => handleAgentClick(agent.id)}
             size="sm"
           />
@@ -134,7 +129,7 @@
   <!-- Files Section (non-collapsible) -->
   <ListSection title={demoTitles.files}>
     {#if files.length === 0}
-      <ListEmpty message="No files" icon={faFile} />
+      <ListEmpty message="No files" />
     {:else}
       <ListContainer spacing="normal">
         {#each files as file (file.name)}

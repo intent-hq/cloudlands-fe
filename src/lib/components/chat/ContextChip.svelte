@@ -1,20 +1,20 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faFileLines,
-  faCodeBranch,
-  faClipboard,
-  faICursor,
-  faFolder,
-  faXmark,
-  faTicket,
-  faBug,
-  faLink,
-  faCodePullRequest,
-} from '@fortawesome/free-solid-svg-icons';
+    faFileLines,
+    faCodeBranch,
+    faClipboard,
+    faICursor,
+    faFolder,
+    faXmark,
+    faTicket,
+    faBug,
+    faLink,
+    faCodePullRequest,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -97,7 +97,7 @@
 {#if clickable}
   <button
     type="button"
-    class="group/button flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-muted-foreground rounded text-xs whitespace-nowrap cursor-pointer hover:bg-muted transition-colors shrink-0"
+    class="group/button type-caption flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-muted-foreground transition-colors hover:bg-muted"
     title={tooltip ?? m.chat_contextChip_open_title({ label })}
     {onclick}
   >
@@ -121,7 +121,7 @@
   </button>
 {:else}
   <div
-    class="group/button flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-subtle rounded text-xs whitespace-nowrap shrink-0"
+    class="group/button type-caption flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-subtle"
     title={tooltip ?? label}
   >
     <Fa icon={displayIcon} size="15" class="opacity-30" />

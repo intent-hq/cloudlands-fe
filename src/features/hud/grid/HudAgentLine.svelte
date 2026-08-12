@@ -46,7 +46,7 @@
     font:
       500 9.5px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

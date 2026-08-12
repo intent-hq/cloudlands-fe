@@ -55,19 +55,25 @@
   }
 
   let touchStartY = 0;
-  function handleTouchStart(e: TouchEvent) { touchStartY = e.touches[0]?.clientY ?? 0; }
+  function handleTouchStart(e: TouchEvent) {
+    touchStartY = e.touches[0]?.clientY ?? 0;
+  }
   function handleTouchMove(e: TouchEvent) {
     const touchY = e.touches[0]?.clientY ?? 0;
     if (touchStartY - touchY < 0) isFollowingBottom = false;
   }
   function handleTouchEnd() {
-    requestAnimationFrame(() => { if (checkIfAtBottom()) isFollowingBottom = true; });
+    requestAnimationFrame(() => {
+      if (checkIfAtBottom()) isFollowingBottom = true;
+    });
   }
 
   function handleScroll() {
     isUserScrolling = true;
     if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-    scrollEndTimeout = setTimeout(() => { isUserScrolling = false; }, 150);
+    scrollEndTimeout = setTimeout(() => {
+      isUserScrolling = false;
+    }, 150);
 
     // Track if scrolled from top for gradient visibility
     if (scrollContainer) {
@@ -81,7 +87,9 @@
     if (scrollContainer) {
       mutationObs = new MutationObserver((mutations) => {
         // Only scroll for new nodes, not text changes on existing nodes
-        const hasNewNodes = mutations.some(m => m.type === 'childList' && m.addedNodes.length > 0);
+        const hasNewNodes = mutations.some(
+          (m) => m.type === 'childList' && m.addedNodes.length > 0,
+        );
         if (hasNewNodes) {
           scrollToBottom();
         }
@@ -138,6 +146,7 @@
 </script>
 
 <div
+  role="group"
   class="cylinder-scroller"
   style={containerStyle}
   bind:this={scrollContainer}

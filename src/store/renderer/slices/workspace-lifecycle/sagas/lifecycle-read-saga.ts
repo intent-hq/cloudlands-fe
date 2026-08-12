@@ -259,7 +259,6 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     if (!(yield* call(isAgentDeletionPending, String(agent.id)))) fetched.push(agent);
   }
   yield* put(setAgentsLoaded(workspaceId, true));
-  if (fetched.length === 0) return;
 
   const agents = [] as typeof fetched;
   for (const agent of fetched) {
@@ -271,12 +270,15 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     );
   }
   yield* put(setAgents(workspaceId, agents));
-  yield* put(bulkUpsertSessions(agents));
-  for (const agent of agents) yield* put(upsertSession(agent));
+  if (agents.length > 0) {
+    yield* put(bulkUpsertSessions(agents));
+    for (const agent of agents) yield* put(upsertSession(agent));
+  }
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
   const agentIds = yield* selectWorkspaceAgentIds.effect(workspaceId);
   if (activeAgentId && agentIds.includes(activeAgentId)) return;
+  if (agents.length === 0) return;
   const firstForeground = agents.find((agent) => !agent.isBackground) ?? agents[0];
   yield* put(setActiveAgentId(workspaceId, String(firstForeground.id)));
 }

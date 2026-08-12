@@ -21,22 +21,22 @@
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-  selectIsTerminalOverlayOpenForWorkspace,
-  selectTerminalOverlayHeight,
-  selectActiveTerminalIdForWorkspace,
-  selectTerminalsForWorkspace,
-} from '$store/renderer/slices/terminals/terminals-selectors';
+    selectIsTerminalOverlayOpenForWorkspace,
+    selectTerminalOverlayHeight,
+    selectActiveTerminalIdForWorkspace,
+    selectTerminalsForWorkspace,
+  } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
-  openTerminalOverlay,
-  closeTerminalOverlay,
-  selectTerminal as selectTerminalAction,
-  addTerminal,
-  removeTerminal,
-  setTerminalOverlayHeight,
-  renameTerminal,
-  terminalCreated,
-  type TerminalTab,
-} from '$store/renderer/slices/terminals/terminals-slice';
+    openTerminalOverlay,
+    closeTerminalOverlay,
+    selectTerminal as selectTerminalAction,
+    addTerminal,
+    removeTerminal,
+    setTerminalOverlayHeight,
+    renameTerminal,
+    terminalCreated,
+    type TerminalTab,
+  } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
   import { toast } from '$lib/components/ui/toast';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
@@ -44,12 +44,12 @@
   import Terminal from './Terminal.svelte';
   import Fa from 'svelte-fa';
   import {
-  faPlus,
-  faXmark,
-  faChevronDown,
-  faTerminal,
-  faBan,
-} from '@fortawesome/free-solid-svg-icons';
+    faPlus,
+    faXmark,
+    faChevronDown,
+    faTerminal,
+    faBan,
+  } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -395,13 +395,12 @@
       <!-- Resize Handle -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="absolute -top-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center group/resize"
+        class="app-resize-handle absolute -top-2 left-0 right-0 z-10 h-4"
+        data-resize-axis="y"
+        data-resize-indicator="short"
+        data-resizing={isResizing}
         onmousedown={startResize}
-      >
-        <div
-          class="w-9 h-1 rounded-sm bg-muted-foreground/20 transition-all duration-150 group-hover/resize:bg-muted-foreground/40 group-hover/resize:scale-x-110"
-        ></div>
-      </div>
+      ></div>
 
       <!-- Header Bar -->
       <div

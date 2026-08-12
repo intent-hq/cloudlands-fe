@@ -58,6 +58,16 @@ vi.mock('$store/renderer/store', async () => {
   };
 });
 
+// Preload the component once at module scope so its import graph (~880
+// modules — the ui/menu primitives pull the whole bits-ui barrel) is
+// cold-transformed during collection, like every other component suite.
+// Without this, the first `await import(...)` inside a test body absorbs the
+// full transform cost and can exceed the 30s per-test timeout on slower CI
+// runners. A dynamic import (after the mock state above is initialized, since
+// the mocked store is evaluated during module init) rather than a hoisted
+// static import; the in-test imports below are then instant cache hits.
+const DaemonStatusIndicatorPreloaded = (await import('./DaemonStatusIndicator.svelte')).default;
+
 describe('DaemonStatusIndicator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -102,6 +112,7 @@ describe('DaemonStatusIndicator', () => {
     it('component file exists and can be imported', async () => {
       const module = await import('./DaemonStatusIndicator.svelte');
       expect(module.default).toBeDefined();
+      expect(module.default).toBe(DaemonStatusIndicatorPreloaded);
     });
   });
 
@@ -435,9 +446,9 @@ describe('DaemonStatusIndicator', () => {
       expect(screen.getByText('Stop Unsloth Server')).toBeTruthy();
       expect(screen.getByText(/2 agents are currently attached/)).toBeTruthy();
 
-      // Portaled to document.body so the fixed overlay escapes the title-bar
-      // region's containing block (same assertion as ChatMessage-edit-confirm).
-      expect(dialog.closest('.portal-container')?.parentElement).toBe(document.body);
+      // Canonical Dialog portals directly to document.body so the fixed overlay
+      // escapes the title-bar region's containing block.
+      expect(dialog.parentElement).toBe(document.body);
 
       // The dropdown closes when the dialog opens, so it can't sit above the
       // dialog's dim overlay or swallow the first Escape.
@@ -651,12 +662,12 @@ describe('DaemonStatusIndicator', () => {
 
       // Local: Switch present, Forget absent (un-forgettable).
       await fireEvent.click(screen.getByText('This machine (local)'));
-      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getAllByText('Switch')).toHaveLength(1);
       expect(screen.queryByText('Forget')).toBeNull();
 
       // Remote: both Switch and Forget present.
       await fireEvent.click(screen.getByText('desk:4180'));
-      expect(screen.getByText('Switch')).toBeTruthy();
+      expect(screen.getAllByText('Switch')).toHaveLength(2);
       expect(screen.getByText('Forget')).toBeTruthy();
     });
 

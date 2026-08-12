@@ -10,10 +10,11 @@
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import AgentCard from './AgentCard.svelte';
   import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
   import type { Workspace } from '$shared/types';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -58,6 +59,10 @@
     showAgentCards = true,
     workspace = null,
   }: Props = $props();
+
+  const stickySurfaceClass = $derived(
+    workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-sidebar' : 'bg-card',
+  );
 
   // Get a friendly summary description for the banner
   // Note: This is a function that uses parsedEvents, which is $derived
@@ -238,35 +243,73 @@
 {#if asDivider}
   <!-- Divider style - can show summary, agent cards, or both -->
   <div
-    class="event-wakeup-banner group/banner w-full min-w-0"
+    class="event-wakeup-banner group/banner mb-4 w-full min-w-0"
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
-    <!-- Summary row -->
-    {#if showSummary}
-      <div class="relative flex items-center w-full min-w-0 py-1 bg-sidebar">
+    <!-- Summary and completed-agent details share one compact row. -->
+    {#if showSummary || (showAgentCards && agentEvents.length > 0)}
+      <div
+        class="relative flex w-full min-w-0 items-center gap-1.5 py-1.5 pr-3 pl-0 {isSticky
+          ? stickySurfaceClass
+          : 'bg-transparent'}"
+      >
         <!-- Provider ensures proper context and cleanup during component destruction -->
-        <Tooltip.Provider delayDuration={0}>
-          <Tooltip.Root delayDuration={0}>
-            <Tooltip.Trigger class="shrink-0 min-w-0 flex-1">
-              <div class="w-full min-w-0 flex items-center gap-2 px-3 py-1 text-subtle">
-                <Fa icon={faBell} size="xs" class="text-ghost" />
-                <span class=" flex-1 min-w-0 truncate text-left">{friendlySummary}</span>
+        {#if showSummary && !(showAgentCards && agentEvents.length > 0)}
+          <Tooltip.Provider delayDuration={0}>
+            <Tooltip.Root delayDuration={0}>
+              <Tooltip.Trigger
+                class={showAgentCards && agentEvents.length > 0 ? 'shrink-0' : 'min-w-0 flex-1'}
+              >
+                <div class="type-body flex min-w-0 items-center gap-2 text-primary">
+                  <Fa icon={faBell} size="xs" class="shrink-0 opacity-40" />
+                  {#if showAgentCards && agentEvents.length > 0}
+                    <span class="sr-only">{friendlySummary}</span>
+                  {:else}
+                    <span class="min-w-0 flex-1 truncate text-left font-medium">
+                      {friendlySummary}
+                    </span>
+                  {/if}
+                </div>
+              </Tooltip.Trigger>
+              <Tooltip.Content side="top">
+                <p class="font-medium">{m.chat_eventWakeup_subscriptionWakeup_tooltip()}</p>
+                <p class="text-subtle mt-0.5">
+                  {(metadata?.eventCount ?? 0) === 1
+                    ? m.chat_eventWakeup_triggered_one({
+                        count: formatInteger(metadata?.eventCount ?? 0),
+                      })
+                    : m.chat_eventWakeup_triggered_many({
+                        count: formatInteger(metadata?.eventCount ?? 0),
+                      })}
+                </p>
+              </Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        {/if}
+
+        {#if showAgentCards && agentEvents.length > 0}
+          <div class="min-w-0 flex-1">
+            {#each agentEvents.slice(0, 5) as event (event.agentId)}
+              <AgentCard
+                agentId={event.agentId!}
+                agentName={event.agentName}
+                completionReport={event.completionReport}
+                lastResponseSummary={event.lastResponseSummary}
+                inline
+                hidePreview
+                statusLabel={event.type === 'agent:created'
+                  ? m.chat_eventWakeup_newAgent_label()
+                  : m.events_activity_partFinished_label().trim()}
+                {workspace}
+              />
+            {/each}
+            {#if agentEvents.length > 5}
+              <div class="type-caption px-2 py-1 text-muted-foreground">
+                {m.chat_shared_moreAgents_label({ count: formatInteger(agentEvents.length - 5) })}
               </div>
-            </Tooltip.Trigger>
-            <Tooltip.Content side="top" class="">
-              <p class="font-medium">{m.chat_eventWakeup_subscriptionWakeup_tooltip()}</p>
-              <p class="text-subtle mt-0.5">
-                {(metadata?.eventCount ?? 0) === 1
-                  ? m.chat_eventWakeup_triggered_one({
-                      count: formatInteger(metadata?.eventCount ?? 0),
-                    })
-                  : m.chat_eventWakeup_triggered_many({
-                      count: formatInteger(metadata?.eventCount ?? 0),
-                    })}
-              </p>
-            </Tooltip.Content>
-          </Tooltip.Root>
-        </Tooltip.Provider>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Scroll to previous button (visible when sticky) -->
         {#if isSticky && onScrollToPrevious}
@@ -288,34 +331,14 @@
         {/if}
       </div>
     {/if}
-
-    <!-- Agent cards (non-sticky, scroll normally) -->
-    {#if showAgentCards && agentEvents.length > 0}
-      <div class="mt-1 pb-3 flex flex-col gap-0.5 px-2">
-        {#each agentEvents.slice(0, 5) as event (event.agentId)}
-          <AgentCard
-            agentId={event.agentId!}
-            agentName={event.agentName}
-            completionReport={event.completionReport}
-            lastResponseSummary={event.lastResponseSummary}
-            {workspace}
-          />
-        {/each}
-        {#if agentEvents.length > 5}
-          <div class="text-ui text-subtle text-center py-1">
-            {m.chat_shared_moreAgents_label({ count: formatInteger(agentEvents.length - 5) })}
-          </div>
-        {/if}
-      </div>
-    {/if}
   </div>
 {:else}
   <!-- Inline style - compact banner inside message -->
   <div
-    class="event-wakeup-banner flex items-center gap-1.5 px-2 py-0.5 mb-1 rounded text-xs text-subtle"
+    class="event-wakeup-banner type-body mb-1 flex items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary"
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
-    <Fa icon={faRotate} class="w-2 h-2" />
+    <Fa icon={faRotate} class="h-2 w-2 opacity-40" />
     <span>{friendlySummary}</span>
   </div>
 {/if}

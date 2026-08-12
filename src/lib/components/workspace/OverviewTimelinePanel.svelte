@@ -6,8 +6,8 @@
   import { isSpecNote } from './sidebar';
   import { toPRDisplayStatus } from './sidebar/sidebar-changes-utils';
   import { getNoteIcon, getNoteTitle, getNoteIconClass, getNoteDepth } from './sidebar/utils';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import Fa from 'svelte-fa';
   import {
@@ -26,7 +26,7 @@
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { PRInfo, UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 
   import { Tooltip } from '$lib/components/ui/tooltip';

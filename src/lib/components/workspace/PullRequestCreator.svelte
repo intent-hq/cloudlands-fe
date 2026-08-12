@@ -12,15 +12,15 @@
   import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   import {
-  faCodePullRequest,
-  faExclamationCircle,
-  faCircleCheck,
-  faMagic,
-  faPaperPlane,
-  faSpinner,
-  faCodeBranch,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+    faCodePullRequest,
+    faExclamationCircle,
+    faCircleCheck,
+    faMagic,
+    faPaperPlane,
+    faSpinner,
+    faCodeBranch,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -167,7 +167,12 @@
       {/if}
     </div>
     {#if onClose}
-      <Button variant="ghost" size="icon-sm" onclick={onClose}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onclick={onClose}
+        aria-label="Close pull request creator"
+      >
         <Fa icon={faXmark} size="sm" />
       </Button>
     {/if}
@@ -177,7 +182,9 @@
   <div class="flex-1 overflow-y-auto">
     <div class="max-w-4xl mx-auto p-6 space-y-6">
       {#if error}
-        <div class="flex items-start gap-2 p-3 bg-destructive/10 text-destructive-foreground rounded-lg">
+        <div
+          class="flex items-start gap-2 p-3 bg-destructive/10 text-destructive-foreground rounded-lg"
+        >
           <Fa icon={faExclamationCircle} size="sm" class="mt-0.5" />
           <span class="text-sm">{error}</span>
         </div>
@@ -191,7 +198,9 @@
       {:else}
         <!-- Title Field -->
         <div class="space-y-2">
-          <label for="pr-title" class="text-sm font-medium">{m.workspace_prCreator_titleField_label()}</label>
+          <label for="pr-title" class="text-sm font-medium"
+            >{m.workspace_prCreator_titleField_label()}</label
+          >
           {#if formData.title.loading}
             <Skeleton class="h-10 w-full" />
           {:else}
@@ -206,7 +215,9 @@
 
         <!-- Description Field -->
         <div class="space-y-2">
-          <label for="pr-description" class="text-sm font-medium">{m.workspace_prCreator_descriptionField_label()}</label>
+          <label for="pr-description" class="text-sm font-medium"
+            >{m.workspace_prCreator_descriptionField_label()}</label
+          >
           {#if formData.description.loading}
             <div class="space-y-2">
               <Skeleton class="h-4 w-full" />

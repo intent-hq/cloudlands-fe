@@ -106,19 +106,8 @@ vi.mock('$features/workspace/mark-workspace-seen', () => ({
   markWorkspaceSeenIfViewing: markWorkspaceSeenIfViewingSpy,
 }));
 
-// Fake the agent-subscription read service so the bridge's completion-watch
-// refresh routing (agent:idle/failed/deleted/created →
-// refreshWorkspaceSubscriptionEntries) is observable without real
-// `agent.getSubscriptions` fetches mutating the store.
-const { refreshWorkspaceSubscriptionEntriesSpy } = vi.hoisted(() => ({
-  refreshWorkspaceSubscriptionEntriesSpy: vi.fn(),
-}));
-vi.mock('$features/agent/agent-subscription-read-service', () => ({
-  refreshWorkspaceSubscriptionEntries: refreshWorkspaceSubscriptionEntriesSpy,
-  createAgentSubscriptionReadMiddleware:
-    () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
-      next(a),
-}));
+// The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
+// of calling the service directly — the saga handles the actual fetch. No mock needed.
 
 // RESUB-1: mock chat-read-service so the bridge's reconnect refresh path can
 // assert `loadChatTranscript(activeAgentId)` fires without touching the real
@@ -157,6 +146,9 @@ vi.mock('$features/terminal/terminal-manager.svelte', () => ({
 const { invokeSpy } = vi.hoisted(() => ({
   invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
 }));
+const { navigateToRouteSpy } = vi.hoisted(() => ({
+  navigateToRouteSpy: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('$lib/electron-bridge', () => ({
   extractEventData: vi.fn((event: any, fieldName?: string) => {
     const payload = event?.payload ?? event;
@@ -181,6 +173,9 @@ vi.mock('$lib/electron-bridge', () => ({
     emit: vi.fn(() => Promise.resolve()),
   },
   IpcTimeoutError: class IpcTimeoutError extends Error {},
+}));
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: navigateToRouteSpy,
 }));
 
 import { store as appStore } from '$store/renderer/store';
@@ -240,6 +235,7 @@ import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
+import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -5134,14 +5130,12 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   beforeEach(async () => {
-    const { clearPendingAgentDeletions } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { clearPendingAgentDeletions } =
+      await import('$features/agent/utils/pending-agent-deletions');
     clearPendingAgentDeletions();
     appStore.dispatch(clearAllSessions());
-    const { clearWorkspacePendingDeletion, removeWorkspaceEntity } = await import(
-      '$store/renderer/slices/workspace/workspace-slice'
-    );
+    const { clearWorkspacePendingDeletion, removeWorkspaceEntity } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(clearWorkspacePendingDeletion(PENDING_WS));
     appStore.dispatch(removeWorkspaceEntity(PENDING_WS));
     onBackendNotificationSpy.mockClear();
@@ -5166,16 +5160,13 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   }
 
   async function workspaceRow(): Promise<unknown> {
-    const { selectWorkspaceById } = await import(
-      '$store/renderer/slices/workspace/workspace-selectors'
-    );
+    const { selectWorkspaceById } =
+      await import('$store/renderer/slices/workspace/workspace-selectors');
     return selectWorkspaceById.select(appStore.state, PENDING_WS);
   }
 
   it('workspace:delete-scheduled hides the row, sets the tombstone, and blocks a stale entity write', async () => {
-    const { setWorkspaceEntity } = await import(
-      '$store/renderer/slices/workspace/workspace-slice'
-    );
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(setWorkspaceEntity(makeWorkspace() as never));
     expect(await workspaceRow()).toBeDefined();
 
@@ -5208,9 +5199,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('workspace:delete-cancelled lifts the tombstone and refetches the row', async () => {
-    const { markWorkspacePendingDeletion, removeWorkspaceEntity } = await import(
-      '$store/renderer/slices/workspace/workspace-slice'
-    );
+    const { markWorkspacePendingDeletion, removeWorkspaceEntity } =
+      await import('$store/renderer/slices/workspace/workspace-slice');
     appStore.dispatch(removeWorkspaceEntity(PENDING_WS));
     appStore.dispatch(markWorkspacePendingDeletion(PENDING_WS));
     backendRequestSpy.mockImplementation((method: string) => {
@@ -5244,9 +5234,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('agent:delete-scheduled soft-hides the hydrated session and registers the pending entry', async () => {
-    const { isAgentDeletionPending } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { isAgentDeletionPending } =
+      await import('$features/agent/utils/pending-agent-deletions');
     const pendingSession: AgentSession = {
       id: PENDING_AGENT,
       backendSessionId: 'backend-pending',
@@ -5290,9 +5279,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('agent:delete-scheduled registers the tombstone even without a hydrated session', async () => {
-    const { isAgentDeletionPending, getPendingAgentDeletion } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { isAgentDeletionPending, getPendingAgentDeletion } =
+      await import('$features/agent/utils/pending-agent-deletions');
     // No session hydrated locally for PENDING_AGENT: an agent.get/list begun
     // before the schedule (row without pendingDeleteAt) could still resolve
     // after it — the snapshot-less tombstone must block that stale read.
@@ -5317,9 +5305,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('agent:delete-scheduled with an existing registry entry is a no-op (originating window)', async () => {
-    const { setPendingAgentDeletion, getPendingAgentDeletion } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { setPendingAgentDeletion, getPendingAgentDeletion } =
+      await import('$features/agent/utils/pending-agent-deletions');
     const snapshot: AgentSession = {
       id: PENDING_AGENT,
       backendSessionId: 'backend-own',
@@ -5409,12 +5396,10 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('disposeDaemonEventsRoutingState clears armed tombstone timers', async () => {
-    const { isAgentDeletionPending } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
-    const { disposeDaemonEventsRoutingState } = await import(
-      '$features/events/daemon-events-bridge.client'
-    );
+    const { isAgentDeletionPending } =
+      await import('$features/agent/utils/pending-agent-deletions');
+    const { disposeDaemonEventsRoutingState } =
+      await import('$features/events/daemon-events-bridge.client');
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -5451,9 +5436,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
   });
 
   it('agent:delete-cancelled restores the snapshot and refetches the canonical list', async () => {
-    const { setPendingAgentDeletion } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { setPendingAgentDeletion } =
+      await import('$features/agent/utils/pending-agent-deletions');
     const snapshot: AgentSession = {
       id: PENDING_AGENT,
       backendSessionId: 'backend-pending',
@@ -5465,6 +5449,12 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
       updatedAt: '2026-01-01T00:00:00.000Z',
     } as AgentSession;
     setPendingAgentDeletion({ wsId: PENDING_WS, agentId: PENDING_AGENT, snapshot });
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'agent.list') {
+        return Promise.resolve({ agents: [snapshot] });
+      }
+      return Promise.resolve({ subscriptionId: 'sub-1' });
+    });
 
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5484,9 +5474,8 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     });
     await flush();
 
-    const { isAgentDeletionPending } = await import(
-      '$features/agent/utils/pending-agent-deletions'
-    );
+    const { isAgentDeletionPending } =
+      await import('$features/agent/utils/pending-agent-deletions');
     expect(isAgentDeletionPending(PENDING_AGENT)).toBe(false);
     const state = appStore.state as {
       agentSessions: { byAgentId: Record<string, { name?: string }> };
@@ -6652,10 +6641,15 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
   beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
-    refreshWorkspaceSubscriptionEntriesSpy.mockClear();
   });
 
   afterEach(() => vi.clearAllMocks());
@@ -6667,24 +6661,30 @@ describe('daemonEventsBridge (completion-watch refresh routing)', () => {
     'agent:created',
     'agent:subscriptions-changed',
   ])(
-    "%s triggers refreshWorkspaceSubscriptionEntries for the event's workspace",
+    "%s dispatches refreshWorkspaceSubscriptionEntriesRequested for the event's workspace",
     async (eventType) => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
       handler(notification(eventType, { agentId: AGENT }));
 
-      expect(refreshWorkspaceSubscriptionEntriesSpy).toHaveBeenCalledWith(WS);
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshWorkspaceSubscriptionEntriesRequested(WS));
+      dispatchSpy.mockRestore();
     },
   );
 
   it('non-completion agent events do not trigger a subscription refresh (except status-changed/idle which trigger agent list refresh instead)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
 
     handler(notification('agent:renamed', { agentId: AGENT, name: 'Renamed' }));
 
-    expect(refreshWorkspaceSubscriptionEntriesSpy).not.toHaveBeenCalled();
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: refreshWorkspaceSubscriptionEntriesRequested.type }),
+    );
+    dispatchSpy.mockRestore();
   });
 });
 
@@ -8376,14 +8376,6 @@ describe('daemonEventsBridge (agent:deleted → reconcileWorkspaceAgentSummary)'
 });
 
 describe('DaemonEventsBridge — app-UI events', () => {
-  const { navigateToRouteSpy } = vi.hoisted(() => ({
-    navigateToRouteSpy: vi.fn(() => Promise.resolve()),
-  }));
-
-  vi.mock('$lib/utils/navigation.client', () => ({
-    navigateToRoute: navigateToRouteSpy,
-  }));
-
   beforeAll(() => appStore.init());
   beforeEach(() => {
     appStore.dispatch(clearAllSessions());

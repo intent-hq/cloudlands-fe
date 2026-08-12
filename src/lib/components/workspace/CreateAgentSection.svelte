@@ -1,24 +1,7 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import {
-  faPlus,
-  faGear,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  filterPickableSpecialists,
-  selectSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { scale } from 'svelte/transition';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -29,105 +12,22 @@
 
   let { onCreate, onCreateWithSpecialist, compact = false }: Props = $props();
 
-  let isExpanded = $state(false);
-  let triggerRef: HTMLButtonElement | null = $state(null);
-  let contentRef: HTMLDivElement | null = $state(null);
-  let portalStyle = $state('');
-
-  const specialists$ = selectSpecialists();
-  const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
-  const visibleSpecialists = $derived.by(() =>
-    filterPickableSpecialists($specialists$, $isGitHubAuth$)
-  );
-  const coordinator = $derived(visibleSpecialists.find((s) => s.id === 'spec-writer'));
-  const otherSpecialists = $derived(
-    visibleSpecialists.filter((s) => s.id !== 'spec-writer'),
-  );
-
-  // Handle creating agent with specialist
-  function handleCreateAgent(specialistId: string | null) {
+  function handleCreateAgent() {
     if (onCreateWithSpecialist) {
-      onCreateWithSpecialist(specialistId);
+      onCreateWithSpecialist(null);
     } else if (onCreate) {
       onCreate();
     }
-    isExpanded = false;
   }
-
-  // Navigate to settings Agents tab
-  async function openSpecialistSettings() {
-    await navigateToSettings({ tab: 'agents' });
-    isExpanded = false;
-  }
-
-  function handleClickOutside(event: MouseEvent) {
-    if (isExpanded && triggerRef && contentRef) {
-      const target = event.target as Node;
-      if (!triggerRef.contains(target) && !contentRef.contains(target)) {
-        isExpanded = false;
-      }
-    }
-  }
-
-  // Escape layer: registered only while expanded so stacked overlays dismiss
-  // one at a time in LIFO order
-  $effect(() => {
-    if (!isExpanded) return;
-    return pushEscapeLayer(() => {
-      isExpanded = false;
-    });
-  });
-
-  function updatePortalPosition() {
-    if (!isExpanded || !triggerRef) return;
-    const rect = triggerRef.getBoundingClientRect();
-    const dropdownWidth = 250;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Position below the trigger, aligned to the left
-    let top = rect.bottom + 4;
-    let left = rect.left;
-
-    // Constrain to viewport
-    const margin = 8;
-    left = Math.max(margin, Math.min(viewportWidth - dropdownWidth - margin, left));
-
-    // If dropdown would go below viewport, position above trigger
-    const estimatedHeight = 400;
-    if (top + estimatedHeight > viewportHeight && rect.top > estimatedHeight) {
-      top = rect.top - estimatedHeight - 4;
-    }
-
-    portalStyle = `left:${left}px;top:${top}px;width:${dropdownWidth}px;`;
-  }
-
-  onMount(() => {
-    document.addEventListener('click', handleClickOutside);
-    window.addEventListener('resize', updatePortalPosition);
-    window.addEventListener('scroll', updatePortalPosition, true);
-  });
-
-  onDestroy(() => {
-    document.removeEventListener('click', handleClickOutside);
-    window.removeEventListener('resize', updatePortalPosition);
-    window.removeEventListener('scroll', updatePortalPosition, true);
-  });
-
-  $effect(() => {
-    if (isExpanded) {
-      requestAnimationFrame(() => updatePortalPosition());
-    }
-  });
 </script>
 
 {#if compact}
   <Button
-    bind:ref={triggerRef}
     variant="ghost-light"
     size="icon-xs"
-    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-xs"
-    onclick={() => (isExpanded = !isExpanded)}
+    aria-label={m.workspace_createAgentSection_createNewAgent_label()}
+    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-none"
+    onclick={handleCreateAgent}
   >
     <Fa icon={faPlus} size="xs" />
   </Button>
@@ -135,88 +35,13 @@
   <div class="w-full pb-2 -mt-1">
     <!-- Toggle Button -->
     <Button
-      bind:ref={triggerRef}
       variant="ghost-light"
       size="xs"
       class="w-full px-0! justify-start gap-1.5 font-normal text-sm"
-      onclick={() => (isExpanded = !isExpanded)}
+      onclick={handleCreateAgent}
     >
       <Fa icon={faPlus} size="xs" class="opacity-60 mr-1.25 ml-2.75" />
       {m.workspace_createAgentSection_createNewAgent_label()}
     </Button>
   </div>
-{/if}
-
-<!-- Portal dropdown -->
-{#if isExpanded}
-  <Portal zIndex={10000}>
-    <div
-      bind:this={contentRef}
-      class="fixed z-[10000] bg-popover border border-border shadow-lg overflow-hidden"
-      style={portalStyle}
-      transition:scale={{ duration: 150, start: 0.95 }}
-    >
-      <!-- Blank Agent Option -->
-      <button
-        class="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left border-b border-border cursor-pointer"
-        onclick={() => handleCreateAgent(null)}
-      >
-        <AuggieAvatar seed="blank" size={22} class="-mt-1" />
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium">{m.workspace_createAgentSection_blankAgent_label()}</div>
-          <div class="text-sm text-subtle">{m.workspace_createAgentSection_blankAgent_description()}</div>
-        </div>
-      </button>
-
-      <!-- Specialist Explanation -->
-      <div class="px-3 pt-2">
-        <p class="text-sm text-subtle">
-          <span class="text-foreground font-medium">{m.workspace_createAgentSection_specialists_label()}</span>
-          {m.workspace_createAgentSection_specialists_description()}
-        </p>
-      </div>
-
-      <!-- Specialist Cards: coordinator first, then the rest -->
-      <div class="pt-1.5 max-h-[280px] overflow-y-auto">
-        <!-- i18n-ignore (TS type-guard expression, not user-facing text) -->
-        {#each [coordinator, ...otherSpecialists].filter((s): s is NonNullable<typeof s> => Boolean(s)) as specialist (specialist.id)}
-          <button
-            class="w-full px-2.5 py-2 flex items-start gap-2.5 hover:bg-muted/50 transition-colors text-left group cursor-pointer"
-            onclick={() => handleCreateAgent(specialist.id)}
-          >
-            <AuggieAvatar
-              seed="blank"
-              size={20}
-              specialist={specialist.id}
-              class="mt-0.5 shrink-0"
-            />
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium">{specialist.name}</div>
-              <div class="text-sm text-subtle line-clamp-2">
-                {specialist.description}
-              </div>
-              {#if specialist.id === 'spec-writer'}
-                <div class="text-xs text-subtle mt-0.5">
-                  {m.workspace_createAgentSection_defaultForOrchestration_label()}
-                </div>
-              {/if}
-            </div>
-          </button>
-        {/each}
-      </div>
-
-      <!-- Settings Link -->
-      <div class="border-t border-border">
-        <Button
-          variant="ghost-light"
-          size="sm"
-          class="w-full justify-start px-3! py-2!"
-          onclick={openSpecialistSettings}
-        >
-          <Fa icon={faGear} size="xs" />
-          <span>{m.workspace_createAgentSection_customizeSpecialists_label()}</span>
-        </Button>
-      </div>
-    </div>
-  </Portal>
 {/if}

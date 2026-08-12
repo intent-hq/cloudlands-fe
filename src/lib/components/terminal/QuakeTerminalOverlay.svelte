@@ -1,5 +1,5 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
    *
@@ -13,34 +13,33 @@
    * - Persisted height and custom names
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
+  import { onDestroy, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import {
     localizeDaemonTerminalName,
     terminalDisplayName,
   } from '$lib/utils/terminal-display-name';
-  import { untrack } from 'svelte';
   import { slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-  selectIsTerminalOverlayOpen,
-  selectTerminalOverlayHeight,
-  selectActiveTerminalId,
-  selectTerminals,
-  selectSelectedScriptId,
-  selectWorkspaceTerminalState,
-} from '$store/renderer/slices/terminals/terminals-selectors';
+    selectIsTerminalOverlayOpenForWorkspace,
+    selectTerminalOverlayHeight,
+    selectActiveTerminalIdForWorkspace,
+    selectTerminalsForWorkspace,
+    selectWorkspaceTerminalState,
+  } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
-  openTerminalOverlay,
-  closeTerminalOverlay,
-  selectTerminal,
-  selectScript,
-  clearScriptSelection,
-  addTerminal,
-  removeTerminal,
-  setTerminalOverlayHeight,
-  renameTerminal,
-  terminalCreated,
-  type TerminalTab,
-} from '$store/renderer/slices/terminals/terminals-slice';
+    openTerminalOverlay,
+    closeTerminalOverlay,
+    selectTerminal,
+    addTerminal,
+    removeTerminal,
+    setTerminalOverlayHeight,
+    renameTerminal,
+    clearScriptSelection,
+    terminalCreated,
+    type TerminalTab,
+  } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
 
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -50,20 +49,20 @@
   import TerminalSidebar from './TerminalSidebar.svelte';
   import Fa from 'svelte-fa';
   import {
-  faPlus,
-  faXmark,
-  faChevronDown,
-  faChevronUp,
-  faTerminal,
-  faBan,
-  faPlay,
-  faStop,
-  faRotateRight,
-  faSpinner,
-  faArrowUpRightFromSquare,
-  faCircle,
-  faPencil,
-} from '@fortawesome/free-solid-svg-icons';
+    faPlus,
+    faXmark,
+    faChevronDown,
+    faChevronUp,
+    faTerminal,
+    faBan,
+    faPlay,
+    faStop,
+    faRotateRight,
+    faSpinner,
+    faArrowUpRightFromSquare,
+    faCircle,
+    faPencil,
+  } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
@@ -71,27 +70,18 @@
   import { m } from '$shared/paraglide/messages.js';
 
   import {
-  selectScriptEntries,
-  selectScriptById,
-  selectScriptRuntime,
-  selectScriptsInitialized,
-} from '$store/renderer/slices/scripts/scripts-selectors';
+    selectWorkspaceScriptEntries,
+    selectWorkspaceScriptsInitialized,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
-  refreshScripts,
-  initializeScripts,
-  removeScript,
-} from '$store/renderer/slices/scripts/scripts-slice';
+    refreshScripts,
+    initializeScripts,
+    removeScript,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
-  import { createLogger } from '$lib/utils/client-logger';
-  import {
-  ListContainer,
-  ListItem,
-} from '$lib/components/ui/list';
-  import {
-  Tooltip,
-  TooltipRich,
-} from '$lib/components/ui/tooltip';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { ListContainer, ListItem } from '$lib/components/ui/list';
+  import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
@@ -105,23 +95,26 @@
 
   interface Props {
     workspaceId?: WorkspaceId;
+    showDockWhenClosed?: boolean;
   }
 
-  let { workspaceId: propWorkspaceId }: Props = $props();
-
-  const logger = createLogger('QuakeTerminalOverlay');
-
-  // Store bindings
-  const isOpen = selectIsTerminalOverlayOpen();
-  const height = selectTerminalOverlayHeight();
-  const activeTerminalId = selectActiveTerminalId();
-  const terminals = selectTerminals();
-  const scriptEntries$ = selectScriptEntries();
-  const scriptsInitialized$ = selectScriptsInitialized();
-  const selectedScriptId$ = selectSelectedScriptId();
+  let { workspaceId: propWorkspaceId, showDockWhenClosed = true }: Props = $props();
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
+  const workspaceIdStore = writable<string>(ROOT_WORKSPACE_ID);
+  $effect(() => workspaceIdStore.set(workspaceId ?? ROOT_WORKSPACE_ID));
+
+  // Store bindings
+  const isOpen = selectIsTerminalOverlayOpenForWorkspace(workspaceIdStore);
+  const height = selectTerminalOverlayHeight();
+  const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
+  const terminals = selectTerminalsForWorkspace(workspaceIdStore);
+  const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
+  const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
+
+  const workspaceOwnership = $derived.by(() => ({ workspaceId }));
   const isRealWorkspace = $derived(
     !!workspaceId &&
       workspaceId !== 'new' &&
@@ -137,13 +130,12 @@
 
   // UI state
   let isResizing = $state(false);
+  let bodyStylesBeforeResize: { cursor: string; userSelect: string } | null = null;
   let editingTerminalId = $state<string | null>(null);
   let editingValue = $state('');
   let isEditingHeaderName = $state(false);
   let headerEditValue = $state('');
-  // Selected script tab lives in the terminals slice (per-workspace) so it
-  // survives workspace switches/remounts; read-only alias for the template.
-  const selectedScriptId = $derived($selectedScriptId$);
+  const selectedScriptId = $derived($workspaceTerminalState$.selectedScriptId);
   let editingScriptTabId = $state<string | null>(null);
   let editingScriptTabValue = $state('');
 
@@ -155,6 +147,13 @@
   let editedScriptCommand = $state('');
 
   let isDetectingScripts = $state(false);
+
+  function setSelectedScript(scriptId: string | null) {
+    if (!workspaceId) return;
+    appStore.dispatch(
+      scriptId ? selectScript(workspaceId, scriptId) : clearScriptSelection(workspaceId),
+    );
+  }
 
   async function handleDetectScripts() {
     if (!workspaceId) return;
@@ -276,41 +275,53 @@
     return actions;
   }
 
-  // Instance export: the 'delete' branch has no template trigger yet, so
-  // unit tests drive it via the component instance.
+  async function runScriptMutation(
+    mutation: () => Promise<{ success: boolean; error?: string }>,
+    fallbackError: string,
+  ): Promise<boolean> {
+    try {
+      const result = await mutation();
+      if (!result.success) {
+        toast.error(result.error || fallbackError);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : fallbackError);
+      return false;
+    }
+  }
+
   export async function handleScriptAction(
     action: 'start' | 'stop' | 'restart' | 'delete',
     scriptId: string,
   ) {
-    if (!workspaceId) return;
-    if (action === 'start') await scriptsClient.start(workspaceId, scriptId);
-    else if (action === 'stop') await scriptsClient.stop(workspaceId, scriptId);
-    else if (action === 'restart') await scriptsClient.restart(workspaceId, scriptId);
-    else if (action === 'delete') {
-      await scriptsClient.remove(workspaceId, scriptId);
-      // Capture the raw selection BEFORE removeScript: the validated
-      // selectedScriptId $derived reads null once the script leaves the
-      // scripts slice, which would skip the clear and strand a stale id in
-      // Redux/localStorage (logically holding the panel open with nothing
-      // renderable until the next script.list hydration).
+    const ownership = workspaceOwnership;
+    const mutationWorkspaceId = ownership.workspaceId;
+    if (!mutationWorkspaceId) return;
+    const succeeded = await runScriptMutation(
+      () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
+      `Failed to ${action} script`,
+    );
+    if (!succeeded) return;
+
+    if (action === 'delete') {
       const wasSelected =
-        selectWorkspaceTerminalState.select(appStore.state, workspaceId).selectedScriptId ===
-        scriptId;
-      appStore.dispatch(removeScript(workspaceId, scriptId));
-      if (wasSelected) appStore.dispatch(clearScriptSelection(workspaceId));
+        selectWorkspaceTerminalState.select(appStore.state, mutationWorkspaceId)
+          .selectedScriptId === scriptId;
+      appStore.dispatch(removeScript(mutationWorkspaceId, scriptId));
+      if (wasSelected) appStore.dispatch(clearScriptSelection(mutationWorkspaceId));
     }
   }
 
   // ---- Script header state (for top header bar when script is selected) ----
 
-  const selectedScript = $derived.by(() => {
-    void $scriptEntries$; // trigger reactivity on script state changes
-    return selectedScriptId ? selectScriptById.select(appStore.state, selectedScriptId) : null;
-  });
-  const selectedScriptRuntime = $derived.by(() => {
-    void $scriptEntries$; // trigger reactivity on script state changes
-    return selectedScriptId ? selectScriptRuntime.select(appStore.state, selectedScriptId) : null;
-  });
+  const selectedScript = $derived(
+    selectedScriptId
+      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      : null,
+  );
+  const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
 
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
     idle: {
@@ -350,17 +361,27 @@
     });
   }
 
-  function finishEditingScriptName(): void {
-    if (isEditingScriptName && selectedScript && selectedScriptId) {
-      const trimmed = editedScriptName.trim();
+  async function finishEditingScriptName(): Promise<void> {
+    const ownership = workspaceOwnership;
+    const mutationWorkspaceId = ownership.workspaceId;
+    const mutationScriptId = selectedScriptId;
+    const mutationValue = editedScriptName;
+    if (isEditingScriptName && selectedScript && mutationScriptId && mutationWorkspaceId) {
+      const trimmed = mutationValue.trim();
       if (trimmed && trimmed !== selectedScript.name) {
-        void scriptsClient
-          .update(workspaceId!, selectedScriptId, { name: trimmed })
-          .then((result) => {
-            if (!result.success && result.error) toast.warning(result.error);
-          })
-          .catch((error) => logger.error('Script update failed', error))
-          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
+        const succeeded = await runScriptMutation(
+          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
+          'Failed to rename script',
+        );
+        if (!succeeded) return;
+        appStore.dispatch(refreshScripts(mutationWorkspaceId));
+        if (
+          workspaceOwnership !== ownership ||
+          selectedScriptId !== mutationScriptId ||
+          editedScriptName !== mutationValue
+        ) {
+          return;
+        }
       }
     }
     isEditingScriptName = false;
@@ -395,18 +416,28 @@
     showScriptEditPanel = false;
   }
 
-  function saveScriptCommand(): void {
-    if (selectedScript && selectedScriptId) {
+  async function saveScriptCommand(): Promise<void> {
+    const ownership = workspaceOwnership;
+    const mutationWorkspaceId = ownership.workspaceId;
+    const mutationScriptId = selectedScriptId;
+    const mutationValue = editedScriptCommand;
+    if (selectedScript && mutationScriptId && mutationWorkspaceId) {
       const updates: Record<string, any> = {};
-      if (editedScriptCommand !== selectedScript.command) updates.command = editedScriptCommand;
+      if (mutationValue !== selectedScript.command) updates.command = mutationValue;
       if (Object.keys(updates).length > 0) {
-        void scriptsClient
-          .update(workspaceId!, selectedScriptId, updates)
-          .then((result) => {
-            if (!result.success && result.error) toast.warning(result.error);
-          })
-          .catch((error) => logger.error('Script update failed', error))
-          .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
+        const succeeded = await runScriptMutation(
+          () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
+          'Failed to update script command',
+        );
+        if (!succeeded) return;
+        appStore.dispatch(refreshScripts(mutationWorkspaceId));
+        if (
+          workspaceOwnership !== ownership ||
+          selectedScriptId !== mutationScriptId ||
+          editedScriptCommand !== mutationValue
+        ) {
+          return;
+        }
       }
     }
     showScriptEditPanel = false;
@@ -424,22 +455,21 @@
       });
   }
 
-  // Scripts shown as tabs in the bottom bar: live (running/restarting) plus
-  // services the daemon reports as previously running (before its last
-  // shutdown) so they stay visible — unopened — after an app relaunch.
+  // Live and previously-running scripts shown as tabs in the bottom bar.
   const runningScripts = $derived(
     $scriptEntries$.filter(
       (s) => isLiveScriptStatus(s.runtime.status) || s.runtime.previouslyRunning === true,
     ),
   );
 
-  // Dismiss a previously-running tab: `script.stop` clears the daemon-side
-  // marker even when the script is not live; refresh re-reads the list.
-  async function dismissPreviouslyRunningTab(scriptId: string, e: MouseEvent) {
-    e.stopPropagation();
+  async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
+    event.stopPropagation();
     if (!workspaceId) return;
-    await scriptsClient.stop(workspaceId, scriptId);
-    appStore.dispatch(refreshScripts(workspaceId));
+    const succeeded = await runScriptMutation(
+      () => scriptsClient.stop(workspaceId, scriptId),
+      m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+    );
+    if (succeeded) appStore.dispatch(refreshScripts(workspaceId));
   }
 
   // Constants
@@ -522,9 +552,7 @@
   // Tab Display Logic
   // ============================================================================
 
-
   /** Split text into segments of plain text and localhost URLs */
-
 
   function getTabDisplayName(term: { id: string; name: string; customName?: string }): string {
     if (term.customName) return term.customName;
@@ -576,17 +604,28 @@
     });
   }
 
-  function finishEditingScriptTab() {
-    if (editingScriptTabId && editingScriptTabValue.trim()) {
-      void scriptsClient
-        .update(workspaceId!, editingScriptTabId, {
-          name: editingScriptTabValue.trim(),
-        })
-        .then((result) => {
-          if (!result.success && result.error) toast.warning(result.error);
-        })
-        .catch((error) => logger.error('Script update failed', error))
-        .finally(() => appStore.dispatch(refreshScripts(workspaceId!)));
+  async function finishEditingScriptTab() {
+    const ownership = workspaceOwnership;
+    const mutationWorkspaceId = ownership.workspaceId;
+    const mutationScriptId = editingScriptTabId;
+    const mutationValue = editingScriptTabValue;
+    if (mutationScriptId && mutationValue.trim() && mutationWorkspaceId) {
+      const succeeded = await runScriptMutation(
+        () =>
+          scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
+            name: mutationValue.trim(),
+          }),
+        'Failed to rename script',
+      );
+      if (!succeeded) return;
+      appStore.dispatch(refreshScripts(mutationWorkspaceId));
+      if (
+        workspaceOwnership !== ownership ||
+        editingScriptTabId !== mutationScriptId ||
+        editingScriptTabValue !== mutationValue
+      ) {
+        return;
+      }
     }
     editingScriptTabId = null;
     editingScriptTabValue = '';
@@ -670,8 +709,6 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  // In-flight guard: a double-click on the new-terminal button must not
-  // issue two `terminal.create` calls (two daemon PTYs).
   let isCreatingTerminal = false;
 
   async function createNewTerminal() {
@@ -679,23 +716,16 @@
     const createWorkspaceId = workspaceId;
     isCreatingTerminal = true;
     try {
-      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
-      // assigns the PTY id and the Redux tab is keyed by it, so hydration
-      // (`terminal.list`) always matches the tab id — no local placeholder
-      // ids that a workspace-switch hydration would drop.
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- mutation must return the daemon-assigned PTY id before the Redux tab is created
       const result = await appClient.terminals.create({
         workspaceId: createWorkspaceId,
         cols: 80,
         rows: 24,
       });
       if (!result.success || !result.id) {
-        logger.error('Failed to create terminal', { error: result.success ? 'missing id' : result.error });
         toast.error(m.terminal_adapter_openFailed_error());
         return;
       }
-      // Workspace switched mid-create: the PTY is real and will hydrate into
-      // its workspace via terminalCreated, but don't mutate the departed
-      // workspace's open/active state.
       const stale = workspaceId !== createWorkspaceId;
       if (!stale) {
         appStore.dispatch(
@@ -706,19 +736,11 @@
           ),
         );
       }
-      // Correct any in-flight terminal.list snapshot that predates the create.
       appStore.dispatch(terminalCreated(createWorkspaceId));
       if (stale) return;
-      if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
-      }
-      // Focus the overlay container immediately so keyboard shortcuts
-      // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
-      requestAnimationFrame(() => {
-        overlayContainer?.focus();
-      });
-    } catch (error) {
-      logger.error('Failed to create terminal', error);
+      if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
+      requestAnimationFrame(() => overlayContainer?.focus());
+    } catch {
       toast.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
@@ -755,7 +777,6 @@
         handleClose();
       } else {
         if (workspaceId) {
-          // selectTerminal also clears the script-tab selection in the reducer
           appStore.dispatch(selectTerminal(workspaceId, termId));
           if (!$isOpen) {
             appStore.dispatch(openTerminalOverlay(workspaceId, termId));
@@ -788,6 +809,12 @@
 
   function startResize(event: MouseEvent) {
     event.preventDefault();
+    if (!bodyStylesBeforeResize) {
+      bodyStylesBeforeResize = {
+        cursor: document.body.style.cursor,
+        userSelect: document.body.style.userSelect,
+      };
+    }
     isResizing = true;
     document.body.style.cursor = 'ns-resize';
     document.body.style.userSelect = 'none';
@@ -803,9 +830,13 @@
   }
 
   function stopResize() {
+    const previousBodyStyles = bodyStylesBeforeResize;
+    bodyStylesBeforeResize = null;
     isResizing = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    if (previousBodyStyles) {
+      document.body.style.cursor = previousBodyStyles.cursor;
+      document.body.style.userSelect = previousBodyStyles.userSelect;
+    }
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
   }
@@ -848,6 +879,14 @@
       return;
     }
   }
+
+  onDestroy(() => {
+    if (pendingClickTimeout) {
+      clearTimeout(pendingClickTimeout);
+      pendingClickTimeout = null;
+    }
+    stopResize();
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -871,13 +910,12 @@
         <!-- Resize Handle - Sleek minimal design -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="absolute -top-1 left-0 right-0 h-3 cursor-ns-resize z-10 flex items-center justify-center group/resize"
+          class="app-resize-handle absolute -top-2 left-0 right-0 z-10 h-4"
+          data-resize-axis="y"
+          data-resize-indicator="short"
+          data-resizing={isResizing}
           onmousedown={startResize}
-        >
-          <div
-            class="w-9 h-1 rounded-sm bg-muted-foreground/20 transition-all duration-150 group-hover/resize:bg-muted-foreground/40 group-hover/resize:scale-x-110"
-          ></div>
-        </div>
+        ></div>
 
         <!-- Header Bar -->
         <div class="flex items-center justify-between h-9 px-3 bg-background shrink-0">
@@ -950,15 +988,15 @@
 
               <!-- Detected URL -->
               {#if selectedScriptRuntime.detectedUrl}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <button
+                <Button
+                  variant="plain"
                   class="text-blue-400 hover:underline text-xs flex items-center gap-1 cursor-pointer flex-shrink-0"
                   onclick={handleScriptOpenUrl}
                   title={selectedScriptRuntime.detectedUrl}
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
                   <span class="max-w-[200px] truncate">{selectedScriptRuntime.detectedUrl}</span>
-                </button>
+                </Button>
               {/if}
             </div>
 
@@ -1096,7 +1134,7 @@
                   {workspaceId}
                   class="flex-1"
                   onDelete={() => {
-                    if (workspaceId) appStore.dispatch(clearScriptSelection(workspaceId));
+                    setSelectedScript(null);
                   }}
                 />
               {/key}
@@ -1104,7 +1142,11 @@
               <!-- Terminal Content -->
               <div class="flex-1 overflow-hidden">
                 {#key $activeTerminalId}
-                  <Terminal terminalId={$activeTerminalId} workspaceId={terminalWorkspaceId} class="h-full w-full" />
+                  <Terminal
+                    terminalId={$activeTerminalId}
+                    workspaceId={terminalWorkspaceId}
+                    class="h-full w-full"
+                  />
                 {/key}
               </div>
             {/if}
@@ -1120,12 +1162,8 @@
             <TerminalSidebar
               {workspaceId}
               {selectedScriptId}
-              onSelectScript={(id) => {
-                if (!workspaceId) return;
-                appStore.dispatch(id ? selectScript(workspaceId, id) : clearScriptSelection(workspaceId));
-              }}
+              onSelectScript={(id) => setSelectedScript(id)}
               onSelectTerminal={(id) => {
-                // selectTerminal also clears the script-tab selection in the reducer
                 if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
               }}
               onCreateTerminal={createNewTerminal}
@@ -1135,302 +1173,308 @@
       </div>
     {/if}
 
-    <!-- Tab Bar - Always visible when terminals exist -->
-    <div class="flex items-center justify-between h-9 px-1 bg-background backdrop-blur-xl">
-      <!-- Tabs Container -->
-      <div class="flex items-center h-full min-w-0 overflow-x-auto scrollbar-none">
-        <!-- Terminal Icon - toggle panel -->
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          class="mx-1 text-muted-foreground"
-          onclick={() => ($isOpen ? handleClose() : handleOpen())}
-          tooltip={$isOpen
-            ? m.terminal_quakeOverlay_collapse_tooltip()
-            : m.terminal_quakeOverlay_expand_tooltip()}
-          tooltipShortcut="mod+`"
-          aria-label={$isOpen
-            ? m.terminal_quakeOverlay_collapse_ariaLabel()
-            : m.terminal_quakeOverlay_expand_ariaLabel()}
-        >
-          <Fa icon={faTerminal} size="xs" />
-        </Button>
-
-        {#each $terminals as term (term.id)}
-          {@const isActive = term.id === $activeTerminalId && $isOpen && selectedScriptId === null}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class={cn(
-              'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
-              'hover:text-foreground hover:bg-muted/80',
-              isActive && 'text-foreground bg-sidebar shadow-sm',
-            )}
-            onclick={() => handleTabClick(term.id)}
-            ondblclick={(e) => handleTabDoubleClick(term.id, term.customName, e)}
-            onkeydown={(e) => e.key === 'Enter' && handleTabClick(term.id)}
-            role="tab"
-            tabindex="0"
-            aria-selected={isActive}
-          >
-            <!-- Tab Label (editable) -->
-            {#if editingTerminalId === term.id}
-              <input
-                type="text"
-                data-edit-terminal={term.id}
-                bind:value={editingValue}
-                onblur={finishEditing}
-                onkeydown={handleEditKeydown}
-                onclick={(e) => e.stopPropagation()}
-                placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
-              />
-            {:else}
-              <span class="overflow-hidden text-ellipsis whitespace-nowrap"
-                >{getTabDisplayName(term)}</span
-              >
-            {/if}
-
-            <!-- Close Button - appears on hover -->
-            <button
-              type="button"
-              class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
-              onclick={(e) => closeTerminal(term.id, e)}
-              aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
-            >
-              <Fa icon={faXmark} size="xs" />
-            </button>
-          </div>
-        {/each}
-
-        <!-- Running Script Tabs -->
-        {#each runningScripts as script (script.id)}
-          {@const isScriptActive = selectedScriptId === script.id && $isOpen}
-          {@const isPreviouslyRunningOnly =
-            script.runtime.previouslyRunning === true && !isLiveScriptStatus(script.runtime.status)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class={cn(
-              'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
-              'hover:text-foreground hover:bg-muted/80',
-              isScriptActive && 'text-foreground bg-sidebar shadow-sm',
-            )}
-            onclick={() => {
-              if (!workspaceId) return;
-              if (isScriptActive) {
-                handleClose();
-                appStore.dispatch(clearScriptSelection(workspaceId));
-              } else {
-                appStore.dispatch(selectScript(workspaceId, script.id));
-                if (!$isOpen) {
-                  appStore.dispatch(openTerminalOverlay(workspaceId));
-                }
-              }
-            }}
-            ondblclick={(e) => {
-              e.stopPropagation();
-              startEditingScriptTab(script.id, script.name);
-            }}
-            role="tab"
-            tabindex="0"
-            aria-selected={isScriptActive}
-          >
-            <div class={cn('w-2 h-2 rounded-full shrink-0', getStatusColor(script))}></div>
-            {#if editingScriptTabId === script.id}
-              <input
-                type="text"
-                data-edit-script-tab={script.id}
-                bind:value={editingScriptTabValue}
-                onblur={finishEditingScriptTab}
-                onkeydown={handleEditScriptTabKeydown}
-                onclick={(e) => e.stopPropagation()}
-                placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
-              />
-            {:else}
-              <span class="overflow-hidden text-ellipsis whitespace-nowrap">{script.name}</span>
-              {#if script.runtime.detectedUrl}
-                <button
-                  type="button"
-                  class="ml-auto p-1 text-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors shrink-0"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    const url = script.runtime.detectedUrl;
-                    if (url) {
-                      import('$features/layout/panel-layout-adapter')
-                        .then(({ getPanelLayoutManager }) => {
-                          const layoutManager = getPanelLayoutManager(workspaceId!);
-                          layoutManager.openBrowserPanel(url);
-                        })
-                        .catch(() => {
-                          window.open(url, '_blank');
-                        });
-                    }
-                  }}
-                  title={m.terminal_quakeOverlay_openUrl_tooltip()}
-                  aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
-                >
-                  <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                </button>
-              {/if}
-              {#if isPreviouslyRunningOnly}
-                <button
-                  type="button"
-                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
-                  data-dismiss-script-tab={script.id}
-                  onclick={(e) => dismissPreviouslyRunningTab(script.id, e)}
-                  aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
-                >
-                  <Fa icon={faXmark} size="xs" />
-                </button>
-              {/if}
-            {/if}
-          </div>
-        {/each}
-      </div>
-
-      <!-- New Terminal Button (sticky, never scrolls) -->
-      <Tooltip
-        content={m.terminal_quakeOverlay_newTerminal_tooltip()}
-        side="top"
-        class="mr-auto pl-1"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          class="text-muted-foreground/75 cursor-pointer a11y-ignore"
-          onclick={createNewTerminal}
-          aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
-        >
-          <Fa icon={faPlus} class="size-2.75" />
-        </Button>
-      </Tooltip>
-
-      <!-- Right Actions -->
-      <div class="flex items-center gap-1">
-        {#if isRealWorkspace && $scriptsInitialized$ && $scriptEntries$.length === 0}
+    <!-- Contextual tab bar; workspace pages use the sidebar dock while collapsed. -->
+    {#if showDockWhenClosed || $isOpen}
+      <div class="flex items-center justify-between h-9 px-1 bg-background backdrop-blur-xl">
+        <!-- Tabs Container -->
+        <div class="flex items-center h-full min-w-0 overflow-x-auto scrollbar-none">
+          <!-- Terminal Icon - toggle panel -->
           <Button
             variant="ghost-light"
-            size="sm"
-            class="text-xs text-muted-foreground hover:text-foreground h-6 px-2 mr-1"
-            onclick={handleDetectScripts}
-            disabled={isDetectingScripts}
+            size="icon-xs"
+            class="mx-1 text-muted-foreground"
+            onclick={() => ($isOpen ? handleClose() : handleOpen())}
+            tooltip={$isOpen
+              ? m.terminal_quakeOverlay_collapse_tooltip()
+              : m.terminal_quakeOverlay_expand_tooltip()}
+            tooltipShortcut="mod+`"
+            aria-label={$isOpen
+              ? m.terminal_quakeOverlay_collapse_ariaLabel()
+              : m.terminal_quakeOverlay_expand_ariaLabel()}
           >
-            {#if isDetectingScripts}
-              <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
-              {m.terminal_quakeOverlay_detecting_label()}
-            {:else}
-              {m.terminal_quakeOverlay_detectScripts_label()}
-            {/if}
+            <Fa icon={faTerminal} size="xs" />
           </Button>
-        {/if}
 
-        {#if isRealWorkspace}
-        <TooltipRich
-          side="top"
-          align="end"
-          sideOffset={8}
-          interactive
-          delayDuration={400}
-          maxWidth="16rem"
-          contentContainerClass="p-0!"
-        >
-          {#snippet trigger()}
-            <button
-              type="button"
-              class="flex items-center justify-center h-full px-2 text-muted-foreground/50 cursor-pointer hover:text-foreground transition-colors text-muted-foreground/75 relative"
-              onclick={async () => {
-                if ($isOpen) {
+          {#each $terminals as term (term.id)}
+            {@const isActive =
+              term.id === $activeTerminalId && $isOpen && selectedScriptId === null}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class={cn(
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'hover:text-foreground hover:bg-muted/80',
+                isActive && 'text-foreground bg-sidebar shadow-sm',
+              )}
+              onclick={() => handleTabClick(term.id)}
+              ondblclick={(e) => handleTabDoubleClick(term.id, term.customName, e)}
+              onkeydown={(e) => e.key === 'Enter' && handleTabClick(term.id)}
+              role="tab"
+              tabindex="0"
+              aria-selected={isActive}
+            >
+              <!-- Tab Label (editable) -->
+              {#if editingTerminalId === term.id}
+                <input
+                  type="text"
+                  data-edit-terminal={term.id}
+                  bind:value={editingValue}
+                  onblur={finishEditing}
+                  onkeydown={handleEditKeydown}
+                  onclick={(e) => e.stopPropagation()}
+                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                  class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                />
+              {:else}
+                <span class="overflow-hidden text-ellipsis whitespace-nowrap"
+                  >{getTabDisplayName(term)}</span
+                >
+              {/if}
+
+              <!-- Close Button - appears on hover -->
+              <Button
+                variant="plain"
+                size="icon-xs"
+                iconOnly
+                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                onclick={(e) => closeTerminal(term.id, e)}
+                aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
+              >
+                <Fa icon={faXmark} size="xs" />
+              </Button>
+            </div>
+          {/each}
+
+          <!-- Running Script Tabs -->
+          {#each runningScripts as script (script.id)}
+            {@const isScriptActive = selectedScriptId === script.id && $isOpen}
+            {@const isPreviouslyRunningOnly =
+              script.runtime.previouslyRunning === true &&
+              !isLiveScriptStatus(script.runtime.status)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class={cn(
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'hover:text-foreground hover:bg-muted/80',
+                isScriptActive && 'text-foreground bg-sidebar shadow-sm',
+              )}
+              onclick={() => {
+                if (isScriptActive) {
                   handleClose();
-                } else if (workspaceId) {
-                  if ($terminals.length === 0) {
-                    // Daemon-first create opens the overlay keyed by the
-                    // daemon id once the create resolves.
-                    await createNewTerminal();
-                  } else {
+                  setSelectedScript(null);
+                } else {
+                  setSelectedScript(script.id);
+                  if (!$isOpen && workspaceId) {
                     appStore.dispatch(openTerminalOverlay(workspaceId));
-                  }
-                  const entries = selectScriptEntries.select(appStore.state);
-                  if (entries.length > 0 && !selectSelectedScriptId.select(appStore.state)) {
-                    appStore.dispatch(selectScript(workspaceId, entries[0].id));
                   }
                 }
               }}
+              ondblclick={(e) => {
+                e.stopPropagation();
+                startEditingScriptTab(script.id, script.name);
+              }}
+              role="tab"
+              tabindex="0"
+              aria-selected={isScriptActive}
             >
-              <div class="flex items-center gap-1.5">
-                <Fa icon={faPlay} size="xs" />
-                {#if $scriptEntries$.length > 0}
-                  <span
-                    class="text-xs bg-muted-foreground/20 text-foreground px-1 py-0.5 rounded leading-none"
-                    >{$scriptEntries$.length}</span
-                  >
-                {/if}
-              </div>
-            </button>
-          {/snippet}
-
-          {#snippet content()}
-            <div class="flex flex-col min-w-[200px] max-h-[300px] overflow-y-auto p-2 pt-2.5">
-              <Header size={6} class="pb-1 px-1">{m.terminal_quakeOverlay_scripts_title()}</Header>
-              {#if $scriptEntries$.length > 0}
-                <ListContainer spacing="compact" class="py-0 px-0">
-                  {#each sortScripts($scriptEntries$) as script (script.id)}
-                    <ListItem
-                      size="sm"
-                      class="py-0.5! px-1! gap-1.5!"
-                      title={script.name}
-                      subtitle={script.command}
-                      subtitleClass="leading-none"
-                      active={selectedScriptId === script.id}
-                      onclick={() => {
-                        if (!workspaceId) return;
-                        appStore.dispatch(selectScript(workspaceId, script.id));
-                        if (!$isOpen) {
-                          appStore.dispatch(openTerminalOverlay(workspaceId));
-                        }
-                      }}
-                      actions={getScriptActions(script)}
-                      actionsVisible="hover"
-                      actionsClass="absolute right-0 top-1/2 -translate-y-1/2 bg-background px-1 rounded"
-                    >
-                      {#snippet iconSnippet()}
-                        <div class="flex items-center justify-center w-3">
-                          <div
-                            class={cn('w-2 h-2 rounded-full', getStatusColor(script))}
-                            title={getStatusLabel(script)}
-                          ></div>
-                        </div>
-                      {/snippet}
-                    </ListItem>
-                  {/each}
-                </ListContainer>
+              <div class="w-2 h-2 rounded-full bg-green-500 shrink-0"></div>
+              {#if editingScriptTabId === script.id}
+                <input
+                  type="text"
+                  data-edit-script-tab={script.id}
+                  bind:value={editingScriptTabValue}
+                  onblur={finishEditingScriptTab}
+                  onkeydown={handleEditScriptTabKeydown}
+                  onclick={(e) => e.stopPropagation()}
+                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                  class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                />
               {:else}
-                <div class="text-xs text-muted-foreground italic p-2">
-                  {m.terminal_quakeOverlay_noScriptsYet_label()}
-                </div>
+                <span class="overflow-hidden text-ellipsis whitespace-nowrap">{script.name}</span>
+                {#if script.runtime.detectedUrl}
+                  <Button
+                    variant="plain"
+                    size="icon-xs"
+                    iconOnly
+                    class="ml-auto p-1 text-muted-foreground/50 hover:text-foreground cursor-pointer transition-colors shrink-0"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      const url = script.runtime.detectedUrl;
+                      if (url) {
+                        import('$features/layout/panel-layout-adapter')
+                          .then(({ getPanelLayoutManager }) => {
+                            const layoutManager = getPanelLayoutManager(workspaceId!);
+                            layoutManager.openBrowserPanel(url);
+                          })
+                          .catch(() => {
+                            window.open(url, '_blank');
+                          });
+                      }
+                    }}
+                    title={m.terminal_quakeOverlay_openUrl_tooltip()}
+                    aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
+                  >
+                    <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                  </Button>
+                {/if}
+                {#if isPreviouslyRunningOnly}
+                  <Button
+                    variant="plain"
+                    size="icon-xs"
+                    iconOnly
+                    class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                    data-dismiss-script-tab={script.id}
+                    onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
+                    aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
+                  >
+                    <Fa icon={faXmark} size="xs" />
+                  </Button>
+                {/if}
               {/if}
             </div>
-          {/snippet}
-        </TooltipRich>
-        {/if}
+          {/each}
+        </div>
 
-        <!-- Collapse/Expand Toggle -->
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => ($isOpen ? handleClose() : handleOpen())}
-          tooltip={$isOpen
-            ? m.terminal_quakeOverlay_collapse_tooltip()
-            : m.terminal_quakeOverlay_expand_tooltip()}
-          tooltipShortcut="mod+`"
-          aria-label={$isOpen
-            ? m.terminal_quakeOverlay_collapse_ariaLabel()
-            : m.terminal_quakeOverlay_expand_ariaLabel()}
+        <!-- New Terminal Button (sticky, never scrolls) -->
+        <Tooltip
+          content={m.terminal_quakeOverlay_newTerminal_tooltip()}
+          side="top"
+          class="mr-auto pl-1"
+          delayDuration={300}
         >
-          <Fa icon={$isOpen ? faChevronDown : faChevronUp} size="xs" />
-        </Button>
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            class="text-muted-foreground/75 cursor-pointer a11y-ignore"
+            onclick={createNewTerminal}
+            aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
+          >
+            <Fa icon={faPlus} class="size-2.75" />
+          </Button>
+        </Tooltip>
+
+        <!-- Right Actions -->
+        <div class="flex items-center gap-1">
+          {#if isRealWorkspace && $scriptsInitialized$ && $scriptEntries$.length === 0}
+            <Button
+              variant="ghost-light"
+              size="sm"
+              class="text-xs text-muted-foreground hover:text-foreground h-6 px-2 mr-1"
+              onclick={handleDetectScripts}
+              disabled={isDetectingScripts}
+            >
+              {#if isDetectingScripts}
+                <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
+                {m.terminal_quakeOverlay_detecting_label()}
+              {:else}
+                {m.terminal_quakeOverlay_detectScripts_label()}
+              {/if}
+            </Button>
+          {/if}
+
+          {#if isRealWorkspace}
+            <TooltipRich
+              side="top"
+              align="end"
+              sideOffset={8}
+              interactive
+              delayDuration={400}
+              maxWidth="16rem"
+              contentContainerClass="p-0!"
+            >
+              {#snippet trigger()}
+                <Button
+                  variant="plain"
+                  class="flex items-center justify-center h-full px-2 text-muted-foreground/50 cursor-pointer hover:text-foreground transition-colors text-muted-foreground/75 relative"
+                  onclick={() => {
+                    if ($isOpen) {
+                      handleClose();
+                    } else if (workspaceId) {
+                      if ($terminals.length === 0) createNewTerminal();
+                      appStore.dispatch(openTerminalOverlay(workspaceId));
+                      const entries = selectWorkspaceScriptEntries.select(
+                        appStore.state,
+                        workspaceId,
+                      );
+                      if (entries.length > 0 && !selectedScriptId) {
+                        setSelectedScript(entries[0].id);
+                      }
+                    }
+                  }}
+                >
+                  <div class="flex items-center gap-1.5">
+                    <Fa icon={faPlay} size="xs" />
+                    {#if $scriptEntries$.length > 0}
+                      <span
+                        class="text-xs bg-muted-foreground/20 text-foreground px-1 py-0.5 rounded leading-none"
+                        >{$scriptEntries$.length}</span
+                      >
+                    {/if}
+                  </div>
+                </Button>
+              {/snippet}
+
+              {#snippet content()}
+                <div class="flex flex-col min-w-[200px] max-h-[300px] overflow-y-auto p-2 pt-2.5">
+                  <Header size={6} class="px-1">{m.terminal_quakeOverlay_scripts_title()}</Header>
+                  {#if $scriptEntries$.length > 0}
+                    <ListContainer spacing="compact" class="py-0! px-0">
+                      {#each sortScripts($scriptEntries$) as script (script.id)}
+                        <ListItem
+                          size="sm"
+                          class="gap-0.5!"
+                          title={script.name}
+                          subtitle={script.command}
+                          subtitleClass="leading-none"
+                          active={selectedScriptId === script.id}
+                          onclick={() => {
+                            setSelectedScript(script.id);
+                            if (!$isOpen && workspaceId) {
+                              appStore.dispatch(openTerminalOverlay(workspaceId));
+                            }
+                          }}
+                          actions={getScriptActions(script)}
+                          actionsVisible="hover"
+                          actionsClass="absolute right-0 top-1/2 -translate-y-1/2 bg-background px-1 rounded"
+                        >
+                          {#snippet iconSnippet()}
+                            <div class="flex items-center justify-center w-2">
+                              <div
+                                class={cn('w-2 h-2 rounded-full', getStatusColor(script))}
+                                title={getStatusLabel(script)}
+                              ></div>
+                            </div>
+                          {/snippet}
+                        </ListItem>
+                      {/each}
+                    </ListContainer>
+                  {:else}
+                    <div class="text-xs text-muted-foreground italic p-2">
+                      {m.terminal_quakeOverlay_noScriptsYet_label()}
+                    </div>
+                  {/if}
+                </div>
+              {/snippet}
+            </TooltipRich>
+          {/if}
+
+          <!-- Collapse/Expand Toggle -->
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            onclick={() => ($isOpen ? handleClose() : handleOpen())}
+            tooltip={$isOpen
+              ? m.terminal_quakeOverlay_collapse_tooltip()
+              : m.terminal_quakeOverlay_expand_tooltip()}
+            tooltipShortcut="mod+`"
+            aria-label={$isOpen
+              ? m.terminal_quakeOverlay_collapse_ariaLabel()
+              : m.terminal_quakeOverlay_expand_ariaLabel()}
+          >
+            <Fa icon={$isOpen ? faChevronDown : faChevronUp} size="xs" />
+          </Button>
+        </div>
       </div>
-    </div>
+    {/if}
   </div>
 {/if}
 

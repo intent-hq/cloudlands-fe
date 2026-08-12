@@ -13,8 +13,11 @@ import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
   chatChangesDedupId,
+  openWorkspaceActivityChanges,
   openWorkspaceAttachment,
+  openWorkspaceBrowser,
   openWorkspaceChatChanges,
+  openWorkspaceCodeReview,
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
@@ -31,7 +34,11 @@ function* openWorkspaceTab(
   sourcePanelId?: string,
 ): SagaGenerator<void> {
   if (adjacent) {
-    yield* put(openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, { force: true }));
+    yield* put(
+      openTabInAdjacentOrSplit(workspaceId, tab, sourcePanelId, {
+        force: true,
+      }),
+    );
     return;
   }
   yield* put(openTab(workspaceId, tab, sourcePanelId, undefined, true));
@@ -130,34 +137,25 @@ function* openDiff(action: ReturnType<typeof openWorkspaceDiff>): SagaGenerator<
   );
 }
 
-function* openChatChanges(action: ReturnType<typeof openWorkspaceChatChanges>): SagaGenerator<void> {
-  const [workspaceId, changes, title, options] = action.payload;
-  if (!workspaceId || !changes?.length) return;
-  // Aggregate summaries omit messageId; derive a stable synthetic dedup id so
-  // re-clicks focus (and refresh) the existing tab instead of opening a new one,
-  // mirroring the navigation-history entry id.
-  const messageId = chatChangesDedupId(options);
+function* openBrowser(action: ReturnType<typeof openWorkspaceBrowser>): SagaGenerator<void> {
+  const [workspaceId, url] = action.payload;
+  if (!workspaceId || !url) return;
   yield* openWorkspaceTab(
     workspaceId,
     {
-      type: 'chat-changes',
-      title,
+      type: 'browser',
+      title: m.layout_tabTypes_browser_title(),
+      browserUrl: url,
       workspaceId,
       closable: true,
-      data: {
-        changes,
-        title,
-        messageId,
-        ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
-        ...(options?.agentId ? { agentId: options.agentId } : {}),
-        ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
-      },
     },
     false,
   );
 }
 
-function* openLocalChanges(action: ReturnType<typeof openWorkspaceLocalChanges>): SagaGenerator<void> {
+function* openLocalChanges(
+  action: ReturnType<typeof openWorkspaceLocalChanges>,
+): SagaGenerator<void> {
   const [workspaceId] = action.payload;
   if (!workspaceId) return;
   yield* openWorkspaceTab(
@@ -167,6 +165,68 @@ function* openLocalChanges(action: ReturnType<typeof openWorkspaceLocalChanges>)
       title: m.layout_presetExecutor_allChanges_title(),
       workspaceId,
       closable: true,
+    },
+    false,
+  );
+}
+
+function* openChatChanges(
+  action: ReturnType<typeof openWorkspaceChatChanges>,
+): SagaGenerator<void> {
+  const [workspaceId, changes, title, options] = action.payload;
+  if (!workspaceId || !changes?.length) return;
+  const tabTitle = title || m.layout_tabTypes_chatChanges_title();
+  const messageId = chatChangesDedupId(options);
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'chat-changes',
+      title: tabTitle,
+      workspaceId,
+      closable: true,
+      data: {
+        changes,
+        title: tabTitle,
+        messageId,
+        ...(options?.isAggregate !== undefined ? { isAggregate: options.isAggregate } : {}),
+        ...(options?.agentId ? { agentId: options.agentId } : {}),
+        ...(options?.turnNumber !== undefined ? { turnNumber: options.turnNumber } : {}),
+      },
+    },
+    Boolean(options?.sourcePanelId),
+    options?.sourcePanelId,
+  );
+}
+
+function* openActivityChanges(
+  action: ReturnType<typeof openWorkspaceActivityChanges>,
+): SagaGenerator<void> {
+  const [workspaceId, event] = action.payload;
+  if (!workspaceId || !event) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'activity-changes',
+      title: m.layout_tabTypes_activityChanges_title(),
+      workspaceId,
+      closable: true,
+      data: { event },
+    },
+    false,
+  );
+}
+
+function* openCodeReview(action: ReturnType<typeof openWorkspaceCodeReview>): SagaGenerator<void> {
+  const [workspaceId, review] = action.payload;
+  if (!workspaceId) return;
+  yield* openWorkspaceTab(
+    workspaceId,
+    {
+      type: 'code-review',
+      title: m.layout_tabTypes_codeReview_title(),
+      workspaceId,
+      closable: true,
+      data: { ...review },
     },
     false,
   );
@@ -195,11 +255,14 @@ function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): Sa
 }
 
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
+  yield* takeEvery(openWorkspaceActivityChanges, openActivityChanges);
+  yield* takeEvery(openWorkspaceBrowser, openBrowser);
+  yield* takeEvery(openWorkspaceChatChanges, openChatChanges);
+  yield* takeEvery(openWorkspaceCodeReview, openCodeReview);
   yield* takeEvery(openWorkspaceCommitChangeset, openCommit);
   yield* takeEvery(openWorkspaceFile, openFile);
+  yield* takeEvery(openWorkspaceLocalChanges, openLocalChanges);
   yield* takeEvery(openWorkspaceNote, openNote);
   yield* takeEvery(openWorkspaceDiff, openDiff);
-  yield* takeEvery(openWorkspaceChatChanges, openChatChanges);
-  yield* takeEvery(openWorkspaceLocalChanges, openLocalChanges);
   yield* takeEvery(openWorkspaceAttachment, openAttachment);
 }

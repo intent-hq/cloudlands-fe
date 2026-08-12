@@ -107,7 +107,7 @@ vi.mock('$features/scripts/scripts.client', () => ({
     start: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn(),
-    remove: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue({ success: true }),
     update: vi.fn(),
   },
 }));
@@ -147,7 +147,12 @@ function makeScript(id: string, wsId: string): ScriptWithState {
 }
 
 function seedWorkspace(wsId: string, scriptIds: string[], selectedId: string) {
-  appStore.dispatch(setScriptsData(wsId, scriptIds.map((id) => makeScript(id, wsId))));
+  appStore.dispatch(
+    setScriptsData(
+      wsId,
+      scriptIds.map((id) => makeScript(id, wsId)),
+    ),
+  );
   appStore.dispatch(setScriptsInitialized(wsId, true));
   appStore.dispatch(selectScript(wsId, selectedId));
 }

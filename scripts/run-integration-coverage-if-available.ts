@@ -8,14 +8,21 @@ const require = createRequire(import.meta.url);
 try {
   require.resolve('@vitest/coverage-v8');
 } catch {
-  console.log('ℹ️  @vitest/coverage-v8 is not installed; skipping integration coverage.');
-  console.log('   Run pnpm add -D @vitest/coverage-v8 to enable this suite.');
-  process.exit(0);
+  console.error('❌ Integration coverage cannot run: @vitest/coverage-v8 is not installed.');
+  console.error('   Install the declared coverage provider before using this verification gate.');
+  process.exit(1);
 }
 
 const child = spawn(
   'pnpm',
-  ['exec', 'vitest', 'run', '--config', 'tests/integration/vitest.integration.config.ts', '--coverage'],
+  [
+    'exec',
+    'vitest',
+    'run',
+    '--config',
+    'tests/integration/vitest.integration.config.ts',
+    '--coverage',
+  ],
   { stdio: 'inherit', env: { ...process.env, VITEST_COVERAGE: 'true' } },
 );
 

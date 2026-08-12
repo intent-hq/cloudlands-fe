@@ -23,6 +23,7 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -71,12 +72,12 @@ function getToast() {
 
 /** Lazily pull the toast component (kept out of the static module graph). */
 let toastComponentPromise: Promise<
-  (typeof import('$lib/components/ui/toast/AgentAttentionToast.svelte'))['default']
+  (typeof import('$lib/components/ui/toast'))['AgentAttentionToast']
 > | null = null;
 function getToastComponent() {
   if (!toastComponentPromise) {
-    toastComponentPromise = import('$lib/components/ui/toast/AgentAttentionToast.svelte').then(
-      (module) => module.default,
+    toastComponentPromise = import('$lib/components/ui/toast').then(
+      (module) => module.AgentAttentionToast,
     );
   }
   return toastComponentPromise;
@@ -117,16 +118,15 @@ function truncate(text: string, maxChars: number): string {
 }
 
 /**
- * "Switch To": dismiss the toast, navigate to the reporting workspace (a
- * cross-workspace `goto`), then open/focus the agent's conversation tab via
- * `openAgentTabRequested` — session hydration and tab dedup stay in the
- * app-layout navigation middleware. The tab dispatch runs even if the goto
- * fails (e.g. already on the page): panel-layout state is per-workspace, so
- * the tab is focused whenever that workspace is (next) shown.
+ * "Switch To": dismiss the toast, activate the reporting workspace, navigate
+ * to it, then open/focus the agent's conversation tab. Explicit tab activation
+ * is required in columns view: route navigation alone does not update
+ * `currentTabId`, whose change scrolls the target column into view.
  */
 export async function switchToAttentionAgent(workspaceId: string, agentId: string): Promise<void> {
   const toast = await getToast();
   toast.dismiss(agentAttentionToastId(agentId));
+  appStore.dispatch(openWorkspaceTab(workspaceId));
   try {
     const { navigateToRoute } = await import('$lib/utils/navigation.client');
     await navigateToRoute(`/workspace/${workspaceId}`);

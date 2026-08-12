@@ -9,8 +9,10 @@
  * 4. Hardcoded SPECIALISTS array (last-resort fallback if file loading fails)
  *
  * IMPORTANT: initSpecialistsService() MUST be awaited during app startup before
- * any workspace creation occurs. This ensures the settings store is ready when
- * getEffectiveSpecialist() is called.
+ * any workspace creation occurs. This ensures the file cache is ready when
+ * getEffectiveSpecialist() is called. GitHub auth is refreshed separately after
+ * the first window is created because it requires the daemon but is not critical
+ * to specialist resolution.
  */
 
 import { Logger } from '$shared/logger';
@@ -138,8 +140,6 @@ export async function initSpecialistsService(): Promise<void> {
       // Pre-load file-based specialists (includes bundled + user files)
       await refreshFileSpecialistsCache();
 
-      // Cache GitHub auth status for synchronous specialist filtering
-      await refreshGitHubAuthStatus();
       specialistsServiceInitialized = true;
     } catch (error) {
       logger.error('Failed to initialize specialists service', error as Error);
@@ -150,8 +150,10 @@ export async function initSpecialistsService(): Promise<void> {
 
 /**
  * Refresh the cached GitHub authentication status.
- * Called during init and can be called when auth state changes. The probe
- * hits the daemon's `github.authStatus` directly and folds errors to false.
+ * Called after first-window startup and when auth state changes. The probe hits
+ * the daemon's `github.authStatus` directly and folds errors to false. Until the
+ * first refresh completes, the conservative false default hides GitHub-only
+ * specialists from synchronous consumers.
  */
 export async function refreshGitHubAuthStatus(): Promise<void> {
   isGitHubAuthenticated = await isGitHubConfigured();

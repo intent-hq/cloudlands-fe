@@ -84,18 +84,22 @@ function reconcileWorkspaceAgentSnapshot(
   agents: AgentSession[],
 ): WorkspaceAgentState {
   const diskAgentIds = agents.map((agent) => String(agent.id));
-  const existingIdSet = new Set(workspaceState.agentIds);
-
-  // Merge: keep existing IPC-added agents + add any new disk-loaded agents
-  const mergedIds = [...workspaceState.agentIds];
-  for (const id of diskAgentIds) {
-    if (!existingIdSet.has(id)) {
-      mergedIds.push(id);
-    }
-  }
-
-  const allIdSet = new Set(mergedIds);
   const diskIdSet = new Set(diskAgentIds);
+
+  // Preserve only explicitly optimistic/pending local agents that are not in the daemon snapshot
+  const optimisticIds = workspaceState.agentIds.filter((id) => {
+    if (diskIdSet.has(id)) return false;
+    // Keep IDs that are either recently created or waiting for first message
+    return (
+      workspaceState.recentlyCreatedAgents.includes(id) ||
+      workspaceState.isWaitingForFirstMessage[id] === true
+    );
+  });
+
+  // Daemon snapshot IDs are authoritative; append optimistic IDs
+  const mergedIds = [...diskAgentIds, ...optimisticIds];
+  const allIdSet = new Set(mergedIds);
+
   const diskForegroundAgentIds = agents
     .filter((agent) => !isBackgroundAgent(agent))
     .map((agent) => agent.id);

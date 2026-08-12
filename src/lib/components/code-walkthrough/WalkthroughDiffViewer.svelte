@@ -11,17 +11,11 @@
    */
   import { slide } from 'svelte/transition';
   import Fa from 'svelte-fa';
-  import {
-  faChevronDown,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  parsePatch,
-  type DiffLine,
-} from './patch-utils';
+  import { faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import { parsePatch, type DiffLine } from './patch-utils';
   import type { WalkthroughAnnotation } from './types';
   import WalkthroughAnnotationCard from './WalkthroughAnnotationCard.svelte';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** The unified diff/patch string */
@@ -138,7 +132,9 @@
                 <div class="w-1 shrink-0 {getIndicatorClasses(line)}"></div>
 
                 <!-- Line numbers -->
-                <div class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border/50">
+                <div
+                  class="w-16 shrink-0 px-2 text-right text-subtle select-none border-r border-border/50"
+                >
                   <span class="inline-block w-6">{line.oldNum ?? ''}</span>
                   <span class="inline-block w-6">{line.newNum ?? ''}</span>
                 </div>

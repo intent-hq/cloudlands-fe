@@ -1,8 +1,27 @@
 diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
-index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df47226761f 100644
---- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js	
-+++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js	
-@@ -68,7 +68,9 @@ export class DismissibleLayerState {
+index 924869bdb3eedccf57345314adb7c1a9b2a12b20..4058f6b78a4de28db871dd65163f0c1f0f938a46 100644
+--- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
++++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+@@ -33,7 +33,9 @@ export class DismissibleLayerState {
+             this.#documentObj = getOwnerDocument(this.opts.ref.current);
+         });
+         let unsubEvents = noop;
++        let setupTimer;
+         const cleanup = () => {
++            clearTimeout(setupTimer);
+             this.#resetState();
+             globalThis.bitsDismissableLayers.delete(this);
+             this.#handleInteractOutside.destroy();
+@@ -42,7 +44,7 @@ export class DismissibleLayerState {
+         watch([() => this.opts.enabled.current, () => this.opts.ref.current], () => {
+             if (!this.opts.enabled.current || !this.opts.ref.current)
+                 return;
+-            afterSleep(1, () => {
++            setupTimer = afterSleep(1, () => {
+                 if (!this.opts.ref.current)
+                     return;
+                 globalThis.bitsDismissableLayers.set(this, this.#behaviorType);
+@@ -68,7 +70,9 @@ export class DismissibleLayerState {
              if (!this.opts.ref.current || this.#isTargetWithinLayer(event.target))
                  return;
              if (event.target && !this.#isFocusInsideDOMTree) {
@@ -13,7 +32,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df4
              }
          });
      };
-@@ -98,6 +100,8 @@ export class DismissibleLayerState {
+@@ -98,6 +102,8 @@ export class DismissibleLayerState {
          if (event.defaultPrevented) {
              event = createWrappedEvent(e);
          }
@@ -22,7 +41,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df4
          this.#interactOutsideProp.current(e);
      };
      #handleInteractOutside = debounce((e) => {
-@@ -105,6 +109,10 @@ export class DismissibleLayerState {
+@@ -105,6 +111,10 @@ export class DismissibleLayerState {
              this.#unsubClickListener();
              return;
          }
@@ -33,7 +52,7 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df4
          const isEventValid = this.opts.isValidEvent.current(e, this.opts.ref.current) ||
              isValidEvent(e, this.opts.ref.current);
          if (!this.#isResponsibleLayer || this.#isAnyEventIntercepted() || !isEventValid) {
-@@ -127,6 +135,10 @@ export class DismissibleLayerState {
+@@ -127,6 +137,10 @@ export class DismissibleLayerState {
              });
          }
          else {
@@ -44,3 +63,24 @@ index 924869bdb3eedccf57345314adb7c1a9b2a12b20..e7e16b37d4b4f07a51b27ccd10d73df4
              this.#interactOutsideProp.current(event);
          }
      }, 10);
+diff --git a/dist/internal/body-scroll-lock.svelte.js b/dist/internal/body-scroll-lock.svelte.js
+index 04833253a9e04813a458a8e1a7c12b720dd4a15b..b5e434d07c0855a88caa135a761d0941f3b3a996 100644
+--- a/dist/internal/body-scroll-lock.svelte.js
++++ b/dist/internal/body-scroll-lock.svelte.js
+@@ -30,6 +30,6 @@ let cleanupScheduledAt = null;
+ const bodyLockStackCount = new SharedState(() => {
+     function resetBodyStyle() {
+-        if (!BROWSER)
++        if (!BROWSER || typeof document === "undefined")
+             return;
+         document.body.setAttribute("style", initialBodyStyle ?? "");
+         document.body.style.removeProperty("--scrollbar-width");
+@@ -132,6 +132,8 @@ const bodyLockStackCount = new SharedState(() => {
+     });
+     onDestroyEffect(() => {
+         return () => {
++            cancelPendingCleanup();
++            resetBodyStyle();
+             stopTouchMoveListener?.();
+         };
+     });

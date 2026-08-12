@@ -78,7 +78,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-burn-rule {
@@ -110,7 +110,7 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-burn-spacer {
     flex: 1;

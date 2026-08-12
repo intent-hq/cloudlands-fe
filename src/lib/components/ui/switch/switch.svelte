@@ -1,13 +1,16 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
+  import { Switch as SwitchPrimitive } from 'bits-ui';
 
   interface Props {
     id?: string;
     checked?: boolean;
     disabled?: boolean;
+    required?: boolean;
+    invalid?: boolean;
     class?: string;
     onCheckedChange?: (checked: boolean) => void;
-    size?: 'sm' | 'md' | 'lg';
+    size?: 'xs' | 'sm' | 'md' | 'lg';
     name?: string;
     value?: string;
     ariaLabel?: string;
@@ -19,6 +22,8 @@
     id = '',
     checked = $bindable(false),
     disabled = false,
+    required = false,
+    invalid = false,
     class: className = '',
     onCheckedChange,
     size = 'md',
@@ -53,46 +58,27 @@
   let padding = $derived(height * paddingRatio);
   let thumbWidth = $derived(height * (1 - paddingRatio * 2));
   let thumbHeight = $derived(thumbWidth);
-
-  function handleClick() {
-    if (!disabled) {
-      checked = !checked;
-      onCheckedChange?.(checked);
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (disabled) return;
-
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      checked = !checked;
-      onCheckedChange?.(checked);
-    }
-  }
 </script>
 
-<button
+<SwitchPrimitive.Root
+  bind:checked
   {id}
   {name}
+  {value}
   {disabled}
+  {required}
+  {onCheckedChange}
   type="button"
-  role="switch"
-  aria-checked={checked}
   aria-label={ariaLabel}
   aria-labelledby={ariaLabelledby}
   aria-describedby={ariaDescribedby}
-  data-state={checked ? 'checked' : 'unchecked'}
-  data-disabled={disabled ? '' : undefined}
-  {value}
-  onclick={handleClick}
-  onkeydown={handleKeyDown}
+  aria-invalid={invalid || undefined}
   class={cn(
-    'relative peer inline-flex shrink-0 cursor-pointer items-center rounded-full shadow-sm transition-colors',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-    'disabled:cursor-not-allowed disabled:opacity-50',
-    'data-[state=unchecked]:bg-input data-[state=checked]:bg-primary',
-
+    "border-border peer relative inline-flex shrink-0 cursor-pointer items-center rounded-full border shadow-(--elevation-raised) transition-[border-color,background-color,box-shadow,opacity] duration-(--motion-fast) after:absolute after:-inset-y-2 after:-inset-x-1 after:content-[''] motion-reduce:transition-none",
+    'hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+    'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border',
+    'data-[state=unchecked]:bg-muted data-[state=checked]:border-primary/60 data-[state=checked]:bg-accent',
+    invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
     className,
   )}
   style={`
@@ -100,15 +86,14 @@
     height: ${height}px;
   `}
 >
-  <span
+  <SwitchPrimitive.Thumb
     class={cn(
-      'pointer-events-none block rounded-full bg-background shadow-lg ring-0 transition-transform absolute top-1/2 left-0',
+      'bg-card pointer-events-none absolute top-1/2 left-0 block rounded-full shadow-(--elevation-raised) ring-0 transition-transform duration-(--motion-standard) motion-reduce:transition-none',
     )}
     style={`
       width: ${thumbWidth}px;
       height: ${thumbHeight}px;
       transform: translateX(${checked ? width - thumbWidth - padding : padding}px) translateY(-50%);
     `}
-    data-state={checked ? 'checked' : 'unchecked'}
-  ></span>
-</button>
+  />
+</SwitchPrimitive.Root>

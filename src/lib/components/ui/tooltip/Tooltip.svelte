@@ -2,6 +2,7 @@
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils.js';
   import type { Snippet } from 'svelte';
+  import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
 
   interface Props {
     /** Tooltip content - can be a string or a snippet */
@@ -27,6 +28,7 @@
     children?: Snippet;
     /** Alternative trigger element */
     trigger?: Snippet;
+    onclick?: (event: MouseEvent) => void;
   }
 
   let {
@@ -49,6 +51,7 @@
     size = 'default',
     children,
     trigger,
+    onclick,
   }: Props = $props();
 
   // Variant styles
@@ -56,22 +59,23 @@
     default: 'bg-popover text-popover-foreground border border-border',
     secondary: 'bg-secondary text-secondary-foreground border border-border',
     destructive: 'bg-destructive text-destructive-foreground border border-border',
-    outline: 'bg-background border border-border text-foreground',
+    outline: 'bg-popover text-popover-foreground border border-border',
   };
 
   // Size styles
   const sizeStyles = {
-    sm: 'px-2 py-1 text-xs',
-    default: 'px-3 py-1.5 text-sm',
-    lg: 'px-4 py-2 text-base',
+    sm: 'type-caption px-3 py-2',
+    default: 'type-body px-3 py-1.5',
+    lg: 'type-title px-4 py-2',
   };
 
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-[200] w-fit max-w-xs text-balance shadow-xs whitespace-pre-wrap',
+      'z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance rounded-md shadow-(--elevation-overlay)',
       'animate-in fade-in-0 zoom-in-95',
       'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+      'motion-reduce:animate-none motion-reduce:transition-none',
       'data-[side=bottom]:slide-in-from-top-2',
       'data-[side=left]:slide-in-from-right-2',
       'data-[side=right]:slide-in-from-left-2',
@@ -99,17 +103,27 @@
     {disableHoverableContent}
     {disableCloseOnTriggerClick}
   >
-    <TooltipPrimitive.Trigger class={cn('inline-flex', className)} {disabled} data-tooltip-trigger>
-      {#if trigger}
-        {@render trigger?.()}
-      {:else if children}
-        {@render children?.()}
-      {/if}
+    <TooltipPrimitive.Trigger
+      class={cn('inline-flex', className)}
+      {disabled}
+      {onclick}
+      data-tooltip-trigger
+    >
+      {#snippet child({ props })}
+        <TooltipTriggerWrapper triggerProps={props}>
+          {#if trigger}
+            {@render trigger?.()}
+          {:else if children}
+            {@render children?.()}
+          {/if}
+        </TooltipTriggerWrapper>
+      {/snippet}
     </TooltipPrimitive.Trigger>
 
     {#if content && !disabled}
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
+          role="tooltip"
           {side}
           {align}
           {sideOffset}

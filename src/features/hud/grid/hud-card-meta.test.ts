@@ -15,7 +15,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 const WARNING = 'hsl(var(--warning))';
 const RED = 'hsl(var(--destructive-foreground))';
 const GREEN = 'hsl(var(--primary))';
-const GREY = 'hsl(var(--text-ghost))';
+const GREY = 'hsl(var(--muted-foreground) / 0.65)';
 const BLUE = 'hsl(var(--ring))';
 
 describe('cardStateColor wait/blocked/failed tokens', () => {

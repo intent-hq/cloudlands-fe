@@ -18,11 +18,12 @@
 <TooltipPrimitive.Portal>
   <TooltipPrimitive.Content
     bind:ref
+    role="tooltip"
     data-slot="tooltip-content"
     {sideOffset}
     {side}
     class={cn(
-      'bg-background text-foreground animate-in shadow-xs border border-border fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--bits-tooltip-content-transform-origin) z-[200] w-fit text-balance rounded-md px-3 py-1.5 text-xs',
+      'type-body z-(--layer-tooltip) w-fit text-balance rounded-md border border-border bg-popover px-3 py-1.5 text-popover-foreground shadow-(--elevation-overlay) outline-none animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--bits-tooltip-content-transform-origin) motion-reduce:animate-none motion-reduce:transition-none',
       className,
     )}
     onFocusOutside={() => {}}
@@ -33,7 +34,7 @@
       {#snippet child({ props })}
         <div
           class={cn(
-            'bg-background border-b border-r border-border z-50 size-2.5 rotate-45 rounded-[2px]',
+            'z-(--layer-tooltip) size-2.5 rotate-45 rounded-[2px] border-b border-r border-border bg-popover',
             'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
             'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
             'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',

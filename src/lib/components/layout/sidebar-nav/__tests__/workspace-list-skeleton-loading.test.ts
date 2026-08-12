@@ -156,16 +156,18 @@ describe('AllWorkspacesCard skeleton loading state', () => {
       const skeletonElements = firstSkeleton.querySelectorAll('[data-slot="skeleton"]');
       expect(skeletonElements.length).toBeGreaterThan(0);
 
-      // Verify each skeleton element has the bg-secondary class (not bg-muted/50)
+      // Sidebar loading rows use a quiet tone derived from the sidebar foreground.
       skeletonElements.forEach((el) => {
         const classList = Array.from(el.classList);
-        // Should have bg-secondary for visibility in both light and dark themes
-        expect(classList).toContain('bg-secondary');
-        // Should have animate-pulse for the loading animation
+        expect(classList).toContain('bg-sidebar-foreground/10');
         expect(classList).toContain('animate-pulse');
-        // Should NOT have the old bg-muted class
-        expect(classList.some((c) => c.includes('bg-muted'))).toBe(false);
       });
+
+      const titleWidths = skeletons.map(
+        (skeleton) =>
+          (skeleton.querySelector('[data-workspace-skeleton-title]') as HTMLElement).style.maxWidth,
+      );
+      expect(new Set(titleWidths).size).toBeGreaterThan(1);
     });
   });
 });

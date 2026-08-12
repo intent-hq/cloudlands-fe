@@ -4,7 +4,7 @@
  * When the renderer runs in a plain browser (no Electron preload bridge) it
  * speaks JSON-RPC 2.0 directly to the intentd daemon over a `WebSocket`
  * (PROTOCOL.md §1–§4): one JSON-RPC object per text frame, bearer token via
- * the `?token=` query param baked into the configured URL. Semantics mirror
+ * the `?token=` query param supplied by runtime configuration. Semantics mirror
  * the main-process `JsonRpcClient`
  * (`src/features/backend/main/json-rpc-client.ts`): request/response
  * id-correlation, default + per-call request timeouts, automatic reconnect
@@ -12,11 +12,11 @@
  * re-established after a drop (RESUB-1) so consumers replay their
  * `events.subscribe` calls, and notification fanout.
  *
- * The URL comes from the `VITE_INTENTD_WS_URL` build-time env var (a full
- * `ws(s)://` URL, optional `?token=`); `backend-transport-factory.ts` selects
- * this transport when `window.electronAPI` is absent and the URL is
- * configured. The WebSocket constructor is injectable (`webSocketFactory`) so
- * unit tests drive the transport with a fake socket.
+ * Production web deployments provide the URL through the same-origin
+ * `/runtime-config.js` asset. `VITE_INTENTD_WS_URL` remains a development-only
+ * convenience. `backend-transport-factory.ts` selects this transport when
+ * `window.electronAPI` is absent and the URL is configured. The WebSocket
+ * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
 import {
   BackendError,
@@ -24,22 +24,50 @@ import {
   type BackendNotification,
   type BackendRequestOptions,
   type BackendTransport,
-} from "./backend-transport-types";
+} from './backend-transport-types';
 
 /**
- * Resolve the configured browser WebSocket URL from the build-time env.
+ * Resolve the configured browser WebSocket URL. Runtime configuration wins;
+ * the build-time environment fallback exists only for local development.
  * Returns `undefined` when unset, blank, or not a `ws://`/`wss://` URL so the
  * factory falls back to the Electron-IPC transport's degraded behavior.
  */
 export function resolveBrowserWsUrl(
-  raw: unknown = process.env.VITE_INTENTD_WS_URL,
+  raw: unknown = (() => {
+    const runtimeConfig = (
+      globalThis as typeof globalThis & {
+        __INTENT_RUNTIME_CONFIG__?: { readonly intentdWsUrl?: unknown };
+      }
+    ).__INTENT_RUNTIME_CONFIG__;
+    if (runtimeConfig?.intentdWsUrl !== undefined) return runtimeConfig.intentdWsUrl;
+    return typeof process === 'undefined' ? undefined : process.env.VITE_INTENTD_WS_URL;
+  })(),
 ): string | undefined {
-  if (typeof raw !== "string") return undefined;
+  if (typeof raw !== 'string') return undefined;
   const url = raw.trim();
   if (!url) return undefined;
-  if (!/^wss?:\/\//i.test(url)) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
     console.warn(
-      "[browser-websocket-transport] Ignoring VITE_INTENTD_WS_URL: expected a ws:// or wss:// URL",
+      '[browser-websocket-transport] Ignoring browser WebSocket URL: expected ws:// or wss://',
+    );
+    return undefined;
+  }
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+    console.warn(
+      '[browser-websocket-transport] Ignoring browser WebSocket URL: expected ws:// or wss://',
+    );
+    return undefined;
+  }
+  const isLoopback =
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '[::1]';
+  if (parsed.protocol === 'ws:' && !isLoopback) {
+    console.warn(
+      '[browser-websocket-transport] Ignoring insecure remote WebSocket URL: use wss://',
     );
     return undefined;
   }
@@ -57,20 +85,18 @@ export function resolveBrowserWsUrl(
 export function sanitizeWsUrlForDisplay(rawUrl: string): string {
   try {
     const url = new URL(rawUrl);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
     return url.toString();
   } catch {
-    return rawUrl
-      .replace(/[?#].*$/, "")
-      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1");
+    return rawUrl.replace(/[?#].*$/, '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
   }
 }
 
 /** Connection status union mirroring the main-process ConnectionStatus. */
-export type BrowserWsConnectionStatus = "connecting" | "connected" | "disconnected";
+export type BrowserWsConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 // --- JSON-RPC error mapping -------------------------------------------------
 // Browser-safe port of `src/features/backend/main/json-rpc-errors.ts` (that
@@ -88,11 +114,11 @@ interface JsonRpcErrorShape {
 
 /** Canonical string codes for the reserved JSON-RPC numeric range. */
 const JSON_RPC_ERROR_CODES: Readonly<Record<number, string>> = {
-  [-32700]: "PARSE_ERROR",
-  [-32600]: "INVALID_REQUEST",
-  [-32601]: "METHOD_NOT_FOUND",
-  [-32602]: "INVALID_PARAMS",
-  [-32603]: "INTERNAL_ERROR",
+  [-32700]: 'PARSE_ERROR',
+  [-32600]: 'INVALID_REQUEST',
+  [-32601]: 'METHOD_NOT_FOUND',
+  [-32602]: 'INVALID_PARAMS',
+  [-32603]: 'INTERNAL_ERROR',
 };
 
 /** Map a numeric JSON-RPC code to a stable string code. */
@@ -100,15 +126,15 @@ function mapErrorCode(code: number): string {
   const known = JSON_RPC_ERROR_CODES[code];
   if (known) return known;
   // -32099..-32000 is the reserved implementation-defined server-error range.
-  if (code <= -32000 && code >= -32099) return "SERVER_ERROR";
-  return "UNKNOWN_ERROR";
+  if (code <= -32000 && code >= -32099) return 'SERVER_ERROR';
+  return 'UNKNOWN_ERROR';
 }
 
 /** Extract a daemon-provided `data.code` string if present, else `undefined`. */
 function explicitDataCode(data: unknown): string | undefined {
-  if (data && typeof data === "object" && "code" in data) {
+  if (data && typeof data === 'object' && 'code' in data) {
     const value = (data as { code?: unknown }).code;
-    if (typeof value === "string" && value.length > 0) return value;
+    if (typeof value === 'string' && value.length > 0) return value;
   }
   return undefined;
 }
@@ -120,9 +146,9 @@ function toBackendErrorPayload(error: JsonRpcErrorShape): BackendErrorPayload {
   // non-object daemon `data` is preserved as `data.detail` (parity with
   // JsonRpcError in the main process).
   const data =
-    error.data && typeof error.data === "object"
+    error.data && typeof error.data === 'object'
       ? { ...(error.data as Record<string, unknown>), code }
-      : typeof error.data === "string" && error.data.length > 0
+      : typeof error.data === 'string' && error.data.length > 0
         ? { code, detail: error.data }
         : { code };
   return { code, message: error.message, data, rpcCode: error.code };
@@ -133,9 +159,9 @@ function toTransportError(error: unknown): BackendError {
   if (error instanceof BackendError) return error;
   const message = error instanceof Error ? error.message : String(error);
   return new BackendError({
-    code: "TRANSPORT_ERROR",
+    code: 'TRANSPORT_ERROR',
     message,
-    data: { code: "TRANSPORT_ERROR" },
+    data: { code: 'TRANSPORT_ERROR' },
   });
 }
 
@@ -209,13 +235,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private readonly reconnectedHandlers = new Set<() => void>();
   private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
   /** Last status delivered to statusHandlers, to fire only on transitions. */
-  private lastNotifiedStatus: BrowserWsConnectionStatus = "disconnected";
+  private lastNotifiedStatus: BrowserWsConnectionStatus = 'disconnected';
 
   constructor(options: BrowserWebSocketTransportOptions) {
     this.url = options.url;
     this.webSocketFactory =
-      options.webSocketFactory ??
-      ((url) => new WebSocket(url) as unknown as BrowserWebSocketLike);
+      options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as BrowserWebSocketLike);
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.reconnectDelayMs = options.reconnectDelayMs ?? DEFAULT_RECONNECT_MS;
     this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? DEFAULT_MAX_RECONNECT_MS;
@@ -234,13 +259,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
   ): Promise<T> {
     if (this.disposed) {
       return Promise.reject(
-        new BackendError({ code: "UNAVAILABLE", message: "Backend transport disposed" }),
+        new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),
       );
     }
     const id = ++this.requestId;
     const override = options?.timeoutMs;
     const timeoutMs =
-      typeof override === "number" && Number.isFinite(override) && override > 0
+      typeof override === 'number' && Number.isFinite(override) && override > 0
         ? override
         : this.requestTimeoutMs;
     return new Promise<T>((resolve, reject) => {
@@ -253,9 +278,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
         this.pending.delete(id);
         reject(
           new BackendError({
-            code: "TIMEOUT",
+            code: 'TIMEOUT',
             message: `JSON-RPC request timed out: ${method}`,
-            data: { code: "TIMEOUT" },
+            data: { code: 'TIMEOUT' },
           }),
         );
       }, timeoutMs);
@@ -263,7 +288,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
       // response arriving immediately after the frame is correlated correctly.
       const send = () => {
         if (timedOut) return;
-        const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
         this.pending.set(id, {
           method,
           timeout,
@@ -290,12 +315,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   async subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T> {
-    return this.request<T>("events.subscribe", params);
+    return this.request<T>('events.subscribe', params);
   }
 
   async unsubscribe(subscriptionId: string): Promise<void> {
     try {
-      await this.request("events.unsubscribe", { subscriptionId });
+      await this.request('events.unsubscribe', { subscriptionId });
     } catch {
       // Unsubscribe is best-effort; ignore transport errors on teardown.
     }
@@ -313,15 +338,13 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   /** Current connection status (mirrors the main-process ConnectionStatus). */
   getConnectionStatus(): BrowserWsConnectionStatus {
-    if (this.connected) return "connected";
-    if (this.connecting) return "connecting";
-    return "disconnected";
+    if (this.connected) return 'connected';
+    if (this.connecting) return 'connecting';
+    return 'disconnected';
   }
 
   /** Subscribe to connection-status transitions; returns an unsubscriber. */
-  onConnectionStatusChange(
-    handler: (status: BrowserWsConnectionStatus) => void,
-  ): () => void {
+  onConnectionStatusChange(handler: (status: BrowserWsConnectionStatus) => void): () => void {
     this.statusHandlers.add(handler);
     return () => this.statusHandlers.delete(handler);
   }
@@ -332,7 +355,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.disposed = true;
     this.clearReconnect();
     this.clearConnectTimer();
-    const error = new BackendError({ code: "UNAVAILABLE", message: "Backend transport disposed" });
+    const error = new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
     this.failPending(error);
     this.failWaiters(error);
     this.teardownSocket();
@@ -383,7 +406,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
       this.connecting = false;
       this.onConnectionFailure(
         new BackendError({
-          code: "TRANSPORT_ERROR",
+          code: 'TRANSPORT_ERROR',
           message: `WebSocket connect attempt timed out after ${this.connectTimeoutMs}ms`,
         }),
       );
@@ -405,7 +428,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
       if (this.socket !== socket) return;
       this.connecting = false;
       this.onConnectionFailure(
-        new BackendError({ code: "TRANSPORT_ERROR", message: "WebSocket connection closed" }),
+        new BackendError({ code: 'TRANSPORT_ERROR', message: 'WebSocket connection closed' }),
       );
     };
   }
@@ -448,7 +471,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private onMessage(data: unknown): void {
-    if (typeof data !== "string") return;
+    if (typeof data !== 'string') return;
     let message: {
       id?: number | string | null;
       method?: string;
@@ -459,18 +482,18 @@ export class BrowserWebSocketTransport implements BackendTransport {
     try {
       message = JSON.parse(data) as typeof message;
     } catch {
-      console.warn("[browser-websocket-transport] Dropping unparseable frame");
+      console.warn('[browser-websocket-transport] Dropping unparseable frame');
       return;
     }
-    if (!message || typeof message !== "object") return;
-    const hasMethod = typeof message.method === "string";
+    if (!message || typeof message !== 'object') return;
+    const hasMethod = typeof message.method === 'string';
     const hasId = message.id != null;
     // Inbound (reverse) request: has BOTH `method` and `id` (§5.14). The
     // browser client registers no reverse handlers, so decline with -32601
     // rather than leaving the daemon's request hanging.
     if (hasMethod && hasId) {
       this.sendFrame({
-        jsonrpc: "2.0",
+        jsonrpc: '2.0',
         id: message.id,
         error: { code: -32601, message: `Method not found: ${String(message.method)}` },
       });

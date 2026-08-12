@@ -9,17 +9,15 @@
 <script lang="ts">
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import { faRectangleList } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { Snippet } from 'svelte';
   import { onDestroy } from 'svelte';
-  import {
-  classifyTool,
-  CATEGORY_ICONS,
-  type ToolCategory,
-} from './tool-classifier';
-  import type { ContentBlock } from '$shared/types';
+  import { classifyTool, CATEGORY_ICONS, type ToolCategory } from './tool-classifier';
+  import type { ContentBlock, ToolUseBlock } from '$shared/types';
+  import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import CylinderScroller from './CylinderScroller.svelte';
+  import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import { getResponseGroupPreviewBlock } from './response-group-blocks';
 
   interface Props {
     name: string;
@@ -213,31 +211,29 @@
     const lastSpace = truncated.lastIndexOf(' ');
     return (lastSpace > 40 ? truncated.substring(0, lastSpace) : truncated) + '…';
   });
+
+  // Keep collapsed groups lightweight: render one inert, current summary
+  // instead of retaining every detailed tool and its focus targets.
+  const previewBlock = $derived(getResponseGroupPreviewBlock(blocks));
+  const previewText = $derived(previewBlock ? getContentBlockText(previewBlock) : '');
 </script>
 
 <div class={className}>
   <button
     type="button"
-    class="flex items-center gap-2.5 w-full py-1 px-1 border-none cursor-pointer text-left text-subtle text-base transition-colors duration-150 rounded-md"
+    class="type-caption flex w-full cursor-pointer items-center gap-2.5 rounded-md border-none py-1 text-left text-muted-foreground/60 transition-colors duration-[var(--motion-fast)] hover:text-muted-foreground focus-visible:text-muted-foreground"
     onclick={toggle}
     aria-expanded={isExpanded}
   >
-    <div
-      class="flex items-center justify-center shrink-0 transition-opacity duration-300 {isStreaming
-        ? 'opacity-70'
-        : ''}"
-    >
-      <Fa icon={faRectangleList} size={12} class="text-ghost" />
-    </div>
     <!-- Name and snippet share one line box so their text baselines coincide;
          a flex sibling with `truncate` (overflow: hidden) would synthesize its
          baseline from the box edge and sit visibly raised. -->
     <span class="min-w-0 truncate">
-      <span class="font-semibold text-foreground">{name}</span>{#if textSnippet}<span
-          class="text-sm text-subtle ml-2.5">{textSnippet}</span
+      <span class="text-foreground">{name}</span>{#if textSnippet && !isExpanded}<span
+          class="ml-2.5 text-muted-foreground">{textSnippet}</span
         >{/if}
     </span>
-    <div class="flex items-center gap-1.5 ml-auto shrink-0 opacity-40">
+    <div class="ml-auto flex shrink-0 items-center gap-1.5 opacity-30">
       {#each stats.icons.slice(0, 5) as icon, i (icon)}
         <span class="icon-animate-in" style="animation-delay: {i * 50}ms">
           <Fa {icon} size={10} />
@@ -249,12 +245,29 @@
   {#if isExpanded || showCylinder}
     <div
       bind:this={contentEl}
-      class="pl-4.5 border-l border-muted-foreground/15 ml-2"
+      class="border-l border-muted-foreground/10 pl-4.5"
       out:collapseFromCurrent={{ duration: 300 }}
     >
       <CylinderScroller isActive={isStreaming && !isExpanded} constrained={!isExpanded}>
         <div class="flex flex-col gap-1.5">
-          {@render children()}
+          {#if isExpanded}
+            {@render children()}
+          {:else if previewBlock?.type === 'tool_use'}
+            <div
+              class="type-caption min-w-0 py-0.5 text-muted-foreground"
+              data-response-group-preview
+            >
+              <AgentPreviewToolLabel toolUse={previewBlock as ToolUseBlock} animate={isStreaming} />
+            </div>
+          {:else if previewText}
+            <div
+              class="type-caption whitespace-pre-wrap py-0.5 text-muted-foreground"
+              data-response-group-preview
+              aria-live={isStreaming ? 'polite' : undefined}
+            >
+              {previewText}
+            </div>
+          {/if}
         </div>
       </CylinderScroller>
     </div>

@@ -1,16 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-  type Mock,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -41,12 +30,11 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
   }
 
   function _createMockFtSelector<T>(getter: () => T) {
-
     const fn = (..._args: any[]) => _makeReadable(getter);
 
     fn.select = (_state: any, ..._args: any[]) => getter();
 
-    fn.effect = (..._args: any[]) => { };
+    fn.effect = (..._args: any[]) => {};
     fn.withStore = () => fn;
     return fn;
   }
@@ -70,7 +58,6 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
       loadingOlderCommits: false,
       changesTruncated: false,
       totalChangesCount: 0,
-
     },
     createMockFtSelector: _createMockFtSelector,
     flushFtSelectors: _flushFtSelectors,
@@ -83,10 +70,16 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectFileTrackingCommits: createMockFtSelector(() => mockFileTrackingStore.commits),
   selectFileTrackingBoundarySha: createMockFtSelector(() => mockFileTrackingStore.boundarySha),
   selectFileTrackingOlderCommits: createMockFtSelector(() => mockFileTrackingStore.olderCommits),
-  selectFileTrackingLoadingOlderCommits: createMockFtSelector(() => mockFileTrackingStore.loadingOlderCommits),
+  selectFileTrackingLoadingOlderCommits: createMockFtSelector(
+    () => mockFileTrackingStore.loadingOlderCommits,
+  ),
   selectFileTrackingLoading: createMockFtSelector(() => mockFileTrackingStore.loading),
-  selectFileTrackingChangesTruncated: createMockFtSelector(() => mockFileTrackingStore.changesTruncated),
-  selectFileTrackingTotalChangesCount: createMockFtSelector(() => mockFileTrackingStore.totalChangesCount),
+  selectFileTrackingChangesTruncated: createMockFtSelector(
+    () => mockFileTrackingStore.changesTruncated,
+  ),
+  selectFileTrackingTotalChangesCount: createMockFtSelector(
+    () => mockFileTrackingStore.totalChangesCount,
+  ),
   selectAcceptChangesState: Object.assign(
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockAcceptChangesState),
     {
@@ -113,17 +106,50 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 
 vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
-  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/stageByPathRequested', payload: [wsId, paths] })),
-  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/unstageByPathRequested', payload: [wsId, paths] })),
-  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({ type: 'changes/revertByPathRequested', payload: [wsId, paths] })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
-  loadOlderCommitsRequested: vi.fn((wsId: string, sha: string) => ({ type: 'changes/loadOlderCommitsRequested', payload: { wsId, beforeSha: sha } })),
-  refreshAcceptChangesStatus: vi.fn((...args: any[]) => ({ type: 'changes/refreshAcceptChangesStatus', payload: args })),
-  setPendingAutoAction: vi.fn((...args: any[]) => ({ type: 'changes/setPendingAutoAction', payload: args })),
-  setSidebarCommitWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarCommitWhenReady', payload: [wsId, value] })),
-  setSidebarCreatePRWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarCreatePRWhenReady', payload: [wsId, value] })),
-  setSidebarMergeWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarMergeWhenReady', payload: [wsId, value] })),
+  clearOlderCommits: vi.fn((wsId: string) => ({
+    type: 'changes/clearOlderCommits',
+    payload: wsId,
+  })),
+  stageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
+    type: 'changes/stageByPathRequested',
+    payload: [wsId, paths],
+  })),
+  unstageByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
+    type: 'changes/unstageByPathRequested',
+    payload: [wsId, paths],
+  })),
+  revertByPathRequested: vi.fn((wsId: string, paths: string[]) => ({
+    type: 'changes/revertByPathRequested',
+    payload: [wsId, paths],
+  })),
+  refreshRequested: vi.fn((wsId: string) => ({
+    type: 'changes/refreshRequested',
+    payload: [wsId],
+  })),
+  loadOlderCommitsRequested: vi.fn((wsId: string, sha: string) => ({
+    type: 'changes/loadOlderCommitsRequested',
+    payload: { wsId, beforeSha: sha },
+  })),
+  refreshAcceptChangesStatus: vi.fn((...args: any[]) => ({
+    type: 'changes/refreshAcceptChangesStatus',
+    payload: args,
+  })),
+  setPendingAutoAction: vi.fn((...args: any[]) => ({
+    type: 'changes/setPendingAutoAction',
+    payload: args,
+  })),
+  setSidebarCommitWhenReady: vi.fn((wsId: string, value: boolean) => ({
+    type: 'changes/setSidebarCommitWhenReady',
+    payload: [wsId, value],
+  })),
+  setSidebarCreatePRWhenReady: vi.fn((wsId: string, value: boolean) => ({
+    type: 'changes/setSidebarCreatePRWhenReady',
+    payload: [wsId, value],
+  })),
+  setSidebarMergeWhenReady: vi.fn((wsId: string, value: boolean) => ({
+    type: 'changes/setSidebarMergeWhenReady',
+    payload: [wsId, value],
+  })),
 }));
 
 // Stage/unstage/revert now route through the git-write-service seam
@@ -162,18 +188,15 @@ vi.mock('$features/git/git.client', () => ({
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
-  selectGitAhead: Object.assign(
-    () => createReadable(mockGitState.ahead),
-    { select: () => mockGitState.ahead },
-  ),
-  selectGitBehind: Object.assign(
-    () => createReadable(mockGitState.behind),
-    { select: () => mockGitState.behind },
-  ),
-  selectGitStatus: Object.assign(
-    () => createReadable(mockGitState.status),
-    { select: () => mockGitState.status },
-  ),
+  selectGitAhead: Object.assign(() => createReadable(mockGitState.ahead), {
+    select: () => mockGitState.ahead,
+  }),
+  selectGitBehind: Object.assign(() => createReadable(mockGitState.behind), {
+    select: () => mockGitState.behind,
+  }),
+  selectGitStatus: Object.assign(() => createReadable(mockGitState.status), {
+    select: () => mockGitState.status,
+  }),
   selectPostMergeState: Object.assign(
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
     { select: () => mockPostMergeState },
@@ -188,7 +211,10 @@ vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
   setPostMergeState: vi.fn((...args: any[]) => ({ type: 'git/setPostMergeState', payload: args })),
-  setGitOperationFlag: vi.fn((...args: any[]) => ({ type: 'git/setGitOperationFlag', payload: args })),
+  setGitOperationFlag: vi.fn((...args: any[]) => ({
+    type: 'git/setGitOperationFlag',
+    payload: args,
+  })),
 }));
 
 const mockWorkspaceStore = {
@@ -222,7 +248,7 @@ function createReadable<T>(value: T) {
   return {
     subscribe(run: (value: T) => void) {
       run(value);
-      return () => { };
+      return () => {};
     },
   };
 }
@@ -249,7 +275,8 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 
 const mockDispatch = vi.fn();
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -268,11 +295,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       select: (_state: unknown, workspaceId: string) => mockWorkspaceStore.findById(workspaceId),
     },
   ),
-  selectWorkspaceActivePullRequest: Object.assign(
-
-    (_workspaceId: any) => createReadable(null),
-    { select: () => null },
-  ),
+  selectWorkspaceActivePullRequest: Object.assign((_workspaceId: any) => createReadable(null), {
+    select: () => null,
+  }),
 }));
 
 const mockPostMergeState = {
@@ -302,7 +327,7 @@ vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
   selectLockedAgentIds: vi.fn().mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
       fn({});
-      return () => { };
+      return () => {};
     },
   }),
 }));
@@ -320,7 +345,7 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticated: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(mockGitHubAuthIsAuthenticated.value);
-      return () => { };
+      return () => {};
     },
   }),
 }));
@@ -331,31 +356,64 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-slice', async (importOri
 }));
 
 const defaultExecutorState = { status: 'idle', result: null, error: null, agentId: null };
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
-  selectExecutorState: Object.assign(
-    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(defaultExecutorState); return () => { }; } }),
-    { select: vi.fn().mockReturnValue(defaultExecutorState) },
-  ),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
+  () => ({
+    selectExecutorState: Object.assign(
+      vi.fn().mockReturnValue({
+        subscribe: (fn: (v: any) => void) => {
+          fn(defaultExecutorState);
+          return () => {};
+        },
+      }),
+      { select: vi.fn().mockReturnValue(defaultExecutorState) },
+    ),
+  }),
+);
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  executeBackgroundAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
-  cancelExecution: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
-  reconnectAgent: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reconnect', payload: args })),
-  resetExecutor: vi.fn((...args: any[]) => ({ type: 'backgroundAgentExecutor/reset', payload: args })),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    executeBackgroundAgent: vi.fn((...args: any[]) => ({
+      type: 'backgroundAgentExecutor/execute',
+      payload: args,
+    })),
+    cancelExecution: vi.fn((...args: any[]) => ({
+      type: 'backgroundAgentExecutor/cancel',
+      payload: args,
+    })),
+    reconnectAgent: vi.fn((...args: any[]) => ({
+      type: 'backgroundAgentExecutor/reconnect',
+      payload: args,
+    })),
+    resetExecutor: vi.fn((...args: any[]) => ({
+      type: 'backgroundAgentExecutor/reset',
+      payload: args,
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
-    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn([]); return () => { }; } }),
+    vi.fn().mockReturnValue({
+      subscribe: (fn: (v: any) => void) => {
+        fn([]);
+        return () => {};
+      },
+    }),
     { select: vi.fn().mockReturnValue([]) },
   ),
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign(
-    vi.fn().mockReturnValue({ subscribe: (fn: (v: any) => void) => { fn(undefined); return () => { }; } }),
+    vi.fn().mockReturnValue({
+      subscribe: (fn: (v: any) => void) => {
+        fn(undefined);
+        return () => {};
+      },
+    }),
     { select: vi.fn().mockReturnValue(undefined) },
   ),
 }));
@@ -363,7 +421,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
   AcceptChangesClient: {
     execute: vi.fn().mockResolvedValue({ success: true }),
-    getStatus: vi.fn().mockResolvedValue({ aheadOfTrunk: 0, hasRemote: true, isContentMergedToTrunk: false }),
+    getStatus: vi
+      .fn()
+      .mockResolvedValue({ aheadOfTrunk: 0, hasRemote: true, isContentMergedToTrunk: false }),
     resetToTrunk: vi.fn().mockResolvedValue({ success: true, result: { newHeadSha: 'abc123' } }),
   },
 }));
@@ -377,7 +437,10 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
 
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  refreshPRStatusRequested: vi.fn((...args: any[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
+  refreshPRStatusRequested: vi.fn((...args: any[]) => ({
+    type: 'prStatus/refreshRequested',
+    payload: args,
+  })),
   startPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/startPolling', payload: args })),
   stopPRPolling: vi.fn((...args: any[]) => ({ type: 'prStatus/stopPolling', payload: args })),
 }));
@@ -410,11 +473,20 @@ vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors'
   };
 });
 
-vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  setAutoCommitEnabled: vi.fn((val: any) => ({ type: 'workspaceSettings/setAutoCommitEnabled', payload: val })),
-  syncWorkspaceSettings: vi.fn((id: any) => ({ type: 'workspaceSettings/syncWorkspaceSettings', payload: id })),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-settings/workspace-settings-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
+    setAutoCommitEnabled: vi.fn((val: any) => ({
+      type: 'workspaceSettings/setAutoCommitEnabled',
+      payload: val,
+    })),
+    syncWorkspaceSettings: vi.fn((id: any) => ({
+      type: 'workspaceSettings/syncWorkspaceSettings',
+      payload: id,
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -422,10 +494,15 @@ vi.mock('$store/renderer/slices/transient-ui/transient-ui-slice', async (importO
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  loadWorkspacesRequested: vi.fn((...args: any[]) => ({ type: 'workspace/loadWorkspacesRequested', payload: args })),
-  setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
+  loadWorkspacesRequested: vi.fn((...args: any[]) => ({
+    type: 'workspace/loadWorkspacesRequested',
+    payload: args,
+  })),
+  setWorkspaceEntity: vi.fn((...args: any[]) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: args,
+  })),
 }));
-
 
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({
@@ -454,7 +531,7 @@ vi.mock('svelte-fa', async () => {
 
 // Mock font awesome icons
 vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, any>;
+  const actual = (await importOriginal()) as Record<string, any>;
   // Wrap in proxy to handle any missing icons gracefully
   return new Proxy(actual, {
     get: (target, prop) => {
@@ -498,7 +575,7 @@ vi.mock('$lib/components/GitHubAuthBanner.svelte', async () => {
   return { default: MockComponent };
 });
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => {
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
   return { default: MockComponent };
 });
@@ -522,7 +599,9 @@ function makeChange(overrides: Partial<TrackedChange> & { relativePath: string }
   };
 }
 
-function makeCommit(overrides: Partial<CommitInfo> & { hash: string; message: string }): CommitInfo {
+function makeCommit(
+  overrides: Partial<CommitInfo> & { hash: string; message: string },
+): CommitInfo {
   return {
     author: 'Test User',
     timestamp: Date.now(),
@@ -586,21 +665,17 @@ async function resetMocks() {
   mockPostMergeState.hasResetToTrunk = false;
 
   // Reset mock implementations that individual tests override via mockReturnValue
-  const { groupFilesByAgent } = await import(
-    '$lib/components/file-tracking/accept-changes/types'
-  );
+  const { groupFilesByAgent } = await import('$lib/components/file-tracking/accept-changes/types');
   (groupFilesByAgent as Mock).mockReturnValue([]);
 
-  const { selectLockedAgentIds } = await import(
-    '$store/renderer/slices/agent-lock/agent-lock-selectors'
-  );
+  const { selectLockedAgentIds } =
+    await import('$store/renderer/slices/agent-lock/agent-lock-selectors');
   (selectLockedAgentIds as Mock).mockReturnValue({
     subscribe: (fn: (value: any) => void) => {
       fn({});
-      return () => { };
+      return () => {};
     },
   });
-
 }
 
 async function renderPanel(props: Record<string, any> = {}) {
@@ -677,10 +752,21 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
+    it('hides stale changes while another workspace is globally active', async () => {
+      mockFileTrackingStore.currentWorkspaceId = 'ws-2';
+      mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/scoped.ts' })];
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('.sidebar-changes-container')).toBeNull();
+        expect(container.querySelectorAll('[data-testid="file-row"]')).toHaveLength(0);
+      });
+    });
+
     it('renders staged changes list', async () => {
-      const staged = [
-        makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
-      ];
+      const staged = [makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -846,9 +932,8 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('renders agent attribution grouping display', async () => {
-      const { groupFilesByAgent } = await import(
-        '$lib/components/file-tracking/accept-changes/types'
-      );
+      const { groupFilesByAgent } =
+        await import('$lib/components/file-tracking/accept-changes/types');
       (groupFilesByAgent as Mock).mockReturnValue([
         {
           agentId: 'agent-1',
@@ -903,19 +988,17 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('renders locked agent group with lock indicator', async () => {
-      const { selectLockedAgentIds } = await import(
-        '$store/renderer/slices/agent-lock/agent-lock-selectors'
-      );
+      const { selectLockedAgentIds } =
+        await import('$store/renderer/slices/agent-lock/agent-lock-selectors');
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
           fn({ 'agent-locked': true as const });
-          return () => { };
+          return () => {};
         },
       });
 
-      const { groupFilesByAgent } = await import(
-        '$lib/components/file-tracking/accept-changes/types'
-      );
+      const { groupFilesByAgent } =
+        await import('$lib/components/file-tracking/accept-changes/types');
       (groupFilesByAgent as Mock).mockReturnValue([
         {
           agentId: 'agent-locked',
@@ -980,9 +1063,7 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('unstages via the git-write-service seam when unstage action is invoked on staged file', async () => {
-      const staged = [
-        makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged }),
-      ];
+      const staged = [makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -1000,9 +1081,7 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('toggles commit drawer open and close', async () => {
-      const staged = [
-        makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
-      ];
+      const staged = [makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -1240,7 +1319,8 @@ describe('SidebarChangesPanel', () => {
       const buttons = Array.from(container.querySelectorAll('button'));
       const stageAllBtn = buttons.find(
         (b) =>
-          b.textContent?.toLowerCase().includes('stage all') || b.getAttribute('title')?.toLowerCase().includes('stage all'),
+          b.textContent?.toLowerCase().includes('stage all') ||
+          b.getAttribute('title')?.toLowerCase().includes('stage all'),
       );
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
@@ -1314,7 +1394,9 @@ describe('SidebarChangesPanel', () => {
       });
 
       // Switch workspace
-      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ id: 'ws-2', branch: 'branch-2' }));
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({ id: 'ws-2', branch: 'branch-2' }),
+      );
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
@@ -1346,19 +1428,17 @@ describe('SidebarChangesPanel', () => {
     });
 
     it('auto-commit lock prevents manual staging of locked files', async () => {
-      const { selectLockedAgentIds } = await import(
-        '$store/renderer/slices/agent-lock/agent-lock-selectors'
-      );
+      const { selectLockedAgentIds } =
+        await import('$store/renderer/slices/agent-lock/agent-lock-selectors');
       (selectLockedAgentIds as Mock).mockReturnValue({
         subscribe: (fn: (value: any) => void) => {
           fn({ 'agent-1': true as const });
-          return () => { };
+          return () => {};
         },
       });
 
-      const { groupFilesByAgent } = await import(
-        '$lib/components/file-tracking/accept-changes/types'
-      );
+      const { groupFilesByAgent } =
+        await import('$lib/components/file-tracking/accept-changes/types');
       (groupFilesByAgent as Mock).mockReturnValue([
         {
           agentId: 'agent-1',
@@ -1408,9 +1488,7 @@ describe('SidebarChangesPanel', () => {
       // This test verifies the component renders without errors when no deferred
       // results processing happens locally.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
-      const staged = [
-        makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
-      ];
+      const staged = [makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
 
@@ -1443,9 +1521,7 @@ describe('SidebarChangesPanel', () => {
 
     it('renders both unstaged and staged changes simultaneously', async () => {
       const unstaged = [makeChange({ relativePath: 'src/unstaged.ts' })];
-      const staged = [
-        makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged }),
-      ];
+      const staged = [makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = unstaged;
       mockFileTrackingStore.stagedChanges = staged;
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -1513,15 +1589,13 @@ describe('SidebarChangesPanel', () => {
   describe('Commit Group - store refresh after commit (regression)', () => {
     it('calls loadGitStatus and file tracking refresh after successful group commit', async () => {
       // Set up AcceptChangesClient to return success
-      const { AcceptChangesClient } = await import(
-        '$features/accept-changes/accept-changes.client'
-      );
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.execute as Mock).mockResolvedValue({ success: true });
 
       // Set up agent-attributed unstaged files so agent group headers render
-      const { groupFilesByAgent } = await import(
-        '$lib/components/file-tracking/accept-changes/types'
-      );
+      const { groupFilesByAgent } =
+        await import('$lib/components/file-tracking/accept-changes/types');
       (groupFilesByAgent as Mock).mockReturnValue([
         {
           agentId: 'agent-1',
@@ -1572,9 +1646,7 @@ describe('SidebarChangesPanel', () => {
       expect(unstagedFileEl).not.toBeNull();
       const agentGroupSection = unstagedFileEl!.closest('.space-y-px');
       expect(agentGroupSection).not.toBeNull();
-      const commitIcon = agentGroupSection!.querySelector(
-        '[data-icon="code-commit"]',
-      );
+      const commitIcon = agentGroupSection!.querySelector('[data-icon="code-commit"]');
       expect(commitIcon).not.toBeNull();
       const commitBtn = commitIcon!.closest('button');
 
@@ -1591,7 +1663,7 @@ describe('SidebarChangesPanel', () => {
 
       // Check that refreshRequested was dispatched
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/refreshRequested' })
+        expect.objectContaining({ type: 'changes/refreshRequested' }),
       );
     });
   });
@@ -1673,7 +1745,9 @@ describe('SidebarChangesPanel', () => {
       });
 
       // Switch to a different workspace with pushed commits
-      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ id: 'ws-2', branch: 'feature/other' }));
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({ id: 'ws-2', branch: 'feature/other' }),
+      );
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'def456', message: 'other push', isPushed: true }),
@@ -1711,7 +1785,8 @@ describe('SidebarChangesPanel', () => {
         makeCommit({ hash: 'new123', message: 'new work after merge', isPushed: false }),
       ];
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 5,
         hasRemote: true,
@@ -1744,9 +1819,12 @@ describe('SidebarChangesPanel', () => {
       });
       mockWorkspaceStore.findById.mockReturnValue(workspace);
       mockFileTrackingStore.unstagedChanges = [];
-      mockFileTrackingStore.stagedChanges = [makeChange({ relativePath: 'src/new-file.ts', stage: ChangeStage.Staged })];
+      mockFileTrackingStore.stagedChanges = [
+        makeChange({ relativePath: 'src/new-file.ts', stage: ChangeStage.Staged }),
+      ];
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 5,
         hasRemote: true,
@@ -1781,7 +1859,8 @@ describe('SidebarChangesPanel', () => {
       mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/new-file.ts' })];
       mockFileTrackingStore.stagedChanges = [];
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 5,
         hasRemote: true,
@@ -1818,7 +1897,8 @@ describe('SidebarChangesPanel', () => {
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 0,
         hasRemote: true,
@@ -1831,8 +1911,7 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent || '';
-        const hasResetOrArchive =
-          text.includes('Reset and continue') || text.includes('Archive');
+        const hasResetOrArchive = text.includes('Reset and continue') || text.includes('Archive');
         expect(hasResetOrArchive).toBe(true);
         expect(text).not.toContain('Create PR');
       });
@@ -1853,7 +1932,8 @@ describe('SidebarChangesPanel', () => {
       mockPostMergeState.isContentMergedToTrunk = true;
       mockPostMergeState.hasRemote = true;
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 3,
         hasRemote: true,
@@ -1866,8 +1946,7 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent || '';
-        const hasResetOrArchive =
-          text.includes('Reset and continue') || text.includes('Archive');
+        const hasResetOrArchive = text.includes('Reset and continue') || text.includes('Archive');
         expect(hasResetOrArchive).toBe(true);
         expect(text).not.toContain('Create PR');
       });
@@ -1880,12 +1959,17 @@ describe('SidebarChangesPanel', () => {
       });
       mockWorkspaceStore.findById.mockReturnValue(workspace);
       mockFileTrackingStore.commits = [
-        makeCommit({ hash: 'new-work-123', message: 'new work after squash merge', isPushed: false }),
+        makeCommit({
+          hash: 'new-work-123',
+          message: 'new work after squash merge',
+          isPushed: false,
+        }),
       ];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 3,
         hasRemote: true,
@@ -1929,7 +2013,8 @@ describe('SidebarChangesPanel', () => {
       mockPostMergeState.aheadOfTrunk = 2;
       mockPostMergeState.hasRemote = true;
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 2,
         hasRemote: true,
@@ -1965,7 +2050,8 @@ describe('SidebarChangesPanel', () => {
       mockPostMergeState.isContentMergedToTrunk = true;
       mockPostMergeState.hasRemote = true;
 
-      const { AcceptChangesClient } = await import('$features/accept-changes/accept-changes.client');
+      const { AcceptChangesClient } =
+        await import('$features/accept-changes/accept-changes.client');
       (AcceptChangesClient.getStatus as Mock).mockResolvedValue({
         aheadOfTrunk: 3,
         hasRemote: true,
@@ -1978,8 +2064,7 @@ describe('SidebarChangesPanel', () => {
 
       await waitFor(() => {
         const text = container.textContent || '';
-        const hasResetOrArchive =
-          text.includes('Reset and continue') || text.includes('Archive');
+        const hasResetOrArchive = text.includes('Reset and continue') || text.includes('Archive');
         expect(hasResetOrArchive).toBe(true);
         expect(text).not.toContain('Create PR');
       });

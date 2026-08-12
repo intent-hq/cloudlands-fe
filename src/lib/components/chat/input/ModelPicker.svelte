@@ -1,10 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import {
-  onMount,
-  tick,
-  untrack,
-} from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { agentClient } from '$features/agent/agent.client';
@@ -13,13 +9,15 @@
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
-  Dropdown,
-  type DropdownGroupProps,
-  type DropdownItemProps,
-  type DropdownOption,
-} from '$lib/components/ui/dropdown';
-  import ProviderIcon, { hasProviderIcon } from '$lib/components/ui/ProviderIcon.svelte';
-  import { faSettings } from '$lib/icons/faSettings';
+    Dropdown,
+    type DropdownGroupProps,
+    type DropdownItemProps,
+    type DropdownOption,
+  } from '$lib/components/ui/dropdown';
+  import ProviderIcon, {
+    hasProviderIcon,
+  } from '$features/agent/components/AgentProviderIcon.svelte';
+  import { faSettings } from '$lib/icons/phosphor-icons';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
   import ModelPickerProviderNotice, {
@@ -29,73 +27,71 @@
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
 
   import {
-  selectSelectedModel,
-  selectAvailableModels,
-  selectAvailableModelsProviderId,
-  selectModelFallbackInfo,
-  selectModelPickerCollapsedGroups,
-  selectIsLoadingModels,
-  selectLoadError,
-  selectAllProviderWarnings,
-  selectAllProviderStaleFlags,
-} from '$store/renderer/slices/model/model-selectors';
+    selectSelectedModel,
+    selectAvailableModels,
+    selectAvailableModelsProviderId,
+    selectModelFallbackInfo,
+    selectModelPickerCollapsedGroups,
+    selectIsLoadingModels,
+    selectLoadError,
+    selectAllProviderWarnings,
+    selectAllProviderStaleFlags,
+  } from '$store/renderer/slices/model/model-selectors';
   import {
-  clearModelFallbackInfo,
-  requestHydrateModelFallbackInfo,
-  selectModel,
-  setLoadingStateForProvider,
-  setModelFallbackInfo,
-  setModelPickerGroupCollapsed,
-} from '$store/renderer/slices/model/model-slice';
+    clearModelFallbackInfo,
+    requestHydrateModelFallbackInfo,
+    selectModel,
+    setLoadingStateForProvider,
+    setModelFallbackInfo,
+    setModelPickerGroupCollapsed,
+  } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
-  selectActiveProviderId,
-  selectAvailableEnabledProviderIds,
-} from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+    selectActiveProviderId,
+    selectEnabledProviderIds,
+    selectAvailableEnabledProviderIds,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-  getModelsForProvider,
-  getModelsForProviderForLoadingState,
-} from '$store/renderer/slices/model/model-utils';
+    getModelsForProvider,
+    getModelsForProviderForLoadingState,
+  } from '$store/renderer/slices/model/model-utils';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
-  selectProviderModelsCacheEntry,
-  selectProviderModelsCacheMap,
-  selectProviderModelsClearEpoch,
-} from '$store/renderer/slices/provider-models/provider-models-selectors';
+    selectProviderModelsCacheEntry,
+    selectProviderModelsCacheMap,
+    selectProviderModelsClearEpoch,
+  } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
   import {
-  selectEffectiveDefaultProviderId,
-  selectNormalizedProviderId,
-  selectProviderDisplayName,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectEffectiveDefaultProviderId,
+    selectNormalizedProviderId,
+    selectProviderDisplayName,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
-  import {
-  formatProviderLoadError,
-  type ProviderLoadError,
-} from './model-picker-provider-errors';
+  import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { buildGroupedModelOptions } from './model-picker-groups';
   import {
-  findModelFallbackOption,
-  isProviderEnabled,
-  isUserProviderSettled,
-  normalizeModelIdForMatch,
-  toDropdownOptions,
-} from './model-picker-utils';
+    findModelFallbackOption,
+    isProviderEnabled,
+    isUserProviderSettled,
+    normalizeModelIdForMatch,
+    toDropdownOptions,
+  } from './model-picker-utils';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import {
-  faCheck,
-  faChevronDown,
-  faLock,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+    faCheck,
+    faChevronDown,
+    faLock,
+    faTriangleExclamation,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   const logger = createLogger('ModelPicker');
@@ -119,6 +115,7 @@
   }
 
   const activeProviderId$ = selectActiveProviderId();
+  const enabledProviderIds$ = selectEnabledProviderIds();
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
@@ -272,7 +269,9 @@
 
   function setProviderErrorState(providerId: string, error: string) {
     const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }));
+    appStore.dispatch(
+      setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }),
+    );
   }
 
   function getProviderWarningNotice(
@@ -313,7 +312,10 @@
   let lastFetchedProviderIds = '';
 
   function hasProviderResult(providerId: string): boolean {
-    return Object.prototype.hasOwnProperty.call(allProviderModels, providerId) || Boolean(allProviderErrors[providerId]);
+    return (
+      Object.prototype.hasOwnProperty.call(allProviderModels, providerId) ||
+      Boolean(allProviderErrors[providerId])
+    );
   }
 
   function setProviderLoading(providerId: string, loading: boolean) {
@@ -460,7 +462,7 @@
 
   let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    const providerIds = $availableEnabledProviderIds$;
+    const providerIds = $hasCheckedOnce$ ? $availableEnabledProviderIds$ : $enabledProviderIds$;
     clearTimeout(fetchDebounceTimer);
     fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
   });
@@ -812,7 +814,9 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$availableEnabledProviderIds$.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
+    ...$availableEnabledProviderIds$.flatMap(
+      (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
+    ),
     // Keep the agent's current provider selectable even if it was since
     // disabled, so the selected model isn't treated as unavailable.
     ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
@@ -868,16 +872,16 @@
   // Gated on hasCheckedOnce: before the first availability check resolves,
   // availableEnabledProviderIds is empty by default, which is "unknown" —
   // not "confirmed unavailable" — so this must not trip during initial load.
-  // Also gated on backend-connected (daemon health): the mount-time
+  // Also gated on a healthy backend: the mount-time
   // ensureProvidersChecked can run its bulk probe before the daemon socket is
-  // up — every probe fails and hasCheckedOnce still flips, which would
-  // transiently satisfy this condition (and fire the toast in every mounted
-  // picker) until the connect listener re-runs the check and heals the map.
-  // A daemon-down failure is surfaced by the daemon-loss UI, not this notice.
+  // up, or while heartbeat RPCs are timing out. Those results are not
+  // authoritative and can transiently empty the available-provider set until
+  // the reconnect listener re-runs the check and heals the map. Daemon-down
+  // and degraded failures are surfaced by the daemon-health UI instead.
   const hasNoAvailableProvider = $derived(
     !providerId &&
       $hasCheckedOnce$ &&
-      $daemonHealth$ !== 'down' &&
+      $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
   );
 
@@ -885,6 +889,12 @@
   // authoritative dedupe — every mounted ModelPicker (and every re-fire of the
   // condition) updates the same single toast instead of stacking a new one.
   let noProviderToastShown = false;
+
+  function openProviderSettings() {
+    void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
+      logger.error('Failed to open provider settings from model picker', error);
+    });
+  }
 
   $effect(() => {
     if (hasNoAvailableProvider) {
@@ -895,13 +905,7 @@
           duration: 6000,
           action: {
             label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: () => {
-              void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch(
-                (error: unknown) => {
-                  logger.error('Failed to open provider settings from no-provider toast', error);
-                },
-              );
-            },
+            onClick: openProviderSettings,
           },
         });
       }
@@ -993,11 +997,14 @@
     if (!hasExplicitModel) return false;
     if (!localModel) return false;
 
-    const values = new Set(flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value)));
-    return !values.has(normalizeModelIdForMatch(localModel));
+    const values = new Set(
+      flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value, effectiveProviderId)),
+    );
+    return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
   });
 
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
@@ -1044,7 +1051,10 @@
     !!agentId &&
       $fallbackInfo$ === null &&
       isSelectedModelMissingFromCatalog &&
-      (isLoadingModels || !allProvidersLoaded || isSelectedModelProviderPending),
+      (!$hasCheckedOnce$ ||
+        isLoadingModels ||
+        !allProvidersLoaded ||
+        isSelectedModelProviderPending),
   );
 
   const modelLoadingTitle = $derived(
@@ -1272,7 +1282,9 @@
     const isActualChange =
       modelValue === USE_DEFAULT_VALUE
         ? hasExplicitModel
-        : !localModel || normalizeModelIdForMatch(modelValue) !== normalizeModelIdForMatch(localModel);
+        : !localModel ||
+          normalizeModelIdForMatch(modelValue, effectiveProviderId) !==
+            normalizeModelIdForMatch(localModel, effectiveProviderId);
     if (isActualChange && confirmModelChange) {
       const confirmed = await confirmModelChange(
         localModel,
@@ -1354,7 +1366,7 @@
     onchange={handleModelChange}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
-    searchable={true}
+    searchable={!hasNoAvailableProvider}
     placeholder={m.chat_modelPicker_searchModels_placeholder()}
     class="min-w-0"
     headerClass="border-b-0!"
@@ -1513,18 +1525,15 @@
     {/snippet}
 
     {#snippet empty()}
-      <ModelPickerEmptyState {isLoadingModels} {blockingLoadError} onRetry={handleRetry} />
+      <ModelPickerEmptyState
+        {isLoadingModels}
+        {blockingLoadError}
+        {hasNoAvailableProvider}
+        onOpenProviderSettings={openProviderSettings}
+        onRetry={handleRetry}
+      />
     {/snippet}
   </Dropdown>
-
-  <ModelPickerProviderNotice
-    warning={hasNoAvailableProvider ? m.chat_modelPicker_noProviderAvailable_title() : undefined}
-    show={hasNoAvailableProvider}
-    title={m.chat_modelPicker_noProviderAvailable_title()}
-    description={m.chat_modelPicker_noProviderAvailable_description()}
-    variant="warning"
-    class={resolvedNoticeClass}
-  />
 
   <ModelPickerProviderNotice
     warning={codexFallbackWarning?.message}

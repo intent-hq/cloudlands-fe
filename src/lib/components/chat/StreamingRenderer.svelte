@@ -56,7 +56,9 @@
         // Found valid closing fence
         const code = text.substring(afterOpener, closingMatch.index);
         const placeholder = `${PLACEHOLDER_PREFIX}${codeBlocks.length}${PLACEHOLDER_SUFFIX}`;
-        codeBlocks.push(`<pre class="code-block"><code class="language-${lang}">${code}</code></pre>`);
+        codeBlocks.push(
+          `<pre class="code-block"><code class="language-${lang}">${code}</code></pre>`,
+        );
         result += placeholder;
         pos = closingMatch.index + closingMatch[0].length;
         openFenceRegex.lastIndex = pos;
@@ -97,10 +99,15 @@
 
     // Step 3: Restore code blocks from placeholders
     // Guard against undefined by checking if the index exists in the array
-    text = text.replace(new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g'), (_, indexStr) => {
-      const index = parseInt(indexStr, 10);
-      return codeBlocks[index] !== undefined ? codeBlocks[index] : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`;
-    });
+    text = text.replace(
+      new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g'),
+      (_, indexStr) => {
+        const index = parseInt(indexStr, 10);
+        return codeBlocks[index] !== undefined
+          ? codeBlocks[index]
+          : `${PLACEHOLDER_PREFIX}${indexStr}${PLACEHOLDER_SUFFIX}`;
+      },
+    );
 
     return text;
   }
@@ -200,7 +207,7 @@
   }
 
   :global(.streaming-renderer .code-block) {
-    background: var(--color-surface-secondary);
+    background: hsl(var(--muted));
     border-radius: 4px;
     padding: 0.75rem;
     margin: 0.5rem 0;
@@ -208,7 +215,7 @@
   }
 
   :global(.streaming-renderer .inline-code) {
-    background: var(--color-surface-secondary);
+    background: hsl(var(--muted));
     padding: 0.125rem 0.25rem;
     border-radius: 3px;
     font-family: monospace;
@@ -218,7 +225,7 @@
   :global(.streaming-renderer .streaming-cursor) {
     display: inline-block;
     animation: blink 1s infinite;
-    color: var(--color-primary);
+    color: hsl(var(--primary));
     margin-left: 2px;
   }
 

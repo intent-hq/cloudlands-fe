@@ -1,7 +1,7 @@
 <script lang="ts">
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import { toggleProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
@@ -9,9 +9,9 @@
 
   import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-  selectProviderCatalogEntries,
-  selectProviderDisplayName,
-} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+    selectProviderCatalogEntries,
+    selectProviderDisplayName,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

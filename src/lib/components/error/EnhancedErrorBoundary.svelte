@@ -10,25 +10,22 @@
    * - Error reporting to backend
    */
 
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { createLogger } from '$lib/utils/client-logger';
   import { ErrorHandler } from '$features/agent/services/error-handler';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faTriangleExclamation,
-  faRotateRight,
-  faArrowsRotate,
-  faHouse,
-  faSpinner,
-  faCopy,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
-  import { goto } from '$app/navigation';
+    faTriangleExclamation,
+    faRotateRight,
+    faArrowsRotate,
+    faLayerGroup,
+    faSpinner,
+    faCopy,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { navigateToFirstWorkspace } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('EnhancedErrorBoundary');
@@ -182,8 +179,12 @@
     window.location.reload();
   }
 
-  function handleGoHome() {
-    goto('/');
+  async function handleNavigateAway() {
+    try {
+      await navigateToFirstWorkspace();
+    } catch (error) {
+      logger.error('[EnhancedErrorBoundary] Failed to navigate to first workspace', error);
+    }
   }
 
   async function handleCopyDetails() {
@@ -218,16 +219,11 @@
     <!-- Full viewport container with vertical centering -->
     <div class="min-h-screen flex items-center justify-center p-6 bg-background">
       <!-- Centered content container with max width -->
-      <div
-        class="w-full max-w-md"
-        role="alert"
-        aria-live="assertive"
-      >
+      <div class="w-full max-w-md" role="alert" aria-live="assertive">
         <!-- Card container -->
         <div class="bg-card border border-border rounded-lg shadow-lg p-8">
           <!-- Vertically stacked content, all centered -->
           <div class="flex flex-col items-center text-center space-y-6">
-
             <!-- Warning Icon with Recovery Animation - Large and centered -->
             <div
               class="w-14 h-14 rounded-full bg-warning/15 flex items-center justify-center ring-1 ring-warning/20 animate-in fade-in zoom-in duration-300"
@@ -250,7 +246,10 @@
               </h3>
               <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto">
                 {#if isRecovering}
-                  {m.error_boundary_recovering_description({ attempt: recoveryAttempts, maxAttempts: 3 })}
+                  {m.error_boundary_recovering_description({
+                    attempt: recoveryAttempts,
+                    maxAttempts: 3,
+                  })}
                 {:else}
                   {error.message || m.error_boundary_componentError_message({ componentName })}
                 {/if}
@@ -272,9 +271,9 @@
 
               <!-- Secondary action and details toggle - Separate row -->
               <div class="flex items-center justify-center gap-3 flex-wrap">
-                <Button variant="ghost" size="sm" onclick={handleGoHome}>
-                  <Fa icon={faHouse} class="w-4 h-4" />
-                  {m.error_boundary_goHome_label()}
+                <Button variant="ghost" size="sm" onclick={handleNavigateAway}>
+                  <Fa icon={faLayerGroup} class="w-4 h-4" />
+                  {m.layout_sidebarNav_allWorkspaces_title()}
                 </Button>
                 {#if errorInfo}
                   <div class="relative">
@@ -284,7 +283,9 @@
                       class="text-foreground/60 hover:text-foreground"
                       onclick={() => (showDetails = !showDetails)}
                     >
-                      {showDetails ? m.error_boundary_hideDetails_label() : m.error_boundary_showDetails_label()}
+                      {showDetails
+                        ? m.error_boundary_hideDetails_label()
+                        : m.error_boundary_showDetails_label()}
                     </Button>
 
                     {#if showDetails}
@@ -306,7 +307,8 @@
               {#if showDetails && errorInfo}
                 <div class="w-full pt-6 border-t border-border" transition:slide={{ axis: 'y' }}>
                   <div class="bg-muted/60 rounded-lg p-4 border border-border/50">
-                    <pre class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>
+                    <pre
+                      class="text-xs font-mono text-subtle leading-relaxed overflow-x-auto max-h-64 text-left whitespace-pre-wrap break-all">{errorInfo}</pre>
                   </div>
                 </div>
               {/if}

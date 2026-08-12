@@ -36,14 +36,16 @@
   });
 </script>
 
-<div class="my-1.5 flex items-center gap-2 group">
-  <Fa icon={faTerminal} size="sm" class="text-ghost flex-none" />
-  <code class="font-mono text-sm text-subtle flex-1 min-w-0 truncate">
+<div
+  class="ws-block-widget group my-2 flex min-h-9 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-foreground shadow-(--elevation-raised)"
+>
+  <Fa icon={faTerminal} size="sm" class="shrink-0 text-muted-foreground" />
+  <code class="type-code min-w-0 flex-1 truncate bg-transparent p-0 text-foreground">
     {command}
   </code>
   <button
     type="button"
-    class="flex-none p-1 rounded cursor-pointer text-subtle hover:text-foreground transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100 {copied
+    class="flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-50 transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 {copied
       ? 'opacity-100'
       : ''}"
     onclick={copyCommand}
@@ -52,7 +54,7 @@
     data-testid="chat-cli-copy"
   >
     {#if copied}
-      <Fa icon={faCheck} size="sm" class="text-green-500" />
+      <Fa icon={faCheck} size="sm" class="text-success" />
     {:else}
       <Fa icon={faCopy} size="sm" />
     {/if}

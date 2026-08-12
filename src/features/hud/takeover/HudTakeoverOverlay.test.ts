@@ -202,16 +202,14 @@ describe('HudTakeoverOverlay status-update banner hierarchy', () => {
     flushSync();
 
     const banner = screen.getByTestId('hud-takeover-banner');
-    expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe(
-      'Sidecar auto-update',
-    );
+    expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe('Sidecar auto-update');
     expect(screen.queryByTestId('hud-takeover-banner-status')).toBeNull();
   });
 
   // jsdom normalizes concrete hsl() colors to rgb, so the card's purple
   // prMerged accent (hsl(262 60% 62%)) asserts as its rgb serialization.
   it.each([
-    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--text-ghost))'],
+    ['workspace_idle', 'WORKSPACE IDLE', 'hsl(var(--muted-foreground) / 0.65)'],
     ['pr_open', 'PR OPEN', 'hsl(var(--ring))'],
     ['pr_ready', 'PR MERGEABLE', 'hsl(var(--ring))'],
     ['pr_merged', 'PR MERGED', 'rgb(143, 100, 216)'],
@@ -282,9 +280,7 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
       'Q: Which authentication method should the endpoint use?',
     );
     // The workspace name stays visible in the overlay header.
-    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
-      'Sidecar auto-update',
-    );
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
   });
 
   it('blocker/discussion: signal chip + prefixed reason sub-title', () => {
@@ -313,9 +309,8 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
     expect(banners).toHaveLength(2);
     const chips = banners.map((b) => b.querySelector('.ov-banner-chip')?.textContent?.trim());
     const heads = banners.map((b) => b.querySelector('.ov-banner-big')?.textContent?.trim());
-    const subs = banners.map(
-      (b) =>
-        b.querySelector('[data-testid="hud-takeover-banner-attention"]')?.textContent?.trim(),
+    const subs = banners.map((b) =>
+      b.querySelector('[data-testid="hud-takeover-banner-attention"]')?.textContent?.trim(),
     );
     expect(chips).toEqual(['BLOCKED', 'DISCUSSION REQUIRED']);
     expect(heads).toEqual(['Verifier', 'Coordinator']);
@@ -375,9 +370,7 @@ describe('HudTakeoverOverlay attention banner (question / blocker / discussion)'
     flushSync();
 
     const banner = screen.getByTestId('hud-takeover-banner');
-    expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe(
-      'Sidecar auto-update',
-    );
+    expect(banner.querySelector('.ov-banner-big')?.textContent?.trim()).toBe('Sidecar auto-update');
     expect(screen.getByTestId('hud-takeover-banner-attention').textContent?.trim()).toBe(
       'Q: Rebuild or repin?',
     );
@@ -486,9 +479,7 @@ describe('HudTakeoverOverlay stalled-clock enqueue (controller regression)', () 
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
     openTakeover(); // No source card → instant open for ws-1.
     expect(screen.getByTestId('hud-takeover-overlay')).toBeTruthy();
-    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
-      'Sidecar auto-update',
-    );
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
 
     // The renderer stalls (e.g. throttled background tab): the wall clock
     // jumps far past every chained deadline without a phase timer firing.
@@ -503,9 +494,7 @@ describe('HudTakeoverOverlay stalled-clock enqueue (controller regression)', () 
     flushSync();
 
     // ws-1 stays on screen; ws-2 waits behind the full close animation.
-    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe(
-      'Sidecar auto-update',
-    );
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
   });
 });
 
@@ -523,9 +512,7 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
 
   /** jsdom has no PointerEvent ctor; the handlers only read mouse fields. */
   function pointer(el: Element, type: string, x: number, y: number): void {
-    el.dispatchEvent(
-      new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }),
-    );
+    el.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
     flushSync();
   }
 

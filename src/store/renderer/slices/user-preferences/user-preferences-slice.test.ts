@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   cycleFontStyle,
   cycleNoteFontStyle,
@@ -38,7 +34,7 @@ import {
   toggleSpellcheck,
   type UserPreferencesState,
   userPreferencesReducer,
-} from "./user-preferences-slice";
+} from './user-preferences-slice';
 import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
@@ -61,203 +57,203 @@ import {
   selectShowReasoningBlocks,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
-} from "./user-preferences-selectors";
+} from './user-preferences-selectors';
 
-describe("userPreferencesReducer", () => {
-  it("should return initial state", () => {
-    const state = userPreferencesReducer(undefined, { type: "@@INIT" });
+describe('userPreferencesReducer', () => {
+  it('should return initial state', () => {
+    const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
   });
 
-  describe("beta updates actions", () => {
-    it("should set beta updates enabled to true", () => {
+  describe('beta updates actions', () => {
+    it('should set beta updates enabled to true', () => {
       const state = userPreferencesReducer(initialState, setBetaUpdatesEnabled(true));
       expect(state.betaUpdatesEnabled).toBe(true);
     });
 
-    it("should set beta updates enabled to false", () => {
+    it('should set beta updates enabled to false', () => {
       const state = userPreferencesReducer(
         { ...initialState, betaUpdatesEnabled: true },
-        setBetaUpdatesEnabled(false)
+        setBetaUpdatesEnabled(false),
       );
       expect(state.betaUpdatesEnabled).toBe(false);
     });
 
-    it("should load beta updates settings to true", () => {
+    it('should load beta updates settings to true', () => {
       const state = userPreferencesReducer(initialState, loadBetaUpdatesSettings(true));
       expect(state.betaUpdatesEnabled).toBe(true);
     });
 
-    it("should load beta updates settings to false", () => {
+    it('should load beta updates settings to false', () => {
       const state = userPreferencesReducer(
         { ...initialState, betaUpdatesEnabled: true },
-        loadBetaUpdatesSettings(false)
+        loadBetaUpdatesSettings(false),
       );
       expect(state.betaUpdatesEnabled).toBe(false);
     });
 
-    it("should toggle beta updates from false to true", () => {
+    it('should toggle beta updates from false to true', () => {
       const state = userPreferencesReducer(initialState, toggleBetaUpdates());
       expect(state.betaUpdatesEnabled).toBe(true);
     });
 
-    it("should toggle beta updates from true to false", () => {
+    it('should toggle beta updates from true to false', () => {
       const state = userPreferencesReducer(
         { ...initialState, betaUpdatesEnabled: true },
-        toggleBetaUpdates()
+        toggleBetaUpdates(),
       );
       expect(state.betaUpdatesEnabled).toBe(false);
     });
   });
 
-  describe("spellcheck actions", () => {
-    it("should set spellcheck enabled to true", () => {
+  describe('spellcheck actions', () => {
+    it('should set spellcheck enabled to true', () => {
       const state = userPreferencesReducer(initialState, setSpellcheckEnabled(true));
       expect(state.spellcheckEnabled).toBe(true);
     });
 
-    it("should set spellcheck enabled to false", () => {
+    it('should set spellcheck enabled to false', () => {
       const state = userPreferencesReducer(
         { ...initialState, spellcheckEnabled: true },
-        setSpellcheckEnabled(false)
+        setSpellcheckEnabled(false),
       );
       expect(state.spellcheckEnabled).toBe(false);
     });
 
-    it("should toggle spellcheck from false to true", () => {
+    it('should toggle spellcheck from false to true', () => {
       const state = userPreferencesReducer(initialState, toggleSpellcheck());
       expect(state.spellcheckEnabled).toBe(true);
     });
 
-    it("should toggle spellcheck from true to false", () => {
+    it('should toggle spellcheck from true to false', () => {
       const state = userPreferencesReducer(
         { ...initialState, spellcheckEnabled: true },
-        toggleSpellcheck()
+        toggleSpellcheck(),
       );
       expect(state.spellcheckEnabled).toBe(false);
     });
   });
 
-  describe("setZoomFactor", () => {
+  describe('setZoomFactor', () => {
     const state: UserPreferencesState = { ...initialState, zoomFactor: 1.0 };
 
-    it("should set zoom factor", () => {
+    it('should set zoom factor', () => {
       expect(userPreferencesReducer(state, setZoomFactor(1.5)).zoomFactor).toBe(1.5);
     });
 
-    it("should return same state if zoom factor unchanged", () => {
+    it('should return same state if zoom factor unchanged', () => {
       expect(userPreferencesReducer(state, setZoomFactor(1.0))).toBe(state);
     });
 
-    it("should reject invalid zoom factors", () => {
+    it('should reject invalid zoom factors', () => {
       expect(userPreferencesReducer(state, setZoomFactor(0))).toBe(state);
       expect(userPreferencesReducer(state, setZoomFactor(-1))).toBe(state);
       expect(userPreferencesReducer(state, setZoomFactor(NaN))).toBe(state);
       expect(userPreferencesReducer(state, setZoomFactor(Infinity))).toBe(state);
     });
 
-    it("should accept valid zoom factors", () => {
+    it('should accept valid zoom factors', () => {
       expect(userPreferencesReducer(state, setZoomFactor(0.5)).zoomFactor).toBe(0.5);
       expect(userPreferencesReducer(state, setZoomFactor(3.0)).zoomFactor).toBe(3.0);
     });
   });
 
-  describe("home page preference actions", () => {
-    it("should set showArchived", () => {
+  describe('home page preference actions', () => {
+    it('should set showArchived', () => {
       const state = userPreferencesReducer(initialState, setShowArchived(true));
       expect(state.showArchived).toBe(true);
     });
 
-    it("should toggle showArchived", () => {
+    it('should toggle showArchived', () => {
       const state = userPreferencesReducer(initialState, toggleShowArchived());
       expect(state.showArchived).toBe(true);
     });
 
-    it("should set groupByRepo", () => {
+    it('should set groupByRepo', () => {
       const state = userPreferencesReducer(initialState, setGroupByRepo(false));
       expect(state.groupByRepo).toBe(false);
     });
 
-    it("should toggle groupByRepo", () => {
+    it('should toggle groupByRepo', () => {
       const state = userPreferencesReducer(initialState, toggleGroupByRepo());
       expect(state.groupByRepo).toBe(false);
     });
 
-    it("should set hasCompletedProviderSetup", () => {
+    it('should set hasCompletedProviderSetup', () => {
       const state = userPreferencesReducer(initialState, setHasCompletedProviderSetup(true));
       expect(state.hasCompletedProviderSetup).toBe(true);
     });
 
-    it("should toggle hasCompletedProviderSetup", () => {
+    it('should toggle hasCompletedProviderSetup', () => {
       const state = userPreferencesReducer(initialState, toggleHasCompletedProviderSetup());
       expect(state.hasCompletedProviderSetup).toBe(true);
     });
   });
 
-  describe("font settings actions", () => {
-    it("keeps action type prefixes under fontSettings", () => {
-      expect(setAgentFontStyle.type).toBe("fontSettings/setAgentFontStyle");
-      expect(cycleFontStyle.type).toBe("fontSettings/cycleFontStyle");
-      expect(setNoteFontStyle.type).toBe("fontSettings/setNoteFontStyle");
-      expect(cycleNoteFontStyle.type).toBe("fontSettings/cycleNoteFontStyle");
-      expect(setCodeFontFamily.type).toBe("fontSettings/setCodeFontFamily");
-      expect(setSystemFonts.type).toBe("fontSettings/setSystemFonts");
+  describe('font settings actions', () => {
+    it('keeps action type prefixes under fontSettings', () => {
+      expect(setAgentFontStyle.type).toBe('fontSettings/setAgentFontStyle');
+      expect(cycleFontStyle.type).toBe('fontSettings/cycleFontStyle');
+      expect(setNoteFontStyle.type).toBe('fontSettings/setNoteFontStyle');
+      expect(cycleNoteFontStyle.type).toBe('fontSettings/cycleNoteFontStyle');
+      expect(setCodeFontFamily.type).toBe('fontSettings/setCodeFontFamily');
+      expect(setSystemFonts.type).toBe('fontSettings/setSystemFonts');
     });
 
-    it("updates and cycles agent font style", () => {
-      expect(userPreferencesReducer(initialState, setAgentFontStyle("monospace")).agentFontStyle).toBe(
-        "monospace"
-      );
-      expect(userPreferencesReducer(initialState, cycleFontStyle()).agentFontStyle).toBe("monospace");
+    it('updates and cycles agent font style', () => {
       expect(
-        userPreferencesReducer(
-          { ...initialState, agentFontStyle: "monospace" },
-          cycleFontStyle()
-        ).agentFontStyle
-      ).toBe("sans");
+        userPreferencesReducer(initialState, setAgentFontStyle('monospace')).agentFontStyle,
+      ).toBe('monospace');
+      expect(userPreferencesReducer(initialState, cycleFontStyle()).agentFontStyle).toBe(
+        'monospace',
+      );
+      expect(
+        userPreferencesReducer({ ...initialState, agentFontStyle: 'monospace' }, cycleFontStyle())
+          .agentFontStyle,
+      ).toBe('sans');
     });
 
-    it("updates and cycles note font style", () => {
-      expect(userPreferencesReducer(initialState, setNoteFontStyle("monospace")).noteFontStyle).toBe(
-        "monospace"
-      );
+    it('updates and cycles note font style', () => {
+      expect(
+        userPreferencesReducer(initialState, setNoteFontStyle('monospace')).noteFontStyle,
+      ).toBe('monospace');
       expect(userPreferencesReducer(initialState, cycleNoteFontStyle()).noteFontStyle).toBe(
-        "monospace"
+        'serif',
       );
       expect(
+        userPreferencesReducer({ ...initialState, noteFontStyle: 'serif' }, cycleNoteFontStyle())
+          .noteFontStyle,
+      ).toBe('monospace');
+      expect(
         userPreferencesReducer(
-          { ...initialState, noteFontStyle: "monospace" },
-          cycleNoteFontStyle()
-        ).noteFontStyle
-      ).toBe("sans");
+          { ...initialState, noteFontStyle: 'monospace' },
+          cycleNoteFontStyle(),
+        ).noteFontStyle,
+      ).toBe('sans');
     });
 
-    it("updates code font family and system fonts", () => {
-      const withCodeFont = userPreferencesReducer(initialState, setCodeFontFamily("Fira Code"));
+    it('updates code font family and system fonts', () => {
+      const withCodeFont = userPreferencesReducer(initialState, setCodeFontFamily('Fira Code'));
       const withSystemFonts = userPreferencesReducer(
         withCodeFont,
-        setSystemFonts(["JetBrains Mono", "Cascadia Code"])
+        setSystemFonts(['JetBrains Mono', 'Cascadia Code']),
       );
 
-      expect(withSystemFonts.codeFontFamily).toBe("Fira Code");
-      expect(withSystemFonts.systemFonts).toEqual(["JetBrains Mono", "Cascadia Code"]);
+      expect(withSystemFonts.codeFontFamily).toBe('Fira Code');
+      expect(withSystemFonts.systemFonts).toEqual(['JetBrains Mono', 'Cascadia Code']);
     });
   });
 
-  describe("notification settings actions", () => {
-    it("keeps action type prefixes under notificationSettings", () => {
-      expect(setNotificationEnabled.type).toBe("notificationSettings/setNotificationEnabled");
-      expect(setSoundEnabled.type).toBe("notificationSettings/setSoundEnabled");
-      expect(setSoundOnlyWhenUnfocused.type).toBe(
-        "notificationSettings/setSoundOnlyWhenUnfocused"
-      );
-      expect(setVolume.type).toBe("notificationSettings/setVolume");
-      expect(resetNotificationSettings.type).toBe(
-        "notificationSettings/resetNotificationSettings"
-      );
+  describe('notification settings actions', () => {
+    it('keeps action type prefixes under notificationSettings', () => {
+      expect(setNotificationEnabled.type).toBe('notificationSettings/setNotificationEnabled');
+      expect(setSoundEnabled.type).toBe('notificationSettings/setSoundEnabled');
+      expect(setSoundOnlyWhenUnfocused.type).toBe('notificationSettings/setSoundOnlyWhenUnfocused');
+      expect(setVolume.type).toBe('notificationSettings/setVolume');
+      expect(resetNotificationSettings.type).toBe('notificationSettings/resetNotificationSettings');
     });
 
-    it("updates notification booleans", () => {
+    it('updates notification booleans', () => {
       let state = userPreferencesReducer(initialState, setNotificationEnabled(false));
       expect(state.enabled).toBe(false);
 
@@ -268,13 +264,13 @@ describe("userPreferencesReducer", () => {
       expect(state.soundOnlyWhenUnfocused).toBe(false);
     });
 
-    it("clamps notification volume", () => {
+    it('clamps notification volume', () => {
       expect(userPreferencesReducer(initialState, setVolume(-0.5)).volume).toBe(0);
       expect(userPreferencesReducer(initialState, setVolume(1.5)).volume).toBe(1);
       expect(userPreferencesReducer(initialState, setVolume(0.8)).volume).toBe(0.8);
     });
 
-    it("resets notification settings without affecting other preferences", () => {
+    it('resets notification settings without affecting other preferences', () => {
       const modified = userPreferencesReducer(
         {
           ...initialState,
@@ -282,56 +278,58 @@ describe("userPreferencesReducer", () => {
           soundEnabled: false,
           soundOnlyWhenUnfocused: false,
           volume: 0.2,
-          noteFontStyle: "monospace",
+          noteFontStyle: 'monospace',
         },
-        resetNotificationSettings()
+        resetNotificationSettings(),
       );
 
       expect(modified.enabled).toBe(true);
       expect(modified.soundEnabled).toBe(true);
       expect(modified.soundOnlyWhenUnfocused).toBe(true);
       expect(modified.volume).toBe(0.5);
-      expect(modified.noteFontStyle).toBe("monospace");
+      expect(modified.noteFontStyle).toBe('monospace');
     });
   });
 
-  describe("small renderer preference persistence actions", () => {
+  describe('small renderer preference persistence actions', () => {
     const preset = {
-      name: "Errors",
+      name: 'Errors',
       filters: {
         showFileChanges: false,
         showAgentActivity: true,
         showSystemEvents: false,
         showErrors: true,
-        searchQuery: "error",
-        dateRange: "today",
-        actorFilter: "agent",
+        searchQuery: 'error',
+        dateRange: 'today',
+        actorFilter: 'agent',
       },
     };
 
-    it("hydrates, saves, and deletes activity log presets", () => {
+    it('hydrates, saves, and deletes activity log presets', () => {
       const hydrated = userPreferencesReducer(initialState, hydrateActivityLogPresets([preset]));
-      const saved = userPreferencesReducer(hydrated, saveActivityLogPreset({ ...preset, name: "All" }));
+      const saved = userPreferencesReducer(
+        hydrated,
+        saveActivityLogPreset({ ...preset, name: 'All' }),
+      );
       const deleted = userPreferencesReducer(saved, deleteActivityLogPreset(0));
 
       expect(hydrated.activityLogPresets).toEqual([preset]);
-      expect(saved.activityLogPresets.map((item) => item.name)).toEqual(["Errors", "All"]);
-      expect(deleted.activityLogPresets.map((item) => item.name)).toEqual(["All"]);
+      expect(saved.activityLogPresets.map((item) => item.name)).toEqual(['Errors', 'All']);
+      expect(deleted.activityLogPresets.map((item) => item.name)).toEqual(['All']);
     });
-
   });
 
-  describe("showReasoningBlocks actions", () => {
-    it("defaults to false (reasoning hidden)", () => {
+  describe('showReasoningBlocks actions', () => {
+    it('defaults to false (reasoning hidden)', () => {
       expect(initialState.showReasoningBlocks).toBe(false);
     });
 
-    it("sets showReasoningBlocks", () => {
+    it('sets showReasoningBlocks', () => {
       const state = userPreferencesReducer(initialState, setShowReasoningBlocks(true));
       expect(state.showReasoningBlocks).toBe(true);
     });
 
-    it("toggles showReasoningBlocks", () => {
+    it('toggles showReasoningBlocks', () => {
       const on = userPreferencesReducer(initialState, toggleShowReasoningBlocks());
       const off = userPreferencesReducer(on, toggleShowReasoningBlocks());
       expect(on.showReasoningBlocks).toBe(true);
@@ -339,44 +337,44 @@ describe("userPreferencesReducer", () => {
     });
   });
 
-  describe("language preference actions", () => {
-    it("defaults to the system preference", () => {
-      expect(initialState.languagePreference).toBe("system");
+  describe('language preference actions', () => {
+    it('defaults to the system preference', () => {
+      expect(initialState.languagePreference).toBe('system');
     });
 
-    it("sets an explicit language preference", () => {
-      const state = userPreferencesReducer(initialState, setLanguagePreference("zh-CN"));
-      expect(state.languagePreference).toBe("zh-CN");
+    it('sets an explicit language preference', () => {
+      const state = userPreferencesReducer(initialState, setLanguagePreference('zh-CN'));
+      expect(state.languagePreference).toBe('zh-CN');
     });
 
-    it("sets the preference back to system", () => {
+    it('sets the preference back to system', () => {
       const state = userPreferencesReducer(
-        { ...initialState, languagePreference: "zh-CN" },
-        setLanguagePreference("system")
+        { ...initialState, languagePreference: 'zh-CN' },
+        setLanguagePreference('system'),
       );
-      expect(state.languagePreference).toBe("system");
+      expect(state.languagePreference).toBe('system');
     });
   });
 
-  describe("GitHub link default action", () => {
-    it("defaults to showing choices", () => {
-      expect(initialState.githubLinkDefaultAction).toBe("show-choices");
+  describe('GitHub link default action', () => {
+    it('defaults to showing choices', () => {
+      expect(initialState.githubLinkDefaultAction).toBe('show-choices');
     });
 
-    it("sets the default action", () => {
-      const state = userPreferencesReducer(initialState, setGithubLinkDefaultAction("copy-link"));
-      expect(state.githubLinkDefaultAction).toBe("copy-link");
+    it('sets the default action', () => {
+      const state = userPreferencesReducer(initialState, setGithubLinkDefaultAction('copy-link'));
+      expect(state.githubLinkDefaultAction).toBe('copy-link');
     });
   });
 
-  describe("selectors", () => {
+  describe('selectors', () => {
     const state = {
       userPreferences: {
         ...initialState,
-        agentFontStyle: "monospace" as AgentFontStyle,
-        noteFontStyle: "monospace",
-        codeFontFamily: "JetBrains Mono",
-        systemFonts: ["JetBrains Mono"],
+        agentFontStyle: 'monospace' as AgentFontStyle,
+        noteFontStyle: 'monospace',
+        codeFontFamily: 'JetBrains Mono',
+        systemFonts: ['JetBrains Mono'],
         enabled: false,
         soundEnabled: false,
         soundOnlyWhenUnfocused: false,
@@ -387,99 +385,96 @@ describe("userPreferencesReducer", () => {
       },
     } as any;
 
-    it("selects home page preference values", () => {
+    it('selects home page preference values', () => {
       expect(selectShowArchived.select(state)).toBe(true);
       expect(selectGroupByRepo.select(state)).toBe(false);
       expect(selectHasCompletedProviderSetup.select(state)).toBe(true);
     });
 
-    it("selects showReasoningBlocks (default false, missing slice safe)", () => {
+    it('selects showReasoningBlocks (default false, missing slice safe)', () => {
       expect(selectShowReasoningBlocks.select(state)).toBe(false);
       expect(
         selectShowReasoningBlocks.select({
           userPreferences: { ...initialState, showReasoningBlocks: true },
-        } as any)
+        } as any),
       ).toBe(true);
       expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
     });
 
-    it("selects font settings from userPreferences", () => {
-      expect(selectAgentFontStyle.select(state)).toBe("monospace");
-      expect(selectAgentFontStyleLabel.select(state)).toBe("Monospace");
+    it('selects font settings from userPreferences', () => {
+      expect(selectAgentFontStyle.select(state)).toBe('monospace');
+      expect(selectAgentFontStyleLabel.select(state)).toBe('Monospace');
       expect(selectIsAgentMonospace.select(state)).toBe(true);
-      expect(selectNoteFontStyle.select(state)).toBe("monospace");
-      expect(selectNoteFontStyleLabel.select(state)).toBe("Monospace");
+      expect(selectNoteFontStyle.select(state)).toBe('monospace');
+      expect(selectNoteFontStyleLabel.select(state)).toBe('Monospace');
       expect(selectIsNoteMonospace.select(state)).toBe(true);
-      expect(selectCodeFontFamily.select(state)).toBe("JetBrains Mono");
+      expect(selectCodeFontFamily.select(state)).toBe('JetBrains Mono');
       expect(selectCodeFontFamilyCSS.select(state)).toBe("'JetBrains Mono', monospace");
-      expect(selectCodeFontFamilyLabel.select(state)).toBe("JetBrains Mono");
+      expect(selectCodeFontFamilyLabel.select(state)).toBe('JetBrains Mono');
       expect(selectCodeFontOptions.select(state)).toEqual([
         {
-          value: "system-default",
-          label: "System Default",
-          fontFamily:
-            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
+          value: 'system-default',
+          label: 'System Default',
+          fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
         },
         {
-          value: "JetBrains Mono",
-          label: "JetBrains Mono",
+          value: 'JetBrains Mono',
+          label: 'JetBrains Mono',
           fontFamily: "'JetBrains Mono', monospace",
         },
       ]);
     });
 
-    it("includes every loaded system font after System Default", () => {
+    it('includes every loaded system font after System Default', () => {
       const fontState = {
         userPreferences: {
           ...initialState,
-          systemFonts: ["Helvetica Neue", "JetBrains Mono", "Cascadia Code"],
+          systemFonts: ['Helvetica Neue', 'JetBrains Mono', 'Cascadia Code'],
         },
       } as any;
 
       expect(selectCodeFontOptions.select(fontState).map((option) => option.value)).toEqual([
-        "system-default",
-        "Helvetica Neue",
-        "JetBrains Mono",
-        "Cascadia Code",
+        'system-default',
+        'Helvetica Neue',
+        'JetBrains Mono',
+        'Cascadia Code',
       ]);
     });
 
-    it("selects notification settings from userPreferences", () => {
+    it('selects notification settings from userPreferences', () => {
       expect(selectNotificationEnabled.select(state)).toBe(false);
       expect(selectSoundEnabled.select(state)).toBe(false);
       expect(selectSoundOnlyWhenUnfocused.select(state)).toBe(false);
       expect(selectNotificationVolume.select(state)).toBe(0.25);
     });
 
-    it("selects migrated small renderer preferences", () => {
+    it('selects migrated small renderer preferences', () => {
       const preferenceState = {
         userPreferences: {
           ...initialState,
-          activityLogPresets: [{ name: "Errors", filters: {} }],
+          activityLogPresets: [{ name: 'Errors', filters: {} }],
         },
       } as any;
 
       expect(selectActivityLogPresets.select(preferenceState)).toEqual([
-        { name: "Errors", filters: {} },
+        { name: 'Errors', filters: {} },
       ]);
     });
 
-    it("selects the language preference", () => {
+    it('selects the language preference', () => {
       const preferenceState = {
-        userPreferences: { ...initialState, languagePreference: "zh-CN" },
+        userPreferences: { ...initialState, languagePreference: 'zh-CN' },
       } as any;
 
-      expect(selectLanguagePreference.select(preferenceState)).toBe("zh-CN");
+      expect(selectLanguagePreference.select(preferenceState)).toBe('zh-CN');
     });
-
-    it("selects the GitHub link default action with a safe fallback", () => {
+    it('selects the GitHub link default action with a safe fallback', () => {
       expect(
         selectGithubLinkDefaultAction.select({
-          userPreferences: { ...initialState, githubLinkDefaultAction: "start-workspace" },
-        } as any)
-      ).toBe("start-workspace");
-      expect(selectGithubLinkDefaultAction.select({} as any)).toBe("show-choices");
+          userPreferences: { ...initialState, githubLinkDefaultAction: 'start-workspace' },
+        } as any),
+      ).toBe('start-workspace');
+      expect(selectGithubLinkDefaultAction.select({} as any)).toBe('show-choices');
     });
-
   });
 });

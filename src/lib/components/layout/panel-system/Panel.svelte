@@ -7,9 +7,16 @@
    * Supports drag-and-drop for cross-panel tab movement.
    */
 
+  import Fa from 'svelte-fa';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import type { PanelState, PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import type {
+    PanelState,
+    PanelTab,
+  } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import PanelTabBar from './PanelTabBar.svelte';
   import PanelContentRenderer from './PanelContentRenderer.svelte';
   import PanelEmptyState from './PanelEmptyState.svelte';
@@ -24,10 +31,16 @@
     updatePanelTabCache,
   } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { untrack, type Snippet } from 'svelte';
   import {
-    untrack,
-    type Snippet,
-  } from 'svelte';
+    PANEL_DRAG_MIME,
+    clearDraggedPanelState,
+    getDraggedPanelId,
+    getPanelDragPlacement,
+    type PanelDragPlacement,
+  } from './panel-drag';
+  import { store as appStore } from '$store/renderer/store';
+  import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -35,6 +48,8 @@
     panel: PanelState;
     isFocused?: boolean;
     workspaceId: string;
+    layoutId: string;
+    contained?: boolean;
     onFocus?: () => void;
     onTabClick?: (tabId: string) => void;
     onTabClose?: (tabId: string) => void;
@@ -51,6 +66,13 @@
     onTabDrop?: (tabId: string, fromPanelId: string, zone: DropZone) => void;
     /** Handler for moving a tab to this panel's tab bar */
     onTabMoveToPanel?: (tabId: string, fromPanelId: string, insertIndex?: number) => void;
+    /** Handler for dropping a whole panel onto this panel (reorder) */
+    onPanelMove?: (draggedPanelId: string, position: PanelDragPlacement) => void;
+    onPanelMovePreview?: (
+      draggedPanelId: string,
+      targetPanelId: string,
+      position: PanelDragPlacement | null,
+    ) => void;
     /** Handler for renaming a tab (note, agent, or file) */
     onTabRename?: (tab: PanelTab, newName: string) => void;
     /** Callbacks for creating new items */
@@ -70,6 +92,8 @@
     panel,
     isFocused = false,
     workspaceId,
+    layoutId,
+    contained = false,
     onFocus,
     onTabClick,
     onTabClose,
@@ -83,6 +107,8 @@
     isZoomed = false,
     onTabDrop,
     onTabMoveToPanel,
+    onPanelMove,
+    onPanelMovePreview,
     onTabRename,
     onCreateAgent,
     onCreateAgentWithSpecialist,
@@ -147,6 +173,7 @@
       panel.activeTabId,
       Date.now(),
       PANEL_TAB_CACHE_TTL_MS,
+      panel.tabs,
     );
     if (delay === null) return;
 
@@ -169,6 +196,7 @@
   // Drop zone state
   let isDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
+  let panelDropPlacement = $state<PanelDragPlacement | null>(null);
   let panelRef = $state.raw<HTMLDivElement | null>(null);
 
   // Tab bar height in pixels (h-9 = 2.25rem = 36px)
@@ -182,10 +210,22 @@
     if (!$isDragging) {
       isDragOver = false;
       activeDropZone = null;
+      panelDropPlacement = null;
     }
   });
 
   function handlePanelFocus() {
+    onFocus?.();
+  }
+
+  // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
+  // fires when a focusable descendant receives focus; clicks on non-focusable
+  // content (empty area, static text, non-interactive tab content) would
+  // otherwise leave the panel unfocused. Uses `pointerdown` (capture) so the
+  // panel focuses before nested interactive elements handle the event, and it
+  // stays passive — no preventDefault / stopPropagation.
+  function handlePanelPointerDown() {
+    if (isFocused) return;
     onFocus?.();
   }
 
@@ -200,22 +240,42 @@
     // If cursor is over the tab bar area, no drop zone
     if (y < TAB_BAR_HEIGHT) return null;
 
-    // Calculate position relative to content area (below tab bar)
-    const contentY = y - TAB_BAR_HEIGHT;
-    const contentHeight = rect.height - TAB_BAR_HEIGHT;
     const width = rect.width;
 
-    // Edge zones are ~20-25% from each edge
-    const edgeThreshold = 0.25;
-
-    if (contentY < contentHeight * edgeThreshold) return 'top';
-    if (contentY > contentHeight * (1 - edgeThreshold)) return 'bottom';
+    // Tabless panels only split along the horizontal stack.
     if (x < width * 0.2) return 'left';
     if (x > width * 0.8) return 'right';
     return 'center';
   }
 
+  function getPanelPlacement(e: DragEvent): PanelDragPlacement {
+    if (!panelRef) return 'after';
+    return getPanelDragPlacement(
+      e.clientX,
+      e.clientY,
+      panelRef.getBoundingClientRect(),
+      panelDropPlacement,
+    );
+  }
+
   function handleDragOver(e: DragEvent) {
+    // Whole-panel drag: preview only. The real layout changes once, on drop.
+    if (e.dataTransfer?.types.includes(PANEL_DRAG_MIME)) {
+      const draggedPanelId = getDraggedPanelId();
+      if (!draggedPanelId) return;
+      e.preventDefault();
+      if (draggedPanelId === panel.id) {
+        panelDropPlacement = getPanelPlacement(e);
+        onPanelMovePreview?.(draggedPanelId, panel.id, panelDropPlacement);
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        return;
+      }
+      panelDropPlacement = getPanelPlacement(e);
+      onPanelMovePreview?.(draggedPanelId, panel.id, panelDropPlacement);
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      return;
+    }
+
     // Only accept our custom tab drag MIME type
     if (!e.dataTransfer?.types.includes(TAB_DRAG_MIME)) return;
 
@@ -236,15 +296,50 @@
     // Only reset if leaving the panel entirely
     const relatedTarget = e.relatedTarget as HTMLElement;
     if (relatedTarget && panelRef?.contains(relatedTarget)) return;
+    if (panelRef) {
+      const rect = panelRef.getBoundingClientRect();
+      const pointerStillInside =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (pointerStillInside) return;
+    }
 
     isDragOver = false;
     activeDropZone = null;
+    panelDropPlacement = null;
+    const draggedPanelId = getDraggedPanelId();
+    if (draggedPanelId) onPanelMovePreview?.(draggedPanelId, panel.id, null);
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
+
+    // Whole-panel drop: reorder the stack
+    const panelData = e.dataTransfer?.getData(PANEL_DRAG_MIME);
+    const mirroredPanelId = getDraggedPanelId();
+    if (panelData || mirroredPanelId) {
+      const placement = panelDropPlacement ?? getPanelPlacement(e);
+      panelDropPlacement = null;
+      activeDropZone = null;
+      let draggedId = mirroredPanelId;
+      try {
+        if (panelData) draggedId = JSON.parse(panelData).panelId ?? draggedId;
+      } catch {
+        // Fall back to the mirrored id used during dragover.
+      }
+      if (draggedId) {
+        onPanelMovePreview?.(draggedId, panel.id, null);
+        clearDraggedPanelState();
+        appStore.dispatch(endDrag());
+        if (draggedId !== panel.id) onPanelMove?.(draggedId, placement);
+      }
+      return;
+    }
+    panelDropPlacement = null;
 
     try {
       const data = e.dataTransfer?.getData(TAB_DRAG_MIME);
@@ -278,13 +373,14 @@
 {#if panel}
   <div
     bind:this={panelRef}
-    class={cn(
-      'panel group/panel relative flex flex-col h-full bg-background overflow-hidden',
-      isFocused && 'focused',
-    )}
+    class="panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50 bg-card text-card-foreground"
+    class:contained
     data-panel-id={panel.id}
-    tabindex="-1"
+    data-layout-id={layoutId}
+    data-focused={isFocused}
+    data-zoomed={isZoomed}
     onfocusin={handlePanelFocus}
+    onpointerdowncapture={handlePanelPointerDown}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
@@ -293,39 +389,58 @@
   >
     <!-- Drop zones overlay (positioned below tab bar) -->
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
+    {#if !activeTab && onClosePanel}
+      <div class="absolute right-2 top-2 z-20" data-empty-panel-close>
+        <Tooltip content="Close panel" side="bottom" delayDuration={300}>
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            class="cursor-pointer opacity-50 hover:opacity-100 focus-visible:opacity-100"
+            onclick={(event) => {
+              event.stopPropagation();
+              onClosePanel?.();
+            }}
+            aria-label="Close panel"
+          >
+            <Fa icon={faXmark} size="xs" />
+          </Button>
+        </Tooltip>
+      </div>
+    {/if}
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
       style={animateTabBar
         ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
         : ''}
     >
-    <PanelTabBar
-      tabs={panel.tabs}
-      activeTabId={panel.activeTabId}
-      panelId={panel.id}
-      {workspaceId}
-      {isFocused}
-      contentActions={headerActions.current}
-      {onTabClick}
-      {onTabClose}
-      {onTabReorder}
-      {onTabMoveToPanel}
-      {onCloseOtherTabs}
-      {onCloseTabsToRight}
-      {onCloseAllTabs}
-      {onCloseAllOthersEverywhere}
-      {onClosePanel}
-      {onZoomToggle}
-      {isZoomed}
-      {onTabRename}
-      {onCreateAgent}
-      {onCreateAgentWithSpecialist}
-      {onCreateNote}
-      {onCreateTerminal}
-      {onOpenBrowser}
-      {onSplitHorizontal}
-      {onSplitVertical}
-    />
+      <PanelTabBar
+        tabs={panel.tabs}
+        activeTabId={panel.activeTabId}
+        panelId={panel.id}
+        {workspaceId}
+        {layoutId}
+        {isFocused}
+        contentActions={headerActions.current}
+        {onTabClick}
+        {onTabClose}
+        {onTabReorder}
+        {onTabMoveToPanel}
+        {onCloseOtherTabs}
+        {onCloseTabsToRight}
+        {onCloseAllTabs}
+        {onCloseAllOthersEverywhere}
+        {onClosePanel}
+        {onZoomToggle}
+        {isZoomed}
+        {onTabRename}
+        {onCreateAgent}
+        {onCreateAgentWithSpecialist}
+        {onCreateNote}
+        {onCreateTerminal}
+        {onOpenBrowser}
+        {onSplitHorizontal}
+        {onSplitVertical}
+      />
     </div>
 
     <!-- Content Area -->
@@ -340,9 +455,7 @@
     - Editors from showing paste cursors
     - Content from interfering with drop zones
   -->
-    <div
-      class={cn('panel-content flex-1 overflow-hidden', $isDragging && 'pointer-events-none')}
-    >
+    <div class={cn('panel-content flex-1 overflow-hidden', $isDragging && 'pointer-events-none')}>
       {#if panel.tabs.length > 0 && activeTab}
         <!-- Render all cached tabs, showing only the active one -->
         {#each tabsToRender as tab (tab.id)}
@@ -356,6 +469,7 @@
             <PanelContentRenderer
               {tab}
               {workspaceId}
+              {layoutId}
               {isActive}
               isPanelFocused={isFocused && isActive}
               onFocus={() => onFocus?.()}
@@ -388,27 +502,14 @@
 <style>
   .panel {
     position: relative;
+    width: 100%;
+    min-width: 0;
+    box-shadow: var(--elevation-raised);
 
     /* Container query setup for responsive panel headers */
     container-type: size;
     container-name: panel;
   }
-
-  .panel.focused {
-    /* border-color: hsl(var(--primary) / 0.9); */
-  }
-
-  /* Subtle focus indicator - left edge accent bar */
-  /* .panel.focused::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: hsl(var(--primary) / 0.6);
-    z-index: 10;
-  } */
 
   .panel-content {
     position: relative;

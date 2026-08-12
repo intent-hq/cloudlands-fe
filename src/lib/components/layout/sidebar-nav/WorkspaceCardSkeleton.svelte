@@ -1,6 +1,11 @@
 <script lang="ts">
   import { Skeleton } from '$lib/components/ui/skeleton';
 
+  const TITLE_WIDTHS = ['68%', '54%', '72%', '61%', '47%'] as const;
+
+  let { index = 0 }: { index?: number } = $props();
+  const titleWidth = $derived(TITLE_WIDTHS[index % TITLE_WIDTHS.length]);
+
   /**
    * WorkspaceCardSkeleton - Indeterminate loading placeholder for workspace cards.
    *
@@ -10,17 +15,20 @@
    */
 </script>
 
-<div class="workspace-card-skeleton px-3 py-1.5 flex items-center gap-2 min-w-0" data-testid="workspace-card-skeleton" aria-hidden="true">
-  <!-- Avatar skeleton (circle) -->
-  <Skeleton class="size-6 rounded-full shrink-0" />
+<div
+  class="workspace-card-skeleton flex min-w-0 items-center gap-2.5 px-3 py-2"
+  data-testid="workspace-card-skeleton"
+  aria-hidden="true"
+>
+  <!-- Phase indicator skeleton (circle) -->
+  <Skeleton class="size-2.5 shrink-0 rounded-full bg-sidebar-foreground/10" />
 
-  <!-- Title and metadata skeleton -->
-  <div class="flex-1 min-w-0 flex flex-col gap-1">
-    <!-- Title bar -->
-    <Skeleton class="h-3.5" style="width: 70%;" />
-    <!-- Metadata/subtitle bar (shorter) -->
-    <Skeleton class="h-2.5" style="width: 50%;" />
-  </div>
+  <!-- Title skeleton (single line) -->
+  <Skeleton
+    class="h-2.5 flex-1 rounded-full bg-sidebar-foreground/10"
+    style="max-width: {titleWidth};"
+    data-workspace-skeleton-title
+  />
 </div>
 
 <style>

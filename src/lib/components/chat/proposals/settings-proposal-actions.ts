@@ -4,7 +4,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import { appClient } from '$lib/client';
-import { store as appStore } from "$store/renderer/store";
+import { store as appStore } from '$store/renderer/store';
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
 import { selectProposalAppliedState } from '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors';
 import type {
@@ -73,7 +73,10 @@ import {
   setActiveProvider,
   setProviderEnabled,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { setEnabled, setDisabledServers } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+import {
+  setEnabled,
+  setDisabledServers,
+} from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
   setAgentFontStyle,
   setBetaUpdatesEnabled,
@@ -90,6 +93,7 @@ import {
   setSpellcheckEnabled,
   setVolume,
   type FontStyle,
+  type NoteFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   setDefaultModel,
@@ -325,6 +329,10 @@ function isFontStyle(value: unknown): value is FontStyle {
   return value === 'sans' || value === 'monospace';
 }
 
+function isNoteFontStyle(value: unknown): value is NoteFontStyle {
+  return value === 'sans' || value === 'serif' || value === 'monospace';
+}
+
 function dispatchReduxAction(path: string, value: unknown): boolean {
   switch (path) {
     case 'preferences.betaUpdatesEnabled': {
@@ -405,7 +413,7 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setAgentFontStyle(value));
       return true;
     case 'fonts.notes':
-      if (!isFontStyle(value)) return false;
+      if (!isNoteFontStyle(value)) return false;
       appStore.dispatch(setNoteFontStyle(value));
       return true;
     case 'fonts.code':

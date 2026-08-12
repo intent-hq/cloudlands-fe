@@ -53,17 +53,14 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   // The picker reads the default provider / catalog rows via the
   // providerCatalog slice — hydrate the §5.38-shaped mock catalog.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
-  const { MOCK_PROVIDER_CATALOG } = await import(
-    '../../../../../test/fixtures/provider-catalog.fixture'
-  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } =
+    await import('../../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -125,7 +122,7 @@ vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
   default: (await import('./mocks/MockDropdownMenu.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
@@ -163,6 +160,26 @@ describe('InitialAgentPicker stale model override clearing', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('exposes the active work mode and updates it when a card is selected', async () => {
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+      },
+    });
+
+    const teamMode = screen.getByRole('button', { name: /Agent orchestration/i });
+    const singleAgent = screen.getByRole('button', { name: /Single agent/i });
+
+    expect(teamMode.getAttribute('aria-pressed')).toBe('true');
+    expect(singleAgent.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(singleAgent);
+
+    expect(teamMode.getAttribute('aria-pressed')).toBe('false');
+    expect(singleAgent.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('does not clear a persisted override before data is loaded, then clears it once loaded', async () => {

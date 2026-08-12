@@ -13,7 +13,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let app: ElectronApplication;
 let page: Page;
-let appLaunchUnavailableReason: string | undefined;
 
 test.beforeAll(async () => {
   // Launch Electron app
@@ -26,13 +25,8 @@ test.beforeAll(async () => {
     },
   });
 
-  try {
-    page = await app.firstWindow({ timeout: 30000 });
-    await page.waitForSelector('[data-testid="app-ready"]', { timeout: 30000 });
-  } catch (error) {
-    appLaunchUnavailableReason = `Electron app did not open a test window: ${error instanceof Error ? error.message : String(error)}`;
-    await app?.close().catch(() => undefined);
-  }
+  page = await app.firstWindow({ timeout: 30000 });
+  await page.waitForSelector('[data-testid="app-ready"]', { timeout: 30000 });
 });
 
 test.afterAll(async () => {
@@ -40,10 +34,6 @@ test.afterAll(async () => {
 });
 
 test.describe('Agent UI Rendering in Electron', () => {
-  test.beforeEach(() => {
-    test.skip(!!appLaunchUnavailableReason, appLaunchUnavailableReason);
-  });
-
   test.describe('Streaming Message Rendering', () => {
     test('should render streaming messages correctly', async () => {
       // Create a new workspace

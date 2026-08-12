@@ -3,44 +3,40 @@
   const logger = new Logger({ category: 'CodeChangesPanel' });
 
   import {
-  faList,
-  faFolderTree,
-  faRefresh,
-  faPlus,
-  faMinus,
-  faArrowRight,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faList,
+    faFolderTree,
+    faRefresh,
+    faPlus,
+    faMinus,
+    faArrowRight,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
-  selectCurrentStagedWorkingChanges as selectFtCurrentStagedChanges,
-  selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
-  selectCurrentCommits as selectFtCurrentCommits,
-  selectCurrentLoading as selectFtCurrentLoading,
-  selectMainPanelView as selectFtMainPanelView,
-  selectAcceptChangesState,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectCurrentStagedWorkingChanges as selectFtCurrentStagedChanges,
+    selectCurrentUnstagedWorkingChanges as selectFtCurrentUnstagedChanges,
+    selectCurrentCommits as selectFtCurrentCommits,
+    selectCurrentLoading as selectFtCurrentLoading,
+    selectMainPanelView as selectFtMainPanelView,
+    selectAcceptChangesState,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  setMainPanelView as ftSetMainPanelView,
-  unstageChangesRequested,
-  revertChangeRequested,
-  loadWorkspaceDataRequested,
-} from '$store/renderer/slices/changes/changes-slice';
+    setMainPanelView as ftSetMainPanelView,
+    unstageChangesRequested,
+    revertChangeRequested,
+    loadWorkspaceDataRequested,
+  } from '$store/renderer/slices/changes/changes-slice';
   import { stageFiles as stageFilesViaSeam } from '$features/git/git-write-service';
 
-
   import {
-  openWorkspaceAcceptChanges,
-  openWorkspaceDiff,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceAcceptChanges,
+    openWorkspaceDiff,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import FileChangesList from './FileChangesList.svelte';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
-  import {
-  ListContainer,
-  ListSection,
-} from '../ui/list';
+  import { ListContainer, ListSection } from '../ui/list';
   import * as ToggleGroup from '../ui/toggle-group';
   import { Tooltip } from '../ui/tooltip';
   import { Button } from '../ui/button';
@@ -48,14 +44,13 @@
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
 
   import { onMount } from 'svelte';
+  import { toStore } from 'svelte/store';
   import { toast } from 'svelte-sonner';
   import { Switch } from '../ui/switch';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
-
 
   interface Props {
     collapsed?: boolean;
@@ -65,7 +60,8 @@
 
   let { collapsed = undefined, onCollapse = undefined, workspaceId = undefined }: Props = $props();
 
-  const acceptChangesState = selectAcceptChangesState(workspaceId ?? '');
+  const workspaceId$ = toStore(() => workspaceId ?? '');
+  const acceptChangesState = selectAcceptChangesState(workspaceId$);
   const ftCurrentWsId$ = selectActiveWorkspaceId();
   const ftStagedChanges$ = selectFtCurrentStagedChanges();
   const ftUnstagedChanges$ = selectFtCurrentUnstagedChanges();
@@ -85,9 +81,7 @@
   // Combined loading state: local loading OR store loading OR workspace mismatch (switching)
   // This ensures skeleton shows during workspace transitions instead of showing empty state
   const isLoading = $derived(
-    localIsLoading ||
-      $ftLoading$ ||
-      (workspaceId && $ftCurrentWsId$ !== workspaceId),
+    localIsLoading || $ftLoading$ || (workspaceId && $ftCurrentWsId$ !== workspaceId),
   );
 
   // Collapsed state for sections
@@ -95,24 +89,20 @@
   let stagedCollapsed = $state(false);
 
   // Auto-commit settings from Redux
-  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId ?? "");
+  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId$);
 
   // Get working changes from FileTrackingStore - the single source of truth
   // PERF: Use store arrays directly to avoid creating new array references on every update.
   // The store already provides stats, so we don't need to map/enhance.
   // Only use empty arrays when the workspace doesn't match (edge case).
-  const stagedChanges = $derived(
-    $ftCurrentWsId$ !== workspaceId ? [] : ($ftStagedChanges$ ?? []),
-  );
+  const stagedChanges = $derived($ftCurrentWsId$ !== workspaceId ? [] : ($ftStagedChanges$ ?? []));
   const unstagedChanges = $derived(
     $ftCurrentWsId$ !== workspaceId ? [] : ($ftUnstagedChanges$ ?? []),
   );
 
   // Track selected change from main panel view
   const selectedChange = $derived(
-    $ftMainPanelView$?.type === 'diff'
-      ? $ftMainPanelView$.change
-      : null,
+    $ftMainPanelView$?.type === 'diff' ? $ftMainPanelView$.change : null,
   );
 
   let previousWorkspaceId: string | undefined = $state(undefined);
@@ -170,7 +160,9 @@
           appStore.dispatch(loadGitStatus(workspaceId, true));
           resolve();
         }),
-        workspaceId ? (appStore.dispatch(loadWorkspaceDataRequested(workspaceId)), Promise.resolve()) : Promise.resolve(), // reload file tracking data
+        workspaceId
+          ? (appStore.dispatch(loadWorkspaceDataRequested(workspaceId)), Promise.resolve())
+          : Promise.resolve(), // reload file tracking data
       ]);
 
       // Set a timeout for the refresh operation - use resolve, not reject
@@ -197,7 +189,8 @@
   const commitHistory = $derived.by(() =>
     $ftCommits$.map((commit) => ({
       hash: commit.hash,
-      message: commit.message || commit.hash?.slice(0, 7) || m.fileTracking_codeChanges_unknown_fallback(),
+      message:
+        commit.message || commit.hash?.slice(0, 7) || m.fileTracking_codeChanges_unknown_fallback(),
       author: commit.author || m.fileTracking_codeChanges_unknown_fallback(),
       timestamp: commit.timestamp,
       files: commit.files,
@@ -218,10 +211,12 @@
     });
 
     // Open diff view in main panel
-    appStore.dispatch(ftSetMainPanelView({
-      type: 'diff',
-      change,
-    }));
+    appStore.dispatch(
+      ftSetMainPanelView({
+        type: 'diff',
+        change,
+      }),
+    );
 
     logger.info('[CodeChangesPanel] setMainPanelView called with diff type');
 
@@ -258,7 +253,8 @@
   // the git-write-service seam yet.
   async function handleUnstageChange(change: TrackedChange) {
     try {
-      if (workspaceId) appStore.dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
+      if (workspaceId)
+        appStore.dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
       logger.error('[handleUnstageChange] Failed to unstage file', error as Error);
     }
@@ -289,7 +285,8 @@
       // Unstage all changes using the store (handles optimistic updates)
       // Pass the UI changes so the store can create them if they're synthetic IDs
       const changeIds = stagedChanges.map((c) => c.id);
-      if (workspaceId) appStore.dispatch(unstageChangesRequested(workspaceId, changeIds, stagedChanges));
+      if (workspaceId)
+        appStore.dispatch(unstageChangesRequested(workspaceId, changeIds, stagedChanges));
     } catch (error) {
       logger.error('[handleUnstageAll] Failed to unstage all files', error as Error);
     }
@@ -330,9 +327,7 @@
 
   // Computed: whether there are any changes to accept
   const hasChangesToAccept = $derived(
-    unstagedChanges.length > 0 ||
-      stagedChanges.length > 0 ||
-      commitHistory.length > 0,
+    unstagedChanges.length > 0 || stagedChanges.length > 0 || commitHistory.length > 0,
   );
 
   // Computed: summary text for the accept button
@@ -389,6 +384,7 @@
       <Button
         variant="ghost-light"
         size="icon"
+        aria-label="Refresh changes"
         class="h-6 w-6"
         onclick={handleRefresh}
         disabled={isRefreshing || !workspaceId}
@@ -398,10 +394,18 @@
     </Tooltip>
 
     <ToggleGroup.Root bind:value={viewMode} size="xs" variant="default">
-      <ToggleGroup.Item value="list" size="xs" tooltip={m.fileTracking_codeChanges_listView_tooltip()}>
+      <ToggleGroup.Item
+        value="list"
+        size="xs"
+        tooltip={m.fileTracking_codeChanges_listView_tooltip()}
+      >
         <Fa icon={faList} size="xs" />
       </ToggleGroup.Item>
-      <ToggleGroup.Item value="tree" size="xs" tooltip={m.fileTracking_codeChanges_treeView_tooltip()}>
+      <ToggleGroup.Item
+        value="tree"
+        size="xs"
+        tooltip={m.fileTracking_codeChanges_treeView_tooltip()}
+      >
         <Fa icon={faFolderTree} size="xs" />
       </ToggleGroup.Item>
     </ToggleGroup.Root>
@@ -474,6 +478,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
+                  aria-label="Unstage all"
                   disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();
@@ -512,6 +517,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
+                  aria-label="Stage all"
                   disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();

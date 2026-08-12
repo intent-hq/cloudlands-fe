@@ -39,7 +39,7 @@
 </script>
 
 <div
-  class="flex items-center gap-1.5 rounded-md text-xs {className}"
+  class="type-caption flex items-center gap-1.5 rounded-md {className}"
   data-testid="hook-wake-attribution"
 >
   <Fa icon={faBolt} class="w-3 h-3 text-ghost" />

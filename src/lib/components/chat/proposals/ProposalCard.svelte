@@ -4,7 +4,7 @@
   import { faCircleCheck, faPencil } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { getSpecialistById } from '$lib/constants/specialists';
-  import { DiffViewer } from '$lib/components/ui/diff';
+  import { DiffViewer } from '$features/file-tracking/components/diff';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import type {
@@ -42,6 +42,7 @@
   interface Props {
     proposal: Proposal;
     disabled?: boolean;
+    neutralBorder?: boolean;
     onApply?: (detail: ProposalActionDetail) => void;
     onDiscard?: (detail: ProposalActionDetail) => void;
     onUndo?: (proposalId: string) => void;
@@ -56,7 +57,14 @@
     ) => void;
   };
 
-  let { proposal, disabled = false, onApply, onDiscard, onUndo }: Props = $props();
+  let {
+    proposal,
+    disabled = false,
+    neutralBorder = false,
+    onApply,
+    onDiscard,
+    onUndo,
+  }: Props = $props();
 
   let rootElement = $state<HTMLElement | undefined>();
   let statusElement = $state<HTMLElement | undefined>();
@@ -151,13 +159,13 @@
   const metadataIdPrefix = $derived(`proposal-${toDomId(proposalId)}`);
   const cardClass = $derived.by(() => {
     if (isWorkspaceCreate) {
-      return isWorkspaceCreated
-        ? 'my-2 w-full max-w-xl rounded-xl border border-border/60 bg-muted/10 p-4 sm:p-5'
-        : 'my-2 w-full max-w-xl rounded-xl border border-border bg-background p-4 sm:p-5';
+      return isWorkspaceCreated && !neutralBorder
+        ? 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-success/40 bg-card p-4 shadow-(--elevation-raised) sm:p-5'
+        : 'my-2 min-w-0 w-full max-w-xl rounded-(--radius-medium) border border-border bg-card p-4 shadow-(--elevation-raised) sm:p-5';
     }
-    return isApplied
-      ? 'my-2 w-full max-w-xl overflow-hidden rounded-lg border border-green-500/30 bg-green-500/5'
-      : 'my-2 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background';
+    return isApplied && !neutralBorder
+      ? 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-success/40 bg-card shadow-(--elevation-raised)'
+      : 'my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)';
   });
 
   $effect(() => {
@@ -643,8 +651,11 @@
 </script>
 
 {#if isDismissed}
-  <div class="my-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-subtle">
-    {m.chat_shared_discarded_label()} {proposal.preview.title}
+  <div
+    class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
+  >
+    {m.chat_shared_discarded_label()}
+    {proposal.preview.title}
   </div>
 {:else if settingsProposal}
   <SettingsChangeCard proposal={settingsProposal} {disabled} {onApply} {onDiscard} {onUndo} />
@@ -667,35 +678,35 @@
         <div class="space-y-3" data-state="workspace-created">
           <div class="flex items-start gap-2">
             <span aria-hidden="true" class="mt-0.5 flex shrink-0 items-center">
-              <Fa icon={faCircleCheck} class="h-4 w-4 text-green-500" />
+              <Fa icon={faCircleCheck} class="h-4 w-4 text-success" />
             </span>
-            <h3 class="min-w-0 text-sm font-semibold leading-snug text-foreground">
+            <h3 class="type-body min-w-0 font-medium leading-snug text-foreground">
               {proposal.preview.title}
             </h3>
           </div>
 
           {#if workspaceInitialPrompt}
-            <p class="line-clamp-3 whitespace-pre-wrap text-xs text-subtle">
+            <p class="type-body line-clamp-3 whitespace-pre-wrap text-muted-foreground">
               {workspaceInitialPrompt}
             </p>
           {/if}
 
-          <dl class="space-y-1 text-xs">
+          <dl class="type-caption space-y-1">
             {#if createdRepoLabel}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">{m.chat_proposalCard_repo_label()}</dt>
+                <dt class="text-muted-foreground">{m.chat_proposalCard_repo_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{createdRepoLabel}</dd>
               </div>
             {/if}
             {#if workspaceBranch}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">{m.chat_proposalCard_baseBranch_label()}</dt>
+                <dt class="text-muted-foreground">{m.chat_proposalCard_baseBranch_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{workspaceBranch}</dd>
               </div>
             {/if}
             {#if createdSpecialistLabel}
               <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-2">
-                <dt class="text-subtle">{m.chat_proposalCard_specialist_label()}</dt>
+                <dt class="text-muted-foreground">{m.chat_proposalCard_specialist_label()}</dt>
                 <dd class="min-w-0 truncate text-foreground">{createdSpecialistLabel}</dd>
               </div>
             {/if}
@@ -709,10 +720,12 @@
                 data-testid="proposal-open-created-workspace"
                 class="inline-flex"
               >
-                <Button size="sm" class="text-white">{m.chat_proposalCard_openWorkspace_label()}</Button>
+                <Button size="sm">{m.chat_proposalCard_openWorkspace_label()}</Button>
               </a>
             {:else}
-              <span class="text-xs text-subtle" data-testid="proposal-workspace-created"
+              <span
+                class="type-caption text-muted-foreground"
+                data-testid="proposal-workspace-created"
                 >{m.chat_proposalCard_workspaceCreated_label()}</span
               >
             {/if}
@@ -720,7 +733,7 @@
         </div>
       {:else}
         <div class="space-y-4">
-          <h3 class="text-sm font-semibold leading-snug text-foreground">
+          <h3 class="type-body font-medium leading-snug text-foreground">
             {proposal.preview.title}
           </h3>
 
@@ -731,7 +744,7 @@
             maxHeight={240}
             doesExpandToFit
             noFocusStyle
-            class="resize-y border-border bg-background text-sm"
+            class="resize-y"
           />
 
           <div class="space-y-1.5">
@@ -743,7 +756,7 @@
             >
               <span
                 id={`${metadataIdPrefix}-repo-label`}
-                class="text-sm text-subtle"
+                class="type-caption font-medium text-muted-foreground"
                 data-metadata-label
               >
                 {m.chat_proposalCard_repo_label()}
@@ -769,7 +782,7 @@
             >
               <span
                 id={`${metadataIdPrefix}-branch-label`}
-                class="pt-1 text-sm text-subtle"
+                class="type-caption pt-1 font-medium text-muted-foreground"
                 data-metadata-label
               >
                 {m.chat_proposalCard_baseBranch_label()}
@@ -815,7 +828,10 @@
                   </p>
                 {/if}
                 {#if prBranchLookupFailed}
-                  <p class="px-2 text-xs text-subtle" data-testid="proposal-branch-lookup-failure">
+                  <p
+                    class="type-caption px-2 text-muted-foreground"
+                    data-testid="proposal-branch-lookup-failure"
+                  >
                     {m.chat_proposalCard_branchLookupFailed_label()}
                   </p>
                 {/if}
@@ -831,7 +847,7 @@
             >
               <span
                 id={`${metadataIdPrefix}-specialist-label`}
-                class="text-sm text-subtle"
+                class="type-caption font-medium text-muted-foreground"
                 data-metadata-label
               >
                 {m.chat_proposalCard_specialist_label()}
@@ -848,7 +864,7 @@
           </div>
 
           {#if proposal.preview.warnings?.length}
-            <div class="text-xs text-subtle">
+            <div class="type-caption text-warning">
               {#each proposal.preview.warnings as warning}
                 <div>⚠ {warning}</div>
               {/each}
@@ -858,7 +874,9 @@
           {#if statusMessage}
             <div
               bind:this={statusElement}
-              class="text-xs text-subtle focus:outline-none"
+              class={isFailed
+                ? 'type-caption text-destructive-foreground focus:outline-none'
+                : 'type-caption text-muted-foreground focus:outline-none'}
               role="status"
               aria-live={isFailed ? 'assertive' : 'polite'}
               tabindex="-1"
@@ -873,7 +891,6 @@
             >
             <Button
               size="sm"
-              class="text-white"
               disabled={actionDisabled}
               onclick={handleApply}
               aria-keyshortcuts="Enter"
@@ -897,12 +914,16 @@
     {:else}
       <div class="px-3 pt-3">
         <div class="min-w-0 space-y-0.5">
-          <div class="text-xs font-medium uppercase tracking-wide text-subtle">{kindLabel}</div>
-          <h3 class="text-sm font-semibold leading-snug text-foreground">
+          <div class="type-caption font-medium uppercase tracking-wide text-muted-foreground">
+            {kindLabel}
+          </div>
+          <h3 class="type-body font-medium leading-snug text-foreground">
             {proposal.preview.title}
           </h3>
           {#if proposal.preview.summary}
-            <p class="text-xs leading-relaxed text-subtle">{proposal.preview.summary}</p>
+            <p class="type-body leading-relaxed text-muted-foreground">
+              {proposal.preview.summary}
+            </p>
           {/if}
         </div>
       </div>
@@ -913,28 +934,32 @@
             {#each fields as field (field.key)}
               <div class="field-row" data-proposal-field={field.key}>
                 {#if field.before !== undefined || field.after !== undefined}
-                  <div class="mb-1 text-xs font-medium text-subtle">{field.label}</div>
+                  <div class="type-caption mb-1 font-medium text-muted-foreground">
+                    {field.label}
+                  </div>
                   <div
                     class={shouldStackBeforeAfter(field)
-                      ? 'flex flex-col gap-1.5 text-sm'
-                      : 'flex min-w-0 items-center gap-2 text-sm'}
+                      ? 'type-body flex flex-col gap-1.5'
+                      : 'type-body flex min-w-0 items-center gap-2'}
                     data-proposal-before-after-row={field.key}
                   >
-                    <div class="min-w-0 rounded px-2 py-1.5 text-subtle">
+                    <div
+                      class="min-w-0 rounded-(--radius-small) border border-border bg-muted/30 px-2 py-1.5 text-muted-foreground"
+                    >
                       <span class="sr-only">{m.chat_shared_before_label()} </span>
                       <div class="whitespace-pre-wrap break-words line-through">
                         {formatValue(field.before) || '—'}
                       </div>
                     </div>
                     <div
-                      class="shrink-0 px-2 text-subtle"
+                      class="shrink-0 px-1 text-muted-foreground"
                       data-proposal-before-after-arrow
                       aria-hidden="true"
                     >
                       →
                     </div>
                     {#if editingFieldKey === field.key}
-                      <div class="min-w-0 flex-1 rounded px-2 py-1.5 text-foreground">
+                      <div class="min-w-0 flex-1 rounded-(--radius-small) text-foreground">
                         <span class="sr-only">{m.chat_shared_after_label()} </span>
                         {#if field.multiline}
                           <Textarea
@@ -957,7 +982,7 @@
                       </div>
                     {:else if isFieldEditable(field)}
                       <div
-                        class="group min-w-0 flex-1 rounded px-2 py-1.5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        class="group min-w-0 flex-1 rounded-(--radius-small) border border-transparent px-2 py-1.5 text-foreground transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-border hover:bg-accent/60 focus-visible:border-ring focus-visible:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                         data-proposal-field-value={field.key}
                         role="button"
                         tabindex="0"
@@ -973,19 +998,19 @@
                             {#if getAfterDisplayValue(field)}
                               {getAfterDisplayValue(field)}
                             {:else}
-                              <span class="text-subtle">{getEmptyFieldLabel(field)}</span>
+                              <span class="text-muted-foreground">{getEmptyFieldLabel(field)}</span>
                             {/if}
                           </span>
                           <Fa
                             icon={faPencil}
                             size="xs"
-                            class="mt-0.5 shrink-0 text-subtle opacity-0 transition-opacity group-hover:opacity-70 group-focus-visible:opacity-70"
+                            class="mt-0.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-70 group-focus-visible:opacity-70 motion-reduce:transition-none"
                           />
                         </div>
                       </div>
                     {:else}
                       <div
-                        class="min-w-0 flex-1 rounded px-2 py-1.5 text-foreground"
+                        class="min-w-0 flex-1 rounded-(--radius-small) border border-border bg-background px-2 py-1.5 text-foreground"
                         data-proposal-field-value={field.key}
                       >
                         <span class="sr-only">{m.chat_shared_after_label()} </span>
@@ -1001,7 +1026,9 @@
                   </div>
                 {:else if editingFieldKey === field.key}
                   <div>
-                    <div class="mb-1 text-xs font-medium text-subtle">{field.label}</div>
+                    <div class="type-caption mb-1 font-medium text-muted-foreground">
+                      {field.label}
+                    </div>
                     {#if field.multiline}
                       <Textarea
                         bind:this={activeEditor}
@@ -1023,7 +1050,7 @@
                   </div>
                 {:else if isFieldEditable(field)}
                   <div
-                    class="group rounded px-2 py-1.5 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    class="group rounded-(--radius-small) border border-transparent px-2 py-1.5 transition-[border-color,background-color,box-shadow] duration-(--motion-fast) hover:border-border hover:bg-accent/60 focus-visible:border-ring focus-visible:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
                     data-proposal-field-value={field.key}
                     role="button"
                     tabindex="0"
@@ -1031,28 +1058,30 @@
                     onclick={() => void startEditing(field)}
                     onkeydown={(event) => handleEditableKeydown(event, field)}
                   >
-                    <div class="text-xs font-medium text-subtle">{field.label}</div>
+                    <div class="type-caption font-medium text-muted-foreground">{field.label}</div>
                     <div
-                      class="flex cursor-text items-start gap-1.5 whitespace-pre-wrap break-words text-sm text-foreground"
+                      class="type-body flex cursor-text items-start gap-1.5 whitespace-pre-wrap break-words text-foreground"
                     >
                       <span class="min-w-0 flex-1">
                         {#if getFieldDisplayValue(field)}
                           {getFieldDisplayValue(field)}
                         {:else}
-                          <span class="text-subtle">{getEmptyFieldLabel(field)}</span>
+                          <span class="text-muted-foreground">{getEmptyFieldLabel(field)}</span>
                         {/if}
                       </span>
                       <Fa
                         icon={faPencil}
                         size="xs"
-                        class="mt-0.5 shrink-0 text-subtle opacity-0 transition-opacity group-hover:opacity-70 group-focus-visible:opacity-70"
+                        class="mt-0.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-70 group-focus-visible:opacity-70 motion-reduce:transition-none"
                       />
                     </div>
                   </div>
                 {:else}
                   <div data-proposal-field-value={field.key}>
-                    <div class="mb-1 text-xs font-medium text-subtle">{field.label}</div>
-                    <div class="whitespace-pre-wrap break-words text-sm text-foreground">
+                    <div class="type-caption mb-1 font-medium text-muted-foreground">
+                      {field.label}
+                    </div>
+                    <div class="type-body whitespace-pre-wrap break-words text-foreground">
                       {#if getFieldDisplayValue(field)}
                         {getFieldDisplayValue(field)}
                       {:else}
@@ -1067,7 +1096,7 @@
         {/if}
 
         {#if diff}
-          <div class="overflow-hidden rounded-md border border-border/60">
+          <div class="overflow-hidden rounded-(--radius-medium) border border-border">
             {#if diff.patch}
               <DiffViewer
                 patch={diff.patch}
@@ -1102,7 +1131,7 @@
         {/if}
 
         {#if proposal.preview.warnings?.length}
-          <div class="text-xs text-subtle">
+          <div class="type-caption text-warning">
             {#each proposal.preview.warnings as warning}
               <div>⚠ {warning}</div>
             {/each}
@@ -1114,15 +1143,17 @@
         <div
           bind:this={statusElement}
           class={isApplied
-            ? 'border-t border-green-500/20 px-3 py-2 text-xs text-green-700 focus:outline-none dark:text-green-400'
-            : 'border-t border-border/60 px-3 py-2 text-xs text-subtle focus:outline-none'}
+            ? 'type-caption border-t border-success/30 bg-success/10 px-3 py-2 text-success focus:outline-none'
+            : isFailed
+              ? 'type-caption border-t border-border px-3 py-2 text-destructive-foreground focus:outline-none'
+              : 'type-caption border-t border-border px-3 py-2 text-muted-foreground focus:outline-none'}
           role="status"
           aria-live={isFailed ? 'assertive' : 'polite'}
           tabindex="-1"
         >
           {#if isApplied}
             <span
-              class="inline-flex items-center gap-1.5 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-1 font-medium"
+              class="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-1 font-medium"
             >
               <Fa icon={faCircleCheck} class="h-3 w-3" />
               <span>{statusMessage}</span>
@@ -1134,7 +1165,9 @@
       {/if}
 
       {#if !isApplied}
-        <div class="flex items-center justify-end gap-2 px-3 pb-3 pt-1">
+        <div
+          class="flex items-center justify-end gap-2 border-t border-border bg-muted/10 px-3 py-3"
+        >
           <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
             >{m.chat_shared_discard_label()}</Button
           >

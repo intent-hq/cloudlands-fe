@@ -15,14 +15,11 @@
 
   import type { Editor } from '@tiptap/core';
   import {
-  mapLineAttributionsToBlocks,
-  type LineAttributions,
-  type AttributionInfo,
-} from './line-to-block-mapper';
-  import {
-  resolveBlockPosition,
-  resolveCodeBlockLinePositions,
-} from './block-position-resolver';
+    mapLineAttributionsToBlocks,
+    type LineAttributions,
+    type AttributionInfo,
+  } from './line-to-block-mapper';
+  import { resolveBlockPosition, resolveCodeBlockLinePositions } from './block-position-resolver';
   import { getAttributionOpacity } from './attribution-color-scale';
   import {
     coalesceAttributionSpans,
@@ -32,7 +29,7 @@
   import { listenSync } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -488,7 +485,7 @@
       aria-label={span.ariaLabel}
       onclick={isClickable ? (e) => handleSpanClick(e, span) : undefined}
       onkeydown={isClickable ? (e) => handleSpanKeydown(e, span) : undefined}
-      role={isClickable ? "button" : undefined}
+      role={isClickable ? 'button' : undefined}
       tabindex={isClickable ? 0 : undefined}
     >
       <div
@@ -501,10 +498,7 @@
         style:top="{span.labelTop - span.top}px"
       >
         {#if span.author?.type === 'agent'}
-          <AuggieAvatar
-            size={20}
-            agentId={span.author.id}
-          />
+          <AuggieAvatar size={20} agentId={span.author.id} />
         {/if}
         <div class="flex flex-col gap-0.5 text-right">
           <div>{formatTimestamp(span.timestamp)}</div>

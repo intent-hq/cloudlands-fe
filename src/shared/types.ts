@@ -245,7 +245,8 @@ export type WorkspaceDisplayStatus = (typeof WORKSPACE_DISPLAY_STATUS_VALUES)[nu
  *  is no local re-derivation from PR/task fields. */
 export function isWorkspaceDisplayStatus(value: unknown): value is WorkspaceDisplayStatus {
   return (
-    typeof value === 'string' && (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
+    typeof value === 'string' &&
+    (WORKSPACE_DISPLAY_STATUS_VALUES as readonly string[]).includes(value)
   );
 }
 
@@ -453,10 +454,7 @@ export interface FirstVisitState {
 
 // FileChange is now defined in shared/types/change-detector.types.ts
 // Re-export for convenience
-import type {
-  FileChange,
-  FileChangeAction,
-} from './types/change-detector.types';
+import type { FileChange, FileChangeAction } from './types/change-detector.types';
 export type { FileChange, FileChangeAction };
 
 export interface ChangeSet {
@@ -1009,10 +1007,7 @@ export interface AgentInfo {
 }
 
 export type AgentScope =
-  | 'workspace'
-  | { diffs: string[] }
-  | { filePattern: string }
-  | { taskType: string };
+  'workspace' | { diffs: string[] } | { filePattern: string } | { taskType: string };
 
 // Auggie output markers
 export const AUGGIE_MARKERS = {
@@ -1153,10 +1148,7 @@ export interface ToolResultBlock {
   /** Addressable block id (PROTOCOL §7.1) */
   id?: string;
   tool_use_id: string;
-  /** Tool result payload (PROTOCOL §7.1) */
-  output?: unknown;
-  /** Legacy payload field — superseded by `output` */
-  content?: string;
+  output: unknown;
   is_error?: boolean;
 }
 

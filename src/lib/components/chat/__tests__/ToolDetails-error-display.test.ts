@@ -10,9 +10,8 @@ import { render, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
 });
 
@@ -36,7 +35,7 @@ vi.mock('../AgentCard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/AuggieAvatar.svelte')).default,
 }));
 
@@ -58,9 +57,7 @@ describe('ToolDetails error display', () => {
       },
     });
 
-    expect(container.textContent).toContain(
-      'Tool workspace_api_workspace-mcp not found.',
-    );
+    expect(container.textContent).toContain('Tool workspace_api_workspace-mcp not found.');
     // The nested string is extracted, not shown as a JSON blob
     expect(container.textContent).not.toContain('"output"');
     expect(container.textContent).not.toContain('No error details available');

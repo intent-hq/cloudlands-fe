@@ -1,28 +1,16 @@
 /**
- * Drawer.svelte Escape handling via the escape-layer stack.
+ * Drawer.svelte Escape handling via the canonical Sheet stack.
  *
  * Migrated from a `svelte:window` Escape listener. Also hosts the
  * stacked-ordering regression: a Drawer opened on top of a Modal closes
  * first (LIFO), the Modal only on the next Escape.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import Drawer from '../Drawer.svelte';
 import Modal from '$lib/components/modals/Modal.svelte';
 
-describe('Drawer Escape handling (escape-layer stack)', () => {
+describe('Drawer Escape handling (canonical Sheet stack)', () => {
   afterEach(() => {
     cleanup();
   });
@@ -31,15 +19,14 @@ describe('Drawer Escape handling (escape-layer stack)', () => {
     const onclose = vi.fn();
     render(Drawer, { props: { isOpen: true, title: 'Test Drawer', onclose } });
     await waitFor(() => {
-      expect(screen.getByText('Test Drawer')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Test Drawer' })).toBeTruthy();
     });
 
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => {
-      expect(screen.queryByText('Test Drawer')).toBeFalsy();
+      expect(onclose).toHaveBeenCalledTimes(1);
     });
-    expect(onclose).toHaveBeenCalledTimes(1);
   });
 
   it('Escape is not consumed while the drawer is closed (no layer registered)', async () => {
@@ -67,24 +54,22 @@ describe('Drawer Escape handling (escape-layer stack)', () => {
       props: { isOpen: true, title: 'Top Drawer', onclose: onDrawerClose },
     });
     await waitFor(() => {
-      expect(screen.getByText('Lower Modal')).toBeTruthy();
-      expect(screen.getByText('Top Drawer')).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Lower Modal' })).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Top Drawer' })).toBeTruthy();
     });
 
     // First Escape: only the drawer (topmost layer) closes
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
-      expect(screen.queryByText('Top Drawer')).toBeFalsy();
+      expect(onDrawerClose).toHaveBeenCalledTimes(1);
     });
-    expect(onDrawerClose).toHaveBeenCalledTimes(1);
     expect(onModalClose).not.toHaveBeenCalled();
-    expect(screen.getByText('Lower Modal')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Lower Modal' })).toBeTruthy();
 
     // Second Escape: the modal closes
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
-      expect(screen.queryByText('Lower Modal')).toBeFalsy();
+      expect(onModalClose).toHaveBeenCalledTimes(1);
     });
-    expect(onModalClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faCode } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faCode } from '@fortawesome/free-solid-svg-icons';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { parseSemanticId } from '$shared/types/notes-primitives';
   import { m } from '$shared/paraglide/messages.js';
@@ -61,28 +61,35 @@
   }
 </script>
 
-<div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
+<div
+  class="ws-block-widget type-body my-2 overflow-hidden rounded-md border border-border bg-card text-foreground shadow-(--elevation-raised)"
+>
   {#if clickable}
     <button
       type="button"
-      class="flex items-center gap-2 px-3 py-1.5 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
+      class="group flex min-h-9 w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
       onclick={handleClick}
       title={m.notes_referenceBlock_goToFile_tooltip()}
     >
-      <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
-      <span class="text-sm font-medium truncate">{fileName}</span>
+      <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />
+      <span class="type-body truncate font-medium">{fileName}</span>
       {#if filePath && filePath !== fileName}
-        <span class="text-sm text-subtle truncate flex-1 min-w-0">
+        <span class="type-caption min-w-0 flex-1 truncate text-muted-foreground">
           {filePath}
         </span>
       {/if}
+      <Fa
+        icon={faArrowRight}
+        size="xs"
+        class="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none"
+      />
     </button>
   {:else}
-    <div class="flex items-center gap-2 px-3 py-1.5">
-      <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
-      <span class="text-sm font-medium truncate">{fileName}</span>
+    <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
+      <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />
+      <span class="type-body truncate font-medium">{fileName}</span>
       {#if filePath && filePath !== fileName}
-        <span class="text-sm text-subtle truncate flex-1 min-w-0">
+        <span class="type-caption min-w-0 flex-1 truncate text-muted-foreground">
           {filePath}
         </span>
       {/if}

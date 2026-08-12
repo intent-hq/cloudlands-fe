@@ -5,7 +5,9 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const testState = vi.hoisted(() => {
-  const readable = <T>(value: T) => ({ subscribe: (run: (value: T) => void) => (run(value), () => {}) });
+  const readable = <T>(value: T) => ({
+    subscribe: (run: (value: T) => void) => (run(value), () => {}),
+  });
   const createControllableReadable = <T>(value: T) => {
     const subscribers = new Set<(nextValue: T) => void>();
     let currentValue = value;
@@ -27,7 +29,11 @@ const testState = vi.hoisted(() => {
   };
   const panelTabs = createControllableReadable<unknown[]>([]);
   const panel = { title: 'app.ts' };
-  const selector = <T>(value: T) => Object.assign(vi.fn(() => readable(value)), { select: vi.fn(() => value) });
+  const selector = <T>(value: T) =>
+    Object.assign(
+      vi.fn(() => readable(value)),
+      { select: vi.fn(() => value) },
+    );
   return {
     dispatch: vi.fn(),
     panelTabs,
@@ -49,65 +55,163 @@ const testState = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: testState.dispatch });
 });
 
-vi.mock('$features/layout/panel-layout-adapter', () => ({ getPanelLayoutManager: () => testState.panelManager }));
-vi.mock('$lib/client', () => ({ appClient: { drafts: { get: vi.fn().mockResolvedValue(null), set: vi.fn().mockResolvedValue({ ok: true }), clear: vi.fn().mockResolvedValue({ ok: true }) }, agents: { retry: vi.fn(), editQueued: vi.fn() } } }));
-vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn().mockResolvedValue({ success: true, data: [] }), listenSync: vi.fn(() => () => {}) }));
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: () => testState.panelManager,
+}));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    drafts: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue({ ok: true }),
+      clear: vi.fn().mockResolvedValue({ ok: true }),
+    },
+    agents: { retry: vi.fn(), editQueued: vi.fn() },
+  },
+}));
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  listenSync: vi.fn(() => () => {}),
+}));
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
-vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({ selectAllTabs: vi.fn(() => testState.panelTabs.readable) }));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectAllTabs: vi.fn(() => testState.panelTabs.readable),
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: testState.selector(null), selectAgentIsResponding: testState.selector(false),
-  selectAgentIsRunning: testState.selector(false), selectAgentSessionIsStreaming: testState.selector(false),
-  selectAgentSessionStreamingContent: testState.selector(''), selectAgentMessages: testState.selector([]),
+  selectAgentSession: testState.selector(null),
+  selectAgentIsResponding: testState.selector(false),
+  selectAgentIsRunning: testState.selector(false),
+  selectAgentSessionIsStreaming: testState.selector(false),
+  selectAgentSessionStreamingContent: testState.selector(''),
+  selectAgentMessages: testState.selector([]),
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
-  selectChatError: testState.selector(null), selectChatLastChunkTime: testState.selector(null),
-  selectChatLiveStreamPhase: testState.selector(null), selectChatModelUnavailable: testState.selector(null),
-  selectChatReceivedFirstChunk: testState.selector(false), selectChatStatusEvents: testState.selector([]),
-  selectChatStreamingStartTime: testState.selector(null), selectTranscriptHydration: testState.selector({ isHydrating: false }),
+  selectChatError: testState.selector(null),
+  selectChatLastChunkTime: testState.selector(null),
+  selectChatLiveStreamPhase: testState.selector(null),
+  selectChatModelUnavailable: testState.selector(null),
+  selectChatReceivedFirstChunk: testState.selector(false),
+  selectChatStatusEvents: testState.selector([]),
+  selectChatStreamingStartTime: testState.selector(null),
+  selectTranscriptHydration: testState.selector({ isHydrating: false }),
   selectTranscriptHydratedOnce: testState.selector(false),
 }));
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({ selectAgentQueueMessages: testState.selector([]) }));
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({ selectNoteById: testState.selector(null) }));
-vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({ selectCheckedPanels: testState.selector([]), selectPanels: testState.selector([]), selectCheckedSelections: testState.selector([]) }));
-vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({ selectWorkspaceSetupTerminal: testState.selector(null) }));
-vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({ selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }) }));
-vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({ selectTasksForAgent: testState.selector([]) }));
-vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({ selectPermissionRequests: testState.selector([]) }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({ selectIsAgentMonospace: testState.selector(false) }));
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({ selectSpecialists: testState.selector([]), selectEffectiveBehaviorPrompt: testState.selector(''), selectEffectiveModel: testState.selector('') }));
-vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({ selectEffectiveDefaultProviderId: testState.selector('') }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: testState.selector([]),
+}));
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
+  selectNoteById: testState.selector(null),
+}));
+vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
+  selectCheckedPanels: testState.selector([]),
+  selectPanels: testState.selector([]),
+  selectCheckedSelections: testState.selector([]),
+}));
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
+  selectWorkspaceSetupTerminal: testState.selector(null),
+}));
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
+  selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
+}));
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectChatDraft: { select: vi.fn(() => '') },
+}));
+vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
+  selectTasksForAgent: testState.selector([]),
+}));
+vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
+  selectPermissionRequests: testState.selector([]),
+}));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectIsAgentMonospace: testState.selector(false),
+}));
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
+  selectSpecialists: testState.selector([]),
+  selectEffectiveBehaviorPrompt: testState.selector(''),
+  selectEffectiveModel: testState.selector(''),
+}));
+vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
+  selectEffectiveDefaultProviderId: testState.selector(''),
+}));
 
-vi.mock('../input/SimpleRichInput.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../ChatMessage.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../DateSeparator.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../EventWakeupBanner.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../AgentCard.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../StreamingStatus.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../LiveStreamPhaseIndicator.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../RegularAgentWelcome.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../ChiefChatEmptyState.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../SuggestedPrompts.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../questions/QuestionWizard.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../ChatFileChangesSummary.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../AutoCommitStatus.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../QueuedMessageList.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../BackgroundHooksRow.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../../ui/button/button.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('$lib/components/ui/panel-find-bar', async () => ({ PanelFindBar: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('$lib/components/ui/skeleton', async () => ({ Skeleton: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../AgentSubscriptions.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../AttentionRequestBanner.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../LazyTurn.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../InlinePermissionRequest.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../AuroraBackground.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('../ModelChangeNotice.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
-vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
+vi.mock('../input/SimpleRichInput.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ChatMessage.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../DateSeparator.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../EventWakeupBanner.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../StreamingStatus.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../LiveStreamPhaseIndicator.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../RegularAgentWelcome.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../SuggestedPrompts.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../questions/QuestionWizard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ChatFileChangesSummary.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AutoCommitStatus.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../QueuedMessageList.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../BackgroundHooksRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../../ui/button/button.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/ui/panel-find-bar', async () => ({
+  PanelFindBar: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/ui/skeleton', async () => ({
+  Skeleton: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentSubscriptions.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AttentionRequestBanner.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../LazyTurn.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../InlinePermissionRequest.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AuroraBackground.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ModelChangeNotice.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 
 const workspace = { id: 'ws-1', title: 'Workspace' };
 
@@ -132,7 +236,13 @@ describe('ChatPanel multi-panel context ownership', () => {
     vi.clearAllMocks();
     testState.panel.title = 'app.ts';
     testState.panelTabs.emit([]);
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
   });
 
   afterEach(() => {

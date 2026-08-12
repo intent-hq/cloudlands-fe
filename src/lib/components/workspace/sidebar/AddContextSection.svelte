@@ -7,18 +7,12 @@
    * - Integrations (Linear, GitHub, Sentry - shows inline picker)
    * - Browser (opens browser panel)
    */
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import {
-  faPlus,
-  faGlobe,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus, faGlobe } from '@fortawesome/free-solid-svg-icons';
   import { scale } from 'svelte/transition';
-  import ProviderIcon from '$lib/components/icons/ProviderIcon.svelte';
+  import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import IssueSuggestions, {
     type IssueSelectionData,
   } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -47,7 +41,6 @@
     onAddNote?.();
     isExpanded = false;
   }
-
 
   function handleBrowserClick() {
     onOpenBrowser?.();
@@ -140,11 +133,11 @@
 
 {#if compact}
   <Button
-    bind:ref={triggerRef}
     variant="ghost-light"
     size="icon-xs"
-    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-xs"
-    onclick={() => (isExpanded = !isExpanded)}
+    aria-label="Add context"
+    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-none"
+    onclick={() => onAddNote?.()}
   >
     <Fa icon={faPlus} size="xs" />
   </Button>

@@ -10,19 +10,12 @@
  * - Event persistence
  */
 
-import {
-  ipcMain,
-  app,
-} from 'electron';
+import { ipcMain, app } from 'electron';
 import path from 'path';
 import { z } from 'zod';
 import { mainLogger } from './main-logger';
 import type { CommandResponse } from '../../../shared/types';
-import {
-  WorkspaceEvent,
-  WorkspaceEventType,
-  createWorkspaceEvent,
-} from '../../events/types';
+import { WorkspaceEvent, WorkspaceEventType, createWorkspaceEvent } from '../../events/types';
 import { FileSystemLogRepository } from './log.repository';
 import type { LogRepository } from './log.repository';
 import { m } from '../../../shared/paraglide/messages.js';
@@ -197,7 +190,7 @@ export function setupLogIPC() {
       TrackFileChangeSchema,
       async (_, validated): Promise<CommandResponse<any>> => {
         try {
-          // Emit file change event via Redux
+          // Emit file change event through the event service.
           const actor = validated.actor || { type: 'user' as const, name: 'User' };
           const fileEvent = createWorkspaceEvent(
             'file:changed',
@@ -242,7 +235,7 @@ export function setupLogIPC() {
       TrackAgentEventSchema,
       async (_, validated): Promise<CommandResponse<WorkspaceEvent>> => {
         try {
-          // Create and emit the agent event via Redux
+          // Create and emit the agent event.
           const event: WorkspaceEvent = {
             id: crypto.randomUUID(),
             type: (validated.eventType as WorkspaceEventType) || 'agent:message',
@@ -256,7 +249,6 @@ export function setupLogIPC() {
             metadata: validated.metadata,
           };
 
-          // Emit through Redux (which handles persistence and broadcast via sagas)
           mainDispatch(reduxEmitWorkspaceEvent(event));
 
           mainLogger.debug('[LOG] Agent event tracked', {
@@ -287,7 +279,7 @@ export function setupLogIPC() {
           // Determine tool kind from tool name
           const toolKind = getToolKindFromName(validated.toolName);
 
-          // Emit agent tool call event via Redux
+          // Emit agent tool call event through the event service.
           const toolEvent = createWorkspaceEvent(
             'agent:tool:call',
             validated.workspaceId,

@@ -6,7 +6,11 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DebouncedSearchService } from '../../src/lib/services/mentions/search-service';
-import type { Provider, SearchContext, MentionCandidate } from '../../src/lib/services/mentions/types';
+import type {
+  Provider,
+  SearchContext,
+  MentionCandidate,
+} from '../../src/lib/services/mentions/types';
 
 describe('DebouncedSearchService', () => {
   let service: DebouncedSearchService;
@@ -80,9 +84,12 @@ describe('DebouncedSearchService', () => {
 
     it('should debounce multiple rapid searches', async () => {
       // Start multiple searches rapidly
-      service.search('test1', [mockProvider], mockContext);
-      service.search('test2', [mockProvider], mockContext);
+      const search1 = service.search('test1', [mockProvider], mockContext).catch((error) => error);
+      const search2 = service.search('test2', [mockProvider], mockContext).catch((error) => error);
       const search3 = service.search('test3', [mockProvider], mockContext);
+
+      await expect(search1).resolves.toMatchObject({ message: 'Search cancelled' });
+      await expect(search2).resolves.toMatchObject({ message: 'Search cancelled' });
 
       // Advance time to trigger debounce
       vi.advanceTimersByTime(300);

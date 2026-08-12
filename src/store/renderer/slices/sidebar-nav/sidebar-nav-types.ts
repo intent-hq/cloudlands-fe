@@ -10,15 +10,15 @@ export const CHIEF_WORKSPACE_ID = '__chief__';
 export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
 
 export type SidebarNavItem =
-  | 'home'
-  | 'new-workspace'
-  | 'active'
-  | 'chief'
-  | 'all-workspaces'
-  | 'hud'
-  | 'stats'
-  | 'settings';
+  'new-workspace' | 'active' | 'chief' | 'all-workspaces' | 'hud' | 'stats' | 'settings';
 export type AllSpacesViewMode = 'recent' | 'repo' | 'status';
+
+/** Panel items that render the combined workspace list and Chief chat. */
+const COMBINED_WORKSPACE_PANEL_ITEMS: readonly SidebarNavItem[] = ['chief', 'all-workspaces'];
+
+export function isCombinedWorkspacePanelItem(item: SidebarNavItem): boolean {
+  return COMBINED_WORKSPACE_PANEL_ITEMS.includes(item);
+}
 
 export type ChiefThreadPreview = {
   agentId: string;
@@ -44,6 +44,8 @@ export type SidebarNavState = {
   panelItem: SidebarNavItem | null;
   /** Panel width in pixels (persisted) */
   panelWidth: number;
+  /** Fraction of combined panel height given to the workspace list (persisted) */
+  combinedPanelSplit: number;
   /** Whether provider onboarding is active (hides sidebar nav) */
   onboardingActive: boolean;
   /** Whether the compact workspace creation modal is open */

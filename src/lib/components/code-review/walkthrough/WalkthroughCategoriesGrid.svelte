@@ -7,7 +7,7 @@
    * Clicking a card scrolls to that category section.
    */
   import type { WalkthroughCategory } from './types';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     /** Categories to display */
@@ -17,11 +17,7 @@
     class?: string;
   }
 
-  let {
-    categories,
-    onCategoryClick,
-    class: className = '',
-  }: Props = $props();
+  let { categories, onCategoryClick, class: className = '' }: Props = $props();
 
   // Get a color class for a category based on its index
   function getCategoryColor(index: number): string {
@@ -52,21 +48,29 @@
 
 <div class="walkthrough-categories-grid {className}">
   <div class="mb-4">
-    <h3 class="text-sm font-medium text-subtle">{m.codeReview_categoriesGrid_whatChanged_title()}</h3>
+    <h3 class="text-sm font-medium text-subtle">
+      {m.codeReview_categoriesGrid_whatChanged_title()}
+    </h3>
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
     {#each categories as category, index (index)}
       <button
         type="button"
-        class="text-left p-4 rounded-lg border transition-all duration-200 {getCategoryColor(index)}"
+        class="text-left p-4 rounded-lg border transition-all duration-200 {getCategoryColor(
+          index,
+        )}"
         onclick={() => onCategoryClick?.(index)}
       >
         <!-- Category icon -->
         <div class="flex items-start gap-3">
           <div class="shrink-0 mt-0.5">
             <svg class="h-5 w-5 {getIconColor(index)}" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z" clip-rule="evenodd" />
+              <path
+                fill-rule="evenodd"
+                d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"
+                clip-rule="evenodd"
+              />
               <path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z" />
             </svg>
           </div>
@@ -78,11 +82,17 @@
             <!-- File count -->
             <div class="flex items-center gap-1 mt-2 text-xs text-subtle">
               <svg class="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"/>
+                <path
+                  d="M3.5 1.5A1.5 1.5 0 0 1 5 0h6a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 11 15H5a1.5 1.5 0 0 1-1.5-1.5v-12z"
+                />
               </svg>
-              <span>{category.files.length === 1
+              <span
+                >{category.files.length === 1
                   ? m.codeReview_categoriesGrid_fileCount_one({ count: category.files.length })
-                  : m.codeReview_categoriesGrid_fileCount_many({ count: category.files.length })}</span>
+                  : m.codeReview_categoriesGrid_fileCount_many({
+                      count: category.files.length,
+                    })}</span
+              >
             </div>
           </div>
         </div>

@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  state,
-  formatUrlForDisplay,
-} from './link-tooltip-state.svelte';
+  import { state, formatUrlForDisplay } from './link-tooltip-state.svelte';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -33,15 +30,13 @@
   );
 </script>
 
-<Portal zIndex={99999}>
+<Portal zIndex={70}>
   {#if state.visible}
-    <div
-      class="link-tooltip"
-      style={tooltipStyle}
-      role="tooltip"
-    >
+    <div class="link-tooltip" style={tooltipStyle} role="tooltip">
       <div class="link-tooltip-url">{displayUrl}</div>
-      <div class="link-tooltip-hint">{state.copied ? m.ui_linkTooltip_copied_label() : hintText}</div>
+      <div class="link-tooltip-hint">
+        {state.copied ? m.ui_linkTooltip_copied_label() : hintText}
+      </div>
     </div>
   {/if}
 </Portal>
@@ -49,19 +44,19 @@
 <style>
   :global(.link-tooltip) {
     position: fixed;
-    z-index: 99999;
+    z-index: var(--layer-tooltip);
     transform: translateX(-50%) translateY(-100%);
     pointer-events: none;
     max-width: 400px;
     padding: 6px 10px 4px;
-    border-radius: 0;
+    border-radius: var(--radius-medium);
     background: var(--color-popover);
     color: var(--color-popover-foreground);
     border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    box-shadow: var(--elevation-overlay);
     font-size: 12px;
     line-height: 1.4;
-    animation: link-tooltip-in 0.08s ease-out;
+    animation: link-tooltip-in var(--motion-fast) var(--ease-emphasized-out);
   }
 
   :global(.link-tooltip-url) {
@@ -86,6 +81,12 @@
     to {
       opacity: 1;
       transform: translateX(-50%) translateY(-100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.link-tooltip) {
+      animation: none;
     }
   }
 </style>

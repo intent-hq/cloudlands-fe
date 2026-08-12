@@ -351,18 +351,16 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
-  // A fresh client starts with clean cert- and protocol-mismatch guards, and no
-  // known active-backend protocol mismatch — the incoming backend's own
-  // `client.hello` re-detects one for a mismatching remote (and leaves it null
-  // for a matching/local backend).
+  // A fresh client starts with clean cert- and protocol-mismatch guards. The
+  // incoming backend's own `client.hello` re-detects any mismatch.
   certMismatchNotified = false;
   authRejectedNotified = false;
   protocolMismatchNotified = false;
   activeProtocolMismatch = null;
   activeAuthRejected = null;
-  // Dev (unpackaged) builds default to the loopback WebSocket transport; the
-  // packaged app stays on UDS. Env overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`)
-  // win either way — see `resolveBackendConfig`. After a switch to a remote
+  // Local and packaged builds default to UDS. Explicit transport overrides
+  // (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`) win either way — see
+  // `resolveBackendConfig`. After a switch to a remote
   // backend, `currentConfig` pins the `wss` target selected by `switchBackend`;
   // it is `null` for the local sidecar (startup + switch-back-to-local).
   const isDev = !app.isPackaged;
@@ -375,6 +373,11 @@ export function getBackendClient(): JsonRpcClient {
     // picked. `system.status` (PROTOCOL.md §5.7) is intentionally UDS-only.
     // A transport timeout/failure trips a reconnect.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+    // One slow control response does not prove that a live socket is dead. The
+    // shared daemon can briefly exceed the request bound under dev load, so wait
+    // for one confirming failure. Socket close/error events still reconnect
+    // immediately in JsonRpcClient.
+    healthCheckFailureThreshold: 2,
     healthCheck: async () => {
       await instance.request('host.status');
     },

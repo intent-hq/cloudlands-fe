@@ -1,29 +1,24 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { selectPermissionOption } from '$store/renderer/slices/permission/permission-slice';
   import type { PermissionRequest } from '$store/renderer/slices/permission/permission-slice';
 
   import Fa from 'svelte-fa';
-  import {
-  faShieldHalved,
-  faChevronDown,
-  faChevronUp,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faShieldHalved, faChevronDown, faChevronUp } from '@fortawesome/free-solid-svg-icons';
   import { parsePermissionRequest } from './permission-parser';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { shouldHandlePermissionShortcut } from './permission-shortcut';
 
   interface Props {
     request: PermissionRequest;
     pendingCount?: number;
+    keyboardShortcutsEnabled?: boolean;
   }
 
-  let { request, pendingCount = 1 }: Props = $props();
+  let { request, pendingCount = 1, keyboardShortcutsEnabled = false }: Props = $props();
 
   let showDetails = $state(false);
   let isProcessing = $state(false);
@@ -64,7 +59,7 @@
 
   // Keyboard shortcut handler
   function handleKeydown(event: KeyboardEvent) {
-    if (isProcessing) return;
+    if (isProcessing || !shouldHandlePermissionShortcut(event, keyboardShortcutsEnabled)) return;
 
     // Check for number keys 1-9
     const num = parseInt(event.key, 10);
@@ -104,19 +99,19 @@
   <div class="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
     <div class="flex items-center gap-3">
       <div class={`p-1.5 rounded-md border ${getCategoryColor(display.category)}`}>
-        <Fa icon={faShieldHalved} class="text-sm" />
+        <Fa icon={faShieldHalved} class="h-3.5 w-3.5" />
       </div>
       <div>
-        <div class="text-sm font-medium text-foreground">{display.question}</div>
+        <div class="type-body font-medium text-foreground">{display.question}</div>
         {#if request.agentName}
-          <div class="text-xs text-subtle">
+          <div class="type-caption text-subtle">
             {m.chat_inlinePermission_from_label({ name: request.agentName })}
           </div>
         {/if}
       </div>
     </div>
     {#if pendingCount > 1}
-      <span class="px-2 py-0.5 text-xs bg-muted rounded-full text-subtle">
+      <span class="type-caption rounded-full bg-muted px-2 py-0.5 text-subtle">
         {m.chat_inlinePermission_pending_label({ count: formatInteger(pendingCount) })}
       </span>
     {/if}
@@ -126,9 +121,7 @@
   <div class="px-4 py-3">
     <!-- Details (command, path, etc.) -->
     {#if display.details}
-      <div
-        class="text-xs text-subtle mb-3 font-mono bg-muted/50 p-2 rounded overflow-x-auto"
-      >
+      <div class="type-code mb-3 overflow-x-auto rounded bg-muted/50 p-2 text-subtle">
         {display.details}
       </div>
     {/if}
@@ -137,7 +130,7 @@
     {#if request.description}
       <button
         type="button"
-        class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+        class="type-caption mb-3 flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         onclick={() => (showDetails = !showDetails)}
       >
         <Fa icon={showDetails ? faChevronUp : faChevronDown} class="text-ui" />
@@ -148,7 +141,7 @@
 
       {#if showDetails}
         <div
-          class="text-xs text-subtle mb-3 p-2 bg-muted/30 rounded font-mono overflow-x-auto max-h-32 overflow-y-auto"
+          class="type-code mb-3 max-h-32 overflow-x-auto overflow-y-auto rounded bg-muted/30 p-2 text-subtle"
         >
           {request.description}
         </div>
@@ -160,7 +153,7 @@
       {#each optionsWithShortcuts as option (option.id)}
         <button
           type="button"
-          class="flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors
+          class="type-body flex items-center gap-3 rounded-md px-3 py-2 transition-colors
                  disabled:opacity-50 disabled:cursor-not-allowed
                  {option.destructive
             ? 'bg-muted text-muted-foreground hover:bg-destructive hover:text-destructive-foreground'
@@ -170,21 +163,21 @@
         >
           {#if option.shortcut}
             <kbd
-              class="inline-flex items-center justify-center w-5 h-5 text-xs font-mono rounded border border-current/30 bg-background/50"
+              class="type-caption inline-flex h-5 w-5 items-center justify-center rounded border border-current/30 bg-background/50"
             >
               {option.shortcut}
             </kbd>
           {/if}
           <span class="flex-1 text-left">{option.label}</span>
           {#if option.description}
-            <span class="text-xs opacity-60">{option.description}</span>
+            <span class="type-caption opacity-60">{option.description}</span>
           {/if}
         </button>
       {/each}
     </div>
 
     <!-- Keyboard hint -->
-    <div class="mt-2 text-xs text-subtle text-center">
+    <div class="type-caption mt-2 text-center text-subtle">
       {m.chat_inlinePermission_keyboardHint_label()}
     </div>
   </div>

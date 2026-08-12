@@ -25,7 +25,12 @@
       "$features": ["./src/features"],
       "$features/*": ["./src/features/*"],
       "$shared": ["./src/shared"],
-      "$shared/*": ["./src/shared/*"]
+      "$shared/*": ["./src/shared/*"],
+      "@fortawesome/fontawesome-common-types": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/fontawesome-svg-core": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-brands-svg-icons": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-regular-svg-icons": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-solid-svg-icons": ["./src/lib/icons/phosphor-icons.ts"]
     }
   },
   "include": [

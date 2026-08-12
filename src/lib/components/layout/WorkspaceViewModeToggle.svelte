@@ -1,0 +1,68 @@
+<script lang="ts">
+  import ColumnsPlusRightIcon from 'phosphor-svelte/lib/ColumnsPlusRightIcon';
+  import TabsIcon from 'phosphor-svelte/lib/TabsIcon';
+  import { tick } from 'svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
+  import { store as appStore } from '$store/renderer/store';
+  import { setWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { m } from '$shared/paraglide/messages.js';
+
+  const viewMode$ = selectWorkspaceViewMode();
+  const isColumns = $derived($viewMode$ === 'columns');
+  const toggleLabel = $derived(
+    isColumns
+      ? m.layout_workspaceTabStrip_openSpaces_ariaLabel()
+      : m.workspace_columns_openSpaces_ariaLabel(),
+  );
+
+  function handleChange(pressed: string | boolean) {
+    const nextMode = pressed === true ? 'columns' : 'single';
+    const update = async () => {
+      appStore.dispatch(setWorkspaceViewMode(nextMode));
+      await tick();
+    };
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const transitionDocument = document as Document & {
+      startViewTransition?: (update: () => Promise<void>) => { finished: Promise<void> };
+    };
+
+    if (!transitionDocument.startViewTransition || reduceMotion) {
+      void update();
+      return;
+    }
+
+    document.documentElement.classList.add('workspace-view-transition');
+    const transition = transitionDocument.startViewTransition.call(document, update);
+    void transition.finished.finally(() => {
+      document.documentElement.classList.remove('workspace-view-transition');
+    });
+  }
+</script>
+
+<Toggle
+  pressed={isColumns}
+  onChange={handleChange}
+  size="xs"
+  class="app-no-drag size-7 border-0 bg-transparent p-0 shadow-none data-[state=on]:bg-transparent!"
+  ariaLabel={toggleLabel}
+  title={toggleLabel}
+>
+  {#if isColumns}
+    <TabsIcon
+      size={14}
+      weight="bold"
+      class="pointer-events-none size-3.5!"
+      data-icon="tabs"
+      aria-hidden="true"
+    />
+  {:else}
+    <ColumnsPlusRightIcon
+      size={14}
+      weight="bold"
+      class="pointer-events-none size-3.5!"
+      data-icon="columns-plus-right"
+      aria-hidden="true"
+    />
+  {/if}
+</Toggle>

@@ -8,60 +8,48 @@
 
   import type { TabTypeComponentProps } from './registry';
   import {
-  openTab,
-  openTabInAdjacentOrSplit,
-} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+    openTab,
+    openTabInAdjacentOrSplit,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { requestPanelFocus } from '$store/renderer/slices/app-layout/app-layout-slice';
 
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
-  selectFileTrackingChanges,
-  selectFileTrackingCommits,
-} from '$store/renderer/slices/changes/changes-selectors';
+    selectFileTrackingChanges,
+    selectFileTrackingCommits,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import { gitClient } from '$features/git/git.client';
   import { gitCache } from '$features/git/git-cache';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
-  import {
-  ChangeStage,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+  import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { TrackedChangeDiffViewer } from '$lib/components/ui/diff';
-  import { Button } from '$lib/components/ui/button';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
+  import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
+  import * as Menu from '$lib/components/ui/menu';
+  import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
-  selectLineWrapping,
-  selectFoldUnchanged,
-  selectDiffSideBySide,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectLineWrapping,
+    selectFoldUnchanged,
+    selectDiffSideBySide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-  toggleLineWrapping,
-  toggleFoldUnchanged,
-  toggleDiffSideBySide,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    toggleLineWrapping,
+    toggleFoldUnchanged,
+    toggleDiffSideBySide,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { toast } from '$lib/components/ui/toast';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
-  import Fa from 'svelte-fa';
-  import {
-  faFile,
-  faTextWidth,
-  faMap,
-  faColumns,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faFile } from '@fortawesome/free-solid-svg-icons';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
   const foldUnchanged = selectFoldUnchanged();
   const diffSideBySide = selectDiffSideBySide();
-  const headerToggleActiveClass =
-    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
-  const headerToggleInactiveClass = 'text-subtle';
-
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   // svelte-ignore state_referenced_locally
@@ -245,7 +233,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions(diffActions);
+    headerContext.registerActions({ display: diffDisplayActions, actions: diffActions });
   });
 
   // Handle staging a hunk
@@ -293,60 +281,29 @@
   }
 </script>
 
+{#snippet diffDisplayActions()}
+  <ViewSettingsDropdown
+    embedded
+    foldEnabled={$foldUnchanged}
+    onToggleFold={() => appStore.dispatch(toggleFoldUnchanged())}
+    wrapEnabled={$lineWrapping}
+    onToggleWrap={() => appStore.dispatch(toggleLineWrapping())}
+    splitEnabled={$diffSideBySide}
+    onToggleSplit={() => appStore.dispatch(toggleDiffSideBySide())}
+  />
+{/snippet}
+
 {#snippet diffActions()}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={handleGoToFile}
-    tooltip={m.layout_diffHeader_goToFile_tooltip()}
-    tooltipSide="bottom"
-  >
-    <Fa icon={faFile} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleLineWrapping())}
-    tooltip={$lineWrapping
-      ? m.layout_diffHeader_wrappingOn_tooltip()
-      : m.layout_diffHeader_wrapLines_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$lineWrapping}
-    class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faTextWidth} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleFoldUnchanged())}
-    tooltip={$foldUnchanged
-      ? m.layout_diffHeader_foldingOn_tooltip()
-      : m.layout_diffHeader_foldLines_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$foldUnchanged}
-    class={$foldUnchanged ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faMap} size="xs" />
-  </Button>
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={() => appStore.dispatch(toggleDiffSideBySide())}
-    tooltip={$diffSideBySide
-      ? m.layout_diffHeader_unifiedView_tooltip()
-      : m.layout_diffHeader_splitView_tooltip()}
-    tooltipSide="bottom"
-    aria-pressed={$diffSideBySide}
-    class={$diffSideBySide ? headerToggleActiveClass : headerToggleInactiveClass}
-  >
-    <Fa icon={faColumns} size="xs" />
-  </Button>
+  <Menu.CommandItem
+    icon={faFile}
+    label={m.layout_diffHeader_goToFile_tooltip()}
+    onclick={(event) => handleGoToFile(event)}
+  />
   {#if diffAbsolutePath}
     <OpenComboButton
       filePath={diffAbsolutePath}
       isDirectory={false}
-      compact
+      embedded
       workspaceFolderPath={repoPath}
     />
   {/if}

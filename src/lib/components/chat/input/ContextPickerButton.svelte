@@ -7,45 +7,42 @@
    * to find files, notes, folders and other primitives.
    */
 
-  import {
-  onMount,
-  tick,
-} from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Fa from 'svelte-fa';
   import {
-  faAt,
-  faFileLines,
-  faCodeBranch,
-  faClipboard,
-  faGlobe,
-  faFolder,
-  faSearch,
-  faSpinner,
-  faRobot,
-  faQuoteLeft,
-  faTerminal,
-} from '@fortawesome/free-solid-svg-icons';
+    faAt,
+    faFileLines,
+    faCodeBranch,
+    faClipboard,
+    faGlobe,
+    faFolder,
+    faSearch,
+    faSpinner,
+    faRobot,
+    faQuoteLeft,
+    faTerminal,
+  } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { cn } from '$lib/utils';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import { Checkbox } from '$lib/components/ui/checkbox';
   import { m } from '$shared/paraglide/messages.js';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import {
-  addSearchedItem,
-  type PanelContextItem,
-  type SelectionContextItem,
-} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
+    addSearchedItem,
+    type PanelContextItem,
+    type SelectionContextItem,
+  } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
 
   import {
-  getMentionSystem,
-  type MentionCandidate,
-  type SearchContext,
-} from '$lib/services/mentions';
+    getMentionSystem,
+    type MentionCandidate,
+    type SearchContext,
+  } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Input } from '$lib/components/ui/input';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -58,7 +55,14 @@
     onToggle?: (id: string) => void;
     onToggleSelection?: (id: string) => void;
     /** Callback to insert a mention chip into the editor (for types not in PanelContextItem) */
-    onInsertMention?: (mention: { id: string; label: string; type: string; uri: string; meta?: Record<string, unknown> }) => void;
+    onInsertMention?: (mention: {
+      id: string;
+      label: string;
+      type: string;
+      uri: string;
+      meta?: Record<string, unknown>;
+    }) => void;
+    renderTrigger?: boolean;
     class?: string;
   }
 
@@ -71,12 +75,13 @@
     onToggle,
     onToggleSelection,
     onInsertMention,
+    renderTrigger = true,
     class: className = '',
   }: Props = $props();
 
-
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
+  let externalAnchor = $state<HTMLElement | null>(null);
   let popoverRef = $state<HTMLDivElement | null>(null);
   let searchInputRef = $state<{ focus: () => void } | null>(null);
   let popoverStyle = $state('');
@@ -86,6 +91,7 @@
   let searchResults = $state<MentionCandidate[]>([]);
   let isSearching = $state(false);
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchGeneration = 0;
 
   // Count of checked panels and selections for badge
   let checkedPanelCount = $derived(panels.filter((p) => p.checked).length);
@@ -178,24 +184,38 @@
     }
   }
 
-  async function toggleOpen() {
+  export async function open(anchor?: HTMLElement) {
     if (disabled) return;
-    isOpen = !isOpen;
+    externalAnchor = anchor ?? null;
+    isOpen = true;
+    updatePosition();
+    await tick();
+    searchInputRef?.focus();
+  }
+
+  async function toggleOpen() {
     if (isOpen) {
-      updatePosition();
-      // Focus search input after popover opens
-      await tick();
-      searchInputRef?.focus();
-    } else {
-      // Clear search when closing
-      searchQuery = '';
-      searchResults = [];
+      isOpen = false;
+      externalAnchor = null;
+      resetSearch();
+      return;
     }
+    await open();
+  }
+
+  function resetSearch() {
+    searchGeneration += 1;
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+    searchQuery = '';
+    searchResults = [];
+    isSearching = false;
   }
 
   function updatePosition() {
-    if (!triggerRef) return;
-    const rect = triggerRef.getBoundingClientRect();
+    const anchor = externalAnchor ?? triggerRef;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.top;
     const estimatedHeight = 350;
@@ -213,8 +233,8 @@
     const target = e.target as Node;
     if (triggerRef?.contains(target) || popoverRef?.contains(target)) return;
     isOpen = false;
-    searchQuery = '';
-    searchResults = [];
+    externalAnchor = null;
+    resetSearch();
   }
 
   // Escape layer: while the popover is open it is the topmost overlay, so
@@ -223,8 +243,8 @@
     if (!isOpen) return;
     return pushEscapeLayer(() => {
       isOpen = false;
-      searchQuery = '';
-      searchResults = [];
+      externalAnchor = null;
+      resetSearch();
     });
   });
 
@@ -244,6 +264,7 @@
       });
       // Close popover after inserting mention
       isOpen = false;
+      externalAnchor = null;
       searchQuery = '';
       searchResults = [];
       return;
@@ -258,56 +279,66 @@
     }
 
     // Add to the store as a checked context item
-    appStore.dispatch(addSearchedItem({
-      id: result.id,
-      type: itemType,
-      label: result.label,
-      filePath: result.uri || undefined,
-      noteId: result.type === 'note' || result.type === 'note-range' ? result.id : undefined,
-    }));
+    appStore.dispatch(
+      addSearchedItem({
+        id: result.id,
+        type: itemType,
+        label: result.label,
+        filePath: result.uri || undefined,
+        noteId: result.type === 'note' || result.type === 'note-range' ? result.id : undefined,
+      }),
+    );
 
     // Clear search but keep popover open so user can add more items
     searchQuery = '';
     searchResults = [];
   }
 
-  async function performSearch(query: string) {
+  async function performSearch(query: string, generation: number) {
     if (!workspace || !query.trim()) {
-      searchResults = [];
+      if (generation === searchGeneration) {
+        searchResults = [];
+        isSearching = false;
+      }
       return;
     }
 
-    isSearching = true;
     try {
       const mentionSystem = getMentionSystem();
       const context: SearchContext = {
         workspaceId: workspace.id,
       };
       const results = await mentionSystem.search(query, context);
-      searchResults = results;
+      if (generation === searchGeneration) searchResults = results;
     } catch (error) {
       console.error('Search failed:', error);
-      searchResults = [];
+      if (generation === searchGeneration) searchResults = [];
     } finally {
-      isSearching = false;
+      if (generation === searchGeneration) isSearching = false;
     }
   }
 
   function handleSearchInput(e: Event) {
     const target = e.target as HTMLInputElement;
     searchQuery = target.value;
+    const generation = ++searchGeneration;
 
-    // Set loading state immediately when user types
-    if (searchQuery.trim()) {
-      isSearching = true;
-    }
-
-    // Debounce search
     if (searchDebounceTimer) {
       clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
     }
+
+    if (!searchQuery.trim()) {
+      searchResults = [];
+      isSearching = false;
+      return;
+    }
+
+    isSearching = true;
+    const query = searchQuery;
     searchDebounceTimer = setTimeout(() => {
-      performSearch(searchQuery);
+      searchDebounceTimer = null;
+      void performSearch(query, generation);
     }, 250);
   }
 
@@ -322,29 +353,31 @@
   });
 </script>
 
-<TooltipShortcut label={m.chat_contextPicker_fromPanels_label()} shortcut={['@']} side="top">
-  <Button
-    bind:ref={triggerRef}
-    variant="ghost-light"
-    size="icon-xs"
-    onclick={toggleOpen}
-    {disabled}
-    aria-label={m.chat_contextPicker_addContext_ariaLabel()}
-    aria-haspopup="true"
-    aria-expanded={isOpen}
-    class={cn('shrink-0 relative', className)}
-  >
-    <Fa icon={faAt} size="sm" />
-    {#if checkedCount > 0}
-      <span
-        class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
-               rounded-full bg-primary text-primary-foreground flex items-center justify-center"
-      >
-        {checkedCount}
-      </span>
-    {/if}
-  </Button>
-</TooltipShortcut>
+{#if renderTrigger}
+  <TooltipShortcut label={m.chat_contextPicker_fromPanels_label()} shortcut={['@']} side="top">
+    <Button
+      bind:ref={triggerRef}
+      variant="ghost-light"
+      size="icon-xs"
+      onclick={toggleOpen}
+      {disabled}
+      aria-label={m.chat_contextPicker_addContext_ariaLabel()}
+      aria-haspopup="true"
+      aria-expanded={isOpen}
+      class={cn('shrink-0 relative', className)}
+    >
+      <Fa icon={faAt} size="sm" />
+      {#if checkedCount > 0}
+        <span
+          class="absolute -top-1 -right-1 min-w-3.5 h-3.5 px-1 text-ui font-medium
+                 rounded-full bg-primary text-primary-foreground flex items-center justify-center"
+        >
+          {checkedCount}
+        </span>
+      {/if}
+    </Button>
+  </TooltipShortcut>
+{/if}
 
 {#if isOpen}
   <Portal zIndex={60}>
@@ -360,8 +393,8 @@
     >
       <!-- Header -->
       <div class="px-3 py-2">
-        <div class="font-medium">{m.chat_contextPicker_context_title()}</div>
-        <div class="text-xs text-subtle">
+        <div class="type-body font-medium">{m.chat_contextPicker_context_title()}</div>
+        <div class="type-caption text-subtle">
           {m.chat_contextPicker_selectFiles_description()}
         </div>
       </div>
@@ -409,7 +442,7 @@
               {/each}
             </div>
           {:else if searchResults.length === 0}
-            <div class="px-3 py-4 text-center text-sm text-subtle">
+            <div class="type-caption px-3 py-4 text-center text-subtle">
               {m.chat_contextPicker_noResults_label()}
             </div>
           {:else}
@@ -418,17 +451,14 @@
                 <button
                   type="button"
                   onclick={() => handleSelectSearchResult(result)}
-                  class="w-full flex items-center gap-2 px-3 py-2 text-sm
+                  class="type-body flex w-full items-center gap-2 px-3 py-2
                          hover:bg-muted/40 cursor-pointer transition-colors text-left"
                 >
-                  <Fa
-                    icon={getIconForType(result.type)}
-                    class="h-3.5 w-3.5 text-subtle"
-                  />
+                  <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
                   <div class="flex-1 min-w-0">
                     <div class="truncate font-medium">{result.label}</div>
                     {#if result.subtitle || result.description}
-                      <div class="truncate text-xs text-subtle">
+                      <div class="type-caption truncate text-subtle">
                         {result.subtitle || result.description}
                       </div>
                     {/if}
@@ -456,7 +486,7 @@
                     onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
                     disabled={isCurrentAgent}
                     class={cn(
-                      'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+                      'type-body flex w-full items-center gap-2 px-3 py-2 transition-colors',
                       isCurrentAgent
                         ? 'opacity-50 cursor-not-allowed'
                         : 'hover:bg-muted/40 cursor-pointer',
@@ -469,17 +499,14 @@
                       onCheckedChange={() => !isCurrentAgent && handleToggleItem(panel.id)}
                       class="!mr-1"
                     />
-                    <Fa
-                      icon={getIconForType(panel.type)}
-                      class="h-3.5 w-3.5 text-subtle"
-                    />
+                    <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
                     <span class="flex-1 truncate text-left">{panel.label}</span>
                     {#if isCurrentAgent}
-                      <span class="text-ui text-muted-foreground uppercase"
+                      <span class="type-caption text-muted-foreground uppercase"
                         >{m.chat_contextPicker_you_badge()}</span
                       >
                     {:else if panel.isActive}
-                      <span class="text-ui text-muted-foreground uppercase"
+                      <span class="type-caption text-muted-foreground uppercase"
                         >{m.chat_contextPicker_active_badge()}</span
                       >
                     {/if}
@@ -491,7 +518,7 @@
                   <button
                     type="button"
                     onclick={() => handleToggleSelectionItem(selection.id)}
-                    class="w-full flex items-center gap-2 px-3 py-2 text-sm
+                    class="type-body flex w-full items-center gap-2 px-3 py-2
                            hover:bg-muted/40 cursor-pointer transition-colors"
                   >
                     <Checkbox
@@ -506,7 +533,7 @@
               {/each}
             </div>
           {:else}
-            <div class="px-3 py-4 text-center text-sm text-subtle">
+            <div class="type-caption px-3 py-4 text-center text-subtle">
               {m.chat_contextPicker_noPanels_label()}
             </div>
           {/if}

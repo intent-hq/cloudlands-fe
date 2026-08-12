@@ -9,16 +9,36 @@
     value = $bindable(''),
     onsubmit,
     oncancel,
+    onvaluechange,
   }: {
     value?: string;
-    onsubmit?: () => void;
+    onsubmit?: (value: string) => void;
     oncancel?: () => void;
+    onvaluechange?: (value: string) => void;
     [key: string]: unknown;
   } = $props();
+
+  export function clear() {
+    value = '';
+    onvaluechange?.(value);
+  }
+
+  export async function setContent(text: string) {
+    value = text;
+    onvaluechange?.(value);
+  }
 </script>
 
 <div data-testid="mock-rich-input" data-value={value}>
-  <button type="button" data-testid="mock-input-submit" onclick={() => onsubmit?.()}>
+  <input
+    data-testid="mock-rich-input-editor"
+    {value}
+    oninput={(event) => {
+      value = event.currentTarget.value;
+      onvaluechange?.(value);
+    }}
+  />
+  <button type="button" data-testid="mock-input-submit" onclick={() => onsubmit?.(value)}>
     submit
   </button>
   <button type="button" data-testid="mock-input-cancel" onclick={() => oncancel?.()}>

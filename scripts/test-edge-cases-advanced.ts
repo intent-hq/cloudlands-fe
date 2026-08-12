@@ -39,18 +39,30 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check agent factory for duplicate prevention
-          const factoryPath = path.join(__dirname, '../src/features/agent/services/agent-factory.ts');
+          const factoryPath = path.join(
+            __dirname,
+            '../src/features/agent/services/agent-factory.ts',
+          );
           const factoryContent = await fs.readFile(factoryPath, 'utf-8');
 
-          if (!factoryContent.includes('config.id') && !factoryContent.includes('generateAgentId')) {
+          if (
+            !factoryContent.includes('config.id') &&
+            !factoryContent.includes('generateAgentId')
+          ) {
             issues.push('Agent factory may not handle duplicate IDs properly');
           }
 
           // Check Redux agent session store
-          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+          const storePath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+          );
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
-          if (!storeContent.includes('byAgentId') || !storeContent.includes('registerInWorkspaceIndex')) {
+          if (
+            !storeContent.includes('byAgentId') ||
+            !storeContent.includes('registerInWorkspaceIndex')
+          ) {
             issues.push('Agent session store may allow duplicate agents');
           }
 
@@ -64,12 +76,21 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for cleanup handlers in the current saga/lifecycle split
-          const sagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const sagaPath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts',
+          );
           const sagaContent = await fs.readFile(sagaPath, 'utf-8');
-          const registryPath = path.join(__dirname, '../src/features/agent/utils/stream-handler-registry.ts');
+          const registryPath = path.join(
+            __dirname,
+            '../src/features/agent/utils/stream-handler-registry.ts',
+          );
           const registryContent = await fs.readFile(registryPath, 'utf-8');
 
-          if (!sagaContent.includes('agentSessionStopChatRequested') || !sagaContent.includes('chatStopCompleted')) {
+          if (
+            !sagaContent.includes('agentSessionStopChatRequested') ||
+            !sagaContent.includes('chatStopCompleted')
+          ) {
             issues.push('Agent chat saga may not handle stopping during deletion');
           }
 
@@ -88,18 +109,30 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for message queueing or locking in current saga/state ownership
-          const chatSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaPath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts',
+          );
           const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
-          if (!chatSagaContent.includes('stopIfResponding') || !chatSagaContent.includes('selectAgentSessionIsProcessing')) {
+          if (
+            !chatSagaContent.includes('stopIfResponding') ||
+            !chatSagaContent.includes('selectAgentSessionIsProcessing')
+          ) {
             issues.push('Chat saga may not handle concurrent messages properly');
           }
 
           // Check stream lifecycle
-          const lifecyclePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+          const lifecyclePath = path.join(
+            __dirname,
+            '../src/features/agent/agent-stream-lifecycle.ts',
+          );
           const lifecycleContent = await fs.readFile(lifecyclePath, 'utf-8');
 
-          if (!lifecycleContent.includes('setAgentStreaming') || !lifecycleContent.includes('agentStreamResetStreamingMessagesRequested')) {
+          if (
+            !lifecycleContent.includes('setAgentStreaming') ||
+            !lifecycleContent.includes('agentStreamResetStreamingMessagesRequested')
+          ) {
             issues.push('Stream lifecycle may not prevent concurrent message sending');
           }
 
@@ -113,11 +146,16 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check workspace service validation
-          const workspacePath = path.join(__dirname, '../src/features/workspace/main/workspace.service.ts');
+          const workspacePath = path.join(
+            __dirname,
+            '../src/features/workspace/main/workspace.service.ts',
+          );
           const workspaceContent = await fs.readFile(workspacePath, 'utf-8');
 
-          if (!workspaceContent.includes("agentId.includes('..')") ||
-              !workspaceContent.includes("agentId.includes('/')")) {
+          if (
+            !workspaceContent.includes("agentId.includes('..')") ||
+            !workspaceContent.includes("agentId.includes('/')")
+          ) {
             issues.push('Workspace service may not validate agent ID format');
           }
 
@@ -131,18 +169,23 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for try-catch around sessionStorage
-          const initPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
+          const initPath = path.join(
+            __dirname,
+            '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+          );
           const initContent = await fs.readFile(initPath, 'utf-8');
 
           if (!initContent.includes('try') || !initContent.includes('sessionStorage')) {
             issues.push('CompactWorkspaceInitializer may not handle sessionStorage errors');
           }
 
-          const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
+          const pagePath = path.join(
+            __dirname,
+            '../src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+          );
           const pageContent = await fs.readFile(pagePath, 'utf-8');
 
-          if (pageContent.includes('sessionStorage.setItem') &&
-              !pageContent.includes('try')) {
+          if (pageContent.includes('sessionStorage.setItem') && !pageContent.includes('try')) {
             issues.push('Workspace page may not handle sessionStorage quota errors');
           }
 
@@ -156,7 +199,10 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for JSON.stringify usage in Redux-owned message state
-          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+          const storePath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+          );
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
           if (storeContent.includes('JSON.stringify') && !storeContent.includes('try')) {
@@ -173,7 +219,10 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for timeout handling
-          const backendPath = path.join(__dirname, '../src/features/agent/main/agent-backend-handler.service.ts');
+          const backendPath = path.join(
+            __dirname,
+            '../src/features/agent/main/agent-backend-handler.service.ts',
+          );
           const backendContent = await fs.readFile(backendPath, 'utf-8');
 
           if (!backendContent.includes('timeout') && !backendContent.includes('TIMEOUT')) {
@@ -181,7 +230,10 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check stream lifecycle
-          const servicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+          const servicePath = path.join(
+            __dirname,
+            '../src/features/agent/agent-stream-lifecycle.ts',
+          );
           const serviceContent = await fs.readFile(servicePath, 'utf-8');
 
           if (!serviceContent.includes('timeout') || !serviceContent.includes('clearTimeout')) {
@@ -206,10 +258,16 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check chat send saga
-          const chatSagaPath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts');
+          const chatSagaPath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/sagas/agent-chat-effects-saga.ts',
+          );
           const chatSagaContent = await fs.readFile(chatSagaPath, 'utf-8');
 
-          if (!chatSagaContent.includes('trim()') || !chatSagaContent.includes('Message cannot be empty')) {
+          if (
+            !chatSagaContent.includes('trim()') ||
+            !chatSagaContent.includes('Message cannot be empty')
+          ) {
             issues.push('Chat send saga may not validate empty messages');
           }
 
@@ -223,7 +281,10 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for message size limits or chunking
-          const streamingPath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+          const streamingPath = path.join(
+            __dirname,
+            '../src/lib/components/chat/StreamingMessageContent.svelte',
+          );
           const streamingContent = await fs.readFile(streamingPath, 'utf-8');
 
           if (!streamingContent.includes('MAX') && !streamingContent.includes('chunk')) {
@@ -231,8 +292,14 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check markdown viewer
-          const markdownPath = path.join(__dirname, '../src/lib/components/markdown/MarkdownViewer.svelte');
-          const markdownExists = await fs.access(markdownPath).then(() => true).catch(() => false);
+          const markdownPath = path.join(
+            __dirname,
+            '../src/lib/components/markdown/MarkdownViewer.svelte',
+          );
+          const markdownExists = await fs
+            .access(markdownPath)
+            .then(() => true)
+            .catch(() => false);
 
           if (markdownExists) {
             const markdownContent = await fs.readFile(markdownPath, 'utf-8');
@@ -251,16 +318,24 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for disconnection handling
-          const agentServicePath = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+          const agentServicePath = path.join(
+            __dirname,
+            '../src/features/agent/agent-stream-lifecycle.ts',
+          );
           const agentServiceContent = await fs.readFile(agentServicePath, 'utf-8');
 
-          if (!agentServiceContent.includes("data.type === 'error'") &&
-              !agentServiceContent.includes('Agent Outcome Received')) {
+          if (
+            !agentServiceContent.includes("data.type === 'error'") &&
+            !agentServiceContent.includes('Agent Outcome Received')
+          ) {
             issues.push('Stream lifecycle may not handle stream disconnection');
           }
 
           // Check for reconnection logic
-          if (!agentServiceContent.includes('executeWithRecovery') && !agentServiceContent.includes('retry')) {
+          if (
+            !agentServiceContent.includes('executeWithRecovery') &&
+            !agentServiceContent.includes('retry')
+          ) {
             logger.warn('No automatic reconnection logic found for streaming');
           }
 
@@ -274,10 +349,16 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for state validation
-          const storePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
+          const storePath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
+          );
           const storeContent = await fs.readFile(storePath, 'utf-8');
 
-          if (!storeContent.includes('deduplicateRecoverySession') || !storeContent.includes('refreshSessionForMissingTarget')) {
+          if (
+            !storeContent.includes('deduplicateRecoverySession') ||
+            !storeContent.includes('refreshSessionForMissingTarget')
+          ) {
             issues.push('Agent stream saga may not handle corrupted state gracefully');
           }
 
@@ -296,10 +377,16 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for cleanup in workspace page
-          const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
+          const pagePath = path.join(
+            __dirname,
+            '../src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+          );
           const pageContent = await fs.readFile(pagePath, 'utf-8');
 
-          if (!pageContent.includes('onDestroy') || !pageContent.includes('cleanupManager.dispose')) {
+          if (
+            !pageContent.includes('onDestroy') ||
+            !pageContent.includes('cleanupManager.dispose')
+          ) {
             issues.push('Workspace page may not clean up on rapid navigation');
           }
 
@@ -318,7 +405,10 @@ class AdvancedEdgeCaseTest {
           const issues: string[] = [];
 
           // Check for creation locks or queuing
-          const factoryPath = path.join(__dirname, '../src/features/agent/services/agent-factory.ts');
+          const factoryPath = path.join(
+            __dirname,
+            '../src/features/agent/services/agent-factory.ts',
+          );
           const factoryContent = await fs.readFile(factoryPath, 'utf-8');
 
           if (!factoryContent.includes('creating') && !factoryContent.includes('pending')) {
@@ -326,7 +416,10 @@ class AdvancedEdgeCaseTest {
           }
 
           // Check for unique ID generation
-          if (!factoryContent.includes('crypto.randomUUID') && !factoryContent.includes('generateAgentId')) {
+          if (
+            !factoryContent.includes('crypto.randomUUID') &&
+            !factoryContent.includes('generateAgentId')
+          ) {
             issues.push('Agent factory may not generate unique IDs reliably');
           }
 
@@ -375,8 +468,8 @@ class AdvancedEdgeCaseTest {
     console.log('============================================================\n');
     console.log('📊 Edge Case Summary:\n');
 
-    const passed = this.results.filter(r => r.passed).length;
-    const failed = this.results.filter(r => !r.passed).length;
+    const passed = this.results.filter((r) => r.passed).length;
+    const failed = this.results.filter((r) => !r.passed).length;
 
     console.log(`Total Edge Cases: ${this.results.length}`);
     console.log(`Passed: ${passed}`);
@@ -391,7 +484,7 @@ class AdvancedEdgeCaseTest {
       console.log('\nRecommendations:');
 
       // Provide specific recommendations based on failures
-      const failedTests = this.results.filter(r => !r.passed);
+      const failedTests = this.results.filter((r) => !r.passed);
       for (const test of failedTests) {
         console.log(`\n${test.name}:`);
         if (test.name.includes('Duplicate')) {
@@ -418,7 +511,7 @@ class AdvancedEdgeCaseTest {
 
 // Run the tests
 const tester = new AdvancedEdgeCaseTest();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   logger.error('Edge case testing failed', error);
   process.exit(1);
 });

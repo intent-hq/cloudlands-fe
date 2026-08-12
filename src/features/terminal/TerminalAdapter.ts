@@ -4,10 +4,7 @@
  * Modular terminal adapter with proper separation of concerns
  */
 
-import {
-  Terminal,
-  IDisposable,
-} from '@xterm/xterm';
+import { Terminal, IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -18,13 +15,11 @@ import { Logger } from '../../shared/logger';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { appClient as defaultAppClient } from '$lib/client';
 import type { AppClient, TerminalsClient } from '$lib/client';
-import {
-  TerminalStateMachine,
-  TerminalState,
-} from './terminal-state-machine';
+import { TerminalStateMachine, TerminalState } from './terminal-state-machine';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { TerminalThemeManager } from './terminal-theme-manager';
 import { terminalHistoryTracker } from './terminal-history-tracker';
+import { disposeXtermAfterViewportSync } from './utils/xterm-lifecycle';
 import { isGitHubUrl } from '$shared/utils/link-helpers';
 import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
@@ -175,8 +170,7 @@ export class TerminalAdapter {
     // Initialize XTerm.js with optimized settings. Font family follows the
     // canonical selectCodeFontFamilyCSS preference; caller-provided value wins
     // when explicitly passed (component captures it at init).
-    const initialFontFamily =
-      options.fontFamily ?? selectCodeFontFamilyCSS.select(appStore.state);
+    const initialFontFamily = options.fontFamily ?? selectCodeFontFamilyCSS.select(appStore.state);
     this.xterm = new Terminal({
       allowProposedApi: true,
       fontFamily: initialFontFamily,
@@ -578,8 +572,12 @@ export class TerminalAdapter {
 
       // Cmd+Shift+] / Cmd+Shift+[ - cycle terminal tabs
       // Return false to let the overlay's window keydown handler pick these up
-      if (isMod && event.shiftKey && !event.altKey &&
-          (event.key === ']' || event.key === '}' || event.key === '[' || event.key === '{')) {
+      if (
+        isMod &&
+        event.shiftKey &&
+        !event.altKey &&
+        (event.key === ']' || event.key === '}' || event.key === '[' || event.key === '{')
+      ) {
         return false;
       }
 
@@ -735,7 +733,9 @@ export class TerminalAdapter {
 
         if (isVisible && !this.wasVisible) {
           // Container transitioned from hidden → visible
-          logger.debug(`[visibility] Terminal ${this.terminalId} became visible, reconnecting ResizeObserver`);
+          logger.debug(
+            `[visibility] Terminal ${this.terminalId} became visible, reconnecting ResizeObserver`,
+          );
 
           // Reconnect ResizeObserver if it was disconnected
           if (!this.resizeObserver) {
@@ -819,7 +819,10 @@ export class TerminalAdapter {
 
             try {
               this.loadWebglAddon();
-              logger.info(`[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`);
+              logger.info(
+                // i18n-ignore (log message, not user-facing)
+                `[WebGL] Successfully recovered from context loss (attempt ${this.webglRecoveryAttempts})`,
+              );
             } catch (error) {
               logger.warn(
                 // i18n-ignore (log message, not user-facing)
@@ -860,7 +863,6 @@ export class TerminalAdapter {
       this.webglAddon = null;
     }
   }
-
 
   /**
    * Setup theme change listener
@@ -982,12 +984,18 @@ export class TerminalAdapter {
         // This helps filter out false positives from malformed escape code stripping
         const looksLikeCommand = /^[a-zA-Z0-9.\/~]/.test(command);
         if (command.length > 0 && !this.isExecuting && looksLikeCommand) {
-          logger.info(`[TerminalAdapter] Detected command from output: ${sanitizeCommandForDisplay(command)}`);
+          logger.info(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalAdapter] Detected command from output: ${sanitizeCommandForDisplay(command)}`,
+          );
           terminalHistoryTracker.onCommandStart(this.terminalId, this.workspaceId, command);
           this.isExecuting = true;
           this.callbacks.onCommandStart?.();
         } else if (command.length > 0 && !looksLikeCommand) {
-          logger.debug(`[TerminalAdapter] Skipping suspicious command detection: ${sanitizeCommandForDisplay(command)}`);
+          logger.debug(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalAdapter] Skipping suspicious command detection: ${sanitizeCommandForDisplay(command)}`,
+          );
         }
       }
 
@@ -1000,7 +1008,10 @@ export class TerminalAdapter {
           this.isExecuting = false;
           this.callbacks.onCommandFinished?.();
           terminalHistoryTracker.onCommandFinish(this.terminalId, this.workspaceId);
-          logger.debug(`[TerminalAdapter] Command finished, prompt detected: ${sanitizeCommandForDisplay(cleanLine)}`);
+          logger.debug(
+            // i18n-ignore (log message, not user-facing)
+            `[TerminalAdapter] Command finished, prompt detected: ${sanitizeCommandForDisplay(cleanLine)}`,
+          );
         }
         this.isAtPrompt = true;
         this.commandBuffer = '';
@@ -1079,7 +1090,6 @@ export class TerminalAdapter {
       if (lines.length > 0) {
         const lastLine = lines[lines.length - 1];
         const secondLastLine = lines.length > 1 ? lines[lines.length - 2] : '';
-
 
         // Case 1: Complete prompt on one line
         if (promptSymbolPattern.test(lastLine) && userHostPattern.test(lastLine)) {
@@ -1185,14 +1195,13 @@ export class TerminalAdapter {
 
       if (command) {
         // Track the command that's about to be executed
-        terminalHistoryTracker.onCommandStart(
-          this.terminalId,
-          this.workspaceId,
-          command,
-        );
+        terminalHistoryTracker.onCommandStart(this.terminalId, this.workspaceId, command);
         // Mark as executing so we know to finish tracking when prompt appears
         this.isExecuting = true;
-        logger.debug(`Command executed: ${sanitizeCommandForDisplay(command)}${xtermCommand ? ' (from xterm buffer)' : ' (from keystroke buffer)'}`);
+        logger.debug(
+          // i18n-ignore (log message, not user-facing)
+          `Command executed: ${sanitizeCommandForDisplay(command)}${xtermCommand ? ' (from xterm buffer)' : ' (from keystroke buffer)'}`,
+        );
       }
       // Clear the command buffer
       this.commandBuffer = '';
@@ -1524,14 +1533,13 @@ export class TerminalAdapter {
       isExecuting: this.isExecuting,
       stats: bufferStats
         ? {
-          bufferSize: bufferStats.size,
-          lineCount: bufferStats.lineCount,
-          uptime: Date.now() - this.startTime,
-        }
+            bufferSize: bufferStats.size,
+            lineCount: bufferStats.lineCount,
+            uptime: Date.now() - this.startTime,
+          }
         : undefined,
     };
   }
-
 
   /**
    * Start the periodic IPC heartbeat.
@@ -1545,7 +1553,9 @@ export class TerminalAdapter {
       return;
     }
 
-    logger.debug(`[heartbeat] Starting for terminal ${this.terminalId} (every ${TerminalAdapter.HEARTBEAT_INTERVAL_MS}ms)`);
+    logger.debug(
+      `[heartbeat] Starting for terminal ${this.terminalId} (every ${TerminalAdapter.HEARTBEAT_INTERVAL_MS}ms)`,
+    );
 
     this.heartbeatTimer = setInterval(() => {
       this.performHealthCheck();
@@ -1570,7 +1580,11 @@ export class TerminalAdapter {
    */
   private async performHealthCheck(): Promise<void> {
     // Only check while CONNECTED and IPC handlers are set up
-    if (this.isDisposed || !this.ipcCleanup || this.stateMachine.getState() !== TerminalState.CONNECTED) {
+    if (
+      this.isDisposed ||
+      !this.ipcCleanup ||
+      this.stateMachine.getState() !== TerminalState.CONNECTED
+    ) {
       return;
     }
 
@@ -1581,7 +1595,10 @@ export class TerminalAdapter {
       const alive = await Promise.race([
         this.terminalExistsOnBackend(),
         new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Heartbeat timeout')), TerminalAdapter.HEARTBEAT_TIMEOUT_MS);
+          timeoutId = setTimeout(
+            () => reject(new Error('Heartbeat timeout')),
+            TerminalAdapter.HEARTBEAT_TIMEOUT_MS,
+          );
         }),
       ]);
 
@@ -1601,15 +1618,11 @@ export class TerminalAdapter {
 
       if (this.isDisposed) return;
 
-      logger.warn(
-        `[heartbeat] Terminal ${this.terminalId}: health check failed:`,
-        error,
-      );
+      logger.warn(`[heartbeat] Terminal ${this.terminalId}: health check failed:`, error);
       this.stopHeartbeat();
       this.stateMachine.transition('disconnect');
     }
   }
-
 
   /**
    * Schedule an auto-reconnect attempt with exponential backoff.
@@ -1734,7 +1747,9 @@ export class TerminalAdapter {
 
     // Show error in terminal
     if (!this.isDisposed) {
-      this.xterm.writeln(`\r\n\x1b[31m${m.terminal_adapter_errorLine_label({ message: error.message })}\x1b[0m\r\n`);
+      this.xterm.writeln(
+        `\r\n\x1b[31m${m.terminal_adapter_errorLine_label({ message: error.message })}\x1b[0m\r\n`,
+      );
     }
   }
 
@@ -2008,15 +2023,10 @@ export class TerminalAdapter {
       logger.error('Error disposing state machine:', error);
     }
 
-    // Finally dispose XTerm and its renderer
-    try {
-      // Clear the terminal first
-      this.xterm.clear();
-
-      // Dispose the terminal (this will also dispose the renderer)
-      this.xterm.dispose();
-    } catch (error) {
+    // xterm 5.x leaves a viewport sync timer queued by open()/fit(). Dispose on
+    // the next task so that callback cannot read an already-cleared renderer.
+    disposeXtermAfterViewportSync(this.xterm, (error) => {
       logger.error('Error disposing xterm:', error);
-    }
+    });
   }
 }

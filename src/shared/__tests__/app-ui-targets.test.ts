@@ -101,8 +101,8 @@ describe('app UI targets registry', () => {
 });
 
 describe('isResolvableNavTarget', () => {
-  it('accepts the home route', () => {
-    expect(isResolvableNavTarget('/')).toBe(true);
+  it('rejects the removed home route', () => {
+    expect(isResolvableNavTarget('/')).toBe(false);
   });
 
   it('accepts a registered settings path with no hash', () => {

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -28,7 +28,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(
-      await screen.findByRole('alertdialog', { name: 'Stop active work and delete space?' })
+      await screen.findByRole('dialog', { name: 'Stop active work and delete space?' }),
     ).toBeTruthy();
     expect(screen.getByText('Stop active work and delete space?')).toBeTruthy();
     expect(screen.getByText('Agent One')).toBeTruthy();
@@ -36,8 +36,9 @@ describe('DeleteWarningDialog', () => {
     expect(screen.getByRole('button', { name: 'Close delete warning dialog' })).toBeTruthy();
 
     const deleteButton = screen.getByRole('button', { name: 'Stop work and delete' });
-    expect(deleteButton.className).toContain('bg-red-700');
-    expect(deleteButton.className).toContain('text-white');
+    await waitFor(() => expect(document.activeElement).toBe(deleteButton));
+    expect(deleteButton.className).toContain('ring-[3px]');
+    expect(screen.getByRole('dialog').querySelector('.svelte-fa')).toBeNull();
 
     await fireEvent.click(deleteButton);
 
@@ -106,7 +107,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(
-      await screen.findByRole('alertdialog', { name: 'Stop active work and archive space?' })
+      await screen.findByRole('dialog', { name: 'Stop active work and archive space?' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close archive warning dialog' })).toBeTruthy();
 
@@ -116,7 +117,7 @@ describe('DeleteWarningDialog', () => {
     expect(onDeleteAnyway).toHaveBeenCalledOnce();
   });
 
-  it('cancels the dialog when Escape is pressed inside the alertdialog', async () => {
+  it('cancels the dialog when Escape is pressed inside the dialog', async () => {
     const onCancel = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
@@ -128,13 +129,13 @@ describe('DeleteWarningDialog', () => {
       },
     });
 
-    const dialog = await screen.findByRole('alertdialog', {
+    const dialog = await screen.findByRole('dialog', {
       name: 'Stop active work and delete space?',
     });
 
     await fireEvent.keyDown(dialog, { key: 'Escape' });
 
     expect(onCancel).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

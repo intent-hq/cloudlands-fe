@@ -1,18 +1,7 @@
 // @vitest-environment jsdom
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  render,
-  screen,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { writable } from 'svelte/store';
 
@@ -34,17 +23,19 @@ const providerWarnings$ = writable<Record<string, string>>({});
 const sessionVersion$ = writable(0);
 const sessions = new Map<string, Session>();
 
-const mockReduxDispatch = vi.hoisted(() => vi.fn((action: { type?: string; payload?: unknown }) => {
-  if (action.type === 'agentSessions/updateSession' && Array.isArray(action.payload)) {
-    const [agentId, updates] = action.payload as [string, Partial<Session>];
-    sessions.set(agentId, {
-      ...(sessions.get(agentId) ?? { id: agentId, workspaceId: 'ws-1' }),
-      ...updates,
-    });
-    sessionVersion$.update((value) => value + 1);
-  }
-  return action;
-}));
+const mockReduxDispatch = vi.hoisted(() =>
+  vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type === 'agentSessions/updateSession' && Array.isArray(action.payload)) {
+      const [agentId, updates] = action.payload as [string, Partial<Session>];
+      sessions.set(agentId, {
+        ...(sessions.get(agentId) ?? { id: agentId, workspaceId: 'ws-1' }),
+        ...updates,
+      });
+      sessionVersion$.update((value) => value + 1);
+    }
+    return action;
+  }),
+);
 
 function selectorForSession(
   agentIdOrStore: string | { subscribe: (run: (value: string) => void) => () => void },
@@ -82,10 +73,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
   faTriangleExclamation: { iconName: 'triangle-exclamation' },
-}));
-
-vi.mock('$lib/icons/faSettings', () => ({
-  faSettings: { iconName: 'settings' },
+  faSettings: { iconName: 'gear' },
 }));
 
 vi.mock('$lib/components/ui/button/button.svelte', async () => {
@@ -98,7 +86,7 @@ vi.mock('$lib/components/ui/dropdown', async () => {
   return { Dropdown: SlotOnly };
 });
 
-vi.mock('$lib/components/ui/ProviderIcon.svelte', async () => {
+vi.mock('$features/agent/components/AgentProviderIcon.svelte', async () => {
   const mod = await import('../../__tests__/mocks/ProviderIcon.svelte');
   return { default: mod.default, hasProviderIcon: mod.hasProviderIcon };
 });
@@ -110,12 +98,12 @@ vi.mock('$features/agent/agent.client', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   // Hydrated catalog with the synthetic `anthropic` provider these regressions
   // use, so the real provider-catalog selectors resolve ids/display names.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded({
@@ -162,8 +150,6 @@ vi.mock('$store/renderer/store', async () => {
   );
 
   return createAppStoreMockModule({
-    // providers.active designates auggie as the settings-derived effective
-    // default (the catalog never fabricates one from its first row).
     state: () => ({
       sessions,
       providerCatalog,
@@ -220,6 +206,7 @@ vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviderIds: () => enabledProviderIds$,
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,
 }));
 
@@ -443,9 +430,7 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'auggie',
-    );
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('auggie');
   });
 
   it('falls back to the active provider when no model or provider is resolvable', () => {
@@ -490,7 +475,9 @@ describe('ModelPicker trigger label regressions', () => {
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('claude-code');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
   });
 

@@ -3,11 +3,7 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import {
-  faExternalLink,
-  faKey,
-  faTerminal,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faExternalLink, faKey, faTerminal } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -73,12 +69,11 @@
     role="button"
     tabindex="0"
     aria-label={m.lib_gitCredentials_closeModal_ariaLabel()}
-    onclick={handleClose}
+    onclick={(event) => event.target === event.currentTarget && handleClose()}
     onkeydown={(e) => e.key === 'Escape' && handleClose()}
   >
     <div
       class="bg-background rounded-lg w-[520px] max-w-[90vw] max-h-[80vh] overflow-y-auto shadow-lg border border-border text-foreground"
-      onclick={(event) => event.stopPropagation()}
     >
       <!-- Header -->
       <div class="flex justify-between items-center p-4 border-b border-border">
@@ -100,7 +95,9 @@
             class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-2"
           >
             <div class="flex justify-between items-center">
-              <p class="text-sm font-medium text-red-800 dark:text-red-200 m-0">{m.lib_gitCredentials_failedOperation_label()}</p>
+              <p class="text-sm font-medium text-red-800 dark:text-red-200 m-0">
+                {m.lib_gitCredentials_failedOperation_label()}
+              </p>
               {#if canRetry}
                 <button
                   class="text-sm text-blue-600 dark:text-blue-400 underline bg-transparent border-none cursor-pointer p-0 hover:text-blue-800 dark:hover:text-blue-300"
@@ -188,7 +185,8 @@
         <div class="flex items-start gap-3">
           <Fa icon={faGithub} class="text-ghost mt-0.5" />
           <p class="text-sm text-subtle m-0">
-            <strong>{m.lib_gitCredentials_note_before()}</strong> {m.lib_gitCredentials_note_after()}
+            <strong>{m.lib_gitCredentials_note_before()}</strong>
+            {m.lib_gitCredentials_note_after()}
           </p>
         </div>
       </div>

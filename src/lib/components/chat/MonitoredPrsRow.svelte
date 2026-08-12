@@ -197,7 +197,7 @@
             align="start"
             delayDuration={300}
             disableHoverableContent={false}
-            contentClass="max-w-sm"
+            contentClass="max-w-sm whitespace-normal"
           >
             {#snippet content()}
               <div class="flex flex-col gap-1 text-xs" data-testid="monitored-pr-hover-card">

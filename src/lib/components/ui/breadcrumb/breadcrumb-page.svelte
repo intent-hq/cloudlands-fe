@@ -18,7 +18,7 @@
   {role}
   aria-disabled={ariaDisabled}
   aria-current={ariaCurrent}
-  class={cn('font-normal text-foreground', className)}
+  class={cn('block min-w-0 truncate font-medium text-foreground', className)}
   {...restProps}
 >
   {@render children?.()}

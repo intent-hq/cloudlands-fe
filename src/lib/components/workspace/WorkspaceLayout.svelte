@@ -47,6 +47,15 @@
     // Start with sidebar collapsed (width 0) — used for onboarding flow
     startCollapsed?: boolean;
 
+    // Let an outer container own resizing while the sidebar fills its available width.
+    sidebarFillsAvailableWidth?: boolean;
+
+    // Keep the inner sidebar fixed while an outer workspace column animates.
+    disableSidebarWidthTransition?: boolean;
+
+    // Report the sidebar's fixed width to an outer workspace column.
+    onSidebarWidthChange?: (width: number) => void;
+
     // Allow additional props to pass through
     [key: string]: unknown;
   }
@@ -58,13 +67,16 @@
     modals,
     sidebarStorageKey = 'workspace-left-panel-width',
     sidebarExpandedStorageKey = 'workspace-left-panel-expanded-width',
-    sidebarMinWidth = 180,
+    sidebarMinWidth = 280,
     sidebarMaxWidth = 800,
-    sidebarDefaultWidth = 350,
+    sidebarDefaultWidth = 360,
     sidebarDefaultExpandedWidth = 600,
-    sidebarPercentageWeight = 0.5,
+    sidebarPercentageWeight = 0,
     sidebarSide = 'left',
     startCollapsed = false,
+    sidebarFillsAvailableWidth = false,
+    disableSidebarWidthTransition = false,
+    onSidebarWidthChange,
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
@@ -73,14 +85,14 @@
 <ErrorBoundary logger={workspaceLogger}>
   <!-- Main Workspace Layout -->
   <div
-    class="workspace-page h-full flex flex-col relative bg-sidebar"
+    class="workspace-page h-full flex flex-col relative bg-transparent"
     aria-label={m.workspace_layout_ariaLabel()}
   >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
     <div class="upper-area flex-1 flex min-h-0">
       {#if sidebarSide === 'right'}
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
-        <div class="main-content-area flex h-full min-w-0 z-10">
+        <div class="main-content-area flex h-full min-w-0 z-10 pl-2 sm:pl-3">
           {@render content()}
         </div>
       {/if}
@@ -96,7 +108,11 @@
         expandedStorageKey={sidebarExpandedStorageKey}
         percentageWeight={sidebarPercentageWeight}
         initiallyCollapsed={startCollapsed}
-        className="flex-none h-full min-w-0 {sidebarSide === 'left'
+        doSkipResize={sidebarFillsAvailableWidth}
+        disableWidthTransition={disableSidebarWidthTransition}
+        onWidthChange={onSidebarWidthChange}
+        className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 {sidebarSide ===
+        'left'
           ? 'mr-auto ml-0'
           : 'ml-auto mr-0'}"
       >
@@ -132,6 +148,22 @@
 
   .main-content-area {
     flex: 1;
+  }
+
+  @media (max-width: 639px) {
+    .upper-area :global(.workspace-sidebar-panel) {
+      position: absolute;
+      inset-block: 0;
+      z-index: 20;
+    }
+
+    .upper-area :global(.workspace-sidebar-left) {
+      left: 0;
+    }
+
+    .upper-area :global(.workspace-sidebar-right) {
+      right: 0;
+    }
   }
 
   /* Terminal Overlay - positioned at bottom, shrinks content above */

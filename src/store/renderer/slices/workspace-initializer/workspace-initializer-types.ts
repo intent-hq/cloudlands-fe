@@ -57,7 +57,6 @@ export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializ
   remoteSetup?: WorkspaceInitializerRemoteSetup | null;
   selectedProvider?: string;
   skipIsolation?: boolean;
-  stayOnHomePage?: boolean;
 }
 
 export interface WorkspaceInitializerOnboardingFormState {

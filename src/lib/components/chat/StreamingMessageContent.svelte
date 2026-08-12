@@ -27,13 +27,13 @@
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
+  import ChatImageBlock from './ChatImageBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
-  import { PatchBlockContent } from '$lib/components/ui/diff';
+  import { PatchBlockContent } from '$features/file-tracking/components/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
-  import Fa from 'svelte-fa';
-  import { faRobot } from '@fortawesome/free-solid-svg-icons';
   import ChatCliBlock from './ChatCliBlock.svelte';
+  import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
   import SetupScriptCard from './SetupScriptCard.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -48,7 +48,6 @@
     parseSuggestedPrompts,
     groupParsedBlocks,
     groupContentBlocks,
-    stripThinkingBlocks,
     filterWorkspaceCardsCoveredByIds,
     type RenderBlock,
     type ParsedContent,
@@ -56,6 +55,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { getResponseGroupBlockKey } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -67,12 +67,10 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-  import { selectShowReasoningBlocks } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
   const logger = createLogger('StreamingMessageContent');
-
-  const showReasoningBlocks$ = selectShowReasoningBlocks();
 
   interface Props {
     content: ContentBlock[];
@@ -240,14 +238,7 @@
   });
 
   // Group content blocks by <group:Name> tags at the ContentBlock level.
-  // Thinking (reasoning) blocks are hidden unless the global
-  // showReasoningBlocks preference is on. This filter runs AFTER grouping
-  // because groupContentBlocks converts legacy <think>…</think> text into
-  // thinking blocks — a pre-grouping filter would miss those.
-  let groupedBlocks = $derived.by(() => {
-    const grouped = groupContentBlocks(blocks, isStreaming);
-    return $showReasoningBlocks$ ? grouped : stripThinkingBlocks(grouped);
-  });
+  let groupedBlocks = $derived(groupContentBlocks(blocks, isStreaming));
 
   // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
@@ -587,8 +578,10 @@
     <ChatDiffViewer diff={parsedBlock.content} filePath={parsedBlock.metadata?.path} />
   {:else if parsedBlock.type === 'commit_message'}
     <div class="commit-message-block p-3 my-2 rounded-md bg-background border border-border">
-      <div class="text-xs font-medium text-subtle mb-1.5">{m.chat_messageContent_generatedCommitMessage_label()}</div>
-      <div class="font-mono text-sm whitespace-pre-wrap text-foreground">
+      <div class="type-caption mb-1.5 font-medium text-subtle">
+        {m.chat_messageContent_generatedCommitMessage_label()}
+      </div>
+      <div class="type-code whitespace-pre-wrap text-foreground">
         {parsedBlock.content}
       </div>
     </div>
@@ -618,20 +611,18 @@
     <NavLink
       target={parsedBlock.metadata.navLinkData.target}
       label={parsedBlock.metadata.navLinkData.label}
+      {workspaceId}
     />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
-    <ChatReferenceBlock reference={parsedBlock.metadata.referenceData} onOpenFile={handleOpenFile} />
+    <ChatReferenceBlock
+      reference={parsedBlock.metadata.referenceData}
+      onOpenFile={handleOpenFile}
+    />
   {:else if parsedBlock.type === 'cli' && parsedBlock.metadata?.cliData}
     {@const cliData = parsedBlock.metadata.cliData}
     <ChatCliBlock command={cliData.command} />
   {:else if parsedBlock.type === 'agent_action' && parsedBlock.metadata?.agentActionData}
-    {@const actionData = parsedBlock.metadata.agentActionData}
-    <div class="my-1.5 flex items-center gap-2">
-      <Fa icon={faRobot} size="sm" class="text-ghost flex-none" />
-      <span class="text-sm text-subtle flex-1 min-w-0 truncate">
-        {actionData.goal}
-      </span>
-    </div>
+    <ChatAgentActionBlock goal={parsedBlock.metadata.agentActionData.goal} />
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -641,15 +632,17 @@
     <MarkdownViewer
       content={parsedBlock.content || ''}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      {workspaceId}
       taskBlockRenderMode="content"
-      onFileClick={(path) => handleOpenFile({ path })}
+      onFileClick={(path, options) => handleOpenFile({ path, ...options })}
     />
   {:else}
     <MarkdownViewer
       content={parsedBlock.content || ''}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      {workspaceId}
       taskBlockRenderMode="content"
-      onFileClick={(path) => handleOpenFile({ path })}
+      onFileClick={(path, options) => handleOpenFile({ path, ...options })}
     />
   {/if}
 {/snippet}
@@ -662,7 +655,7 @@
 {#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
-      <NavLink target={block.target} label={block.label} />
+      <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
   {:else if resolveCard(block, cardHandlers)}
     <!-- §7.1 standalone resource block with a registered card (MIME-keyed
@@ -677,7 +670,12 @@
     {@const proposal = getProposalFromBlock(block)}
     {#if proposal}
       <div class="w-full">
-        <ProposalCard {proposal} onApply={handleProposalApply} onUndo={handleProposalUndo} />
+        <ProposalCard
+          {proposal}
+          neutralBorder={workspaceId === CHIEF_WORKSPACE_ID}
+          onApply={handleProposalApply}
+          onUndo={handleProposalUndo}
+        />
       </div>
     {/if}
   {:else if block.type === 'text' && (block.text || (block as any).content)}
@@ -708,8 +706,9 @@
           <MarkdownViewer
             content={cleanedText}
             isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+            {workspaceId}
             taskBlockRenderMode="content"
-            onFileClick={(path) => handleOpenFile({ path })}
+            onFileClick={(path, options) => handleOpenFile({ path, ...options })}
           />
         {/if}
       {/if}
@@ -725,6 +724,17 @@
         result={resultContent}
         {workspaceId}
       />
+      {#if Array.isArray(resultContent)}
+        {#each resultContent as nestedBlock, nestedIndex (`${toolBlock.id}-image-${nestedIndex}`)}
+          {#if nestedBlock?.type === 'image' && typeof nestedBlock.data === 'string' && typeof nestedBlock.mimeType === 'string'}
+            <ChatImageBlock
+              data={nestedBlock.data}
+              mimeType={nestedBlock.mimeType}
+              alt={m.chat_chatMessage_attachedImage_alt({ number: String(nestedIndex + 1) })}
+            />
+          {/if}
+        {/each}
+      {/if}
     </div>
   {:else if block.type === 'tool_result'}
     <!-- Tool results are handled by associating them with their tool_use blocks -->
@@ -735,7 +745,10 @@
     <ThinkingBlock
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+      {workspaceId}
     />
+  {:else if block.type === 'image' && block.data && block.mimeType}
+    <ChatImageBlock data={block.data} mimeType={block.mimeType} />
   {/if}
 {/snippet}
 
@@ -759,7 +772,7 @@
           blocks={group.children}
         >
           {#snippet children()}
-            {#each group.children as childBlock, childIndex (`${blockIndex}-group-${childIndex}`)}
+            {#each group.children as childBlock, childIndex (getResponseGroupBlockKey(childBlock, childIndex))}
               {#if childBlock.type !== 'tool_result'}
                 <div class="content-block content-block--{childBlock.type} my-1.25">
                   {@render renderContentBlock(
@@ -773,7 +786,7 @@
           {/snippet}
         </ResponseGroup>
       </div>
-    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking'].includes(block.type)}
+    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'
@@ -792,14 +805,17 @@
   <!-- Show streaming cursor if streaming but no content yet -->
   {#if isStreaming && groupedBlocks.length === 0}
     <div class="w-full">
-      <MarkdownViewer content="" isStreaming={true} taskBlockRenderMode="content" />
+      <MarkdownViewer content="" isStreaming={true} {workspaceId} taskBlockRenderMode="content" />
     </div>
   {/if}
 </div>
 
 <style>
   /* Adjacent tool_use blocks should have reduced spacing */
-  .content-block--tool_use + .content-block--tool_use {
+  .content-block--tool_use + .content-block--tool_use,
+  .content-block--tool_use + .content-block--thinking,
+  .content-block--thinking + .content-block--tool_use,
+  .content-block--thinking + .content-block--thinking {
     margin-top: -0.5rem;
   }
   /* Adjacent tool_use blocks should have reduced spacing */

@@ -115,7 +115,7 @@ export function taskCellMeta(status: string): HudTakeoverCellMeta {
     case 'waiting':
       return {
         label: m.hud_takeover_taskWaiting_label(),
-        color: 'hsl(var(--text-subtle))',
+        color: 'hsl(var(--muted-foreground))',
         bg: 'hsl(var(--card))',
         borderColor: 'hsl(var(--border))',
         borderStyle: 'solid',
@@ -131,7 +131,7 @@ export function taskCellMeta(status: string): HudTakeoverCellMeta {
     default:
       return {
         label: m.hud_takeover_taskNotStarted_label(),
-        color: 'hsl(var(--text-ghost))',
+        color: 'hsl(var(--muted-foreground) / 0.65)',
         bg: 'transparent',
         borderColor: 'hsl(var(--border))',
         borderStyle: 'dashed',
@@ -144,9 +144,7 @@ export function taskCellMeta(status: string): HudTakeoverCellMeta {
  * chip labels — QUESTION / BLOCKED / DISCUSSION REQUIRED), so a blocker or
  * discussion takeover never mislabels itself as a question.
  */
-export function takeoverAttentionChipLabel(
-  signal: 'question' | 'blocker' | 'discussion',
-): string {
+export function takeoverAttentionChipLabel(signal: 'question' | 'blocker' | 'discussion'): string {
   switch (signal) {
     case 'question':
       return m.hud_attention_kindQuestion_label();

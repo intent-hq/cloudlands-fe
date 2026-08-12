@@ -1,11 +1,8 @@
 <script lang="ts">
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import type { NodeViewProps } from '@tiptap/core';
-  import DiffViewer from '$lib/components/ui/diff/DiffViewer.svelte';
-  import {
-    decodeDiffContent,
-    withSyntheticDiffHeaders,
-  } from '$lib/utils/diff-patch-utils';
+  import DiffViewer from '$features/file-tracking/components/diff/DiffViewer.svelte';
+  import { decodeDiffContent, withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
 
   // TipTap NodeViewProps
   let { node, selected }: NodeViewProps = $props();

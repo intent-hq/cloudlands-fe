@@ -100,6 +100,13 @@ function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   };
 }
 
+async function openHoverCard() {
+  const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
+  expect(trigger).toBeTruthy();
+  await fireEvent.pointerMove(trigger);
+  return waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+}
+
 describe('MonitoredPrsRow', () => {
   afterEach(() => {
     cleanup();
@@ -154,12 +161,7 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    expect(trigger).toBeTruthy();
-    // bits-ui opens the tooltip on trigger focus (no hover delay)
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     expect(card.textContent).toContain('Fix widget rendering');
     expect(card.textContent).toContain('open');
     expect(card.textContent).toContain('checks: 1/4 running');
@@ -181,10 +183,7 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     // Facts live in a flex-col block, one <span> per line — no inline
     // "·" separators that wrap mid-phrase.
     expect(card.textContent).not.toContain('·');
@@ -208,12 +207,14 @@ describe('MonitoredPrsRow', () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
     expect(card.textContent).not.toContain('No changes pending');
+
+    const tooltipContent = document.querySelector('[data-tooltip-content]') as HTMLElement;
+    expect(tooltipContent).toBeTruthy();
+    expect(tooltipContent.className).toContain('whitespace-normal');
+    expect(tooltipContent.className).not.toContain('whitespace-pre-wrap');
   });
 
   it('hover card prefers the merge-blocked reason over the mergeable line', async () => {
@@ -228,10 +229,7 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const card = await waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+    const card = await openHoverCard();
     expect(card.textContent).toContain('Merge blocked: required checks failing');
     expect(card.textContent).not.toContain('Not mergeable');
   });

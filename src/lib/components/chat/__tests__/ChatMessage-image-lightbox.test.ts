@@ -1,10 +1,12 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 
 // Mock Redux store and selectors
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: vi.fn(),
@@ -50,7 +52,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 import ChatMessage from '../ChatMessage.svelte';
 
 describe('ChatMessage image lightbox', () => {
-  const mockImageData = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const mockImageData =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   const mockImageMimeType = 'image/png';
 
   function createMessageWithImage(): AgentMessage {
@@ -78,12 +81,101 @@ describe('ChatMessage image lightbox', () => {
     };
   }
 
+  function createAssistantMessageWithImage(): AgentMessage {
+    return {
+      id: 'msg-agent-image',
+      role: 'assistant',
+      contentBlocks: [
+        { type: 'text', text: 'Here is the generated image.' },
+        { type: 'image', data: mockImageData, mimeType: mockImageMimeType },
+      ],
+      timestamp: new Date('2024-01-01T12:00:00Z'),
+    };
+  }
+
+  function createAssistantMessageWithToolImage(): AgentMessage {
+    return {
+      id: 'msg-agent-tool-image',
+      role: 'assistant',
+      contentBlocks: [
+        { type: 'tool_use', id: 'tool-image', name: 'screenshot', input: {} },
+        {
+          type: 'tool_result',
+          tool_use_id: 'tool-image',
+          output: [{ type: 'image', data: mockImageData, mimeType: mockImageMimeType }],
+        },
+      ],
+      timestamp: new Date('2024-01-01T12:00:00Z'),
+    };
+  }
+
+  it('renders an assistant image block inline and opens it full size', async () => {
+    render(ChatMessage, { props: { message: createAssistantMessageWithImage() } });
+
+    const image = screen.getByRole('img', { name: 'Image from agent' });
+    expect(image.getAttribute('src')).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'View image from agent full size' }));
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    });
+  });
+
+  it('renders an image block delivered by a live chat delta', () => {
+    const reconciler = new ChatTranscriptReconciler();
+    reconciler.applySnapshot(0, {
+      agentId: 'agent-image',
+      messages: [],
+      truncated: false,
+      totalMessages: 0,
+    });
+    expect(
+      reconciler.applyDelta(1, {
+        added: [
+          {
+            messageId: 'msg-live-image',
+            role: 'assistant',
+            block: {
+              type: 'image',
+              id: 'msg-live-image:0',
+              data: mockImageData,
+              mimeType: mockImageMimeType,
+            },
+          },
+        ],
+        updated: [],
+        removedIds: [],
+      }),
+    ).toBe('applied');
+
+    const message = reconciler.transcript().messages[0];
+    expect(message.contentBlocks?.[0]).toMatchObject({
+      type: 'image',
+      data: mockImageData,
+      mimeType: mockImageMimeType,
+    });
+    render(ChatMessage, { props: { message } });
+
+    expect(screen.getByRole('img', { name: 'Image from agent' }).getAttribute('src')).toBe(
+      `data:${mockImageMimeType};base64,${mockImageData}`,
+    );
+  });
+
+  it('renders protocol-shaped image content returned by an agent tool', () => {
+    render(ChatMessage, { props: { message: createAssistantMessageWithToolImage() } });
+
+    const image = screen.getByRole('img', { name: 'Attached image 1' });
+    expect(image.getAttribute('src')).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+  });
+
   it('opens lightbox when image thumbnail is clicked', async () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
     // Find the image button
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     expect(imageButton).toBeTruthy();
 
     // Click the image
@@ -96,11 +188,26 @@ describe('ChatMessage image lightbox', () => {
     });
   });
 
+  it('hides attachment thumbnails while the user message is sticky', async () => {
+    const message = createMessageWithImage();
+    const { rerender } = render(ChatMessage, { props: { message, isSticky: false } });
+    const thumbnailName = /view attached image 1 of 1 full size/i;
+
+    expect(screen.getByRole('button', { name: thumbnailName })).toBeTruthy();
+
+    await rerender({ message, isSticky: true });
+
+    expect(screen.queryByRole('button', { name: thumbnailName })).toBeNull();
+    expect(screen.getByText('Here is an image:')).toBeTruthy();
+  });
+
   it('opens lightbox with Enter key', async () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
 
     // Press Enter key
     await fireEvent.keyDown(imageButton, { key: 'Enter' });
@@ -116,7 +223,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
 
     // Press Space key
     await fireEvent.keyDown(imageButton, { key: ' ' });
@@ -132,7 +241,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox to appear
@@ -154,7 +265,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -177,7 +290,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox to appear
@@ -201,7 +316,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -223,7 +340,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -247,7 +366,9 @@ describe('ChatMessage image lightbox', () => {
     render(ChatMessage, { props: { message } });
 
     // Should have two image buttons
-    const imageButtons = screen.getAllByRole('button', { name: /view attached image \d of \d full size/i });
+    const imageButtons = screen.getAllByRole('button', {
+      name: /view attached image \d of \d full size/i,
+    });
     expect(imageButtons).toHaveLength(2);
 
     // Click the first image
@@ -284,7 +405,9 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+    const imageButton = screen.getByRole('button', {
+      name: /view attached image 1 of 1 full size/i,
+    });
     await fireEvent.click(imageButton);
 
     // Zoom controls should render inside the lightbox

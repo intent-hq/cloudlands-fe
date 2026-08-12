@@ -240,7 +240,7 @@
       600 10px 'JetBrains Mono',
       monospace;
     letter-spacing: 0.15em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-header-theme-btn:hover,
@@ -276,11 +276,11 @@
     width: 10px;
     height: 10px;
     margin-top: -4px;
-    background: hsl(var(--text-subtle));
+    background: hsl(var(--muted-foreground));
     border: 1px solid hsl(var(--border));
   }
   .hud-header-volume-slider:focus-visible {
-    outline: 1px solid hsl(var(--text-subtle));
+    outline: 1px solid hsl(var(--muted-foreground));
     outline-offset: 2px;
   }
 </style>

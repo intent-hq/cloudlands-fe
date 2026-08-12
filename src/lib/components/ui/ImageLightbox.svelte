@@ -11,7 +11,7 @@
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
   import Button from './button/button.svelte';
-  import ZoomPanViewport from './ZoomPanViewport.svelte';
+  import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -64,7 +64,7 @@
       if (!dialogElement) return;
 
       const focusableElements = dialogElement.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
       const focusableArray = Array.from(focusableElements);
 

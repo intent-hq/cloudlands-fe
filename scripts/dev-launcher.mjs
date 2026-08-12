@@ -12,7 +12,7 @@ import { createServer } from 'net';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, rmSync } from 'fs';
+import { existsSync, readdirSync, statSync, rmSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -115,8 +115,7 @@ function getLinuxElectronFlags() {
   if (process.platform !== 'linux') return [];
 
   const flags = [];
-  const isWayland =
-    process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland';
+  const isWayland = process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === 'wayland';
 
   if (isWayland) {
     flags.push('--ozone-platform=wayland');
@@ -124,40 +123,6 @@ function getLinuxElectronFlags() {
   }
 
   return flags;
-}
-
-/**
- * Patch the Electron.app Info.plist so macOS shows a custom name in the dock
- * instead of "Electron". Returns a cleanup function that restores the original.
- */
-function patchElectronPlist(displayName) {
-  const plistPath = join(
-    dirname(__dirname),
-    'node_modules/electron/dist/Electron.app/Contents/Info.plist',
-  );
-  if (!existsSync(plistPath)) return null;
-
-  const original = readFileSync(plistPath, 'utf-8');
-  const patched = original
-    .replace(
-      /<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/,
-      `<key>CFBundleDisplayName</key>\n\t<string>${displayName}</string>`,
-    )
-    .replace(
-      /<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/,
-      `<key>CFBundleName</key>\n\t<string>${displayName}</string>`,
-    );
-
-  if (patched === original) return null;
-
-  writeFileSync(plistPath, patched, 'utf-8');
-  return () => {
-    try {
-      writeFileSync(plistPath, original, 'utf-8');
-    } catch {
-      // best-effort restore
-    }
-  };
 }
 
 function runDev(ports, cdpMode = false, devName = '') {
@@ -169,13 +134,7 @@ function runDev(ports, cdpMode = false, devName = '') {
   // names can contain quotes/apostrophes that break nested shell quoting.
   process.env.DEV_NAME = devName || '';
 
-  // On macOS, patch the Electron binary's Info.plist so the dock shows our name
   const label = devName || (ports.instanceNum ? `Dev ${ports.instanceNum}` : 'Dev');
-  let restorePlist = null;
-  if (process.platform === 'darwin') {
-    restorePlist = patchElectronPlist(`Intent [${label}]`);
-  }
-
 
   const script = cdpMode ? 'dev:cdp:base' : 'dev:base';
 
@@ -211,22 +170,12 @@ function runDev(ports, cdpMode = false, devName = '') {
     windowsVerbatimArguments: isWindows,
   });
 
-  // Restore the original Info.plist when the process exits (guard against double-call)
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    if (restorePlist) restorePlist();
-  };
-
   child.on('error', (err) => {
-    cleanup();
     console.error('Failed to start dev server:', err);
     process.exit(1);
   });
 
   child.on('exit', (code) => {
-    cleanup();
     process.exit(code ?? 0);
   });
 
@@ -236,9 +185,6 @@ function runDev(ports, cdpMode = false, devName = '') {
       child.kill(signal);
     });
   });
-
-  // Also restore on unexpected exit
-  process.on('exit', cleanup);
 }
 
 /**

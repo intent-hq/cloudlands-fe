@@ -5,47 +5,47 @@
 -->
 
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { WorkspaceEvent } from '../../events/types';
+  import { shouldShowWorkspaceActivityEvent } from '../utils/activity-event-visibility';
   import Fa from 'svelte-fa';
   import {
-  faFile,
-  faFileCirclePlus,
-  faFileCircleMinus,
-  faFileEdit,
-  faArrowRightArrowLeft,
-  faCodeBranch,
-  faTerminal,
-  faPlay,
-  faCheck,
-  faXmark,
-  faWrench,
-  faCircle,
-  faServer,
-  faGlobe,
-  faCamera,
-} from '@fortawesome/free-solid-svg-icons';
+    faFile,
+    faFileCirclePlus,
+    faFileCircleMinus,
+    faFileEdit,
+    faArrowRightArrowLeft,
+    faCodeBranch,
+    faTerminal,
+    faPlay,
+    faCheck,
+    faXmark,
+    faWrench,
+    faCircle,
+    faServer,
+    faGlobe,
+    faCamera,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import { writable } from 'svelte/store';
   import {
-  selectWorkspaceEvents,
-  selectEventsLoading,
-} from '$store/renderer/slices/workspace-events/workspace-events-selectors';
+    selectWorkspaceEvents,
+    selectEventsLoading,
+  } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { slide } from 'svelte/transition';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import EntityChip from './EntityChip.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import {
-  getFriendlyLabel,
-  type EntityRef,
-  type AgentNameResolver,
-} from '../utils/friendly-labels';
+    getFriendlyLabel,
+    type EntityRef,
+    type AgentNameResolver,
+  } from '../utils/friendly-labels';
   import { faNote } from '$lib/icons/faNote';
   import { m } from '$shared/paraglide/messages.js';
-
 
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
@@ -83,7 +83,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const seen = new Set<string>();
     const deduped: WorkspaceEvent[] = [];
     for (const event of $events$) {
-      if (event.id && !seen.has(event.id)) {
+      if (event.id && shouldShowWorkspaceActivityEvent(event) && !seen.has(event.id)) {
         seen.add(event.id);
         deduped.push(event);
       }
@@ -187,7 +187,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           </div>
         {/each}
       </div>
-    {:else if $events$.length === 0}
+    {:else if dedupedEvents.length === 0}
       <div class="flex flex-col items-center justify-center h-full text-subtle py-8">
         <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
         <p class="text-sm">{m.log_timeline_noActivity_label()}</p>

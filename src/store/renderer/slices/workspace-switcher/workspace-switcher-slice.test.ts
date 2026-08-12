@@ -1,163 +1,106 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { resetWorkspaceState } from "../workspace/workspace-slice";
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { describe, expect, it } from 'vitest';
+import { resetWorkspaceState } from '../workspace/workspace-slice';
 import {
   closeSwitcher,
   confirmSelection,
   cycleNext,
   cyclePrevious,
-  defaultWorkspaceSwitcherState,
   initialState,
   openSwitcher,
   workspaceSwitcherReducer,
-} from "./workspace-switcher-slice";
+} from './workspace-switcher-slice';
 import {
   selectSelectedWorkspaceId,
   selectSwitcherState,
   selectSwitcherWorkspaceIds,
-} from "./workspace-switcher-selectors";
+} from './workspace-switcher-selectors';
 
-describe("workspaceSwitcherReducer", () => {
-  it("returns the initial state", () => {
-    expect(workspaceSwitcherReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
+describe('workspaceSwitcherReducer', () => {
+  it('returns the initial state', () => {
+    expect(workspaceSwitcherReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it("opens the switcher with current workspace first and the next workspace selected", () => {
-    const next = workspaceSwitcherReducer(initialState, openSwitcher(["ws-2", "ws-3", "ws-1"], "ws-2"));
+  it('opens on the next workspace when the active workspace is first', () => {
+    const next = workspaceSwitcherReducer(
+      initialState,
+      openSwitcher(['ws-2', 'ws-3', 'ws-1'], 'ws-2'),
+    );
 
-    expect(next).toEqual({
-      selectedIndex: 1,
-      selectionHandled: false,
-    });
+    expect(next).toEqual({ selectedIndex: 1, selectionHandled: false });
+    expect(workspaceSwitcherReducer(next, openSwitcher(['ws-2', 'ws-3'], 'ws-2'))).toBe(next);
   });
 
-  it("opens the switcher at index 0 when the current workspace is not the first item", () => {
-    const next = workspaceSwitcherReducer(initialState, openSwitcher(["ws-3", "ws-1"], "ws-2"));
-
-    expect(next.selectedIndex).toBe(0);
+  it('opens at the first entry when the active workspace is absent and ignores empty lists', () => {
+    const next = workspaceSwitcherReducer(initialState, openSwitcher(['ws-3', 'ws-1'], 'ws-2'));
+    expect(next).toEqual({ selectedIndex: 0, selectionHandled: false });
+    expect(workspaceSwitcherReducer(initialState, openSwitcher([], 'ws-2'))).toBe(initialState);
   });
 
-  it("cycles forward and backward through switcher items", () => {
-    let state = workspaceSwitcherReducer(initialState, openSwitcher(["ws-1", "ws-2", "ws-3"], "ws-1"));
+  it('cycles in both directions with wrapping', () => {
+    let state = workspaceSwitcherReducer(
+      initialState,
+      openSwitcher(['ws-1', 'ws-2', 'ws-3'], 'ws-1'),
+    );
     state = workspaceSwitcherReducer(state, cycleNext(3));
     expect(state.selectedIndex).toBe(2);
-
+    state = workspaceSwitcherReducer(state, cycleNext(3));
+    expect(state.selectedIndex).toBe(0);
     state = workspaceSwitcherReducer(state, cyclePrevious(3));
-    expect(state.selectedIndex).toBe(1);
+    expect(state.selectedIndex).toBe(2);
   });
 
-  it("confirms selection by closing and marking the selection as handled", () => {
-    const openState = workspaceSwitcherReducer(
-      initialState,
-      openSwitcher(["ws-1", "ws-2", "ws-3"], "ws-1")
-    );
-    const next = workspaceSwitcherReducer(openState, confirmSelection());
-
-    expect(next).toEqual({
-      ...defaultWorkspaceSwitcherState,
-      selectionHandled: true,
-    });
+  it('closes or confirms to the handled state and keeps closed actions as no-ops', () => {
+    const open = workspaceSwitcherReducer(initialState, openSwitcher(['ws-1', 'ws-2'], 'ws-1'));
+    expect(workspaceSwitcherReducer(open, closeSwitcher())).toEqual(initialState);
+    expect(workspaceSwitcherReducer(open, confirmSelection())).toEqual(initialState);
+    expect(workspaceSwitcherReducer(initialState, closeSwitcher())).toBe(initialState);
+    expect(workspaceSwitcherReducer(initialState, confirmSelection())).toBe(initialState);
+    expect(workspaceSwitcherReducer(initialState, cycleNext(2))).toBe(initialState);
+    expect(workspaceSwitcherReducer(initialState, cyclePrevious(2))).toBe(initialState);
   });
 
-  it("closes the switcher and resets to the default state", () => {
-    const openState = workspaceSwitcherReducer(
-      initialState,
-      openSwitcher(["ws-1", "ws-2", "ws-3"], "ws-1")
-    );
-    const next = workspaceSwitcherReducer(openState, closeSwitcher());
-
-    expect(next).toEqual({
-      ...defaultWorkspaceSwitcherState,
-      selectionHandled: true,
-    });
-  });
-
-  it("is a no-op for switcher actions when the switcher is not open", () => {
-    let state = workspaceSwitcherReducer(initialState, cycleNext(3));
-    expect(state).toBe(initialState);
-
-    state = workspaceSwitcherReducer(initialState, cyclePrevious(3));
-    expect(state).toBe(initialState);
-
-    state = workspaceSwitcherReducer(initialState, confirmSelection());
-    expect(state).toBe(initialState);
-  });
-
-  it("resets to defaults when workspace state is reset", () => {
-    const openState = workspaceSwitcherReducer(
-      initialState,
-      openSwitcher(["ws-1", "ws-2", "ws-3"], "ws-1")
-    );
-
-    expect(workspaceSwitcherReducer(openState, resetWorkspaceState())).toEqual(initialState);
+  it('resets with workspace state', () => {
+    const open = workspaceSwitcherReducer(initialState, openSwitcher(['ws-1', 'ws-2'], 'ws-1'));
+    expect(workspaceSwitcherReducer(open, resetWorkspaceState())).toEqual(initialState);
   });
 });
 
-describe("workspace switcher selectors", () => {
-  const stateWith = (
-    switcher: Partial<typeof initialState>,
-    workspaceItems: Array<{ id: string; status?: string }>,
-    activeWorkspaceId: string | null = null,
-  ) => ({
-    workspace: {
-      activeWorkspaceId,
-      recency: {
-        lastViewedAt: { "ws-2": 20, "ws-1": 10, "ws-3": 5 },
+describe('workspace switcher selectors', () => {
+  function stateWith(selectedIndex: number, selectionHandled: boolean) {
+    return {
+      workspace: {
+        activeWorkspaceId: 'ws-1',
+        recency: { lastViewedAt: { 'ws-2': 20, 'ws-1': 10, 'ws-3': 5 } },
+        workspaces: createCollection(
+          'id',
+          ['ws-1', 'ws-2', 'ws-3'].map((id) => ({
+            id,
+            title: id,
+            path: `/tmp/${id}`,
+            branch: 'main',
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+            status: 'active',
+          })),
+        ),
       },
-      workspaces: createCollection(
-        "id",
-        workspaceItems.map((workspace) => ({
-          title: workspace.id,
-          path: `/tmp/${workspace.id}`,
-          branch: "main",
-          changesets: [],
-          timeline: [],
-          conversationInfo: [],
-          createdAt: "2026-01-01T00:00:00Z",
-          updatedAt: "2026-01-01T00:00:00Z",
-          status: "active",
-          ...workspace,
-        })),
-      ),
-    },
-    workspaceSwitcher: { ...initialState, ...switcher },
-  });
-
-  it("exposes switcher selectors from workspaceSwitcher state", () => {
-    const switcher = {
-      ...defaultWorkspaceSwitcherState,
-      selectedIndex: 1,
-      selectionHandled: false,
+      workspaceSwitcher: { selectedIndex, selectionHandled },
     };
-    const state = stateWith(switcher, [{ id: "ws-1" }, { id: "ws-2" }, { id: "ws-3" }], "ws-1");
+  }
 
-    expect(selectSwitcherState.select(state as any)).toEqual(switcher);
-    expect(selectSwitcherWorkspaceIds.select(state as any)).toEqual(["ws-1", "ws-2", "ws-3"]);
-    expect(selectSelectedWorkspaceId.select(state as any)).toBe("ws-2");
+  it('selects the ordered workspace ids and current selection while open', () => {
+    const state = stateWith(1, false);
+    expect(selectSwitcherState.select(state as never)).toEqual(state.workspaceSwitcher);
+    expect(selectSwitcherWorkspaceIds.select(state as never)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(selectSelectedWorkspaceId.select(state as never)).toBe('ws-2');
   });
 
-  it("selectSelectedWorkspaceId returns null when the selected index is out of range", () => {
-    const state = stateWith({
-      selectedIndex: 3,
-      selectionHandled: false,
-    }, [{ id: "ws-1" }, { id: "ws-2" }], "ws-1");
-
-    expect(selectSelectedWorkspaceId.select(state as any)).toBeNull();
-  });
-
-  it("selectSwitcherWorkspaceIds returns an empty list when the switcher is closed", () => {
-    const state = stateWith(
-      {
-        selectionHandled: true,
-      },
-      [{ id: "ws-1" }, { id: "ws-2" }],
-      "ws-1",
-    );
-
-    expect(selectSwitcherWorkspaceIds.select(state as any)).toEqual([]);
+  it('returns no ids while closed and null for an out-of-range selection', () => {
+    expect(selectSwitcherWorkspaceIds.select(stateWith(0, true) as never)).toEqual([]);
+    expect(selectSelectedWorkspaceId.select(stateWith(3, false) as never)).toBeNull();
   });
 });

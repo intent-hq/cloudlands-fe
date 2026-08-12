@@ -37,12 +37,12 @@
       {m.settings_language_description()}
     </p>
   </div>
-  <div class="w-[180px] flex-shrink-0">
+  <div class="w-45 flex-shrink-0">
     <Select.Root value={$languagePreference} onchange={handleLanguageChange}>
       <Select.Trigger>
         <span class="truncate">{selectedLabel}</span>
       </Select.Trigger>
-      <Select.Content portal class="max-h-[300px] w-[180px]">
+      <Select.Content portal class="max-h-75 w-45">
         {#each options as option (option.value)}
           <Select.Item value={option.value}>
             <span class="truncate">{option.label}</span>

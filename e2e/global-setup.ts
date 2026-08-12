@@ -45,7 +45,8 @@ async function globalSetup() {
   if (process.env.BUILD_BEFORE_TEST === 'true') {
     console.log('📦 Building application...');
     await new Promise<void>((resolve, reject) => {
-      const buildProcess = spawn('npm', ['run', 'build'], {
+      const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+      const buildProcess = spawn(pnpmCommand, ['run', 'build'], {
         stdio: 'inherit',
         shell: true,
       });
@@ -71,7 +72,7 @@ async function globalSetup() {
     await fs.access(electronPath);
     console.log('  ✓ Electron binary found');
   } catch (e) {
-    console.error('  ✗ Electron binary not found. Run npm install first.');
+    console.error('  ✗ Electron binary not found. Run pnpm install first.');
     throw new Error('Electron binary not found');
   }
 
@@ -81,7 +82,7 @@ async function globalSetup() {
     await fs.access(mainPath);
     console.log('  ✓ Main process entry found');
   } catch (e) {
-    console.error('  ✗ Main process entry not found. Run npm run build first.');
+    console.error('  ✗ Main process entry not found. Run pnpm run build first.');
     throw new Error('Main process entry not found');
   }
 

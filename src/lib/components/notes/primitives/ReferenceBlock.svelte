@@ -7,17 +7,11 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import Fa from 'svelte-fa';
-  import {
-  faCode,
-  faArrowRight,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCode, faArrowRight } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import { invoke } from '$lib/electron-bridge';
-  import {
-  parseSemanticId,
-  getSemanticId,
-} from '$shared/types/notes-primitives';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { parseSemanticId, getSemanticId } from '$shared/types/notes-primitives';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
@@ -25,7 +19,9 @@
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
+  import { resolveReferenceSnapshot } from './utils/reference-snapshot';
 
   const logger = createLogger('ReferenceBlock');
 
@@ -98,15 +94,12 @@
       loading = false;
       return;
     }
-    if (primitive.snapshot) {
-      resolvedCode = primitive.snapshot.code;
-      editorContent = primitive.snapshot.code;
-      // Some producers emit the legacy `language` field instead of `languageId`.
-      resolvedLanguage =
-        primitive.snapshot.languageId ||
-        (primitive.snapshot as { language?: string }).language ||
-        'text';
-      resolvedRange = primitive.target?.range || null;
+    const snapshot = resolveReferenceSnapshot(primitive);
+    if (snapshot) {
+      resolvedCode = snapshot.code;
+      editorContent = snapshot.code;
+      resolvedLanguage = snapshot.languageId;
+      resolvedRange = snapshot.range;
     } else {
       error = m.notes_referenceBlock_noSnapshot_error();
     }
@@ -205,19 +198,24 @@
     {@const fileName = filePath?.split('/').pop() || displayName}
     {@const startLine = lineRange?.startLine || resolvedRange?.startLine || 1}
     {@const codeContent = resolvedCode || primitive.snapshot?.code || ''}
-    <div class="my-2 rounded-lg border border-border overflow-hidden bg-background">
+    <div
+      class="ws-block-widget type-body my-2 overflow-hidden rounded-md border border-border bg-card text-foreground shadow-(--elevation-raised)"
+    >
       <!-- Header row -->
-      <div class="flex items-center gap-2 px-3 py-1.5">
+      <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
         {#if linkedAgentId}
           <!-- Show agent avatar that opens the agent panel -->
           <button
             type="button"
-            class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-            onclick={(e) => {
-              e.stopPropagation();
+            class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
+            onclick={(event) => {
+              event.stopPropagation();
               if (workspaceId) {
                 appStore.dispatch(
-                  openAgentTabRequested(workspaceId, { agentId: linkedAgentId }),
+                  openAgentTabRequested(workspaceId, {
+                    agentId: linkedAgentId,
+                    ...getNavigationContext(event),
+                  }),
                 );
               }
             }}
@@ -226,30 +224,31 @@
             <AuggieAvatar agentId={linkedAgentId} size={16} />
           </button>
         {:else}
-          <Fa icon={faCode} size="xs" class="flex-none text-ghost" />
+          <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />
         {/if}
         <!-- Clickable area to toggle expansion -->
         <button
           type="button"
-          class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-foreground transition-colors cursor-pointer"
+          class="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-foreground"
           onclick={() => (expanded = !expanded)}
         >
-          <span class="text-inherit font-medium truncate">{fileName}</span>
+          <span class="type-body truncate font-medium">{fileName}</span>
           {#if filePath && filePath !== fileName}
-            <span class="text-sm text-subtle truncate flex-1 min-w-0">
+            <span class="type-caption min-w-0 flex-1 truncate text-muted-foreground">
               {filePath}
             </span>
           {/if}
           {#if lineRangeDisplay()}
-            <span class="text-xs text-subtle font-mono flex-none">
+            <span class="type-caption shrink-0 tabular-nums text-muted-foreground">
               {lineRangeDisplay()}
             </span>
           {/if}
         </button>
         <Button
           variant="ghost-light"
-          size="sm"
-          class="h-6 px-2 text-xs text-subtle gap-1 flex-none"
+          size="icon-xs"
+          iconOnly={true}
+          class="shrink-0"
           onclick={openInApp}
           title={m.notes_referenceBlock_goToFile_tooltip()}
         >
@@ -266,7 +265,7 @@
                 <Skeleton class="h-16 w-full rounded" />
               </div>
             {:else if error && !resolvedCode && !primitive.snapshot}
-              <div class="p-3 text-sm text-subtle">{error}</div>
+              <div class="type-caption p-3 text-muted-foreground">{error}</div>
             {:else if codeContent}
               <CodeBlock
                 code={codeContent}
@@ -277,13 +276,17 @@
                 noMargin={true}
               />
             {:else}
-              <div class="p-3 text-sm text-subtle italic">{m.notes_referenceBlock_noContent_label()}</div>
+              <div class="type-caption p-3 italic text-muted-foreground">
+                {m.notes_referenceBlock_noContent_label()}
+              </div>
             {/if}
           </div>
         </div>
       {/if}
     </div>
   {:else}
-    <div class="my-1.5 text-sm text-subtle">{m.notes_referenceBlock_invalid_error()}</div>
+    <div class="ws-block-widget type-caption my-2 text-muted-foreground">
+      {m.notes_referenceBlock_invalid_error()}
+    </div>
   {/if}
 </NodeViewWrapper>

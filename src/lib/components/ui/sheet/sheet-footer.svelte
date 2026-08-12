@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
   import type { HTMLAttributes } from 'svelte/elements';
 
   let {
@@ -16,7 +13,10 @@
 <div
   bind:this={ref}
   data-slot="sheet-footer"
-  class={cn('mt-auto flex flex-col gap-2 p-4', className)}
+  class={cn(
+    'mt-auto flex flex-col gap-2 border-t border-border bg-popover px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
+    className,
+  )}
   {...restProps}
 >
   {@render children?.()}

@@ -269,8 +269,26 @@ describe('RepoSelector Recent list owner rendering', () => {
     // The ownerless row must render the folder name only — no stray suffix.
     expect(rowTexts).toContain('solo');
 
-    // Local entries no longer use the GitHub "owner /" prefix.
     expect(screen.queryByText('acme /')).toBeNull();
+  });
+});
+
+describe('RepoSelector mode tabs', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('keeps each mode label on one line', async () => {
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+
+    for (const label of ['Copy local repo', 'Pick a repo', 'New repo']) {
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: label }).className).toContain(
+          'whitespace-nowrap',
+        );
+      });
+    }
   });
 });
 
@@ -310,7 +328,7 @@ describe('RepoSelector Recent list daemon-owned exclusions', () => {
   });
 });
 
-describe('RepoSelector Recent list search filtering ("Pick a repo" tab)', () => {
+describe('RepoSelector Recent list search filtering (GitHub tab)', () => {
   afterEach(() => {
     mockRepos.recentRepos = [];
     cleanup();
@@ -339,7 +357,8 @@ describe('RepoSelector Recent list search filtering ("Pick a repo" tab)', () => 
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    // "Pick a repo" is the first and default tab — GitHub repos show right away
+    await fireEvent.click(screen.getByText('Pick a repo'));
+
     await waitFor(() => {
       expect(screen.getByText('monorepo')).toBeTruthy();
       expect(screen.getByText('react')).toBeTruthy();

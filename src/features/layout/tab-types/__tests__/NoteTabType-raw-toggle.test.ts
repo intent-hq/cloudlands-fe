@@ -1,18 +1,5 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -37,6 +24,7 @@ const mockState = vi.hoisted(() => {
     dispatch: vi.fn(),
     rawViewEnabled: store(false),
     spellcheckEnabled: store(true),
+    noteFontStyle: store('sans'),
     scrollPosition: store(0),
     initialSpecWriteInProgress: store(false),
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
@@ -68,21 +56,20 @@ vi.mock('$lib/components/workspace/SpecWritingOnboarding.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
 }));
-vi.mock('$lib/components/ui/OpenComboButton.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
-}));
-vi.mock('$lib/components/notes/NoteFontStyleButton.svelte', async () => ({
+vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
 }));
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   faCheck: { iconName: 'check' },
   faCode: { iconName: 'code' },
   faCopy: { iconName: 'copy' },
+  faFont: { iconName: 'font' },
+  faSliders: { iconName: 'sliders' },
   faSpellCheck: { iconName: 'spell-check' },
   faTrash: { iconName: 'trash' },
 }));
@@ -92,7 +79,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -118,9 +106,14 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => null },
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectNoteFontStyle: () => mockState.noteFontStyle,
   selectSpellcheckEnabled: () => mockState.spellcheckEnabled,
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
+  setNoteFontStyle: (style: string) => ({
+    type: 'fontSettings/setNoteFontStyle',
+    payload: [style],
+  }),
   toggleSpellcheck: () => ({ type: 'userPreferences/toggleSpellcheck' }),
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -148,6 +141,8 @@ describe('NoteTabType raw note view toggle', () => {
   beforeEach(() => {
     mockState.dispatch.mockClear();
     mockState.rawViewEnabled.set(false);
+    mockState.spellcheckEnabled.set(true);
+    mockState.noteFontStyle.set('sans');
   });
 
   afterEach(() => {
@@ -155,15 +150,18 @@ describe('NoteTabType raw note view toggle', () => {
     vi.restoreAllMocks();
   });
 
-  it('registers an accessible header toggle that dispatches raw view toggle', async () => {
+  it('groups the raw view toggle into the panel action menu', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
-    const toggle = await screen.findByRole('button', { name: 'Show raw markdown note view' });
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(toggle.className).toContain('text-subtle');
-    expect(toggle.className).not.toContain('text-primary');
+    const trigger = await screen.findByRole('button', { name: 'Panel actions' });
+    await fireEvent.click(trigger);
+
+    const toggle = await screen.findByRole('menuitemcheckbox', {
+      name: 'Raw Markdown',
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
 
     await fireEvent.click(toggle);
     expect(mockState.dispatch).toHaveBeenCalledWith({
@@ -173,11 +171,33 @@ describe('NoteTabType raw note view toggle', () => {
 
     mockState.rawViewEnabled.set(true);
     await waitFor(() => {
-      const enabledToggle = screen.getByRole('button', { name: 'Show rich note view' });
-      expect(enabledToggle.getAttribute('aria-pressed')).toBe('true');
-      expect(enabledToggle.className).toContain('text-foreground');
-      expect(enabledToggle.className).toContain('bg-sidebar');
-      expect(enabledToggle.className).not.toContain('text-primary');
+      const enabledToggle = screen.getByRole('menuitemcheckbox', { name: 'Raw Markdown' });
+      expect(enabledToggle.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+
+  it('offers font and spellcheck controls in the Display section', async () => {
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(screen.getByRole('group', { name: /Font Style/i })).toBeTruthy();
+
+    expect(
+      screen.getByRole('menuitemradio', { name: /Sans-serif/ }).getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: /Serif/ }));
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'fontSettings/setNoteFontStyle',
+      payload: ['serif'],
+    });
+
+    const spellcheck = screen.getByRole('menuitemcheckbox', { name: 'Spellcheck' });
+    expect(spellcheck.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(spellcheck);
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'userPreferences/toggleSpellcheck',
     });
   });
 
@@ -190,7 +210,8 @@ describe('NoteTabType raw note view toggle', () => {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
-    await fireEvent.click(await screen.findByRole('button', { name: 'Copy full note' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('Note content'));
     const callsBeforeUnmount = clearTimeoutSpy.mock.calls.length;
 

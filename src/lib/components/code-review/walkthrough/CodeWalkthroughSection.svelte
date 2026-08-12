@@ -2,18 +2,15 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faWandMagicSparkles,
-  faSpinner,
-  faRotateRight,
-  faChevronDown,
-  faChevronRight,
-  faFolderOpen,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  fly,
-  slide,
-} from 'svelte/transition';
-  import { batchedGitDiff } from '$lib/components/ui/diff/diff-ipc-batcher';
+    faWandMagicSparkles,
+    faSpinner,
+    faRotateRight,
+    faChevronDown,
+    faChevronRight,
+    faFolderOpen,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { fly, slide } from 'svelte/transition';
+  import { batchedGitDiff } from '$features/file-tracking/components/diff/diff-ipc-batcher';
   import WalkthroughFileDiff from './WalkthroughFileDiff.svelte';
   import WalkthroughCategoriesGrid from './WalkthroughCategoriesGrid.svelte';
   import WalkthroughCategorySection from './WalkthroughCategorySection.svelte';
@@ -25,7 +22,7 @@
   } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspace = selectActiveWorkspace();
 

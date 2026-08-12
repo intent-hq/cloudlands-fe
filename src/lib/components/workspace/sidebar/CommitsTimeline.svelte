@@ -10,45 +10,41 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
-  ChangeStage,
-  type CommitFile,
-  type CommitInfo,
-  type TrackedChange,
-} from '$features/file-tracking/types';
+    ChangeStage,
+    type CommitFile,
+    type CommitInfo,
+    type TrackedChange,
+  } from '$features/file-tracking/types';
+  import {
+    selectFileTrackingCommits as selectFtCommits,
+    selectFileTrackingBoundarySha as selectFtBoundarySha,
+    selectFileTrackingOlderCommits as selectFtOlderCommits,
+    selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
+  } from '$store/renderer/slices/changes/changes-selectors';
   import { appClient } from '$lib/client';
   import {
-  selectFileTrackingCommits as selectFtCommits,
-  selectFileTrackingBoundarySha as selectFtBoundarySha,
-  selectFileTrackingOlderCommits as selectFtOlderCommits,
-  selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
-} from '$store/renderer/slices/changes/changes-selectors';
+    clearOlderCommits as ftClearOlderCommits,
+    refreshRequested,
+    loadOlderCommitsRequested,
+  } from '$store/renderer/slices/changes/changes-slice';
+  import { loadGitStatus, setGitOperationFlag } from '$store/renderer/slices/git/git-slice';
   import {
-  clearOlderCommits as ftClearOlderCommits,
-  refreshRequested,
-  loadOlderCommitsRequested,
-} from '$store/renderer/slices/changes/changes-slice';
-  import {
-  loadGitStatus,
-  setGitOperationFlag,
-} from '$store/renderer/slices/git/git-slice';
-  import {
-  selectPostMergeState,
-  selectGitOperationFlags,
-} from '$store/renderer/slices/git/git-selectors';
+    selectPostMergeState,
+    selectGitOperationFlags,
+  } from '$store/renderer/slices/git/git-selectors';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import {
-  addTerminal,
-  openTerminalOverlay,
-} from '$store/renderer/slices/terminals/terminals-slice';
-
+    addTerminal,
+    openTerminalOverlay,
+  } from '$store/renderer/slices/terminals/terminals-slice';
 
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
@@ -60,35 +56,34 @@
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
-  faArrowUpFromBracket,
-  faArrowUpRightFromSquare,
-  faChevronDown,
-  faCloud,
-  faCodeCommit,
-  faFlag,
-  faRotateLeft,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowUpFromBracket,
+    faArrowUpRightFromSquare,
+    faChevronDown,
+    faCloud,
+    faCodeCommit,
+    faFlag,
+    faRotateLeft,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from 'svelte/transition';
   import TimelineSection from './TimelineSection.svelte';
   import {
-  openWorkspaceCommitChangeset,
-  openWorkspaceDiff,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceCommitChangeset,
+    openWorkspaceDiff,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
-  getCommitsToUndoCount,
-  getLocalCommitsToUndoCount,
-  getPushTooltip as getPushTooltipUtil,
-  getUndoTooltip as getUndoTooltipUtil,
-  getUndoCommitTooltip as getUndoCommitTooltipUtil,
-  canAmendCommit as canAmendCommitUtil,
-} from './sidebar-changes-utils';
+    getCommitsToUndoCount,
+    getLocalCommitsToUndoCount,
+    getPushTooltip as getPushTooltipUtil,
+    getUndoTooltip as getUndoTooltipUtil,
+    getUndoCommitTooltip as getUndoCommitTooltipUtil,
+    canAmendCommit as canAmendCommitUtil,
+  } from './sidebar-changes-utils';
   import { store as appStore } from '$store/renderer/store';
   import { posixSingleQuote } from '$shared/utils/posix-single-quote';
-
 
   interface Props {
     workspaceId: string;
@@ -130,6 +125,16 @@
 
   // Local component state
   let expandedCommits = $state<Set<string>>(new Set());
+  let commitEdit = $state<{
+    hash: string | null;
+    value: string;
+    inputRef: HTMLInputElement | null;
+  }>({ hash: null, value: '', inputRef: null });
+  let undoState = $state<{ commitHash: string | null; undoing: boolean; undoingCommit: boolean }>({
+    commitHash: null,
+    undoing: false,
+    undoingCommit: false,
+  });
   // Lazily-fetched per-file data keyed by commit hash: the list payload is
   // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
   // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
@@ -185,8 +190,6 @@
       clearCommitFileMarker(commit.hash);
     });
   }
-  let commitEdit = $state<{ hash: string | null; value: string; inputRef: HTMLInputElement | null }>({ hash: null, value: '', inputRef: null });
-  let undoState = $state<{ commitHash: string | null; undoing: boolean; undoingCommit: boolean }>({ commitHash: null, undoing: false, undoingCommit: false });
   let commitContextMenu: { x: number; y: number; commitHash: string } | null = $state(null);
 
   // Utility to persist workspace changes
@@ -421,7 +424,10 @@
       const file = getCommitFiles(commit).find((f) => f.path === filePath);
       if (file) {
         try {
-          logger.info('[handleCommitFileClick] Fetching content from commit', { filePath, commitHash });
+          logger.info('[handleCommitFileClick] Fetching content from commit', {
+            filePath,
+            commitHash,
+          });
           // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
           // errors fold to { ok: false } inside the git client.
           const [newContentResult, oldContentResult] = await Promise.all([
@@ -433,7 +439,8 @@
           const oldContent = oldContentResult.ok ? oldContentResult.data : '';
 
           logger.info('[handleCommitFileClick] Content fetched', {
-            filePath, commitHash,
+            filePath,
+            commitHash,
             newContentLength: newContent.length,
             oldContentLength: oldContent.length,
           });
@@ -451,7 +458,9 @@
           };
 
           logger.info('[handleCommitFileClick] Dispatching workspace:open-diff event', {
-            changeId: change.id, stage: change.stage, commitHash: change.commitHash,
+            changeId: change.id,
+            stage: change.stage,
+            commitHash: change.commitHash,
           });
 
           appStore.dispatch(
@@ -503,7 +512,10 @@
   async function openPullTerminal() {
     if (!workspaceId) return;
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
-    if (!worktreePath) { toast.error(m.workspace_commitsTimeline_noSpacePath_error()); return; }
+    if (!worktreePath) {
+      toast.error(m.workspace_commitsTimeline_noSpacePath_error());
+      return;
+    }
     try {
       const remoteBranch = $workspace?.branch || 'HEAD';
       const pullCommand = `git pull --rebase origin ${remoteBranch}`;
@@ -511,7 +523,9 @@
         branch: remoteBranch,
       });
       const result = await invoke<any>('terminal:createWithCommand', {
-        workspaceId, command: pullCommand, cwd: worktreePath,
+        workspaceId,
+        command: pullCommand,
+        cwd: worktreePath,
         title: terminalTitle,
       });
       if (result.ok && result.terminalId) {
@@ -558,7 +572,9 @@
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
-        } catch { /* Refresh failed but push succeeded */ }
+        } catch {
+          /* Refresh failed but push succeeded */
+        }
       } else {
         const errorMsg = result.error || m.workspace_prSection_pushFailed_error();
         // i18n-ignore (matching backend error strings)
@@ -707,7 +723,9 @@
         {#if hasRemote && commit.isPushed && index > 0 && !allCommits[index - 1].isPushed && commits.length > 0}
           <div class="flex items-center gap-2 px-1 py-1.5">
             <div class="flex-1 h-px bg-border"></div>
-            <span class="text-xs text-subtle">{m.workspace_commitsTimeline_pushedToRemote_label()}</span>
+            <span class="text-xs text-subtle"
+              >{m.workspace_commitsTimeline_pushedToRemote_label()}</span
+            >
             <div class="flex-1 h-px bg-border"></div>
           </div>
         {/if}
@@ -756,14 +774,8 @@
 
             <!-- Show auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
             {#if commit.agentId}
-              <span
-                class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none"
-              >
-                <AuggieAvatar
-                  agentId={commit.agentId}
-                  size={14}
-                  class="mr-[-2px]"
-                />
+              <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+                <AuggieAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
               </span>
             {:else}
               <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
@@ -790,9 +802,7 @@
                 ondblclick={(e) => handleCommitMessageDoubleClick(e, commit, index)}
               >
                 <span
-                  class="text-ui text-subtle truncate flex-1 {canAmendCommit(index)
-                    ? ''
-                    : ''}"
+                  class="text-ui text-subtle truncate flex-1 {canAmendCommit(index) ? '' : ''}"
                   title={commit.message}
                 >
                   {commit.message}
@@ -802,9 +812,7 @@
 
             <!-- Right side: Cloud icon for pushed commits (fades on hover, only when remote exists) -->
             {#if hasRemote && commit.isPushed && !commit.agentId}
-              <span
-                class="absolute right-0 shrink-0 group-hover:opacity-0 transition-opacity"
-              >
+              <span class="absolute right-0 shrink-0 group-hover:opacity-0 transition-opacity">
                 <Fa icon={faCloud} class="text-ghost p-0.5" size={15} />
               </span>
             {/if}
@@ -890,10 +898,7 @@
 
           <!-- Expanded panel content -->
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ duration: 150 }}
-            >
+            <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
@@ -918,9 +923,7 @@
   <!-- Workspace start boundary marker + show previous toggle -->
   {#if $ftBoundarySha$}
     <button
-      class="group/boundary relative w-full cursor-pointer {allCommits.length > 0
-        ? 'mt-2'
-        : ''}"
+      class="group/boundary relative w-full cursor-pointer {allCommits.length > 0 ? 'mt-2' : ''}"
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
@@ -936,9 +939,7 @@
           ? 'opacity-100'
           : 'opacity-0'}"
       >
-        <span
-          class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none"
-        >
+        <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
           {m.workspace_commitsTimeline_workspaceStart_label()}
           {#if $ftLoadingOlderCommits$}
             <Fa icon={faSpinner} class="opacity-50 animate-spin" size="xs" />
@@ -946,9 +947,7 @@
             <Fa
               icon={faChevronDown}
               size="xs"
-              class="opacity-50 transition-transform {olderCommits.length > 0
-                ? 'rotate-180'
-                : ''}"
+              class="opacity-50 transition-transform {olderCommits.length > 0 ? 'rotate-180' : ''}"
             />
           {/if}
         </span>
@@ -1013,10 +1012,7 @@
           </div>
 
           {#if isExpanded}
-            <div
-              class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-              transition:slide={{ duration: 150 }}
-            >
+            <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
               {#each files as file (file.path)}
                 <FileRow
                   {file}
@@ -1044,10 +1040,7 @@
       disabled={$ftLoadingOlderCommits$}
       onclick={() => {
         const lastOlder = olderCommits[olderCommits.length - 1];
-        if (lastOlder)
-          appStore.dispatch(
-            loadOlderCommitsRequested(workspaceId, lastOlder.hash),
-          );
+        if (lastOlder) appStore.dispatch(loadOlderCommitsRequested(workspaceId, lastOlder.hash));
       }}
     >
       {#if $ftLoadingOlderCommits$}

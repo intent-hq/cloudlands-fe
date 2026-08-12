@@ -85,7 +85,10 @@ describe('Import Fixes Verification', () => {
 
   describe('FileActionsDropdown.svelte', () => {
     it('should have all required imports', () => {
-      const filePath = join(projectRoot, 'src/lib/components/ui/FileActionsDropdown.svelte');
+      const filePath = join(
+        projectRoot,
+        'src/features/external-editors/components/FileActionsDropdown.svelte',
+      );
       const content = readFileSync(filePath, 'utf-8');
 
       // Check for logger import
@@ -95,9 +98,9 @@ describe('Import Fixes Verification', () => {
       expect(content).toContain(
         "import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte'",
       );
-      expect(content).toContain("import Button from '$lib/components/ui/button/button.svelte'");
+      expect(content).toContain("import { Button } from '$lib/components/ui/button'");
       expect(content).toContain(
-        "import WorkspaceActionsMenu from '$lib/components/ui/WorkspaceActionsMenu.svelte'",
+        "import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte'",
       );
 
       // Check for icon imports

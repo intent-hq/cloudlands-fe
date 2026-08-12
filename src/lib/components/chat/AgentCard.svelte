@@ -34,8 +34,8 @@
   import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
-  import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeSlide } from '$lib/utils/animations';
@@ -83,6 +83,10 @@
     showStateBorder?: boolean;
     /** Hide the message preview / second line */
     hidePreview?: boolean;
+    /** Render as a compact single row (used by event wake-up banners). */
+    inline?: boolean;
+    /** Compact status text shown after the agent name. */
+    statusLabel?: string;
     /** Optional workspace to load agent session from (for home page usage) */
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
@@ -109,6 +113,8 @@
     showBorder = false,
     showStateBorder = false,
     hidePreview = false,
+    inline = false,
+    statusLabel,
     workspace = null,
     isCompleted = false,
     provider = undefined,
@@ -595,15 +601,16 @@
   >
     <button
       type="button"
-      class="w-full text-left flex gap-2 px-1.75 pt-1.25 pb-1.5 transition-colors duration-150 cursor-pointer group border {selected ||
-      showBorder
+      class="w-full text-left flex gap-2 transition-colors duration-150 cursor-pointer group border {inline
+        ? 'type-body items-center rounded-md px-1.5 py-1'
+        : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
         ? `bg-background border-border ${glowClass} shadow-xs`
         : 'border-transparent'}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
     >
-      <div class="relative shrink-0 mt-[-0.8px] -mb-1">
+      <div class="relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}">
         <AugieAvatarWithState
           {agentId}
           size={20}
@@ -613,12 +620,22 @@
         />
       </div>
 
-      <div class="agent-card-content flex-1 min-w-0 flex flex-col">
+      <div
+        class="agent-card-content flex-1 min-w-0 flex {inline
+          ? 'flex-row items-center gap-2'
+          : 'flex-col'}"
+      >
         <!-- Header row -->
-        <div class="flex items-center gap-1.5 pr-1.5">
+        <div
+          class="agent-card-header flex min-w-0 items-center gap-1.5 {inline
+            ? 'inline-agent-card-header overflow-hidden'
+            : 'pr-1.5'}"
+        >
           <!-- Avatar with streaming indicator -->
 
-          <div class="flex-1 min-w-0 font-medium flex items-center">
+          <div
+            class="flex-1 min-w-0 font-medium flex items-center {inline ? 'overflow-hidden' : ''}"
+          >
             {#if isEditing}
               <!-- svelte-ignore a11y_autofocus -->
               <input
@@ -633,7 +650,9 @@
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <h3
-                class="min-w-0 shrink whitespace-nowrap text-sm truncate text-foreground/90 group-hover:text-foreground"
+                class="min-w-0 shrink whitespace-nowrap truncate text-foreground/90 group-hover:text-foreground {inline
+                  ? 'type-body'
+                  : 'text-sm'}"
                 ondblclick={handleNameDoubleClick}
               >
                 {displayName}
@@ -649,7 +668,7 @@
               {specialistDisplayName}
             </span>
           {/if} -->
-            {#if delegatedByName}
+            {#if delegatedByName && !inline}
               <span
                 class="delegated-by-text ml-1 min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle"
               >
@@ -679,6 +698,10 @@
             {/if}
           </div>
         </div>
+
+        {#if inline && statusLabel}
+          <span class="max-w-[40%] shrink-0 truncate text-ui text-subtle">{statusLabel}</span>
+        {/if}
 
         <!-- Message preview: one persistent container rendering the derived
              `preview` value (see agent-card-preview.ts for the precedence

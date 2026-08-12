@@ -1,18 +1,15 @@
 <script lang="ts" module>
-  import {
-  tv,
-  type VariantProps,
-} from 'tailwind-variants';
+  import { tv, type VariantProps } from 'tailwind-variants';
   export const sheetVariants = tv({
-    base: 'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+    base: 'sheet-editorial-content bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-[var(--layer-modal)] flex flex-col overflow-y-auto overscroll-contain border-border outline-none transition motion-reduce:animate-none motion-reduce:transition-none',
     variants: {
       side: {
-        top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
+        top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-2 top-0 rounded-b-md border-b border-x sm:inset-x-4',
         bottom:
-          'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t',
-        left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
+          'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-2 bottom-0 rounded-t-md border-t border-x sm:inset-x-4',
+        left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-2 left-0 rounded-r-md border-y border-r',
         right:
-          'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
+          'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-2 right-0 rounded-l-md border-y border-l',
       },
     },
     defaultVariants: {
@@ -25,14 +22,9 @@
 
 <script lang="ts">
   import { Dialog as SheetPrimitive } from 'bits-ui';
-  import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import SheetOverlay from './sheet-overlay.svelte';
-  import {
-  cn,
-  type WithoutChildrenOrChild,
-} from '$lib/utils.js';
+  import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
@@ -40,11 +32,17 @@
     class: className,
     side = 'right',
     portalProps,
+    showCloseButton = true,
+    closeDisabled = false,
+    closeLabel = m.ui_sheet_close_label(),
     children,
     ...restProps
   }: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
     portalProps?: SheetPrimitive.PortalProps;
     side?: Side;
+    showCloseButton?: boolean;
+    closeDisabled?: boolean;
+    closeLabel?: string;
     children: Snippet;
   } = $props();
 </script>
@@ -54,16 +52,40 @@
   <SheetPrimitive.Content
     bind:ref
     data-slot="sheet-content"
+    data-side={side}
     class={cn(sheetVariants({ side }), className)}
-    onFocusOutside={() => {}}
     {...restProps}
   >
     {@render children?.()}
-    <SheetPrimitive.Close
-      class="ring-offset-background focus-visible:ring-ring rounded-xs focus-visible:outline-hidden absolute right-4 top-4 opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none"
-    >
-      <Fa icon={faXmark} size="1x" class="size-4" />
-      <span class="sr-only">{m.ui_sheet_close_label()}</span>
-    </SheetPrimitive.Close>
+    {#if showCloseButton}
+      <SheetPrimitive.Close
+        aria-label={closeLabel}
+        disabled={closeDisabled}
+        class="absolute right-3 top-3 inline-flex size-7 items-center justify-center rounded-md border border-transparent text-muted-foreground transition-[color,background-color,border-color] duration-[var(--motion-fast)] hover:bg-accent hover:text-accent-foreground focus-visible:border-input focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" class="size-4" fill="none">
+          <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </SheetPrimitive.Close>
+    {/if}
   </SheetPrimitive.Content>
 </SheetPrimitive.Portal>
+
+<style>
+  :global(.sheet-editorial-content) {
+    box-shadow: var(--elevation-overlay);
+    transition-duration: var(--motion-slow);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  :global(.sheet-editorial-content[data-side='left']),
+  :global(.sheet-editorial-content[data-side='right']) {
+    width: min(26rem, calc(100% - 0.5rem));
+    height: calc(100% - 1rem);
+  }
+
+  :global(.sheet-editorial-content[data-side='top']),
+  :global(.sheet-editorial-content[data-side='bottom']) {
+    max-height: calc(100dvh - 0.5rem);
+  }
+</style>

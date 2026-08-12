@@ -1,39 +1,35 @@
 <script lang="ts">
-import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { ToolUseBlock } from '$shared/types';
-  import {
-  faCheckCircle,
-  faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheckCircle, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import ToolDetails from './ToolDetails.svelte';
   import { parseToolResult } from './tool-result-parser';
-  import {
-  classifyTool,
-  isContextEngineTool,
-} from './tool-classifier';
+  import { classifyTool, isContextEngineTool } from './tool-classifier';
   import ContextEngineToolCall from './ContextEngineToolCall.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
 
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
-  import {
-  openWorkspaceFile,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
-    'figma', 'sentry', 'playwright', 'github', 'linear',
-    'slack', 'context7',
+    'figma',
+    'sentry',
+    'playwright',
+    'github',
+    'linear',
+    'slack',
+    'context7',
   ]);
 
   interface Props {
@@ -50,7 +46,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // PERF: Parse result for rich preview - memoized with $derived
   const parsedResult = $derived(
-    result ? parseToolResult(toolUse.name, toolUse.input, result) : null,
+    result ? parseToolResult(toolUse.name, toolUse.input || {}, result) : null,
   );
 
   // PERF: Classify tool - memoized with $derived
@@ -114,8 +110,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   function expand(node: Element) {
     return safeSlide(node, { duration: 150 });
   }
-
-
 </script>
 
 <!-- Special rendering for Augment Context Engine tools -->
@@ -123,17 +117,29 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   <ContextEngineToolCall {toolUse} {toolState} {result} />
 {:else if !toolDisplay.hidden}
   <div
-    class="tool-call-container group relative w-full text-base rounded-md transition-all duration-150 ease-out overflow-hidden block font-family-child"
+    class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-foreground/75 transition-all duration-[var(--motion-fast)] ease-out hover:text-foreground focus-within:text-foreground"
+    data-tool-use-id={toolUse.id}
+    data-tool-call-id={toolUse.toolCallId || undefined}
   >
     <!-- Running state: animate-pulse on the icon indicates running state -->
-    <div class="flex items-center w-full min-w-0 gap-2 px-1 py-0.5 relative min-h-6">
+    <div class="relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0">
       <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
       {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-        <div class="w-4 shrink-0 flex items-center justify-center {toolState === 'running' ? 'animate-pulse' : ''}">
-          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={14} />
+        <div
+          class="flex w-4 shrink-0 items-center justify-center opacity-60 {toolState === 'running'
+            ? 'animate-pulse'
+            : ''}"
+        >
+          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
         </div>
       {:else}
-        <Fa icon={toolDisplay.icon} size="xs" class="w-4 text-ghost shrink-0 {toolState === 'running' ? 'animate-pulse' : ''}" />
+        <Fa
+          icon={toolDisplay.icon}
+          size={14}
+          class="a11y-ignore w-4 shrink-0 text-foreground/60 {toolState === 'running'
+            ? 'animate-pulse'
+            : ''}"
+        />
       {/if}
 
       <!-- Clickable text area for expand/collapse -->
@@ -148,15 +154,15 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       >
         {#if isAgentMessage && parsedResult?.toAgentId}
           <!-- Agent message: show avatar + name + message preview -->
-          <span class="text-subtle whitespace-nowrap shrink-0">{m.chat_toolCall_message_label()}</span>
-          <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
-          <span
-            class="text-foreground font-medium whitespace-nowrap shrink-0 max-w-[120px] truncate"
+          <span class="shrink-0 whitespace-nowrap text-muted-foreground"
+            >{m.chat_toolCall_message_label()}</span
           >
+          <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
+          <span class="max-w-[120px] shrink-0 truncate whitespace-nowrap text-foreground">
             {targetAgentName}
           </span>
           {#if parsedResult.messageContent}
-            <span class="text-subtle whitespace-nowrap truncate min-w-0">
+            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
               "{parsedResult.messageContent.slice(0, 30)}{parsedResult.messageContent.length > 30
                 ? '...'
                 : ''}"
@@ -166,14 +172,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
           <!-- Standard tool display -->
           <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
           {#if toolDisplay.verb}
-            <span class="text-subtle whitespace-nowrap shrink-0">
+            <span class="shrink-0 whitespace-nowrap text-muted-foreground">
               {toolDisplay.verb}
             </span>
           {/if}
 
           <!-- Subject (truncates) - separate from button if it's a note link or file link -->
           {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}
-            <span class="text-subtle whitespace-nowrap truncate min-w-0">
+            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
               {toolDisplay.subject}
             </span>
           {/if}
@@ -184,25 +190,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       {#if toolDisplay.subject && toolDisplay.noteId}
         <a
           href={noteUrl(toolDisplay.noteId)}
-          class="text-muted-foreground whitespace-nowrap truncate min-w-0 hover:text-foreground hover:underline"
+          class="min-w-0 truncate whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
           style="flex: 0 0.01 auto;"
           onclick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
             const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            if (openInAdjacentPanel) {
-              const sourcePanelId = getPanelIdFromEvent(e);
-              if (workspaceId && toolDisplay.noteId) {
-                appStore.dispatch(
-                  openWorkspaceNote(workspaceId, toolDisplay.noteId, {
-                    openInAdjacentPanel,
-                    sourcePanelId,
-                  }),
-                );
-              }
-            } else {
-              await handleIntentLink(noteUrl(toolDisplay.noteId!));
-            }
+            await handleIntentLink(noteUrl(toolDisplay.noteId!), {
+              workspaceId,
+              sourcePanelId: getPanelIdFromEvent(e),
+              openInAdjacentPanel,
+            });
           }}
         >
           {toolDisplay.subject}
@@ -214,11 +212,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       {#if toolDisplay.subject && toolDisplay.filePath && !toolDisplay.noteId}
         {#if toolDisplay.isDirectory}
           <span class="flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden text-left">
-            <span class="text-subtle truncate" style="flex: 0 0.01 auto;">
+            <span class="truncate text-muted-foreground" style="flex: 0 0.01 auto;">
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -244,12 +242,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             }}
           >
             <span
-              class="text-subtle truncate group-hover/button:underline" style="flex: 0 0.01 auto;"
+              class="truncate text-muted-foreground group-hover/button:underline"
+              style="flex: 0 0.01 auto;"
             >
               {toolDisplay.subject}
             </span>
             {#if toolDisplay.path}
-              <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
+              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
                 {toolDisplay.path}
               </span>
             {/if}
@@ -259,7 +258,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
       <!-- Path (muted, truncated, takes remaining space) - only when NOT a file link -->
       {#if toolDisplay.path && !toolDisplay.filePath}
-        <span class="flex-1 text-subtle truncate min-w-0 text-sm -mb-px pl-1">
+        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
           {toolDisplay.path}
         </span>
       {/if}
@@ -269,15 +268,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         {#if toolState === 'running'}
           <!-- No spinner — the animate-pulse on the icon indicates running state -->
         {:else if toolState === 'completed' && expanded}
-          <Fa icon={faCheckCircle} size="xs" class="text-emerald-500 opacity-60" />
+          <Fa icon={faCheckCircle} size={14} class="text-success opacity-60" />
         {:else if toolState === 'error'}
-          <Fa icon={faExclamationTriangle} size="xs" class="text-red-500" />
+          <Fa icon={faExclamationTriangle} size={14} class="text-destructive" />
         {/if}
-
-
       </div>
     </div>
-
   </div>
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
@@ -285,7 +281,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <button
       type="button"
       class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
-      onclick={() => { if (isExpandable) expanded = !expanded; }}
+      onclick={() => {
+        if (isExpandable) expanded = !expanded;
+      }}
     >
       <div class="overflow-hidden rounded border border-border/40">
         <img
@@ -300,7 +298,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   {#if expanded}
     <div class="ml-1" transition:expand>
-      <ToolDetails input={toolUse.input} {result} {parsedResult} isError={toolState === 'error'} {workspaceId} />
+      <ToolDetails
+        input={toolUse.input}
+        {result}
+        {parsedResult}
+        isError={toolState === 'error'}
+        {workspaceId}
+      />
     </div>
   {/if}
 {/if}

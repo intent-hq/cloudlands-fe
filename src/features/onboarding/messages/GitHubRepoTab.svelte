@@ -22,7 +22,7 @@
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
   import { shell } from '$lib/electron-bridge';
-  import Input from '$lib/components/ui/input/input.svelte';
+  import { Input } from '$lib/components/ui/input';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -268,7 +268,9 @@
 
 <div class="space-y-3">
   <div class="w-full flex space-between items-center">
-    <p class="text-base text-muted-foreground pb-3 flex-1">{m.onboarding_githubRepoTab_clone_description()}</p>
+    <p class="text-base text-muted-foreground pb-3 flex-1">
+      {m.onboarding_githubRepoTab_clone_description()}
+    </p>
   </div>
   <!-- GitHub URL input — the only control; the daemon owns the checkout location. -->
   <div class="flex items-stretch gap-2">
@@ -381,8 +383,14 @@
                   if (e.key === 'Enter')
                     openInBrowser(`https://github.com/${repo.owner}/${repo.name}`, e);
                 }}
-                title={m.onboarding_githubRepoTab_openOnGithub_tooltip({ owner: repo.owner, name: repo.name })}
-                aria-label={m.onboarding_githubRepoTab_openOnGithub_tooltip({ owner: repo.owner, name: repo.name })}
+                title={m.onboarding_githubRepoTab_openOnGithub_tooltip({
+                  owner: repo.owner,
+                  name: repo.name,
+                })}
+                aria-label={m.onboarding_githubRepoTab_openOnGithub_tooltip({
+                  owner: repo.owner,
+                  name: repo.name,
+                })}
               >
                 <Fa icon={faArrowUpRightFromSquare} size="xs" />
               </span>

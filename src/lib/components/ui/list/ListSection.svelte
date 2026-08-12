@@ -47,36 +47,43 @@
   }
 </script>
 
-<div class={cn('flex flex-col', className)} {...restProps}>
+<div data-slot="list-section" class={cn('flex min-w-0 flex-col', className)} {...restProps}>
   {#if title}
     {#if collapsible}
-      <button
-        type="button"
+      <div
         class={cn(
-          'flex items-center justify-between px-2 py-0 gap-1 group',
-          'text-xs font-medium text-muted-foreground',
-          'cursor-pointer hover:text-foreground',
+          'group type-caption flex min-h-7 items-center rounded-md border border-transparent font-medium text-muted-foreground',
+          'hover:bg-accent/60 hover:text-accent-foreground',
           titleClass,
         )}
-        onclick={handleToggle}
       >
-        <div class="flex items-center gap-1.5 flex-1">
+        <button
+          type="button"
+          class="flex min-h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+          onclick={handleToggle}
+          aria-expanded={!collapsed}
+        >
           {#if icon}
             <Fa {icon} size="12" class="text-muted-foreground/50" />
           {/if}
           <Header size={6} class="flex-1 text-left">{title}</Header>
-        </div>
-
-        <div class="flex items-center gap-1">
+          <Fa
+            icon={faChevronDown}
+            size="13"
+            class={cn(
+              'text-muted-foreground/50 transition-transform duration-[var(--motion-standard)] motion-reduce:transition-none' /* a11y-ignore */,
+              collapsed && 'rotate-90',
+            )}
+          />
+        </button>
+        <div class="flex shrink-0 items-center gap-1 pr-1">
           {#if actions}
-            <div class="flex items-center" onclick={(e) => e.stopPropagation()}>
-              {@render actions()}
-            </div>
+            {@render actions()}
           {:else if actionIcon && onAction}
             <Button
               variant="ghost-light"
               size="icon-xs"
-              class="opacity-0 group-hover:opacity-100 transition-opacity"
+              class="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
               onclick={(e) => {
                 e.stopPropagation();
                 onAction();
@@ -87,26 +94,16 @@
             </Button>
           {/if}
         </div>
-
-        <Fa
-          icon={faChevronDown}
-          size={13}
-          class={cn(
-            'text-muted-foreground/50 transition-transform duration-200', /* a11y-ignore */
-            collapsed && 'rotate-90',
-          )}
-        />
-      </button>
+      </div>
     {:else}
       <div
         class={cn(
-          'flex items-center justify-between px-2 py-0 mb-1 group',
-          'text-xs font-medium text-subtle',
+          'group mb-1 flex min-h-7 items-center justify-between gap-2 px-2 py-1',
+          'type-caption font-medium text-muted-foreground',
           titleClass,
         )}
       >
-        <span
-          class="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 flex-1 text-left a11y-ignore"
+        <span class="a11y-ignore type-caption flex-1 text-left font-medium text-muted-foreground"
           >{title}</span
         >
 
@@ -117,7 +114,7 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
-              class="opacity-0 group-hover:opacity-100 transition-opacity"
+              class="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
               onclick={(e) => {
                 e.stopPropagation();
                 onAction();
@@ -133,8 +130,20 @@
   {/if}
 
   {#if !collapsed}
-    <div class={cn('flex flex-col', contentClass)} transition:slide={{ duration: 150 }}>
+    <div
+      data-slot="list-section-content"
+      class={cn('flex min-w-0 flex-col', contentClass)}
+      transition:slide={{ duration: 150 }}
+    >
       {@render children?.()}
     </div>
   {/if}
 </div>
+
+<style>
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot='list-section-content'] {
+      transition-duration: 0ms !important;
+    }
+  }
+</style>

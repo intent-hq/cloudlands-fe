@@ -1,0 +1,326 @@
+{
+  "ratchets": {
+    "palette": 902,
+    "arbitrary": 342
+  },
+  "controlHeightExceptions": [
+    {
+      "files": [
+        "src/lib/components/ui/button/button.svelte",
+        "src/lib/components/ui/button/index.ts"
+      ],
+      "variants": ["lg", "xl", "icon-lg"],
+      "values": ["40px", "48px"],
+      "owner": "button",
+      "reason": "Reachable large CTA compatibility variants predate the 24/28/32/36px control scale",
+      "replacement": "Map or remove these variants during the Plan 007 Button API consolidation",
+      "removalCondition": "Plan 007 call-site migration reaches zero legacy large-size usages"
+    }
+  ],
+  "canonicalRaw": {
+    "src/lib/components/ui/badge/badge.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/badge/index.ts": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/button/button.svelte": { "palette": 0, "arbitrary": 7 },
+    "src/lib/components/ui/button/index.ts": { "palette": 0, "arbitrary": 7 },
+    "src/lib/components/ui/checkbox/checkbox.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/CollapsiblePanel.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/dialog/dialog-content.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/dropdown/Dropdown.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/EditableName.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/grouped-combobox/grouped-combobox.svelte": {
+      "palette": 0,
+      "arbitrary": 1
+    },
+    "src/lib/components/ui/Header.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/ImageLightbox.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/NavigationButtons.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/PanelWrapper.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/scroll-area/scroll-area.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/searchable-combobox/searchable-combobox.svelte": {
+      "palette": 0,
+      "arbitrary": 1
+    },
+    "src/lib/components/ui/select/select-content.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/sheet/sheet-content.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/sidebar/sidebar-menu-button.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/sidebar/sidebar-rail.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/sidebar/sidebar.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/toast/ErrorToast.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/toast/AgentFailureToast.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/toast/Toast.svelte": { "palette": 0, "arbitrary": 25 },
+    "src/lib/components/ui/toggle-group/toggle-group.svelte": { "palette": 0, "arbitrary": 2 },
+    "src/lib/components/ui/toggle/toggle.svelte": { "palette": 0, "arbitrary": 5 },
+    "src/lib/components/ui/tooltip/tooltip-content.svelte": { "palette": 0, "arbitrary": 1 },
+    "src/lib/components/ui/tooltip/TooltipRich.svelte": { "palette": 0, "arbitrary": 0 }
+  },
+  "physicalPaletteBoundaries": [
+    {
+      "file": "src/features/agent/components/auggie-avatar/AuggieAvatar.svelte",
+      "owner": "brand",
+      "reason": "Auggie brand identity",
+      "replacement": "brand-local palette",
+      "removalCondition": "Never; explicit brand boundary"
+    },
+    {
+      "file": "src/features/agent/components/auggie-avatar/AugieAvatarWithState.svelte",
+      "owner": "brand",
+      "reason": "Auggie brand identity and presence state",
+      "replacement": "brand-local palette",
+      "removalCondition": "Never; explicit brand boundary"
+    },
+    {
+      "file": "src/features/file-tracking/components/diff/PatchBlockContent.svelte",
+      "owner": "diff-adapter",
+      "reason": "Added/deleted diff semantics",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary"
+    }
+  ],
+  "aliases": [
+    {
+      "token": "--app-background",
+      "owner": "app-shell",
+      "reason": "Existing window chrome surface",
+      "replacement": "--background or --sidebar",
+      "removalCondition": "No product usages remain",
+      "allowedFiles": ["src/lib/components/layout/WindowTitleBar.svelte"]
+    },
+    {
+      "token": "--text-primary",
+      "owner": "design-system",
+      "reason": "Legacy text compatibility",
+      "replacement": "--foreground",
+      "removalCondition": "No product usages remain",
+      "allowedFiles": [
+        "src/features/export/html-template.ts",
+        "src/lib/components/chat/StreamingAnimatedContent.svelte"
+      ]
+    },
+    {
+      "token": "--text-secondary",
+      "owner": "design-system",
+      "reason": "Legacy text compatibility",
+      "replacement": "--muted-foreground",
+      "removalCondition": "No product usages remain",
+      "allowedFiles": ["src/features/export/html-template.ts"]
+    },
+    {
+      "token": "--text-tertiary",
+      "owner": "design-system",
+      "reason": "Legacy text compatibility",
+      "replacement": "--muted-foreground",
+      "removalCondition": "No product usages remain",
+      "allowedFiles": ["src/features/export/html-template.ts"]
+    },
+    {
+      "token": "--text-subtle",
+      "owner": "design-system",
+      "reason": "Legacy low-emphasis text",
+      "replacement": "--muted-foreground",
+      "removalCondition": "Tailwind subtle usages reach zero",
+      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
+    },
+    {
+      "token": "--text-ghost",
+      "owner": "design-system",
+      "reason": "Legacy decorative text utility retained by the HUD axis label",
+      "replacement": "--muted-foreground with opacity",
+      "removalCondition": "Tailwind ghost usages reach zero",
+      "allowedFiles": ["src/features/hud/right-column/TokRatePanel.svelte"]
+    },
+    {
+      "token": "--bg-primary",
+      "owner": "standalone-export",
+      "reason": "Standalone HTML export surface",
+      "replacement": "--background",
+      "removalCondition": "Export stylesheet owns semantic tokens",
+      "allowedFiles": ["src/features/export/html-template.ts"]
+    },
+    {
+      "token": "--bg-secondary",
+      "owner": "standalone-export",
+      "reason": "Standalone HTML export surface",
+      "replacement": "--card",
+      "removalCondition": "Export stylesheet owns semantic tokens",
+      "allowedFiles": ["src/features/export/html-template.ts"]
+    },
+    {
+      "token": "--bg-tertiary",
+      "owner": "standalone-export",
+      "reason": "Standalone HTML export surface",
+      "replacement": "--muted",
+      "removalCondition": "Export stylesheet owns semantic tokens",
+      "allowedFiles": ["src/features/export/html-template.ts"]
+    }
+  ],
+  "undefined": [
+    {
+      "token": "--color-bg",
+      "owner": "terminal-adapter",
+      "reason": "Terminal viewer and diagnostics host override",
+      "replacement": "--background",
+      "removalCondition": "Adapters own a local default",
+      "allowedFiles": [
+        "src/lib/components/terminal/ScriptOutputViewer.svelte",
+        "src/lib/utils/accessibility.ts"
+      ]
+    },
+    {
+      "token": "--color-bg-primary",
+      "owner": "accessibility-utility",
+      "reason": "Diagnostic fixture variable",
+      "replacement": "--background",
+      "removalCondition": "Accessibility fixture migrates",
+      "allowedFiles": ["src/lib/utils/accessibility.ts"]
+    },
+    {
+      "token": "--color-border-focus",
+      "owner": "accessibility-utility",
+      "reason": "Diagnostic fixture variable",
+      "replacement": "--ring",
+      "removalCondition": "Accessibility fixture migrates",
+      "allowedFiles": ["src/lib/utils/accessibility.ts"]
+    },
+    {
+      "token": "--color-surface-1",
+      "owner": "chat",
+      "reason": "Legacy surface role",
+      "replacement": "--card",
+      "removalCondition": "Streaming content migrates",
+      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
+    },
+    {
+      "token": "--color-surface-2",
+      "owner": "chat",
+      "reason": "Legacy surface role",
+      "replacement": "--muted",
+      "removalCondition": "Streaming content migrates",
+      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
+    },
+    {
+      "token": "--color-text",
+      "owner": "workspace",
+      "reason": "Legacy text role",
+      "replacement": "--foreground",
+      "removalCondition": "Named consumers migrate",
+      "allowedFiles": [
+        "src/lib/components/chat/StreamingAnimatedContent.svelte",
+        "src/lib/components/diagrams/DiagramNodeHTML.svelte",
+        "src/lib/components/workspace/NoteWithComments.svelte",
+        "src/lib/utils/accessibility.ts"
+      ]
+    },
+    {
+      "token": "--color-text-muted",
+      "owner": "diagram-adapter",
+      "reason": "Diagram HTML export adapter",
+      "replacement": "--muted-foreground",
+      "removalCondition": "Diagram adapter supplies a local default",
+      "allowedFiles": ["src/lib/components/diagrams/DiagramNodeHTML.svelte"]
+    },
+    {
+      "token": "--color-text-primary",
+      "owner": "accessibility-utility",
+      "reason": "Diagnostic fixture variable",
+      "replacement": "--foreground",
+      "removalCondition": "Accessibility fixture migrates",
+      "allowedFiles": ["src/lib/utils/accessibility.ts"]
+    },
+    {
+      "token": "--color-text-secondary",
+      "owner": "chat",
+      "reason": "Legacy text role",
+      "replacement": "--muted-foreground",
+      "removalCondition": "Streaming content migrates",
+      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
+    },
+    {
+      "token": "--cylinder-max-height",
+      "owner": "cylinder-scroller",
+      "reason": "Runtime component geometry input",
+      "replacement": "component-local property",
+      "removalCondition": "Never; intentional component API",
+      "allowedFiles": ["src/lib/components/chat/CylinderScroller.svelte"]
+    },
+    {
+      "token": "--cylinder-top-fade",
+      "owner": "cylinder-scroller",
+      "reason": "Runtime component geometry input",
+      "replacement": "component-local property",
+      "removalCondition": "Never; intentional component API",
+      "allowedFiles": ["src/lib/components/chat/CylinderScroller.svelte"]
+    },
+    {
+      "token": "--diffs-bg-addition",
+      "owner": "diff-adapter",
+      "reason": "Diff renderer source semantic",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary",
+      "allowedFiles": ["src/features/file-tracking/components/diff/DiffViewer.svelte"]
+    },
+    {
+      "token": "--diffs-bg-deletion",
+      "owner": "diff-adapter",
+      "reason": "Diff renderer source semantic",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary",
+      "allowedFiles": ["src/features/file-tracking/components/diff/DiffViewer.svelte"]
+    },
+    {
+      "token": "--diffs-bg-separator",
+      "owner": "diff-adapter",
+      "reason": "Diff renderer source semantic",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary",
+      "allowedFiles": ["src/features/file-tracking/components/diff/DiffViewer.svelte"]
+    },
+    {
+      "token": "--diffs-fg",
+      "owner": "diff-adapter",
+      "reason": "Diff renderer source semantic",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary",
+      "allowedFiles": ["src/features/file-tracking/components/diff/DiffViewer.svelte"]
+    },
+    {
+      "token": "--diffs-fg-number",
+      "owner": "diff-adapter",
+      "reason": "Diff renderer source semantic",
+      "replacement": "diff-local palette",
+      "removalCondition": "Never; explicit diff boundary",
+      "allowedFiles": ["src/features/file-tracking/components/diff/DiffViewer.svelte"]
+    },
+    {
+      "token": "--font-family",
+      "owner": "mention-list",
+      "reason": "Runtime floating-list font input",
+      "replacement": "--font-ui",
+      "removalCondition": "Mention list adopts canonical font role",
+      "allowedFiles": ["src/lib/components/chat/input/EnhancedMentionList.svelte"]
+    },
+    {
+      "token": "--sd-color-text-secondary",
+      "owner": "mention-list",
+      "reason": "Runtime floating-list source variable",
+      "replacement": "--muted-foreground",
+      "removalCondition": "Mention list adopts canonical text role",
+      "allowedFiles": ["src/lib/components/chat/input/EnhancedMentionList.svelte"]
+    },
+    {
+      "token": "--success-bg",
+      "owner": "comments",
+      "reason": "Local resolved-comment state",
+      "replacement": "--success",
+      "removalCondition": "Comment thread styling migrates",
+      "allowedFiles": ["src/lib/components/tiptap/comments/ResponsiveCommentThread.svelte"]
+    },
+    {
+      "token": "--text-code",
+      "owner": "chat",
+      "reason": "Legacy code text role",
+      "replacement": "--foreground",
+      "removalCondition": "Streaming content migrates",
+      "allowedFiles": ["src/lib/components/chat/StreamingAnimatedContent.svelte"]
+    }
+  ]
+}

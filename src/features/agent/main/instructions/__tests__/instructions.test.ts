@@ -2,13 +2,7 @@
  * Tests for Agent Instructions
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getBaseInstruction } from '../base-system-prompt';
 import { getMainActiveLocale } from '../../../../../main/main-locale';
 import {
@@ -150,14 +144,28 @@ describe('Agent Instructions', () => {
       expect(workspace).toContain('ws.note.read');
       expect(workspace).toContain('statusMessage');
       expect(workspace).toContain('ws.workspace.setStatusMessage(message)');
+      expect(workspace).toContain('ws.workspace.setStatusImage({ data, mimeType, originalName? })');
+      expect(workspace).toContain('ws.workspace.setStatusImage(null)');
+      expect(workspace).toContain('meaningful visual result');
       expect(workspace).toContain('Workspace.status');
       expect(workspace).toContain('task statuses');
+      expect(workspace).toContain('exactly one plain TL;DR sentence');
+      expect(workspace).toContain('ideally 3–8 words and never more than 12 words');
+      expect(workspace).toContain('Do not include test counts');
+      expect(workspace).toContain('Ready for review.');
     });
 
     it('workspace-agent instruction documents statusMessage APIs', () => {
       expect(workspaceAgent).toContain('ws.workspace.details()');
       expect(workspaceAgent).toContain('ws.workspace.setStatusMessage(message)');
+      expect(workspaceAgent).toContain(
+        'ws.workspace.setStatusImage({ data, mimeType, originalName? } | null)',
+      );
       expect(workspaceAgent).toContain('statusMessage');
+      expect(workspaceAgent).toContain('one 3–8 word TL;DR sentence');
+      expect(workspaceAgent).toContain('no counts or implementation details');
+      expect(workspaceAgent).toContain('meaningful visual milestone');
+      expect(workspaceAgent).toContain('clear stale images');
     });
   });
 

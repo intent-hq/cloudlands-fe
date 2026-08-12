@@ -5,6 +5,7 @@
   import { writable } from 'svelte/store';
 
   import { backendRequest } from '$lib/client/live/backend-transport';
+  import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
@@ -240,14 +241,12 @@
         });
 
         // Map daemon workspace-relative paths into search results
-        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map(
-          (path) => ({
-            name: path.split('/').pop() || path,
-            path,
-            relativePath: path,
-            type: 'file' as const,
-          }),
-        );
+        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map((path) => ({
+          name: path.split('/').pop() || path,
+          path,
+          relativePath: path,
+          type: 'file' as const,
+        }));
 
         // Filter to only changed files if showOnlyChanged is enabled
         const gitStatusRec = $gitStatusRecord$;
@@ -426,6 +425,16 @@
     }
   }
 
+  function retryInitialization() {
+    const initializationInputs = selectFileExplorerInitializationInputs.select(
+      appStore.state,
+      effectiveWsId,
+    );
+    pendingInitializationKey = undefined;
+    initialized = false;
+    initializeForWorkspace(initializationInputs.workspacePath, effectiveWsId);
+  }
+
   // Effect to handle mount, remount, workspace ID/path changes, and cleared Redux state.
   // Environment-config changes are observed by the file-explorer saga.
   $effect(() => {
@@ -561,7 +570,12 @@
        (bits-ui ScrollArea adds overflow-y:scroll on its Viewport) which breaks
        virtualization by giving the inner scroll container an unconstrained height. -->
   <div class="flex-1 min-h-0 overflow-hidden">
-    {#if $feIsLoading$ || externalLoading || !$feIsInitialized$}
+    {#if $feError$}
+      <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
+        <p class="text-xs text-destructive-foreground">{$feError$}</p>
+        <Button variant="outline" size="xs" onclick={retryInitialization}>Retry</Button>
+      </div>
+    {:else if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->
       <ScrollArea class="h-full">
         <div class="space-y-1 py-2 px-2">
@@ -573,10 +587,6 @@
           {/each}
         </div>
       </ScrollArea>
-    {:else if $feError$}
-      <div class="text-xs text-destructive-foreground py-2">
-        {$feError$}
-      </div>
     {:else if searchQuery && searchQuery.trim()}
       <!-- Search results - flat list -->
       {#if isSearching}

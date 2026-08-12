@@ -1,45 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  afterEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 // ─── Mock Redux selectors and dispatch bridge ───────────────────────────────
-// TaskItemNodeView.svelte calls these at component init time (readable form).
-// The selector state is mutable so tests can simulate a `note:updated` push
-// landing in the notes slice (update the note map + bump notesVersion).
-const mockState = vi.hoisted(() => {
-  const versionSubscribers = new Set<(v: number) => void>();
-  return {
-    workspaceId: null as string | null,
-    notes: new Map<string, any>(),
-    version: 0,
-    versionSubscribers,
-    /** Simulate the notes-slice update a `note:updated` push produces. */
-    applyNoteUpdated(note: any) {
-      this.notes.set(String(note.id), note);
-      this.version += 1;
-      for (const fn of versionSubscribers) fn(this.version);
-    },
-    reset() {
-      this.workspaceId = null;
-      this.notes.clear();
-      this.version = 0;
-      versionSubscribers.clear();
-    },
-  };
-});
-
+// TaskItemNodeView.svelte calls these at component init time (readable form)
 const mockReadable = (value: any) => ({
   subscribe: (fn: (v: any) => void) => {
     fn(value);
@@ -47,35 +13,66 @@ const mockReadable = (value: any) => ({
   },
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => ({
-    subscribe: (fn: (v: any) => void) => {
-      fn(mockState.workspaceId);
-      return () => {};
+const linkedNoteState = vi.hoisted(() => {
+  let value: any;
+  let initialized = false;
+  const subscribers = new Set<(note: any) => void>();
+  const initializedSubscribers = new Set<(value: boolean) => void>();
+  return {
+    get: () => value,
+    readable: {
+      subscribe(fn: (note: any) => void) {
+        subscribers.add(fn);
+        fn(value);
+        return () => subscribers.delete(fn);
+      },
     },
-  }),
+    initializedReadable: {
+      subscribe(fn: (value: boolean) => void) {
+        initializedSubscribers.add(fn);
+        fn(initialized);
+        return () => initializedSubscribers.delete(fn);
+      },
+    },
+    reset() {
+      value = undefined;
+      initialized = false;
+      subscribers.forEach((fn) => fn(value));
+      initializedSubscribers.forEach((fn) => fn(initialized));
+    },
+    set(note: any) {
+      value = note;
+      subscribers.forEach((fn) => fn(value));
+    },
+    setInitialized(value: boolean) {
+      initialized = value;
+      initializedSubscribers.forEach((fn) => fn(initialized));
+    },
+  };
+});
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectActiveWorkspaceId: () => mockReadable('workspace-1'),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
-  selectNoteById: Object.assign(() => mockReadable(undefined), {
-    select: (_state: unknown, _wsId: string, noteId: string) => mockState.notes.get(noteId),
+  selectNoteById: Object.assign(() => linkedNoteState.readable, {
+    select: () => linkedNoteState.get(),
   }),
   selectSelectedNoteId: Object.assign(() => mockReadable(null), {
     select: () => null,
   }),
-  selectNotesVersion: () => ({
-    subscribe: (fn: (v: number) => void) => {
-      fn(mockState.version);
-      mockState.versionSubscribers.add(fn);
-      return () => {
-        mockState.versionSubscribers.delete(fn);
-      };
+  selectNotesVersion: () => mockReadable(0),
+  selectWorkspaceNotesState: () => ({
+    subscribe(fn: (value: { initialized: boolean }) => void) {
+      return linkedNoteState.initializedReadable.subscribe((initialized) => fn({ initialized }));
     },
   }),
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -84,15 +81,21 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')
+  >()),
 }));
 
-vi.mock('$lib/utils/workspace-navigation', () => ({
-  navigateToNote: vi.fn(),
-}));
+const navigateToNoteMock = vi.hoisted(() => vi.fn());
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: navigateToNoteMock }));
 
 // Use test wrapper that provides the required context
 import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
+
+beforeEach(() => {
+  linkedNoteState.reset();
+  navigateToNoteMock.mockClear();
+});
 
 /**
  * Create a mock editor with all required methods
@@ -185,29 +188,22 @@ function createMockProps(overrides: any = {}) {
   } as any;
 }
 
-/**
- * Create a mock node whose content carries an intent://local/task/{noteId}
- * link so the component renders in linked-task mode.
- */
-function createLinkedTaskNode(noteId: string) {
-  const linkText = {
+function createLinkedTaskProps(noteId: string) {
+  const textNode = {
     isText: true,
     marks: [{ type: { name: 'link' }, attrs: { href: `intent://local/task/${noteId}` } }],
   };
-  const paragraph = {
-    content: { forEach: (fn: (child: any) => void) => fn(linkText) },
-  };
-  return {
-    attrs: { checked: false, status: 'todo' },
-    nodeSize: 10,
-    content: { forEach: (fn: (child: any) => void) => fn(paragraph) },
-    toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'todo' } }),
-  };
+  return createMockProps({
+    node: {
+      content: {
+        forEach: (visitParagraph: (node: any) => void) =>
+          visitParagraph({
+            content: { forEach: (visitText: (node: any) => void) => visitText(textNode) },
+          }),
+      },
+    },
+  });
 }
-
-afterEach(() => {
-  mockState.reset();
-});
 
 describe('TaskItemNodeView - Basic Rendering', () => {
   it('should render a list item with checkbox', () => {
@@ -221,6 +217,34 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     // The checkbox is a div with role="checkbox" (custom checkbox component)
     const checkbox = container.querySelector('[role="checkbox"]');
     expect(checkbox).toBeTruthy();
+  });
+
+  it('renders dependency and conflict chips for a linked task', async () => {
+
+    linkedNoteState.set({
+      id: 'task-with-relations',
+      workspaceId: 'workspace-1',
+      title: 'Task with relations',
+      metadata: {
+        task: {
+          status: 'in_progress',
+          dependsOn: ['dependency-1'],
+          unmetDependsOn: ['dependency-1'],
+          conflictsWith: ['conflict-1'],
+        },
+      },
+    });
+    linkedNoteState.setInitialized(true);
+
+    const { getByText } = render(TestTaskItemNodeView, {
+      props: createLinkedTaskProps('task-with-relations'),
+    });
+
+    const dependencyChip = await waitFor(() => getByText('Waits on 1'));
+    const conflictChip = getByText('Conflicts 1');
+    // Chips render with correct counts (tooltip content tested separately)
+    expect(dependencyChip).toBeTruthy();
+    expect(conflictChip).toBeTruthy();
   });
 
   it('should render unchecked checkbox for todo status', () => {
@@ -416,6 +440,62 @@ describe('TaskItemNodeView - Action Button', () => {
 });
 
 describe('TaskItemNodeView - Reactivity', () => {
+  it('opens linked task notes beside their source panel by default', async () => {
+    const noteId = 'task-linked';
+    linkedNoteState.set({
+      id: noteId,
+      workspaceId: 'workspace-1',
+      title: 'Linked task',
+      metadata: { task: { status: 'not_started' } },
+    });
+    const { container } = render(TestTaskItemNodeView, { props: createLinkedTaskProps(noteId) });
+    const panel = document.createElement('div');
+    panel.dataset.panelId = 'panel-note';
+    container.parentElement?.insertBefore(panel, container);
+    panel.appendChild(container);
+
+    await fireEvent.click(container.querySelector('button')!);
+
+    expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
+      openInAdjacentPanel: true,
+      openInNewAdjacentPanel: true,
+      sourcePanelId: 'panel-note',
+    });
+  });
+
+  it('shows a missing-task error only after notes initialization completes', async () => {
+    const noteId = 'task-missing';
+    const { container } = render(TestTaskItemNodeView, {
+      props: createLinkedTaskProps(noteId),
+    });
+
+    expect(container.textContent).toContain('Loading');
+
+    linkedNoteState.setInitialized(true);
+
+    await waitFor(() => expect(container.textContent).toContain(`Task not found: ${noteId}`));
+  });
+
+  it('replaces the missing-task state when delayed note hydration completes', async () => {
+    const noteId = 'task-delayed';
+    const { container } = render(TestTaskItemNodeView, {
+      props: createLinkedTaskProps(noteId),
+    });
+
+    expect(container.textContent).toContain('Loading');
+    expect(container.textContent).not.toContain('Task not found');
+
+    linkedNoteState.set({
+      id: noteId,
+      workspaceId: 'workspace-1',
+      title: 'Hydrated task title',
+      metadata: { task: { status: 'not_started' } },
+    });
+
+    await waitFor(() => expect(container.textContent).toContain('Hydrated task title'));
+    expect(container.textContent).not.toContain('Task not found');
+  });
+
   it('should update checkbox when node attrs change', async () => {
     // Test reactivity by rendering with different props
     const props1 = createMockProps();
@@ -524,44 +604,43 @@ describe('TaskItemNodeView - Daemon-provided unmetDependsOn (v6.8, monorepo#1979
   }
 
   function renderLinkedTask() {
-    const node = createLinkedTaskNode(TASK_ID);
-    const props = createMockProps({ node, editor: createMockEditor(node) });
-    return render(TestTaskItemNodeView, { props });
+    return render(TestTaskItemNodeView, { props: createLinkedTaskProps(TASK_ID) });
   }
 
-  it('renders the "Waits on" chip from the daemon-provided metadata.task.unmetDependsOn', () => {
-    mockState.workspaceId = WS_ID;
-    mockState.notes.set(TASK_ID, makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+  it('renders the "Waits on" chip from the daemon-provided metadata.task.unmetDependsOn', async () => {
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+    linkedNoteState.setInitialized(true);
 
     const { container } = renderLinkedTask();
-    expect(container.textContent).toContain('Waits on 2');
+    await waitFor(() => expect(container.textContent).toContain('Waits on 2'));
   });
 
-  it('renders no chip when the daemon omits unmetDependsOn, even with dependsOn edges', () => {
+  it('renders no chip when the daemon omits unmetDependsOn, even with dependsOn edges', async () => {
     // Pre-#1979 the FE re-derived unmet deps from dependsOn + the notes slice;
     // now an omitted field (all deps met) must render no chip.
-    mockState.workspaceId = WS_ID;
-    mockState.notes.set(TASK_ID, makeTaskNote());
+    linkedNoteState.set(makeTaskNote());
+    linkedNoteState.setInitialized(true);
 
     const { container } = renderLinkedTask();
+    await waitFor(() => expect(container.textContent).toContain('Linked task'));
     expect(container.textContent).not.toContain('Waits on');
   });
 
   it('updates the rendered chip when a note:updated push changes unmetDependsOn', async () => {
-    mockState.workspaceId = WS_ID;
-    mockState.notes.set(TASK_ID, makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-a', 'dep-b'] }));
+    linkedNoteState.setInitialized(true);
 
     const { container } = renderLinkedTask();
-    expect(container.textContent).toContain('Waits on 2');
+    await waitFor(() => expect(container.textContent).toContain('Waits on 2'));
 
     // Simulate the notes-slice update a `note:updated` push produces after a
     // dependency completes: the daemon re-announces the dependent note with
     // the refreshed projection (one dep left).
-    mockState.applyNoteUpdated(makeTaskNote({ unmetDependsOn: ['dep-b'] }));
+    linkedNoteState.set(makeTaskNote({ unmetDependsOn: ['dep-b'] }));
     await waitFor(() => expect(container.textContent).toContain('Waits on 1'));
 
     // Second push: the last dep completes and the field is omitted → chip gone.
-    mockState.applyNoteUpdated(makeTaskNote());
+    linkedNoteState.set(makeTaskNote());
     await waitFor(() => expect(container.textContent).not.toContain('Waits on'));
   });
 });

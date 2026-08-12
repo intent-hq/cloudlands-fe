@@ -9,6 +9,11 @@
   import PathSettingField from './PathSettingField.svelte';
   import { Select } from '$lib/components/ui/select';
 
+  // i18n-ignore (file path)
+  const WORKTREES_PLACEHOLDER = '~/intent/workspaces';
+  // i18n-ignore (file path)
+  const SSH_KEY_PLACEHOLDER = '~/.ssh/id_ed25519';
+
   // Settings state
   let worktreesLocation = $state('');
   let sshKeyPath = $state('');
@@ -177,9 +182,9 @@
   }
 </script>
 
-<div class="flex flex-col bg-card rounded-xl pt-1 pb-3">
+<div class="flex min-w-0 flex-col gap-4" data-settings-git-workspace>
   {#if settingsError}
-    <section class="px-6 py-2">
+    <section>
       <p
         class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
       >
@@ -189,7 +194,7 @@
   {/if}
 
   <!-- Worktrees Location -->
-  <section class="px-6 py-2">
+  <section>
     <div class="flex items-center justify-between gap-4">
       <label for="worktreesLocation" class="text-sm font-medium text-foreground shrink-0">
         {m.settings_gitWorkspace_worktreesLocation_label()}
@@ -197,7 +202,7 @@
       <PathSettingField
         id="worktreesLocation"
         bind:value={worktreesLocation}
-        placeholder={'~/intent/workspaces' /* i18n-ignore (file path) */}
+        placeholder={WORKTREES_PLACEHOLDER}
         pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
         confirm={{
           title: m.settings_gitWorkspace_worktreesLocation_confirm_title(),
@@ -209,7 +214,7 @@
   </section>
 
   <!-- SSH Key Path -->
-  <section class="px-6 py-2">
+  <section>
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
         <label for="sshKeyPath" class="text-sm font-medium text-foreground">
@@ -225,8 +230,8 @@
         mode="file"
         id="sshKeyPath"
         bind:value={sshKeyPath}
-        placeholder={'~/.ssh/id_ed25519' /* i18n-ignore (file path) */}
-        defaultPath={'~/.ssh' /* i18n-ignore (file path) */}
+        placeholder={SSH_KEY_PLACEHOLDER}
+        defaultPath={'~/.ssh'}
         pickerTitle={m.settings_gitWorkspace_sshKeyPath_label()}
         onchange={handleSave}
       />
@@ -234,7 +239,7 @@
   </section>
 
   <!-- Default Shell -->
-  <section class="px-6 py-2">
+  <section>
     <div class="flex items-center justify-between gap-4">
       <label for="defaultShell" class="text-sm font-medium text-foreground shrink-0">
         {m.settings_gitWorkspace_defaultShell_label()}
@@ -257,7 +262,7 @@
   </section>
 
   <!-- Branch Prefix -->
-  <section class="px-6 py-2">
+  <section>
     <div class="flex items-center justify-between gap-4">
       <div class="shrink-0">
         <label for="branchPrefix" class="text-sm font-medium text-foreground">
@@ -289,7 +294,7 @@
   </section>
 
   <!-- Auto options -->
-  <section class="px-6 py-2">
+  <section>
     <div class="flex flex-wrap gap-x-8 gap-y-2">
       <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
         <input
@@ -305,7 +310,7 @@
 
   <!-- Copy-on-Write isolation -->
   {#if showCowToggle}
-    <section class="px-6 py-2">
+    <section>
       <div class="flex items-center gap-2">
         <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
@@ -331,7 +336,7 @@
 
   <!-- Git credentials -->
   {#if gitCredentialSettingSupported}
-    <section class="px-6 py-2">
+    <section>
       <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
         <input
           type="checkbox"

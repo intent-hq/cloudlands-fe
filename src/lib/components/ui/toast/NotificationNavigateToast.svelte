@@ -7,8 +7,8 @@
    * notification-ipc-service.showNavigateToast).
    */
   import Button from '$lib/components/ui/button/button.svelte';
-  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
 
   /**
    * Structured content parts of `notification:show` (mirrors the wire
@@ -58,7 +58,7 @@
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding). -->
-<div class="flex items-center gap-3 max-w-[500px]">
+<div class="flex max-w-125 items-center gap-3">
   <div class="flex-1 min-w-0">
     {#if structured}
       <!-- Line 1: slot square (when resolved) baseline-aligned with the workspace title. -->

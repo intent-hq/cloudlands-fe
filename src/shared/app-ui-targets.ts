@@ -36,14 +36,6 @@ function settingsTarget(target: AppUiTarget): AppUiTarget {
 
 export const APP_UI_TARGETS: AppUiTarget[] = [
   {
-    id: 'home',
-    tab: '',
-    label: 'Home',
-    route: '/',
-    category: 'navigation',
-    description: 'Workspace home and global overview.',
-  },
-  {
     id: 'new-workspace',
     tab: '',
     label: 'New workspace',
@@ -171,7 +163,6 @@ export const APP_UI_TARGETS: AppUiTarget[] = [
     hashAliases: ['workspace-card'],
     highlightSelector: '[data-highlight-id^="workspace-"]',
     label: 'Workspace card',
-    route: '/',
     category: 'workspace',
     description: 'A workspace card on workspace list surfaces.',
     dynamic: true,

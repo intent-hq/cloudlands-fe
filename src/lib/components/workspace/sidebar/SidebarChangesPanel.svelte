@@ -941,7 +941,7 @@
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
       <!-- Loading skeleton with timeline (shown during initial load or workspace switch) -->
-      <div class="flex-1 overflow-y-auto pt-3 pb-20 pl-3 pr-3">
+      <div class="flex-1 overflow-y-auto pb-20 pt-3">
         <div class="relative">
           <div class="absolute left-0 top-2 bottom-2 w-px bg-border/30"></div>
           {#each [0, 1, 2, 3] as i (i)}
@@ -962,7 +962,7 @@
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
         bind:this={changesPanelContainer}
-        class="sidebar-changes-container min-h-full flex flex-col flex-1 overflow-y-auto pl-3 pr-3 outline-none"
+        class="sidebar-changes-container min-h-full flex flex-col flex-1 overflow-y-auto outline-none"
         tabindex="0"
         role="listbox"
         aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}

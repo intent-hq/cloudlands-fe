@@ -1,10 +1,10 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import {
-  selectSpecialists,
-  filterPickableSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    filterPickableSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -19,18 +19,13 @@
     class?: string;
   }
 
-  let {
-    value = null,
-    onchange,
-    size = 'md',
-    class: className,
-  }: Props = $props();
+  let { value = null, onchange, size = 'md', class: className }: Props = $props();
 
   // All available specialists (built-in + custom), filtered by GitHub auth
   const allSpecialists = selectSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
-    filterPickableSpecialists($allSpecialists, $isGitHubAuth$)
+    filterPickableSpecialists($allSpecialists, $isGitHubAuth$),
   );
 
   // Options: blank + visible specialists

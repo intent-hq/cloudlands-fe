@@ -666,22 +666,16 @@
   {/snippet}
 </DropdownMenu>
 
-<!--
-  Portaled to the document body (same pattern as EditRegenerateConfirmDialog)
-  so the fixed-position overlay escapes the title-bar region's containing
-  block — rendered inline it gets clipped inside the title bar.
--->
+<!-- BulkActionConfirmDialog owns its canonical body portal. -->
 {#if stopUnslothDialogOpen}
-  <Portal target="body" zIndex={100}>
-    <BulkActionConfirmDialog
-      bind:open={stopUnslothDialogOpen}
-      title={m.layout_daemonStatus_stopUnsloth_title()}
-      description={stopUnslothDescription}
-      confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
-      variant="destructive"
-      onConfirm={confirmStopUnsloth}
-    />
-  </Portal>
+  <BulkActionConfirmDialog
+    bind:open={stopUnslothDialogOpen}
+    title={m.layout_daemonStatus_stopUnsloth_title()}
+    description={stopUnslothDescription}
+    confirmText={m.layout_daemonStatus_stopUnsloth_confirm_label()}
+    variant="destructive"
+    onConfirm={confirmStopUnsloth}
+  />
 {/if}
 
 <!-- Add-connection modal (portaled to body, same rationale as the stop dialog). -->

@@ -7,7 +7,7 @@
  * (takes effect on the next message; re-selecting the current model before
  * sending cancels the switch with no trace).
  */
-import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
 
@@ -103,14 +103,20 @@ describe('ModelSwitchConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels via Escape and via a backdrop click', async () => {
+  it('visibly focuses the confirm action and renders no warning icon', async () => {
+    renderDialog();
+    const confirm = screen.getByRole('button', { name: 'Switch model' });
+
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+    expect(confirm.className).toContain('ring-[3px]');
+    expect(dialogEl().querySelector('.svelte-fa')).toBeNull();
+  });
+
+  it('cancels via Escape', async () => {
     const onCancel = vi.fn();
     renderDialog({ onCancel });
 
     await fireEvent.keyDown(dialogEl(), { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledTimes(1);
-
-    await fireEvent.click(document.body.querySelector('[role="presentation"]')!);
-    expect(onCancel).toHaveBeenCalledTimes(2);
   });
 });

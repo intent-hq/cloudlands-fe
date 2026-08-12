@@ -12,15 +12,15 @@
    * When running, shows thinking/tool call indicator below.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import type { AvatarState } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import type { AvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { Spinner } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import { classifyTool } from '$lib/components/chat/tool-classifier';
   import {
-  selectAgentAttentionRequest,
-  selectAgentIsWaitingForOtherAgents,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentAttentionRequest,
+    selectAgentIsWaitingForOtherAgents,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AgentAttentionKind } from '$shared/utils/agent-attention';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 
@@ -100,8 +100,8 @@
         date={$attentionRequest$.timestamp}
         compact
         class="text-ui leading-none {$attentionRequest$.kind === 'blocker'
-          ? 'text-red-500'
-          : 'text-amber-500'}"
+          ? 'text-destructive'
+          : 'text-warning'}"
       />
     </div>
   {/if}

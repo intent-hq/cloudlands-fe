@@ -27,7 +27,12 @@ import {
   bulkUpdateWorkspaceEntities,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { setAllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { WorkspaceStatus, PullRequestStatus, type Workspace, type WorkspaceId } from '$shared/types';
+import {
+  WorkspaceStatus,
+  PullRequestStatus,
+  type Workspace,
+  type WorkspaceId,
+} from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
@@ -60,11 +65,7 @@ vi.mock('$features/agent/services/active-streams-tracker', () => {
   };
 });
 
-function makeWorkspace(
-  id: string,
-  title: string,
-  overrides?: Partial<Workspace>,
-): Workspace {
+function makeWorkspace(id: string, title: string, overrides?: Partial<Workspace>): Workspace {
   return {
     id: id as WorkspaceId,
     title,
@@ -83,14 +84,19 @@ function makeWorkspace(
 }
 
 function getGroupHeaders(): string[] {
-  return screen.queryAllByRole('heading', { level: 3 }).map((el) => el.textContent ?? '');
+  return screen.queryAllByRole('heading', { level: 4 }).map((el) => el.textContent ?? '');
+}
+
+function getRedesignedGroupHeaders(): string[] {
+  return getGroupHeaders();
 }
 
 describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
   let streamingIdsMap: Map<string, string[]>;
 
   beforeEach(async () => {
-    const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
+    const { activeStreamsTracker } =
+      await import('$features/agent/services/active-streams-tracker');
     streamingIdsMap = (activeStreamsTracker as any).__getStreamingIdsMap();
     streamingIdsMap.clear();
   });
@@ -149,7 +155,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      const headers = getGroupHeaders();
+      const headers = getRedesignedGroupHeaders();
       expect(headers).toContain('Idle');
       expect(headers).not.toContain('In Progress');
     });
@@ -197,7 +203,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      const headers = getGroupHeaders();
+      const headers = getRedesignedGroupHeaders();
       expect(headers).toContain('Needs Attention');
       expect(headers).not.toContain('No Code Changes');
     });
@@ -231,7 +237,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      const headers = getGroupHeaders();
+      const headers = getRedesignedGroupHeaders();
       expect(headers).toEqual(['Needs Attention', 'Idle', 'In Progress']);
     });
   });
@@ -345,9 +351,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     appStore.dispatch(
-      bulkUpdateWorkspaceEntities([
-        updateWorkspaceEntity('ws-be-live', { displayStatus: 'idle' }),
-      ]),
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-be-live', { displayStatus: 'idle' })]),
     );
 
     await waitFor(() => {
@@ -361,7 +365,8 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     // The tracker still drives the running-dot affordance, but a stream
     // starting must not move the workspace out of its BE-sent group — only a
     // workspace:displayStatus-changed entity merge regroups.
-    const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
+    const { activeStreamsTracker } =
+      await import('$features/agent/services/active-streams-tracker');
     const notify = (activeStreamsTracker as any).__notify as () => void;
     const ws = makeWorkspace('ws-tracker-live', 'Tracker-driven badge', {
       displayStatus: 'pr_merged',
@@ -380,7 +385,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
     });
 
     await waitFor(() => {
-      expect(getGroupHeaders()).toContain('PR Merged');
+      expect(getRedesignedGroupHeaders()).toContain('PR Merged');
     });
 
     // A stream starts: the tracker refreshes its state and notifies.
@@ -394,7 +399,7 @@ describe('AllWorkspacesCard BE displayStatus (Status view)', () => {
       const card = screen.getByTestId('workspace-card');
       expect(card.getAttribute('data-running')).toBe('true');
     });
-    const headers = getGroupHeaders();
+    const headers = getRedesignedGroupHeaders();
     expect(headers).toContain('PR Merged');
     expect(headers).not.toContain('In Progress');
   });

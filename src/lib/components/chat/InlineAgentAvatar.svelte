@@ -4,7 +4,7 @@
    * A small inline avatar for an agent, used in the collapsed AgentSubscriptions view.
    * Subscribes to agent updates to show real-time state.
    */
-  import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
 
   import {
     selectAgentIsResponding,
@@ -15,7 +15,7 @@
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
+  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';

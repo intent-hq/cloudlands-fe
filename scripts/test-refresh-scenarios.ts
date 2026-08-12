@@ -35,16 +35,25 @@ class RefreshScenarioTester {
 
     try {
       // Check Redux agent-session slice for proper state preservation
-      const storeFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+      const storeFile = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+      );
       const storeContent = fs.readFileSync(storeFile, 'utf-8');
 
       // Check if messages are preserved when session updates
-      if (!storeContent.includes('normalizeSortPruneMessages') || !storeContent.includes('deduplicateAgentMessages')) {
+      if (
+        !storeContent.includes('normalizeSortPruneMessages') ||
+        !storeContent.includes('deduplicateAgentMessages')
+      ) {
         issues.push('Messages not preserved when updating session during streaming');
       }
 
       // Check stream saga for proper message handling
-      const sessionFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts');
+      const sessionFile = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
+      );
       const sessionContent = fs.readFileSync(sessionFile, 'utf-8');
 
       // Check if updateMessage creates new objects for reactivity
@@ -53,7 +62,10 @@ class RefreshScenarioTester {
       }
 
       // Check if messages are merged properly on getSession
-      if (!sessionContent.includes('replaceMessages(') || !sessionContent.includes('deduplicateRecoverySession')) {
+      if (
+        !sessionContent.includes('replaceMessages(') ||
+        !sessionContent.includes('deduplicateRecoverySession')
+      ) {
         issues.push('getSession not merging messages properly');
       }
 
@@ -81,7 +93,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServiceFile = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check if textBuffer is preserved
@@ -132,7 +147,10 @@ class RefreshScenarioTester {
       }
 
       // Check if streaming state is read from Redux agent-session selectors
-      if (!content.includes('selectAgentSessionIsStreaming') || !content.includes('agentSessionIsStreaming')) {
+      if (
+        !content.includes('selectAgentSessionIsStreaming') ||
+        !content.includes('agentSessionIsStreaming')
+      ) {
         issues.push('Streaming state not loaded from agent-session selectors on mount');
       }
 
@@ -165,7 +183,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServiceFile = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check if tool blocks are preserved
@@ -179,7 +200,10 @@ class RefreshScenarioTester {
       }
 
       // Check StreamingMessageContent for tool call rendering
-      const streamingFile = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+      const streamingFile = path.join(
+        __dirname,
+        '../src/lib/components/chat/StreamingMessageContent.svelte',
+      );
       const streamingContent = fs.readFileSync(streamingFile, 'utf-8');
 
       if (!streamingContent.includes('ToolCall')) {
@@ -210,7 +234,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const unifiedStoreFile = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+      const unifiedStoreFile = path.join(
+        __dirname,
+        '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+      );
       const content = fs.readFileSync(unifiedStoreFile, 'utf-8');
 
       // Check for idempotent operations
@@ -219,7 +246,10 @@ class RefreshScenarioTester {
       }
 
       // Check for proper state merging
-      if (!content.includes('normalizeSortPruneMessages') || !content.includes('updateSessionFields')) {
+      if (
+        !content.includes('normalizeSortPruneMessages') ||
+        !content.includes('updateSessionFields')
+      ) {
         issues.push('State not properly merged - may lose data on multiple refreshes');
       }
 
@@ -247,7 +277,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const markdownViewerFile = path.join(__dirname, '../src/lib/components/markdown/MarkdownViewer.svelte');
+      const markdownViewerFile = path.join(
+        __dirname,
+        '../src/lib/components/markdown/MarkdownViewer.svelte',
+      );
       const content = fs.readFileSync(markdownViewerFile, 'utf-8');
 
       // Check for throttling
@@ -284,7 +317,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const pageFile = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
+      const pageFile = path.join(
+        __dirname,
+        '../src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+      );
       const content = fs.readFileSync(pageFile, 'utf-8');
 
       // Check for proper cleanup on unmount
@@ -325,7 +361,10 @@ class RefreshScenarioTester {
       const content = fs.readFileSync(sessionStoreFile, 'utf-8');
 
       // Check if browser compatibility subscribers are driven by Redux updates
-      if (!content.includes('appStore.getReadableState().subscribe') || !content.includes('selectAgentSession.select')) {
+      if (
+        !content.includes('appStore.getReadableState().subscribe') ||
+        !content.includes('selectAgentSession.select')
+      ) {
         issues.push('Browser subscriber bridge not using Redux updates for reactivity');
       }
 
@@ -358,7 +397,10 @@ class RefreshScenarioTester {
     const issues: string[] = [];
 
     try {
-      const agentServiceFile = path.join(__dirname, '../src/features/agent/agent-stream-lifecycle.ts');
+      const agentServiceFile = path.join(
+        __dirname,
+        '../src/features/agent/agent-stream-lifecycle.ts',
+      );
       const content = fs.readFileSync(agentServiceFile, 'utf-8');
 
       // Check for session/stream ID isolation
@@ -428,19 +470,19 @@ class RefreshScenarioTester {
    */
   generateReport(): void {
     console.log('\n🔄 Refresh Scenario Test Results\n');
-    console.log('=' .repeat(60));
+    console.log('='.repeat(60));
 
     let totalPassed = 0;
     let totalFailed = 0;
     const criticalIssues: string[] = [];
 
-    this.results.forEach(result => {
+    this.results.forEach((result) => {
       const status = result.passed ? '✅' : '❌';
       console.log(`\n${status} ${result.scenario}`);
 
       if (!result.passed) {
         totalFailed++;
-        result.issues.forEach(issue => {
+        result.issues.forEach((issue) => {
           console.log(`   └─ ${issue}`);
           if (issue.includes('lost') || issue.includes('leak')) {
             criticalIssues.push(`${result.scenario}: ${issue}`);
@@ -452,7 +494,7 @@ class RefreshScenarioTester {
       }
     });
 
-    console.log(`\n${  '='.repeat(60)}`);
+    console.log(`\n${'='.repeat(60)}`);
     console.log('\n📊 Summary:');
     console.log(`   Total Scenarios: ${this.results.length}`);
     console.log(`   Passed: ${totalPassed}`);
@@ -491,14 +533,14 @@ class RefreshScenarioTester {
 
     this.generateReport();
 
-    const failedCount = this.results.filter(r => !r.passed).length;
+    const failedCount = this.results.filter((r) => !r.passed).length;
     process.exit(failedCount > 0 ? 1 : 0);
   }
 }
 
 // Run tests
 const tester = new RefreshScenarioTester();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   console.error('Refresh scenario test runner failed:', error);
   process.exit(1);
 });

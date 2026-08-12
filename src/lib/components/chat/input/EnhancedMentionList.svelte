@@ -10,54 +10,54 @@
   import { getIconForType } from '$lib/services/mentions/icon-map';
   import { faNote } from '$lib/icons/faNote';
   import Fa from 'svelte-fa';
-  import AugieAvatarWithState from '$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarStateFromStore } from '$lib/components/ui/auggie-avatar/avatar-state';
+  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import { getAvatarStateFromStore } from '$features/agent/components/auggie-avatar/avatar-state';
   import { m } from '$shared/paraglide/messages.js';
   import {
-  faFile,
-  faFileCode,
-  faFileAlt,
-  faFolder,
-  faFolderOpen,
-  faListCheck,
-  faSquareCheck,
-  faShield,
-  faTerminal,
-  faExternalLinkAlt,
-  faGlobe,
-  faPalette,
-  faDatabase,
-  faCog,
-  faLock,
-  faCodeBranch,
-  faBox,
-  faWrench,
-  faCube,
-  faImage,
-  faFlask,
-  faBookOpen,
-  faCheckSquare,
-  faUsers,
-  faLightbulb,
-  faPenFancy,
-  faBug,
-  faMagicWandSparkles,
-  faChartLine,
-  faSync,
-  faShieldAlt,
-  faAlignLeft,
-  faPlay,
-  faHammer,
-  faRocket,
-  faCopy,
-  faChevronRight,
-  faRobot,
-  faBrain,
-  faUserTie,
-  faUserGraduate,
-  faChalkboardTeacher,
-  faBolt,
-} from '@fortawesome/free-solid-svg-icons';
+    faFile,
+    faFileCode,
+    faFileAlt,
+    faFolder,
+    faFolderOpen,
+    faListCheck,
+    faSquareCheck,
+    faShield,
+    faTerminal,
+    faExternalLinkAlt,
+    faGlobe,
+    faPalette,
+    faDatabase,
+    faCog,
+    faLock,
+    faCodeBranch,
+    faBox,
+    faWrench,
+    faCube,
+    faImage,
+    faFlask,
+    faBookOpen,
+    faCheckSquare,
+    faUsers,
+    faLightbulb,
+    faPenFancy,
+    faBug,
+    faMagicWandSparkles,
+    faChartLine,
+    faSync,
+    faShieldAlt,
+    faAlignLeft,
+    faPlay,
+    faHammer,
+    faRocket,
+    faCopy,
+    faChevronRight,
+    faRobot,
+    faBrain,
+    faUserTie,
+    faUserGraduate,
+    faChalkboardTeacher,
+    faBolt,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
@@ -689,7 +689,12 @@
   }
 
   @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 </style>

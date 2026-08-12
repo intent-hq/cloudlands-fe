@@ -29,9 +29,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
 });
 
@@ -64,7 +63,6 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
 }));
 
-
 vi.mock('$features/setup-scripts', () => ({
   SETUP_SCRIPT_TEMPLATES: [],
   getTemplateContent: vi.fn(() => ''),
@@ -87,7 +85,14 @@ vi.mock('$lib/config/debug', () => ({
 }));
 
 vi.mock('$lib/client', () => ({
-  appClient: { git: { pull: vi.fn(async () => ({ success: true })) } },
+  appClient: {
+    git: { pull: vi.fn(async () => ({ success: true })) },
+    drafts: {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+    },
+  },
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
@@ -226,5 +231,52 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
 
     expect(sessionStorage.getItem('compact-workspace-initializer-agent-id')).toBeNull();
+  });
+
+  it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repositoryPath: '/tmp/test-repo',
+        baseRef: 'main',
+        initialAgent: expect.objectContaining({ prompt: 'Build the thing' }),
+      }),
+    );
+
+    const dispatched = mocks.dispatch.mock.calls.map(([action]) => action);
+    const hydrateIndex = dispatched.findIndex(
+      (action) => action.type === 'workspaceNavigation/hydrateWorkspaceNavigation',
+    );
+    const openIndex = dispatched.findIndex((action) => action.type === 'tabState/openWorkspaceTab');
+    expect(dispatched[hydrateIndex]?.payload).toEqual([
+      'ws-created',
+      expect.objectContaining({
+        mainPanel: { type: 'empty' },
+        drawer: { open: true, type: 'agent', itemId: 'agent-created' },
+      }),
+    ]);
+    expect(dispatched[openIndex]?.payload).toEqual(['ws-created']);
+    expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 });

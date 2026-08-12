@@ -1,26 +1,24 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
-  import {
-  tv,
-  type VariantProps,
-} from 'tailwind-variants';
+  import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
+  import type { Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { getContext } from 'svelte';
-  import Button from '../button/button.svelte';
+  import { tv, type VariantProps } from 'tailwind-variants';
 
   const toggleVariants = tv({
-    // i18n-ignore (CSS class list, not UI text)
-    base: 'inline-flex items-center justify-center rounded-sm text-sm font-medium ring-offset-background transition-colors hover:bg-muted! hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-background! data-[state=on]:shadow-xs text-muted-foreground data-[state=on]:text-muted-foreground',
+    base: 'type-body inline-flex cursor-pointer items-center justify-center rounded-(--radius-small) border border-transparent bg-transparent font-medium text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-[var(--motion-fast)] hover:border-input hover:bg-accent hover:text-accent-foreground focus-visible:z-10 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:border-primary/60 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[state=on]:shadow-(--elevation-raised) motion-reduce:transition-none',
     variants: {
       variant: {
-        default: 'bg-transparent',
-        outline: 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground',
+        default: '',
+        outline: 'bg-transparent',
+        flat: 'border-transparent hover:border-transparent data-[state=on]:border-transparent data-[state=on]:shadow-none',
       },
       size: {
-        default: 'h-9 w-9',
-        xs: 'h-5 w-5 text-xs',
-        sm: 'h-7 w-7 text-xs',
-        lg: 'h-10 w-10',
+        default: 'h-(--control-height-medium) min-w-8 px-2',
+        xs: 'h-(--control-height-small) min-w-7 px-1.5',
+        sm: 'h-(--control-height-small) min-w-7 px-1.5',
+        lg: 'h-(--control-height-large) min-w-9 px-2.5',
       },
     },
     defaultVariants: {
@@ -36,14 +34,14 @@
     tooltip?: string;
     disabled?: boolean;
     class?: string;
-    children?: any;
+    children?: Snippet;
   }
 
   let {
     value,
     disabled = false,
-    variant = 'default',
-    size = 'default',
+    variant = undefined,
+    size = undefined,
     tooltip = undefined,
     class: className = '',
     onclick,
@@ -51,41 +49,22 @@
     ...restProps
   }: Props = $props();
 
-  // Get context from parent ToggleGroup
   const context = getContext<{
-    value: string;
-    type: string;
-    disabled: boolean;
-    size: string;
-    setValue: (value: string) => void;
-  }>('toggle-group');
+    size?: ToggleVariant['size'];
+    variant?: ToggleVariant['variant'];
+  }>('toggle-group-style');
 
-  // Use context size if not explicitly set
-  const actualSize = $derived(size || context?.size || 'default');
-
-  // Check if this item is selected
-  const isSelected = $derived(context?.value === value);
-
-  // Check if disabled (either from prop or context)
-  const isDisabled = $derived(disabled || context?.disabled);
-
-  function handleClick(e: MouseEvent) {
-    if (!isDisabled && context) {
-      context.setValue(value);
-    }
-    onclick?.(e as any);
-  }
+  const actualSize = $derived(size ?? context?.size ?? 'default');
+  const actualVariant = $derived(variant ?? context?.variant ?? 'default');
 </script>
 
-<Button
-  variant="ghost-light"
-  data-state={isSelected ? 'on' : 'off'}
-  data-value={value}
-  {tooltip}
-  disabled={isDisabled}
-  onclick={handleClick}
-  class={cn(toggleVariants({ variant, size: actualSize as any }), className)}
+<ToggleGroupPrimitive.Item
+  {value}
+  title={tooltip}
+  {disabled}
+  {onclick}
+  class={cn(toggleVariants({ variant: actualVariant, size: actualSize }), className)}
   {...restProps as any}
 >
   {@render children?.()}
-</Button>
+</ToggleGroupPrimitive.Item>

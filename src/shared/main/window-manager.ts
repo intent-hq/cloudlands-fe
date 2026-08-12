@@ -1,18 +1,9 @@
-import {
-  BrowserWindow,
-  dialog,
-  screen,
-} from 'electron';
-import {
-  join,
-  dirname,
-} from 'path';
-import {
-  pathToFileURL,
-  fileURLToPath,
-} from 'url';
+import { BrowserWindow, dialog, nativeTheme, screen } from 'electron';
+import { join, dirname } from 'path';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { ConfigManager } from '../services/config-manager';
 import { Logger } from '../../lib/utils/logger';
+import { getWindowAppearanceOptions } from './window-appearance';
 
 // ESM polyfill for __dirname (not available in ES modules)
 const __filename = fileURLToPath(import.meta.url);
@@ -52,7 +43,7 @@ export class WindowManager {
       },
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       frame: process.platform !== 'darwin',
-      backgroundColor: '#1e1e1e',
+      ...getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors),
       show: false,
       icon: this.getAppIcon(),
     });
@@ -157,6 +148,7 @@ export class WindowManager {
 
     const window = new BrowserWindow({
       ...options,
+      ...getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

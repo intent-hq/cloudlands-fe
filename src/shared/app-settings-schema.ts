@@ -4,14 +4,7 @@ import { SYSTEM_LANGUAGE_PREFERENCE } from './i18n/locale-matcher';
 import { GITHUB_LINK_DEFAULT_ACTIONS } from './utils/link-helpers';
 
 export type AppSettingValueType =
-  | 'string'
-  | 'boolean'
-  | 'number'
-  | 'object'
-  | 'array'
-  | 'enum'
-  | 'status'
-  | 'readonly';
+  'string' | 'boolean' | 'number' | 'object' | 'array' | 'enum' | 'status' | 'readonly';
 
 export type AppSettingSource =
   /**
@@ -502,7 +495,7 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Font style for notes.',
     category: 'fonts',
     type: 'enum',
-    enumValues: ['sans', 'monospace'],
+    enumValues: ['sans', 'serif', 'monospace'],
     source: 'local-storage',
     storageKey: 'note-font-settings',
     valuePath: 'fontStyle',

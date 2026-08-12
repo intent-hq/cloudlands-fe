@@ -8,18 +8,8 @@
  * With the escape-layer stack, the first Escape closes only the lightbox
  * (topmost layer) and a second Escape closes the modal.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
 
@@ -29,6 +19,14 @@ vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', async ()
 }));
 
 describe('NewSpaceModal + ImageLightbox Escape ordering', () => {
+  it('exposes a named modal dialog to assistive technology', async () => {
+    render(NewSpaceModal, { props: { open: true } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBeTruthy();
+    });
+  });
+
   it('first Escape closes only the lightbox, second Escape closes the modal', async () => {
     const modalOnClose = vi.fn();
     const lightboxOnClose = vi.fn();

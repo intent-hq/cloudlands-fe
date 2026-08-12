@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   dismissMock,
@@ -37,7 +31,8 @@ vi.mock('$lib/components/ui/toast/ErrorToast.svelte', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => appStoreFactoryMock()?.getState?.() ?? {},
@@ -119,8 +114,8 @@ describe('showErrorToast', () => {
   // Content-only component — the severity tint rides the wrapper class.
   it.each([
     ['error', '!border-destructive/50'],
-    ['warning', '!border-amber-500/50'],
-    ['info', '!border-blue-500/50'],
+    ['warning', '!border-warning/50'],
+    ['info', '!border-info/50'],
   ])('passes the %s severity wrapper border class', (type, expectedClass) => {
     showErrorToast({
       id: `error-${type}`,

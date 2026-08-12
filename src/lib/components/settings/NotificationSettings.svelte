@@ -10,21 +10,21 @@
    */
 
   import {
-  selectNotificationEnabled,
-  selectSoundEnabled,
-  selectSoundOnlyWhenUnfocused,
-  selectNotificationVolume,
-} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+    selectNotificationEnabled,
+    selectSoundEnabled,
+    selectSoundOnlyWhenUnfocused,
+    selectNotificationVolume,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
-  setNotificationEnabled,
-  setSoundEnabled,
-  setSoundOnlyWhenUnfocused,
-  setVolume,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+    setNotificationEnabled,
+    setSoundEnabled,
+    setSoundOnlyWhenUnfocused,
+    setVolume,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { Toggle } from '$lib/components/ui/toggle';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
@@ -63,7 +63,7 @@
   );
 </script>
 
-<div class="grid grid-cols-[repeat(auto-fit,_minmax(220px,_1fr))] gap-x-10 gap-y-6">
+<div class="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
   <!-- Desktop notifications -->
   <div class="flex justify-between">
     <div>
@@ -124,6 +124,7 @@
       <Button
         variant="ghost-light"
         size="icon-xs"
+        aria-label={m.settings_notifications_testSound_ariaLabel()}
         onclick={handleTestSound}
         disabled={testSoundLoading}
       >

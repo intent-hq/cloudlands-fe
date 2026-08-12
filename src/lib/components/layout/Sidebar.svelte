@@ -41,43 +41,6 @@
     <!-- {/if} -->
   </div>
 
-  <!-- Workspaces Section -->
-  <!-- <div class="py-7 overflow-hidden">
-      {#if !isCollapsed}
-        <div class="pl-5 mb-1.5 flex justify-between items-center">
-          <a href="/">
-            <Header size={4}>Spaces</Header>
-          </a>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            onclick={onCreateWorkspace}
-            aria-label="Create new space"
-          >
-            <Fa icon={faPlus} size="xs" />
-          </Button>
-        </div>
-      {:else}
-        <div class="px-2 mb-1.5 flex justify-center">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={onCreateWorkspace}
-            aria-label="Create new space"
-            title="Create new space"
-          >
-            <Fa icon={faPlus} size="xs" />
-          </Button>
-        </div>
-      {/if}
-
-      <WorkspaceLinks
-        {workspaces}
-        collapsed={isCollapsed}
-        {onCreateWorkspaceForRepo}
-      />
-    </div> -->
-
   <!-- Threads Section -->
   <!-- <AgentsList
       {agents}

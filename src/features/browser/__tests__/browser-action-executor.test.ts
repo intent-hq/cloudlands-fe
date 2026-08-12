@@ -9,13 +9,7 @@
  * - Action sequence validation
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 
 // Mock the CDP service before importing the executor
@@ -37,6 +31,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
 
 vi.mock('../main/browser-capture-service', () => ({
   browserCapture: {
+    snapshot: vi.fn(),
     startSession: vi.fn(),
     endSession: vi.fn(),
     startCapture: vi.fn(),
@@ -49,6 +44,7 @@ vi.mock('../main/browser-capture-service', () => ({
 }));
 
 import { executeActions } from '../main/browser-action-executor';
+import { browserCapture } from '../main/browser-capture-service';
 
 describe('browser-action-executor', () => {
   const mockOpenTabFn = vi.fn().mockReturnValue({ success: true, message: 'opened' });
@@ -189,15 +185,75 @@ describe('browser-action-executor', () => {
     it('should execute multiple valid actions sequentially', async () => {
       const result = await executeActions(
         {
-          actions: [
-            { action: 'openTab', url: 'http://localhost:3000' },
-            { action: 'listTabs' },
-          ],
+          actions: [{ action: 'openTab', url: 'http://localhost:3000' }, { action: 'listTabs' }],
         },
         mockOpenTabFn,
       );
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
+    });
+  });
+
+  describe('capture workspace boundaries', () => {
+    it('routes protocol-shaped snapshot requests through the trusted workspace context', async () => {
+      vi.mocked(browserCapture.snapshot).mockResolvedValueOnce({
+        captureId: 'example.test/snap',
+      } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'snapshot', name: 'snap' }] },
+        undefined,
+        'agent-1',
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(browserCapture.snapshot).toHaveBeenCalledWith({
+        workspaceId: 'workspace-a',
+        tabId: undefined,
+        name: 'snap',
+        reload: undefined,
+        waitFor: undefined,
+      });
+    });
+
+    it('rejects action-level workspace overrides from protocol-shaped requests', async () => {
+      const result = await executeActions(
+        {
+          actions: [{ action: 'startSession', workspaceId: 'workspace-b', name: 'foreign' }],
+        },
+        undefined,
+        'agent-1',
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Unrecognized key');
+      expect(browserCapture.startSession).not.toHaveBeenCalled();
+    });
+
+    it('resolves getSummary by capture ID within the trusted workspace', async () => {
+      vi.mocked(browserCapture.getSummary).mockResolvedValueOnce(null);
+
+      const result = await executeActions(
+        { actions: [{ action: 'getSummary', captureId: 'example.test/snap' }] },
+        undefined,
+        'agent-1',
+        'workspace-a',
+      );
+
+      expect(result.success).toBe(true);
+      expect(browserCapture.getSummary).toHaveBeenCalledWith('workspace-a', 'example.test/snap');
+    });
+
+    it('requires trusted workspace context for session operations', async () => {
+      const result = await executeActions({
+        actions: [{ action: 'startCapture', sessionId: 'session-1' }],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('requires workspace context');
+      expect(browserCapture.startCapture).not.toHaveBeenCalled();
     });
   });
 
@@ -283,7 +339,10 @@ describe('browser-action-executor', () => {
         actions: [{ action: 'navigate', url: 'http://localhost:8080/page' }],
       });
       expect(result.success).toBe(true);
-      expect(result.results[0]?.result).toEqual({ tabId: 'tab-1', url: 'http://localhost:8080/page' });
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-1',
+        url: 'http://localhost:8080/page',
+      });
     });
   });
 });
@@ -331,4 +390,3 @@ describe('BROWSER_PROTOCOLS shared constants', () => {
     expect(BROWSER_PROTOCOLS.EXTERNAL).not.toContain('file:');
   });
 });
-

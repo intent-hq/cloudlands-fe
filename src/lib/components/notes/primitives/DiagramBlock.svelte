@@ -4,15 +4,15 @@
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
   import Fa from 'svelte-fa';
   import {
-  faChevronDown,
-  faImage,
-  faCode,
-  faCopy,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faChevronDown,
+    faImage,
+    faCode,
+    faCopy,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
@@ -20,10 +20,11 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
-  openWorkspaceFile,
-  openWorkspaceNote,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceFile,
+    openWorkspaceNote,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
 
   const activeWorkspace = selectActiveWorkspace();
@@ -73,13 +74,9 @@
     if (!wsId) return;
     const { type, target } = binding;
     if (type === 'file' && target) {
-      appStore.dispatch(
-        openWorkspaceFile(wsId, target, { openInAdjacentPanel, sourcePanelId }),
-      );
+      appStore.dispatch(openWorkspaceFile(wsId, target, { openInAdjacentPanel, sourcePanelId }));
     } else if (type === 'note' && target) {
-      appStore.dispatch(
-        openWorkspaceNote(wsId, target, { openInAdjacentPanel, sourcePanelId }),
-      );
+      appStore.dispatch(openWorkspaceNote(wsId, target, { openInAdjacentPanel, sourcePanelId }));
     }
   }
 
@@ -411,7 +408,6 @@
     toast.success(m.notes_diagramBlock_pngCopied_label());
     setTimeout(() => (copiedPng = false), 2000);
   }
-
 </script>
 
 <NodeViewWrapper>
@@ -425,11 +421,14 @@
           <button
             type="button"
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
-            onclick={() => {
+            onclick={(event) => {
               const agentWsId = $activeWorkspace?.id;
               if (agentWsId) {
                 appStore.dispatch(
-                  openAgentTabRequested(agentWsId, { agentId: linkedAgentId }),
+                  openAgentTabRequested(agentWsId, {
+                    agentId: linkedAgentId,
+                    ...getNavigationContext(event),
+                  }),
                 );
               }
             }}
@@ -446,9 +445,7 @@
           <Fa
             icon={faChevronDown}
             size="sm"
-            class="flex-none text-ghost transition-transform {expanded
-              ? ''
-              : '-rotate-90'}"
+            class="flex-none text-ghost transition-transform {expanded ? '' : '-rotate-90'}"
           />
           <span class="text-sm truncate">{displayName}</span>
           {#if primitive.states && primitive.states.length > 0}
@@ -461,7 +458,11 @@
         <!-- Copy dropdown -->
         <DropdownMenu align="end">
           {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Tooltip content={m.notes_diagramBlock_copyDiagram_tooltip()} side="top" delayDuration={300}>
+            <Tooltip
+              content={m.notes_diagramBlock_copyDiagram_tooltip()}
+              side="top"
+              delayDuration={300}
+            >
               <button
                 type="button"
                 class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"

@@ -1,31 +1,24 @@
 <script lang="ts">
-  import {
-  faPlus,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
 
   import { Skeleton } from '../ui/skeleton';
   import VSCodeScrollablePanel from '../ui/VSCodeScrollablePanel.svelte';
-  import {
-  ListContainer,
-  ListItem,
-} from '../ui/list';
+  import { ListContainer, ListEmpty, ListItem } from '../ui/list';
 
-  import {
-  initializeNotes,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { createNote as createNoteWrite } from '$features/notes/notes-write-service';
   import {
-  selectNotesLoading,
-  selectNotesError,
-  selectAllNotes,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+    selectNotesLoading,
+    selectNotesError,
+    selectAllNotes,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
-  sortNotes,
-  getNoteIcon,
-  getNoteTitle,
-  getNoteDepth,
-  parseTaskStats,
-} from '../workspace/sidebar/utils';
+    sortNotes,
+    getNoteIcon,
+    getNoteTitle,
+    getNoteDepth,
+    parseTaskStats,
+  } from '../workspace/sidebar/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -50,10 +43,7 @@
     if (workspaceId && lastInitializedWorkspaceId !== workspaceId) {
       lastInitializedWorkspaceId = workspaceId;
       // Initialize with the current selected note to preserve selection
-      appStore.dispatch(initializeNotes(
-        workspaceId,
-        selectedNoteId ? selectedNoteId : undefined,
-      ));
+      appStore.dispatch(initializeNotes(workspaceId, selectedNoteId ? selectedNoteId : undefined));
     }
   });
 
@@ -106,7 +96,7 @@
         {$error$}
       </div>
     {:else if filteredNotes.length === 0}
-      <!-- <ListEmpty message="No notes yet" icon={faStickyNote} /> -->
+      <ListEmpty message={m.notes_panel_empty_label()} />
     {:else}
       <ListContainer spacing="compact">
         <!-- Show all notes (including spec note with fixed ID "spec") -->

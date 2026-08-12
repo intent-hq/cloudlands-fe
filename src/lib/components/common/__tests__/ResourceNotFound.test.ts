@@ -13,7 +13,7 @@ describe('ResourceNotFound', () => {
         kind: 'not_found' as const,
         resourceLabel: 'Workspace',
         resourceId: 'ws-missing-1',
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -28,7 +28,7 @@ describe('ResourceNotFound', () => {
         resourceLabel: 'Workspace',
         resourceId: 'ws-broken-1',
         detail: 'Failed to open space: Backend exploded',
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -42,7 +42,7 @@ describe('ResourceNotFound', () => {
       props: {
         kind: 'not_found' as const,
         resourceLabel: 'Agent',
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -55,7 +55,7 @@ describe('ResourceNotFound', () => {
       props: {
         kind: 'error' as const,
         resourceLabel: 'Note',
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -67,7 +67,7 @@ describe('ResourceNotFound', () => {
       props: {
         kind: 'not_found' as const,
         resourceLabel: 'Workspace',
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -87,7 +87,7 @@ describe('ResourceNotFound', () => {
         kind: 'not_found' as const,
         resourceLabel: 'Workspace',
         headingLevel: 2 as const,
-        onGoHome: vi.fn(),
+        onNavigateAway: vi.fn(),
       },
     });
 
@@ -96,20 +96,20 @@ describe('ResourceNotFound', () => {
     );
   });
 
-  it('invokes the onGoHome callback when the Home button is clicked', async () => {
-    const onGoHome = vi.fn();
+  it('invokes the navigation callback when the action is clicked', async () => {
+    const onNavigateAway = vi.fn();
     render(ResourceNotFound, {
       props: {
         kind: 'not_found' as const,
         resourceLabel: 'Workspace',
         resourceId: 'ws-missing-2',
-        onGoHome,
+        onNavigateAway,
       },
     });
 
-    const button = screen.getByRole('button', { name: 'Go to Home' });
+    const button = screen.getByRole('button', { name: 'All workspaces' });
     await fireEvent.click(button);
 
-    expect(onGoHome).toHaveBeenCalledTimes(1);
+    expect(onNavigateAway).toHaveBeenCalledTimes(1);
   });
 });

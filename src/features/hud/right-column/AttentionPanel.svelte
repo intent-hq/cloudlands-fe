@@ -73,7 +73,8 @@
 
   let listStyle = $derived.by(() => {
     if (reducedMotion.current || slide.phase === 'idle') return '';
-    if (slide.phase === 'prep') return `transform: translateY(-${SLIDE_OFFSET_PX}px); transition: none;`;
+    if (slide.phase === 'prep')
+      return `transform: translateY(-${SLIDE_OFFSET_PX}px); transition: none;`;
     return 'transform: translateY(0); transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);';
   });
 
@@ -91,9 +92,7 @@
   data-testid="hud-attention-panel"
 >
   <header class="hud-attention-header">
-    <span
-      class="hud-attention-blink"
-      class:hud-attention-blink-static={reducedMotion.current}
+    <span class="hud-attention-blink" class:hud-attention-blink-static={reducedMotion.current}
     ></span>
     <span class="hud-attention-title">{m.hud_attention_title()}</span>
     <span class="hud-attention-rule"></span>
@@ -214,7 +213,7 @@
   .hud-attention-src {
     flex: none;
     border: 1px solid hsl(var(--border));
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     padding: 0 5px;
     font-size: 8.5px;
     letter-spacing: 0.08em;
@@ -244,14 +243,14 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     flex: none;
   }
   .hud-attention-msg {
     font:
       500 10.5px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

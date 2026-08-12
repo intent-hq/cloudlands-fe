@@ -1,0 +1,47 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  defaultCatalogPreferences,
+  readCatalogPreferences,
+  writeCatalogPreferences,
+} from './catalog-preferences';
+
+describe('catalog preferences', () => {
+  it('validates partial and corrupt stored preferences', () => {
+    const storage = {
+      getItem: vi.fn(() =>
+        JSON.stringify({ theme: 'dark', colorTheme: 'invalid', reducedMotion: true }),
+      ),
+    } as unknown as Storage;
+    expect(readCatalogPreferences(storage)).toEqual({
+      theme: 'dark',
+      colorTheme: defaultCatalogPreferences.colorTheme,
+      reducedMotion: true,
+    });
+
+    vi.mocked(storage.getItem).mockReturnValue('{');
+    expect(readCatalogPreferences(storage)).toEqual(defaultCatalogPreferences);
+  });
+
+  it('writes one stable preference payload and tolerates unavailable storage', () => {
+    const setItem = vi.fn();
+    const storage = { setItem } as unknown as Storage;
+    const value = {
+      theme: 'light',
+      colorTheme: 'dracula',
+      reducedMotion: true,
+    } as const;
+    writeCatalogPreferences(storage, value);
+    expect(setItem).toHaveBeenCalledWith('component-catalog-preferences', JSON.stringify(value));
+
+    expect(() =>
+      writeCatalogPreferences(
+        {
+          setItem: () => {
+            throw new Error('unavailable');
+          },
+        } as unknown as Storage,
+        value,
+      ),
+    ).not.toThrow();
+  });
+});

@@ -1,24 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Workspace } from '$shared/types';
-import {
-  PullRequestStatus,
-  WorkspaceStatusEnum,
-} from '$shared/types';
+import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -70,7 +57,8 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -114,9 +102,8 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   return {
     selectWorkspaceTaskProgress: vi.fn(mocks.createWorkspaceValueReadable(taskProgress)),
     selectWorkspaceTaskDisplayList: vi.fn(
-      mocks.createWorkspaceValueReadable(
-        (workspaceId: string) =>
-          (mocks.tasksByWorkspace[workspaceId] ?? []).filter((task) => task.status !== 'cancelled'),
+      mocks.createWorkspaceValueReadable((workspaceId: string) =>
+        (mocks.tasksByWorkspace[workspaceId] ?? []).filter((task) => task.status !== 'cancelled'),
       ),
     ),
   };
@@ -135,7 +122,7 @@ vi.mock('$store/renderer/slices/workspace-summaries/workspace-summaries-selector
   ),
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
@@ -194,9 +181,7 @@ warmImport(() => import('../WorkspaceHoverCard.svelte'));
 function getEnsureSessionLoadPayloads() {
   return mocks.dispatch.mock.calls.flatMap(([action]) => {
     const dispatchedAction = action as { type?: string; payload?: unknown } | undefined;
-    return dispatchedAction?.type === ENSURE_AGENT_SESSION_LOADED
-      ? [dispatchedAction.payload]
-      : [];
+    return dispatchedAction?.type === ENSURE_AGENT_SESSION_LOADED ? [dispatchedAction.payload] : [];
   });
 }
 
@@ -480,15 +465,18 @@ describe('WorkspaceHoverCard', () => {
     [{ ahead: 0, behind: 2, hasUnpushed: false }, '2 commits behind remote'],
     [{ ahead: 3, behind: 1, hasUnpushed: true }, '+3 -1'],
     [{ ahead: 0, behind: 0, hasUnpushed: true }, 'Local commits not pushed'],
-  ])('formats git-only summary copy without labels or middle dots', async (gitSummary, expected) => {
-    mocks.gitSummaryByWorkspace['ws-1'] = gitSummary;
+  ])(
+    'formats git-only summary copy without labels or middle dots',
+    async (gitSummary, expected) => {
+      mocks.gitSummaryByWorkspace['ws-1'] = gitSummary;
 
-    const { container } = await renderHoverCard();
+      const { container } = await renderHoverCard();
 
-    expect(screen.queryByText('Git')).toBeNull();
-    expectVisibleChangesRow(expected);
-    expect(container.textContent).not.toContain(' · ');
-  });
+      expect(screen.queryByText('Git')).toBeNull();
+      expectVisibleChangesRow(expected);
+      expect(container.textContent).not.toContain(' · ');
+    },
+  );
 
   it('renders line-stat-only local changes as a visible summary row', async () => {
     const { container } = await renderHoverCard({}, { additions: 2, deletions: 1 });
@@ -500,9 +488,24 @@ describe('WorkspaceHoverCard', () => {
 
   it('renders running and background agent statuses as compact rows', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
-      { id: 'agent-running', name: 'Running Agent', status: 'running', messages: [] } as AgentSession,
-      { id: 'agent-background', name: 'Worker Agent', status: 'background', messages: [] } as AgentSession,
-      { id: 'agent-waiting', name: 'Waiting Agent', status: 'waiting', messages: [] } as AgentSession,
+      {
+        id: 'agent-running',
+        name: 'Running Agent',
+        status: 'running',
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-background',
+        name: 'Worker Agent',
+        status: 'background',
+        messages: [],
+      } as AgentSession,
+      {
+        id: 'agent-waiting',
+        name: 'Waiting Agent',
+        status: 'waiting',
+        messages: [],
+      } as AgentSession,
     ];
 
     await renderHoverCard({

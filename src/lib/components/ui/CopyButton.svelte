@@ -2,10 +2,7 @@
   import { onDestroy } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
 
-  import {
-  faCopy,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { TooltipShortcut } from './tooltip';
   import { m } from '$shared/paraglide/messages.js';
@@ -20,7 +17,13 @@
     label?: string;
   }
 
-  let { text, size = 'xs', class: className = '', shortcut, label = m.ui_copyButton_label() }: Props = $props();
+  let {
+    text,
+    size = 'xs',
+    class: className = '',
+    shortcut,
+    label = m.ui_copyButton_label(),
+  }: Props = $props();
 
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -58,7 +61,7 @@
     type="button"
   >
     {#if copied}
-      <Fa icon={faCheck} {size} class="text-green-500" />
+      <Fa icon={faCheck} {size} class="text-success" />
     {:else}
       <Fa icon={faCopy} {size} />
     {/if}

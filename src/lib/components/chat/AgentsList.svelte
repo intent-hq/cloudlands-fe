@@ -22,7 +22,7 @@
    */
   import type { AgentSession } from '$shared/types';
 
-  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
@@ -124,7 +124,6 @@
 
     {#if visibleAgents.length > 0}
       {#each visibleAgents as agent (agent.id)}
-
         {@const timestamp = getAgentTimestamp(agent)}
         {@const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist}
         <div class="pl-3">

@@ -28,7 +28,7 @@
 <div class="relative pl-5 pb-3">
   <!-- Timeline node -->
   <div
-    class="absolute left-0 top-0.75 w-2.5 h-2.5 rounded-full border-[2px] border-sidebar {active
+    class="absolute left-[1.5px] top-[9px] size-1.5 rounded-full bg-border {active
       ? activeColor
       : 'bg-border'}"
   ></div>

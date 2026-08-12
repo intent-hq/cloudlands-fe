@@ -38,6 +38,8 @@ export interface SnapshotOptions {
  * Result of a snapshot capture
  */
 export interface SnapshotResult {
+  /** Workspace-relative identifier for reading capture artifacts */
+  captureId: string;
   /** Directory containing all snapshot files */
   dir: string;
   /** Path to accessibility tree YAML file */
@@ -75,6 +77,8 @@ export interface SessionOptions {
 export interface CaptureSession {
   /** Unique session ID */
   id: string;
+  /** Workspace-relative identifier for reading capture artifacts */
+  captureId: string;
   /** Tab being captured */
   tabId: string;
   /** Workspace ID */
@@ -139,6 +143,8 @@ export interface NetworkRequest {
  * Result of ending a capture session
  */
 export interface SessionResult {
+  /** Workspace-relative identifier for reading capture artifacts */
+  captureId: string;
   /** Directory containing all session files */
   dir: string;
   /** Paths to step directories */

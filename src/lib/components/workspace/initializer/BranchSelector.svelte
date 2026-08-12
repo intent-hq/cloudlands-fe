@@ -1119,7 +1119,8 @@
     } catch (err) {
       logger.error('Failed to connect GitHub', err);
       isConnectingGitHub = false;
-      error = err instanceof Error ? err.message : m.workspace_branchSelector_githubConnectFailed_error();
+      error =
+        err instanceof Error ? err.message : m.workspace_branchSelector_githubConnectFailed_error();
     }
   }
 
@@ -1427,17 +1428,22 @@
           {/if}
           <span class="flex-1 text-left truncate min-w-0">
             {#if githubAuthNeeded === 'not-authenticated'}
-              <span class="text-orange-500">{m.workspace_branchSelector_connectGithub_label()}</span>
+              <span class="text-orange-500">{m.workspace_branchSelector_connectGithub_label()}</span
+              >
             {:else if skipIsolation && selectedBranch}
               <span>{selectedBranch}</span>
-              <span class="text-sm opacity-75 ml-1">{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span>
+              <span class="text-sm opacity-75 ml-1"
+                >{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span
+              >
             {:else if selectedBranch}
               <span>{selectedBranch}</span>
             {:else if !repoPath}
               <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
             {:else if isLoading}
               <Fa icon={faSpinner} class="text-ghost animate-spin" size="sm" />
-              <span class="sr-only">{m.workspace_compactInitializer_waitingBranchSelection_label()}</span>
+              <span class="sr-only"
+                >{m.workspace_compactInitializer_waitingBranchSelection_label()}</span
+              >
             {:else}
               <span>{m.workspace_branchSelector_selectBranch_label()}</span>
             {/if}
@@ -1466,7 +1472,9 @@
       >
         <!-- Header -->
         <div class="px-4 pt-2 pb-3">
-          <h2 class="text-base font-semibold text-foreground">{m.workspace_branchSelector_whichBranch_label()}</h2>
+          <h2 class="text-base font-semibold text-foreground">
+            {m.workspace_branchSelector_whichBranch_label()}
+          </h2>
           <p class="text-sm text-subtle mt-1">
             {description || m.workspace_branchSelector_whichBranch_description()}
           </p>
@@ -1504,7 +1512,13 @@
               class="flex-1 border-0 bg-sidebar"
               noFocusStyle
             />
-            <Button onclick={handleRefresh} variant="ghost-light" size="icon" disabled={isLoading}>
+            <Button
+              onclick={handleRefresh}
+              variant="ghost-light"
+              size="icon"
+              disabled={isLoading}
+              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+            >
               <Fa icon={faRotate} class={isLoading ? 'animate-spin' : ''} />
             </Button>
           </div>
@@ -1543,8 +1557,12 @@
                 />
               </svg>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground">{m.workspace_branchSelector_connectWithGithub_label()}</p>
-                <p class="text-sm text-subtle">{m.workspace_branchSelector_connectWithGithub_description()}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {m.workspace_branchSelector_connectWithGithub_label()}
+                </p>
+                <p class="text-sm text-subtle">
+                  {m.workspace_branchSelector_connectWithGithub_description()}
+                </p>
               </div>
             </button>
           {:else if isConnectingGitHub}
@@ -1552,8 +1570,12 @@
             <div class="px-3 py-3 flex items-center gap-3 border-l-2 border-primary bg-primary/5">
               <Fa icon={faSpinner} class="w-5 h-5 text-ghost animate-spin" />
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground">{m.workspace_branchSelector_connectingGithub_label()}</p>
-                <p class="text-sm text-subtle">{m.workspace_branchSelector_completeAuth_description()}</p>
+                <p class="text-sm font-medium text-foreground">
+                  {m.workspace_branchSelector_connectingGithub_label()}
+                </p>
+                <p class="text-sm text-subtle">
+                  {m.workspace_branchSelector_completeAuth_description()}
+                </p>
               </div>
             </div>
           {:else if githubAuthNeeded === 'no-access'}
@@ -1609,10 +1631,14 @@
                     <span class="text-sm truncate flex-1">{branch}</span>
                     <div class="flex items-center gap-1 ml-2 shrink-0">
                       {#if branch === currentBranch && branch !== defaultBranch}
-                        <span class="text-sm text-subtle">{m.workspace_branchSelector_current_label()}</span>
+                        <span class="text-sm text-subtle"
+                          >{m.workspace_branchSelector_current_label()}</span
+                        >
                       {/if}
                       {#if branch === defaultBranch}
-                        <span class="text-sm text-subtle">{m.workspace_branchSelector_default_label()}</span>
+                        <span class="text-sm text-subtle"
+                          >{m.workspace_branchSelector_default_label()}</span
+                        >
                       {/if}
                       {#if branch === selectedBranch}
                         <Fa icon={faCheck} class="text-primary" size="sm" />
@@ -1635,7 +1661,9 @@
                       size="xs"
                       class="mr-1"
                     />
-                    {m.workspace_branchSelector_dependabotUpdates_label({ count: dependabotBranches.length })}
+                    {m.workspace_branchSelector_dependabotUpdates_label({
+                      count: dependabotBranches.length,
+                    })}
                   </Button>
 
                   {#if !dependabotBranchesCollapsed}
@@ -1773,7 +1801,10 @@
                 class="w-full justify-start"
               >
                 <GitBranchIcon size={14} class="text-ghost" />
-                <span class="text-sm">{m.workspace_branchSelector_useBranch_label()} <strong>{searchValue}</strong></span>
+                <span class="text-sm"
+                  >{m.workspace_branchSelector_useBranch_label()}
+                  <strong>{searchValue}</strong></span
+                >
               </Button>
             </div>
           {:else if !isLoading && !error}

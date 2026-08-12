@@ -1,60 +1,63 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from "$shared/types";
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/types';
 
 // FAKE transport only: the backend bridge is mocked so no request ever reaches
 // the user's real daemon. Each test asserts the JSON-RPC method + params the
 // client emits and how it folds success / error into a MutationResult.
-vi.mock("./backend-transport", () => ({
+vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
-  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
+  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-import { backendRequest } from "./backend-transport";
-import { BackendError } from "./backend-transport-types";
-import { LiveWorkspacesClient } from "./live-workspaces-client";
-import { CreateWorkspaceRequestSchema } from "$shared/schemas";
+import { backendRequest } from './backend-transport';
+import { BackendError } from './backend-transport-types';
+import { LiveWorkspacesClient } from './live-workspaces-client';
+import { CreateWorkspaceRequestSchema } from '$shared/schemas';
 
 const mockedRequest = vi.mocked(backendRequest);
 
-describe("LiveWorkspacesClient mutations (fake transport)", () => {
+describe('LiveWorkspacesClient mutations (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("create forwards workspace.create with the request + an idempotencyKey and 120s timeout override", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
+  it('create forwards workspace.create with the request + an idempotencyKey and 120s timeout override', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "New WS", scope: "apps/web" } as CreateWorkspaceRequest);
+    const result = await client.create({
+      title: 'New WS',
+      scope: 'apps/web',
+    } as CreateWorkspaceRequest);
 
     expect(result).toEqual({ success: true });
     // The 120s override keeps cold Claude Code ACP session opens (daemon's
     // 70s NPX budget + first-turn overhead) from tripping the flat 30s
     // transport default.
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.create",
+      'workspace.create',
       expect.objectContaining({
-        title: "New WS",
-        scope: "apps/web",
+        title: 'New WS',
+        scope: 'apps/web',
         idempotencyKey: expect.any(String),
       }),
       { timeoutMs: 120_000 },
     );
   });
 
-  it("create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
+  it('create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();
-    const progressId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const progressId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
     await client.create({
-      title: "With progress",
-      githubUrl: "https://github.com/example/repo",
+      title: 'With progress',
+      githubUrl: 'https://github.com/example/repo',
       progressId,
     } as CreateWorkspaceRequest);
 
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.create",
+      'workspace.create',
       expect.objectContaining({ progressId }),
       { timeoutMs: 120_000 },
     );
@@ -72,82 +75,82 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     // `result.data` (navigation needs the new id).
     mockedRequest.mockResolvedValueOnce({
       workspace: {
-        id: "33333333-3333-4333-8333-333333333333",
-        title: "Fresh",
-        branch: "intent/fresh",
-        status: "Active",
+        id: '33333333-3333-4333-8333-333333333333',
+        title: 'Fresh',
+        branch: 'intent/fresh',
+        status: 'Active',
       },
     });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Fresh" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Fresh' } as CreateWorkspaceRequest);
 
     expect(result.success).toBe(true);
     expect(result.workspace).toMatchObject({
-      id: "33333333-3333-4333-8333-333333333333",
-      title: "Fresh",
-      branch: "intent/fresh",
+      id: '33333333-3333-4333-8333-333333333333',
+      title: 'Fresh',
+      branch: 'intent/fresh',
     });
   });
 
-  it("create surfaces the daemon-assigned initialAgent on the result", async () => {
+  it('create surfaces the daemon-assigned initialAgent on the result', async () => {
     // When the request carries an `initialAgent`, the daemon assigns the
     // agent id and returns the created projection as `initialAgent` — the
     // client surfaces it verbatim so callers adopt the id.
     mockedRequest.mockResolvedValueOnce({
       workspace: {
-        id: "44444444-4444-4444-8444-444444444444",
-        title: "With agent",
-        status: "Active",
+        id: '44444444-4444-4444-8444-444444444444',
+        title: 'With agent',
+        status: 'Active',
       },
-      initialAgent: { id: "agent-daemon-1", name: "Coordinator" },
+      initialAgent: { id: 'agent-daemon-1', name: 'Coordinator' },
     });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "With agent" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'With agent' } as CreateWorkspaceRequest);
 
     expect(result.success).toBe(true);
-    expect(result.initialAgent).toMatchObject({ id: "agent-daemon-1", name: "Coordinator" });
+    expect(result.initialAgent).toMatchObject({ id: 'agent-daemon-1', name: 'Coordinator' });
   });
 
-  it("create fails loudly when the daemon returns an initialAgent without a valid id", async () => {
+  it('create fails loudly when the daemon returns an initialAgent without a valid id', async () => {
     // Wire divergence: an initialAgent projection without a daemon-assigned
     // id must surface as an error, not be masked as "no initialAgent".
     mockedRequest.mockResolvedValueOnce({
       workspace: {
-        id: "66666666-6666-4666-8666-666666666666",
-        title: "Bad agent",
-        status: "Active",
+        id: '66666666-6666-4666-8666-666666666666',
+        title: 'Bad agent',
+        status: 'Active',
       },
-      initialAgent: { name: "Coordinator" },
+      initialAgent: { name: 'Coordinator' },
     });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Bad agent" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Bad agent' } as CreateWorkspaceRequest);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("initialAgent");
+    expect(result.error).toContain('initialAgent');
   });
 
-  it("create omits initialAgent from the result when the daemon returns none", async () => {
+  it('create omits initialAgent from the result when the daemon returns none', async () => {
     mockedRequest.mockResolvedValueOnce({
-      workspace: { id: "55555555-5555-4555-8555-555555555555", title: "Bare", status: "Active" },
+      workspace: { id: '55555555-5555-4555-8555-555555555555', title: 'Bare', status: 'Active' },
     });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Bare" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Bare' } as CreateWorkspaceRequest);
 
     expect(result.success).toBe(true);
     expect(result.initialAgent).toBeUndefined();
   });
 
-  it("create folds a daemon error into { success: false, error }", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("worktree add failed"));
+  it('create folds a daemon error into { success: false, error }', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('worktree add failed'));
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Broken" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Broken' } as CreateWorkspaceRequest);
 
-    expect(result).toEqual({ success: false, error: "worktree add failed" });
+    expect(result).toEqual({ success: false, error: 'worktree add failed' });
   });
 
   it("create surfaces the daemon's structured error.data.code as errorCode", async () => {
@@ -156,17 +159,17 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     // baseRef }. The transport mirrors data onto the thrown error; create
     // surfaces the code so ProposalCard can key off it instead of the prose.
     const error = Object.assign(new Error("cannot resolve base ref 'nope'"), {
-      data: { code: "base-ref-unresolvable", baseRef: "nope" },
+      data: { code: 'base-ref-unresolvable', baseRef: 'nope' },
     });
     mockedRequest.mockRejectedValueOnce(error);
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Bad ref" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Bad ref' } as CreateWorkspaceRequest);
 
     expect(result).toEqual({
       success: false,
       error: "cannot resolve base ref 'nope'",
-      errorCode: "base-ref-unresolvable",
+      errorCode: 'base-ref-unresolvable',
     });
   });
 
@@ -181,7 +184,7 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
       ),
       {
         data: {
-          code: "auth-required",
+          code: 'auth-required',
           detail:
             "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
         },
@@ -190,24 +193,24 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     mockedRequest.mockRejectedValueOnce(error);
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Private repo" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Private repo' } as CreateWorkspaceRequest);
 
     expect(result.success).toBe(false);
-    if (result.success) throw new Error("unreachable");
-    expect(result.errorCode).toBe("auth-required");
-    expect(result.error).toContain("terminal prompts disabled");
-    expect(result.error).not.toBe("Internal error");
+    if (result.success) throw new Error('unreachable');
+    expect(result.errorCode).toBe('auth-required');
+    expect(result.error).toContain('terminal prompts disabled');
+    expect(result.error).not.toBe('Internal error');
   });
 
-  it("create omits errorCode when the daemon error carries no string data.code", async () => {
-    const error = Object.assign(new Error("boom"), { data: { detail: "no code here" } });
+  it('create omits errorCode when the daemon error carries no string data.code', async () => {
+    const error = Object.assign(new Error('boom'), { data: { detail: 'no code here' } });
     mockedRequest.mockRejectedValueOnce(error);
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "No code" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'No code' } as CreateWorkspaceRequest);
 
-    expect(result).toEqual({ success: false, error: "boom" });
-    expect("errorCode" in result).toBe(false);
+    expect(result).toEqual({ success: false, error: 'boom' });
+    expect('errorCode' in result).toBe(false);
   });
 
   it("create surfaces the bridge-mapped code for an older daemon's bare -32602", async () => {
@@ -217,128 +220,156 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     // absent. ProposalCard's prose regex is what carries those daemons; do not
     // "simplify" the fallback away on the assumption errorCode is missing.
     const error = Object.assign(new Error("cannot resolve base ref 'nope'"), {
-      data: { code: "INVALID_PARAMS" },
+      data: { code: 'INVALID_PARAMS' },
     });
     mockedRequest.mockRejectedValueOnce(error);
     const client = new LiveWorkspacesClient();
 
-    const result = await client.create({ title: "Old daemon" } as CreateWorkspaceRequest);
+    const result = await client.create({ title: 'Old daemon' } as CreateWorkspaceRequest);
 
     expect(result).toEqual({
       success: false,
       error: "cannot resolve base ref 'nope'",
-      errorCode: "INVALID_PARAMS",
+      errorCode: 'INVALID_PARAMS',
     });
   });
 
-  it("create generates a distinct idempotencyKey per call", async () => {
-    mockedRequest.mockResolvedValue({ id: "ws-x" });
+  it('create generates a distinct idempotencyKey per call', async () => {
+    mockedRequest.mockResolvedValue({ id: 'ws-x' });
     const client = new LiveWorkspacesClient();
 
-    await client.create({ title: "A" } as CreateWorkspaceRequest);
-    await client.create({ title: "B" } as CreateWorkspaceRequest);
+    await client.create({ title: 'A' } as CreateWorkspaceRequest);
+    await client.create({ title: 'B' } as CreateWorkspaceRequest);
 
     const firstKey = (mockedRequest.mock.calls[0][1] as { idempotencyKey: string }).idempotencyKey;
     const secondKey = (mockedRequest.mock.calls[1][1] as { idempotencyKey: string }).idempotencyKey;
     expect(firstKey).not.toEqual(secondKey);
   });
 
-  it("delete forwards workspace.delete with the workspaceId and 120s timeout override", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
+  it('delete forwards workspace.delete with the workspaceId and 120s timeout override', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.delete("ws-1")).toEqual({ success: true });
+    expect(await client.delete('ws-1')).toEqual({ success: true });
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.delete",
-      { workspaceId: "ws-1" },
-      { timeoutMs: 120_000 }
+      'workspace.delete',
+      { workspaceId: 'ws-1' },
+      { timeoutMs: 120_000 },
     );
   });
 
-  it("delete forwards undoDelayMs and surfaces the daemon's { scheduled, deleteAt } (§5.1 delete grace window)", async () => {
+  it("delete forwards undoDelayMs and surfaces the daemon's scheduled deadline", async () => {
     mockedRequest.mockResolvedValueOnce({
       success: true,
       scheduled: true,
-      deleteAt: "2026-08-11T00:00:15.000Z",
+      deleteAt: '2026-08-11T00:00:15.000Z',
     });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.delete("ws-1", { undoDelayMs: 15_000 })).toEqual({
+    expect(await client.delete('ws-1', { undoDelayMs: 15_000 })).toEqual({
       success: true,
       scheduled: true,
-      deleteAt: "2026-08-11T00:00:15.000Z",
+      deleteAt: '2026-08-11T00:00:15.000Z',
     });
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.delete",
-      { workspaceId: "ws-1", undoDelayMs: 15_000 },
-      { timeoutMs: 120_000 }
+      'workspace.delete',
+      { workspaceId: 'ws-1', undoDelayMs: 15_000 },
+      { timeoutMs: 120_000 },
     );
   });
 
-  it("delete keeps the pre-6.7 wire shape byte-identical when undoDelayMs is 0", async () => {
+  it('delete preserves the immediate wire shape when undoDelayMs is 0', async () => {
     mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.delete("ws-1", { undoDelayMs: 0 })).toEqual({ success: true });
+    expect(await client.delete('ws-1', { undoDelayMs: 0 })).toEqual({ success: true });
     expect(mockedRequest).toHaveBeenCalledWith(
-      "workspace.delete",
-      { workspaceId: "ws-1" },
-      { timeoutMs: 120_000 }
+      'workspace.delete',
+      { workspaceId: 'ws-1' },
+      { timeoutMs: 120_000 },
     );
   });
 
-  it("cancelDelete forwards workspace.cancelDelete and surfaces the race-safe { cancelled } outcomes", async () => {
+  it('cancelDelete forwards the request and surfaces race-safe outcomes', async () => {
     mockedRequest
       .mockResolvedValueOnce({ cancelled: true })
       .mockResolvedValueOnce({ cancelled: false });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.cancelDelete("ws-1")).toEqual({ success: true, cancelled: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.cancelDelete", { workspaceId: "ws-1" });
-    // Already committed / never scheduled — non-error, cancelled: false
-    expect(await client.cancelDelete("ws-1")).toEqual({ success: true, cancelled: false });
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: true, cancelled: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.cancelDelete', { workspaceId: 'ws-1' });
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: true, cancelled: false });
   });
 
-  it("cancelDelete maps a transport error to a failed MutationResult without throwing", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("daemon offline"));
+  it('cancelDelete maps a transport error without throwing', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('daemon offline'));
     const client = new LiveWorkspacesClient();
 
-    expect(await client.cancelDelete("ws-1")).toEqual({ success: false, error: "daemon offline" });
+    expect(await client.cancelDelete('ws-1')).toEqual({ success: false, error: 'daemon offline' });
   });
 
-  it("setActive forwards workspace.setActive with the workspaceId", async () => {
+  it('setActive forwards workspace.setActive with the workspaceId', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.setActive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.setActive", { workspaceId: "ws-1" });
+    expect(await client.setActive('ws-1')).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setActive', { workspaceId: 'ws-1' });
   });
 
-  it("maps a daemon error to a failed MutationResult without throwing", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("workspace exists"));
+  it('maps a daemon error to a failed MutationResult without throwing', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('workspace exists'));
     const client = new LiveWorkspacesClient();
 
-    expect(await client.delete("ws-1")).toEqual({ success: false, error: "workspace exists" });
+    expect(await client.delete('ws-1')).toEqual({ success: false, error: 'workspace exists' });
   });
 });
 
-describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
+describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("sends workspace.list and passes the BE-owned displayStatus through normalization", async () => {
+  it('coalesces concurrent reads with the same archive scope into one wire request', async () => {
+    let resolveRequest: ((value: { workspaces: unknown[] }) => void) | undefined;
+    mockedRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    const first = client.list({ includeArchived: true });
+    const second = client.list({ includeArchived: true });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    resolveRequest?.({ workspaces: [] });
+    await expect(Promise.all([first, second])).resolves.toEqual([[], []]);
+  });
+
+  it('clears a failed single-flight read so a later call can retry', async () => {
+    mockedRequest
+      .mockRejectedValueOnce(new Error('workspace.list timed out'))
+      .mockResolvedValueOnce({ workspaces: [] });
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.list({ includeArchived: true })).rejects.toThrow('timed out');
+    await expect(client.list({ includeArchived: true })).resolves.toEqual([]);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends workspace.list and passes the BE-owned displayStatus through normalization', async () => {
     // intent-hq/intentd#600: the daemon computes the current-cycle
     // `displayStatus` (snake_case wire values) and the FE renders it verbatim
     // — the normalizer must not strip or remap it.
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "11111111-1111-4111-8111-111111111111",
-          title: "Rollup ws",
-          branch: "intent/rollup",
-          status: "Active",
-          displayStatus: "in_progress",
-          createdAt: "2026-07-01T00:00:00.000Z",
-          updatedAt: "2026-07-01T00:00:00.000Z",
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Rollup ws',
+          branch: 'intent/rollup',
+          status: 'Active',
+          displayStatus: 'in_progress',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
         },
       ],
     });
@@ -346,12 +377,12 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     const workspaces = await client.list({ includeArchived: true });
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", { includeArchived: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', { includeArchived: true });
     expect(workspaces).toHaveLength(1);
     expect(workspaces[0]).toMatchObject({
-      id: "11111111-1111-4111-8111-111111111111",
-      title: "Rollup ws",
-      displayStatus: "in_progress",
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Rollup ws',
+      displayStatus: 'in_progress',
     });
   });
 
@@ -361,14 +392,14 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "33333333-3333-4333-8333-333333333333",
-          title: "Quiet ws",
-          branch: "intent/quiet",
-          status: "Active",
-          displayStatus: "idle",
-          activity: "idle",
-          createdAt: "2026-07-01T00:00:00.000Z",
-          updatedAt: "2026-07-01T00:00:00.000Z",
+          id: '33333333-3333-4333-8333-333333333333',
+          title: 'Quiet ws',
+          branch: 'intent/quiet',
+          status: 'Active',
+          displayStatus: 'idle',
+          activity: 'idle',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
         },
       ],
     });
@@ -376,11 +407,11 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
-    expect(workspaces[0]?.displayStatus).toBe("idle");
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(workspaces[0]?.displayStatus).toBe('idle');
   });
 
-  it("passes a needs_attention snapshot through normalization verbatim", async () => {
+  it('passes a needs_attention snapshot through normalization verbatim', async () => {
     // Step-0 attention rollup (PROTOCOL §5.1): `needs_attention` outranks
     // every other displayStatus, including `in_progress`. The list snapshot
     // must surface it verbatim — the renderer maps derive the needs-attention
@@ -388,13 +419,13 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "44444444-4444-4444-8444-444444444444",
-          title: "Attention ws",
-          branch: "intent/attention",
-          status: "Active",
-          displayStatus: "needs_attention",
-          createdAt: "2026-08-01T00:00:00.000Z",
-          updatedAt: "2026-08-01T00:00:00.000Z",
+          id: '44444444-4444-4444-8444-444444444444',
+          title: 'Attention ws',
+          branch: 'intent/attention',
+          status: 'Active',
+          displayStatus: 'needs_attention',
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
         },
       ],
     });
@@ -402,21 +433,21 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
     expect(workspaces[0]).toMatchObject({
-      id: "44444444-4444-4444-8444-444444444444",
-      displayStatus: "needs_attention",
+      id: '44444444-4444-4444-8444-444444444444',
+      displayStatus: 'needs_attention',
     });
   });
 
-  it("leaves displayStatus undefined when an older daemon omits the field", async () => {
+  it('leaves displayStatus undefined when an older daemon omits the field', async () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "22222222-2222-4222-8222-222222222222",
-          title: "Legacy ws",
-          branch: "intent/legacy",
-          status: "Active",
+          id: '22222222-2222-4222-8222-222222222222',
+          title: 'Legacy ws',
+          branch: 'intent/legacy',
+          status: 'Active',
         },
       ],
     });
@@ -424,24 +455,24 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
     expect(workspaces[0]?.displayStatus).toBeUndefined();
   });
 
-  it("passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)", async () => {
+  it('passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)', async () => {
     // The daemon serves `attention` on every `workspace.*` Workspace payload
     // (snake_case wire values `none`/`unread`/`review_required`); the
     // normalizer must retain it verbatim so unread indicators can render it.
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "55555555-5555-4555-8555-555555555555",
-          title: "Unread ws",
-          branch: "intent/unread",
-          status: "Active",
-          attention: "unread",
-          createdAt: "2026-08-01T00:00:00.000Z",
-          updatedAt: "2026-08-01T00:00:00.000Z",
+          id: '55555555-5555-4555-8555-555555555555',
+          title: 'Unread ws',
+          branch: 'intent/unread',
+          status: 'Active',
+          attention: 'unread',
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
         },
       ],
     });
@@ -449,21 +480,21 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
 
     const workspaces = await client.list();
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.list", undefined);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
     expect(workspaces[0]).toMatchObject({
-      id: "55555555-5555-4555-8555-555555555555",
-      attention: "unread",
+      id: '55555555-5555-4555-8555-555555555555',
+      attention: 'unread',
     });
   });
 
-  it("leaves attention undefined when an older daemon omits the field", async () => {
+  it('leaves attention undefined when an older daemon omits the field', async () => {
     mockedRequest.mockResolvedValueOnce({
       workspaces: [
         {
-          id: "66666666-6666-4666-8666-666666666666",
-          title: "Legacy attention ws",
-          branch: "intent/legacy-attention",
-          status: "Active",
+          id: '66666666-6666-4666-8666-666666666666',
+          title: 'Legacy attention ws',
+          branch: 'intent/legacy-attention',
+          status: 'Active',
         },
       ],
     });
@@ -475,63 +506,62 @@ describe("LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)", () => {
   });
 });
 
-
-describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)", () => {
+describe('LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it("update maps the FE id to workspaceId and surfaces the daemon's updated workspace", async () => {
-    const wsId = "0f7a13d7-5a96-455a-9aaf-e62303a8f2d1";
+    const wsId = '0f7a13d7-5a96-455a-9aaf-e62303a8f2d1';
     // PROTOCOL §5.1: workspace.update returns { workspace: Workspace }.
     mockedRequest.mockResolvedValueOnce({
-      workspace: { id: wsId, title: "Renamed", branch: "main", status: "active" },
+      workspace: { id: wsId, title: 'Renamed', branch: 'main', status: 'active' },
     });
     const client = new LiveWorkspacesClient();
 
-    const result = await client.update({ id: wsId, title: "Renamed" } as UpdateWorkspaceRequest);
+    const result = await client.update({ id: wsId, title: 'Renamed' } as UpdateWorkspaceRequest);
 
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.update", {
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.update', {
       workspaceId: wsId,
-      title: "Renamed",
+      title: 'Renamed',
     });
     expect(result.success).toBe(true);
-    expect(result.workspace).toMatchObject({ id: wsId, title: "Renamed", branch: "main" });
+    expect(result.workspace).toMatchObject({ id: wsId, title: 'Renamed', branch: 'main' });
   });
 
-  it("update folds a daemon error into a failed result without throwing", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("update failed"));
+  it('update folds a daemon error into a failed result without throwing', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('update failed'));
     const client = new LiveWorkspacesClient();
 
-    expect(await client.update({ id: "ws-1", title: "X" } as UpdateWorkspaceRequest)).toEqual({
+    expect(await client.update({ id: 'ws-1', title: 'X' } as UpdateWorkspaceRequest)).toEqual({
       success: false,
-      error: "update failed",
+      error: 'update failed',
     });
   });
 
-  it("archive forwards workspace.archive with the workspaceId", async () => {
+  it('archive forwards workspace.archive with the workspaceId', async () => {
     mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.archive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" });
+    expect(await client.archive('ws-1')).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.archive', { workspaceId: 'ws-1' });
   });
 
-  it("unarchive forwards workspace.unarchive with the workspaceId (archive undo)", async () => {
+  it('unarchive forwards workspace.unarchive with the workspaceId (archive undo)', async () => {
     mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.unarchive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" });
+    expect(await client.unarchive('ws-1')).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.unarchive', { workspaceId: 'ws-1' });
   });
 });
 
-describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)", () => {
+describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("sends workspace.getTokenUsage with the workspaceId and unwraps the tokenUsage envelope", async () => {
+  it('sends workspace.getTokenUsage with the workspaceId and unwraps the tokenUsage envelope', async () => {
     // PROTOCOL §5.23 response shape, verbatim.
     const tokenUsage = {
       byAgentId: {
-        "agent-123": {
+        'agent-123': {
           inputTokens: 12000,
           outputTokens: 3400,
           cacheReadTokens: 8000,
@@ -539,7 +569,7 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
         },
       },
       byModel: {
-        "opus-4.8": {
+        'opus-4.8': {
           inputTokens: 12000,
           outputTokens: 3400,
           cacheReadTokens: 8000,
@@ -552,27 +582,27 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
         cacheReadTokens: 8000,
         cacheCreationTokens: 1200,
       },
-      lastScanAt: "2026-06-17T12:00:00Z",
+      lastScanAt: '2026-06-17T12:00:00Z',
     };
     mockedRequest.mockResolvedValueOnce({ tokenUsage });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getTokenUsage("ws-abc")).toEqual(tokenUsage);
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.getTokenUsage", {
-      workspaceId: "ws-abc",
+    expect(await client.getTokenUsage('ws-abc')).toEqual(tokenUsage);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.getTokenUsage', {
+      workspaceId: 'ws-abc',
     });
   });
 
-  it("returns null when the result carries no tokenUsage object", async () => {
+  it('returns null when the result carries no tokenUsage object', async () => {
     mockedRequest.mockResolvedValueOnce({});
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getTokenUsage("ws-abc")).toBeNull();
+    expect(await client.getTokenUsage('ws-abc')).toBeNull();
   });
 
-  it("passes provider cost through unchanged when the daemon reports it", async () => {
+  it('passes provider cost through unchanged when the daemon reports it', async () => {
     // PROTOCOL §5.23 `cost` is optional and provider-reported (never estimated).
-    const cost = { amount: 0.42, currency: "USD" };
+    const cost = { amount: 0.42, currency: 'USD' };
     const entry = {
       inputTokens: 12000,
       outputTokens: 3400,
@@ -581,126 +611,126 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
       cost,
     };
     const tokenUsage = {
-      byAgentId: { "agent-123": entry },
-      byModel: { "opus-4.8": entry },
+      byAgentId: { 'agent-123': entry },
+      byModel: { 'opus-4.8': entry },
       totals: entry,
-      lastScanAt: "2026-06-17T12:00:00Z",
+      lastScanAt: '2026-06-17T12:00:00Z',
     };
     mockedRequest.mockResolvedValueOnce({ tokenUsage });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getTokenUsage("ws-abc")).toEqual(tokenUsage);
+    expect(await client.getTokenUsage('ws-abc')).toEqual(tokenUsage);
   });
 });
 
-describe("LiveWorkspacesClient.diskUsage (PROTOCOL §5.1, fake transport)", () => {
+describe('LiveWorkspacesClient.diskUsage (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("sends workspace.diskUsage with the workspaceId and surfaces { diskUsage, refreshing }", async () => {
+  it('sends workspace.diskUsage with the workspaceId and surfaces { diskUsage, refreshing }', async () => {
     // PROTOCOL §5.1 response shape, verbatim (background refresh in flight).
     const diskUsage = {
       bytes: 2_330_000_000,
       fileCount: 12345,
-      computedAt: "2026-08-01T12:00:00Z",
-      breakdown: [{ name: "repo", bytes: 2_000_000_000, fileCount: 12000 }],
+      computedAt: '2026-08-01T12:00:00Z',
+      breakdown: [{ name: 'repo', bytes: 2_000_000_000, fileCount: 12000 }],
     };
     mockedRequest.mockResolvedValueOnce({ diskUsage, refreshing: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.diskUsage("ws-abc")).toEqual({ diskUsage, refreshing: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.diskUsage", {
-      workspaceId: "ws-abc",
+    expect(await client.diskUsage('ws-abc')).toEqual({ diskUsage, refreshing: true });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.diskUsage', {
+      workspaceId: 'ws-abc',
     });
   });
 
-  it("omits diskUsage while the first walk runs (refreshing only)", async () => {
+  it('omits diskUsage while the first walk runs (refreshing only)', async () => {
     mockedRequest.mockResolvedValueOnce({ refreshing: true });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: true });
+    expect(await client.diskUsage('ws-abc')).toEqual({ refreshing: true });
   });
 
-  it("returns refreshing:false when the daemon settles with no usage", async () => {
+  it('returns refreshing:false when the daemon settles with no usage', async () => {
     mockedRequest.mockResolvedValueOnce({ refreshing: false });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.diskUsage("ws-abc")).toEqual({ refreshing: false });
+    expect(await client.diskUsage('ws-abc')).toEqual({ refreshing: false });
   });
 
-  it("returns null when the daemon predates the method (-32601 METHOD_NOT_FOUND)", async () => {
+  it('returns null when the daemon predates the method (-32601 METHOD_NOT_FOUND)', async () => {
     mockedRequest.mockRejectedValueOnce(
       new BackendError({
-        code: "METHOD_NOT_FOUND",
-        message: "method not found",
+        code: 'METHOD_NOT_FOUND',
+        message: 'method not found',
         rpcCode: -32601,
       }),
     );
     const client = new LiveWorkspacesClient();
 
-    expect(await client.diskUsage("ws-abc")).toBeNull();
+    expect(await client.diskUsage('ws-abc')).toBeNull();
   });
 
-  it("propagates non-METHOD_NOT_FOUND errors", async () => {
+  it('propagates non-METHOD_NOT_FOUND errors', async () => {
     const error = new BackendError({
-      code: "INVALID_PARAMS",
-      message: "bad params",
+      code: 'INVALID_PARAMS',
+      message: 'bad params',
       rpcCode: -32602,
     });
     mockedRequest.mockRejectedValueOnce(error);
     const client = new LiveWorkspacesClient();
 
-    await expect(client.diskUsage("ws-abc")).rejects.toBe(error);
+    await expect(client.diskUsage('ws-abc')).rejects.toBe(error);
   });
 });
 
-describe("LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)", () => {
+describe('LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("getContext sends workspaceId and unwraps items", async () => {
+  it('getContext sends workspaceId and unwraps items', async () => {
     const items = [
       {
-        id: "n1",
-        type: "note",
-        title: "note",
-        provider: "internal",
-        noteId: "n1",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+        id: 'n1',
+        type: 'note',
+        title: 'note',
+        provider: 'internal',
+        noteId: 'n1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
       },
     ];
     mockedRequest.mockResolvedValueOnce({ items });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getContext("ws-abc")).toEqual(items);
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.getContext", {
-      workspaceId: "ws-abc",
+    expect(await client.getContext('ws-abc')).toEqual(items);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.getContext', {
+      workspaceId: 'ws-abc',
     });
   });
 
-  it("getContext returns an empty array when items is missing / non-array", async () => {
+  it('getContext returns an empty array when items is missing / non-array', async () => {
     mockedRequest.mockResolvedValueOnce({});
     const client = new LiveWorkspacesClient();
-    expect(await client.getContext("ws-abc")).toEqual([]);
+    expect(await client.getContext('ws-abc')).toEqual([]);
   });
 
-  it("updateContext forwards items as full-list replacement and returns persisted list", async () => {
+  it('updateContext forwards items as full-list replacement and returns persisted list', async () => {
     const items = [
       {
-        id: "u-1",
-        type: "url",
-        title: "docs",
-        provider: "browser",
-        url: "https://example.com",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
+        id: 'u-1',
+        type: 'url',
+        title: 'docs',
+        provider: 'browser',
+        url: 'https://example.com',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
       },
     ];
     mockedRequest.mockResolvedValueOnce({ items });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.updateContext("ws-abc", items as never)).toEqual(items);
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.updateContext", {
-      workspaceId: "ws-abc",
+    expect(await client.updateContext('ws-abc', items as never)).toEqual(items);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.updateContext', {
+      workspaceId: 'ws-abc',
       items,
     });
   });
@@ -708,39 +738,39 @@ describe("LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)", () => 
   // The context slice keys items by `id` and discriminates variants by `type`,
   // so rows missing either would corrupt the Collection. The client filters
   // those out at the seam before they reach the reducer.
-  it("getContext filters out rows missing id or type before returning", async () => {
+  it('getContext filters out rows missing id or type before returning', async () => {
     const good = {
-      id: "n1",
-      type: "note",
-      title: "note",
-      provider: "internal",
-      noteId: "n1",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      id: 'n1',
+      type: 'note',
+      title: 'note',
+      provider: 'internal',
+      noteId: 'n1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
     };
     mockedRequest.mockResolvedValueOnce({
-      items: [good, { title: "missing id" }, { id: "n2" }, null, "n3"],
+      items: [good, { title: 'missing id' }, { id: 'n2' }, null, 'n3'],
     });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.getContext("ws-abc")).toEqual([good]);
+    expect(await client.getContext('ws-abc')).toEqual([good]);
   });
 
-  it("updateContext filters out rows missing id or type before returning", async () => {
+  it('updateContext filters out rows missing id or type before returning', async () => {
     const good = {
-      id: "u-1",
-      type: "browser-url",
-      title: "docs",
-      provider: "browser",
-      url: "https://example.com",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      id: 'u-1',
+      type: 'browser-url',
+      title: 'docs',
+      provider: 'browser',
+      url: 'https://example.com',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
     };
     mockedRequest.mockResolvedValueOnce({
-      items: [good, { id: "u-2", title: "missing type" }, { type: "note" }],
+      items: [good, { id: 'u-2', title: 'missing type' }, { type: 'note' }],
     });
     const client = new LiveWorkspacesClient();
 
-    expect(await client.updateContext("ws-abc", [good] as never)).toEqual([good]);
+    expect(await client.updateContext('ws-abc', [good] as never)).toEqual([good]);
   });
 });

@@ -204,7 +204,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .hud-tokrate-rule {
@@ -216,7 +216,7 @@
     font:
       500 9px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-tokrate-chart {
     position: relative;
@@ -249,7 +249,7 @@
     font:
       500 9px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     pointer-events: none;
   }
   .hud-tokrate-tick.right-edge {
@@ -295,7 +295,7 @@
     background-color: hsl(var(--muted) / 0.5);
     background-image: repeating-linear-gradient(
       0deg,
-      hsl(var(--text-subtle) / 0.7) 0 1px,
+      hsl(var(--muted-foreground) / 0.7) 0 1px,
       transparent 1px 3px
     );
   }
@@ -309,7 +309,7 @@
     font:
       500 9px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .hud-tokrate-legend-item {
     display: inline-flex;
@@ -329,7 +329,7 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-tokrate-spacer {
     flex: 1;

@@ -22,15 +22,30 @@ const { store, mockStageFiles, mockDispatch, makeSelector } = vi.hoisted(() => {
     staged: [] as any[],
     unstaged: [] as any[],
     currentWsId: 'ws-1' as string | null,
+    autoCommitByWorkspace: {} as Record<string, boolean>,
+    acceptChangesStateByWorkspace: {} as Record<string, any>,
+    emptyAcceptChangesState: { backgroundOperation: null },
   };
-  const makeSelector = <T>(getter: () => T) => {
-    const fn = (..._a: any[]) => ({
+  const makeSelector = <T>(getter: (...args: any[]) => T) => {
+    const fn = (...args: any[]) => ({
       subscribe(run: (v: T) => void) {
-        run(getter());
-        return () => {};
+        const [arg] = args;
+        if (!arg || typeof arg.subscribe !== 'function') {
+          run(getter(...args));
+          return () => {};
+        }
+        let hasLatest = false;
+        let latest: T;
+        return arg.subscribe((value: unknown) => {
+          const next = getter(value);
+          if (hasLatest && next === latest) return;
+          hasLatest = true;
+          latest = next;
+          run(next);
+        });
       },
     });
-    (fn as any).select = () => getter();
+    (fn as any).select = (_state: unknown, ...args: any[]) => getter(...args);
     (fn as any).effect = () => {};
     (fn as any).withStore = () => fn;
     return fn;
@@ -50,7 +65,8 @@ vi.mock('$features/git/git-write-service', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ uiLayout: { collapsiblePanelCollapsed: {} } }),
     dispatch: mockDispatch,
@@ -63,14 +79,26 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectCurrentCommits: makeSelector(() => []),
   selectCurrentLoading: makeSelector(() => false),
   selectMainPanelView: makeSelector(() => null),
-  selectAcceptChangesState: makeSelector(() => ({ backgroundOperation: null })),
+  selectAcceptChangesState: makeSelector(
+    (workspaceId: string) =>
+      store.acceptChangesStateByWorkspace[workspaceId] ?? store.emptyAcceptChangesState,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   setMainPanelView: vi.fn((v: any) => ({ type: 'changes/setMainPanelView', payload: v })),
-  unstageChangesRequested: vi.fn((...a: any[]) => ({ type: 'changes/unstageChangesRequested', payload: a })),
-  revertChangeRequested: vi.fn((...a: any[]) => ({ type: 'changes/revertChangeRequested', payload: a })),
-  loadWorkspaceDataRequested: vi.fn((...a: any[]) => ({ type: 'changes/loadWorkspaceDataRequested', payload: a })),
+  unstageChangesRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/unstageChangesRequested',
+    payload: a,
+  })),
+  revertChangeRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/revertChangeRequested',
+    payload: a,
+  })),
+  loadWorkspaceDataRequested: vi.fn((...a: any[]) => ({
+    type: 'changes/loadWorkspaceDataRequested',
+    payload: a,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
@@ -78,11 +106,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors', () => ({
-  selectAutoCommitEnabled: makeSelector(() => false),
+  selectAutoCommitEnabled: makeSelector(
+    (workspaceId: string) => store.autoCommitByWorkspace[workspaceId] ?? false,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
-  setAutoCommitEnabled: vi.fn((...a: any[]) => ({ type: 'ws-settings/setAutoCommitEnabled', payload: a })),
+  setAutoCommitEnabled: vi.fn((...a: any[]) => ({
+    type: 'ws-settings/setAutoCommitEnabled',
+    payload: a,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
@@ -99,14 +132,20 @@ vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte'))
 vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, any>;
   return new Proxy(actual, {
-    get: (t, p) => (p in t ? (t as any)[p] : { iconName: String(p), prefix: 'fas', icon: [0, 0, [], '', ''] }),
+    get: (t, p) =>
+      p in t ? (t as any)[p] : { iconName: String(p), prefix: 'fas', icon: [0, 0, [], '', ''] },
   });
 });
 
 vi.mock('svelte-sonner', () => ({ toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 vi.mock('$lib/utils/logger', () => ({
-  Logger: class { info() {} warn() {} error() {} debug() {} },
+  Logger: class {
+    info() {}
+    warn() {}
+    error() {}
+    debug() {}
+  },
 }));
 
 vi.mock('../FileChangesList.svelte', async () => ({
@@ -142,6 +181,8 @@ describe('CodeChangesPanel git-write-service routing', () => {
     store.staged = [];
     store.unstaged = [];
     store.currentWsId = 'ws-1';
+    store.autoCommitByWorkspace = {};
+    store.acceptChangesStateByWorkspace = {};
   });
 
   it('routes single-file stage through the git-write-service seam', async () => {
@@ -153,7 +194,10 @@ describe('CodeChangesPanel git-write-service routing', () => {
   });
 
   it('routes "Stage all" through the git-write-service seam', async () => {
-    store.unstaged = [makeChange({ relativePath: 'src/a.ts' }), makeChange({ relativePath: 'src/b.ts' })];
+    store.unstaged = [
+      makeChange({ relativePath: 'src/a.ts' }),
+      makeChange({ relativePath: 'src/b.ts' }),
+    ];
     const { container } = await renderPanel();
     await waitFor(() => expect(container.textContent).toContain('Unstaged'));
     // The "Stage all" action button is icon-only (faPlus); the Fa mock renders
@@ -167,7 +211,9 @@ describe('CodeChangesPanel git-write-service routing', () => {
   it('keeps unstage on the legacy dispatch path (BE-gated)', async () => {
     store.staged = [makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged })];
     const { container } = await renderPanel();
-    await waitFor(() => expect(container.querySelector('[data-testid="unstage-btn"]')).toBeTruthy());
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="unstage-btn"]')).toBeTruthy(),
+    );
     await fireEvent.click(container.querySelector('[data-testid="unstage-btn"]')!);
     expect(mockStageFiles).not.toHaveBeenCalled();
     expect(mockDispatch).toHaveBeenCalledWith(
@@ -184,5 +230,32 @@ describe('CodeChangesPanel git-write-service routing', () => {
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'changes/revertChangeRequested' }),
     );
+  });
+
+  it('rebinds workspace-scoped state and mutations after an A-to-B rerender', async () => {
+    store.autoCommitByWorkspace = { 'ws-a': true, 'ws-b': false };
+    store.acceptChangesStateByWorkspace = {
+      'ws-a': { backgroundOperation: { type: 'commit', phase: 'syncing' } },
+      'ws-b': { backgroundOperation: { type: 'create-pr', phase: 'generating' } },
+    };
+
+    const { getByRole, container, rerender } = await renderPanel({ workspaceId: 'ws-a' });
+    const autoCommitSwitch = getByRole('switch');
+    expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('true');
+    expect(container.textContent).toContain('Committing');
+
+    await rerender({ workspaceId: 'ws-b' });
+
+    await waitFor(() => {
+      expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('false');
+      expect(container.textContent).toContain('Creating PR');
+    });
+    expect(container.textContent).not.toContain('Committing');
+
+    await fireEvent.click(autoCommitSwitch);
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'ws-settings/setAutoCommitEnabled',
+      payload: ['ws-b', true],
+    });
   });
 });

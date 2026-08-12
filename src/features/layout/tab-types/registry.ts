@@ -22,6 +22,8 @@ import { m } from '$shared/paraglide/messages.js';
 export interface TabTypeComponentProps {
   tab: PanelTab;
   workspaceId: string;
+  /** Panel-layout state key; differs from workspaceId in column view. */
+  layoutId?: string;
   /** Whether this tab is currently the active/visible tab */
   isActive: boolean;
   /** Whether this panel is currently focused AND this tab is active */

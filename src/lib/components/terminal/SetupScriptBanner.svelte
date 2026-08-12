@@ -19,11 +19,11 @@
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-  faWandMagicSparkles,
-  faXmark,
-  faFloppyDisk,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
+    faWandMagicSparkles,
+    faXmark,
+    faFloppyDisk,
+    faChevronRight,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
@@ -105,9 +105,7 @@
 
   // Should show the banner?
   // Hide while the setup-script check is pending (avoid flash) and when a non-empty script exists
-  const shouldShow = $derived(
-    isOpen && !isDismissed && repoHasSetupScript === false,
-  );
+  const shouldShow = $derived(isOpen && !isDismissed && repoHasSetupScript === false);
 
   // Check for existing setup script on mount and when workspaceId changes
   $effect(() => {
@@ -294,7 +292,9 @@
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="absolute top-0 bottom-0 left-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-20"
+      class="app-resize-handle absolute -left-2 bottom-0 top-0 z-20 w-4"
+      data-resize-axis="x"
+      data-resizing={isResizing}
       onmousedown={startResize}
     ></div>
 

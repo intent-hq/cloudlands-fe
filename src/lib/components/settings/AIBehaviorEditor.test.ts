@@ -49,9 +49,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: (action: { type: string; payload: unknown[] }) => {
@@ -87,7 +86,10 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 }));
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-slice', () => ({
-  setActiveProvider: (id: string) => ({ type: 'providerSettings/setActiveProvider', payload: [id] }),
+  setActiveProvider: (id: string) => ({
+    type: 'providerSettings/setActiveProvider',
+    payload: [id],
+  }),
 }));
 
 vi.mock('$store/renderer/slices/model/model-slice', () => ({
@@ -147,9 +149,8 @@ vi.mock('./AgentRulesEditor.svelte', async () => ({
 }));
 
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
-  default: (
-    await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte')
-  ).default,
+  default: (await import('../workspace/initializer/__tests__/mocks/MockModelPicker.svelte'))
+    .default,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -228,16 +229,20 @@ describe('AIBehaviorEditor default reasoning-effort dropdown', () => {
     selectedModel$.set(DEFAULT_MODEL);
     render(AIBehaviorEditor, { activeView: { type: 'system-prompt' } });
 
-    await fireEvent.click(screen.getByTestId('default-effort').querySelector('button')!);
-    await fireEvent.click(screen.getByText('high'));
+    const trigger = screen.getByTestId('default-effort').querySelector('button')!;
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'h' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(lastEffortDispatch()).toEqual({
       type: 'model/setDefaultReasoningEffort',
       payload: ['high'],
     });
 
     mocks.defaultEffort$.set('high');
-    await fireEvent.click(screen.getByTestId('default-effort').querySelector('button')!);
-    await fireEvent.click(screen.getByText('Default'));
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'Home' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(lastEffortDispatch()).toEqual({
       type: 'model/setDefaultReasoningEffort',
       payload: [''],
@@ -387,8 +392,11 @@ describe('AIBehaviorEditor reasoning-effort dropdown', () => {
     mocks.effortLevels.value = { [EFFORT_MODEL]: ['low', 'high'] };
     renderSpecialist();
 
-    await fireEvent.click(screen.getByTestId('specialist-effort').querySelector('button')!);
-    await fireEvent.click(screen.getByText('high'));
+    const trigger = screen.getByTestId('specialist-effort').querySelector('button')!;
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'h' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     expect(lastSave()).toMatchObject({ id: 'implementor', reasoningEffort: 'high' });
   });

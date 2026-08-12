@@ -8,7 +8,7 @@ import { warmImport } from '../../../../test/warm-import';
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goto: vi.fn(() => Promise.resolve()),
-  handleIntentLink: vi.fn(() => Promise.resolve(true)),
+  handleLink: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -18,14 +18,12 @@ vi.mock('$store/renderer/store', () => ({
     state: {},
   },
 }));
-vi.mock('$lib/utils/workspaces-link-handler', () => ({
-  handleIntentLink: mocks.handleIntentLink,
-}));
+vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
   mocks.goto.mockClear();
-  mocks.handleIntentLink.mockClear();
+  mocks.handleLink.mockClear();
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
     return 0;
@@ -73,11 +71,19 @@ describe('NavLink', () => {
   it('routes intent:// targets through the workspaces link handler instead of goto', async () => {
     const NavLink = (await import('../NavLink.svelte')).default;
     const target = 'intent://local/ws-123/note/note-456';
-    render(NavLink, { props: { target, label: 'Open note' } });
+    const { container } = render(NavLink, {
+      props: { target, label: 'Open note', workspaceId: 'ws-123' },
+    });
+    container.firstElementChild?.setAttribute('data-panel-id', 'panel-chat');
 
     await fireEvent.click(screen.getByRole('link', { name: /Open note/ }));
 
-    await waitFor(() => expect(mocks.handleIntentLink).toHaveBeenCalledWith(target));
+    await waitFor(() =>
+      expect(mocks.handleLink).toHaveBeenCalledWith(
+        target,
+        expect.objectContaining({ workspaceId: 'ws-123', event: expect.any(MouseEvent) }),
+      ),
+    );
     expect(mocks.goto).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
@@ -89,7 +95,12 @@ describe('NavLink', () => {
 
     await fireEvent.click(screen.getByRole('link', { name: /Spec/ }));
 
-    await waitFor(() => expect(mocks.handleIntentLink).toHaveBeenCalledWith(target));
+    await waitFor(() =>
+      expect(mocks.handleLink).toHaveBeenCalledWith(
+        target,
+        expect.objectContaining({ event: expect.any(MouseEvent) }),
+      ),
+    );
     expect(mocks.goto).not.toHaveBeenCalled();
   });
 

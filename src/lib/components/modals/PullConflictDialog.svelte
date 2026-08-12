@@ -5,20 +5,20 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-  faXmark,
-  faTerminal,
-  faCode,
-  faCodeBranch,
-  faExclamationTriangle,
-  faChevronDown,
-  faArrowUpRightFromSquare,
-  faFolder,
-} from '@fortawesome/free-solid-svg-icons';
+    faXmark,
+    faTerminal,
+    faCode,
+    faCodeBranch,
+    faExclamationTriangle,
+    faChevronDown,
+    faArrowUpRightFromSquare,
+    faFolder,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import {
-  fetchEditors,
-  type InstalledEditor,
-} from '$store/renderer/slices/external-editors/external-editors-slice';
+    fetchEditors,
+    type InstalledEditor,
+  } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
@@ -157,7 +157,7 @@
       toast.error(
         err instanceof Error
           ? err.message
-          : m.modals_pullConflict_openFailed_error({ appName: editor.appName })
+          : m.modals_pullConflict_openFailed_error({ appName: editor.appName }),
       );
     }
   }
@@ -213,11 +213,18 @@
             <div>
               <h2 class="text-lg font-semibold">{m.modals_pullConflict_title()}</h2>
               {#if branchName}
-                <p class="text-sm text-subtle mt-0.5">{m.modals_pullConflict_branch_label({ branchName })}</p>
+                <p class="text-sm text-subtle mt-0.5">
+                  {m.modals_pullConflict_branch_label({ branchName })}
+                </p>
               {/if}
             </div>
           </div>
-          <Button variant="ghost" size="icon" onclick={close}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onclick={close}
+            aria-label="Close pull conflict dialog"
+          >
             <Fa icon={faXmark} />
           </Button>
         </div>
@@ -289,10 +296,10 @@
             {/if}
           </div>
           <div class="grid grid-cols-2 gap-2 items-center">
-            <Tooltip
-              content={m.modals_pullConflict_createWorkspace_tooltip()}
-            >
-              <span class="text-xs inline-block">{m.modals_pullConflict_letIntentHandle_label()}</span>
+            <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
+              <span class="text-xs inline-block"
+                >{m.modals_pullConflict_letIntentHandle_label()}</span
+              >
             </Tooltip>
             <!-- Create workspace action -->
             <Button

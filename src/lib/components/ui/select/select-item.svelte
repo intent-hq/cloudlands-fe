@@ -1,27 +1,32 @@
 <script lang="ts">
-  import { getContext } from 'svelte';
   import type { Snippet } from 'svelte';
+  import { Select as SelectPrimitive } from 'bits-ui';
 
-  let { value, children, class: className = '', disabled = false }: { value: string; children?: Snippet; class?: string; disabled?: boolean; } = $props();
-
-  const selectContext = getContext<{
+  let {
+    value,
+    label,
+    disabled = false,
+    children,
+    class: className = '',
+  }: {
     value: string;
-    isOpen: boolean;
-  }>('select');
-
-  function handleSelect() {
-    if (disabled) return;
-    selectContext.value = value;
-    selectContext.isOpen = false;
-  }
+    label?: string;
+    disabled?: boolean;
+    children?: Snippet;
+    class?: string;
+  } = $props();
 </script>
 
-<button
-  type="button"
-  class="w-full px-2 py-2 text-sm text-left border-none bg-transparent transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded {disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-muted/40'} {className}"
-  class:selected={selectContext.value === value}
-  onclick={handleSelect}
+<SelectPrimitive.Item
+  {value}
+  label={label ?? value}
   {disabled}
+  class="group type-body flex min-h-(--control-height-compact) w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--radius-small) border-none bg-transparent px-2 py-1 text-left outline-none transition-colors duration-(--motion-fast) data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[selected]:bg-accent/60 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none {className}"
 >
-  {@render children?.()}
-</button>
+  <div class="min-w-0 flex-1 truncate">{@render children?.()}</div>
+  <span
+    data-slot="select-item-check"
+    class="text-primary shrink-0 font-medium opacity-0 group-data-[selected]:opacity-100"
+    aria-hidden="true">✓</span
+  >
+</SelectPrimitive.Item>

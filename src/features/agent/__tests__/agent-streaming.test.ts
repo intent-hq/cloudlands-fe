@@ -4,14 +4,7 @@
  * Comprehensive tests for agent message streaming functionality
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Store } from '@augmentcode/themis/svelte-store';
 
 vi.mock('svelte', async (importOriginal) => ({
@@ -42,6 +35,7 @@ import * as accumulator from '../../../store/main/slices/message-accumulator/mes
 
 describe('Agent Message Streaming', () => {
   beforeEach(() => {
+    accumulator.resetMessageAccumulatorState();
     testStore = new Store({ messageAccumulator: messageAccumulatorReducer });
     testStore.init();
   });

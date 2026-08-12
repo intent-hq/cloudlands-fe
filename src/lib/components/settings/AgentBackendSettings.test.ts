@@ -98,6 +98,22 @@ describe('AgentBackendSettings', () => {
     });
   });
 
+  it('saves valid positive integer on Enter', async () => {
+    mockSettings({ maxConcurrent: 0 });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'agents.maxConcurrent', value: 8 }]);
+    render(AgentBackendSettings);
+    const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
+
+    await fireEvent.input(input, { target: { value: '8' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agents.maxConcurrent', value: 8 },
+      ]);
+    });
+  });
+
   it('saves 0 when input is empty', async () => {
     mockSettings({ maxConcurrent: 12 });
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'agents.maxConcurrent', value: 0 }]);
@@ -243,19 +259,17 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'System Messages Only' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
         { path: FLUSH_PATH, value: 'systemOnly' },
       ]);
     });
-    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
-      'System Messages Only',
-    );
+    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain('System Messages Only');
   });
 
   it('persists a selection of off via settings.update with the exact payload', async () => {
@@ -265,10 +279,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
@@ -283,17 +298,15 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'All Queued Messages' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'all' }]);
     });
-    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain(
-      'All Queued Messages',
-    );
+    expect(screen.getByRole('button', FLUSH_TRIGGER).textContent).toContain('All Queued Messages');
   });
 
   it('keeps the current value and shows an error when the update fails', async () => {
@@ -303,10 +316,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
@@ -323,10 +337,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Failed to save agent settings.')).toBeTruthy();
@@ -344,10 +359,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
     render(AgentBackendSettings);
 
     const trigger = await waitFor(() => screen.getByRole('button', FLUSH_TRIGGER));
-    await fireEvent.click(trigger);
-
-    const option = await waitFor(() => screen.getByRole('button', { name: 'Off (FIFO)' }));
-    await fireEvent.click(option);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
 
     await waitFor(() => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);

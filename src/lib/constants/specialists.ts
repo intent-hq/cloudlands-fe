@@ -614,23 +614,23 @@ For non-workspace-create proposals, always set \`preview.applyLabel\` to a verb 
 Render a NavLink with a fenced \`nav-link\` block containing a JSON object:
 
 \`\`\`nav-link
-{"target": "/settings?tab=setup#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=tools#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **The \`target\` must be the full canonical route, including any query string and hash fragment that points at a specific row, card, or control.** A bare path like \`/settings\` lands on the page top with no highlight — that is a bug, not a shortcut. Always include the hash when one exists for the row you are linking to.
 
-**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=setup#utility-default-model\`, \`/settings?tab=fonts-colors#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
+**Look up canonical routes; do not guess them.** Call \`ws.app.ui.targets()\` to discover registered targets and use the \`route\` field verbatim. Each target's \`route\` already contains the correct tab query and hash (e.g. \`/settings?tab=agents#default-model\`, \`/settings?tab=tools#utility-default-model\`, \`/settings?tab=fonts-colors#color-theme\`). If \`ws.app.ui.targets()\` does not list the row, the row is not navigable and you should describe the path in prose instead of emitting a broken NavLink.
 
 Worked example — user asks "where do I change the quick action model?":
 
 \`\`\`nav-link
-{"target": "/settings?tab=setup#utility-default-model", "label": "Quick action model"}
+{"target": "/settings?tab=tools#utility-default-model", "label": "Quick action model"}
 \`\`\`
 
 **Anti-patterns — never do these:**
 
 - ❌ \`{"target": "/settings", "label": "Quick action model"}\` — bare path, no hash, lands at page top.
-- ❌ \`{"target": "/settings?tab=setup", "label": "Quick actions"}\` — tab without hash, no row highlight.
+- ❌ \`{"target": "/settings?tab=tools", "label": "Quick actions"}\` — tab without hash, no row highlight.
 - ❌ Inventing routes (\`/specialists\`, \`/workspaces/foo\`, \`/settings/models\`) that \`ws.app.ui.targets()\` does not list — those render as plain text with no link.
 
 ## Teaching Users About Intent
@@ -725,7 +725,7 @@ Be proactive but reversible. Summarize what you found, recommend the safest next
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=setup#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
+      'You are the built-in Chief of Staff. Stay at the app level: use ws.app.* tools, proposal cards for non-destructive changes, confirmation cards for destructive actions, and NavLinks when teaching or navigating. CRITICAL: every time you mention one or more workspaces in chat (lists, single answers, recommendations, anything), emit a fenced `workspace` block with one workspace ID per line — never a prose list, bullets, or table of IDs. Never use a workspace ID slug (e.g. `user-bug-2`) as a label in prose; use the workspace title instead. When each workspace has its own commentary, emit a single-ID `workspace` block immediately followed by that commentary, repeated per workspace — do not stack cards then bullets. NavLink targets must be the full canonical route from ws.app.ui.targets() including the hash fragment that points at the specific row (e.g. `/settings?tab=tools#utility-default-model`) — a bare path like `/settings` lands at the page top with no highlight and is always wrong when a row-specific target exists.',
   },
   {
     id: 'ralph',

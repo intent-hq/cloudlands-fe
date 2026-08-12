@@ -37,6 +37,7 @@ import {
   setBulkOperation,
   setChildrenAtPathAction,
   setFileExplorerFileCount,
+  setFileExplorerError,
   setFileExplorerInitialized,
   setFileExplorerLoading,
   setFileExplorerWorkspacePath,
@@ -189,6 +190,7 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
     completed = true;
   } catch (error) {
     logger.error('Failed to initialize file explorer', error);
+    yield* put(setFileExplorerError(wsId, error instanceof Error ? error.message : String(error)));
     completed = true;
   } finally {
     if (completed && !(yield* cancelled())) {
@@ -224,6 +226,7 @@ function* hydrateExplorer(wsId: string) {
     completed = true;
   } catch (error) {
     logger.error('Failed to hydrate file explorer for workspace', error);
+    yield* put(setFileExplorerError(wsId, error instanceof Error ? error.message : String(error)));
     completed = true;
   } finally {
     if (completed && !(yield* cancelled())) {

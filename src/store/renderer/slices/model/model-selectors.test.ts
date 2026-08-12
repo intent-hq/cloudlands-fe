@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { initialState as modelInitialState } from './model-slice';
 import { initialState as providerSettingsInitialState } from '../provider-settings/provider-settings-slice';
 import {
@@ -222,7 +218,11 @@ describe('selectModelEffortLevels', () => {
     const state = mockState({
       defaultProviderId,
       availableModels: createCollection<AuggieModel, 'value'>('value', [
-        { value: `${defaultProviderId}:sonnet4.6`, label: 'Claude Sonnet 4.6', effortLevels: efforts },
+        {
+          value: `${defaultProviderId}:sonnet4.6`,
+          label: 'Claude Sonnet 4.6',
+          effortLevels: efforts,
+        },
       ]),
     });
     expect(selectModelEffortLevels.select(state, 'sonnet4.6')).toEqual(efforts);
@@ -255,9 +255,39 @@ describe('selectAgentModelEffortLevels', () => {
     } as unknown as StoreState;
 
     expect(selectAgentModelEffortLevels.select(state, 'a1')).toEqual(['low', 'high']);
-    // No model on the session (provider default) / unknown agent → undefined.
+    // No resolvable provider default / unknown agent → undefined.
     expect(selectAgentModelEffortLevels.select(state, 'a2')).toBeUndefined();
     expect(selectAgentModelEffortLevels.select(state, 'unknown')).toBeUndefined();
+  });
+
+  it('resolves effort levels from the provider model when the session inherits its model', () => {
+    const base = mockState({
+      defaultProviderId,
+      providerModels: { auggie: 'gpt5.6-sol' },
+      availableModels: createCollection<AuggieModel, 'value'>('value', [
+        {
+          value: 'gpt5.6-sol',
+          label: 'GPT-5.6 Sol',
+          effortLevels: ['low', 'medium', 'high', 'max'],
+        },
+      ]),
+    });
+    const state = {
+      ...base,
+      agentSessions: {
+        byAgentId: {
+          inherited: { id: 'inherited', workspaceId: 'ws-1', provider: 'auggie', model: null },
+        },
+        agentIdsByWorkspace: {},
+      },
+    } as unknown as StoreState;
+
+    expect(selectAgentModelEffortLevels.select(state, 'inherited')).toEqual([
+      'low',
+      'medium',
+      'high',
+      'max',
+    ]);
   });
 
   it('prefers the session-advertised effortLevels over the catalog metadata (§5.5)', () => {

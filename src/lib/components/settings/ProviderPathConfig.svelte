@@ -10,7 +10,8 @@
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import { Button } from '$lib/components/ui/button';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -105,21 +106,25 @@
   );
 </script>
 
-<DropdownMenu bind:open align="end" side="bottom" portal={true}>
-  {#snippet trigger({ toggle }: { toggle: () => void })}
-    {#if showTrigger}
-      <button
-        type="button"
-        onclick={toggle}
-        class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
-        title={m.settings_providerPath_configureTitle({ name: providerName })}
-      >
-        <Fa icon={faFolder} size={11} />
-      </button>
-    {/if}
-  {/snippet}
-
-  {#snippet content()}
+<Menu.Root bind:open>
+  {#if showTrigger}
+    <Menu.Trigger>
+      {#snippet child({ props })}
+        <span class="contents" {...props}>
+          <Button
+            variant="ghost-light"
+            size="icon-xs"
+            tooltip={m.settings_providerPath_configureTitle({ name: providerName })}
+            title={m.settings_providerPath_configureTitle({ name: providerName })}
+            aria-label={m.settings_providerPath_configureTitle({ name: providerName })}
+          >
+            <Fa icon={faFolder} size={11} />
+          </Button>
+        </span>
+      {/snippet}
+    </Menu.Trigger>
+  {/if}
+  <Menu.Content align="end" side="bottom" portal={true} aria-label={m.ui_dropdownMenu_ariaLabel()}>
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
       <div class="space-y-1">
@@ -216,5 +221,5 @@
         </div>
       {/if}
     </div>
-  {/snippet}
-</DropdownMenu>
+  </Menu.Content>
+</Menu.Root>

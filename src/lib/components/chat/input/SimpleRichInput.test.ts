@@ -1,30 +1,21 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
-vi.mock('svelte-fa', async () => {
+vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('$lib/icons/phosphor-icons', () => ({
+  faFile: { iconName: 'file' },
+  faFileAlt: { iconName: 'file-alt' },
+  faFileCode: { iconName: 'file-code' },
+  faImage: { iconName: 'image' },
   faMagicWandSparkles: { iconName: 'magic-wand' },
   faMicrophone: { iconName: 'microphone' },
   faPaperclip: { iconName: 'paperclip' },
-  faPaperPlane: { iconName: 'paper-plane' },
+  faArrowRight: { iconName: 'arrow-right' },
   faSpinner: { iconName: 'spinner' },
   faXmark: { iconName: 'xmark' },
   faLayerGroup: { iconName: 'layer-group' },
@@ -32,11 +23,11 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faCheck: { iconName: 'check' },
   faChevronRight: { iconName: 'chevron-right' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
-  // AttachmentPreview chip icons (rendered for non-image file context items)
-  faFile: { iconName: 'file' },
-  faImage: { iconName: 'image' },
-  faFileCode: { iconName: 'file-code' },
-  faFileAlt: { iconName: 'file-alt' },
+  faPlus: { iconName: 'plus' },
+  faClock: { iconName: 'clock' },
+  faWandMagicSparkles: { iconName: 'wand-magic-sparkles' },
+  faRotateLeft: { iconName: 'rotate-left' },
+  faAt: { iconName: 'at' },
   // Placement lifecycle pill icons (placing spinner / failed + retry)
   faCircleExclamation: { iconName: 'circle-exclamation' },
   faRotateRight: { iconName: 'rotate-right' },
@@ -106,7 +97,12 @@ vi.mock('$lib/utils/provider-model-selection', () => ({
   buildProviderDropdownOptions: (providerIds: string[]) =>
     providerIds.map((providerId) => ({
       value: providerId,
-      label: providerId === 'auggie' ? 'Augment Auggie' : providerId === 'codex' ? 'OpenAI Codex' : providerId,
+      label:
+        providerId === 'auggie'
+          ? 'Augment Auggie'
+          : providerId === 'codex'
+            ? 'OpenAI Codex'
+            : providerId,
     })),
   getSelectableProviderIds: ({
     enabledProviderIds,
@@ -155,8 +151,7 @@ vi.mock('$features/agent/agent.client', () => ({
 const enhancePromptMock = vi.hoisted(() => vi.fn());
 
 vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
+  const actual = await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
   return { ...actual, enhancePrompt: enhancePromptMock };
 });
 
@@ -203,15 +198,14 @@ const mockReduxState = vi.hoisted(
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   // The input resolves provider ids/display names via the providerCatalog
   // slice — hydrate the §5.38-shaped mock catalog into the mocked state.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
-  const { MOCK_PROVIDER_CATALOG } = await import(
-    '../../../../test/fixtures/provider-catalog.fixture'
-  );
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } =
+    await import('../../../../test/fixtures/provider-catalog.fixture');
   mockReduxState.providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -289,11 +283,113 @@ warmImport(() => import('../__tests__/mocks/TipTapEditor.svelte'));
 warmImport(() => import('../__tests__/mocks/ModelPicker.svelte'));
 warmImport(() => import('../__tests__/mocks/SlotOnly.svelte'));
 
+describe('SimpleRichInput draft change notification', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('reports each editor update synchronously', async () => {
+    const onvaluechange = vi.fn();
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        onvaluechange,
+      },
+    });
+
+    await fireEvent.input(screen.getByTestId('tiptap-editor'), {
+      target: { value: 'draft that must survive remounts' },
+    });
+
+    expect(onvaluechange).toHaveBeenLastCalledWith('draft that must survive remounts');
+  });
+
+  it('uses the concise chat placeholder by default', () => {
+    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+
+    expect(screen.getByTestId('tiptap-editor').getAttribute('placeholder')).toBe(
+      'Ask anything or type @ for context',
+    );
+  });
+});
+
+describe('SimpleRichInput image paste', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('adds a pasted image thumbnail without entering a reactive update loop', async () => {
+    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const file = new File(['image-bytes'], 'pasted.png', { type: 'image/png' });
+
+    await fireEvent.paste(screen.getByTestId('message-input'), {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }],
+      },
+    });
+
+    expect(await screen.findByRole('img', { name: 'pasted.png' })).toBeTruthy();
+  });
+});
+
+describe('SimpleRichInput action bar layout', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('keeps model and menu controls left while dictation and submit controls stay right', async () => {
+    const { container } = render(SimpleRichInput, {
+      props: { value: '', contextItems: [] },
+    });
+
+    const actionBar = container.querySelector('[data-chat-input-action-bar]');
+    const primaryActions = container.querySelector('[data-chat-input-primary-actions]');
+    const submitActions = container.querySelector('[data-chat-input-submit-actions]');
+    const promptMenu = screen.getByTestId('prompt-actions-trigger');
+    const micButton = screen.getByTestId('composer-mic-button');
+
+    expect(actionBar?.className).toContain('items-center');
+    expect(actionBar?.className).toContain('pr-1.5!');
+    expect(primaryActions?.className).toContain('items-center');
+    expect(submitActions?.className).toContain('items-center');
+    expect(primaryActions?.contains(promptMenu)).toBe(true);
+    expect(promptMenu.dataset.size).toBe('icon-sm');
+    expect(promptMenu.querySelector('[data-icon="plus"]')).toBeTruthy();
+    expect(submitActions?.contains(micButton)).toBe(true);
+    await fireEvent.click(promptMenu);
+    expect(await screen.findByRole('menuitem', { name: /Add Context/i })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Attach files/i })).toBeTruthy();
+    const modelPickerClass = screen.getByTestId('model-picker').className;
+    expect(modelPickerClass).toContain('px-0');
+    expect(modelPickerClass).toContain('font-medium');
+    expect(modelPickerClass).toContain('hover:bg-transparent');
+    expect(screen.getByTestId('message-input').className).toContain('focus-within:border-ring');
+    expect(screen.getByTestId('message-input').className).toContain('focus-within:ring-0');
+    expect(screen.getByTestId('message-input').className).not.toContain('focus-within:ring-2');
+  });
+
+  it('keeps the prompt surface transparent when edge-docked', () => {
+    render(SimpleRichInput, {
+      props: { value: '', contextItems: [], edgeDocked: true },
+    });
+
+    expect(screen.getByTestId('message-input').className).toContain('bg-transparent');
+    expect(screen.getByTestId('message-input').className).not.toContain('bg-card');
+  });
+});
+
 describe('SimpleRichInput provider switch sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resolveCompatibleModelForProviderMock.mockResolvedValue('codex:gpt-5-codex');
-    setModelMock.mockResolvedValue({ ok: true, data: { success: true, modelId: 'codex:gpt-5-codex' } });
+    setModelMock.mockResolvedValue({
+      ok: true,
+      data: { success: true, modelId: 'codex:gpt-5-codex' },
+    });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -358,7 +454,8 @@ describe('SimpleRichInput provider switch sync', () => {
 
   it('hydrates the persisted model without passing the session provider as a filter', async () => {
     removeMockSession('ws-1', 'agent-1');
-    addMockSession('ws-1',
+    addMockSession(
+      'ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',
@@ -394,7 +491,8 @@ describe('SimpleRichInput provider switch sync', () => {
 
   it('keeps the model picker unlocked mid-conversation (confirmation replaces the lock)', async () => {
     removeMockSession('ws-1', 'agent-1');
-    addMockSession('ws-1',
+    addMockSession(
+      'ws-1',
       createSession({
         metadata: {
           provider: 'auggie',
@@ -689,7 +787,8 @@ describe('SimpleRichInput provider switch sync', () => {
 
   it('keeps the provider control visible when the current provider is non-default', async () => {
     removeMockSession('ws-1', 'agent-1');
-    addMockSession('ws-1',
+    addMockSession(
+      'ws-1',
       createSession({
         model: 'codex:gpt-5-codex',
         provider: 'codex',
@@ -740,13 +839,13 @@ describe('SimpleRichInput Stop-button visibility', () => {
   // The mocked Button component strips aria-label, so locate the Send/Stop
   // affordances via the Fa icon's data-icon attribute instead. The icon mocks
   // above render `data-icon="stop"` for the Stop button and
-  // `data-icon="paper-plane"` for the Send button.
+  // `data-icon="arrow-right"` for the Send button.
   function stopButton(): HTMLButtonElement | null {
     const icon = document.body.querySelector('[data-icon="stop"]');
     return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
   }
   function sendButton(): HTMLButtonElement | null {
-    const icons = document.body.querySelectorAll('[data-icon="paper-plane"]');
+    const icons = document.body.querySelectorAll('[data-icon="arrow-right"]');
     for (const icon of icons) {
       const btn = icon.closest('button') as HTMLButtonElement | null;
       // Skip the interrupt-and-send split button inside the Stop block; that
@@ -793,6 +892,43 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).toBeNull();
   });
 
+  it('uses the same muted treatment for prompt controls and Stop', () => {
+    render(SimpleRichInput, { props: { ...baseProps(), isResponding: true } });
+
+    expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
+      'text-muted-foreground',
+    );
+    expect(screen.getByTestId('model-picker').className).toContain('text-muted-foreground');
+    expect(stopButton()?.dataset.variant).toBe('ghost-light');
+    expect(stopButton()?.className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('prompt-actions-trigger').dataset.variant).toBe('ghost-light');
+  });
+
+  it('renders Queue and Send as flat muted actions while responding with a draft', async () => {
+    const onsubmit = vi.fn();
+    const onforcesubmit = vi.fn();
+    render(SimpleRichInput, {
+      props: {
+        ...baseProps(),
+        value: 'follow up',
+        isResponding: true,
+        onsubmit,
+        onforcesubmit,
+      },
+    });
+
+    const queue = screen.getByRole('button', { name: 'Queue message' });
+    const send = screen.getByRole('button', { name: 'Interrupt and send' });
+    expect(queue?.dataset.variant).toBe('ghost-light');
+    expect(send?.dataset.variant).toBe('ghost-light');
+    expect(queue?.parentElement?.className).not.toContain('bg-sidebar');
+
+    await fireEvent.click(queue!);
+    await fireEvent.click(send!);
+    expect(onsubmit).toHaveBeenCalledWith('follow up');
+    expect(onforcesubmit).toHaveBeenCalledWith('follow up');
+  });
+
   it('shows Send (not Stop) when only the broader running signal would be true, IDLE-1', () => {
     // A coordinator whose own turn has ended but is still waiting on delegated
     // children clears `isStreaming` / `isResponding` in the agent-session slice
@@ -835,7 +971,70 @@ describe('SimpleRichInput Stop-button visibility', () => {
   });
 });
 
-describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
+describe('SimpleRichInput compact panel height', () => {
+  const props = {
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  };
+
+  function renderInPanel(height: number) {
+    const panel = document.createElement('div');
+    panel.className = 'group/panel';
+    Object.defineProperty(panel, 'clientHeight', { configurable: true, value: height });
+    document.body.append(panel);
+    return render(SimpleRichInput, { target: panel, props });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('uses the 65px composer in a short stacked panel', async () => {
+    renderInPanel(560);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
+        'min-height: 65px',
+      );
+    });
+  });
+
+  it('keeps the roomier composer in a tall panel', async () => {
+    renderInPanel(720);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('message-input').getAttribute('style')).toContain(
+        'min-height: 100px',
+      );
+    });
+  });
+});
+
+describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
   const baseProps = () => ({
     value: 'make this prompt better',
     contextItems: [],
@@ -849,11 +1048,13 @@ describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
     selectedModel: 'gpt5.4',
   });
 
-  // The mocked Button strips aria-label — locate the enhance affordance via
-  // the Fa icon mock's data-icon attribute (faMagicWandSparkles → magic-wand).
-  function enhanceButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="magic-wand"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  async function openPromptActions() {
+    await fireEvent.click(screen.getByTestId('prompt-actions-trigger'));
+    await screen.findByRole('menu');
+  }
+
+  function startEnhancement() {
+    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
   }
 
   beforeEach(() => {
@@ -878,49 +1079,179 @@ describe('SimpleRichInput enhance-button provider gate (§5.31)', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows the enhance button when the active provider is auggie', () => {
+  it('shows Enhance prompt in the kebab menu for auggie', async () => {
     mockReduxState.providerSettings.activeProviderId = 'auggie';
     render(SimpleRichInput, { props: baseProps() });
 
-    expect(enhanceButton()).not.toBeNull();
+    await openPromptActions();
+    expect(screen.getByRole('menuitem', { name: /Enhance prompt/i })).toBeTruthy();
+    expect(screen.getByText('⌘/')).toBeTruthy();
   });
 
-  it('hides the enhance button when no active provider is set (unresolved closes the §5.31 gate)', () => {
+  it('hides enhancement when no active provider is set', async () => {
     // Mirrors the daemon: unset/undecidable settings resolve the gate
     // CLOSED — never a silent auggie default.
     mockReduxState.providerSettings.activeProviderId = '';
     render(SimpleRichInput, { props: baseProps() });
 
-    expect(enhanceButton()).toBeNull();
+    await openPromptActions();
+    expect(screen.queryByRole('menuitem', { name: /Enhance prompt/i })).toBeNull();
   });
 
-  it('hides the enhance button when the active provider is not auggie', () => {
+  it('hides enhancement when the active provider is not auggie', async () => {
     mockReduxState.providerSettings.activeProviderId = 'codex';
     render(SimpleRichInput, { props: baseProps() });
 
-    expect(enhanceButton()).toBeNull();
+    await openPromptActions();
+    expect(screen.queryByRole('menuitem', { name: /Enhance prompt/i })).toBeNull();
   });
 
-  it('ignores the Cmd+/ enhance shortcut when the active provider is not auggie', async () => {
-    mockReduxState.providerSettings.activeProviderId = 'codex';
-    render(SimpleRichInput, { props: baseProps() });
+  it('disables enhancement until the prompt has at least three characters', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    const { rerender } = render(SimpleRichInput, { props: { ...baseProps(), value: 'ab' } });
 
-    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
+    await openPromptActions();
+    expect(
+      screen.getByRole('menuitem', { name: /Enhance prompt/i }).hasAttribute('data-disabled'),
+    ).toBe(true);
 
-    await waitFor(() => {
-      expect(enhancePromptMock).not.toHaveBeenCalled();
-    });
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await rerender({ ...baseProps(), value: 'abc' });
+    await openPromptActions();
+    expect(
+      screen.getByRole('menuitem', { name: /Enhance prompt/i }).hasAttribute('data-disabled'),
+    ).toBe(false);
   });
 
-  it('runs the Cmd+/ enhance shortcut when the active provider is auggie', async () => {
+  it('runs enhancement from the menu', async () => {
     mockReduxState.providerSettings.activeProviderId = 'auggie';
     render(SimpleRichInput, { props: baseProps() });
 
-    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
+    await openPromptActions();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /Enhance prompt/i }));
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledOnce());
+  });
 
+  it('replaces Enhance with Stop enhancing while running', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    let resolveEnhancement: ((value: { enhanced: string }) => void) | undefined;
+    enhancePromptMock.mockImplementationOnce(
+      () =>
+        new Promise<{ enhanced: string }>((resolve) => {
+          resolveEnhancement = resolve;
+        }),
+    );
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledOnce());
+    await openPromptActions();
+    const stopEnhancing = screen.getByRole('menuitem', { name: /Stop enhancing/i });
+    await fireEvent.click(stopEnhancing);
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).disabled).toBe(false);
+
+    resolveEnhancement?.({ enhanced: 'Enhanced prompt' });
+  });
+
+  it('cancels enhancement with Escape', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    let resolveEnhancement: ((value: { enhanced: string }) => void) | undefined;
+    enhancePromptMock.mockImplementationOnce(
+      () =>
+        new Promise<{ enhanced: string }>((resolve) => {
+          resolveEnhancement = resolve;
+        }),
+    );
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledOnce());
+    await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Escape' });
+
+    resolveEnhancement?.({ enhanced: 'Enhanced prompt' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+      'make this prompt better',
+    );
+  });
+
+  it('keeps every canceled request stale when responses arrive out of order', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    let resolveFirst: ((value: { enhanced: string }) => void) | undefined;
+    let resolveSecond: ((value: { enhanced: string }) => void) | undefined;
+    enhancePromptMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ enhanced: string }>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ enhanced: string }>((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledTimes(1));
+    await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Escape' });
+
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledTimes(2));
+    await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Escape' });
+
+    resolveSecond?.({ enhanced: 'Second late response' });
+    await Promise.resolve();
+    await Promise.resolve();
+    resolveFirst?.({ enhanced: 'First late response' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+      'make this prompt better',
+    );
+  });
+
+  it('cancels enhancement when the prompt is deleted', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    let resolveEnhancement: ((value: { enhanced: string }) => void) | undefined;
+    enhancePromptMock.mockImplementationOnce(
+      () =>
+        new Promise<{ enhanced: string }>((resolve) => {
+          resolveEnhancement = resolve;
+        }),
+    );
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
+    await waitFor(() => expect(enhancePromptMock).toHaveBeenCalledOnce());
+    await fireEvent.input(screen.getByTestId('tiptap-editor'), { target: { value: '' } });
+
+    resolveEnhancement?.({ enhanced: 'Late enhanced prompt' });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('shows Undo enhance after success and restores the original prompt', async () => {
+    mockReduxState.providerSettings.activeProviderId = 'auggie';
+    render(SimpleRichInput, { props: baseProps() });
+
+    startEnhancement();
     await waitFor(() => {
-      expect(enhancePromptMock).toHaveBeenCalledTimes(1);
+      expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+        'enhanced prompt',
+      );
     });
+
+    await openPromptActions();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /Undo enhance/i }));
+    expect((screen.getByTestId('tiptap-editor') as HTMLTextAreaElement).value).toBe(
+      'make this prompt better',
+    );
   });
 });
 
@@ -942,20 +1273,17 @@ describe('SimpleRichInput input lock while enhancing', () => {
     return screen.getByTestId('tiptap-editor') as HTMLTextAreaElement;
   }
 
-  // The mocked Button strips aria-label — locate affordances via the Fa icon
-  // mock's data-icon attribute.
-  function enhanceButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="magic-wand"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  function startEnhancement() {
+    window.dispatchEvent(new CustomEvent('chat:enhance-prompt'));
   }
 
-  function stopEnhanceButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="stop"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  async function stopEnhanceButton(): Promise<HTMLElement> {
+    await fireEvent.click(screen.getByTestId('prompt-actions-trigger'));
+    return await screen.findByRole('menuitem', { name: /Stop enhancing/i });
   }
 
   function sendButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="paper-plane"]');
+    const icon = document.body.querySelector('[data-icon="arrow-right"]');
     return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
   }
 
@@ -980,14 +1308,17 @@ describe('SimpleRichInput input lock while enhancing', () => {
   it('disables the editor and send button while enhancing and restores them on success', async () => {
     let resolveEnhance!: (value: unknown) => void;
     enhancePromptMock.mockImplementation(
-      () => new Promise((resolve) => { resolveEnhance = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveEnhance = resolve;
+        }),
     );
     render(SimpleRichInput, { props: baseProps() });
 
     expect(editorTextarea().disabled).toBe(false);
     expect(sendButton()!.disabled).toBe(false);
 
-    await fireEvent.click(enhanceButton()!);
+    startEnhancement();
 
     await waitFor(() => expect(editorTextarea().disabled).toBe(true));
     expect(sendButton()!.disabled).toBe(true);
@@ -1005,11 +1336,14 @@ describe('SimpleRichInput input lock while enhancing', () => {
   it('restores editability and submission when enhancement fails', async () => {
     let rejectEnhance!: (error: unknown) => void;
     enhancePromptMock.mockImplementation(
-      () => new Promise((_resolve, reject) => { rejectEnhance = reject; }),
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectEnhance = reject;
+        }),
     );
     render(SimpleRichInput, { props: baseProps() });
 
-    await fireEvent.click(enhanceButton()!);
+    startEnhancement();
     await waitFor(() => expect(editorTextarea().disabled).toBe(true));
 
     rejectEnhance(new Error('enhance failed'));
@@ -1022,14 +1356,14 @@ describe('SimpleRichInput input lock while enhancing', () => {
     enhancePromptMock.mockImplementation(() => new Promise(() => {}));
     render(SimpleRichInput, { props: baseProps() });
 
-    await fireEvent.click(enhanceButton()!);
+    startEnhancement();
     await waitFor(() => expect(editorTextarea().disabled).toBe(true));
 
-    const stopButton = stopEnhanceButton();
+    const stopButton = await stopEnhanceButton();
     expect(stopButton).not.toBeNull();
-    expect(stopButton!.disabled).toBe(false);
+    expect(stopButton.hasAttribute('data-disabled')).toBe(false);
 
-    await fireEvent.click(stopButton!);
+    await fireEvent.click(stopButton);
 
     await waitFor(() => expect(editorTextarea().disabled).toBe(false));
     expect(sendButton()!.disabled).toBe(false);
@@ -1040,7 +1374,7 @@ describe('SimpleRichInput input lock while enhancing', () => {
     const onsubmit = vi.fn();
     render(SimpleRichInput, { props: { ...baseProps(), onsubmit } });
 
-    await fireEvent.click(enhanceButton()!);
+    startEnhancement();
     await waitFor(() => expect(editorTextarea().disabled).toBe(true));
 
     await fireEvent.click(sendButton()!);
@@ -1163,14 +1497,15 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     const button = transcribingButton();
     expect(button).not.toBeNull();
     expect(button!.disabled).toBe(false);
-    expect(button!.getAttribute('aria-label')).toBe(
-      m.chat_richInput_micCancelTranscribing_label(),
-    );
+    expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micCancelTranscribing_label());
   });
 
   it('clicking the cancel control abandons the in-flight transcription session', async () => {
-    const { beginTranscriptionSession, hasActiveTranscriptionSession, resetTranscriptionCancellation } =
-      await import('$features/hardware-console/voice/transcription-cancellation');
+    const {
+      beginTranscriptionSession,
+      hasActiveTranscriptionSession,
+      resetTranscriptionCancellation,
+    } = await import('$features/hardware-console/voice/transcription-cancellation');
     const onCancel = vi.fn();
     beginTranscriptionSession(onCancel);
 

@@ -7,7 +7,7 @@
  * last question hands back the full answers array.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import QuestionWizard, { type QuestionAnswer } from '../QuestionWizard.svelte';
 import type { Question } from '$shared/types/question-resource';
 
@@ -57,14 +57,30 @@ function setup(questions: Question[] = [SINGLE, MULTI, LAST]) {
 }
 
 describe('QuestionWizard', () => {
-  it('renders the first question with counter and no Next for mid-flow single-select', () => {
+  it('renders a focused first question with counter and no decorative progress', () => {
     const { container } = setup();
     expect(screen.getByText('1 of 3')).toBeTruthy();
-    expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(0);
     expect(screen.getByRole('button', { name: /back/i })).toBeTruthy();
     expect(screen.getByText('Token storage')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /next/i })).toBeNull();
-    expect(screen.getByText('Selecting an option moves to the next question')).toBeTruthy();
+    expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
+  });
+
+  it('uses a transparent surface with quiet outlined choices and input', () => {
+    const { container } = setup([LAST]);
+    const wizard = container.querySelector('[data-question-wizard]');
+    const options = Array.from(container.querySelectorAll('[data-question-option]'));
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+
+    expect(wizard?.className).toContain('bg-transparent');
+    expect(wizard?.className).not.toContain('bg-muted');
+    expect(options).toHaveLength(2);
+    expect(options.every((option) => option.className.includes('border-input'))).toBe(true);
+    expect(options.every((option) => !option.className.includes('shadow'))).toBe(true);
+    expect(container.querySelectorAll('[data-option-indicator]')).toHaveLength(2);
+    expect(input.parentElement?.className).toContain('focus-within:border-ring');
+    expect(screen.getByRole('heading', { name: LAST.question })).toBeTruthy();
   });
 
   it('single-question wizard hides the counter, progress segments, and Back button', () => {
@@ -72,8 +88,8 @@ describe('QuestionWizard', () => {
     expect(screen.queryByText('1 of 1')).toBeNull();
     expect(container.querySelectorAll('[data-progress-segment]')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /back/i })).toBeNull();
-    expect(screen.getByText('Agent Has Questions')).toBeTruthy();
-    expect(screen.getByText('select all that apply')).toBeTruthy();
+    expect(screen.queryByText('Agent Has Questions')).toBeNull();
+    expect(screen.queryByText('select all that apply')).toBeNull();
     expect(screen.getByRole('button', { name: /hide/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /skip/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /send/i })).toBeTruthy();
@@ -107,7 +123,7 @@ describe('QuestionWizard', () => {
   it('multi-select toggles checkboxes and requires Next; Next disabled with no selection/text', async () => {
     setup();
     await fireEvent.click(screen.getByText('OS keychain'));
-    expect(screen.getByText('select all that apply')).toBeTruthy();
+    expect(screen.queryByText('select all that apply')).toBeNull();
     const next = screen.getByRole('button', { name: /next/i });
     expect((next as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(screen.getByText('Desktop app'));
@@ -124,7 +140,7 @@ describe('QuestionWizard', () => {
     await fireEvent.click(screen.getByText('OS keychain'));
     await fireEvent.click(screen.getByRole('button', { name: /back/i }));
     expect(screen.getByText('1 of 3')).toBeTruthy();
-    const selectedRow = container.querySelector('.border-primary.bg-primary\\/10');
+    const selectedRow = container.querySelector('[data-question-option][data-selected="true"]');
     expect(selectedRow?.textContent).toContain('OS keychain');
   });
 
@@ -146,6 +162,16 @@ describe('QuestionWizard', () => {
     await fireEvent.input(input, { target: { value: 'Redis' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByText('2 of 3')).toBeTruthy();
+  });
+
+  it('keeps the free-form field visually integrated when focused', () => {
+    setup();
+    const input = screen.getByPlaceholderText('Or type your own answer…');
+
+    expect(input.className).toContain('focus:outline-none!');
+    expect(input.className).toContain('focus:ring-0!');
+    expect(input.className).toContain('focus-visible:outline-none!');
+    expect(input.className).toContain('focus-visible:ring-0!');
   });
 
   it('last question shows Send and hands back the full answers array', async () => {
@@ -204,10 +230,10 @@ describe('QuestionWizard', () => {
   it('single-select: typing in the Other input clears the option selection', async () => {
     const { container } = setup([LAST]);
     await fireEvent.click(screen.getByText('Migrate silently'));
-    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeTruthy();
+    expect(container.querySelector('[data-question-option][data-selected="true"]')).toBeTruthy();
     const input = screen.getByPlaceholderText('Or type your own answer…');
     await fireEvent.input(input, { target: { value: 'R' } });
-    expect(container.querySelector('.border-primary.bg-primary\\/10')).toBeNull();
+    expect(container.querySelector('[data-question-option][data-selected="true"]')).toBeNull();
     const send = screen.getByRole('button', { name: /send/i });
     expect((send as HTMLButtonElement).disabled).toBe(false);
   });
@@ -299,15 +325,56 @@ describe('QuestionWizard', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
+  it('focuses the confirm action first and restores focus to Dismiss after cancel', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    const dismissTrigger = screen.getByRole('button', { name: 'Dismiss' });
+    dismissTrigger.focus();
+    await fireEvent.click(dismissTrigger);
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const confirm = screen.getByRole('button', { name: 'Dismiss questions' });
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
+    expect(document.activeElement).not.toBe(cancel);
+    expect(confirm.className).toContain('ring-[3px]');
+
+    cancel.focus();
+    await waitFor(() => expect(confirm.className).not.toContain('ring-[3px]'));
+
+    await fireEvent.click(cancel);
+    await waitFor(() => expect(document.activeElement).toBe(dismissTrigger));
+  });
+
+  it('uses the canonical compact editorial dialog surface', async () => {
+    const onDismiss = vi.fn();
+    render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('data-slot')).toBe('dialog-content');
+    expect(dialog.className).toContain('max-w-sm');
+    expect(dialog.className).toContain('bg-popover');
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeTruthy();
+    expect(document.querySelector('[data-slot="dialog-footer"]')?.className).toContain('border-0');
+    expect(dialog.querySelector('.svelte-fa')).toBeNull();
+  });
+
   it('Escape and backdrop click close the confirm dialog without dismissing', async () => {
     const onDismiss = vi.fn();
     render(QuestionWizard, { props: { questions: [SINGLE], onDismiss } });
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    await fireEvent.click(document.body.querySelector('[role="presentation"]')!);
-    expect(screen.queryByRole('dialog')).toBeNull();
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await fireEvent.pointerDown(overlay, {
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+      pointerType: 'mouse',
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onDismiss).not.toHaveBeenCalled();
   });
 

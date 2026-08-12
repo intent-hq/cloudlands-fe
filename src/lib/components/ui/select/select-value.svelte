@@ -3,13 +3,13 @@
   import { m } from '$shared/paraglide/messages.js';
 
   let { placeholder = m.ui_select_value_placeholder() }: { placeholder?: string } = $props();
-
-  const selectContext = getContext<{
-    value: string;
-    isOpen: boolean;
-  }>('select');
+  const selectContext = getContext<{ value: string; displayValue: string }>('canonical-select');
 </script>
 
-<span class="flex-1 text-left truncate">
-  {selectContext.value || placeholder}
+<span
+  class="min-w-0 flex-1 truncate text-left {selectContext.value
+    ? 'text-foreground'
+    : 'text-muted-foreground'}"
+>
+  {selectContext.displayValue || placeholder}
 </span>

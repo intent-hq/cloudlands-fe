@@ -1,0 +1,34 @@
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.panel-layout-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 25px;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}
+
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region select,
+.app-drag-region textarea,
+.app-drag-region [role='button'],
+.app-drag-region [role='tab'],
+.app-drag-region [role='menuitem'],
+.app-drag-region [data-interactive],
+.app-drag-region [tabindex]:not([tabindex='-1']),
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

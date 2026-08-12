@@ -8,13 +8,10 @@
   import { Button } from '$lib/components/ui/button';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Fa from 'svelte-fa';
-  import {
-  faChevronLeft,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     states: DiagramState[];
@@ -120,7 +117,12 @@
 
     <!-- Stepper and navigation -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <div class="flex items-center gap-1.5 flex-none" role="tablist" tabindex="0" onkeydown={handleKeydown}>
+    <div
+      class="flex items-center gap-1.5 flex-none"
+      role="tablist"
+      tabindex="0"
+      onkeydown={handleKeydown}
+    >
       <!-- Stepper dots -->
       <div class="flex items-center gap-1.5">
         {#each states as state, index (state.id)}
@@ -133,7 +135,12 @@
             onclick={() => goToState(index)}
             onmouseenter={() => (hoveredIndex = index)}
             onmouseleave={() => (hoveredIndex = null)}
-            aria-label={m.diagram_controls_state_ariaLabel({ number: index + 1, title: stateNarrative?.title || m.diagram_controls_stateNumber_label({ number: index + 1 }) })}
+            aria-label={m.diagram_controls_state_ariaLabel({
+              number: index + 1,
+              title:
+                stateNarrative?.title ||
+                m.diagram_controls_stateNumber_label({ number: index + 1 }),
+            })}
           ></button>
 
           <!-- Hover card -->
@@ -155,7 +162,9 @@
       </div>
 
       <!-- Step counter -->
-      <span class="text-ui text-subtle tabular-nums flex-none">{currentIndex + 1}/{states.length}</span>
+      <span class="text-ui text-subtle tabular-nums flex-none"
+        >{currentIndex + 1}/{states.length}</span
+      >
 
       <!-- Navigation buttons (hidden for single state) -->
       {#if states.length > 1}

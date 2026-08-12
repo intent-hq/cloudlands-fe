@@ -1,10 +1,43 @@
-import {
-  Mark,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Mark, mergeAttributes } from '@tiptap/core';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
 export interface SuggestionOptions {
   HTMLAttributes: Record<string, any>;
+}
+
+type SuggestionRange = {
+  from: number;
+  to: number;
+  type: 'addition' | 'deletion' | 'modification';
+  originalText?: string;
+};
+
+function findSuggestionRanges(
+  doc: ProseMirrorNode,
+  markName: string,
+  id: string,
+): SuggestionRange[] {
+  const ranges: SuggestionRange[] = [];
+  doc.descendants((node, pos) => {
+    const mark = node.marks.find(
+      (candidate) => candidate.type.name === markName && candidate.attrs.id === id,
+    );
+    if (!mark) return;
+    const previous = ranges.at(-1);
+    const type = mark.attrs.type as SuggestionRange['type'];
+    const originalText = mark.attrs.originalText as string | undefined;
+    if (
+      previous &&
+      previous.to === pos &&
+      previous.type === type &&
+      previous.originalText === originalText
+    ) {
+      previous.to = pos + node.nodeSize;
+      return;
+    }
+    ranges.push({ from: pos, to: pos + node.nodeSize, type, originalText });
+  });
+  return ranges;
 }
 
 declare module '@tiptap/core' {
@@ -166,84 +199,46 @@ export const Suggestion = Mark.create<SuggestionOptions>({
     return {
       setSuggestion:
         (attributes) =>
-          ({ commands }) =>
-            commands.setMark(this.name, attributes),
+        ({ commands }) =>
+          commands.setMark(this.name, attributes),
       toggleSuggestion:
         (attributes) =>
-          ({ commands }) =>
-            commands.toggleMark(this.name, attributes),
+        ({ commands }) =>
+          commands.toggleMark(this.name, attributes),
       unsetSuggestion:
         () =>
-          ({ commands }) =>
-            commands.unsetMark(this.name),
+        ({ commands }) =>
+          commands.unsetMark(this.name),
       acceptSuggestion:
         (id: string) =>
-          ({ state, dispatch, tr }) => {
-            const { doc } = state;
-            let found = false;
-
-            doc.descendants((node, pos) => {
-              node.marks.forEach((mark) => {
-                if (mark.type.name === this.name && mark.attrs.id === id) {
-                  found = true;
-                  const from = pos;
-                  const to = pos + node.nodeSize;
-
-                  if (mark.attrs.type === 'deletion') {
-                  // Remove the content for deletions
-                    if (dispatch) {
-                      tr.delete(from, to);
-                    }
-                  } else {
-                  // Remove the suggestion mark for additions/modifications
-                    if (dispatch) {
-                      tr.removeMark(from, to, mark.type);
-                    }
-                  }
-                }
-              });
-            });
-
-            if (dispatch && found) {
-              dispatch(tr);
+        ({ state, dispatch, tr }) => {
+          const ranges = findSuggestionRanges(state.doc, this.name, id);
+          if (dispatch && ranges.length > 0) {
+            for (const range of [...ranges].reverse()) {
+              if (range.type === 'deletion') tr.delete(range.from, range.to);
+              else tr.removeMark(range.from, range.to, this.type);
             }
-
-            return found;
-          },
+            dispatch(tr);
+          }
+          return ranges.length > 0;
+        },
       rejectSuggestion:
         (id: string) =>
-          ({ state, dispatch, tr }) => {
-            const { doc } = state;
-            let found = false;
-
-            doc.descendants((node, pos) => {
-              node.marks.forEach((mark) => {
-                if (mark.type.name === this.name && mark.attrs.id === id) {
-                  found = true;
-                  const from = pos;
-                  const to = pos + node.nodeSize;
-
-                  if (mark.attrs.type === 'addition') {
-                  // Remove the content for additions
-                    if (dispatch) {
-                      tr.delete(from, to);
-                    }
-                  } else {
-                  // Remove the suggestion mark for deletions/modifications
-                    if (dispatch) {
-                      tr.removeMark(from, to, mark.type);
-                    }
-                  }
-                }
-              });
-            });
-
-            if (dispatch && found) {
-              dispatch(tr);
+        ({ state, dispatch, tr }) => {
+          const ranges = findSuggestionRanges(state.doc, this.name, id);
+          if (dispatch && ranges.length > 0) {
+            for (const range of [...ranges].reverse()) {
+              if (range.type === 'addition') tr.delete(range.from, range.to);
+              else if (range.type === 'modification' && range.originalText) {
+                tr.replaceWith(range.from, range.to, state.schema.text(range.originalText));
+              } else {
+                tr.removeMark(range.from, range.to, this.type);
+              }
             }
-
-            return found;
-          },
+            dispatch(tr);
+          }
+          return ranges.length > 0;
+        },
     };
   },
 });

@@ -1,9 +1,6 @@
 <script lang="ts">
   import { ScrollArea as ScrollAreaPrimitive } from 'bits-ui';
-  import {
-  cn,
-  type WithoutChild,
-} from '$lib/utils.js';
+  import { cn, type WithoutChild } from '$lib/utils.js';
 
   interface Props extends WithoutChild<ScrollAreaPrimitive.ScrollbarProps> {
     children?: any;
@@ -23,7 +20,7 @@
   data-slot="scroll-area-scrollbar"
   {orientation}
   class={cn(
-    'flex touch-none select-none transition-colors',
+    'flex touch-none select-none transition-colors motion-reduce:transition-none',
     orientation === 'vertical' && 'h-full w-2 border-l border-l-transparent',
     orientation === 'horizontal' && 'h-2 flex-col border-t border-t-transparent',
     className,
@@ -33,6 +30,6 @@
   {@render children?.()}
   <ScrollAreaPrimitive.Thumb
     data-slot="scroll-area-thumb"
-    class="relative flex-1 rounded bg-muted-foreground/30 hover:bg-muted-foreground/50 transition-colors"
+    class="relative flex-1 rounded-full bg-muted-foreground/30 transition-colors hover:bg-muted-foreground/50 motion-reduce:transition-none"
   />
 </ScrollAreaPrimitive.Scrollbar>

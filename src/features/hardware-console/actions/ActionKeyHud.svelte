@@ -29,7 +29,7 @@
     role="status"
   >
     <div
-      class="bg-background border border-border shadow-lg rounded-lg px-4 py-2 text-[13px] font-medium text-foreground max-w-96 truncate"
+      class="type-caption bg-background border border-border shadow-lg rounded-lg px-4 py-2 font-medium text-foreground max-w-96 truncate"
     >
       {text}
     </div>

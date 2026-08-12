@@ -15,26 +15,31 @@
  * `active-streams-bridge-seeder.ts` via the cross-workspace `agent.listActive`
  * RPC, which is registered via the seeder barrel before agents-seeder runs.
  */
-import { registerMockSeeder } from "../mock-bootstrap";
-import { isAgentDeletionPending } from "$features/agent/utils/pending-agent-deletions";
-import { bulkUpsertSessions, upsertSession } from "../slices/agent-session/agent-session-slice";
+import { registerMockSeeder } from '../mock-bootstrap';
+import type { AgentSession } from '$shared/types';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { bulkUpsertSessions, upsertSession } from '../slices/agent-session/agent-session-slice';
 import {
   setActiveAgentId,
   setAgentsLoaded,
-} from "../slices/workspace-agents/workspace-agents-slice";
+} from '../slices/workspace-agents/workspace-agents-slice';
 
-registerMockSeeder("agents", async ({ store, client }) => {
+registerMockSeeder('agents', async ({ store, client }) => {
   const wsId = store.state.workspace.activeWorkspaceId;
   if (!wsId) return;
 
-  // Drop agents with a pending soft-hidden deletion (undo window still
-  // open) — or carrying the daemon's delete-grace-window deadline
-  // (`pendingDeleteAt`, PROTOCOL §5.5 v6.7+) — so the boot/seed path cannot
-  // resurrect a deleted agent — same guard `hydrateWorkspaceAgents` applies
-  // in lifecycle-read-service.ts.
-  const fetched = (await client.agents.list(wsId)).filter(
-    (agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)),
-  );
+  // Drop agents hidden by either the local tombstone or the daemon-owned
+  // delete grace window so hydration cannot resurrect them.
+  let fetched: AgentSession[];
+  try {
+    fetched = (await client.agents.list(wsId)).filter(
+      (agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)),
+    );
+  } catch (error) {
+    console.error(`Agents seeder: client.agents.list(${wsId}) failed:`, error);
+    store.dispatch(setAgentsLoaded(wsId, true));
+    return;
+  }
 
   store.dispatch(setAgentsLoaded(wsId, true));
   if (fetched.length === 0) return;

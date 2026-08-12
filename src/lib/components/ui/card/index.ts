@@ -6,6 +6,8 @@ import Header from './card-header.svelte';
 import Title from './card-title.svelte';
 import Action from './card-action.svelte';
 
+export { cardMetadata } from './card.meta';
+
 export {
   Root,
   Content,

@@ -1,14 +1,11 @@
 import type { Note } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
 import type { WorkspaceEvent } from '$features/events/types';
+import { shouldShowWorkspaceActivityEvent } from '$features/log/utils/activity-event-visibility';
 import { getActivityLabel } from '$features/events/activity-labels';
 import { isSpecNote } from '$shared/constants/notes';
 import { TASK_LINK_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
-import {
-  EXCLUDED_STATUSES,
-  IN_PROGRESS_STATUSES,
-  type TaskStats,
-} from '$shared/utils/task-stats';
+import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES, type TaskStats } from '$shared/utils/task-stats';
 import {
   faFile,
   faFileCirclePlus,
@@ -339,11 +336,136 @@ export function parseTaskStats(content: string | undefined, notes?: Note[]): Tas
 // Activity utilities
 // ============================================================================
 
+const MESSAGE_ACTIVITY_TYPES = new Set([
+  'agent:message',
+  'agent:message:sent',
+  'agent:message:received',
+]);
+
+function getActivityMessagePreview(event: WorkspaceEvent): string | null {
+  if (!MESSAGE_ACTIVITY_TYPES.has(event.type)) return null;
+  const data = event.data as Record<string, unknown> | undefined;
+  const raw = data?.content ?? data?.message ?? data?.text;
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  return normalized.length > 60 ? `${normalized.slice(0, 59).trimEnd()}…` : normalized;
+}
+
+export function shouldShowActivityPreviewEvent(event: WorkspaceEvent): boolean {
+  if (!shouldShowWorkspaceActivityEvent(event)) return false;
+  const data = event.data as Record<string, unknown> | undefined;
+  if (event.type === 'agent:status-changed' && (data?.status ?? data?.newStatus) === 'active') {
+    return false;
+  }
+  return !MESSAGE_ACTIVITY_TYPES.has(event.type) || getActivityMessagePreview(event) !== null;
+}
+
+function getScriptActivityTitle(
+  event: WorkspaceEvent,
+  scriptNames: Readonly<Record<string, string>>,
+): string {
+  const data = event.data as Record<string, unknown> | undefined;
+  const scriptId = typeof data?.scriptId === 'string' ? data.scriptId : undefined;
+  const name = (scriptId && scriptNames[scriptId]) || 'Script';
+  const status = data?.status;
+
+  if (status === 'running') return `${name} started`;
+  if (status === 'exited') {
+    const exitCode = data?.exitCode;
+    if (typeof exitCode === 'number' && exitCode !== 0) {
+      return `${name} failed (exit ${exitCode})`;
+    }
+    if (data?.error) return `${name} failed`;
+    return `${name} stopped`;
+  }
+  return status ? `${name} is ${String(status)}` : `${name} state changed`;
+}
+
 /**
  * Get the display title for an activity event
  */
-export function getActivityTitle(event: WorkspaceEvent): string {
-  return getActivityLabel(event);
+export function getActivityTitle(
+  event: WorkspaceEvent,
+  scriptNames: Readonly<Record<string, string>> = {},
+  agentNames: Readonly<Record<string, string>> = {},
+): string {
+  const data = event.data as Record<string, unknown> | undefined;
+  const agentStatus = data?.status ?? data?.newStatus;
+  if (
+    event.type === 'agent:idle' ||
+    event.type === 'agent:completed' ||
+    (event.type === 'agent:status-changed' &&
+      (agentStatus === 'idle' || agentStatus === 'completed' || agentStatus === 'done'))
+  ) {
+    const actorName =
+      event.actor?.type === 'agent' || event.actor?.type === 'external'
+        ? event.actor.name
+        : undefined;
+    const agentId = getEventAgentId(event);
+    const subjectName = [
+      data?.agentName,
+      data?.name,
+      agentId && agentNames[agentId],
+      actorName,
+    ].find((name): name is string => typeof name === 'string' && name.trim().length > 0);
+    return subjectName
+      ? m.events_activity_nameFinished_label({ name: subjectName.trim() })
+      : m.events_activity_partFinished_label().trim();
+  }
+  const messagePreview = getActivityMessagePreview(event);
+  if (messagePreview) {
+    const actorName = event.actor?.type === 'agent' ? event.actor.name : undefined;
+    const sender = data?.fromAgentName || data?.agentName || actorName || 'Agent';
+    return `${sender}: ${messagePreview}`.replaceAll('`', '');
+  }
+  if (event.type === 'script:state') {
+    return getScriptActivityTitle(event, scriptNames);
+  }
+  return getActivityLabel(event).replaceAll('`', '');
+}
+
+/**
+ * Resolve the agent an activity event is about, for avatar rendering and
+ * click-through. Prefers an agent/external actor; for `agent:*` lifecycle
+ * events (created/completed/…) the actor is often the system, so fall back to
+ * the subject agent carried in the payload.
+ */
+export function getEventAgentId(event: WorkspaceEvent): string | null {
+  const actor = event.actor;
+  if ((actor?.type === 'agent' || actor?.type === 'external') && actor.id) {
+    return actor.id;
+  }
+  if (event.type.startsWith('agent:')) {
+    const data = event.data as Record<string, unknown> | undefined;
+    const subject = (data?.agentId || event.sessionId || null) as string | null;
+    return subject;
+  }
+  return null;
+}
+
+export interface ActivityChatTarget {
+  messageId?: string;
+  toolCallId?: string;
+  turnNumber?: number;
+}
+
+/** Resolve the most precise chat location carried by an activity event. */
+export function getActivityChatTarget(event: WorkspaceEvent): ActivityChatTarget {
+  const data = event.data as Record<string, unknown> | undefined;
+  const messageId =
+    event.relatedChatMessageId ||
+    (typeof data?.messageId === 'string' ? data.messageId : undefined) ||
+    event.provenance?.chat?.messageId;
+  const toolCallId =
+    event.relatedToolCallId ||
+    (typeof data?.toolCallId === 'string' ? data.toolCallId : undefined) ||
+    event.provenance?.execution?.toolCallId;
+  const dataTurnNumber = data?.turnNumber;
+  const turnNumber =
+    typeof dataTurnNumber === 'number' ? dataTurnNumber : event.provenance?.chat?.turnNumber;
+
+  return { messageId, toolCallId, turnNumber };
 }
 
 /**
@@ -367,6 +489,7 @@ export function getActivityIcon(event: WorkspaceEvent) {
     'note:created': faNote,
     'note:updated': faNote,
     'terminal:command': faTerminal,
+    'script:state': faTerminal,
   };
 
   return iconMap[type] || faFile;

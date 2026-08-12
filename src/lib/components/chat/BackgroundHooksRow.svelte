@@ -23,8 +23,8 @@
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import HookScriptModal from '$lib/components/chat/HookScriptModal.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatCompactDuration, formatInteger, formatTime } from '$lib/i18n/format';
@@ -45,9 +45,8 @@
 
   let { workspaceId, agentId }: Props = $props();
 
-  // Writable store mirrors the prop so the Redux selector re-evaluates when
-  // workspaceId changes (selector readables are init-time only).
-  // svelte-ignore state_referenced_locally -- store is seeded with the current value; the effect below mirrors prop changes.
+  // Capture the initial prop in a store; the effect below keeps later changes in sync.
+  // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -100,6 +99,7 @@
 
   // Hook whose script/logs modal is open; null when closed.
   let viewingHookId = $state<string | null>(null);
+  let focusedHookId = $state<string | null>(null);
 
   function handleViewScript(hook: BackgroundHook, close?: () => void) {
     close?.();
@@ -154,6 +154,10 @@
             delayDuration={300}
             disableHoverableContent={false}
             contentClass="max-w-sm"
+            open={focusedHookId === hook.hookId}
+            onOpenChange={(open) => {
+              focusedHookId = open ? hook.hookId : null;
+            }}
           >
             {#snippet content()}
               <div class="flex flex-col gap-1 text-xs" data-testid="background-hook-hover-card">
@@ -201,6 +205,7 @@
             <button
               type="button"
               onclick={toggle}
+              onfocus={() => (focusedHookId = hook.hookId)}
               class="group/chip relative flex flex-col rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors overflow-hidden cursor-pointer"
               data-testid="background-hook-chip"
               data-hook-state={hook.state}

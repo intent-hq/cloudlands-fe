@@ -1,8 +1,8 @@
 type KnownWindowEventName =
   | 'agent-follow-animation'
+  | 'agent:scroll-to-activity'
   | 'agent:scroll-to-turn'
   | 'app:deep-link-create'
-  | 'chat:enhance-prompt'
   | 'chat:open-message'
   | 'chat:open-model-picker'
   | 'chat:resend-message'
@@ -54,9 +54,7 @@ type LegacyOrphanWindowEventName =
   | 'workspace:file-resolved'
   | 'workspace:post-merge-update';
 
-type DynamicWindowEventName =
-  | `panelVisibility:${string}`
-  | `window:${string}`;
+type DynamicWindowEventName = `panelVisibility:${string}` | `window:${string}`;
 
 export type WindowEventName = KnownWindowEventName | DynamicWindowEventName;
 

@@ -3,39 +3,21 @@
  * Migrated from a manual `document` keydown listener; the layer is only
  * registered while the dropdown is expanded.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 // Stub the heavy integrations picker — the escape layer lives on the section.
 vi.mock('$lib/components/workspace/initializer/IssueSuggestions.svelte', async () => ({
-  default: (
-    await import('../../initializer/__tests__/mocks/MockComponent.svelte')
-  ).default,
+  default: (await import('../../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
 vi.mock('$lib/components/ui/Portal.svelte', async () => {
-  const MockPortal = (
-    await import('../../../modals/__tests__/mocks/MockPortal.svelte')
-  ).default;
+  const MockPortal = (await import('../../../modals/__tests__/mocks/MockPortal.svelte')).default;
   return { default: MockPortal };
 });
 
 vi.mock('svelte-fa', async () => {
-  const MockFa = (
-    await import('../../../ui/__tests__/mocks/Fa.svelte')
-  ).default;
+  const MockFa = (await import('../../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
 });
 
@@ -84,5 +66,22 @@ describe('AddContextSection Escape handling (escape-layer stack)', () => {
     window.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('creates a note directly from the compact trigger', async () => {
+    const onAddNote = vi.fn();
+    const onOpenBrowser = vi.fn();
+    render(AddContextSection, { props: { compact: true, onAddNote, onOpenBrowser } });
+
+    const trigger = screen.getByRole('button', { name: 'Add context' });
+    expect(trigger.classList.contains('shadow-none')).toBe(true);
+    expect(trigger.classList.contains('shadow-xs')).toBe(false);
+
+    await fireEvent.click(trigger);
+
+    expect(onAddNote).toHaveBeenCalledOnce();
+    expect(onOpenBrowser).not.toHaveBeenCalled();
+    expect(screen.queryByText('Note')).toBeFalsy();
+    expect(screen.queryByText('Browser')).toBeFalsy();
   });
 });

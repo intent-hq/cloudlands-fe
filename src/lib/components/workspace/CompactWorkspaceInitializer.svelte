@@ -1,99 +1,92 @@
 <script lang="ts">
-/* eslint-disable max-lines */
+  /* eslint-disable max-lines */
+  import { untrack, onMount, onDestroy } from 'svelte';
   import {
-  untrack,
-  onMount,
-  onDestroy,
-} from 'svelte';
-  import {
-  type InitialRepoInfo,
-  getLastSelectedRepoHydrationAction,
-  getInitialRepoKey,
-  mapInitialRepoToFormState,
-} from './initializer/initial-repo-utils';
+    type InitialRepoInfo,
+    getLastSelectedRepoHydrationAction,
+    getInitialRepoKey,
+    mapInitialRepoToFormState,
+  } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
   import {
-  SETUP_SCRIPT_TEMPLATES,
-  getTemplateContent,
-  chooseDefaultSetupScript,
-  createRepoConfigProbeScheduler,
-  resolveSetupScriptParam,
-  REPO_CONFIG_SCRIPT_NAME,
-} from '$features/setup-scripts';
+    SETUP_SCRIPT_TEMPLATES,
+    getTemplateContent,
+    chooseDefaultSetupScript,
+    createRepoConfigProbeScheduler,
+    resolveSetupScriptParam,
+    REPO_CONFIG_SCRIPT_NAME,
+  } from '$features/setup-scripts';
   import {
-  getLastUsedSetupScript,
-  recordLastUsedSetupScript,
-} from '$features/setup-scripts/last-used';
+    getLastUsedSetupScript,
+    recordLastUsedSetupScript,
+  } from '$features/setup-scripts/last-used';
   import {
-  setCompactWorkspaceInitializerFormState,
-  clearWorkspaceInitializerPendingGitHubPrefill,
-  setWorkspaceInitializerBranchForRepo,
-  setWorkspaceInitializerLastSubmittedAgent,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+    setCompactWorkspaceInitializerFormState,
+    clearWorkspaceInitializerPendingGitHubPrefill,
+    setWorkspaceInitializerBranchForRepo,
+    setWorkspaceInitializerLastSubmittedAgent,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
-  beginWorkspaceCreateProgress,
-  clearWorkspaceCreateProgress,
-} from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
+    beginWorkspaceCreateProgress,
+    clearWorkspaceCreateProgress,
+  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import {
-  selectCompactWorkspaceInitializerFormState,
-  selectWorkspaceInitializerHydrated,
-  selectWorkspaceInitializerLastSelectedRepo,
-  selectWorkspaceInitializerLastSubmittedAgent,
-  selectWorkspaceInitializerPendingGitHubPrefill,
-  selectWorkspaceInitializerRecentRepos,
-} from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+    selectCompactWorkspaceInitializerFormState,
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerLastSelectedRepo,
+    selectWorkspaceInitializerLastSubmittedAgent,
+    selectWorkspaceInitializerPendingGitHubPrefill,
+    selectWorkspaceInitializerRecentRepos,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
     WorkspaceInitializerRepoSelection,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import {
-  hydrateWorkspaceNavigation,
-  type WorkspaceNavigationWorkspaceState,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    hydrateWorkspaceNavigation,
+    type WorkspaceNavigationWorkspaceState,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import {
-  setWorkspaceEntity,
-  updateWorkspaceEntity,
-} from '$store/renderer/slices/workspace/workspace-slice';
-
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import {
-  selectSpecialists,
-  selectEffectiveBehaviorPrompt,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectEffectiveBehaviorPrompt,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
-  getGitErrorMessage,
-  parseGitHubUrl,
-  validateBranchName,
-  validateInitialPrompt,
-  validateRepoPath,
-} from '$lib/utils/workspace-validation';
+    getGitErrorMessage,
+    parseGitHubUrl,
+    validateBranchName,
+    validateInitialPrompt,
+    validateRepoPath,
+  } from '$lib/utils/workspace-validation';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import {
-  faMagicWandSparkles,
-  faMicrophone,
-  faPaperclip,
-  faSpinner,
-  faStop,
-  faExclamationTriangle,
-  faCodeBranch,
-} from '@fortawesome/free-solid-svg-icons';
+    faMagicWandSparkles,
+    faMicrophone,
+    faPaperclip,
+    faSpinner,
+    faStop,
+    faExclamationTriangle,
+    faCodeBranch,
+  } from '@fortawesome/free-solid-svg-icons';
   import {
-  selectPttRecording,
-  selectVoiceTranscribing,
-} from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+    selectPttRecording,
+    selectVoiceTranscribing,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import {
-  cancelPromptMicRecording,
-  isPromptMicRecording,
-  togglePromptMicRecording,
-} from '$features/hardware-console/voice/prompt-mic-controller';
+    cancelPromptMicRecording,
+    isPromptMicRecording,
+    togglePromptMicRecording,
+  } from '$features/hardware-console/voice/prompt-mic-controller';
   import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
@@ -109,13 +102,8 @@
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
   import { toast } from 'svelte-sonner';
-  import {
-  fade,
-  slide,
-} from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import Button from '../ui/button/button.svelte';
-  import { Checkbox } from '../ui/checkbox';
-  import Tooltip from '../ui/tooltip/Tooltip.svelte';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
@@ -142,16 +130,16 @@
   import { backendRequest } from '$lib/client/live/backend-transport';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
-  clearNewWorkspaceDraft,
-  createNewWorkspaceDraftSaver,
-  restoreNewWorkspaceDraft,
-} from './initializer/new-workspace-draft';
+    clearNewWorkspaceDraft,
+    createNewWorkspaceDraftSaver,
+    restoreNewWorkspaceDraft,
+  } from './initializer/new-workspace-draft';
   import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
   import { createRepoCacheWarmer } from './initializer/warm-repo-cache';
   import {
-  matchGitHubPrefillRepo,
-  type GitHubPrefillRepoCandidate,
-} from './initializer/github-prefill-repo-match';
+    matchGitHubPrefillRepo,
+    type GitHubPrefillRepoCandidate,
+  } from './initializer/github-prefill-repo-match';
 
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -335,10 +323,10 @@
           // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
           // Try resolving now via IPC to the repo registry.
           try {
-            const result = await invoke<{ success: boolean; data?: Array<{ path: string; name: string; owner?: string }> }>(
-              'workspace:get-recent-repositories',
-              {},
-            );
+            const result = await invoke<{
+              success: boolean;
+              data?: Array<{ path: string; name: string; owner?: string }>;
+            }>('workspace:get-recent-repositories', {});
             if (result?.success && Array.isArray(result.data)) {
               const ghUrl = data.githubUrl.trim();
               const patterns = [
@@ -363,7 +351,10 @@
                   repoPath = matched.path;
                   isValidPath = true;
                   scope = '';
-                  logger.debug('Resolved githubUrl to local path via IPC', { githubUrl: data.githubUrl, repoPath });
+                  logger.debug('Resolved githubUrl to local path via IPC', {
+                    githubUrl: data.githubUrl,
+                    repoPath,
+                  });
                 }
               }
             }
@@ -396,7 +387,9 @@
             isTeamMode = data.specialist === 'spec-writer';
             logger.debug('Applied specialist from prefill', { specialistId: matchedSpecialist.id });
           } else {
-            logger.warn('Specialist from prefill not found, ignoring', { specialist: data.specialist });
+            logger.warn('Specialist from prefill not found, ignoring', {
+              specialist: data.specialist,
+            });
           }
         }
 
@@ -565,9 +558,6 @@
   // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
   let gitAvailable: boolean | 'unknown' | null = $state(null);
 
-  // Stay on home page after creation
-  let stayOnHomePage = $state(savedState?.stayOnHomePage ?? false);
-
   // GitHub auth state - tracks if user needs to authenticate for private repos
   let githubAuthNeeded = $state<'none' | 'not-authenticated' | 'no-access'>('none');
 
@@ -608,11 +598,11 @@
     branch = formState.branch ?? branch;
     isNewRepo = formState.isNewRepo ?? isNewRepo;
     isValidPath = formState.isValidPath ?? isValidPath;
-    scope = formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
+    scope =
+      formState.scope && formState.repoPath === formState.scopeRepoPath ? formState.scope : scope;
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     selectedProvider = formState.selectedProvider ?? selectedProvider;
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
-    stayOnHomePage = formState.stayOnHomePage ?? stayOnHomePage;
     applyAgentSettings(formState);
   }
 
@@ -745,7 +735,6 @@
         isTeamMode,
         selectedProvider,
         skipIsolation,
-        stayOnHomePage,
       };
       // Snapshot to strip $state proxies (e.g. remoteSetup) — Redux state must be
       // structured-cloneable for daemon persistence (src/store/renderer/AGENTS.md §2).
@@ -855,14 +844,20 @@
         // Apply specialist if provided (match by specialist ID)
         if (data.specialist) {
           const specialists = selectSpecialists.select(appStore.state);
-          const matchedSpecialist = specialists.find((s: { id: string }) => s.id === data.specialist);
+          const matchedSpecialist = specialists.find(
+            (s: { id: string }) => s.id === data.specialist,
+          );
           if (matchedSpecialist) {
             selectedSpecialist = matchedSpecialist.id;
             // Switch team mode based on specialist - spec-writer uses team orchestration, everything else is single agent
             isTeamMode = data.specialist === 'spec-writer';
-            logger.debug('Applied specialist from prefill (onMount)', { specialistId: matchedSpecialist.id });
+            logger.debug('Applied specialist from prefill (onMount)', {
+              specialistId: matchedSpecialist.id,
+            });
           } else {
-            logger.warn('Specialist from prefill not found (onMount), ignoring', { specialist: data.specialist });
+            logger.warn('Specialist from prefill not found (onMount), ignoring', {
+              specialist: data.specialist,
+            });
           }
         }
 
@@ -1275,8 +1270,8 @@
         const response =
           typeof window !== 'undefined' && window.electronAPI
             ? await invoke<any>('git-tracking:get-remote-url', {
-              repoPath: path,
-            })
+                repoPath: path,
+              })
             : undefined;
         // Drop stale responses: the repo changed while this probe was in flight
         if (generation !== remoteUrlProbeGeneration) {
@@ -1668,7 +1663,8 @@
             branch,
           });
         } catch (err) {
-          pullError = err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
+          pullError =
+            err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
           showPullConflictDialog = true;
           isPulling = false;
           isCreating = false;
@@ -1940,8 +1936,7 @@
       // With no explicit pick the daemon applies its own resolved default at
       // creation time (the same value the picker previews via
       // `resolvedModel`), so no client-side tier/preference fallback runs.
-      const resolvedModel =
-        modelWasOverridden && selectedModel ? selectedModel : undefined;
+      const resolvedModel = modelWasOverridden && selectedModel ? selectedModel : undefined;
 
       // Derive the submitted provider from the explicit model (if any) so
       // intent and daemon spawn can never diverge: the daemon's
@@ -2158,47 +2153,28 @@
         ui: { hasInitialized: false },
       };
       appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
+      appStore.dispatch(openWorkspaceTab(workspace.id));
 
-      if (stayOnHomePage) {
-        // Update the workspace in the store with agentSummary so the agent shows immediately
-        // This is needed because the workspace returned from create() doesn't include agentSummary
-        appStore.dispatch(
-          updateWorkspaceEntity(workspace.id, {
-            agentSummary: {
-              agentIds: initialAgentId ? [initialAgentId] : [],
-            },
-          }),
-        );
-      } else {
-        await goto(`/workspace/${workspace.id}`);
-      }
+      await goto(`/workspace/${workspace.id}`);
 
       // Save last submitted agent settings before clearing form.
       // This allows the form to restore these values after submission.
-      appStore.dispatch(setWorkspaceInitializerLastSubmittedAgent({
-        selectedSpecialist,
-        selectedModel,
-        modelWasOverridden,
-        isTeamMode,
-      }));
+      appStore.dispatch(
+        setWorkspaceInitializerLastSubmittedAgent({
+          selectedSpecialist,
+          selectedModel,
+          modelWasOverridden,
+          isTeamMode,
+        }),
+      );
 
-      clearForm({ preserveRepo: stayOnHomePage });
-
-      // Notify parent (e.g. modal) that creation succeeded
-      // Skip if in rapid fire mode — the user wants to stay in the modal to create more workspaces
-      if (!stayOnHomePage) {
-        oncreate?.();
-      }
-
-      // Re-focus the text input if staying on the home page
-      if (stayOnHomePage) {
-        // Use setTimeout to ensure the form is fully cleared before focusing
-        setTimeout(() => {
-          richTextarea?.focus();
-        }, 100);
-      }
+      clearForm();
+      oncreate?.();
     } catch (err) {
-      error = err instanceof Error ? getGitErrorMessage(err.message) : m.workspace_compactInitializer_createFailed_error();
+      error =
+        err instanceof Error
+          ? getGitErrorMessage(err.message)
+          : m.workspace_compactInitializer_createFailed_error();
     } finally {
       isCreating = false;
       // The create settled (success, failure, or early return) — drop the
@@ -2208,16 +2184,14 @@
     }
   }
 
-  function clearForm({ preserveRepo = false }: { preserveRepo?: boolean } = {}) {
-    if (!preserveRepo) {
-      repoPath = '';
-      repoType = 'local';
-      githubUrl = '';
-      branch = '';
-      isNewRepo = false;
-      isValidPath = false;
-      scope = '';
-    }
+  function clearForm() {
+    repoPath = '';
+    repoType = 'local';
+    githubUrl = '';
+    branch = '';
+    isNewRepo = false;
+    isValidPath = false;
+    scope = '';
     remoteSetup = null;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
@@ -2232,11 +2206,6 @@
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
 
-    // When preserving repo (stayOnHomePage), restore the last used setup script
-    // so the next workspace creation uses the same script
-    if (preserveRepo && repoPath) {
-      restoreLastUsedSetupScript(repoPath);
-    }
     hasFiredClick = false;
     hasFiredType = false;
     error = null;
@@ -2244,7 +2213,7 @@
     branchBehind = 0;
     pullError = null;
     showPullConflictDialog = false;
-    // Note: intentionally not resetting stayOnHomePage or shouldPullBeforeCreate - user preferences should persist
+    // Note: intentionally not resetting shouldPullBeforeCreate — this preference should persist.
 
     // Immediately write the cleaned form state to Redux so that even if the
     // $effect doesn't fire before the component unmounts (e.g. navigation
@@ -2256,21 +2225,9 @@
       modelWasOverridden,
       isTeamMode,
       selectedProvider,
-      stayOnHomePage,
       skipIsolation,
       remoteSetup, // null at this point, but keeps parity with $effect's formState
     };
-    if (preserveRepo) {
-      // Keep repo fields in persisted form state when staying on the home page
-      cleanedState.repoPath = repoPath;
-      cleanedState.repoType = repoType;
-      cleanedState.githubUrl = githubUrl;
-      cleanedState.branch = branch;
-      cleanedState.isNewRepo = isNewRepo;
-      cleanedState.isValidPath = isValidPath;
-      cleanedState.scope = scope;
-      cleanedState.scopeRepoPath = scope ? repoPath : undefined;
-    }
     // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
     appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
   }
@@ -2436,7 +2393,9 @@
           }
         } catch (err) {
           logger.error('Failed to process image', { fileName: file.name, error: err });
-          toast.error(m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }));
+          toast.error(
+            m.workspace_compactInitializer_processImageFailed_error({ fileName: file.name }),
+          );
         }
       } else {
         // Non-image files are STAGED as path-only context items: no workspace
@@ -2479,7 +2438,9 @@
     }
 
     if (oversizedFiles.length > 0) {
-      toast.error(m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }));
+      toast.error(
+        m.workspace_compactInitializer_filesTooLarge_error({ files: oversizedFiles.join(', ') }),
+      );
     }
   }
 
@@ -2595,11 +2556,9 @@
     try {
       const sent = await placeAndSendFirstMessage();
       if (!sent) return;
-      clearForm({ preserveRepo: stayOnHomePage });
-      if (!stayOnHomePage) {
-        oncreate?.();
-        await goto(`/workspace/${pending.workspaceId}`);
-      }
+      await goto(`/workspace/${pending.workspaceId}`);
+      clearForm();
+      oncreate?.();
     } finally {
       isCreating = false;
     }
@@ -2776,7 +2735,9 @@
         error instanceof EnhancePromptUnavailableError
           ? m.workspace_compactInitializer_enhanceUnavailable_error()
           : error instanceof Error && error.message
-            ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({ message: error.message })
+            ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({
+                message: error.message,
+              })
             : m.workspace_compactInitializer_enhanceFailed_error(),
       );
     } finally {
@@ -2811,10 +2772,7 @@
     // fallback): surface the actionable setup toast instead of recording
     // audio that could never be transcribed. A live recording is never
     // gated — its stop-click must always land.
-    if (
-      !micRecording &&
-      selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable'
-    ) {
+    if (!micRecording && selectEffectiveVoiceEngine.select(appStore.state) === 'unavailable') {
       showVoiceSetupToast();
       return;
     }
@@ -2865,7 +2823,7 @@
   <!-- Bordered container: Linear issues + Text area -->
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
   <div
-    class="relative -ml-4 w-[calc(100%+32px)] border rounded-xl transition-all duration-200 border-border bg-background"
+    class="relative w-full rounded-lg border border-border bg-background transition-all duration-200"
     class:drag-over={isDraggingOver}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
@@ -2881,11 +2839,12 @@
     <!-- Drag overlay -->
     {#if isDraggingOver}
       <div
-        class="absolute inset-0 z-10 flex items-center justify-center bg-primary/5 rounded-xl pointer-events-none"
+        class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/5 pointer-events-none"
       >
         <div class="flex flex-col items-center gap-2 text-primary">
           <Fa icon={faPaperclip} class="w-6 h-6" />
-          <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span>
+          <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span
+          >
         </div>
       </div>
     {/if}
@@ -3028,7 +2987,9 @@
               size="icon-xs"
               variant="ghost-light"
               disabled={!initialPrompt.trim() && !isEnhancing}
-              tooltip={isEnhancing ? m.workspace_compactInitializer_stopEnhancing_tooltip() : m.workspace_compactInitializer_enhancePrompt_tooltip()}
+              tooltip={isEnhancing
+                ? m.workspace_compactInitializer_stopEnhancing_tooltip()
+                : m.workspace_compactInitializer_enhancePrompt_tooltip()}
               tooltipSide="top"
             >
               {#if isEnhancing}
@@ -3064,7 +3025,7 @@
 
   <!-- Bottom: Agent picker, Setup script, Create button -->
   {#if isExpanded}
-    <div class="w-full min-w-0 mt-3.5 mb-3" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="mt-4 mb-1 w-full min-w-0" transition:slide={{ axis: 'y', duration: 200 }}>
       <!-- Git not installed banner -->
       {#if gitAvailable === false}
         <div
@@ -3074,7 +3035,9 @@
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-destructive-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-destructive-foreground">{m.workspace_compactInitializer_gitNotInstalled_label()}</p>
+              <p class="font-medium text-destructive-foreground">
+                {m.workspace_compactInitializer_gitNotInstalled_label()}
+              </p>
               <p class="text-subtle mt-1">
                 {m.workspace_compactInitializer_gitRequired_description()}
               </p>
@@ -3112,7 +3075,9 @@
       {/if}
 
       <!-- Agent picker row -->
-      <div class="w-full min-w-0 flex flex-wrap items-center gap-2 pt-1 pb-4">
+      <div
+        class="flex w-full min-w-0 flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 shadow-xs"
+      >
         <div class="flex-1 min-w-fit flex-col">
           <!-- Repo + Branch picker row (above border) -->
           {#if isExpanded}
@@ -3141,7 +3106,11 @@
 
         <!-- Create button -->
         <div class="shrink-0">
-          <Button class="text-white relative overflow-hidden" onclick={handleSubmit} disabled={!isValid || isCreating || isEnhancing}>
+          <Button
+            onclick={handleSubmit}
+            disabled={!isValid || isCreating || isEnhancing}
+            class="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+          >
             {#if isCreating}
               <Fa icon={faSpinner} class="animate-spin" size="sm" />
               <span class="min-w-[160px] text-left">
@@ -3161,12 +3130,12 @@
                 {/if}
               </span>
             {:else}
+              <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
               {#if isValid}
                 <span class="opacity-50 ml-1" transition:slide={{ axis: 'x', duration: 200 }}>
                   {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
                 </span>
               {/if}
-              <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
             {/if}
           </Button>
         </div>
@@ -3217,13 +3186,16 @@
             }}
           >
             <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-            <span>{m.workspace_branchSelector_usePrBranch_label()} <strong>{selectedPRBranch}</strong></span>
+            <span
+              >{m.workspace_branchSelector_usePrBranch_label()}
+              <strong>{selectedPRBranch}</strong></span
+            >
           </button>
         </div>
       {/if}
 
-      <div class="w-full mt-3">
-        <div class="mb-6">
+      <div class="mt-4 w-full">
+        <div class="mb-4">
           <InitialAgentPicker
             bind:selectedSpecialist
             {selectedModel}
@@ -3235,35 +3207,32 @@
             bind:selectedProvider
           />
         </div>
-        <!-- Setup script + Rapid fire row -->
-        <div class="border-t border-border pt-4 space-y-2">
+        <!-- Setup script -->
+        <div class="space-y-2 border-t border-border pt-3">
           <div class="flex items-center justify-between flex-wrap gap-2 w-full">
             <!-- Left: setup script button -->
             <button
               type="button"
-              class="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              class="group flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
               {#if isRepoConfigLoading}
                 <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-                <span class="sr-only">{m.workspace_compactInitializer_detectingSetupScript_label()}</span>
+                <span class="sr-only"
+                  >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
+                >
               {:else}
-                <div class="bg-background px-2 py-0.5 font-medium">{setupScriptName}</div>
-                <p class="text-sm text-subtle">{m.workspace_compactInitializer_setupDevEnvWith_after()}</p>
+                <span
+                  class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
+                >
+                  {setupScriptName}
+                </span>
+                <p class="text-sm text-subtle">
+                  {m.workspace_compactInitializer_setupDevEnvWith_after()}
+                </p>
               {/if}
             </button>
-            <!-- Right: rapid fire -->
-            <Tooltip content={m.workspace_compactInitializer_rapidFire_tooltip()} side="top" size="sm">
-              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-              <div
-                class="flex whitespace-nowrap items-center gap-2 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer select-none ml-auto"
-                onclick={() => (stayOnHomePage = !stayOnHomePage)}
-              >
-                <Checkbox checked={stayOnHomePage} size="sm" />
-                <span>{m.workspace_compactInitializer_rapidFireMode_label()}</span>
-              </div>
-            </Tooltip>
           </div>
           <SetupScriptModal
             bind:open={showSetupScript}

@@ -6,7 +6,7 @@
    * ShadCN/Vercel-inspired design.
    */
   import { formatTime as formatClockTime } from '$lib/i18n/format';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     currentTime: string;
@@ -89,7 +89,11 @@
     {:else}
       <span class="h-2 w-2 rounded-full bg-muted-foreground/40"></span>
     {/if}
-    <span>{isLive ? m.agentOverview_timeScrubber_live_label() : m.agentOverview_timeScrubber_paused_label()}</span>
+    <span
+      >{isLive
+        ? m.agentOverview_timeScrubber_live_label()
+        : m.agentOverview_timeScrubber_paused_label()}</span
+    >
   </button>
 
   <!-- Slider container -->
@@ -134,9 +138,7 @@
   </div>
 
   <!-- Current time -->
-  <div
-    class="shrink-0 text-ui text-subtle font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded"
-  >
+  <div class="shrink-0 text-ui text-subtle font-mono tabular-nums bg-muted/50 px-2 py-0.5 rounded">
     {formatTime(currentTime)}
   </div>
 </div>

@@ -30,10 +30,13 @@
   import {
     selectSelectedNoteId,
     selectNoteById,
-    selectNotesVersion,
+    selectWorkspaceNotesState,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 
-  import { updateTaskNoteStatus, createPrerequisiteTask } from '$features/tasks/tasks-write-service';
+  import {
+    updateTaskNoteStatus,
+    createPrerequisiteTask,
+  } from '$features/tasks/tasks-write-service';
   import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
   import type { NoteId, TaskStatus } from '$shared/types';
@@ -52,7 +55,6 @@
   $effect(() => {
     wsIdStore.set($activeWorkspaceId ?? '');
   });
-  const notesVersion = selectNotesVersion(wsIdStore);
 
   let { node, selected, updateAttributes, getPos, editor }: NodeViewProps = $props();
 
@@ -85,25 +87,26 @@
   });
 
   let isLinkedTask = $derived(!!linkedTaskNoteId);
-
-  let linkedTaskNote = $derived.by(() => {
-    if (!linkedTaskNoteId) return null;
-    // Access notesVersion to trigger reactivity when notes map changes
-    void $notesVersion;
-    const wsId = $activeWorkspaceId;
-    if (!wsId) return null;
-    const state = appStore.state;
-    return selectNoteById.select(state, wsId, linkedTaskNoteId) ?? null;
+  const linkedTaskNoteIdStore = writable<NoteId | null>(null);
+  $effect(() => {
+    linkedTaskNoteIdStore.set(linkedTaskNoteId);
   });
+  const linkedTaskNoteStore = selectNoteById(wsIdStore, linkedTaskNoteIdStore);
+  const workspaceNotesStateStore = selectWorkspaceNotesState(wsIdStore);
+  let linkedTaskNote = $derived($linkedTaskNoteStore ?? null);
 
   let linkedTaskTitle = $derived(
     linkedTaskNote?.title ??
-      m.tiptap_taskItem_taskNotFound_label({
-        id: linkedTaskNoteId ?? m.tiptap_taskItem_unknownId_label(),
-      }),
+      (!$workspaceNotesStateStore.initialized
+        ? m.tiptap_taskNotePreview_loading_label()
+        : m.tiptap_taskItem_taskNotFound_label({
+            id: linkedTaskNoteId ?? m.tiptap_taskItem_unknownId_label(),
+          })),
   );
   let linkedTaskStatus = $derived(linkedTaskNote?.metadata?.task?.status ?? null);
-  let linkedTaskNotFound = $derived(isLinkedTask && !linkedTaskNote);
+  let linkedTaskNotFound = $derived(
+    isLinkedTask && $workspaceNotesStateStore.initialized && !linkedTaskNote,
+  );
   let linkedTaskChecked = $derived(linkedTaskStatus === 'complete');
 
   let linkedTaskAgentId = $derived.by(() => {
@@ -179,7 +182,7 @@
 
   async function handleOpenLinkedNote(event?: MouseEvent) {
     if (linkedTaskNoteId) {
-      const openInAdjacentPanel = event?.metaKey || event?.ctrlKey || false;
+      const openInAdjacentPanel = true;
       // Find the panel ID by looking up the DOM for the data-panel-id attribute
       const target = event?.target as HTMLElement | null;
       const panelElement = target?.closest('[data-panel-id]');
@@ -191,7 +194,11 @@
         event.stopPropagation();
       }
 
-      await navigateToNote(linkedTaskNoteId, { openInAdjacentPanel, sourcePanelId });
+      await navigateToNote(linkedTaskNoteId, {
+        openInAdjacentPanel,
+        openInNewAdjacentPanel: true,
+        sourcePanelId,
+      });
     }
   }
 
@@ -568,6 +575,7 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
+              aria-label="Convert to task note"
               class="opacity-20 hover:opacity-100 transition-opacity"
               onclick={(e) => {
                 e.stopPropagation();

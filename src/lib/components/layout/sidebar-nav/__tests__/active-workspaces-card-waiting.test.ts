@@ -73,7 +73,8 @@ describe('ActiveWorkspacesCard Waiting section', () => {
   beforeEach(async () => {
     appStore.init();
     appStore.dispatch(resetWorkspaceState());
-    const { activeStreamsTracker } = await import('$features/agent/services/active-streams-tracker');
+    const { activeStreamsTracker } =
+      await import('$features/agent/services/active-streams-tracker');
     streamingIdsMap = (
       activeStreamsTracker as unknown as { __getStreamingIdsMap: () => Map<string, string[]> }
     ).__getStreamingIdsMap();
@@ -87,6 +88,22 @@ describe('ActiveWorkspacesCard Waiting section', () => {
       expect(getSectionHeaders()).toContain('Waiting');
       expect(screen.getByText('Waiting WS')).toBeTruthy();
     });
+  });
+
+  it('exposes labeled navigation and search semantics without a false listbox role', async () => {
+    renderWith(
+      Array.from({ length: 4 }, (_, index) =>
+        makeWorkspace(`ws-wait-${index}`, `Waiting WS ${index}`, {
+          displayStatus: 'in_progress',
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('navigation', { name: 'Active workspaces' })).toBeTruthy();
+    });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Search spaces...' })).toBeTruthy();
   });
 
   it('excludes a streaming in_progress workspace from Waiting (it is Running)', async () => {

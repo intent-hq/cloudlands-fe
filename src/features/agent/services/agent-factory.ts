@@ -208,8 +208,8 @@ export class UnifiedAgentFactory {
 
           // Get open panels from panel layout manager
           // IMPORTANT: Only access the panel layout manager if it already exists in cache.
-          // This prevents prematurely initializing the layout when creating an agent from
-          // the home page (before the workspace page is loaded). If we initialize the layout
+          // This prevents prematurely initializing the layout when creating an agent before
+          // the workspace page is loaded. If we initialize the layout
           // here, it may load stale data from localStorage, causing duplicate tabs.
           try {
             const { getPanelLayoutManager, hasPanelLayoutManager } =

@@ -6,10 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self' data: blob: ws: wss:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: workspace-asset:; connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* https:; worker-src 'self' blob: data:;"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: workspace-asset:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; worker-src 'self' blob: data:;"
     />
     <title>Intent</title>
+    <!-- Runtime web configuration is a same-origin deployment asset, never a Vite-bundled secret. -->
+    <script src="/runtime-config.js"></script>
     <style>
+      html,
+      body {
+        background: transparent;
+      }
+
       /* Splash screen to prevent blank flash during SvelteKit SPA initialization (~1s).
          Uses position:fixed to cover viewport regardless of #app's display:contents. */
       #splash {
@@ -18,20 +25,20 @@
         z-index: 9999;
         transition: opacity 0.15s ease-out;
         display: flex;
-        flex-direction: row;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        background: transparent;
       }
-      .light #splash { background: hsl(230 10% 97%); color: hsl(230 10% 40%); }
-      .dark #splash { background: hsl(240 15% 5%); color: hsl(230 10% 70%); }
-      #splash-text {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-size: 14px;
-        letter-spacing: 0.05em;
+      #splash-art {
+        display: block;
+        width: 100%;
+        height: 100%;
       }
       /* Hide splash once Svelte layout mounts */
-      #splash.mounted { opacity: 0; pointer-events: none; }
+      #splash.mounted {
+        opacity: 0;
+        pointer-events: none;
+      }
       /* Drag region available immediately so the window is draggable before Svelte mounts.
          Once Svelte's layout renders its own drag region, this one is removed. */
       #app-drag-region {
@@ -46,7 +53,7 @@
     </style>
     <script>
       // Apply theme immediately to prevent FOUC
-      (function() {
+      (function () {
         const theme = localStorage.getItem('theme') || 'system';
         const root = document.documentElement;
 
@@ -76,92 +83,382 @@
   <body data-sveltekit-preload-data="hover">
     <div id="app-drag-region"></div>
     <div id="splash">
-      <svg width="32" viewBox="0 0 33 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path
-          fill-rule="evenodd"
-          clip-rule="evenodd"
-          d="M14.3425 0.67787C14.5267 0.577836 14.776 0.539734 15.0643 0.539734C15.3535 0.539734 15.6042 0.579649 15.7894 0.684655C15.9919 0.799507 16.102 0.985265 16.102 1.21703V1.2248L15.9438 5.4114C15.9431 5.50257 15.9205 5.59176 15.8698 5.67176C15.8187 5.75227 15.7466 5.81184 15.665 5.8547C15.5081 5.93717 15.2994 5.96692 15.0643 5.96692C14.8292 5.96692 14.6205 5.93717 14.4636 5.8547C14.382 5.81184 14.3099 5.75227 14.2588 5.67176C14.2081 5.59177 14.1855 5.50259 14.1848 5.41144C14.1451 4.36908 14.1129 3.56102 14.0866 2.98843L14.0864 2.98359C14.0731 2.39632 14.06 1.98098 14.0469 1.73639C14.0338 1.49099 14.0267 1.33386 14.0267 1.27529V1.19729C14.0267 1.08961 14.0519 0.985591 14.109 0.892536C14.1659 0.799934 14.2474 0.729587 14.3425 0.67787ZM17.6967 0.67787C17.8808 0.577836 18.1301 0.539734 18.4184 0.539734C18.7076 0.539734 18.9584 0.579648 19.1435 0.684655C19.346 0.799507 19.456 0.985265 19.456 1.21703V1.2248L19.2979 5.4114C19.2972 5.50257 19.2746 5.59176 19.2239 5.67176C19.1728 5.75227 19.1007 5.81184 19.0191 5.8547C18.8622 5.93717 18.6535 5.96692 18.4184 5.96692C18.1833 5.96692 17.9747 5.93717 17.8178 5.8547C17.7362 5.81184 17.664 5.75227 17.6129 5.67176C17.5622 5.59178 17.5396 5.50262 17.5389 5.41147C17.4992 4.3691 17.4671 3.56102 17.4406 2.98843L17.4404 2.98359C17.4272 2.39632 17.414 1.98098 17.4009 1.73639C17.3878 1.49099 17.3808 1.33386 17.3808 1.27529V1.19729C17.3808 1.08961 17.406 0.985591 17.4631 0.892536C17.52 0.799934 17.6015 0.729587 17.6967 0.67787ZM20.4784 7.19913C20.6777 7.02101 20.9244 6.93693 21.2048 6.93693H27.4717C28.2765 6.93693 28.9228 7.15037 29.3814 7.60345C29.8418 8.05809 30.0539 8.71033 30.0539 9.52179V14.8122C30.0539 15.4289 30.1808 15.8367 30.3892 16.0756C30.59 16.3046 30.9745 16.4556 31.61 16.4701L31.6206 16.4703C31.8738 16.489 32.0904 16.5875 32.2541 16.7721C32.4199 16.9567 32.4941 17.1883 32.4941 17.4462C32.4941 17.6944 32.4176 17.9183 32.2607 18.1107C32.0969 18.315 31.8707 18.4216 31.6078 18.4223C30.9736 18.4371 30.5903 18.5881 30.3886 18.8174C30.1796 19.0562 30.0539 19.4683 30.0539 20.1036V25.394C30.0539 25.9315 29.9598 26.3992 29.7609 26.7939C29.5605 27.1917 29.2637 27.4911 28.8712 27.691L28.8702 27.6915C28.4802 27.8876 28.0112 27.9807 27.4717 27.9807H21.4138V27.9864H21.2048C20.9198 27.9864 20.673 27.8947 20.474 27.708C20.2787 27.5235 20.1728 27.2952 20.1728 27.0338C20.1728 26.7841 20.257 26.5582 20.4242 26.371C20.6012 26.1727 20.8371 26.0793 21.1101 26.0793H26.9291C27.2255 26.0793 27.4129 26.0048 27.5319 25.8848L27.5331 25.8836C27.6509 25.7667 27.7304 25.5664 27.7304 25.2362V19.8978C27.7304 19.4031 27.8312 18.9487 28.0338 18.5373C28.2352 18.1277 28.5081 17.8005 28.8533 17.5594C28.9103 17.5198 28.9697 17.483 29.03 17.45C28.9697 17.4168 28.911 17.3805 28.8539 17.3409C28.5079 17.1014 28.235 16.7728 28.0337 16.3623C27.8311 15.951 27.7304 15.4967 27.7304 15.0021V9.68718C27.7304 9.35973 27.6513 9.15856 27.5326 9.03933C27.4116 8.91957 27.2219 8.84405 26.9291 8.84405H21.1101C20.8377 8.84405 20.6029 8.74883 20.4252 8.55257C20.2569 8.36646 20.1728 8.14076 20.1728 7.88861C20.1728 7.61531 20.2737 7.38039 20.4784 7.19913ZM20.4784 7.19913L20.4775 7.19997L20.6176 7.35393L20.4784 7.19913ZM3.93118 7.60902C4.38827 7.15544 5.03685 6.94217 5.84129 6.94217H12.1082C12.39 6.94217 12.6352 7.02802 12.8345 7.20433L12.8355 7.2052C13.0368 7.38559 13.1402 7.62155 13.1402 7.89385C13.1402 8.14675 13.0558 8.36973 12.8888 8.55672C12.7122 8.75443 12.4766 8.84929 12.2029 8.84929H6.3839C6.08871 8.84929 5.90007 8.9251 5.78025 9.04466C5.66251 9.1615 5.58256 9.36222 5.58256 9.69242V15.0073C5.58256 15.5021 5.48181 15.9565 5.27912 16.3679C5.07776 16.7775 4.80486 17.1047 4.45976 17.3457C4.40266 17.3853 4.34329 17.4221 4.28303 17.4551C4.34329 17.4883 4.40197 17.5246 4.45906 17.5642C4.80504 17.8037 5.07806 18.1323 5.2793 18.5428C5.48198 18.9542 5.58256 19.4082 5.58256 19.903V25.2414C5.58256 25.5712 5.66193 25.7712 5.78025 25.8891C5.90041 26.0097 6.08964 26.0845 6.3839 26.0845H12.2029C12.4753 26.0845 12.7097 26.1797 12.8874 26.3746C13.0581 26.5631 13.1402 26.7885 13.1402 27.039C13.1402 27.3021 13.0359 27.5283 12.8391 27.7131C12.6394 27.9018 12.3915 27.9917 12.1082 27.9917H5.63224V27.9811C5.17987 27.9597 4.78149 27.867 4.44284 27.6968C4.04934 27.4983 3.75025 27.1946 3.55186 26.7988C3.35522 26.4065 3.25916 25.9363 3.25916 25.3993V20.1088C3.25916 19.4764 3.13198 19.0623 2.92375 18.8219C2.7231 18.5932 2.33931 18.4424 1.70523 18.4275C1.44033 18.4268 1.21623 18.3226 1.05179 18.1153C0.895346 17.9222 0.818848 17.6967 0.818848 17.4515C0.818848 17.1935 0.893082 16.9619 1.05902 16.7771C1.22364 16.5929 1.44187 16.4946 1.69216 16.4759L1.7027 16.4751C2.33901 16.4596 2.72341 16.3096 2.92409 16.0805C3.13396 15.841 3.25916 15.4347 3.25916 14.8175V9.52703C3.25916 8.71508 3.47336 8.06332 3.93118 7.60902ZM22.5513 15.1669C21.2948 15.1669 20.276 16.1778 20.276 17.4247C20.276 18.6716 21.2948 19.6826 22.5513 19.6826C23.8079 19.6826 24.8267 18.6716 24.8267 17.4247C24.8267 16.1778 23.8079 15.1669 22.5513 15.1669ZM8.96648 17.4247C8.96648 16.1778 9.98526 15.1669 11.2418 15.1669C12.4983 15.1669 13.5171 16.1778 13.5171 17.4247C13.5171 18.6716 12.4983 19.6826 11.2418 19.6826C9.98526 19.6826 8.96648 18.6716 8.96648 17.4247Z"
-          fill="currentColor"
-        />
-      </svg>
-      <span id="splash-text">Getting ready to build</span>
+      <canvas id="splash-art" width="512" height="512" aria-hidden="true"> </canvas>
+      <script>
+        (() => {
+          const canvas = document.getElementById('splash-art');
+          const context = canvas.getContext('2d');
+          const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          const tiles = [];
+          let routes = [];
+          let maxRouteLength = 0;
+          let seed = Math.floor(performance.timeOrigin) >>> 0;
+          let width = 0;
+          let height = 0;
+          let columns = 0;
+          let rows = 0;
+          let cellWidth = 0;
+          let cellHeight = 0;
+          let revealStartedAt = 0;
+          let nextAmbientFlip = Infinity;
+          const introDuration = 2200;
+          const initialRevealProgress = 0.12;
+          const curvesPerTile = 7;
+          const curveSpacing = 0.12;
+
+          function random() {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            return seed / 4294967296;
+          }
+
+          function ease(progress) {
+            return 1 - (1 - progress) ** 3;
+          }
+
+          function token(name, fallback) {
+            return (
+              getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+            );
+          }
+
+          const dark = document.documentElement.classList.contains('dark');
+          const splashLine = `hsl(${token('--foreground', dark ? '145 80% 96%' : '154 24% 14%')})`;
+
+          function portPoint(tile, port) {
+            if (port === 0) return { x: tile.cx, y: tile.cy - tile.ry };
+            if (port === 1) return { x: tile.cx + tile.rx, y: tile.cy };
+            if (port === 2) return { x: tile.cx, y: tile.cy + tile.ry };
+            return { x: tile.cx - tile.rx, y: tile.cy };
+          }
+
+          function makeSegment(tile, from, to) {
+            const fromPoint = portPoint(tile, from);
+            const toPoint = portPoint(tile, to);
+            const centerX = from === 1 || to === 1 ? tile.cx + tile.rx : tile.cx - tile.rx;
+            const centerY = from === 2 || to === 2 ? tile.cy + tile.ry : tile.cy - tile.ry;
+            const angleAt = (point) =>
+              Math.atan2((point.y - centerY) / tile.ry, (point.x - centerX) / tile.rx);
+            const startAngle = angleAt(fromPoint);
+            let angleDelta = angleAt(toPoint) - startAngle;
+            while (angleDelta > Math.PI) angleDelta -= Math.PI * 2;
+            while (angleDelta < -Math.PI) angleDelta += Math.PI * 2;
+            return {
+              cx: centerX,
+              cy: centerY,
+              rx: tile.rx,
+              ry: tile.ry,
+              col: tile.col,
+              row: tile.row,
+              startAngle,
+              angleDelta,
+              length: (Math.PI / 2) * Math.sqrt((tile.rx ** 2 + tile.ry ** 2) / 2),
+            };
+          }
+
+          function curveRadius(halfExtent, curveIndex) {
+            const centeredIndex = curveIndex - (curvesPerTile - 1) / 2;
+            return halfExtent * (1 + centeredIndex * curveSpacing);
+          }
+
+          function pointOnSegment(segment, progress, curveIndex) {
+            const angle = segment.startAngle + segment.angleDelta * progress;
+            return {
+              x: segment.cx + Math.cos(angle) * curveRadius(segment.rx, curveIndex),
+              y: segment.cy + Math.sin(angle) * curveRadius(segment.ry, curveIndex),
+            };
+          }
+
+          const oppositePort = (port) => (port + 2) % 4;
+          const pairedPort = (orient, port) => {
+            if (orient === 0) return [3, 2, 1, 0][port];
+            return [1, 0, 3, 2][port];
+          };
+
+          function traceRoute(startIndex, startPort) {
+            const traced = [];
+            const visited = new Set();
+            let tileIndex = startIndex;
+            let entryPort = startPort;
+            while (tileIndex >= 0) {
+              const key = `${tileIndex}:${entryPort}`;
+              if (visited.has(key)) break;
+              visited.add(key);
+              const tile = tiles[tileIndex];
+              const exitPort = pairedPort(tile.orient, entryPort);
+              const segment = makeSegment(tile, entryPort, exitPort);
+              segment.key = `${tileIndex}:${Math.min(entryPort, exitPort)}-${Math.max(entryPort, exitPort)}`;
+              traced.push(segment);
+              const nextCol = tile.col + (exitPort === 1 ? 1 : exitPort === 3 ? -1 : 0);
+              const nextRow = tile.row + (exitPort === 2 ? 1 : exitPort === 0 ? -1 : 0);
+              if (nextCol < 0 || nextCol >= columns || nextRow < 0 || nextRow >= rows) break;
+              tileIndex = nextRow * columns + nextCol;
+              entryPort = oppositePort(exitPort);
+            }
+            return traced;
+          }
+
+          function longestRouteForLayout() {
+            const starts = [];
+            for (let col = 0; col < columns; col += 1) {
+              starts.push([col, 0], [(rows - 1) * columns + col, 2]);
+            }
+            for (let row = 0; row < rows; row += 1) {
+              starts.push([row * columns, 3], [row * columns + columns - 1, 1]);
+            }
+            return starts.reduce((longest, [tileIndex, port]) => {
+              const candidate = traceRoute(tileIndex, port);
+              return candidate.length > longest.length ? candidate : longest;
+            }, []);
+          }
+
+          function routeCoverage(candidate) {
+            const columnsCovered = new Set(candidate.map((segment) => segment.col)).size;
+            const rowsCovered = new Set(candidate.map((segment) => segment.row)).size;
+            return {
+              columnsCovered,
+              rowsCovered,
+              score: (columnsCovered / columns) * (rowsCovered / rows) * 1000 + candidate.length,
+            };
+          }
+
+          function buildAllRoutes() {
+            const claimed = new Set();
+            routes = [];
+            const addRoute = (tileIndex, port) => {
+              const candidate = traceRoute(tileIndex, port);
+              if (!candidate.length || claimed.has(candidate[0].key)) return;
+              let offset = 0;
+              for (const segment of candidate) {
+                claimed.add(segment.key);
+                segment.offset = offset;
+                offset += segment.length;
+              }
+              candidate.totalLength = offset;
+              routes.push(candidate);
+            };
+            for (let col = 0; col < columns; col += 1) {
+              addRoute(col, 0);
+              addRoute((rows - 1) * columns + col, 2);
+            }
+            for (let row = 0; row < rows; row += 1) {
+              addRoute(row * columns, 3);
+              addRoute(row * columns + columns - 1, 1);
+            }
+            for (let tileIndex = 0; tileIndex < tiles.length; tileIndex += 1) {
+              for (let port = 0; port < 4; port += 1) addRoute(tileIndex, port);
+            }
+            maxRouteLength = Math.max(...routes.map((candidate) => candidate.totalLength), 1);
+          }
+
+          function buildFullWindowRoute() {
+            let bestRoute = [];
+            let bestOrientations = [];
+            let bestScore = -1;
+            const targetLength = Math.floor(tiles.length * 0.65);
+            for (let attempt = 0; attempt < 1200; attempt += 1) {
+              for (const tile of tiles) tile.orient = random() > 0.5 ? 1 : 0;
+              const candidate = longestRouteForLayout();
+              const coverage = routeCoverage(candidate);
+              if (coverage.score > bestScore) {
+                bestRoute = candidate;
+                bestOrientations = tiles.map((tile) => tile.orient);
+                bestScore = coverage.score;
+              }
+              if (
+                coverage.columnsCovered === columns &&
+                coverage.rowsCovered === rows &&
+                candidate.length >= targetLength
+              )
+                break;
+            }
+            if (!bestRoute.length) return;
+            for (let index = 0; index < tiles.length; index += 1) {
+              tiles[index].orient = bestOrientations[index];
+            }
+            buildAllRoutes();
+            revealStartedAt = performance.now();
+            nextAmbientFlip = revealStartedAt + introDuration + 700;
+          }
+
+          function rebuild(nextSeed = seed) {
+            seed = nextSeed >>> 0;
+            tiles.length = 0;
+            const bounds = canvas.getBoundingClientRect();
+            width = Math.round(bounds.width);
+            height = Math.round(bounds.height);
+            const ratio = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = width * ratio;
+            canvas.height = height * ratio;
+            context.setTransform(ratio, 0, 0, ratio, 0, 0);
+            columns = Math.max(4, Math.round(width / 150));
+            rows = Math.max(6, Math.round((height / width) * columns));
+            cellWidth = width / columns;
+            cellHeight = height / rows;
+            for (let row = 0; row < rows; row += 1) {
+              for (let col = 0; col < columns; col += 1) {
+                tiles.push({
+                  col,
+                  row,
+                  cx: (col + 0.5) * cellWidth,
+                  cy: (row + 0.5) * cellHeight,
+                  rx: cellWidth / 2,
+                  ry: cellHeight / 2,
+                  orient: 0,
+                  flipStart: -1,
+                  lastFlip: -Infinity,
+                });
+              }
+            }
+            buildFullWindowRoute();
+          }
+
+          function strokeRoute(route, progress) {
+            const startDistance = 0;
+            const endDistance = route.totalLength * progress;
+            context.beginPath();
+            let hasPath = false;
+            for (const segment of route) {
+              const localStart = Math.max(0, (startDistance - segment.offset) / segment.length);
+              const localEnd = Math.min(1, (endDistance - segment.offset) / segment.length);
+              if (localEnd <= 0 || localStart >= 1 || localStart >= localEnd) continue;
+              for (let curveIndex = 0; curveIndex < curvesPerTile; curveIndex += 1) {
+                const point = pointOnSegment(segment, localStart, curveIndex);
+                context.moveTo(point.x, point.y);
+                context.ellipse(
+                  segment.cx,
+                  segment.cy,
+                  curveRadius(segment.rx, curveIndex),
+                  curveRadius(segment.ry, curveIndex),
+                  0,
+                  segment.startAngle + segment.angleDelta * localStart,
+                  segment.startAngle + segment.angleDelta * localEnd,
+                  segment.angleDelta < 0,
+                );
+                hasPath = true;
+              }
+            }
+            if (hasPath) context.stroke();
+          }
+
+          function addTileCurve(cx, cy, rx, ry, startAngle, endAngle) {
+            context.moveTo(cx + Math.cos(startAngle) * rx, cy + Math.sin(startAngle) * ry);
+            context.ellipse(cx, cy, rx, ry, 0, startAngle, endAngle);
+          }
+
+          function strokeTile(tile) {
+            const rx = tile.rx;
+            const ry = tile.ry;
+            context.beginPath();
+            for (let curveIndex = 0; curveIndex < curvesPerTile; curveIndex += 1) {
+              const curveRx = curveRadius(rx, curveIndex);
+              const curveRy = curveRadius(ry, curveIndex);
+              if (tile.orient === 0) {
+                addTileCurve(-rx, -ry, curveRx, curveRy, 0, Math.PI / 2);
+                addTileCurve(rx, ry, curveRx, curveRy, Math.PI, Math.PI * 1.5);
+              } else {
+                addTileCurve(rx, -ry, curveRx, curveRy, Math.PI / 2, Math.PI);
+                addTileCurve(-rx, ry, curveRx, curveRy, Math.PI * 1.5, Math.PI * 2);
+              }
+            }
+            context.stroke();
+          }
+
+          function drawInteractiveTiles(now) {
+            if (!reducedMotion && now >= nextAmbientFlip) {
+              const anchor = tiles[Math.floor(random() * tiles.length)];
+              if (anchor) {
+                const reach = Math.min(cellWidth, cellHeight) * 1.4;
+                for (const tile of tiles) {
+                  const distance = Math.hypot(tile.cx - anchor.cx, tile.cy - anchor.cy);
+                  if (tile.flipStart < 0 && distance < reach) tile.flipStart = now + distance * 0.7;
+                }
+              }
+              nextAmbientFlip = now + 1100 + random() * 1500;
+            }
+            for (const tile of tiles) {
+              let angle = 0;
+              if (tile.flipStart >= 0) {
+                const progress = (now - tile.flipStart) / 420;
+                if (progress >= 1) {
+                  tile.orient ^= 1;
+                  tile.flipStart = -1;
+                  tile.lastFlip = now;
+                } else if (progress > 0) angle = ease(progress) * (Math.PI / 2);
+              }
+              context.save();
+              context.beginPath();
+              context.rect(tile.cx - tile.rx, tile.cy - tile.ry, tile.rx * 2, tile.ry * 2);
+              context.clip();
+              context.translate(tile.cx, tile.cy);
+              if (angle) context.rotate(angle);
+              strokeTile(tile);
+              context.restore();
+            }
+          }
+
+          function draw(now = 0) {
+            if (!canvas.isConnected) return;
+            if (
+              width !== Math.round(canvas.clientWidth) ||
+              height !== Math.round(canvas.clientHeight)
+            )
+              rebuild();
+            context.clearRect(0, 0, width, height);
+            context.globalCompositeOperation = 'source-over';
+            context.strokeStyle = splashLine;
+            context.lineWidth = 2;
+            context.lineCap = 'round';
+            const introProgress = reducedMotion
+              ? 1
+              : Math.min(
+                  1,
+                  initialRevealProgress +
+                    (Math.max(0, now - revealStartedAt) / introDuration) *
+                      (1 - initialRevealProgress),
+                );
+            if (introProgress < 1) {
+              const traveled = ease(introProgress) * maxRouteLength;
+              for (const route of routes) {
+                strokeRoute(route, Math.min(1, traveled / route.totalLength));
+              }
+            } else drawInteractiveTiles(now);
+            context.globalCompositeOperation = 'source-over';
+            if (!reducedMotion) requestAnimationFrame(draw);
+          }
+
+          function flipNear(x, y, reach) {
+            if (reducedMotion || performance.now() - revealStartedAt < introDuration) return;
+            const now = performance.now();
+            for (const tile of tiles) {
+              const distance = Math.hypot(tile.cx - x, tile.cy - y);
+              if (tile.flipStart < 0 && now - tile.lastFlip > 350 && distance < reach) {
+                tile.flipStart = now + distance * 0.45;
+              }
+            }
+          }
+
+          canvas.addEventListener('pointermove', (event) => {
+            const bounds = canvas.getBoundingClientRect();
+            flipNear(
+              event.clientX - bounds.left,
+              event.clientY - bounds.top,
+              Math.min(cellWidth, cellHeight) * 0.72,
+            );
+          });
+          canvas.addEventListener('pointerdown', (event) => {
+            const bounds = canvas.getBoundingClientRect();
+            flipNear(
+              event.clientX - bounds.left,
+              event.clientY - bounds.top,
+              Math.min(cellWidth, cellHeight) * 1.8,
+            );
+          });
+
+          rebuild();
+          draw(performance.now());
+        })();
+      </script>
     </div>
-    <script>
-      // Localize the splash text before first paint (same pre-paint pattern as
-      // the inline theme script in <head>; this one lives after the splash
-      // markup so #splash-text exists when it runs).
-      // The per-locale strings duplicate splash_gettingReady_label in
-      // messages/*.json — the catalogs are the source of truth; keep this map
-      // in sync when they change (a sync check chained into `pnpm run lint`
-      // compares this map against the catalogs).
-      // Locale resolution is a simplified inline version of
-      // src/shared/i18n/locale-matcher.ts: explicit preference (exact tag) →
-      // navigator.languages best match → 'en'. Simplification: instead of full
-      // Intl.Locale likely-subtags negotiation, the matcher does exact-tag then
-      // language-prefix matching, with a hardcoded zh split (Traditional
-      // zh-TW/zh-HK/zh-MO/zh-Hant-* → zh-TW; other zh → zh-CN).
-      // Defensive: any exception leaves the English default span content (and
-      // lang="en") intact.
-      (function() {
-        try {
-          const messages = {
-            'en': 'Getting ready to build',
-            'de': 'Wir bereiten alles zum Bauen vor',
-            'es': 'Preparando todo para construir',
-            'fr': 'Nous préparons tout pour construire',
-            'ja': 'ビルドの準備をしています',
-            'ko': '빌드를 준비하는 중입니다',
-            'zh-CN': '正在准备构建',
-            'zh-TW': '正在準備建置'
-          };
-          const locales = Object.keys(messages);
-          const exact = function(tag) {
-            const lowered = tag.toLowerCase();
-            return locales.find(function(l) { return l.toLowerCase() === lowered; });
-          };
-          const match = function(tag) {
-            if (typeof tag !== 'string' || tag.trim() === '') return undefined;
-            const found = exact(tag);
-            if (found) return found;
-            const lowered = tag.toLowerCase();
-            if (lowered === 'zh' || lowered.indexOf('zh-') === 0) {
-              return /^zh(-hant|-tw|-hk|-mo)/.test(lowered) ? 'zh-TW' : 'zh-CN';
-            }
-            const language = lowered.split('-')[0];
-            return locales.find(function(l) { return l.split('-')[0] === language; });
-          };
-
-          let preference = null;
-          try {
-            preference = JSON.parse(localStorage.getItem('language-preference'));
-          } catch (e) {
-            preference = null; // missing/invalid = no preference
-          }
-
-          let resolved;
-          if (typeof preference === 'string' && preference !== 'system') {
-            resolved = exact(preference);
-          }
-          if (!resolved) {
-            const requested = (navigator.languages && navigator.languages.length > 0)
-              ? navigator.languages
-              : [navigator.language];
-            for (const tag of requested) {
-              resolved = match(tag);
-              if (resolved) break;
-            }
-          }
-          if (resolved && resolved !== 'en') {
-            document.getElementById('splash-text').textContent = messages[resolved];
-            // Match the announced language to the rendered splash text for
-            // screen readers; the rest of the app does not manage lang.
-            document.documentElement.lang = resolved;
-          }
-        } catch (e) {
-          // Keep the English default on any failure.
-        }
-      })();
-    </script>
     <div style="display: contents" id="app">%sveltekit.body%</div>
   </body>
 </html>

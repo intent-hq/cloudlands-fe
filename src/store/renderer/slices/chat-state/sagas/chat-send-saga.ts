@@ -40,6 +40,7 @@ import {
 } from '../../sidebar-nav/chief-thread-title';
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
 import { requestUnarchiveWorkspace } from '../../workspace-operations/workspace-operations-slice';
 import {
   workspaceDeleted,
@@ -106,6 +107,8 @@ function* waitForTranscriptRefresh(agentId: string, wsId: string): SagaGenerator
 function* hydrateBeforeSend(agentId: string, wsId: string): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
   if (session && session.messages.length > 0) return;
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (session && hydration === 'settled') return;
   yield* put(refreshChatTranscriptRequested(wsId, agentId));
   yield* call(waitForTranscriptRefresh, agentId, wsId);
 }
@@ -192,7 +195,10 @@ function* dispatchToLifecycle(
   options: LifecycleSendOptions,
   skipQueueCheck: boolean,
 ): SagaGenerator<void> {
-  const workspace = yield* selectWorkspaceById.effect(wsId);
+  const workspace =
+    wsId === CHIEF_WORKSPACE_ID
+      ? createChiefVirtualWorkspace()
+      : yield* selectWorkspaceById.effect(wsId);
   if (!workspace) {
     yield* put(chatSendFailed(agentId, m.agent_chatSend_workspaceNotFound_error({ id: wsId })));
     return;

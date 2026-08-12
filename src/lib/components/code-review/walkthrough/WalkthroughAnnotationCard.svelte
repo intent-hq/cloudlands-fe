@@ -3,7 +3,7 @@
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import type { WalkthroughAnnotation } from './types';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     annotation: WalkthroughAnnotation;
@@ -70,9 +70,7 @@
 
     <!-- Code snippet (if available) -->
     {#if codeLines.length > 0}
-      <div
-        class="mb-2 overflow-hidden rounded-lg border border-border bg-muted/30"
-      >
+      <div class="mb-2 overflow-hidden rounded-lg border border-border bg-muted/30">
         <div class="overflow-x-auto">
           <div class="font-mono text-xs leading-relaxed">
             {#each codeLines as line, i}

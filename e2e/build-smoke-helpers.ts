@@ -101,6 +101,8 @@ async function killExistingPackagedApp(): Promise<void> {
 export interface LaunchOptions {
   /** Directory to use as the workspace root */
   workspaceDir?: string;
+  /** Extra command-line arguments passed to the packaged Electron app */
+  extraArgs?: string[];
   /** Extra environment variables passed to the app */
   extraEnv?: Record<string, string>;
 }
@@ -123,7 +125,10 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
 
   const app = await electron.launch({
     executablePath,
-    args: [...(process.env.CI ? ['--disable-gpu', '--disable-software-rasterizer'] : [])],
+    args: [
+      ...(process.env.CI ? ['--disable-gpu', '--disable-software-rasterizer'] : []),
+      ...(options.extraArgs || []),
+    ],
     env: {
       ...process.env,
       TESTING: 'true',
@@ -208,7 +213,9 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
 
   console.log(`📂 Created temp repo at stable path: ${repoPath}`);
 
-  execSync('git init', { cwd: repoPath, stdio: 'ignore' });
+  // Onboarding preselects `main`; make the fixture independent of the
+  // developer machine's `init.defaultBranch` Git configuration.
+  execSync('git init -b main', { cwd: repoPath, stdio: 'ignore' });
   execSync('git config user.email "smoke-test@test.local"', { cwd: repoPath, stdio: 'ignore' });
   execSync('git config user.name "Smoke Test"', { cwd: repoPath, stdio: 'ignore' });
 

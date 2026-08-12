@@ -1,10 +1,11 @@
-import { store } from "../../store";
+import { store } from '../../store';
 import {
   getItem,
   getItems,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import { getAgentProvider } from '$shared/types/agent-session';
 import { isModelValidForProvider } from '$shared/utils/compound-model-id';
 import {
   selectActiveProviderId,
@@ -12,6 +13,7 @@ import {
 } from '../provider-settings/provider-settings-selectors';
 import { resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
+import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
@@ -46,7 +48,7 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
 export const selectHasResolvableModel = store.createSelector(
   (state, providerId?: string): boolean => {
     return selectSelectedModel.select(state, providerId) !== '';
-  }
+  },
 );
 
 const selectAvailableModelsCollection = store.createSelector(
@@ -212,15 +214,19 @@ export const selectModelEffortLevels = store.createSelector(
  * daemon-served `effortLevels` (the provider's `thought_level` select
  * discovered at session open, §5.5) take precedence when present; otherwise
  * the catalog metadata lookup applies (codex static catalog etc.).
- * `undefined` when the session is unknown, uses the provider default model,
- * or neither the session nor the loaded catalog advertises effort support.
+ * Sessions that inherit their provider model resolve through `selectSelectedModel`.
+ * `undefined` when the session is unknown or neither the session nor the loaded
+ * catalog advertises effort support.
  */
 export const selectAgentModelEffortLevels = store.createSelector(
   (state, agentId: string): string[] | undefined => {
     const session = state.agentSessions?.byAgentId[agentId];
-    if (Array.isArray(session?.effortLevels) && session.effortLevels.length > 0) {
+    if (!session) return undefined;
+    if (Array.isArray(session.effortLevels) && session.effortLevels.length > 0) {
       return session.effortLevels;
     }
-    return selectModelEffortLevels.select(state, session?.model);
+    const providerId = getAgentProvider(session, selectEffectiveDefaultProviderId.select(state));
+    const model = session.model ?? selectSelectedModel.select(state, providerId);
+    return selectModelEffortLevels.select(state, model);
   },
 );

@@ -1068,7 +1068,15 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         if (anchor?.href) {
           event.preventDefault();
           if (workspace?.id) {
-            handleLink(anchor.href, { workspaceId: workspace.id, event });
+            const panelElement = target.closest('[data-panel-id]');
+            const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
+            handleLink(anchor.href, {
+              workspaceId: workspace.id,
+              sourcePanelId,
+              openInAdjacentPanel: true,
+              openInNewAdjacentPanel: true,
+              event,
+            });
           }
           return true; // Handled
         }
@@ -1086,7 +1094,10 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           const meta = metaStr ? JSON.parse(metaStr) : {};
 
           // Check if cmd/ctrl was held - opens in adjacent panel
-          const openInAdjacentPanel = event.metaKey || event.ctrlKey;
+          const openInAdjacentPanel =
+            mentionType === 'note' || mentionType === 'note-range'
+              ? true
+              : event.metaKey || event.ctrlKey;
 
           // Find the source panel for opening in adjacent (needed for split behavior)
           const panelElement = mentionEl.closest('[data-panel-id]');
@@ -1125,6 +1136,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
               appStore.dispatch(
                 openWorkspaceNote(workspace.id, mentionId, {
                   openInAdjacentPanel,
+                  openInNewAdjacentPanel: true,
                   sourcePanelId,
                 }),
               );

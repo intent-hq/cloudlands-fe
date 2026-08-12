@@ -115,9 +115,7 @@
 
   // ── Derived choreography state ──
   // The pre-roll blink shows only the card flash — the overlay stays hidden.
-  const visible = $derived(
-    queue.phase !== 'idle' && queue.phase !== 'blinking' && $view$ !== null,
-  );
+  const visible = $derived(queue.phase !== 'idle' && queue.phase !== 'blinking' && $view$ !== null);
   const closing = $derived(queue.phase === 'closing');
   const motion = $derived(!reducedMotion.current);
   const frameStyle = $derived(
@@ -220,7 +218,6 @@
     if (!Number.isFinite(startedMs)) return '--:--:--'; // i18n-ignore (digit placeholder)
     return formatHudTimer((nowMs - startedMs) / 1000);
   }
-
 </script>
 
 {#if visible && $view$}
@@ -423,7 +420,9 @@
               </div>
               <div class="ov-panel-body ov-changes">
                 {#if queue.active}
-                  {#each queue.active.triggers.slice().reverse() as change, i (`${change.kind}-${change.raisedAtMs}-${i}`)}
+                  {#each queue.active.triggers
+                    .slice()
+                    .reverse() as change, i (`${change.kind}-${change.raisedAtMs}-${i}`)}
                     <div class="ov-change">
                       <span style:color={takeoverKindColor(change.kind)}>▸</span>
                       <span class="ov-change-text">{changeLine(change)}</span>
@@ -473,9 +472,7 @@
                 {#each view.idleAgents as agent (agent.id)}
                   <div class="ov-agent">
                     <div class="ov-agent-row">
-                      <span
-                        class="ov-agent-dot"
-                        style:background={agentBucketColor(agent.bucket)}
+                      <span class="ov-agent-dot" style:background={agentBucketColor(agent.bucket)}
                       ></span>
                       <span class="ov-agent-name">{agent.name}</span>
                       <span class="ov-agent-state" style:color={agentBucketColor(agent.bucket)}>
@@ -586,7 +583,7 @@
   .ov-backdrop {
     position: absolute;
     inset: 0;
-    background: hsl(var(--app-background) / 0.55);
+    background: hsl(var(--background) / 0.55);
     backdrop-filter: blur(3px);
     animation: ovf 0.3s ease both;
   }
@@ -604,7 +601,7 @@
     position: absolute;
     inset: 0;
     background: hsl(var(--card) / 0.98);
-    box-shadow: 0 24px 80px hsl(var(--app-background) / 0.8);
+    box-shadow: 0 24px 80px hsl(var(--background) / 0.8);
     animation: ovf 0.25s ease 0.12s both;
   }
   .ov-edge-h {
@@ -736,8 +733,10 @@
     max-width: 380px;
   }
   .ov-ws-repo {
-    font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-subtle));
+    font:
+      500 10px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground));
   }
   .ov-divider {
     width: 1px;
@@ -753,8 +752,10 @@
   .ov-progress-row {
     display: flex;
     justify-content: space-between;
-    font: 500 9px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    font:
+      500 9px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-progress-segs {
     display: flex;
@@ -768,17 +769,21 @@
     flex: 1;
   }
   .ov-return {
-    font: 500 12px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    font:
+      500 12px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-dismiss {
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
     padding: 6px 12px;
-    font: 600 10px 'JetBrains Mono', monospace;
+    font:
+      600 10px 'JetBrains Mono',
+      monospace;
     letter-spacing: 0.12em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-dismiss:hover {
@@ -804,7 +809,9 @@
     align-items: center;
     gap: 10px;
     padding: 10px 20px 0 22px;
-    font: 500 11px 'JetBrains Mono', monospace;
+    font:
+      500 11px 'JetBrains Mono',
+      monospace;
   }
   .ov-status-tag {
     font:
@@ -812,11 +819,11 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     flex: none;
   }
   .ov-status-text {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -889,7 +896,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.3em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .ov-spec-title {
     font:
@@ -906,8 +913,10 @@
     width: 80%;
   }
   .ov-spec-prog {
-    font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    font:
+      500 10px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-cell-task {
     display: flex;
@@ -926,7 +935,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font: 600 8px 'JetBrains Mono', monospace;
+    font:
+      600 8px 'JetBrains Mono',
+      monospace;
     letter-spacing: 0.08em;
   }
   .ov-cell-dot {
@@ -977,7 +988,9 @@
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card) / 0.85);
     padding: 1px 5px;
-    font: 500 8px 'JetBrains Mono', monospace;
+    font:
+      500 8px 'JetBrains Mono',
+      monospace;
     white-space: nowrap;
     overflow: hidden;
   }
@@ -1026,7 +1039,7 @@
       system-ui,
       sans-serif;
     letter-spacing: 0.18em;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
   .ov-panel-rule {
@@ -1035,8 +1048,10 @@
     background: hsl(var(--border) / 0.6);
   }
   .ov-panel-count {
-    font: 500 9px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-ghost));
+    font:
+      500 9px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground) / 0.55);
   }
   .ov-panel-body {
     display: flex;
@@ -1045,7 +1060,9 @@
   }
   .ov-changes {
     gap: 8px;
-    font: 500 10.5px 'JetBrains Mono', monospace;
+    font:
+      500 10.5px 'JetBrains Mono',
+      monospace;
     line-height: 1.5;
   }
   .ov-change {
@@ -1053,7 +1070,7 @@
     gap: 8px;
   }
   .ov-change-text {
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .ov-agents {
     gap: 10px;
@@ -1067,7 +1084,9 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    font: 500 11px 'JetBrains Mono', monospace;
+    font:
+      500 11px 'JetBrains Mono',
+      monospace;
   }
   .ov-agent-dot {
     width: 6px;
@@ -1081,15 +1100,17 @@
   }
   .ov-agent-elapsed {
     margin-left: auto;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     font-size: 9.5px;
   }
   .ov-agent-state {
     font-size: 9.5px;
   }
   .ov-agent-note {
-    font: 500 10px 'JetBrains Mono', monospace;
-    color: hsl(var(--text-subtle));
+    font:
+      500 10px 'JetBrains Mono',
+      monospace;
+    color: hsl(var(--muted-foreground));
     padding-left: 13px;
     overflow: hidden;
     display: -webkit-box;
@@ -1100,9 +1121,11 @@
     flex: 1;
   }
   .ov-side-footer {
-    font: 500 9px 'JetBrains Mono', monospace;
+    font:
+      500 9px 'JetBrains Mono',
+      monospace;
     letter-spacing: 0.12em;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.55);
     display: flex;
     gap: 14px;
   }

@@ -40,6 +40,11 @@
   let localScriptName = $state('Custom');
   let localIsCustomScript = $state(false);
   let editorExpanded = $state(true);
+  const localHasUnsavedChanges = $derived(
+    localValue !== value ||
+      localScriptName !== scriptName ||
+      localIsCustomScript !== isCustomScript,
+  );
 
   // Snapshot parent values when modal opens
   $effect(() => {
@@ -57,6 +62,10 @@
     isCustomScript = localIsCustomScript;
     open = false;
     onClose?.();
+  }
+
+  function handleSaveAndDone() {
+    handleDone();
   }
 
   function handleCancel() {
@@ -79,6 +88,12 @@
   />
   <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
-    <Button class="text-white" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
+    {#if localHasUnsavedChanges}
+      <Button variant="default" onclick={handleSaveAndDone}>
+        {m.modals_setupScript_saveAndDone_label()}
+      </Button>
+    {:else}
+      <Button variant="default" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
+    {/if}
   </div>
 </Modal>

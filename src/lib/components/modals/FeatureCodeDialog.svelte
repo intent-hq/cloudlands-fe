@@ -4,26 +4,22 @@
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import {
-  selectActiveFeatures,
-  selectHasActiveFeatures,
-} from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+    selectActiveFeatures,
+    selectHasActiveFeatures,
+  } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import {
-  fetchFeatures,
-  deactivateFeature,
-} from '$store/renderer/slices/feature-codes/feature-codes-slice';
+    fetchFeatures,
+    deactivateFeature,
+  } from '$store/renderer/slices/feature-codes/feature-codes-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Props {
     open?: boolean;
     onClose?: () => void;
   }
 
-  let {
-    open = $bindable(false),
-    onClose,
-  }: Props = $props();
+  let { open = $bindable(false), onClose }: Props = $props();
 
   const activeFeatures$ = selectActiveFeatures();
   const hasActiveFeatures$ = selectHasActiveFeatures();
@@ -71,9 +67,14 @@
     feedback = null;
 
     try {
-      const result = await invoke<{ status: string }>('feature-codes:activate', { code: inputValue.trim() });
+      const result = await invoke<{ status: string }>('feature-codes:activate', {
+        code: inputValue.trim(),
+      });
       if (result?.status === 'already_active') {
-        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
+        feedback = {
+          message: m.modals_featureCode_alreadyActive_feedback(),
+          color: 'text-yellow-400',
+        };
       } else {
         feedback = { message: m.modals_featureCode_activated_feedback(), color: 'text-green-400' };
         needsRestart = true;
@@ -82,8 +83,14 @@
       appStore.dispatch(fetchFeatures());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.toLowerCase().includes('already active') || message.toLowerCase().includes('already_active')) {
-        feedback = { message: m.modals_featureCode_alreadyActive_feedback(), color: 'text-yellow-400' };
+      if (
+        message.toLowerCase().includes('already active') ||
+        message.toLowerCase().includes('already_active')
+      ) {
+        feedback = {
+          message: m.modals_featureCode_alreadyActive_feedback(),
+          color: 'text-yellow-400',
+        };
       } else {
         feedback = { message: m.modals_featureCode_invalidCode_feedback(), color: 'text-red-400' };
       }
@@ -143,7 +150,12 @@
       <!-- Header -->
       <div class="px-6 py-4 border-b border-border flex items-center justify-between">
         <h2 class="text-lg font-semibold">{m.modals_featureCode_title()}</h2>
-        <Button variant="ghost" size="icon" onclick={close}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onclick={close}
+          aria-label={m.modals_featureCode_close_label()}
+        >
           <Fa icon={faXmark} />
         </Button>
       </div>
@@ -173,7 +185,9 @@
           <p class="text-xs text-subtle mb-2">{m.modals_featureCode_activeFeatures_label()}</p>
           <ul class="space-y-1">
             {#each $activeFeatures$ as featureId}
-              <li class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1">
+              <li
+                class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1"
+              >
                 <span>{featureId}</span>
                 <button
                   class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
@@ -190,9 +204,15 @@
 
       <!-- Footer -->
       <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        <Button variant="ghost" onclick={close}>{needsRestart ? m.modals_featureCode_close_label() : m.modals_featureCode_cancel_label()}</Button>
+        <Button variant="ghost" onclick={close}
+          >{needsRestart
+            ? m.modals_featureCode_close_label()
+            : m.modals_featureCode_cancel_label()}</Button
+        >
         {#if needsRestart}
-          <Button variant="outline" onclick={restartApp}>{m.modals_featureCode_restartNow_label()}</Button>
+          <Button variant="outline" onclick={restartApp}
+            >{m.modals_featureCode_restartNow_label()}</Button
+          >
         {/if}
         <Button
           variant="default"
@@ -205,4 +225,3 @@
     </div>
   </div>
 {/if}
-

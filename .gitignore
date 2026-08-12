@@ -68,6 +68,7 @@ test-results
 test-reports
 playwright-report
 test-harness-report.json
+.demo-artifacts/
 
 # Temporary files
 *.tmp
@@ -111,3 +112,5 @@ resources/sidecar/
 # Speech helper staging directory (build-speech-helper.cjs output)
 resources/speech-helper/
 
+# Generated production-only Paraglide bundle
+static/generated/

@@ -1,18 +1,8 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  waitFor,
-} from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import Dropdown from './Dropdown.svelte';
+import { dropdownCallerLedger } from './dropdown-caller-ledger';
+import { buildUiComponentInventory } from '../../../../../scripts/ui-component-inventory';
 import { warmImport } from '../../../../test/warm-import';
 
 vi.mock('svelte-fa', async () => {
@@ -156,5 +146,137 @@ describe('Dropdown portal positioning', () => {
       expect(listbox?.style.bottom).toBeTruthy();
       expect(listbox?.style.top).toBe('');
     });
+  });
+});
+
+describe('Dropdown compatibility modes', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  it('preserves searchable keyboard selection and open-state callbacks', async () => {
+    const onchange = vi.fn();
+    const onopenchange = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        options: [
+          { value: 'a', label: 'Alpha' },
+          { value: 'b', label: 'Beta', description: 'Second option' },
+        ],
+        onchange,
+        onopenchange,
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    const search = await screen.findByRole('searchbox', { name: 'Search options' });
+    await fireEvent.input(search, { target: { value: 'Second' } });
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    expect(onchange).toHaveBeenCalledWith('b', undefined);
+    expect(onopenchange).toHaveBeenNthCalledWith(1, true);
+    expect(onopenchange).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('preserves multi-select, toggle, action, separator, and submenu modes', async () => {
+    const onchange = vi.fn();
+    const action = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        multiple: true,
+        searchable: false,
+        onchange,
+        options: [
+          { value: 'a', label: 'Alpha' },
+          { value: 'separator', label: '', type: 'separator' },
+          { value: 'toggle', label: 'Toggle detail', type: 'toggle', checked: true },
+          { value: 'action', label: 'Run action', type: 'action', onclick: action },
+          {
+            value: 'submenu',
+            label: 'More',
+            type: 'submenu',
+            children: [{ value: 'child', label: 'Child action' }],
+          },
+        ],
+      },
+    });
+    await fireEvent.click(container.querySelector('button')!);
+    await fireEvent.click(screen.getByRole('option', { name: 'Alpha' }));
+    expect(onchange).toHaveBeenCalledWith(['a'], expect.any(MouseEvent));
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('option', { name: 'Toggle detail' }));
+    expect(onchange).toHaveBeenCalledWith('toggle', expect.any(MouseEvent));
+    await fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'More' }).parentElement!);
+    expect(await screen.findByRole('menu')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('option', { name: 'Run action' }));
+    expect(action).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('preserves disabled and empty states', async () => {
+    const { container, unmount } = render(Dropdown, {
+      props: { disabled: true, options: [{ value: 'a', label: 'Alpha' }] },
+    });
+    const trigger = container.querySelector('button')!;
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole('listbox')).toBeNull();
+    unmount();
+
+    const emptyRender = render(Dropdown, { props: { options: [], searchable: false } });
+    await fireEvent.click(emptyRender.container.querySelector('button')!);
+    expect(screen.getByText('No results found')).toBeTruthy();
+  });
+});
+
+describe('Dropdown caller migration ledger', () => {
+  it('classifies every authoritative caller by its actual behavior', () => {
+    const inventoryEntry = buildUiComponentInventory().components.find(
+      (component) => component.publicImport === '$lib/components/ui/dropdown',
+    );
+    const inventoryCallers = inventoryEntry?.callers;
+    expect(inventoryEntry?.replacement).toBe(
+      'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
+    );
+    expect(dropdownCallerLedger.map(({ caller }) => caller).sort()).toEqual(inventoryCallers);
+    expect([...new Set(dropdownCallerLedger.map(({ replacement }) => replacement))].sort()).toEqual(
+      ['Combobox', 'Menu', 'Select'],
+    );
+    expect(dropdownCallerLedger).toEqual([
+      {
+        caller: 'src/lib/components/chat/input/ModelPicker.svelte',
+        replacement: 'Combobox',
+        reason: 'searchable grouped value selection',
+      },
+      {
+        caller: 'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
+        replacement: 'Combobox',
+        reason: 'group header support for ModelPicker',
+      },
+      {
+        caller: 'src/lib/components/chat/input/model-picker-groups.ts',
+        replacement: 'Combobox',
+        reason: 'grouped option model for ModelPicker',
+      },
+      {
+        caller: 'src/lib/components/chat/input/model-picker-utils.ts',
+        replacement: 'Combobox',
+        reason: 'searchable option model for ModelPicker',
+      },
+      {
+        caller: 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
+        replacement: 'Select',
+        reason: 'non-searchable single-value selection',
+      },
+      {
+        caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
+        replacement: 'Combobox',
+        reason: 'shared option model for ModelPicker',
+      },
+      {
+        caller: 'src/lib/components/settings/mcp/McpServerCard.svelte',
+        replacement: 'Menu',
+        reason: 'action items and separator without value selection',
+      },
+    ]);
   });
 });

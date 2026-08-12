@@ -10,6 +10,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from '../logger';
 import { writeJsonAsync } from './async-utils';
+import { redactIpcDebugData } from './ipc-debug-redaction';
 
 const logger = new Logger('IPCDebugTracker');
 
@@ -112,7 +113,7 @@ class IPCDebugTracker {
       timestamp: new Date().toISOString(),
       channel,
       type: 'call',
-      data: this.truncateData(data),
+      data: this.truncateData(redactIpcDebugData(channel, data)),
       source,
     });
   }
@@ -124,19 +125,18 @@ class IPCDebugTracker {
       timestamp: new Date().toISOString(),
       channel,
       type: 'success',
-      data: this.truncateData(data),
+      data: this.truncateData(redactIpcDebugData(channel, data)),
     });
   }
 
   trackValidationError(channel: string, error: any, data?: any): void {
-    // Always track validation errors even if disabled
     this.addEntry({
       timestamp: new Date().toISOString(),
       channel,
       type: 'validation_error',
-      data: this.truncateData(data),
+      data: this.enabled ? this.truncateData(redactIpcDebugData(channel, data)) : undefined,
       error: error.message || String(error),
-      stack: error.stack?.slice(0, 500), // Truncate stack too
+      stack: this.enabled ? error.stack?.slice(0, 500) : undefined,
     });
 
     logger.warn(`IPC validation error on channel ${channel}:`, error);
@@ -153,7 +153,7 @@ class IPCDebugTracker {
       timestamp: new Date().toISOString(),
       channel,
       type: 'missing_handler',
-      data: this.truncateData(data),
+      data: this.enabled ? this.truncateData(redactIpcDebugData(channel, data)) : undefined,
       error: `No handler registered for channel: ${channel}`,
     });
 
@@ -263,7 +263,7 @@ class IPCDebugTracker {
     validationErrors: number;
     missingHandlers: string[];
     recentErrors: IPCDebugEntry[];
-    } {
+  } {
     const validationErrors = this.entries.filter((e) => e.type === 'validation_error');
     const successfulCalls = this.entries.filter((e) => e.type === 'success');
     const recentErrors = this.entries

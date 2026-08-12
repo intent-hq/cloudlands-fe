@@ -9,7 +9,12 @@
   let { class: className, children, ...restProps }: Props = $props();
 </script>
 
-<li role="presentation" aria-hidden="true" class={cn('[&>svg]:size-3.5', className)} {...restProps}>
+<li
+  role="presentation"
+  aria-hidden="true"
+  class={cn('shrink-0 text-muted-foreground [&>svg]:size-3.5', className)}
+  {...restProps}
+>
   {#if children}
     {@render children()}
   {:else}

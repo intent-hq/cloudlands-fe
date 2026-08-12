@@ -1,19 +1,20 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
+  import { faCheck, faMinus } from '@fortawesome/free-solid-svg-icons';
+  import { Checkbox as CheckboxPrimitive } from 'bits-ui';
   import Fa from 'svelte-fa';
-  import {
-  faCheck,
-  faMinus,
-} from '@fortawesome/free-solid-svg-icons';
-  import { fly } from 'svelte/transition';
 
   interface Props {
     id?: string;
     checked?: boolean;
     indeterminate?: boolean;
     disabled?: boolean;
+    required?: boolean;
+    readonly?: boolean;
+    invalid?: boolean;
     class?: string;
     onCheckedChange?: (checked: boolean) => void;
+    onIndeterminateChange?: (indeterminate: boolean) => void;
     name?: string;
     value?: string;
     ariaLabel?: string;
@@ -25,13 +26,15 @@
   let {
     id = '',
     checked = $bindable(false),
-    indeterminate = false,
+    indeterminate = $bindable(false),
     disabled = false,
+    required = false,
+    readonly = false,
+    invalid = false,
     class: className = '',
     onCheckedChange,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    onIndeterminateChange,
     name,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     value = 'on',
     ariaLabel,
     ariaLabelledby,
@@ -39,23 +42,8 @@
     size = 'md',
   }: Props = $props();
 
-  function handleClick(e: MouseEvent) {
-    if (!disabled) {
-      e.stopPropagation();
-      checked = !checked;
-      onCheckedChange?.(checked);
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (disabled) return;
-
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      checked = !checked;
-      onCheckedChange?.(checked);
-    }
+  function stopClickPropagation(event: MouseEvent) {
+    event.stopPropagation();
   }
 
   const sizeClasses = {
@@ -71,37 +59,40 @@
   };
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
+<CheckboxPrimitive.Root
+  bind:checked
+  bind:indeterminate
   {id}
-  role="checkbox"
-  tabindex={disabled ? -1 : 0}
-  aria-checked={indeterminate ? 'mixed' : checked}
+  {disabled}
+  {required}
+  {readonly}
+  {name}
+  {value}
+  {onCheckedChange}
+  {onIndeterminateChange}
   aria-label={ariaLabel}
   aria-labelledby={ariaLabelledby}
   aria-describedby={ariaDescribedby}
-  data-state={indeterminate ? 'indeterminate' : checked ? 'checked' : 'unchecked'}
-  data-disabled={disabled ? '' : undefined}
-  onclick={handleClick}
-  onkeydown={handleKeyDown}
+  aria-invalid={invalid || undefined}
+  onclick={stopClickPropagation}
   class={cn(
-    'inline-flex items-center justify-center shrink-0 rounded-xs transition-all duration-150',
-    'border border-muted-foreground/30 cursor-pointer',
-    'bg-background',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-    disabled && 'cursor-not-allowed opacity-50',
-    'data-[state=checked]:bg-foreground data-[state=checked]:border-foreground data-[state=indeterminate]:bg-muted',
+    "border-border bg-card relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-(--radius-small) border shadow-(--elevation-raised) transition-[border-color,background-color,box-shadow,opacity] duration-(--motion-fast) after:absolute after:-inset-1.5 after:content-[''] motion-reduce:transition-none",
+    'hover:border-input hover:bg-muted/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+    disabled && 'cursor-not-allowed bg-muted/40 opacity-60 hover:border-border',
+    readonly && 'cursor-default',
+    invalid && 'border-destructive-foreground ring-1 ring-destructive-foreground/25',
+    'data-[state=checked]:border-primary/60 data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=indeterminate]:border-primary/60 data-[state=indeterminate]:bg-accent data-[state=indeterminate]:text-accent-foreground',
     sizeClasses[size],
     className,
   )}
 >
   {#if indeterminate}
-  <div transition:fly={{y: 9, duration: 150}}>
-    <Fa icon={faMinus} size={iconSizes[size]} class="text-background mt-[-0.1em]" />
+    <div class="flex items-center justify-center" aria-hidden="true">
+      <Fa icon={faMinus} size={iconSizes[size]} class="-mt-px text-accent-foreground" />
     </div>
   {:else if checked}
-  <div transition:fly={{y: 9, duration: 150}}>
-    <Fa icon={faCheck} size={iconSizes[size]} class="text-background mt-[-0.1em]" />
+    <div class="flex items-center justify-center" aria-hidden="true">
+      <Fa icon={faCheck} size={iconSizes[size]} class="-mt-px text-accent-foreground" />
     </div>
   {/if}
-</div>
+</CheckboxPrimitive.Root>

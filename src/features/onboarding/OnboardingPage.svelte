@@ -107,6 +107,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
 
@@ -447,8 +448,7 @@
   function restoreLastUsedSetupScript(repo: string) {
     // GitHub selections key last-used by path + source URL: the path is only
     // the clone destination, which two different repos can share.
-    const ghUrl =
-      projectSelection?.type === 'github' ? projectSelection?.githubUrl : undefined;
+    const ghUrl = projectSelection?.type === 'github' ? projectSelection?.githubUrl : undefined;
     const lastUsed = repo ? getLastUsedSetupScript(repo, ghUrl) : undefined;
     const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
     const choice = chooseDefaultSetupScript({
@@ -943,7 +943,8 @@
             branch: projectSelection.branch,
           });
         } catch (err) {
-          onboardingPullError = err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
+          onboardingPullError =
+            err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
           onboardingShowPullConflictDialog = true;
           isOnboardingCreating = false;
           return;
@@ -1175,7 +1176,7 @@
       // persistence/session cleanup is handled by the workspace-initializer saga.
       appStore.dispatch(resetOnboarding());
 
-      // Mark provider setup as complete so the home page won't redirect back here
+      // Mark provider setup as complete so the app shell won't redirect back here.
       appStore.dispatch(setHasCompletedProviderSetup(true));
 
       appStore.dispatch(setOnboardingWorkspaceId(workspace.id));
@@ -1186,10 +1187,12 @@
       onHoldActiveChange(true);
       onFadingOutChange(false);
 
+      appStore.dispatch(openWorkspaceTab(workspace.id));
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
       logger.error('Workspace creation failed', err as Error);
-      onboardingCreationError = err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
+      onboardingCreationError =
+        err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
     }
   }

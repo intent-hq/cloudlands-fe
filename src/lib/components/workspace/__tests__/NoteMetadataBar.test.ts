@@ -1,18 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  render,
-  screen,
-  fireEvent,
-} from '@testing-library/svelte';
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -52,7 +42,8 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -88,7 +79,9 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: { select: (_state: unknown, agentId: string) => mocks.agentsById.get(agentId) },
+  selectAgentSession: {
+    select: (_state: unknown, agentId: string) => mocks.agentsById.get(agentId),
+  },
 }));
 
 vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
@@ -121,7 +114,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   })),
 }));
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 

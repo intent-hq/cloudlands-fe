@@ -7,39 +7,31 @@
    * Output streams in real-time via store subscription.
    * On re-open, loads buffered output from the store.
    */
-  import {
-  onDestroy,
-  untrack,
-} from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
-  import {
-  faXmark,
-  faWandMagicSparkles,
-  faPlay,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsClient } from '$features/scripts/scripts.client';
 
-
   import {
-  selectScriptById,
-  selectScriptRuntime,
-  selectScriptOutput,
-} from '$store/renderer/slices/scripts/scripts-selectors';
+    selectScriptById,
+    selectScriptRuntime,
+    selectScriptOutput,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
+  import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   interface Props {
     scriptId: string;
@@ -58,8 +50,6 @@
   let themeManager: TerminalThemeManager | null = null;
   let initRafId: number | null = null;
   let fitRafId: number | null = null;
-
-
 
   // Reactive state from Redux store. Selector readables must be created at
   // component init; scriptId is stable for the lifetime of this viewer.
@@ -186,10 +176,13 @@
     resizeObserver = null;
     themeManager?.dispose();
     themeManager = null;
-    xterm?.dispose();
+    const terminalToDispose = xterm;
     xterm = null;
     fitAddon = null;
     writtenChunkCount = 0;
+    if (terminalToDispose) {
+      disposeXtermAfterViewportSync(terminalToDispose);
+    }
   }
 
   // ---- Real-time streaming via $effect ----
@@ -202,7 +195,12 @@
 
     // Write only chunks not yet rendered, verbatim — no injected newlines.
     const startIndex = Math.max(written - buffer.dropped, 0);
-    xterm.write(buffer.chunks.slice(startIndex).map((c) => c.text).join(''));
+    xterm.write(
+      buffer.chunks
+        .slice(startIndex)
+        .map((c) => c.text)
+        .join(''),
+    );
     writtenChunkCount = total;
   });
 
@@ -249,17 +247,23 @@
     const prompt = `The script '${$script$?.name}'${failedText}.\n\nCommand: \`${$script$?.command}\`\n\nOutput (last 100 lines):\n\`\`\`\n${lastLines}\n\`\`\`\n\nPlease analyze the error and suggest how to fix this script. If you can identify the issue, update the script command using the \`create_script\` MCP tool with scriptId="${scriptId}".`;
 
     try {
-      appStore.dispatch(createAgentFromConfigRequested(workspaceId, {
-        name: m.terminal_scriptOutput_fixAgentName_label({
-          name: $script$?.name ?? m.terminal_scriptOutput_script_fallback(),
-        }),
-        // Derived from the script name, not user-chosen — keep the session
-        // self-renameable.
-        nameExplicitlySet: false,
-        workspaceId: WorkspaceId(workspaceId),
-        initialMessage: prompt,
-        source: 'error-notification',
-      }, { openAgent: true }));
+      appStore.dispatch(
+        createAgentFromConfigRequested(
+          workspaceId,
+          {
+            name: m.terminal_scriptOutput_fixAgentName_label({
+              name: $script$?.name ?? m.terminal_scriptOutput_script_fallback(),
+            }),
+            // Derived from the script name, not user-chosen — keep the session
+            // self-renameable.
+            nameExplicitlySet: false,
+            workspaceId: WorkspaceId(workspaceId),
+            initialMessage: prompt,
+            source: 'error-notification',
+          },
+          { openAgent: true },
+        ),
+      );
     } catch {
       toast.error(m.workspace_modals_createAgentFailed_error());
     }
@@ -270,7 +274,7 @@
   // Reset xterm when transitioning back to empty state
   $effect(() => {
     const isEmptyState = $runtime$.status === 'idle' && $output$.chunks.length === 0;
-    if (isEmptyState && xterm) {
+    if (isEmptyState) {
       disposeXterm();
     }
   });
@@ -299,12 +303,16 @@
 <!-- Script output viewer (no header - header is now in parent) -->
 <div class="script-output-viewer {className}">
   {#if isFailing}
-    <div class="bg-destructive/20 border-y border-destructive/20 px-3 py-1.5 flex items-center justify-between">
+    <div
+      class="bg-destructive/20 border-y border-destructive/20 px-3 py-1.5 flex items-center justify-between"
+    >
       <div class="flex items-center gap-2 text-sm text-destructive-foreground font-medium">
         <div class="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
           <Fa icon={faXmark} size="xs" />
         </div>
-        <span>{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span>
+        <span
+          >{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span
+        >
       </div>
       <Button
         variant="outline"
@@ -340,7 +348,10 @@
   {/if}
 
   <!-- xterm output (hidden when empty state is showing) -->
-  <div class="flex-1 relative overflow-hidden" class:hidden={$runtime$.status === 'idle' && $output$.chunks.length === 0}>
+  <div
+    class="flex-1 relative overflow-hidden"
+    class:hidden={$runtime$.status === 'idle' && $output$.chunks.length === 0}
+  >
     <div class="xterm-output" bind:this={xtermContainer}></div>
   </div>
 </div>

@@ -75,7 +75,12 @@ export interface CanonicalAgentStatusFields {
    * a parent or client can tell a PR-monitor-waiting idle agent from a
    * stalled one. Rendered verbatim.
    */
-  waitingOnPrMonitors?: Array<{ monitorId: string; repo: string; prNumber: number; title?: string }>;
+  waitingOnPrMonitors?: Array<{
+    monitorId: string;
+    repo: string;
+    prNumber: number;
+    title?: string;
+  }>;
 }
 
 // ============================================================================
@@ -165,6 +170,10 @@ export const WorkspaceEventType = {
   // Terminal events
   TerminalCommand: 'terminal:command',
 
+  // Script events (PROTOCOL §6.5)
+  ScriptState: 'script:state',
+  ScriptOutput: 'script:output',
+
   // Test events
   TestStarted: 'test:started',
   TestCompleted: 'test:completed',
@@ -180,6 +189,7 @@ export const WorkspaceEventType = {
   Opened: 'workspace:opened',
   Closed: 'workspace:closed',
   Activity: 'workspace:activity',
+  DisplayStatusChanged: 'workspace:displayStatus-changed',
 
   // Spec events
   SpecUpdated: 'spec:updated',

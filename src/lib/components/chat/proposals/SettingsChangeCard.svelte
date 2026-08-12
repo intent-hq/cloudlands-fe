@@ -114,8 +114,10 @@
   function formatRowValue(row: DisplayRow, value: unknown): string {
     const definition = findAppSettingDefinition(row.key);
     if (definition) return formatSettingValue(definition, value);
-    if (value === null || value === undefined || value === '') return m.chat_shared_valueNone_label();
-    if (typeof value === 'boolean') return value ? m.chat_shared_valueOn_label() : m.chat_shared_valueOff_label();
+    if (value === null || value === undefined || value === '')
+      return m.chat_shared_valueNone_label();
+    if (typeof value === 'boolean')
+      return value ? m.chat_shared_valueOn_label() : m.chat_shared_valueOff_label();
     if (typeof value === 'string' || typeof value === 'number') return String(value);
     return JSON.stringify(value) ?? String(value);
   }
@@ -205,13 +207,16 @@
 </script>
 
 {#if isDismissed}
-  <div class="my-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-subtle">
-    {m.chat_shared_discarded_label()} {proposal.preview.title}
+  <div
+    class="type-body my-2 rounded-(--radius-medium) border border-border bg-muted/30 px-3 py-2 text-muted-foreground"
+  >
+    {m.chat_shared_discarded_label()}
+    {proposal.preview.title}
   </div>
 {:else}
   <section
     bind:this={rootElement}
-    class="my-2 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background"
+    class="my-2 min-w-0 w-full max-w-xl overflow-hidden rounded-(--radius-medium) border border-border bg-card shadow-(--elevation-raised)"
     data-proposal-kind={proposal.kind}
     data-apply-tool-call-id={proposal.applyToolCallId}
     title={proposal.applyToolCallId
@@ -219,20 +224,26 @@
       : undefined}
   >
     <div class="px-3 pt-3">
-      <h3 class="text-sm font-semibold leading-snug text-foreground">{proposal.preview.title}</h3>
+      <h3 class="type-body font-medium leading-snug text-foreground">{proposal.preview.title}</h3>
       {#if proposal.preview.summary}
-        <p class="mt-1 text-xs leading-relaxed text-subtle">{proposal.preview.summary}</p>
+        <p class="type-body mt-1 leading-relaxed text-muted-foreground">
+          {proposal.preview.summary}
+        </p>
       {/if}
     </div>
 
     <div class="space-y-2 px-3 py-2.5">
       {#each rows as row (row.key)}
-        <div class="rounded-md bg-muted/20 px-2.5 py-2 text-sm" data-proposal-field={row.key}>
-          <div>
-            <span class="font-medium text-foreground">{row.label}</span><span class="text-subtle"
+        <div
+          class="min-w-0 rounded-(--radius-medium) border border-border bg-background px-3 py-2.5"
+          data-proposal-field={row.key}
+        >
+          <div class="type-body min-w-0 break-words">
+            <span class="font-medium text-foreground">{row.label}</span><span
+              class="text-muted-foreground"
               >:
             </span>
-            <span class="text-subtle" data-proposal-before-after-row={row.key}
+            <span class="text-muted-foreground" data-proposal-before-after-row={row.key}
               >{formatRowValue(row, row.before)} → {formatRowValue(row, row.after)}</span
             >
           </div>
@@ -246,7 +257,9 @@
                   onchange={(value) => handleEnumEdit(row, value)}
                 >
                   <Select.Trigger id={`settings-change-${row.key}`} class="py-1.5">
-                    <span class="truncate">{enumValueLabel(definition, selectedEnumValue(row))}</span>
+                    <span class="truncate"
+                      >{enumValueLabel(definition, selectedEnumValue(row))}</span
+                    >
                   </Select.Trigger>
                   <Select.Content portal class="max-h-[300px]">
                     {#if definition.nullable}
@@ -273,7 +286,9 @@
     {#if statusMessage}
       <div
         bind:this={statusElement}
-        class="border-t border-border/60 px-3 py-2 text-xs text-subtle focus:outline-none"
+        class={isFailed
+          ? 'type-caption border-t border-border px-3 py-2 text-destructive-foreground focus:outline-none'
+          : 'type-caption border-t border-border px-3 py-2 text-muted-foreground focus:outline-none'}
         role="status"
         aria-live={isFailed ? 'assertive' : 'polite'}
         tabindex="-1"
@@ -284,15 +299,21 @@
 
     {#if isApplied || isUndoing}
       <div
-        class="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2.5 text-xs text-subtle"
+        class="type-caption flex items-center justify-between gap-3 border-t border-success/30 bg-success/10 px-3 py-2.5 text-muted-foreground"
       >
-        <span>{m.chat_shared_appliedTimeAgo_label({ timeAgo })} <span aria-hidden="true">·</span></span>
+        <span class="text-success"
+          >{m.chat_shared_appliedTimeAgo_label({ timeAgo })} <span aria-hidden="true">·</span></span
+        >
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleUndo}>
-          {isUndoing ? m.chat_shared_undoing_label() : isFailed ? m.chat_shared_retry_label() : m.chat_shared_undo_label()}
+          {isUndoing
+            ? m.chat_shared_undoing_label()
+            : isFailed
+              ? m.chat_shared_retry_label()
+              : m.chat_shared_undo_label()}
         </Button>
       </div>
     {:else}
-      <div class="flex items-center justify-end gap-2 px-3 pb-3 pt-1">
+      <div class="flex items-center justify-end gap-2 border-t border-border bg-muted/10 px-3 py-3">
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
           >{m.chat_shared_discard_label()}</Button
         >

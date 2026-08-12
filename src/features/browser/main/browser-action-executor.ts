@@ -54,21 +54,23 @@ const WaitForOptionsSchema = z.object({
   timeout: z.number().optional(),
 });
 
-const SnapshotActionSchema = z.object({
-  action: z.literal('snapshot'),
-  workspaceId: z.string(),
-  tabId: z.string().optional(),
-  name: z.string().optional(),
-  reload: z.boolean().optional(),
-  waitFor: WaitForOptionsSchema.optional(),
-});
+const SnapshotActionSchema = z
+  .object({
+    action: z.literal('snapshot'),
+    tabId: z.string().optional(),
+    name: z.string().optional(),
+    reload: z.boolean().optional(),
+    waitFor: WaitForOptionsSchema.optional(),
+  })
+  .strict();
 
-const StartSessionActionSchema = z.object({
-  action: z.literal('startSession'),
-  workspaceId: z.string(),
-  tabId: z.string().optional(),
-  name: z.string().optional(),
-});
+const StartSessionActionSchema = z
+  .object({
+    action: z.literal('startSession'),
+    tabId: z.string().optional(),
+    name: z.string().optional(),
+  })
+  .strict();
 
 const StartCaptureActionSchema = z.object({
   action: z.literal('startCapture'),
@@ -110,10 +112,12 @@ const ResetTabActionSchema = z.object({
   tabId: z.string().optional(),
 });
 
-const GetSummaryActionSchema = z.object({
-  action: z.literal('getSummary'),
-  captureDir: z.string(),
-});
+const GetSummaryActionSchema = z
+  .object({
+    action: z.literal('getSummary'),
+    captureId: z.string(),
+  })
+  .strict();
 
 const OpenTabActionSchema = z.object({
   action: z.literal('openTab'),
@@ -176,6 +180,13 @@ function validateBrowserUrl(url: string): string | null {
     // i18n-ignore (agent-facing protocol error, not user-facing)
     return `Invalid URL: "${url}". Please provide a valid URL with one of these protocols: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
   }
+}
+
+function requireWorkspaceId(workspaceId: string | undefined, action: string): string {
+  if (!workspaceId) {
+    throw new Error(`Action '${action}' requires workspace context`);
+  }
+  return workspaceId;
 }
 
 // Schema for the full action sequence
@@ -256,8 +267,9 @@ async function executeAction(
       }
 
       case 'snapshot': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         const options: SnapshotOptions = {
-          workspaceId: action.workspaceId,
+          workspaceId: captureWorkspaceId,
           tabId,
           name: action.name,
           reload: action.reload,
@@ -268,8 +280,9 @@ async function executeAction(
       }
 
       case 'startSession': {
+        const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         const options: SessionOptions = {
-          workspaceId: action.workspaceId,
+          workspaceId: captureWorkspaceId,
           tabId,
           name: action.name,
         };
@@ -278,12 +291,18 @@ async function executeAction(
       }
 
       case 'startCapture': {
-        await browserCapture.startCapture(action.sessionId);
+        await browserCapture.startCapture(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+        );
         return { action: 'startCapture', success: true };
       }
 
       case 'endCapture': {
-        await browserCapture.endCapture(action.sessionId);
+        await browserCapture.endCapture(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+        );
         return { action: 'endCapture', success: true };
       }
 
@@ -292,22 +311,38 @@ async function executeAction(
           action.reload || action.waitFor
             ? { reload: action.reload, waitFor: action.waitFor }
             : undefined;
-        const result = await browserCapture.captureStep(action.sessionId, action.stepName, options);
+        const result = await browserCapture.captureStep(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+          action.stepName,
+          options,
+        );
         return { action: 'captureStep', success: true, result };
       }
 
       case 'startTrace': {
-        const result = await browserCapture.startTrace(action.sessionId, action.traceName);
+        const result = await browserCapture.startTrace(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+          action.traceName,
+        );
         return { action: 'startTrace', success: true, result };
       }
 
       case 'stopTrace': {
-        const result = await browserCapture.stopTrace(action.sessionId, action.traceName);
+        const result = await browserCapture.stopTrace(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+          action.traceName,
+        );
         return { action: 'stopTrace', success: true, result };
       }
 
       case 'endSession': {
-        const result = await browserCapture.endSession(action.sessionId);
+        const result = await browserCapture.endSession(
+          action.sessionId,
+          requireWorkspaceId(workspaceId, action.action),
+        );
         return { action: 'endSession', success: true, result };
       }
 
@@ -317,7 +352,10 @@ async function executeAction(
       }
 
       case 'getSummary': {
-        const result = await browserCapture.getSummary(action.captureDir);
+        const result = await browserCapture.getSummary(
+          requireWorkspaceId(workspaceId, action.action),
+          action.captureId,
+        );
         return { action: 'getSummary', success: true, result };
       }
 
@@ -389,7 +427,8 @@ async function executeAction(
             action: 'navigate',
             success: false,
             // i18n-ignore (agent-facing protocol error, not user-facing)
-            error: 'No browser tabs available. Use { action: "openTab", url: "..." } to open a tab first.',
+            error:
+              'No browser tabs available. Use { action: "openTab", url: "..." } to open a tab first.',
           };
         }
 
@@ -397,7 +436,11 @@ async function executeAction(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(action.url)}`,
         );
-        return { action: 'navigate', success: true, result: { tabId: resolvedTabId, url: action.url } };
+        return {
+          action: 'navigate',
+          success: true,
+          result: { tabId: resolvedTabId, url: action.url },
+        };
       }
 
       default: {

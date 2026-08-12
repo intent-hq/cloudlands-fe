@@ -47,6 +47,15 @@ const RENDERER_STARTUP_CHANNELS = [
 ];
 
 describe('IPC Startup Race Condition', () => {
+  it('keeps automatic update checks disabled in packaged test fixtures', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+
+    expect(source).toContain(
+      "process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true'",
+    );
+  });
+
   it('initializes auto-update before window creation without requiring a window', () => {
     const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
     const source = fs.readFileSync(indexPath, 'utf-8');
@@ -59,7 +68,9 @@ describe('IPC Startup Race Condition', () => {
     expect(secondaryStart).toBeGreaterThan(-1);
     expect(updaterInit).toBeGreaterThan(secondaryStart);
     expect(updaterInit).toBeLessThan(createWindowEnd);
-    expect(preWindowStartup).toContain("if (process.env.NODE_ENV !== 'development')");
+    expect(preWindowStartup).toContain(
+      "if (process.env.NODE_ENV !== 'development' && process.env.TESTING !== 'true')",
+    );
     expect(preWindowStartup).not.toContain("process.env.NODE_ENV !== 'development' && mainWindow");
   });
 
@@ -71,6 +82,26 @@ describe('IPC Startup Race Condition', () => {
 
     expect(sidecarStart).toBeGreaterThan(-1);
     expect(hostEnvSeed).toBeGreaterThan(sidecarStart);
+  });
+
+  it('defers specialist GitHub auth until handlers and the first window are available', () => {
+    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
+    const source = fs.readFileSync(indexPath, 'utf-8');
+    const specialistInit = source.indexOf('await initSpecialistsService();');
+    const specialistHandlers = source.indexOf('setupSpecialistsIPC();');
+    const backendHandlers = source.indexOf('registerBackendHandlers();');
+    const criticalEnd = source.indexOf("startupMetrics.end('criticalIPC')");
+    const windowCreated = source.indexOf("startupMetrics.end('createWindow')");
+    const authRefresh = source.indexOf('void refreshGitHubAuthStatus();');
+
+    expect(specialistInit).toBeGreaterThan(-1);
+    expect(specialistHandlers).toBeGreaterThan(specialistInit);
+    expect(specialistHandlers).toBeLessThan(criticalEnd);
+    expect(backendHandlers).toBeLessThan(criticalEnd);
+    expect(windowCreated).toBeGreaterThan(criticalEnd);
+    expect(authRefresh).toBeGreaterThan(windowCreated);
+    expect(authRefresh).toBeGreaterThan(backendHandlers);
+    expect(source).not.toContain('await refreshGitHubAuthStatus();');
   });
 
   it('should identify setup functions in critical vs secondary sections', () => {

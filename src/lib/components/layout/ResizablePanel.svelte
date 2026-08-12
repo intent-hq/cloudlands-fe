@@ -1,25 +1,21 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import {
-  requestResizablePanelSize,
-  setResizablePanelSize,
-  setSidebarExpandedWidth,
-  setWidth as setSidebarWidth,
-} from '$store/renderer/slices/ui-layout/ui-layout-slice';
+    requestResizablePanelSize,
+    setResizablePanelSize,
+    setSidebarExpandedWidth,
+    setWidth as setSidebarWidth,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import {
-  selectIsCollapsed,
-  selectResizablePanelSize,
-  selectSidebarExpandedWidth,
-  selectSidebarWidth,
-} from '$store/renderer/slices/ui-layout/ui-layout-selectors';
+    selectIsCollapsed,
+    selectResizablePanelSize,
+    selectSidebarExpandedWidth,
+    selectSidebarWidth,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
 
   let {
     // Common props
@@ -27,11 +23,13 @@
     storageKey = null,
     className = '',
     handleClassName = '',
+    showHandleIndicator = false,
 
     // Width props (for horizontal orientation)
     minWidth = 280,
     maxWidth = 800,
     defaultWidth = 320,
+    restoreStoredWidth = true,
     defaultExpandedWidth = 600,
     side = 'right',
     expandedStorageKey = null,
@@ -47,9 +45,27 @@
     // Animation props
     animateOnMount = false,
     animationDuration = 300,
+    disableWidthTransition = false,
+    onWidthChange,
+    onResizeStart,
+    onResize,
+    onResizeEnd,
+    resizeScrollContainer = null,
 
     // For skipping resize (used by parent to control when we're in full-width mode)
     doSkipResize = false,
+
+    // Allow a consumer's increasing default to grow an already-mounted panel.
+    growWithDefaultWidth = false,
+
+    // Follow reactive default changes in either direction while preserving manual offset.
+    resizeWithDefaultWidth = false,
+
+    // Follow reactive default changes exactly, discarding a manual offset.
+    syncWithDefaultWidth = false,
+
+    // Apply a temporary visual delta without changing or persisting the base width.
+    transientWidthDelta = 0,
 
     // Percentage-based resizing weight: 0 = fixed pixels, 1 = fully percentage-based
     // Values between 0 and 1 blend between the two behaviors
@@ -69,11 +85,14 @@
     storageKey?: string | null;
     className?: string;
     handleClassName?: string;
+    showHandleIndicator?: boolean;
 
     // Width props (for horizontal orientation)
     minWidth?: number;
     maxWidth?: number;
     defaultWidth?: number;
+    /** Restore the persisted normal width when mounting. */
+    restoreStoredWidth?: boolean;
     defaultExpandedWidth?: number;
     side?: 'left' | 'right';
     expandedStorageKey?: string | null;
@@ -89,9 +108,28 @@
     // Animation props
     animateOnMount?: boolean;
     animationDuration?: number;
+    disableWidthTransition?: boolean;
+    onWidthChange?: (width: number) => void;
+    onResizeStart?: () => void;
+    onResize?: (previousWidth: number, nextWidth: number) => void;
+    onResizeEnd?: (startSize: number, finalSize: number) => void;
+    /** Scroll viewport that should advance when a right-edge resize reaches its boundary. */
+    resizeScrollContainer?: HTMLElement | null;
 
     // For skipping resize (used by parent to control when we're in full-width mode)
     doSkipResize?: boolean;
+
+    // Grow to a larger reactive default without shrinking manual widths.
+    growWithDefaultWidth?: boolean;
+
+    // Resize by the reactive default delta while preserving manual adjustment.
+    resizeWithDefaultWidth?: boolean;
+
+    // Resize exactly to each reactive default.
+    syncWithDefaultWidth?: boolean;
+
+    // Temporary rendered-width delta that is never persisted.
+    transientWidthDelta?: number;
 
     // Percentage-based resizing weight (0-1)
     percentageWeight?: number;
@@ -120,6 +158,10 @@
   const isWorkspaceExpandedPanel = expandedStorageKey === 'workspace-left-panel-expanded-width';
   let appliedStoredPanelSize = $state<number | undefined>(undefined);
   let appliedStoredExpandedPanelSize = $state<number | undefined>(undefined);
+  // svelte-ignore state_referenced_locally
+  let previousDefaultWidth = defaultWidth;
+  // svelte-ignore state_referenced_locally
+  let wasDefaultWidthResizeEnabled = resizeWithDefaultWidth || syncWithDefaultWidth;
 
   // Compute effective weight (legacy usePercentage prop takes precedence if defined)
   const effectiveWeight = $derived(
@@ -195,7 +237,7 @@
   // Helper function to get initial width from Redux-owned persisted state.
   // When percentage weight > 0, stored value is a percentage
   function getInitialWidth(): number {
-    const savedWidth = getStoredPanelSize(true);
+    const savedWidth = restoreStoredWidth ? getStoredPanelSize(true) : null;
     if (savedWidth !== null) return savedWidth;
     return defaultWidth;
   }
@@ -221,6 +263,9 @@
   let panelWidth = $state(
     initiallyCollapsed ? 0 : orientation === 'horizontal' ? getInitialWidth() : defaultWidth,
   );
+  let panelElement: HTMLDivElement | null = $state(null);
+  // svelte-ignore state_referenced_locally
+  let wasSkippingResize = $state(doSkipResize);
   // svelte-ignore state_referenced_locally
   let expandedWidth = $state(
     orientation === 'horizontal' ? getInitialExpandedWidth() : defaultExpandedWidth,
@@ -243,6 +288,12 @@
   let startY = $state(0);
   let startWidth = $state(0);
   let startHeight = $state(0);
+  let lastResizeWidth = $state(0);
+  let startScrollLeft = 0;
+  let lastPointerX = 0;
+  let resizeAutoScrollFrame: number | null = null;
+  const RESIZE_EDGE_THRESHOLD = 24;
+  const RESIZE_AUTO_SCROLL_STEP = 8;
 
   // Track previous window size for weighted blending
 
@@ -319,7 +370,9 @@
   let lastSidebarCollapsed = $state<boolean | undefined>(undefined);
 
   $effect(() => {
-    if (initiallyCollapsed || isExpanded || orientation !== 'horizontal') return;
+    if (!restoreStoredWidth || initiallyCollapsed || isExpanded || orientation !== 'horizontal') {
+      return;
+    }
 
     const storedValue = isWorkspaceLeftPanel ? $sidebarWidth : $storedPanelSize;
     if (storedValue === undefined || storedValue === appliedStoredPanelSize) return;
@@ -360,6 +413,51 @@
     }
   });
 
+  $effect(() => {
+    const nextDefaultWidth = defaultWidth;
+    const priorDefaultWidth = previousDefaultWidth;
+    const defaultWidthResizeEnabled = resizeWithDefaultWidth || syncWithDefaultWidth;
+    const defaultWidthResizeWasEnabled = wasDefaultWidthResizeEnabled;
+    previousDefaultWidth = nextDefaultWidth;
+    wasDefaultWidthResizeEnabled = defaultWidthResizeEnabled;
+
+    // Layout hydration can update the panel count and enable reactive default
+    // resizing in the same render. Treat the persisted width as authoritative
+    // for that frame instead of applying the restored default delta twice.
+    if (restoreStoredWidth && defaultWidthResizeEnabled && !defaultWidthResizeWasEnabled) return;
+
+    if (
+      defaultWidthResizeEnabled &&
+      !initiallyCollapsed &&
+      !isExpanded &&
+      orientation === 'horizontal' &&
+      nextDefaultWidth !== priorDefaultWidth
+    ) {
+      const nextWidth = syncWithDefaultWidth
+        ? nextDefaultWidth
+        : panelWidth + nextDefaultWidth - priorDefaultWidth;
+      panelWidth = Math.max(minWidth, Math.min(maxWidth, nextWidth));
+      widthPercent = pixelsToPercent(panelWidth, true);
+      persistPanelSize(storageKey, panelWidth, true);
+      return;
+    }
+
+    if (
+      !growWithDefaultWidth ||
+      initiallyCollapsed ||
+      isExpanded ||
+      orientation !== 'horizontal' ||
+      nextDefaultWidth <= priorDefaultWidth ||
+      panelWidth >= nextDefaultWidth
+    ) {
+      return;
+    }
+
+    panelWidth = Math.max(minWidth, Math.min(maxWidth, nextDefaultWidth));
+    widthPercent = pixelsToPercent(panelWidth, true);
+    persistPanelSize(storageKey, panelWidth, true);
+  });
+
   // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
   // The first run captures the baseline; subsequent runs apply collapse/expand.
   $effect(() => {
@@ -378,7 +476,7 @@
 
   // Check for collapse threshold on mount and set up resize listener
   onMount(() => {
-    if (storageKey && !isWorkspaceLeftPanel) {
+    if (restoreStoredWidth && storageKey && !isWorkspaceLeftPanel) {
       appStore.dispatch(requestResizablePanelSize(storageKey));
     }
     if (expandedStorageKey && !isWorkspaceExpandedPanel) {
@@ -420,44 +518,84 @@
     };
   });
 
+  function applyHorizontalResize(clientX: number) {
+    const scrollDelta = resizeScrollContainer
+      ? resizeScrollContainer.scrollLeft - startScrollLeft
+      : 0;
+    const delta = side === 'left' ? clientX - startX + scrollDelta : startX - clientX - scrollDelta;
+    let newWidth = startWidth + delta;
+
+    // Clamp to min/max
+    newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+    // Update the appropriate width based on expanded state
+    if (isExpanded) {
+      expandedWidth = newWidth;
+      // Always update percentage for window resize tracking
+      expandedWidthPercent = pixelsToPercent(newWidth, true);
+    } else {
+      // Check if we should collapse (if collapse feature is enabled)
+      if (collapseThreshold !== null) {
+        if (newWidth < collapseThreshold) {
+          isCollapsed = true;
+          panelWidth = minWidth;
+          widthPercent = pixelsToPercent(minWidth, true);
+        } else {
+          isCollapsed = false;
+          panelWidth = newWidth;
+          widthPercent = pixelsToPercent(newWidth, true);
+        }
+      } else {
+        panelWidth = newWidth;
+        widthPercent = pixelsToPercent(newWidth, true);
+      }
+
+      // Update sidebar width store for left sidebar (live during drag)
+      if (storageKey === 'workspace-left-panel-width') {
+        appStore.dispatch(setSidebarWidth(panelWidth));
+      }
+    }
+    const nextRenderedWidth = isExpanded ? expandedWidth : panelWidth;
+    onResize?.(lastResizeWidth, nextRenderedWidth);
+    lastResizeWidth = nextRenderedWidth;
+  }
+
+  function scheduleResizeAutoScroll() {
+    if (resizeAutoScrollFrame !== null || !resizeScrollContainer || side !== 'left') return;
+
+    const containerRect = resizeScrollContainer.getBoundingClientRect();
+    const currentWidth = isExpanded ? expandedWidth : panelWidth;
+    if (lastPointerX < containerRect.right - RESIZE_EDGE_THRESHOLD || currentWidth >= maxWidth) {
+      return;
+    }
+
+    resizeAutoScrollFrame = requestAnimationFrame(() => {
+      resizeAutoScrollFrame = null;
+      if (!isResizing || !resizeScrollContainer) return;
+
+      const maxScrollLeft = Math.max(
+        0,
+        resizeScrollContainer.scrollWidth - resizeScrollContainer.clientWidth,
+      );
+      const nextScrollLeft = Math.min(
+        maxScrollLeft,
+        resizeScrollContainer.scrollLeft + RESIZE_AUTO_SCROLL_STEP,
+      );
+      if (nextScrollLeft === resizeScrollContainer.scrollLeft) return;
+
+      resizeScrollContainer.scrollLeft = nextScrollLeft;
+      applyHorizontalResize(lastPointerX);
+      scheduleResizeAutoScroll();
+    });
+  }
+
   function handleResize(e: MouseEvent) {
     if (!isResizing) return;
 
     if (orientation === 'horizontal') {
-      // Calculate delta based on side
-      const delta = side === 'left' ? e.clientX - startX : startX - e.clientX;
-      let newWidth = startWidth + delta;
-
-      // Clamp to min/max
-      newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-
-      // Update the appropriate width based on expanded state
-      if (isExpanded) {
-        expandedWidth = newWidth;
-        // Always update percentage for window resize tracking
-        expandedWidthPercent = pixelsToPercent(newWidth, true);
-      } else {
-        // Check if we should collapse (if collapse feature is enabled)
-        if (collapseThreshold !== null) {
-          if (newWidth < collapseThreshold) {
-            isCollapsed = true;
-            panelWidth = minWidth;
-            widthPercent = pixelsToPercent(minWidth, true);
-          } else {
-            isCollapsed = false;
-            panelWidth = newWidth;
-            widthPercent = pixelsToPercent(newWidth, true);
-          }
-        } else {
-          panelWidth = newWidth;
-          widthPercent = pixelsToPercent(newWidth, true);
-        }
-
-        // Update sidebar width store for left sidebar (live during drag)
-        if (storageKey === 'workspace-left-panel-width') {
-          appStore.dispatch(setSidebarWidth(panelWidth));
-        }
-      }
+      lastPointerX = e.clientX;
+      applyHorizontalResize(e.clientX);
+      scheduleResizeAutoScroll();
     } else {
       // Vertical orientation
       const delta = edge === 'top' ? startY - e.clientY : e.clientY - startY;
@@ -475,6 +613,12 @@
     if (!isResizing) return;
 
     isResizing = false;
+    if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
+    resizeAutoScrollFrame = null;
+    const finalSize =
+      orientation === 'horizontal' ? (isExpanded ? expandedWidth : panelWidth) : panelHeight;
+    onResizeEnd?.(orientation === 'horizontal' ? startWidth : startHeight, finalSize);
+    document.body.classList.remove('panel-resizing');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 
@@ -498,11 +642,16 @@
 
   function startResize(e: MouseEvent) {
     isResizing = true;
+    onResizeStart?.();
+    document.body.classList.add('panel-resizing');
 
     if (orientation === 'horizontal') {
       startX = e.clientX;
+      lastPointerX = e.clientX;
+      startScrollLeft = resizeScrollContainer?.scrollLeft ?? 0;
       // Start from the current width (either normal or expanded)
       startWidth = isExpanded ? expandedWidth : panelWidth;
+      lastResizeWidth = startWidth;
       document.body.style.cursor = side === 'left' ? 'col-resize' : 'ew-resize';
     } else {
       startY = e.clientY;
@@ -595,23 +744,52 @@
   onDestroy(() => {
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
+    document.body.classList.remove('panel-resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
+    if (isResizing) onResizeEnd?.();
   });
 
   // Compute the actual dimensions to use based on orientation and expanded state
-  let actualWidth = $derived(isExpanded ? expandedWidth : panelWidth);
+  let actualWidth = $derived(
+    Math.max(
+      minWidth,
+      Math.min(maxWidth, (isExpanded ? expandedWidth : panelWidth) + transientWidthDelta),
+    ),
+  );
   let actualHeight = $derived(panelHeight);
+
+  $effect.pre(() => {
+    const isSkippingResize = doSkipResize;
+    if (wasSkippingResize && !isSkippingResize) {
+      const renderedWidth = panelElement?.getBoundingClientRect().width ?? 0;
+      if (renderedWidth > 0) {
+        panelWidth = Math.max(minWidth, Math.min(maxWidth, renderedWidth));
+        widthPercent = pixelsToPercent(panelWidth, true);
+      }
+    }
+    wasSkippingResize = isSkippingResize;
+  });
+
+  $effect(() => {
+    const width = actualWidth;
+    untrack(() => onWidthChange?.(width));
+  });
 </script>
 
 {#if orientation === 'horizontal'}
   <div
+    bind:this={panelElement}
     transition:fly={{
       x: animateOnMount ? (side === 'right' ? actualWidth : -actualWidth) : 0,
       duration: animateOnMount ? animationDuration : 0,
       easing: cubicOut,
     }}
-    class="relative shrink-0 {isResizing
+    class="relative shrink-0 {isResizing || disableWidthTransition
       ? ''
-      : 'transition-[width] mx-auto duration-300 ease-[cubic-bezier(0.33,1,0.68,1)]'} {actualWidth === 0
+      : 'transition-[width,min-width,max-width] mx-auto duration-300 ease-(--ease-emphasized-out)'} {!doSkipResize &&
+    actualWidth === 0
       ? 'overflow-hidden'
       : ''} {className}"
     style={doSkipResize
@@ -620,7 +798,8 @@
   >
     <!-- Panel content slot -->
     <div
-      class="h-full min-h-0 transition-opacity duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] {actualWidth === 0
+      class="h-full min-h-0 transition-opacity duration-300 ease-(--ease-emphasized-out) {!doSkipResize &&
+      actualWidth === 0
         ? 'opacity-0'
         : 'opacity-100'}"
     >
@@ -634,8 +813,11 @@
       <button
         type="button"
         class="absolute top-0 {side === 'left'
-          ? '-right-px'
-          : '-left-px'} w-px h-full cursor-col-resize hover:bg-primary focus-visible:ring-0 transition-colors group z-30 {handleClassName}"
+          ? '-right-2'
+          : '-left-2'} app-resize-handle h-full w-4 z-30 {handleClassName}"
+        data-resize-axis="x"
+        data-resize-indicator={showHandleIndicator ? 'short' : undefined}
+        data-resizing={isResizing}
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
@@ -643,12 +825,6 @@
         aria-label={m.layout_resizable_resizePanel_ariaLabel()}
         title={m.layout_resizable_dragToResize_tooltip()}
       >
-        <!-- Visual indicator on hover -->
-        <div
-          class="absolute inset-y-0 {side === 'left'
-            ? '-right-1'
-            : '-left-1'} w-2 opacity-0 group-hover:opacity-100 transition-opacity bg-primary/20"
-        ></div>
       </button>
     {/if}
   </div>
@@ -667,8 +843,10 @@
       <button
         type="button"
         class="{edge === 'top'
-          ? 'absolute -top-px'
-          : 'absolute -bottom-px'} left-0 right-0 h-px cursor-ns-resize hover:bg-primary focus-visible:ring-0 transition-colors group z-30 {handleClassName}"
+          ? 'absolute -top-2'
+          : 'absolute -bottom-2'} app-resize-handle left-0 right-0 h-4 z-30 {handleClassName}"
+        data-resize-axis="y"
+        data-resizing={isResizing}
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
@@ -676,12 +854,6 @@
         aria-label={m.layout_resizable_resizePanelHeight_ariaLabel()}
         title={m.layout_resizable_dragToResizeHeight_tooltip()}
       >
-        <!-- Visual indicator on hover -->
-        <div
-          class="absolute inset-x-0 {edge === 'top'
-            ? '-top-1'
-            : '-bottom-1'} h-2 opacity-0 group-hover:opacity-100 transition-opacity bg-primary/20"
-        ></div>
       </button>
     {/if}
 

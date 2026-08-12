@@ -7,6 +7,17 @@ export interface UrlPropNavigationDecision {
   targetUrl: string | null;
 }
 
+export interface EmbeddedBrowserWebviewNavigationTarget {
+  loadURL: (url: string) => Promise<void>;
+}
+
+export function navigateEmbeddedBrowserWebview(
+  webview: EmbeddedBrowserWebviewNavigationTarget,
+  url: string,
+): Promise<void> {
+  return webview.loadURL(url);
+}
+
 export function createEmbeddedBrowserNavigationSyncState(
   initialUrl: string | null | undefined,
 ): EmbeddedBrowserNavigationSyncState {
@@ -18,6 +29,17 @@ export function recordEmbeddedBrowserNavigation(
   navigatedUrl: string,
 ): void {
   state.previousUrlProp = navigatedUrl;
+}
+
+export function reconcileEmbeddedBrowserLoadCompletion(
+  state: EmbeddedBrowserNavigationSyncState,
+  requestedUrl: string,
+  loadedUrl: string | null | undefined,
+): string | null {
+  const finalUrl = loadedUrl || requestedUrl;
+  if (state.previousUrlProp === finalUrl) return null;
+  state.previousUrlProp = finalUrl;
+  return finalUrl;
 }
 
 export function reconcileEmbeddedBrowserUrlProp(

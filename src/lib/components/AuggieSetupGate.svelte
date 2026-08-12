@@ -1,5 +1,4 @@
 <script lang="ts">
- 
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
@@ -12,12 +11,12 @@
   import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
-  faCircleCheck,
-  faCircleNotch,
-  faDownload,
-  faPaste,
-  faExternalLinkAlt,
-} from '@fortawesome/free-solid-svg-icons';
+    faCircleCheck,
+    faCircleNotch,
+    faDownload,
+    faPaste,
+    faExternalLinkAlt,
+  } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
@@ -219,7 +218,7 @@
     auggieCommand = null;
   }
 
-  // Provider setup is now non-blocking on the homepage — the gate is retained
+  // Provider setup is now non-blocking in the app shell — the gate is retained
   // for the multi-provider setup UI it hosts, but not rendered by default.
   const shouldBlock = $derived.by(() => false);
 
@@ -369,7 +368,8 @@
                 {/if}
                 {#if provider.available}
                   <span class="available-badge">
-                    <Fa icon={faCircleCheck} class="inline" size="sm" /> {m.lib_auggieSetup_available_badge()}
+                    <Fa icon={faCircleCheck} class="inline" size="sm" />
+                    {m.lib_auggieSetup_available_badge()}
                   </span>
                 {/if}
               </div>
@@ -436,7 +436,8 @@
               });
             }}
           >
-            <Fa icon={faCircleNotch} class="mr-2" /> {m.lib_auggieSetup_checkAgain_label()}
+            <Fa icon={faCircleNotch} class="mr-2" />
+            {m.lib_auggieSetup_checkAgain_label()}
           </Button>
         </div>
       </section>
@@ -448,9 +449,11 @@
           <div class="actions">
             <Button onclick={() => startAuthentication()} disabled={actionInProgress}>
               {#if actionInProgress}
-                <Fa icon={faCircleNotch} class="animate-spin mr-2" /> {m.lib_auggieSetup_loading_label()}
+                <Fa icon={faCircleNotch} class="animate-spin mr-2" />
+                {m.lib_auggieSetup_loading_label()}
               {:else}
-                <Fa icon={faCircleCheck} class="mr-2" /> {m.lib_auggieSetup_loginWithAugment_label()}
+                <Fa icon={faCircleCheck} class="mr-2" />
+                {m.lib_auggieSetup_loginWithAugment_label()}
               {/if}
             </Button>
           </div>

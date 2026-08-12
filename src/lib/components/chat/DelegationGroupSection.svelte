@@ -21,7 +21,7 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import AgentCard from './AgentCard.svelte';
   import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import {
@@ -43,7 +43,13 @@
     onCancelGroup?: (group: DelegationGroupStatus) => void;
   }
 
-  let { group, workspace = null, hideActions = false, onStopGroup, onCancelGroup }: Props = $props();
+  let {
+    group,
+    workspace = null,
+    hideActions = false,
+    onStopGroup,
+    onCancelGroup,
+  }: Props = $props();
 
   let isCollapsed: boolean = $state(false);
 
@@ -63,7 +69,10 @@
 </script>
 
 <div class="w-full font-family-child" data-testid="delegation-group-section">
-  <div class="flex items-center gap-2 px-3 py-1.5 text-sm text-subtle">
+  <div
+    class="flex items-center gap-2 pl-0 pr-3 py-1.5 text-sm text-subtle"
+    data-testid="delegation-group-header"
+  >
     <!-- Collapse/expand toggle -->
     <button
       type="button"
@@ -86,7 +95,9 @@
         </span>
       {:else}
         <Fa icon={faHourglass} size="13" />
-        {m.chat_agentSubscriptions_waitingForAll_label()}
+        {totalCount === 1
+          ? m.chat_agentSubscriptions_waitingForAgents_one()
+          : m.chat_agentSubscriptions_waitingForAll_label()}
       {/if}
       {#if totalCount > 0}
         <span class="text-subtle" data-testid="group-counter">

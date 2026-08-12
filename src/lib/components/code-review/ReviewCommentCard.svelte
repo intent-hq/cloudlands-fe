@@ -1,24 +1,21 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import {
-  faCircleExclamation,
-  faTriangleExclamation,
-  faCircleInfo,
-  faChevronDown,
-  faArrowUpRightFromSquare,
-  faWrench,
-} from '@fortawesome/free-solid-svg-icons';
+    faCircleExclamation,
+    faTriangleExclamation,
+    faCircleInfo,
+    faChevronDown,
+    faArrowUpRightFromSquare,
+    faWrench,
+  } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
-  import {
-  type ReviewComment,
-  type ReviewSeverity,
-} from './types';
+  import { type ReviewComment, type ReviewSeverity } from './types';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { invoke } from '$lib/electron-bridge';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { slide } from 'svelte/transition';
-  import * as m from '$shared/paraglide/messages.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     comment: ReviewComment;
@@ -75,12 +72,14 @@
     }
   }
 
-  const severityConfig: Record<ReviewSeverity, { icon: typeof faCircleExclamation; color: string }> =
-    {
-      critical: { icon: faCircleExclamation, color: 'text-red-500' },
-      important: { icon: faTriangleExclamation, color: 'text-amber-500' },
-      minor: { icon: faCircleInfo, color: 'text-blue-400' },
-    };
+  const severityConfig: Record<
+    ReviewSeverity,
+    { icon: typeof faCircleExclamation; color: string }
+  > = {
+    critical: { icon: faCircleExclamation, color: 'text-red-500' },
+    important: { icon: faTriangleExclamation, color: 'text-amber-500' },
+    minor: { icon: faCircleInfo, color: 'text-blue-400' },
+  };
 
   const config = $derived(severityConfig[comment.severity]);
   const language = $derived(comment.location ? getLanguageFromPath(comment.location.file) : 'text');
@@ -145,7 +144,9 @@
     {#if isCodeExpanded}
       <div class="px-4 pb-3" transition:slide={{ duration: 100 }}>
         {#if isLoadingSnippet}
-          <div class="text-xs text-subtle italic py-2">{m.codeReview_commentCard_loading_label()}</div>
+          <div class="text-xs text-subtle italic py-2">
+            {m.codeReview_commentCard_loading_label()}
+          </div>
         {:else if snippetError}
           <div class="text-xs text-red-500 py-2">{snippetError}</div>
         {:else if codeSnippet}
@@ -176,7 +177,11 @@
         disabled={isFixing}
       >
         <Fa icon={faWrench} class="h-3 w-3" />
-        <span>{isFixing ? m.codeReview_commentCard_creating_label() : m.codeReview_commentCard_fix_label()}</span>
+        <span
+          >{isFixing
+            ? m.codeReview_commentCard_creating_label()
+            : m.codeReview_commentCard_fix_label()}</span
+        >
       </button>
     {/if}
   </div>

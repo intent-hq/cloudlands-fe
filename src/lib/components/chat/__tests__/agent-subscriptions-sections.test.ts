@@ -2,7 +2,7 @@
  * Component tests for the reworked AgentSubscriptions footer: one-shot watch
  * rows on top, one collapsible DelegationGroupSection per after_all group.
  *
- * FAKE seam: `backendRequest` is stubbed (no daemon). The read middleware is
+ * FAKE seam: `backendRequest` is stubbed (no daemon). The read saga is
  * registered in the REAL configured store, so rendering the component
  * dispatches `requestSubscriptionFetch`, we assert the exact
  * `agent.getSubscriptions` request shape (PROTOCOL §5.5 extensions), feed a
@@ -45,7 +45,7 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => makeReadable(null),
 }));
 
-vi.mock('../../ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 
@@ -60,7 +60,6 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 });
 
 import { store as appStore } from '$store/renderer/store';
-import { __resetAgentSubscriptionReadServiceForTests } from '$features/agent/agent-subscription-read-service';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { agentSubscriptionReadSaga } from '$store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
@@ -168,9 +167,7 @@ describe('AgentSubscriptions sections', () => {
   }
 
   function resetWorkspace(wsId: string) {
-    __resetAgentSubscriptionReadServiceForTests();
     appStore.dispatch(workspaceDeleted(wsId, []));
-    __resetAgentSubscriptionReadServiceForTests();
   }
 
   it('sends the §5.5 agent.getSubscriptions request shape on mount', async () => {
@@ -212,10 +209,27 @@ describe('AgentSubscriptions sections', () => {
     expect(sections).toHaveLength(2);
     expect(within(sections[0]).getByTestId('group-counter').textContent).toContain('1/2');
     expect(within(sections[1]).getByTestId('group-counter').textContent).toContain('0/3');
+    expect(within(sections[0]).getByTestId('delegation-group-header').className).toContain('pl-0');
     // No group has finished, so no delivery-pending warning anywhere
     expect(screen.queryByTestId('group-delivery-pending')).toBeNull();
     // No one-shot rows in this snapshot
     expect(screen.queryByTestId('one-shot-watches')).toBeNull();
+  });
+
+  it('uses a singular waiting label for a merged one-agent delegation group', async () => {
+    const WS = 'ws-sections-single-group';
+    await renderWithSnapshot(WS, {
+      subscriptions: [groupSubscription('grp-1', WS, ['child-a'])],
+      delegationGroups: [delegationGroup('grp-1', ['child-a'])],
+      agentStatuses: { [PARENT]: 'waiting', 'child-a': 'responding' },
+    });
+
+    const header = screen.getByTestId('one-shot-header');
+    expect(header.textContent).toContain('Waiting on 1 agent');
+    const agentList = screen.getByTestId('one-shot-agent-list');
+    expect(agentList.className).toContain('pl-0');
+    expect(agentList.className).not.toContain('pl-4.5');
+    expect(screen.queryByTestId('delegation-group-section')).toBeNull();
   });
 
   it('renders one-shot watch rows above group sections with per-row actions', async () => {
@@ -270,9 +284,10 @@ describe('AgentSubscriptions sections', () => {
       agentStatuses: { [PARENT]: 'waiting', 'child-1': 'responding', 'child-2': 'responding' },
     });
 
-    expect(screen.getByTestId('one-shot-header').textContent).toContain(
-      'Waiting on each of 2 agents',
-    );
+    const header = screen.getByTestId('one-shot-header');
+    expect(header.textContent).toContain('Waiting on each of 2 agents');
+    expect(header.className).toContain('pl-0');
+    expect(header.className).not.toContain('px-3');
   });
 
   it('orders one-shot rows by agent id regardless of snapshot iteration order', async () => {

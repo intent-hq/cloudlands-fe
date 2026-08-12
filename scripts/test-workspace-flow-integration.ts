@@ -40,26 +40,36 @@ class WorkspaceFlowIntegrationTest {
       {
         name: 'Compact Workspace Initializer Component',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
+          const filePath = path.join(
+            __dirname,
+            '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+          );
           const content = await fs.readFile(filePath, 'utf-8');
 
           // Check all critical elements
-          return content.includes('unifiedIdService.generateAgentId()') &&
-                 content.includes('initialAgent') &&
-                 content.includes('workspaceClient.create') &&
-                 content.includes('sessionStorage.setItem');
+          return (
+            content.includes('unifiedIdService.generateAgentId()') &&
+            content.includes('initialAgent') &&
+            content.includes('workspaceClient.create') &&
+            content.includes('sessionStorage.setItem')
+          );
         },
         critical: true,
       },
       {
         name: 'Workspace Service Creation',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/features/workspace/main/workspace.service.ts');
+          const filePath = path.join(
+            __dirname,
+            '../src/features/workspace/main/workspace.service.ts',
+          );
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('request.initialAgent') &&
-                 content.includes('AgentStatus.Pending') &&
-                 content.includes('workspaceCreated({');
+          return (
+            content.includes('request.initialAgent') &&
+            content.includes('AgentStatus.Pending') &&
+            content.includes('workspaceCreated({')
+          );
         },
         critical: true,
       },
@@ -69,33 +79,51 @@ class WorkspaceFlowIntegrationTest {
           const filePath = path.join(__dirname, '../src/features/agent/services/agent-factory.ts');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('workspace-initializer') &&
-                 content.includes('metadata') &&
-                 content.includes('createInBackend');
+          return (
+            content.includes('workspace-initializer') &&
+            content.includes('metadata') &&
+            content.includes('createInBackend')
+          );
         },
         critical: true,
       },
       {
         name: 'Backend Handler Activation',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/features/agent/main/agent-backend-handler.service.ts');
+          const filePath = path.join(
+            __dirname,
+            '../src/features/agent/main/agent-backend-handler.service.ts',
+          );
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('handleActivate') &&
-                 content.includes('agent.id') &&
-                 content.includes('backendSessionId');
+          return (
+            content.includes('handleActivate') &&
+            content.includes('agent.id') &&
+            content.includes('backendSessionId')
+          );
         },
         critical: true,
       },
       {
-        name: 'Workspace Page Integration',
+        name: 'Workspace Navigation Integration',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
-          const content = await fs.readFile(filePath, 'utf-8');
+          const surfacePath = path.join(
+            __dirname,
+            '../src/routes/(app)/workspace/[id]/WorkspaceSurface.svelte',
+          );
+          const initializerPath = path.join(
+            __dirname,
+            '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+          );
+          const surfaceContent = await fs.readFile(surfacePath, 'utf-8');
+          const initializerContent = await fs.readFile(initializerPath, 'utf-8');
 
-          return content.includes('initialAgentId') &&
-                 content.includes('isInitialAgent') &&
-                 content.includes('restoreInitialAgent');
+          return (
+            initializerContent.includes('setInitialAgentId') &&
+            initializerContent.includes('hydrateWorkspaceNavigation') &&
+            initializerContent.includes('openWorkspaceTab') &&
+            surfaceContent.includes('workspaceUnmounted')
+          );
         },
         critical: true,
       },
@@ -105,41 +133,56 @@ class WorkspaceFlowIntegrationTest {
           const filePath = path.join(__dirname, '../src/lib/components/chat/ChatPanel.svelte');
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('sendInitialMessageRequested') &&
-                 content.includes('agentMessages') &&
-                 content.includes('agentSessionIsStreaming');
+          return (
+            content.includes('sendInitialMessageRequested') &&
+            content.includes('agentMessages') &&
+            content.includes('agentSessionIsStreaming')
+          );
         },
         critical: true,
       },
       {
         name: 'Streaming Message Content',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/lib/components/chat/StreamingMessageContent.svelte');
+          const filePath = path.join(
+            __dirname,
+            '../src/lib/components/chat/StreamingMessageContent.svelte',
+          );
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('isStreaming={isStreaming') &&
-                 content.includes('onDestroy');
+          return content.includes('isStreaming={isStreaming') && content.includes('onDestroy');
         },
         critical: false,
       },
       {
         name: 'Agent Session Redux State',
         check: async () => {
-          const filePath = path.join(__dirname, '../src/store/renderer/slices/agent-session/agent-session-slice.ts');
+          const filePath = path.join(
+            __dirname,
+            '../src/store/renderer/slices/agent-session/agent-session-slice.ts',
+          );
           const content = await fs.readFile(filePath, 'utf-8');
 
-          return content.includes('upsertSession') &&
-                 content.includes('replaceMessages') &&
-                 content.includes('setAgentStreaming');
+          return (
+            content.includes('upsertSession') &&
+            content.includes('replaceMessages') &&
+            content.includes('setAgentStreaming')
+          );
         },
         critical: true,
       },
       {
         name: 'Welcome Message Component',
         check: async () => {
-          const regularPath = path.join(__dirname, '../src/lib/components/chat/RegularAgentWelcome.svelte');
+          const regularPath = path.join(
+            __dirname,
+            '../src/lib/components/chat/RegularAgentWelcome.svelte',
+          );
 
-          const regularExists = await fs.access(regularPath).then(() => true).catch(() => false);
+          const regularExists = await fs
+            .access(regularPath)
+            .then(() => true)
+            .catch(() => false);
 
           return regularExists;
         },
@@ -148,14 +191,22 @@ class WorkspaceFlowIntegrationTest {
       {
         name: 'Session Storage Integration',
         check: async () => {
-          const pagePath = path.join(__dirname, '../src/routes/workspace/[id]/+page.svelte');
-          const initPath = path.join(__dirname, '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
+          const initPath = path.join(
+            __dirname,
+            '../src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
+          );
+          const prefillPath = path.join(
+            __dirname,
+            '../src/lib/components/workspace/sidebar/PostMergeActions.svelte',
+          );
 
-          const pageContent = await fs.readFile(pagePath, 'utf-8');
           const initContent = await fs.readFile(initPath, 'utf-8');
+          const prefillContent = await fs.readFile(prefillPath, 'utf-8');
 
-          return pageContent.includes('sessionStorage.getItem') &&
-                 initContent.includes('sessionStorage.setItem');
+          return (
+            initContent.includes('sessionStorage.getItem') &&
+            prefillContent.includes("sessionStorage.setItem('workspace-prefill'")
+          );
         },
         critical: true,
       },
@@ -191,7 +242,9 @@ class WorkspaceFlowIntegrationTest {
     // Display results
     for (const result of this.results) {
       const icon = result.passed ? '✅' : '❌';
-      const critical = this.steps.find(s => s.name === result.step)?.critical ? ' [CRITICAL]' : '';
+      const critical = this.steps.find((s) => s.name === result.step)?.critical
+        ? ' [CRITICAL]'
+        : '';
 
       console.log(`${icon} ${result.step}${critical}`);
       if (result.error) {
@@ -203,10 +256,10 @@ class WorkspaceFlowIntegrationTest {
     console.log('\n============================================================\n');
     console.log('📊 Flow Integration Summary:\n');
 
-    const passed = this.results.filter(r => r.passed).length;
-    const failed = this.results.filter(r => !r.passed).length;
-    const criticalFailed = this.results.filter(r => {
-      const step = this.steps.find(s => s.name === r.step);
+    const passed = this.results.filter((r) => r.passed).length;
+    const failed = this.results.filter((r) => !r.passed).length;
+    const criticalFailed = this.results.filter((r) => {
+      const step = this.steps.find((s) => s.name === r.step);
       return !r.passed && step?.critical;
     }).length;
 
@@ -232,7 +285,7 @@ class WorkspaceFlowIntegrationTest {
 
 // Run the integration test
 const tester = new WorkspaceFlowIntegrationTest();
-tester.runAllTests().catch(error => {
+tester.runAllTests().catch((error) => {
   logger.error('Integration test failed', error);
   process.exit(1);
 });

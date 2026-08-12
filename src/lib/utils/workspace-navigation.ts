@@ -26,6 +26,7 @@ import { page } from '$app/stores';
 import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
@@ -113,6 +114,8 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
 export interface OpenInPanelOptions {
   /** If true, opens in an adjacent panel (or creates a split if needed). Used for cmd+click. */
   openInAdjacentPanel?: boolean;
+  /** If true, creates a new adjacent panel rather than reusing an existing neighbor. */
+  openInNewAdjacentPanel?: boolean;
   /** The ID of the panel where the navigation originated (used to open in the same panel). */
   sourcePanelId?: string;
 }
@@ -154,6 +157,7 @@ export async function navigateToNote(noteId: string, options?: OpenInPanelOption
   appStore.dispatch(
     openWorkspaceNote(workspaceId, noteId, {
       openInAdjacentPanel: options?.openInAdjacentPanel ?? false,
+      openInNewAdjacentPanel: options?.openInNewAdjacentPanel ?? false,
       sourcePanelId: options?.sourcePanelId,
     }),
   );
@@ -280,11 +284,7 @@ export async function navigateToTask(
 
   // Dispatch scroll-to-task event with retries to handle editor mount timing
   const dispatchScrollEvent = () => {
-    dispatchWindowEvent(
-      'scroll-to-task',
-      { noteId, taskPosition, taskText },
-      { bubbles: true },
-    );
+    dispatchWindowEvent('scroll-to-task', { noteId, taskPosition, taskText }, { bubbles: true });
     logger.debug('[navigateToTask] Dispatched scroll-to-task event', { noteId, taskPosition });
   };
 
@@ -380,11 +380,11 @@ export async function navigateToSettings(options?: SettingsNavigationOptions): P
  *
  * Used by the settings page to show a back button.
  *
- * @returns The previous path, or '/' if not set
+ * @returns The previous path, or the workspace creation route if not set
  */
 export function getSettingsPreviousPath(): string {
-  if (typeof sessionStorage === 'undefined') return '/';
-  return sessionStorage.getItem(SETTINGS_PREV_PATH_KEY) || '/';
+  if (typeof sessionStorage === 'undefined') return '/workspace/new';
+  return sessionStorage.getItem(SETTINGS_PREV_PATH_KEY) || '/workspace/new';
 }
 
 /**
@@ -393,6 +393,10 @@ export function getSettingsPreviousPath(): string {
 export async function navigateBackFromSettings(): Promise<void> {
   const prevPath = getSettingsPreviousPath();
   logger.info('[navigateBackFromSettings] Navigating back to:', prevPath);
+  if (prevPath === '/') {
+    await navigateToFirstWorkspace();
+    return;
+  }
   await goto(prevPath);
 }
 
@@ -401,14 +405,17 @@ export async function navigateBackFromSettings(): Promise<void> {
  *
  * Closes the tab for the removed workspace and navigates to:
  * - The next available workspace tab (if any exist)
- * - The home page (if no other tabs are open)
+ * - Another available workspace, or workspace creation when none remain
  *
  * Uses the tab manager's built-in "pick next or previous" logic.
  *
  * @param removedWorkspaceId - The ID of the workspace being archived/deleted
  */
 export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
-  logger.info('[navigateAfterWorkspaceRemoval] Navigating after workspace removal:', removedWorkspaceId);
+  logger.info(
+    '[navigateAfterWorkspaceRemoval] Navigating after workspace removal:',
+    removedWorkspaceId,
+  );
 
   // Close the tab - this automatically sets currentTabId to the next available tab
   appStore.dispatch(closeWorkspaceTab(removedWorkspaceId));
@@ -416,11 +423,42 @@ export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string):
   // Get the next tab ID (already set by closeTab)
   const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
 
-  if (nextTabId && typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== 'undefined' && nextTabId !== 'null' && nextTabId !== removedWorkspaceId) {
+  if (
+    nextTabId &&
+    typeof nextTabId === 'string' &&
+    nextTabId.length > 0 &&
+    nextTabId !== 'undefined' &&
+    nextTabId !== 'null' &&
+    nextTabId !== removedWorkspaceId
+  ) {
     logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);
     await goto(`/workspace/${nextTabId}`);
   } else {
-    logger.info('[navigateAfterWorkspaceRemoval] No other tabs, navigating to home');
-    await goto('/');
+    const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
+    const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+    logger.info('[navigateAfterWorkspaceRemoval] Navigating to fallback:', target);
+    await goto(target);
   }
+}
+
+/**
+ * Return the first non-archived workspace, excluding one being removed.
+ */
+function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
+  return selectWorkspaceItems
+    .select(appStore.state)
+    .find(
+      (workspace) =>
+        workspace.id !== excludedWorkspaceId &&
+        workspace.status !== 'Archived' &&
+        workspace.status !== 'Deleted',
+    );
+}
+
+/** Navigate to an available workspace, or workspace creation when none exist. */
+export async function navigateToFirstWorkspace(): Promise<void> {
+  const workspace = getFirstAvailableWorkspace();
+  const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+  logger.info('[navigateToFirstWorkspace] Navigating to:', target);
+  await goto(target);
 }

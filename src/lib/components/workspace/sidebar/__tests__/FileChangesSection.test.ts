@@ -1,20 +1,6 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
-import {
-  ChangeStage,
-  type TrackedChange,
-} from '$features/file-tracking/types';
-import { warmImport } from '../../../../../test/warm-import';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -48,16 +34,23 @@ const mocks = vi.hoisted(() => {
     discardFiles,
     selector,
     getAutoCommit: () => autoCommit,
-    setAutoCommit: (v: boolean) => { autoCommit = v; },
+    setAutoCommit: (v: boolean) => {
+      autoCommit = v;
+    },
     getLockedAgentIds: () => lockedAgentIds,
-    setLockedAgentIds: (v: Record<string, true>) => { lockedAgentIds = v; },
+    setLockedAgentIds: (v: Record<string, true>) => {
+      lockedAgentIds = v;
+    },
     getAgents: () => workspaceAgents,
-    setAgents: (v: Array<{ id: string; name: string }>) => { workspaceAgents = v; },
+    setAgents: (v: Array<{ id: string; name: string }>) => {
+      workspaceAgents = v;
+    },
   };
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   const dispatch = (...args: any[]) => {
     mocks.dispatch(...args);
     return mocks.reduxDispatch(...args);
@@ -117,14 +110,24 @@ vi.mock('$store/renderer/slices/agent-lock/agent-lock-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: Object.assign(
-    () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.getAgents()); return () => {}; } }),
+    () => ({
+      subscribe: (run: (v: unknown) => void) => {
+        run(mocks.getAgents());
+        return () => {};
+      },
+    }),
     { select: (_state: unknown, _wsId: string) => mocks.getAgents() },
   ),
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: Object.assign(
-    () => ({ subscribe: (run: (v: unknown) => void) => { run(undefined); return () => {}; } }),
+    () => ({
+      subscribe: (run: (v: unknown) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
     { select: (_state: unknown, _agentId: string) => undefined },
   ),
 }));
@@ -143,7 +146,6 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
-
 
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -176,7 +178,7 @@ vi.mock('$lib/components/ui/Header.svelte', async () => {
   return { default: MockComponent };
 });
 
-vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => {
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
   return { default: MockComponent };
 });
@@ -209,9 +211,7 @@ function makeChange(
     stats: rest.stats ?? { additions: 10, deletions: 5 },
     attribution: rest.attribution ?? {
       timestamp: Date.now(),
-      ...(agentId
-        ? { agent: { agentId, agentName: agentName ?? 'Agent 1' } }
-        : { manual: true }),
+      ...(agentId ? { agent: { agentId, agentName: agentName ?? 'Agent 1' } } : { manual: true }),
     },
     ...rest,
   } as TrackedChange;
@@ -227,13 +227,6 @@ async function renderSection(overrides: Partial<Record<string, unknown>> = {}) {
   };
   return render(FileChangesSection, { props: { ...defaults, ...overrides } });
 }
-
-// Pre-warm the component module graph so the cold dynamic import is not
-// billed to the first test's timeout (intent-hq/monorepo#1464).
-warmImport(() => import('./mocks/MockFileRow.svelte'));
-warmImport(() => import('./mocks/MockSimple.svelte'));
-warmImport(() => import('./mocks/Fa.svelte'));
-warmImport(() => import('../FileChangesSection.svelte'));
 
 describe('FileChangesSection', () => {
   beforeEach(() => {
@@ -268,7 +261,9 @@ describe('FileChangesSection', () => {
     const { container } = await renderSection();
 
     const rows = Array.from(container.querySelectorAll('[data-testid="file-row"]'));
-    expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(2);
+    expect(rows.filter((row) => row.getAttribute('data-file-path') === 'src/dual.ts')).toHaveLength(
+      2,
+    );
   });
 
   it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {
@@ -367,6 +362,7 @@ describe('FileChangesSection', () => {
     const { container } = await renderSection();
     const toggle = container.querySelector('button[role="switch"], [role="switch"]') as HTMLElement;
     expect(toggle).toBeDefined();
+    expect(toggle.className).toContain('border-0!');
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({

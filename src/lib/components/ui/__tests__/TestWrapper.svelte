@@ -1,5 +1,5 @@
 <script lang="ts">
-  import FileActionsDropdown from '../FileActionsDropdown.svelte';
+  import FileActionsDropdown from '$features/external-editors/components/FileActionsDropdown.svelte';
 
   export let filePath: string = '/test/file.ts';
   export let workspaceId: string = '';

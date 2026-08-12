@@ -5,17 +5,16 @@
  * renderer `FileContentEntry` cache shape. `gitStatusMap` is DERIVED from
  * `git.status` (the daemon exposes no per-path status map). `explorerTree`
  * resolves via the additive `file.tree` read (PROTOCOL §5.9), anchored at the
- * workspace root; transport/daemon errors fold to `null` so the explorer
- * degrades cleanly. `list` returns an empty content cache (the daemon's
+ * workspace root; transport/daemon errors propagate so the explorer can
+ * expose a retryable failure. `list` returns an empty content cache (the daemon's
  * directory listing is not a `FileContentEntry` collection). File-event
- * subscription is owned by daemon-events-saga's scoped `file:*` lease — this
- * client has no subscribe surface.
+ * subscription is owned by daemon-events-saga's scoped `file:*` lease.
  */
-import type { FileGitStatus, FileNode } from "$shared/types";
-import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
-import type { FilesClient, MutationResult } from "../app-client";
-import { backendRequest } from "./backend-transport";
-import { newIdempotencyKey, runMutation } from "./live-support";
+import type { FileGitStatus, FileNode } from '$shared/types';
+import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
+import type { FilesClient, MutationResult } from '../app-client';
+import { backendRequest } from './backend-transport';
+import { newIdempotencyKey, runMutation } from './live-support';
 
 /** Map raw daemon file content into a `FileContentEntry`. */
 function toFileContentEntry(path: string, content: string): FileContentEntry {
@@ -51,22 +50,22 @@ function toFileNodes(result: unknown): FileNode[] {
 
   const nodes: FileNode[] = [];
   for (const candidate of entries) {
-    if (!candidate || typeof candidate !== "object") continue;
+    if (!candidate || typeof candidate !== 'object') continue;
     const entry = candidate as Record<string, unknown>;
-    const name = typeof entry.name === "string" ? entry.name : undefined;
-    const rawPath = typeof entry.path === "string" ? entry.path : undefined;
+    const name = typeof entry.name === 'string' ? entry.name : undefined;
+    const rawPath = typeof entry.path === 'string' ? entry.path : undefined;
     const path = rawPath ?? name;
     if (!path) continue;
     const isDirectory =
-      entry.type === "directory" || entry.type === "dir" || entry.isDirectory === true;
+      entry.type === 'directory' || entry.type === 'dir' || entry.isDirectory === true;
     const node: FileNode = {
-      name: name ?? path.split("/").pop() ?? path,
+      name: name ?? path.split('/').pop() ?? path,
       path,
-      type: isDirectory ? "directory" : "file",
+      type: isDirectory ? 'directory' : 'file',
     };
-    if (typeof entry.size === "number") node.size = entry.size;
-    if (typeof entry.modified === "string") node.modified = entry.modified;
-    if (typeof entry.isGitignored === "boolean") node.isGitignored = entry.isGitignored;
+    if (typeof entry.size === 'number') node.size = entry.size;
+    if (typeof entry.modified === 'string') node.modified = entry.modified;
+    if (typeof entry.isGitignored === 'boolean') node.isGitignored = entry.isGitignored;
     nodes.push(node);
   }
   return nodes;
@@ -75,7 +74,7 @@ function toFileNodes(result: unknown): FileNode[] {
 /** Build a two-char porcelain-style status code from a daemon single-char code. */
 function toPorcelain(status: string, staged: boolean): string {
   const code = status.trim();
-  if (code === "?") return "??";
+  if (code === '?') return '??';
   return staged ? `${code} ` : ` ${code}`;
 }
 
@@ -89,11 +88,11 @@ export class LiveFilesClient implements FilesClient {
 
   async read(workspaceId: string, path: string): Promise<FileContentEntry | null> {
     try {
-      const result = await backendRequest<unknown>("file.read", { workspaceId, path });
+      const result = await backendRequest<unknown>('file.read', { workspaceId, path });
       const content =
-        typeof result === "string"
+        typeof result === 'string'
           ? result
-          : typeof (result as { content?: unknown })?.content === "string"
+          : typeof (result as { content?: unknown })?.content === 'string'
             ? (result as { content: string }).content
             : null;
       if (content === null) return null;
@@ -108,13 +107,12 @@ export class LiveFilesClient implements FilesClient {
   // wrap the entries as the synthetic root `FileNode`'s children (the wire
   // result is shallow — deeper levels load lazily via `listDirectory`).
   async explorerTree(workspaceId: string): Promise<FileNode | null> {
-    try {
-      const result = await backendRequest<unknown>("file.tree", { workspaceId, path: "." });
-      const children = toFileNodes(result);
-      return { name: "", path: "", type: "directory", children };
-    } catch {
-      return null;
+    const result = await backendRequest<unknown>('file.tree', { workspaceId, path: '.' });
+    if (!Array.isArray(result)) {
+      throw new Error('Invalid file.tree response: expected an array');
     }
+    const children = toFileNodes(result);
+    return { name: '', path: '', type: 'directory', children };
   }
 
   // Directory listing via the daemon's `file.list` (a directory listing, unlike
@@ -123,7 +121,7 @@ export class LiveFilesClient implements FilesClient {
   // read leaves the existing rows intact rather than throwing into the store.
   async listDirectory(workspaceId: string, path: string): Promise<FileNode[]> {
     try {
-      const result = await backendRequest<unknown>("file.list", { workspaceId, path });
+      const result = await backendRequest<unknown>('file.list', { workspaceId, path });
       return toFileNodes(result);
     } catch {
       return [];
@@ -132,15 +130,15 @@ export class LiveFilesClient implements FilesClient {
 
   async gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>> {
     try {
-      const result = await backendRequest<{ files?: unknown[] }>("git.status", { workspaceId });
+      const result = await backendRequest<{ files?: unknown[] }>('git.status', { workspaceId });
       const files = Array.isArray(result?.files) ? result.files : [];
       const map: Record<string, FileGitStatus> = {};
       for (const f of files) {
         const file = f as Record<string, unknown>;
-        const path = String(file.path ?? "");
+        const path = String(file.path ?? '');
         if (!path) continue;
         map[path] = {
-          status: toPorcelain(String(file.status ?? ""), Boolean(file.staged)),
+          status: toPorcelain(String(file.status ?? ''), Boolean(file.staged)),
         };
       }
       return map;
@@ -151,16 +149,15 @@ export class LiveFilesClient implements FilesClient {
 
   // ---- Mutations ----------------------------------------------------------
   // Each forwards to the daemon (§7.6) and folds the outcome into a
-  // MutationResult; daemon-events-saga's scoped `file:*` lease reconciles
-  // store state from the resulting `file:*` events. All file mutations are
-  // workspace-scoped and use workspace-relative paths. `write`/`mkdir`/`rename`
-  // are create-ish, so they
+  // MutationResult; daemon-events-saga's scoped `file:*` lease reconciles store
+  // state from the resulting events. All file mutations are workspace-scoped
+  // and use workspace-relative paths. `write`/`mkdir`/`rename` are create-ish, so they
   // carry an idempotencyKey (§5.6: required on create, best-effort elsewhere).
   // DATA SAFETY: these are destructive against the user's real files; they are
   // only ever exercised against the FAKE socket in tests.
 
   async write(workspaceId: string, path: string, content: string): Promise<MutationResult> {
-    return runMutation("file.write", {
+    return runMutation('file.write', {
       workspaceId,
       path,
       content,
@@ -169,15 +166,15 @@ export class LiveFilesClient implements FilesClient {
   }
 
   async delete(workspaceId: string, path: string): Promise<MutationResult> {
-    return runMutation("file.delete", { workspaceId, path });
+    return runMutation('file.delete', { workspaceId, path });
   }
 
   async mkdir(workspaceId: string, path: string): Promise<MutationResult> {
-    return runMutation("file.mkdir", { workspaceId, path, idempotencyKey: newIdempotencyKey() });
+    return runMutation('file.mkdir', { workspaceId, path, idempotencyKey: newIdempotencyKey() });
   }
 
   async rename(workspaceId: string, oldPath: string, newPath: string): Promise<MutationResult> {
-    return runMutation("file.rename", {
+    return runMutation('file.rename', {
       workspaceId,
       oldPath,
       newPath,

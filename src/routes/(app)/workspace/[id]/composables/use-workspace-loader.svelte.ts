@@ -1,0 +1,430 @@
+/**
+ * useWorkspaceLoader Composable
+ *
+ * Manages workspace loading logic including optimistic workspace handling.
+ * Extracted from +page.svelte to reduce file size and improve maintainability.
+ */
+
+import { untrack } from 'svelte';
+import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+
+import { createLogger } from '$lib/utils/client-logger';
+import { WorkspaceId } from '$shared/types/branded-ids';
+
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import {
+  removeWorkspaceEntity,
+  setActiveWorkspaceId,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+
+import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
+import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '$store/renderer/store';
+
+const logger = createLogger('workspace-loader');
+
+export interface UseWorkspaceLoaderOptions {
+  workspaceId: string;
+  workspaceState: WorkspacePageStateManager | null;
+  state: WorkspacePageState | null;
+  previousWorkspaceId: string | null;
+  activateWorkspace?: boolean;
+}
+
+export interface WorkspaceLoadError {
+  kind: 'not_found' | 'error';
+  message: string;
+}
+
+export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
+  // Track loading state more robustly
+  let loadingWorkspaceId: string | null = $state(null);
+  let loadingPromise: Promise<void> | null = $state(null);
+  let loadGeneration = 0;
+  // Terminal load failure for the current workspace, if any. Distinguishes
+  // "Workspace not found" from generic load errors so the page can render a
+  // dedicated not-found state. Reset whenever a new workspace load starts.
+  let loadError: WorkspaceLoadError | null = $state(null);
+
+  // Track the last workspace ID for which workspaceMounted was dispatched.
+  // This prevents the isAlreadyActive guard from short-circuiting during
+  // workspace-to-workspace navigation: pre-population by initializeWorkspaceState
+  // makes workspaceData.id match the new workspace before the loader runs,
+  // but workspaceMounted hasn't been dispatched yet for the new workspace.
+  let lastMountedWorkspaceId: string | null = null;
+
+  async function loadWorkspace() {
+    const { workspaceId, workspaceState, state } = options;
+
+    if (!workspaceId || !workspaceState) {
+      return;
+    }
+
+    // Prevent duplicate loads by checking if we're already loading this workspace
+    if (loadingPromise) {
+      logger.debug('Load already in progress, skipping duplicate call');
+      return loadingPromise;
+    }
+
+    const generation = ++loadGeneration;
+
+    // Capture the value outside of reactive context to avoid creating dependencies
+    const isOptimisticValue = workspaceState.isOptimistic;
+
+    logger.debug('Loading workspace', { workspaceId, isOptimistic: isOptimisticValue });
+
+    loadError = null;
+
+    try {
+      // Check if optimistic
+      if (isOptimisticValue) {
+        await handleOptimisticLoad(workspaceId, workspaceState);
+      } else {
+        await handleRealWorkspaceLoad(workspaceId, workspaceState, state, generation);
+      }
+    } catch (error) {
+      if (generation !== loadGeneration) {
+        logger.debug('Ignoring error from stale workspace load', { workspaceId });
+        return;
+      }
+
+      logger.error('Failed to load workspace', { workspaceId, error });
+      // Staleness guard: if navigation superseded this load (e.g. the user
+      // clicked another workspace while a retry was pending), don't write
+      // error state for the old workspace over the new one's.
+      if (options.workspaceId !== workspaceId) {
+        logger.debug('Ignoring stale load failure after navigation', {
+          staleWorkspaceId: workspaceId,
+          currentWorkspaceId: options.workspaceId,
+        });
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      loadError = { kind: 'error', message };
+      // Check if workspaceState exists before using it
+      if (workspaceState) {
+        // Set workspaceData to a minimal error object to prevent infinite retry loops
+        // The key is that workspaceData must be truthy to break the loop
+        workspaceState.updateState({
+          workspace: { id: workspaceId, status: 'error' },
+          workspaceData: {
+            id: workspaceId,
+            title: m.workspace_loader_errorLoading_title(),
+            status: 'error',
+            error: message,
+          } as any,
+        });
+      } else {
+        logger.warn('Workspace state not available, cannot set error status in catch block', {
+          workspaceId,
+        });
+      }
+    } finally {
+      // NOTE: Do NOT clear loadingWorkspaceId here!
+      // The loadingWorkspaceId serves two purposes:
+      // 1. During loading: indicates which workspace is being loaded
+      // 2. After loading: indicates which workspace has already been loaded
+      // Clearing it would cause the $effect to re-run and trigger an infinite loop.
+      // The cleanup function in the $effect handles resetting when workspace changes.
+    }
+  }
+
+  async function handleOptimisticLoad(
+    workspaceId: string,
+    workspaceState: WorkspacePageStateManager,
+  ) {
+    // For optimistic workspaces, `transition` is display config only.
+    const transition = workspaceState.transition;
+    const config = transition?.config;
+
+    // Still waiting for real workspace creation.
+    // The optimistic workspace listener will navigate to the real workspace once it resolves.
+    // Set a placeholder workspace data to prevent infinite loading loops.
+    workspaceState.updateState({
+      workspace: { id: workspaceId, status: 'ready' }, // Don't show loading state
+      workspaceData: {
+        id: workspaceId,
+        title: config?.title ?? m.workspace_loader_newWorkspace_title(),
+        repositoryPath: config?.repositoryPath ?? '',
+        branch: config?.branch ?? '',
+        status: 'creating',
+        isOptimistic: true,
+      } as any,
+    });
+    logger.debug('Optimistic workspace - waiting for real workspace creation');
+  }
+
+  async function handleRealWorkspaceLoad(
+    workspaceId: string,
+    workspaceState: WorkspacePageStateManager,
+    _state: WorkspacePageState | null,
+    generation: number,
+  ) {
+    // Don't try to load the 'new' placeholder — it's the onboarding flow
+    if (workspaceId === 'new') {
+      logger.debug('Skipping load for onboarding placeholder workspace', { workspaceId });
+      return;
+    }
+
+    // Check if this is an optimistic ID that's no longer in the manager
+    if (workspaceId.startsWith('optimistic-')) {
+      logger.warn(
+        // i18n-ignore (log message, not user-facing)
+        'Attempting to load optimistic workspace as real workspace - waiting for navigation',
+        { workspaceId },
+      );
+      return;
+    }
+
+    // Load real workspace - prefer already-initialized workspace from the store
+    let ws = selectWorkspaceById.select(appStore.state, workspaceId);
+
+    // NOTE: We previously skipped workspaceClient.open() when the workspace already had a worktreePath.
+    // However, this caused a bug where change detection monitoring wouldn't start on revisits.
+    // The backend open() call is idempotent and fast if monitoring is already running, so we always call it
+    // to ensure the change detector is properly initialized.
+
+    logger.info('Opening workspace to ensure backend initialization', {
+      workspaceId,
+      existsInStore: !!ws,
+      hasWorktreePath: !!ws?.worktreePath,
+    });
+
+    // FIX: When the workspace is already cached in the store (e.g. after
+    // workspace creation via Redux), populate Redux and Svelte state immediately
+    // BEFORE the async open() call. This eliminates the blank-page flash
+    // that occurs when safeWorkspace is null during the open() round-trip,
+    // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
+    // start without waiting for backend confirmation.
+    //
+    // STAB-24 fix: Skip the pre-population block when re-running the loader
+    // for the same workspace ID (lastMountedWorkspaceId === workspaceId) to
+    // avoid redundant state updates. workspaceMounted will still be dispatched
+    // later (after the backend open() call) to ensure terminal tabs and other
+    // workspace-scoped state are re-hydrated from the daemon.
+    let alreadyMounted = false;
+    const isReturnVisit = lastMountedWorkspaceId === workspaceId;
+    if (ws && !isReturnVisit) {
+      logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
+      workspaceState.updateState({
+        workspaceData: ws,
+        workspace: { id: ws.id, status: 'ready' },
+      });
+      workspaceState.markInitialized();
+      appStore.dispatch(setWorkspaceEntity(ws));
+      appStore.dispatch(workspaceMounted(ws.id));
+      lastMountedWorkspaceId = ws.id;
+      alreadyMounted = true;
+
+      if (options.activateWorkspace !== false) {
+        appStore.dispatch(setActiveWorkspaceId(ws.id));
+      }
+    }
+
+    let openResult = await workspaceClient.open(WorkspaceId(workspaceId));
+    if (generation !== loadGeneration) {
+      return;
+    }
+
+    // FIX: Retry once if workspace not found - this handles a race condition on page reload
+    // where workspace:open is called before the backend has fully initialized.
+    // The retry gives the backend time to scan workspace directories.
+    // i18n-ignore (backend error-string comparison, not user-facing)
+    if (!openResult.ok && openResult.error === 'Workspace not found') {
+      logger.warn('Workspace not found on first attempt, retrying after delay', { workspaceId });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (generation !== loadGeneration) {
+        return;
+      }
+      openResult = await workspaceClient.open(WorkspaceId(workspaceId));
+      if (generation !== loadGeneration) {
+        return;
+      }
+    }
+
+    // Distinct not-found outcome: the backend definitively doesn't know this
+    // workspace (after the retry above). BE truth wins over any cached Redux
+    // entity: evict the stale entity so the page renders the not-found state
+    // instead of a zombie view (#766). We do NOT synthesize a workspace
+    // entity into Redux.
+    // i18n-ignore (backend error-string comparison, not user-facing)
+    if (!openResult.ok && openResult.error === 'Workspace not found') {
+      logger.error('Workspace not found after retry', { workspaceId });
+      // Staleness guard: navigation may have superseded this load while the
+      // 500ms retry was pending — don't write stale error state in that case.
+      if (options.workspaceId !== workspaceId) {
+        logger.debug('Ignoring stale not-found result after navigation', {
+          staleWorkspaceId: workspaceId,
+          currentWorkspaceId: options.workspaceId,
+        });
+        return;
+      }
+      if (ws) {
+        // Evict the stale cached entity before surfacing loadError so no
+        // frame renders the zombie workspace after the failure resolves.
+        // The removeWorkspaceEntity reducer also clears activeWorkspaceId
+        // when it points at this workspace, matching deletion flows.
+        logger.warn('Evicting stale cached workspace entity after definitive not-found', {
+          workspaceId,
+        });
+        appStore.dispatch(removeWorkspaceEntity(workspaceId));
+        // Undo the pre-population mount side effect (this run or an earlier
+        // visit) so workspace-scoped state is torn down like a normal unmount.
+        if (lastMountedWorkspaceId === workspaceId) {
+          appStore.dispatch(workspaceUnmounted(workspaceId));
+          lastMountedWorkspaceId = null;
+        }
+      }
+      loadError = { kind: 'not_found', message: openResult.error };
+      workspaceState.updateState({
+        workspace: { id: workspaceId, status: 'error' },
+        workspaceData: {
+          id: workspaceId,
+          title: m.workspace_loader_notFound_title(),
+          status: 'not_found',
+        } as any,
+      });
+      return;
+    }
+
+    if (openResult.ok && openResult.data) {
+      ws = openResult.data;
+      if (options.activateWorkspace !== false) {
+        appStore.dispatch(setActiveWorkspaceId(ws.id));
+      }
+      logger.info('Workspace opened successfully, monitoring started', {
+        workspaceId,
+        worktreePath: ws.worktreePath,
+      });
+    } else {
+      const errorMsg =
+        !openResult.ok && 'error' in openResult
+          ? openResult.error
+          : m.ui_workspaceActions_unknown_error();
+      logger.error('Failed to open workspace', { workspaceId, error: errorMsg });
+      if (!ws) {
+        throw new Error(m.workspace_loader_openFailed_error({ error: errorMsg }));
+      }
+    }
+
+    if (ws) {
+      // Update workspace state with potentially fresher data from the backend.
+      workspaceState.updateState({
+        workspaceData: ws,
+        workspace: { id: ws.id, status: 'ready' },
+      });
+      workspaceState.markInitialized();
+
+      // Hydrate Redux with the (potentially fresher) workspace entity.
+      appStore.dispatch(setWorkspaceEntity(ws));
+
+      // STAB-24 fix: Dispatch workspaceMounted unless it was already dispatched
+      // during the pre-population block above. The pre-population block only runs
+      // when (ws && !isReturnVisit), so alreadyMounted is only true for first
+      // visits to a cached workspace. In all other cases (return visits or
+      // uncached first visits), we need to dispatch workspaceMounted here to
+      // ensure terminal tabs and other workspace-scoped state are hydrated.
+      if (!alreadyMounted) {
+        appStore.dispatch(workspaceMounted(ws.id));
+        lastMountedWorkspaceId = ws.id;
+      }
+
+      // Ensure it's set as current in store
+      if (options.activateWorkspace !== false) {
+        appStore.dispatch(setActiveWorkspaceId(ws.id));
+      }
+    } else {
+      // This case shouldn't be reached since we throw if ws is null after failed open
+      // but keep it as a safety net
+      workspaceState.updateState({
+        workspace: { id: workspaceId, status: 'error' },
+        workspaceData: {
+          id: workspaceId,
+          title: m.workspace_loader_notFound_title(),
+          status: 'error',
+        } as any,
+      });
+    }
+  }
+
+  // Load workspace on mount or ID change with deduplication
+  $effect(() => {
+    // Track only navigation-related values as dependencies.
+    // These are the ONLY reactive reads that should trigger this effect.
+    const workspaceId = options.workspaceId;
+    const previousWorkspaceId = options.previousWorkspaceId;
+    const hasWorkspaceState = !!options.workspaceState;
+
+    if (workspaceId && hasWorkspaceState) {
+      // Use untrack for the entire loading block to prevent feedback loops.
+      // Without untrack, reads of $state guard variables (loadingWorkspaceId,
+      // loadingPromise) and synchronous reads inside loadWorkspace() (including
+      // options.state which is $derived from workspaceState.state) create reactive
+      // dependencies that re-trigger this effect when the load completes, causing
+      // the workspace to be opened thousands of times in a tight loop.
+      //
+      // Note: We intentionally do NOT check for existing workspaceData here.
+      // The backend workspace:open call is idempotent and must run on every visit
+      // to ensure SSH, RPC, change detection, and git monitoring are initialized.
+      untrack(() => {
+        // Only load if:
+        // 1. We haven't already started loading this workspace
+        // 2. We're not currently loading
+        if (loadingWorkspaceId !== workspaceId && !loadingPromise) {
+          loadingWorkspaceId = workspaceId;
+
+          // Store the promise to prevent duplicate loads
+          const promise = loadWorkspace();
+          loadingPromise = promise;
+
+          // Clear loading promise when done
+          promise.finally(() => {
+            if (loadingPromise === promise) {
+              loadingPromise = null;
+            }
+          });
+        }
+      });
+    }
+
+    // Invalidate this effect's work on navigation or teardown.
+    return () => {
+      loadGeneration += 1;
+      loadingWorkspaceId = null;
+      loadingPromise = null;
+      if (workspaceId !== previousWorkspaceId) {
+        loadError = null;
+      }
+    };
+  });
+
+  return {
+    // State
+    get loadingWorkspaceId() {
+      return loadingWorkspaceId;
+    },
+    get loadingPromise() {
+      return loadingPromise;
+    },
+    get isLoading() {
+      return loadingPromise !== null;
+    },
+    get loadError(): WorkspaceLoadError | null {
+      return loadError;
+    },
+
+    // Methods
+    loadWorkspace,
+    clearLoadingState() {
+      loadGeneration += 1;
+      loadingWorkspaceId = null;
+      loadingPromise = null;
+      loadError = null;
+    },
+  };
+}

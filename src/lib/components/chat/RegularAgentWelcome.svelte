@@ -1,22 +1,18 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-  faGear,
-  faChevronDown,
-  faPlus,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
   import {
-  selectSpecialists,
-  selectUserOverrides,
-  filterPickableSpecialists,
-} from '$store/renderer/slices/specialists/specialists-selectors';
+    selectSpecialists,
+    selectUserOverrides,
+    filterPickableSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import type { AgentSession } from '$shared/types/agent-session';
   import { isPendingAgentSession } from '$shared/types/agent-session';
-  import AuggieAvatar from '../ui/auggie-avatar/AuggieAvatar.svelte';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import DropdownMenu from '../ui/dropdown-menu.svelte';
   import Button from '../ui/button/button.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -31,7 +27,9 @@
   // Reactive store subscriptions for Svelte reactivity
   const specialists$ = selectSpecialists();
   const userOverrides$ = selectUserOverrides();
-  $effect(() => { void $userOverrides$; });
+  $effect(() => {
+    void $userOverrides$;
+  });
 
   // Get specialist info from session metadata
   const specialistInfo = $derived.by((): Specialist | null => {
@@ -70,85 +68,150 @@
 
   // Display label for the picker trigger
   const displayLabel = $derived(specialistInfo?.name ?? m.chat_shared_general_fallback());
+  const displayDescription = $derived(
+    specialistInfo?.description ?? m.chat_shared_noSpecializedBehavior_label(),
+  );
 
   // The behavior prompt or description to show
   const displayPrompt = $derived(
-    specialistInfo ? (specialistInfo.defaultBehaviorPrompt || '') : generalDescription,
+    specialistInfo ? specialistInfo.defaultBehaviorPrompt || '' : generalDescription,
   );
 </script>
 
-<div class="flex flex-col flex-1 text-subtle py-6 pt-4 px-4">
+<div class="mx-auto flex w-full max-w-[40rem] flex-1 flex-col px-4 pb-6 pt-4 text-subtle">
   <!-- Specialist Picker Dropdown -->
   {#if onSpecialistChange}
-    <div class="mb-4">
-      <DropdownMenu bind:open={pickerOpen} align="start" side="bottom" contentClass="p-0!">
-        {#snippet trigger({ toggle }: { toggle: () => void })}
+    <div class="mb-5">
+      <DropdownMenu
+        class="block w-full"
+        bind:open={pickerOpen}
+        align="start"
+        side="bottom"
+        contentClass="w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-0!"
+      >
+        {#snippet trigger()}
           <button
             type="button"
-            onclick={toggle}
             class={cn(
-              'inline-flex items-center gap-2 px-3 py-1.5 text-sm',
-              'bg-sidebar/50 cursor-pointer',
+              'group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-xs transition-colors',
+              'hover:border-input hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
+            data-testid="specialist-picker-trigger"
           >
-            <AuggieAvatar seed="blank" size={18} specialist={specialistInfo?.id ?? null} />
-            <span class="text-foreground font-medium">{displayLabel}</span>
-            <Fa icon={faChevronDown} class="text-ghost" size={10} />
+            <div class="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted/50">
+              <AuggieAvatar seed="blank" size={24} specialist={specialistInfo?.id ?? null} />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="type-body truncate font-medium text-foreground">{displayLabel}</div>
+              <div class="type-caption mt-0.5 line-clamp-2 text-muted-foreground">
+                {displayDescription}
+              </div>
+            </div>
+            <div
+              class="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground transition-colors group-hover:bg-muted"
+            >
+              <Fa icon={faChevronDown} size={10} />
+            </div>
           </button>
         {/snippet}
 
         {#snippet content({ close }: { close: () => void })}
-          <div class="min-w-[220px]">
-            <!-- General option -->
-            <button
-              type="button"
-              class={cn(
-                'flex items-center gap-2.5 w-full px-3 py-2 text-left text-sm transition-colors',
-                'hover:bg-muted rounded-sm cursor-pointer',
-                !specialistInfo ? 'bg-muted/50' : '',
-              )}
-              onclick={() => { onSpecialistChange?.(null); close(); }}
-            >
-              <AuggieAvatar seed="blank" size={20} />
-              <div class="flex flex-col min-w-0">
-                <span class="font-medium text-foreground">{m.chat_shared_general_fallback()}</span>
-                <span class="text-xs text-subtle">{m.chat_shared_noSpecializedBehavior_label()}</span>
-              </div>
-            </button>
+          <div>
+            <div class="border-b border-border bg-muted/20 px-4 py-3">
+              <p class="type-body font-medium text-foreground">
+                {m.workspace_createAgentSection_specialists_label()}
+              </p>
+              <p class="type-caption mt-0.5 text-muted-foreground">
+                {m.workspace_createAgentSection_specialists_label()}
+                {m.workspace_createAgentSection_specialists_description()}
+              </p>
+            </div>
 
-            {#if customSpecialists.length > 0}
-              <div class="h-px bg-border"></div>
-            {/if}
-
-            <!-- Specialists -->
-            {#each customSpecialists as specialist (specialist.id)}
+            <div class="max-h-[21rem] overflow-y-auto p-2">
               <button
                 type="button"
                 class={cn(
-                  'flex items-center gap-2.5 w-full px-3 py-2 text-left text-sm transition-colors',
-                  'hover:bg-muted rounded-sm cursor-pointer',
-                  specialistInfo?.id === specialist.id ? 'bg-muted/50' : '',
+                  'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+                  'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  !specialistInfo ? 'bg-accent/70' : '',
                 )}
-                onclick={() => { onSpecialistChange?.(specialist.id); close(); }}
+                aria-pressed={!specialistInfo}
+                data-specialist-option="general"
+                onclick={() => {
+                  onSpecialistChange?.(null);
+                  close();
+                }}
               >
-                <AuggieAvatar seed="blank" size={20} specialist={specialist.id} />
-                <div class="flex flex-col min-w-0">
-                  <span class="font-medium text-foreground">{specialist.name}</span>
-                  <span class="text-xs text-subtle truncate">{specialist.description}</span>
+                <div
+                  class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
+                >
+                  <AuggieAvatar seed="blank" size={22} />
                 </div>
+                <div class="min-w-0 flex-1">
+                  <div class="type-body font-medium text-foreground">
+                    {m.chat_shared_general_fallback()}
+                  </div>
+                  <div class="type-caption mt-0.5 text-muted-foreground">
+                    {m.chat_shared_noSpecializedBehavior_label()}
+                  </div>
+                </div>
+                {#if !specialistInfo}
+                  <Fa icon={faCheck} size={12} class="shrink-0 text-primary" />
+                {/if}
               </button>
-            {/each}
 
-            <!-- Create new -->
-            <div class="h-px bg-border"></div>
-            <button
-              type="button"
-              class="flex items-center gap-2.5 w-full px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground rounded-sm cursor-pointer transition-colors"
-              onclick={() => { openSpecialistSettings(); close(); }}
-            >
-              <Fa icon={faPlus} size={12} class="ml-1 opacity-50" />
-              <span>{m.chat_regularAgentWelcome_createSpecialist_label()}</span>
-            </button>
+              {#each customSpecialists as specialist (specialist.id)}
+                <button
+                  type="button"
+                  class={cn(
+                    'mt-1 flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+                    'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    specialistInfo?.id === specialist.id ? 'bg-accent/70' : '',
+                  )}
+                  aria-pressed={specialistInfo?.id === specialist.id}
+                  data-specialist-option={specialist.id}
+                  onclick={() => {
+                    onSpecialistChange?.(specialist.id);
+                    close();
+                  }}
+                >
+                  <div
+                    class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
+                  >
+                    <AuggieAvatar seed="blank" size={22} specialist={specialist.id} />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="type-body font-medium text-foreground">{specialist.name}</div>
+                    <div class="type-caption mt-0.5 line-clamp-2 text-muted-foreground">
+                      {specialist.description}
+                    </div>
+                  </div>
+                  {#if specialistInfo?.id === specialist.id}
+                    <Fa icon={faCheck} size={12} class="shrink-0 text-primary" />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+
+            <div class="border-t border-border bg-popover p-2">
+              <button
+                type="button"
+                class="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onclick={() => {
+                  openSpecialistSettings();
+                  close();
+                }}
+              >
+                <div
+                  class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
+                >
+                  <Fa icon={faPlus} size={12} />
+                </div>
+                <span class="type-body font-medium"
+                  >{m.chat_regularAgentWelcome_createSpecialist_label()}</span
+                >
+              </button>
+            </div>
           </div>
         {/snippet}
       </DropdownMenu>
@@ -156,9 +219,10 @@
   {/if}
 
   <!-- Behavior Prompt / Description -->
-  <div class="bg-muted/20 px-4 py-2.5 mb-3">
+  <div class="mb-3 rounded-lg border border-border bg-card px-4 py-3 shadow-xs">
     <p
-      class="text-sm text-subtle leading-relaxed whitespace-pre-wrap {specialistInfo && !showFullPrompt
+      class="text-sm text-subtle leading-relaxed whitespace-pre-wrap {specialistInfo &&
+      !showFullPrompt
         ? 'line-clamp-6'
         : ''}"
     >

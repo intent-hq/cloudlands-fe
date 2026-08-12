@@ -1,26 +1,36 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-  screen,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
-  const dispatch = vi.fn();
+  const storeState = {
+    workspace: {
+      pendingTitleMutations: {} as Record<string, { token: number }>,
+    },
+  };
+  const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
+    const [workspaceId, token] = action.payload ?? [];
+    if (action.type === 'workspace/beginWorkspaceTitleMutation') {
+      storeState.workspace.pendingTitleMutations[workspaceId as string] = {
+        token: token as number,
+      };
+    } else if (
+      action.type === 'workspace/completeWorkspaceTitleMutation' ||
+      action.type === 'workspace/failWorkspaceTitleMutation'
+    ) {
+      delete storeState.workspace.pendingTitleMutations[workspaceId as string];
+    }
+    return action;
+  });
   const update = vi.fn();
+  const clipboardWrite = vi.fn();
+  const toastSuccess = vi.fn();
+  const toastError = vi.fn();
   const selector = <T>(value: T) =>
     Object.assign(
       () => ({
@@ -31,14 +41,19 @@ const mocks = vi.hoisted(() => {
       }),
       { select: () => value },
     );
-  return { dispatch, update, selector };
+  return { dispatch, update, clipboardWrite, toastSuccess, toastError, selector, storeState };
 });
 
+vi.mock('svelte-sonner', () => ({
+  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+}));
+
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mocks.storeState,
     dispatch: mocks.dispatch,
   });
 });
@@ -48,10 +63,25 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
+  toggleSidebar: vi.fn(() => ({ type: 'uiLayout/toggleSidebar' })),
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+  beginWorkspaceTitleMutation: vi.fn(
+    (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
+      type: 'workspace/beginWorkspaceTitleMutation',
+      payload: [id, token, optimisticTitle, previousTitle],
+    }),
+  ),
+  completeWorkspaceTitleMutation: vi.fn((id: string, token: number, workspace: Workspace) => ({
+    type: 'workspace/completeWorkspaceTitleMutation',
+    payload: [id, token, workspace],
+  })),
+  failWorkspaceTitleMutation: vi.fn((id: string, token: number) => ({
+    type: 'workspace/failWorkspaceTitleMutation',
+    payload: [id, token],
+  })),
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
@@ -86,11 +116,15 @@ vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../terminal/__tests__/mocks/MockButton.svelte')).default,
 }));
 
+vi.mock('$lib/components/ui/tooltip', async () => ({
+  TooltipRich: (await import('../sidebar/__tests__/mocks/MockTooltipRich.svelte')).default,
+}));
+
 vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/WorkspaceActionsMenu.svelte', async () => ({
+vi.mock('$features/workspace/components/WorkspaceActionsMenu.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 
@@ -138,6 +172,14 @@ describe('WorkspaceSidebarHeader status message', () => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
     mocks.update.mockResolvedValue({ ok: true, data: baseWorkspace });
+    mocks.clipboardWrite.mockReset();
+    mocks.toastSuccess.mockReset();
+    mocks.toastError.mockReset();
+    mocks.storeState.workspace.pendingTitleMutations = {};
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: mocks.clipboardWrite },
+      configurable: true,
+    });
   });
 
   it('renders the workspace status message under the title', async () => {
@@ -147,6 +189,122 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(screen.getByRole('button', { name: 'Edit workspace status' }).textContent).toContain(
       'Implementing Wave 2 UI.',
     );
+  });
+
+  it('renders repository and branch together after the status level', async () => {
+    await renderHeader({ statusMessage: 'Aligning the sidebar hierarchy.' });
+
+    const status = screen.getByRole('button', { name: 'Edit workspace status' });
+    const repository = screen.getByText('augment/intent');
+    const branch = screen.getByRole('button', { name: 'feature/status' });
+
+    expect(
+      status.compareDocumentPosition(repository) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(repository.parentElement).toBe(branch.closest('[data-sidebar-workspace-metadata]'));
+  });
+
+  it('gives long repository and branch names independent truncation boundaries', async () => {
+    const repositoryName = 'long-running-navigation-redesign-repository';
+    const branchName = 'feature/simplify-workspace-navigation-and-sidebar-metadata';
+    const { container } = await renderHeader({ repositoryName, branch: branchName });
+
+    const metadata = container.querySelector('[data-sidebar-workspace-metadata]');
+    const repository = container.querySelector('[data-sidebar-repository]');
+    const branchMetadata = container.querySelector('[data-sidebar-branch-metadata]');
+    const branch = screen.getByRole('button', { name: branchName });
+
+    expect(metadata?.className).toContain('overflow-hidden');
+    expect(metadata?.className).toContain('h-5');
+    expect(repository?.className).toContain('max-w-[45%]');
+    expect(repository?.className).toContain('truncate');
+    expect(repository?.className).toContain('h-5');
+    expect(repository?.getAttribute('title')).toBe(`augment/${repositoryName}`);
+    expect(branchMetadata?.className).toContain('h-5');
+    expect(branchMetadata?.className).toContain('items-center');
+    expect(branch.className).toContain('h-5');
+    expect(branch.className).toContain('min-w-0');
+    expect(branch.className).toContain('flex-1');
+    expect(container.querySelector('[data-sidebar-branch-hover-card]')?.textContent).toContain(
+      branchName,
+    );
+  });
+
+  it('aligns the branch icon and shows compact branch context', async () => {
+    const { container } = await renderHeader({ baseRef: 'main', skipWorktree: false });
+    const icon = container.querySelector('[data-sidebar-branch-icon]');
+    const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
+
+    expect(icon?.className).toContain('size-4');
+    expect(icon?.className).toContain('place-items-center');
+    expect(hoverCard?.textContent).toContain('feature/status');
+    expect(hoverCard?.textContent).toContain('Base main');
+    expect(hoverCard?.textContent).toContain('Worktree');
+    expect(hoverCard?.textContent).not.toContain('Click to rename');
+  });
+
+  it('renames on click and copies the branch name on Shift-click', async () => {
+    await renderHeader();
+    await fireEvent.click(screen.getByRole('button', { name: 'feature/status' }));
+    const branchInput = await screen.findByPlaceholderText('branch name');
+    expect(branchInput).toBeTruthy();
+
+    await fireEvent.keyDown(branchInput, { key: 'Escape' });
+    const branchButton = await screen.findByRole('button', { name: 'feature/status' });
+    await fireEvent.click(branchButton, { shiftKey: true });
+
+    await waitFor(() => expect(mocks.clipboardWrite).toHaveBeenCalledWith('feature/status'));
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('Branch name copied to clipboard');
+    expect(screen.queryByPlaceholderText('branch name')).toBeNull();
+  });
+
+  it('updates the sidebar workspace title before the rename response resolves', async () => {
+    let resolveUpdate!: (result: { ok: true; data: Workspace }) => void;
+    mocks.update.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+
+    await renderHeader();
+    await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Renamed immediately' } });
+    await fireEvent.keyDown(titleInput, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith({
+        id: 'ws-1',
+        title: 'Renamed immediately',
+      }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspace/beginWorkspaceTitleMutation',
+      payload: ['ws-1', expect.any(Number), 'Renamed immediately', 'Status Workspace'],
+    });
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    resolveUpdate({
+      ok: true,
+      data: { ...baseWorkspace, title: 'Renamed immediately' },
+    });
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'workspace/completeWorkspaceTitleMutation' }),
+      ),
+    );
+  });
+
+  it('surfaces a rejected workspace title rename without leaving the editor pending', async () => {
+    mocks.update.mockResolvedValue({ ok: false, error: 'Rename rejected' });
+    await renderHeader();
+    await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
+    const titleInput = screen.getByRole('textbox');
+    await fireEvent.input(titleInput, { target: { value: 'Rejected title' } });
+    await fireEvent.keyDown(titleInput, { key: 'Enter' });
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Rename rejected'));
+    expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('shows a discoverable add status affordance when empty', async () => {

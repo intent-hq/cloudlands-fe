@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
@@ -50,10 +44,6 @@ vi.mock('../repo-registry', () => ({
   clearRepos: vi.fn(),
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({ mainDispatch: vi.fn() }));
-vi.mock('../../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice', () => ({
-  workspaceFileChanges: vi.fn((payload) => ({ type: 'workspace/fileChanges', payload })),
-}));
 vi.mock('../../../../store/main/slices/agent-events/agent-events-slice', () => ({
   agentSessionUpdated: vi.fn((payload) => ({ type: 'agent/sessionUpdated', payload })),
 }));
@@ -69,7 +59,6 @@ vi.mock('../../../notifications/main/notification.service', () => ({
   getNotificationService: vi.fn(() => ({ start: vi.fn() })),
 }));
 vi.mock('../../../metadata-fs/main/metadata-fs-factory', () => ({ clearMetadataFSCache: vi.fn() }));
-vi.mock('../../../notes/main/notes.service', () => ({ notesService: {} }));
 
 import { WORKSPACE_CHANNELS } from '../../../../shared/ipc/channels';
 import { setupWorkspaceIPC } from '../workspace.ipc';
@@ -127,9 +116,7 @@ describe('workspace IPC read contract', () => {
   });
 
   it('wraps current-workspace reads and missing-workspace responses consistently', async () => {
-    mocks.getWorkspace
-      .mockResolvedValueOnce(secondWorkspace)
-      .mockResolvedValueOnce(null);
+    mocks.getWorkspace.mockResolvedValueOnce(secondWorkspace).mockResolvedValueOnce(null);
 
     const getCurrentHandler = mocks.handlers.get(WORKSPACE_CHANNELS.GET_CURRENT);
     const getHandler = mocks.handlers.get(WORKSPACE_CHANNELS.GET);

@@ -171,8 +171,8 @@ describe('resolveDevIntentdDataDir', () => {
 });
 
 describe('shouldIsolateDevIntentdDataDir', () => {
-  it('isolates dev builds with no INTENTD_* env', () => {
-    expect(shouldIsolateDevIntentdDataDir({}, true)).toBe(true);
+  it('leaves connect-only dev builds on the global daemon socket', () => {
+    expect(shouldIsolateDevIntentdDataDir({}, true)).toBe(false);
   });
 
   it('honours an inherited INTENTD_DATA_DIR (e.g. the monorepo `make dev` seat)', () => {
@@ -182,7 +182,9 @@ describe('shouldIsolateDevIntentdDataDir', () => {
   });
 
   it('ignores a whitespace-only INTENTD_DATA_DIR', () => {
-    expect(shouldIsolateDevIntentdDataDir({ INTENTD_DATA_DIR: '  ' }, true)).toBe(true);
+    expect(
+      shouldIsolateDevIntentdDataDir({ INTENTD_SIDECAR: '1', INTENTD_DATA_DIR: '  ' }, true),
+    ).toBe(true);
   });
 
   it('never isolates a packaged build', () => {
@@ -204,6 +206,8 @@ describe('shouldIsolateDevIntentdDataDir', () => {
   });
 
   it('ignores whitespace-only transport overrides', () => {
-    expect(shouldIsolateDevIntentdDataDir({ INTENTD_SOCKET: '  ' }, true)).toBe(true);
+    expect(
+      shouldIsolateDevIntentdDataDir({ INTENTD_SIDECAR: '1', INTENTD_SOCKET: '  ' }, true),
+    ).toBe(true);
   });
 });

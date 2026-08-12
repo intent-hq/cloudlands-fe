@@ -200,7 +200,7 @@ import {
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
 import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
-import { refreshWorkspaceSubscriptionEntries } from '$features/agent/agent-subscription-read-service';
+import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   permissionRequestReceived,
   removePermissionRequest,
@@ -2275,7 +2275,7 @@ function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: str
     if (pending.snapshot) {
       appStore.dispatch(bulkUpsertSessions([pending.snapshot]));
       appStore.dispatch(upsertSession(pending.snapshot));
-      refreshWorkspaceSubscriptionEntries(workspaceId);
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
     }
   }
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
@@ -2856,7 +2856,7 @@ export function routeDaemonEventsNotification(
   // agent-subscription-ui entry via `agent.getSubscriptions` — completion
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
-    refreshWorkspaceSubscriptionEntries(workspaceId);
+    appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
   }
 
   // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the

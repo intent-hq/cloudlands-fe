@@ -38,9 +38,9 @@
   import MarkdownFileEditor from '$lib/components/editor/MarkdownFileEditor.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { Button } from '$lib/components/ui/button';
-  import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
-  import SaveIndicator from '$lib/components/ui/SaveIndicator.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
+  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
     selectLineWrapping,
     selectDiffIndicators,
@@ -53,15 +53,7 @@
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
-  import Fa from 'svelte-fa';
-  import {
-    faPaintbrush,
-    faTextWidth,
-    faPencil,
-    faTrash,
-    faEye,
-    faCode,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
@@ -69,10 +61,6 @@
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
-  const headerToggleActiveClass =
-    'text-foreground bg-sidebar hover:text-foreground hover:bg-sidebar';
-  const headerToggleInactiveClass = 'text-subtle';
-
   let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
 
   // svelte-ignore state_referenced_locally
@@ -104,7 +92,9 @@
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  const repoPath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || null);
+  const repoPath = $derived(
+    $workspace?.worktreePath || $workspace?.repositoryPath || $workspace?.path || null,
+  );
 
   const fileContent = $derived($fileContentStore);
   const fileLoading = $derived($fileLoadingStore);
@@ -119,6 +109,13 @@
   const isFileBinary = $derived($isFileBinaryStore);
   const isFileDirty = $derived($isFileDirtyStore);
   const fileLastUpdated = $derived($fileLastUpdatedStore);
+  const saveStatusLabel = $derived(
+    fileSaving
+      ? m.ui_saveIndicator_saving_tooltip()
+      : isFileDirty
+        ? m.ui_saveIndicator_autoSaving_tooltip()
+        : m.ui_saveIndicator_saved_tooltip(),
+  );
 
   let codeEditorRef = $state<{ focus: () => boolean } | null>(null);
   let isMounted = $state(true);
@@ -216,8 +213,12 @@
     const absolutePath = fileAbsolutePath;
     const wsId = workspaceId;
 
-    if (filePath && absolutePath && wsId && !isOutsideWorkspace) {
-      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+    // `file.read` is scoped by workspaceId and accepts a repository-relative
+    // path. Do not block the read while the workspace entity/root hydrates —
+    // doing so leaves activity-opened tabs stuck at "Preparing to load file".
+    // The effect runs again with the resolved absolute path once hydration lands.
+    if (filePath && wsId && !isOutsideWorkspace) {
+      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath ?? filePath));
     }
   });
 
@@ -346,96 +347,58 @@
   // Register header state and actions
   $effect(() => {
     if (!headerContext || !isActive) return;
+    const headerState = { isDirty: isFileDirty, isSaving: fileSaving };
     untrack(() => {
-      headerContext.registerActions(fileActions);
-      headerContext.registerState({ isDirty: isFileDirty, isSaving: fileSaving });
+      headerContext.registerActions({ display: fileDisplayActions, actions: fileActions });
+      headerContext.registerState(headerState);
     });
   });
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
 
-{#snippet fileActions()}
+{#snippet fileDisplayActions()}
   <!-- Save/edit affordances are hidden for out-of-workspace paths -->
   {#if !isOutsideWorkspace}
-    <SaveIndicator
-      isDirty={isFileDirty}
-      isSaving={fileSaving}
-      isAutoSaving={isFileDirty && !fileSaving}
-      onSave={saveFileContent}
-      size="sm"
-    />
+    <Menu.CommandItem icon={faFloppyDisk} label={saveStatusLabel} disabled />
   {/if}
   {#if tab.filePath && !isOutsideWorkspace}
-    <div class="w-px h-4 bg-border mx-1"></div>
-    {#if isMarkdownFile}
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={() => (markdownPreview = !markdownPreview)}
-        tooltip={markdownPreview
-          ? m.layout_fileTab_switchToCode_tooltip()
-          : m.layout_fileTab_switchToPreview_tooltip()}
-        tooltipSide="bottom"
-        aria-pressed={markdownPreview}
-        class={markdownPreview ? headerToggleActiveClass : headerToggleInactiveClass}
-      >
-        <Fa icon={markdownPreview ? faCode : faEye} size="xs" />
-      </Button>
-    {/if}
+    <ViewSettingsDropdown
+      embedded
+      showFold={false}
+      showSplit={false}
+      showPreview={isMarkdownFile}
+      previewEnabled={markdownPreview}
+      onTogglePreview={() => (markdownPreview = !markdownPreview)}
+      showWrap={!isMarkdownFile || !markdownPreview}
+      wrapEnabled={$lineWrapping}
+      onToggleWrap={() => appStore.dispatch(toggleLineWrapping())}
+      showDiff={!isMarkdownFile || !markdownPreview}
+      diffEnabled={$diffIndicators}
+      onToggleDiff={() => appStore.dispatch(toggleDiffIndicators())}
+    />
+  {/if}
+{/snippet}
+
+{#snippet fileActions()}
+  {#if tab.filePath && !isOutsideWorkspace}
     {#if fileHasChanges}
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
+      <Menu.CommandItem
+        icon={faPencil}
+        label={m.layout_fileTab_goToChanges_tooltip()}
         onclick={handleGoToChanges}
-        tooltip={m.layout_fileTab_goToChanges_tooltip()}
-        tooltipSide="bottom"
-      >
-        <Fa icon={faPencil} size="xs" />
-      </Button>
+      />
     {/if}
-    {#if !isMarkdownFile || !markdownPreview}
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={() => appStore.dispatch(toggleDiffIndicators())}
-        tooltip={$diffIndicators
-          ? m.layout_fileTab_hideDiffIndicators_tooltip()
-          : m.layout_fileTab_showDiffIndicators_tooltip()}
-        tooltipSide="bottom"
-        aria-pressed={$diffIndicators}
-        class={$diffIndicators ? headerToggleActiveClass : headerToggleInactiveClass}
-      >
-        <Fa icon={faPaintbrush} size="xs" />
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={() => appStore.dispatch(toggleLineWrapping())}
-        tooltip={$lineWrapping
-          ? m.layout_diffHeader_wrappingOn_tooltip()
-          : m.layout_diffHeader_wrapLines_tooltip()}
-        tooltipSide="bottom"
-        aria-pressed={$lineWrapping}
-        class={$lineWrapping ? headerToggleActiveClass : headerToggleInactiveClass}
-      >
-        <Fa icon={faTextWidth} size="xs" />
-      </Button>
-    {/if}
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
+    <Menu.CommandItem
+      icon={faTrash}
+      label={m.layout_fileTab_deleteFile_tooltip()}
       onclick={handleDeleteFile}
-      tooltip={m.layout_fileTab_deleteFile_tooltip()}
-      tooltipSide="bottom"
-      class="text-muted-foreground hover:text-destructive-foreground"
-    >
-      <Fa icon={faTrash} size="xs" />
-    </Button>
+      destructive
+    />
     <OpenComboButton
       filePath={tab.filePath}
       isDirectory={false}
-      compact
+      embedded
       workspaceFolderPath={repoPath ?? undefined}
     />
   {/if}

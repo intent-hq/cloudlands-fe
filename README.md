@@ -73,13 +73,29 @@ Use `pnpm` (not `npm`). The following scripts are defined in `package.json`:
 ```bash
 pnpm install            # Install dependencies
 pnpm run dev            # Start the app in development (Vite + Electron)
+pnpm run dev:web        # Start the plain-browser development profile
 pnpm run build          # Production build (renderer, main, preload)
+pnpm run build:web      # Build static plain-browser output in dist/web
 pnpm run check          # svelte-check (Svelte + TypeScript diagnostics)
 pnpm run lint           # ESLint
 pnpm run format         # Prettier (write)
 pnpm run test:unit      # Vitest unit suite
 pnpm run test:playwright # Playwright tests
 ```
+
+### Web runtime configuration
+
+`dev:web` accepts `VITE_INTENTD_WS_URL` as a local-development convenience.
+`build:web` deliberately does not compile that value into static JavaScript,
+because a full WebSocket URL can contain userinfo, query credentials, or a
+fragment. Production hosting should replace `/runtime-config.js` at response or
+deployment time and set `globalThis.__INTENT_RUNTIME_CONFIG__.intentdWsUrl` to a
+`wss://` URL. Serve that asset over authenticated HTTPS with `Cache-Control:
+no-store`, and use a short-lived, per-user credential rather than a shared
+secret. The URL is necessarily visible to that browser session; this separation
+prevents it from leaking through versioned bundles, source maps, and long-lived
+CDN caches. The committed empty runtime config preserves the standalone mock
+fallback when no live daemon is configured.
 
 ## intentd sidecar pin
 

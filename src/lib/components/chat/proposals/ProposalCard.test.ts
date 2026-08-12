@@ -256,13 +256,45 @@ describe('ProposalCard', () => {
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('Applied.');
-    expect(status.className).toContain('text-green');
+    expect(status.className).toContain('text-success');
     expect(container.querySelector('[data-lifecycle-status="applied"]')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit Title' })).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
     expect(onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('uses a neutral outer border for completed cards when requested by the host', () => {
+    lifecycleSelectorState.status = 'applied';
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
+        neutralBorder: true,
+      },
+    });
+
+    const card = container.querySelector('[data-proposal-kind]');
+    expect(card?.className).toContain('border-border');
+    expect(card?.className).not.toContain('border-success');
+    expect(screen.getByRole('status').className).toContain('text-success');
+  });
+
+  it('uses the compact editorial surface and semantic status roles', () => {
+    const { container } = render(ProposalCard, {
+      props: {
+        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
+      },
+    });
+
+    const card = container.querySelector('[data-proposal-kind]');
+    expect(card?.className).toContain('rounded-(--radius-medium)');
+    expect(card?.className).toContain('bg-card');
+    expect(card?.className).toContain('shadow-(--elevation-raised)');
+    expect(screen.getByRole('heading', { name: 'Change settings' }).className).toContain(
+      'type-body',
+    );
+    expect(container.innerHTML).not.toMatch(/(?:green|emerald)-[0-9]/);
   });
 
   it('shows Retry only on failed lifecycle and retries apply', async () => {
@@ -302,7 +334,7 @@ describe('ProposalCard', () => {
     const placeholder = screen.getByText('Add title…');
 
     expect(row.getAttribute('tabindex')).toBe('0');
-    expect(placeholder.className).toContain('text-subtle');
+    expect(placeholder.className).toContain('text-muted-foreground');
 
     await fireEvent.click(row);
 
@@ -455,7 +487,9 @@ describe('ProposalCard', () => {
     ).toEqual(['Repo', 'Base branch', 'Specialist']);
     for (const row of rows) {
       expect(row.className).toContain('grid-cols-[6rem_minmax(0,1fr)]');
-      expect(row.querySelector('[data-metadata-label]')?.className).toContain('text-subtle');
+      expect(row.querySelector('[data-metadata-label]')?.className).toContain(
+        'text-muted-foreground',
+      );
       expect(row.getAttribute('role')).toBe('group');
       expect(row.getAttribute('aria-labelledby')).toBeTruthy();
     }

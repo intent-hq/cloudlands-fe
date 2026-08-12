@@ -27,9 +27,7 @@
   const color = $derived(cardStateColor(card.stateKey));
   const blinking = $derived($takeoverBlinkTarget === card.workspaceId);
   const isFailed = $derived(card.stateKey === 'failed');
-  const isAttention = $derived(
-    card.stateKey === 'wait' || card.stateKey === 'blocked' || isFailed,
-  );
+  const isAttention = $derived(card.stateKey === 'wait' || card.stateKey === 'blocked' || isFailed);
 
   /** Mock `taskSegs`: completed → in-progress → remaining segment colors. */
   const segments = $derived.by(() => {
@@ -272,7 +270,7 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     margin-top: 1px;
     white-space: nowrap;
     overflow: hidden;
@@ -297,7 +295,7 @@
     font:
       500 9px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     white-space: nowrap;
   }
   .hud-ws-card-body {
@@ -313,7 +311,7 @@
     font:
       500 11px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
     line-height: 1.55;
     padding-top: 2px;
     user-select: text;
@@ -335,7 +333,7 @@
     line-height: 1.45;
   }
   .hud-ws-card-agent-tree {
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
     white-space: pre;
     flex: none;
   }
@@ -351,7 +349,7 @@
   }
   .hud-ws-card-agent-elapsed {
     margin-left: auto;
-    color: hsl(var(--text-ghost));
+    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-ws-card-agent-msg {
     padding-left: 12px;
@@ -375,7 +373,7 @@
     font:
       500 10px 'JetBrains Mono',
       monospace;
-    color: hsl(var(--text-subtle));
+    color: hsl(var(--muted-foreground));
   }
   .hud-ws-card-footer-spacer {
     flex: 1;

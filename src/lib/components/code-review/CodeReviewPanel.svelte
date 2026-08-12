@@ -5,30 +5,24 @@
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import Fa from 'svelte-fa';
   import {
-  faRotateRight,
-  faStop,
-  faCheck,
-  faSpinner,
-  faRobot,
-  faCodeCompare,
-  faChevronLeft,
-  faChevronRight,
-  faWandMagicSparkles,
-} from '@fortawesome/free-solid-svg-icons';
+    faRotateRight,
+    faStop,
+    faCheck,
+    faSpinner,
+    faRobot,
+    faCodeCompare,
+    faChevronLeft,
+    faChevronRight,
+    faWandMagicSparkles,
+  } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
   import ReviewCommentCard from './ReviewCommentCard.svelte';
   import type { ReviewComment, ReviewStatus, ReviewSeverity, CodeReview } from './types';
-  import {
-  parseAllReviewComments,
-  parseReviewSummary,
-} from './types';
+  import { parseAllReviewComments, parseReviewSummary } from './types';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
-  import {
-  CodeWalkthroughSection,
-  parseWalkthrough,
-} from './walkthrough';
+  import { CodeWalkthroughSection, parseWalkthrough } from './walkthrough';
   import type { CodeWalkthrough, WalkthroughStatus } from './walkthrough';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import { executeBackgroundAgent } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
@@ -36,10 +30,10 @@
   import { sendMessage } from '$features/agent/agent-send';
   import { buildWorkspaceContext } from '$features/agent/agent-launch-core';
 
-
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
-  import * as m from '$shared/paraglide/messages.js';
+  import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('CodeReviewPanel');
   const activeWorkspace = selectActiveWorkspace();
@@ -122,14 +116,16 @@
   );
 
   // Open agent in panel
-  function handleOpenAgent() {
+  function handleOpenAgent(event: MouseEvent) {
     if (agentId) {
       if (onOpenAgent) {
         onOpenAgent(agentId);
       } else {
         const wsId = $activeWorkspace?.id;
         if (wsId) {
-          appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
+          appStore.dispatch(
+            openAgentTabRequested(wsId, { agentId, ...getNavigationContext(event) }),
+          );
         }
       }
     }
@@ -333,7 +329,13 @@
 
 <PanelWrapper
   title={m.codeReview_panel_title()}
-  breadcrumbs={[{ label: m.codeReview_panel_changesBreadcrumb_label(), icon: faCodeCompare, onClick: onNavigateToChanges }]}
+  breadcrumbs={[
+    {
+      label: m.codeReview_panel_changesBreadcrumb_label(),
+      icon: faCodeCompare,
+      onClick: onNavigateToChanges,
+    },
+  ]}
   {canGoBack}
   {canGoForward}
   {onNavigateBack}
@@ -348,6 +350,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
+            aria-label="Previous review version"
             onclick={() => onSelectReview?.(currentReviewIndex + 1)}
             disabled={!canGoPrev}
             class="h-6 w-6"
@@ -360,6 +363,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
+            aria-label="Next review version"
             onclick={() => onSelectReview?.(currentReviewIndex - 1)}
             disabled={!canGoNext}
             class="h-6 w-6"
@@ -390,7 +394,9 @@
             : m.codeReview_panel_commentCount_many({ count: totalCount })}
         </Badge>
       {:else if isStale}
-        <Badge variant="outline" class="text-xs text-amber-600">{m.codeReview_panel_outdated_label()}</Badge>
+        <Badge variant="outline" class="text-xs text-amber-600"
+          >{m.codeReview_panel_outdated_label()}</Badge
+        >
       {/if}
 
       <!-- Action buttons -->
@@ -422,7 +428,9 @@
       >
         <Fa icon={faWandMagicSparkles} class="h-5 w-5 text-subtle" />
       </div>
-      <h3 class="text-sm font-medium text-foreground mb-2">{m.codeReview_panel_noReview_title()}</h3>
+      <h3 class="text-sm font-medium text-foreground mb-2">
+        {m.codeReview_panel_noReview_title()}
+      </h3>
       <p class="text-xs text-subtle mb-4 max-w-60">
         {m.codeReview_panel_noReview_description()}
       </p>
@@ -441,7 +449,9 @@
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              <span class="text-sm font-medium text-foreground">{m.codeReview_panel_reviewingCode_label()}</span>
+              <span class="text-sm font-medium text-foreground"
+                >{m.codeReview_panel_reviewingCode_label()}</span
+              >
             </div>
             {#if agentId}
               <Button
@@ -456,9 +466,7 @@
             {/if}
           </div>
           {#if streamingPreview}
-            <div
-              class="text-xs text-subtle whitespace-pre-wrap line-clamp-3 overflow-hidden"
-            >
+            <div class="text-xs text-subtle whitespace-pre-wrap line-clamp-3 overflow-hidden">
               {streamingPreview}
               <span
                 class="inline-block w-1.5 h-3 bg-muted-foreground/50 animate-pulse ml-0.5 align-middle"

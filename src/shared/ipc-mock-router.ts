@@ -129,6 +129,24 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'system:write-clipboard',
     { success: false, error: 'Clipboard IPC is not available in this build' },
   ],
+  // Note-primitive actions against the legacy main process: patch blocks
+  // (PatchBlock apply/revert) and code-reference resolution (ReferenceBlock).
+  // No daemon patch/reference surface; the callers check `.ok` and surface
+  // the error in the block UI / a toast on the triggering interaction.
+  ['patch:apply', { ok: false, error: 'Applying patches is not available in this build' }],
+  ['patch:revert', { ok: false, error: 'Reverting patches is not available in this build' }],
+  [
+    'reference:resolve',
+    { ok: false, error: 'Code-reference resolution is not bridged to the daemon' },
+  ],
+  // FilesPanel's remote-file existence probe (only reached for
+  // environmentConfig.type === 'remote' workspaces). The legacy SSH
+  // connection pool is Electron-main-only; the caller folds `success:false`
+  // to "file not present remotely".
+  [
+    'remote-fs:exists',
+    { success: false, error: 'Remote SSH file access is not available in this build' },
+  ],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
   // (caller `.catch`es and logs) and PanelLayout's response arm for the
   // browser:list-tabs-request event — which never fires in this build (see

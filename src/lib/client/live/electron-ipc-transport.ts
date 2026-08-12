@@ -9,14 +9,14 @@
  * IPC router used by `$lib/electron-bridge`), since migrated domains must
  * reach the live main-process client.
  */
-import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   BackendError,
   type BackendErrorPayload,
   type BackendNotification,
   type BackendRequestOptions,
   type BackendTransport,
-} from "./backend-transport-types";
+} from './backend-transport-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 
@@ -26,14 +26,14 @@ interface BackendResult<T> {
   error?: BackendErrorPayload;
 }
 
-export function electronAPI(): Window["electronAPI"] | undefined {
-  return typeof window !== "undefined" ? window.electronAPI : undefined;
+export function electronAPI(): Window['electronAPI'] | undefined {
+  return typeof window !== 'undefined' ? window.electronAPI : undefined;
 }
 
 function unwrap<T>(response: BackendResult<T> | undefined): T {
   if (!response || !response.ok) {
     throw new BackendError(
-      response?.error ?? { code: "TRANSPORT_ERROR", message: "Backend request failed" },
+      response?.error ?? { code: 'TRANSPORT_ERROR', message: 'Backend request failed' },
     );
   }
   return response.result as T;
@@ -89,13 +89,13 @@ export function inspectChannelFanoutSubscribers(): Record<string, number> {
  */
 function createChannelFanout<TPayload>(channel: string, label: string) {
   const handlers = new Set<(payload: TPayload) => void>();
-  let listener: { api: NonNullable<Window["electronAPI"]>; id: string } | null = null;
+  let listener: { api: NonNullable<Window['electronAPI']>; id: string } | null = null;
   // Identity for `subscribedFanouts`; `size` is read there, never here.
   const registration = { channel, size: () => handlers.size };
 
   return {
     subscribe(
-      api: NonNullable<Window["electronAPI"]>,
+      api: NonNullable<Window['electronAPI']>,
       handler: (payload: TPayload) => void,
     ): () => void {
       if (!listener) {
@@ -142,10 +142,10 @@ export function createElectronIpcBackendTransport(): BackendTransport {
   // per-module listeners tripped ipcRenderer's default cap of 10).
   const reconnectedFanout = createChannelFanout<
     { status?: string; reconnected?: boolean } | undefined
-  >(BACKEND.STATUS, "onReconnected");
+  >(BACKEND.STATUS, 'onReconnected');
   const notificationFanout = createChannelFanout<BackendNotification>(
     BACKEND.NOTIFICATION,
-    "onNotification",
+    'onNotification',
   );
 
   return {
@@ -160,7 +160,7 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     ): Promise<T> {
       const api = electronAPI();
       if (!api)
-        throw new BackendError({ code: "UNAVAILABLE", message: "Backend bridge unavailable" });
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
       const invokePayload: { method: string; params?: unknown; timeoutMs?: number } = {
         method,
         params,
@@ -173,7 +173,7 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     async subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T> {
       const api = electronAPI();
       if (!api)
-        throw new BackendError({ code: "UNAVAILABLE", message: "Backend bridge unavailable" });
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
       const response = (await api.invoke(BACKEND.SUBSCRIBE, params)) as BackendResult<T>;
       return unwrap(response);
     },
@@ -211,7 +211,7 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       const api = electronAPI();
       if (!api) return () => {};
       return reconnectedFanout.subscribe(api, (payload) => {
-        if (payload?.status !== "connected" || payload.reconnected !== true) return;
+        if (payload?.status !== 'connected' || payload.reconnected !== true) return;
         handler();
       });
     },

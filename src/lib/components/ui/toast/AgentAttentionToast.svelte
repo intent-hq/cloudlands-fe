@@ -2,7 +2,7 @@
   import Fa from 'svelte-fa';
   import { faComments, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
-  import MicroKeySlotSquare from '$lib/components/ui/toast/MicroKeySlotSquare.svelte';
+  import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -26,7 +26,7 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the kind-flavored border tint is passed as a wrapper class by the service. -->
-<div class="flex items-start gap-3 max-w-[500px]">
+<div class="flex max-w-125 items-start gap-3">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-destructive' : 'text-primary'}">
     <Fa icon={kind === 'blocker' ? faTriangleExclamation : faComments} class="w-5 h-5" />

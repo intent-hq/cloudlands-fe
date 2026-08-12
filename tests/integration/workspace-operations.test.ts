@@ -1,431 +1,149 @@
 /**
- * Workspace Operations Integration Tests
- *
- * Tests for workspace lifecycle including creation, deletion,
- * duplication, archiving, and agent management within workspaces.
+ * Workspace operation integration coverage against a PROTOCOL-shaped daemon.
+ * The daemon owns creation and filesystem/worktree lifecycle; this suite keeps
+ * the FE service integration focused on the supported workspace.* wire paths.
  */
-
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { AgentTestHarness } from '../../src/features/agent/testing/agent-test-harness';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../../src/features/workspace/main/workspace.service';
-import { FileSystemWorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
-import type { WorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
-import { randomUUID } from 'crypto';
-import { execSync } from 'child_process';
-import type { Workspace, AgentSession } from '../../src/shared/types';
-import { WorkspaceStatus } from '../../src/shared/types';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { InMemoryWorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
+import { WorkspaceStatus, type Workspace, type WorkspaceId } from '../../src/shared/types';
+
+const backend = vi.hoisted(() => {
+  const workspaces = new Map<string, Record<string, unknown>>();
+  const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+    const workspaceId = String(params?.workspaceId ?? '');
+    if (method === 'agent.list') return { agents: [] };
+    if (method === 'note.list') return { notes: [] };
+    if (method === 'settings.get') return { value: {} };
+    if (method === 'workspace.list') return { workspaces: [...workspaces.values()] };
+    if (method === 'workspace.get') {
+      const workspace = workspaces.get(workspaceId);
+      if (!workspace) throw new Error('Workspace not found');
+      return { workspace };
+    }
+    if (method === 'workspace.update') {
+      const current = workspaces.get(workspaceId);
+      if (!current) throw new Error('Workspace not found');
+      const { workspaceId: _ignored, ...changes } = params ?? {};
+      const workspace = { ...current, ...changes, updatedAt: '2026-01-02T00:00:00.000Z' };
+      workspaces.set(workspaceId, workspace);
+      return { workspace };
+    }
+    if (method === 'workspace.duplicate') {
+      const current = workspaces.get(workspaceId);
+      if (!current) throw new Error('Workspace not found');
+      const workspace = {
+        ...current,
+        id: `${workspaceId}-copy`,
+        title: params?.newTitle,
+        branch: `${workspaceId}-copy`,
+      };
+      workspaces.set(String(workspace.id), workspace);
+      return { workspace };
+    }
+    if (method === 'workspace.archive') {
+      const current = workspaces.get(workspaceId);
+      const workspace = { ...current, status: WorkspaceStatus.Archived, archived: true };
+      workspaces.set(workspaceId, workspace);
+      return { workspace };
+    }
+    if (method === 'workspace.unarchive') {
+      const current = workspaces.get(workspaceId);
+      const workspace = { ...current, status: WorkspaceStatus.Active, archived: false };
+      workspaces.set(workspaceId, workspace);
+      return { workspace };
+    }
+    if (method === 'workspace.delete') {
+      workspaces.delete(workspaceId);
+      return { success: true };
+    }
+    throw new Error(`Unexpected method: ${method}`);
+  });
+  return { request, workspaces };
+});
+
+vi.mock('../../src/features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: backend.request }),
+}));
+vi.mock('../../src/store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: unknown) => action),
+}));
+
+function createWorkspace(): Workspace {
+  return {
+    id: 'ws-integration' as WorkspaceId,
+    title: 'Integration Workspace',
+    branch: 'workspace-integration',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+}
 
 describe('Workspace Operations Integration Tests', () => {
-  let harness: AgentTestHarness;
   let workspaceService: WorkspaceService;
-  let workspaceRepository: WorkspaceRepository;
-  let testRepoPath: string;
+  let workspace: Workspace;
 
-  beforeAll(async () => {
-    // Initialize test infrastructure
-    harness = new AgentTestHarness({
-      enableMemoryTracking: true,
-      enablePerformanceTracking: true,
-      enableErrorCapture: true,
-      verbose: process.env.VERBOSE === 'true',
-    });
-
-    workspaceRepository = new FileSystemWorkspaceRepository();
-    workspaceService = new WorkspaceService(workspaceRepository);
-
-    // Create test repository directory
-    testRepoPath = path.join(process.cwd(), '.test-repos', randomUUID());
-    await fs.mkdir(testRepoPath, { recursive: true });
-
-    // Initialize git repo for testing
-    execSync('git init -b main', { cwd: testRepoPath });
-    execSync('git config user.email "test@example.com"', { cwd: testRepoPath });
-    execSync('git config user.name "Test User"', { cwd: testRepoPath });
-    execSync('echo "test" > README.md', { cwd: testRepoPath });
-    execSync('git add .', { cwd: testRepoPath });
-    execSync('git commit -m "Initial commit"', { cwd: testRepoPath });
+  beforeEach(() => {
+    backend.request.mockClear();
+    backend.workspaces.clear();
+    workspace = createWorkspace();
+    backend.workspaces.set(workspace.id, { ...workspace });
+    workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository());
   });
 
-  afterAll(async () => {
-    await harness.cleanup();
-    await fs.rm(testRepoPath, { recursive: true, force: true });
+  afterEach(() => workspaceService.cleanup());
+
+  it('updates and lists daemon-owned workspace metadata', async () => {
+    const update = await workspaceService.updateWorkspace({ id: workspace.id, title: 'Updated' });
+    const list = await workspaceService.listWorkspaces();
+
+    expect(update.ok && update.data.title === 'Updated').toBe(true);
+    expect(list.ok && list.data.workspaces.some(({ title }) => title === 'Updated')).toBe(true);
+    expect(backend.request.mock.calls).toContainEqual([
+      'workspace.update',
+      { workspaceId: workspace.id, title: 'Updated' },
+    ]);
+    expect(backend.request.mock.calls.filter(([method]) => method === 'workspace.list')).toEqual([
+      ['workspace.list', { includeArchived: false }],
+    ]);
   });
 
-  beforeEach(async () => {
-    await harness.start();
+  it('duplicates a workspace through the daemon', async () => {
+    const result = await workspaceService.duplicateWorkspace(workspace.id, 'Copy');
+
+    expect(result.ok && result.data.title === 'Copy').toBe(true);
+    expect(backend.request.mock.calls).toContainEqual([
+      'workspace.duplicate',
+      { workspaceId: workspace.id, newTitle: 'Copy' },
+    ]);
   });
 
-  afterEach(async () => {
-    await harness.stop();
-    await harness.reset();
+  it('archives and unarchives a workspace through the daemon', async () => {
+    const archived = await workspaceService.archiveWorkspace(workspace.id);
+    const unarchived = await workspaceService.unarchiveWorkspace(workspace.id);
+
+    expect(archived.ok && archived.data.status).toBe(WorkspaceStatus.Archived);
+    expect(unarchived.ok && unarchived.data.status).toBe(WorkspaceStatus.Active);
+    expect(backend.request.mock.calls.filter(([method]) => method === 'workspace.archive')).toEqual(
+      [['workspace.archive', { workspaceId: workspace.id }]],
+    );
+    expect(
+      backend.request.mock.calls.filter(([method]) => method === 'workspace.unarchive'),
+    ).toEqual([['workspace.unarchive', { workspaceId: workspace.id }]]);
   });
 
-  describe('Workspace Creation', () => {
-    it('should create workspace with agent', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Test Workspace with Agent',
-        repositoryPath: testRepoPath,
-        baseRef: 'main',
-      });
-
-      expect(createResult.ok).toBe(true);
-      expect(createResult.data).toBeDefined();
-
-      const workspace = createResult.data!;
-      expect(workspace.title).toBe('Test Workspace with Agent');
-      expect(workspace.status).toBe(WorkspaceStatus.Active);
-      expect(workspace.repositoryPath).toBe(testRepoPath);
-
-      // Create agent in workspace
-      const agent = await harness.createAgent({
-        name: 'Workspace Agent',
-        model: 'claude-3-opus',
-        provider: 'anthropic',
-        workspaceId: workspace.id,
-      });
-
-      expect(agent.workspaceId).toBe(workspace.id);
-    });
-
-    it('should create workspace with git worktree', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Workspace with Worktree',
-        repositoryPath: testRepoPath,
-        baseRef: 'main',
-        branch: 'feature/test-branch',
-      });
-
-      expect(createResult.ok).toBe(true);
-      const workspace = createResult.data!;
-
-      expect(workspace.worktreePath).toBeDefined();
-      expect(workspace.branch).toBeDefined();
-
-      // Verify worktree exists
-      try {
-        await fs.access(workspace.worktreePath!);
-        const actualBranch = execSync('git branch --show-current', { cwd: workspace.worktreePath! })
-          .toString()
-          .trim();
-        expect(actualBranch).toBe(workspace.branch);
-        expect(true).toBe(true);
-      } catch {
-        expect.fail('Worktree path should exist');
-      }
-    });
-
-    it('should handle workspace creation failures', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Invalid Workspace',
-        repositoryPath: '/invalid/path/that/does/not/exist',
-        baseRef: 'main',
-      });
-
-      expect(createResult.ok).toBe(false);
-      expect(createResult.error).toBeDefined();
-    });
-
-    it('should resolve remote branch when baseRef is without origin/ prefix', async () => {
-      // Create a "remote" by making a bare clone and adding it as origin
-      const bareRepoPath = path.join(process.cwd(), '.test-repos', `bare-${randomUUID()}`);
-      await fs.mkdir(bareRepoPath, { recursive: true });
-
-      try {
-        // Create a bare repo to act as "remote"
-        execSync('git clone --bare . ' + bareRepoPath, { cwd: testRepoPath });
-
-        // Add it as origin to our test repo
-        try {
-          execSync('git remote remove origin', { cwd: testRepoPath });
-        } catch {
-          // Ignore if origin doesn't exist
-        }
-        execSync(`git remote add origin ${bareRepoPath}`, { cwd: testRepoPath });
-
-        // Create a branch on the "remote" that doesn't exist locally
-        // First create it locally, push it, then delete locally
-        execSync('git checkout -b remote-only-branch', { cwd: testRepoPath });
-        execSync('echo "remote content" > remote-file.txt', { cwd: testRepoPath });
-        execSync('git add .', { cwd: testRepoPath });
-        execSync('git commit -m "Remote only commit"', { cwd: testRepoPath });
-        execSync('git push origin remote-only-branch', { cwd: testRepoPath });
-
-        // Get the commit SHA of the remote branch
-        const remoteCommitSha = execSync('git rev-parse HEAD', { cwd: testRepoPath })
-          .toString()
-          .trim();
-
-        // Switch back to main and delete the local branch
-        execSync('git checkout main', { cwd: testRepoPath });
-        execSync('git branch -D remote-only-branch', { cwd: testRepoPath });
-
-        // Fetch to ensure we have the remote ref
-        execSync('git fetch origin', { cwd: testRepoPath });
-
-        // Now create a workspace with baseRef = 'remote-only-branch' (without origin/ prefix)
-        // This simulates what happens when user selects from "Remote branches" in the UI
-        const createResult = await workspaceService.createWorkspace({
-          title: 'Workspace from Remote Branch',
-          repositoryPath: testRepoPath,
-          baseRef: 'remote-only-branch', // Without origin/ prefix, like the UI sends
-        });
-
-        expect(createResult.ok).toBe(true);
-        const workspace = createResult.data!;
-
-        expect(workspace.worktreePath).toBeDefined();
-
-        // Verify the worktree was created from the remote branch content
-        // by checking that the remote-file.txt exists
-        const remoteFilePath = path.join(workspace.worktreePath!, 'remote-file.txt');
-        try {
-          await fs.access(remoteFilePath);
-          const content = await fs.readFile(remoteFilePath, 'utf-8');
-          expect(content.trim()).toBe('remote content');
-        } catch {
-          expect.fail('Worktree should contain remote-file.txt from the remote branch');
-        }
-
-        // Verify the worktree HEAD matches the remote branch commit
-        const worktreeCommitSha = execSync('git rev-parse HEAD', { cwd: workspace.worktreePath! })
-          .toString()
-          .trim();
-        expect(worktreeCommitSha).toBe(remoteCommitSha);
-      } finally {
-        // Cleanup bare repo
-        await fs.rm(bareRepoPath, { recursive: true, force: true });
-      }
-    });
-  });
-
-  describe('Workspace Loading and Listing', () => {
-    it('should load workspace with existing agents', async () => {
-      // Create workspace
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Workspace to Load',
-        repositoryPath: testRepoPath,
-      });
-
-      const workspace = createResult.data!;
-
-      // Create multiple agents
-      const agentCount = 3;
-      const agents: AgentSession[] = [];
-
-      for (let i = 0; i < agentCount; i++) {
-        const agent = await harness.createAgent({
-          name: `Agent ${i}`,
-          model: 'claude-3-opus',
-          provider: 'anthropic',
-          workspaceId: workspace.id,
-        });
-        agents.push(agent);
-      }
-
-      // Load workspace
-      const loadResult = await workspaceService.getWorkspace(workspace.id);
-      expect(loadResult.ok).toBe(true);
-      expect(loadResult.data).toBeDefined();
-    });
-
-    it('should list all workspaces', async () => {
-      // Create multiple workspaces
-      const workspaceCount = 3;
-      const workspaces: Workspace[] = [];
-
-      for (let i = 0; i < workspaceCount; i++) {
-        const result = await workspaceService.createWorkspace({
-          title: `List Test Workspace ${i}`,
-          repositoryPath: testRepoPath,
-        });
-        if (result.ok && result.data) {
-          workspaces.push(result.data);
-        }
-      }
-
-      // List workspaces
-      const listResult = await workspaceService.listWorkspaces();
-      expect(listResult.ok).toBe(true);
-      expect(listResult.data).toBeDefined();
-
-      // Should contain at least the workspaces we created
-      expect(listResult.data!.workspaces.length).toBeGreaterThanOrEqual(workspaceCount);
-      expect(listResult.data!.total).toBeGreaterThanOrEqual(workspaceCount);
-    });
-  });
-
-  describe('Workspace Deletion and Cleanup', () => {
-    it('should delete workspace and cleanup agents', async () => {
-      // Create workspace
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Workspace to Delete',
-        repositoryPath: testRepoPath,
-      });
-
-      const workspace = createResult.data!;
-
-      // Create agents
-      await harness.createAgent({
-        name: 'Agent to Delete 1',
-        model: 'claude-3-opus',
-        provider: 'anthropic',
-        workspaceId: workspace.id,
-      });
-
-      await harness.createAgent({
-        name: 'Agent to Delete 2',
-        model: 'claude-3-opus',
-        provider: 'anthropic',
-        workspaceId: workspace.id,
-      });
-
-      // Delete workspace
-      const deleteResult = await workspaceService.deleteWorkspace(workspace.id);
-      expect(deleteResult.ok).toBe(true);
-
-      // Verify workspace is deleted
-      const loadResult = await workspaceService.getWorkspace(workspace.id);
-      expect(loadResult.ok).toBe(false);
-
-      // Manually cleanup agents in test harness when workspace is deleted
-      // This simulates what would happen in production with proper event handling
-      await harness.deleteAgentsInWorkspace(workspace.id);
-
-      // Verify agents are cleaned up
-      const agents = await harness.listAgentsInWorkspace(workspace.id);
-      expect(agents).toHaveLength(0);
-    });
-
-    it('should cleanup worktree on deletion', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Workspace with Worktree to Delete',
-        repositoryPath: testRepoPath,
-        branch: 'feature/delete-test',
-      });
-
-      const workspace = createResult.data!;
-      const worktreePath = workspace.worktreePath!;
-
-      // Verify worktree exists
-      await fs.access(worktreePath);
-
-      // Delete workspace
-      await workspaceService.deleteWorkspace(workspace.id);
-
-      // Verify worktree is removed
-      try {
-        await fs.access(worktreePath);
-        expect.fail('Worktree should be deleted');
-      } catch {
-        expect(true).toBe(true);
-      }
-    });
-  });
-
-  describe('Workspace Duplication', () => {
-    it('should duplicate workspace with agents', async () => {
-      // Create original workspace
-      const originalResult = await workspaceService.createWorkspace({
-        title: 'Original Workspace',
-        repositoryPath: testRepoPath,
-      });
-
-      const original = originalResult.data!;
-
-      // Create agents in original
-      await harness.createAgent({
-        name: 'Original Agent 1',
-        model: 'claude-3-opus',
-        provider: 'anthropic',
-        workspaceId: original.id,
-      });
-
-      await harness.createAgent({
-        name: 'Original Agent 2',
-        model: 'claude-3-opus',
-        provider: 'anthropic',
-        workspaceId: original.id,
-      });
-
-      // Duplicate workspace
-      const duplicateResult = await workspaceService.duplicateWorkspace(
-        original.id,
-        'Duplicated Workspace',
-      );
-
-      expect(duplicateResult.ok).toBe(true);
-      const duplicate = duplicateResult.data!;
-
-      expect(duplicate.title).toBe('Duplicated Workspace');
-      expect(duplicate.id).not.toBe(original.id);
-      expect(duplicate.repositoryPath).toBe(original.repositoryPath);
-
-      // Manually duplicate agents in test harness
-      // The workspace service doesn't automatically duplicate agents
-      const duplicatedAgents = await harness.duplicateAgentsToWorkspace(original.id, duplicate.id);
-
-      // Verify agents were duplicated
-      expect(duplicatedAgents.length).toBe(2);
-    });
-  });
-
-  describe('Workspace Archiving', () => {
-    it('should archive and restore workspace', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Workspace to Archive',
-        repositoryPath: testRepoPath,
-      });
-
-      const workspace = createResult.data!;
-
-      // Archive workspace
-      const archiveResult = await workspaceService.archiveWorkspace(workspace.id);
-      expect(archiveResult.ok).toBe(true);
-
-      // Load archived workspace
-      const loadResult = await workspaceService.getWorkspace(workspace.id);
-      expect(loadResult.ok).toBe(true);
-      expect(loadResult.data?.status).toBe(WorkspaceStatus.Archived);
-
-      // Restore workspace
-      const restoreResult = await workspaceService.restoreWorkspace(workspace.id);
-      expect(restoreResult.ok).toBe(true);
-
-      // Verify restored
-      const restoredResult = await workspaceService.getWorkspace(workspace.id);
-      expect(restoredResult.data?.status).toBe(WorkspaceStatus.Active);
-    });
-  });
-
-  describe('Workspace Metadata Persistence', () => {
-    it('should persist workspace metadata changes', async () => {
-      const createResult = await workspaceService.createWorkspace({
-        title: 'Metadata Test Workspace',
-        repositoryPath: testRepoPath,
-      });
-
-      const workspace = createResult.data!;
-
-      // Update workspace
-      const updatedWorkspace = {
-        ...workspace,
-        title: 'Updated Title',
-        tags: ['test', 'integration'],
-        metadata: {
-          lastModified: new Date().toISOString(),
-          customField: 'custom value',
-        },
-      };
-
-      await workspaceService.updateWorkspace(updatedWorkspace);
-
-      // Reload and verify
-      const loadResult = await workspaceService.getWorkspace(workspace.id);
-      expect(loadResult.data?.title).toBe('Updated Title');
-      expect(loadResult.data?.tags).toEqual(['test', 'integration']);
-      expect(loadResult.data?.metadata?.customField).toBe('custom value');
-    });
+  it('deletes a workspace through the daemon', async () => {
+    const result = await workspaceService.deleteWorkspace(workspace.id);
+
+    expect(result.ok).toBe(true);
+    expect(backend.request.mock.calls).toContainEqual([
+      'workspace.delete',
+      { workspaceId: workspace.id },
+    ]);
+    expect(backend.workspaces.has(workspace.id)).toBe(false);
   });
 });

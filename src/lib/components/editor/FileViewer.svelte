@@ -2,13 +2,13 @@
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
-  faDownload,
-  faSearchPlus,
-  faSearchMinus,
-  faArrowsRotate,
-  faCopy,
-  faCheck,
-} from '@fortawesome/free-solid-svg-icons';
+    faDownload,
+    faSearchPlus,
+    faSearchMinus,
+    faArrowsRotate,
+    faCopy,
+    faCheck,
+  } from '@fortawesome/free-solid-svg-icons';
   import CodeEditor from './CodeEditor.svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -115,6 +115,21 @@
       return `data:image/${ext};base64,${base64}`;
     }
     return '';
+  };
+
+  const getSvgSrc = (): string => {
+    const bytes =
+      typeof fileContent === 'string'
+        ? new TextEncoder().encode(fileContent)
+        : new Uint8Array(fileContent);
+    const chunks: string[] = [];
+    const chunkSize = 0x8000;
+
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+    }
+
+    return `data:image/svg+xml;base64,${btoa(chunks.join(''))}`;
   };
 
   const handleZoomIn = () => {
@@ -288,7 +303,7 @@
         </div>
       </div>
       <div class="flex-1 overflow-auto bg-checkered flex items-center justify-center p-4">
-        {@html fileContent}
+        <img src={getSvgSrc()} alt={fileName} class="max-w-full max-h-full object-contain" />
       </div>
     </div>
   {:else if fileType === 'video'}

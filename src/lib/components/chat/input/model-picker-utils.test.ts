@@ -1,9 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { DropdownOption } from '$lib/components/ui/dropdown';
@@ -11,15 +6,12 @@ import type { DropdownOption } from '$lib/components/ui/dropdown';
 // The picker utils normalize provider ids via the providerCatalog slice —
 // provide a hydrated §5.38-shaped mock state instead of booting the full store.
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
-  const { MOCK_PROVIDER_CATALOG } = await import(
-    '../../../../test/fixtures/provider-catalog.fixture'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_PROVIDER_CATALOG } =
+    await import('../../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -27,7 +19,11 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({ providerCatalog }) });
 });
 
-import { findModelFallbackOption, isUserProviderSettled } from './model-picker-utils';
+import {
+  findModelFallbackOption,
+  isUserProviderSettled,
+  normalizeModelIdForMatch,
+} from './model-picker-utils';
 
 const sampleModel: AuggieModel = { value: 'auggie:sonnet4.6', label: 'Sonnet 4.6' };
 const sampleDropdownOption: DropdownOption = {
@@ -35,6 +31,17 @@ const sampleDropdownOption: DropdownOption = {
   label: 'Sonnet 4.6',
   description: 'A model',
 };
+
+describe('normalizeModelIdForMatch', () => {
+  it('matches a bare session model to its compound catalog id when the default is unresolved', () => {
+    expect(normalizeModelIdForMatch('gpt5.6-sol', 'auggie')).toBe('auggie:gpt5.6-sol');
+    expect(normalizeModelIdForMatch('auggie:gpt5.6-sol', 'auggie')).toBe('auggie:gpt5.6-sol');
+  });
+
+  it('preserves an explicit different provider', () => {
+    expect(normalizeModelIdForMatch('codex:gpt5.6-sol', 'auggie')).toBe('codex:gpt5.6-sol');
+  });
+});
 
 describe('isUserProviderSettled', () => {
   it('returns false while a disabled agent provider fetch is still pending', () => {

@@ -155,9 +155,9 @@ Available notes: ${JSON.stringify(notes)}
 User request: "${userPrompt}"
 
 RULES:
-1. Use ONLY type values: "single" (1 panel), "split-horizontal" (2 panels side by side), "split-vertical" (2 panels stacked), "three-column" (3 panels), "grid-2x2" (4 panels)
+1. Use ONLY type values: "single" (1 panel), "split-horizontal" (2 panels side by side), "three-column" (3 panels)
 2. panels array must be FLAT - each panel object has "tabs" array directly, NO nesting
-3. Number of panels must match the type (single=1, split=2, three-column=3, grid-2x2=4)
+3. Number of panels must match the type (single=1, split=2, three-column=3)
 4. Use actual agent IDs from the available agents list above
 
 Respond with ONLY:

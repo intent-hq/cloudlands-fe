@@ -6,14 +6,12 @@
    * the questions are dismissed completely without answering and won't come
    * back. Cancel / Escape / backdrop close without side effects.
    *
-   * Portaled to the document body (same pattern as ModelSwitchConfirmDialog)
-   * so the fixed-position overlay escapes the composer's overflow/stacking
-   * contexts.
+   * Uses the canonical dialog primitive for focus trapping, focus restoration,
+   * semantic overlay styling, Escape handling, and outside dismissal. Initial
+   * focus deliberately lands on the confirm action for keyboard efficiency.
    */
   import { Button } from '$lib/components/ui/button';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import Fa from 'svelte-fa';
-  import { faXmark, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import * as Dialog from '$lib/components/ui/dialog';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -24,73 +22,48 @@
 
   let { open = false, onConfirm, onCancel }: Props = $props();
 
-  let dialogRef: HTMLDivElement | null = $state(null);
+  let confirmButtonRef: HTMLButtonElement | null = $state(null);
+  let confirmHasFocus = $state(false);
 
-  // Focus dialog when it opens so Escape key works (same deferred-microtask
-  // pattern as ModelSwitchConfirmDialog — Portal relocation drops focus).
-  $effect(() => {
-    if (open && dialogRef) {
-      const el = dialogRef;
-      queueMicrotask(() => el.focus());
-    }
-  });
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) onCancel?.();
+  }
+
+  function handleOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    confirmButtonRef?.focus();
+  }
 </script>
 
-{#if open}
-  <Portal target="body" zIndex={100}>
-    <div
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      role="presentation"
-      onclick={() => onCancel?.()}
-    >
-      <div
-        bind:this={dialogRef}
-        class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-        onclick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dismiss-questions-dialog-title"
-        aria-describedby="dismiss-questions-dialog-description"
-        tabindex="-1"
-        onkeydown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') {
-            onCancel?.();
-          }
-        }}
-      >
-        <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="text-destructive-foreground">
-              <Fa icon={faExclamationTriangle} size="lg" />
-            </div>
-            <h2 id="dismiss-questions-dialog-title" class="text-lg font-semibold">
-              {m.chat_questionWizard_dismissDialog_title()}
-            </h2>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onclick={() => onCancel?.()}
-            aria-label={m.chat_questionWizard_dismissDialog_close_ariaLabel()}
-          >
-            <Fa icon={faXmark} />
-          </Button>
-        </div>
-
-        <div id="dismiss-questions-dialog-description" class="p-6 text-sm text-subtle">
-          <p>{m.chat_questionWizard_dismissDialog_description()}</p>
-        </div>
-
-        <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-          <Button variant="ghost" onclick={() => onCancel?.()}>
-            {m.chat_questionWizard_dismissDialog_cancel_label()}
-          </Button>
-          <Button variant="destructive" onclick={() => onConfirm?.()}>
-            {m.chat_questionWizard_dismissDialog_confirm_label()}
-          </Button>
-        </div>
-      </div>
+<Dialog.Root {open} onOpenChange={handleOpenChange}>
+  <Dialog.Content
+    class="max-w-sm gap-0 overflow-hidden p-0"
+    closeLabel={m.chat_questionWizard_dismissDialog_close_ariaLabel()}
+    onOpenAutoFocus={handleOpenAutoFocus}
+  >
+    <div class="p-5 pr-12">
+      <Dialog.Header class="gap-2 pr-0">
+        <Dialog.Title>{m.chat_questionWizard_dismissDialog_title()}</Dialog.Title>
+        <Dialog.Description class="leading-5">
+          {m.chat_questionWizard_dismissDialog_description()}
+        </Dialog.Description>
+      </Dialog.Header>
     </div>
-  </Portal>
-{/if}
+
+    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
+      <Button variant="ghost-light" onclick={() => onCancel?.()}>
+        {m.chat_questionWizard_dismissDialog_cancel_label()}
+      </Button>
+      <Button
+        variant="destructive"
+        bind:ref={confirmButtonRef}
+        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
+        onfocus={() => (confirmHasFocus = true)}
+        onblur={() => (confirmHasFocus = false)}
+        onclick={() => onConfirm?.()}
+      >
+        {m.chat_questionWizard_dismissDialog_confirm_label()}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
