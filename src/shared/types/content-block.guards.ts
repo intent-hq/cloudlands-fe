@@ -69,16 +69,18 @@ export function isAudioBlock(
 }
 
 /**
- * Check if a ContentBlock is a file block
+ * Check if a ContentBlock is a file block — either the legacy inline-data
+ * variant (`data` + `mimeType`) or an attachment-reference block carrying an
+ * `attachmentId` instead of bytes.
  */
 export function isFileBlock(
   block: ContentBlock,
-): block is ContentBlock & { data: string; mimeType: string; fileName: string } {
+): block is ContentBlock & { fileName: string } {
   return (
     block.type === 'file' &&
-    typeof block.data === 'string' &&
-    typeof block.mimeType === 'string' &&
-    typeof block.fileName === 'string'
+    typeof block.fileName === 'string' &&
+    ((typeof block.data === 'string' && typeof block.mimeType === 'string') ||
+      typeof block.attachmentId === 'string')
   );
 }
 

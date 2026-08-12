@@ -22,6 +22,13 @@ export function buildRecordedAttempt(
     noteIds?: string[];
     model?: string;
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+    fileBlocks?: Array<{
+      type: 'file';
+      attachmentId: string;
+      fileName: string;
+      mimeType?: string;
+      size?: number;
+    }>;
     messageMetadata?: Record<string, unknown>;
   },
 ): LastAttemptedMessage {
@@ -29,6 +36,7 @@ export function buildRecordedAttempt(
     ...(options.noteIds !== undefined ? { noteIds: options.noteIds } : {}),
     ...(options.model !== undefined ? { model: options.model } : {}),
     ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
+    ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
     ...(options.messageMetadata !== undefined
       ? { messageMetadata: options.messageMetadata }
       : {}),

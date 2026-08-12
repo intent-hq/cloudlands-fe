@@ -428,6 +428,20 @@ export interface ImageBlock {
 }
 
 /**
+ * Attachment-reference file block attached to a message (PROTOCOL §5.5:
+ * `{ type: "file", attachmentId, fileName, mimeType?, size? }`). Carries the
+ * attachment-registry UUID plus chip-rendering metadata — never bytes or
+ * paths. Shared shape for the optional `fileBlocks` param on `agents.queue`.
+ */
+export interface FileBlock {
+  type: "file";
+  attachmentId: string;
+  fileName: string;
+  mimeType?: string;
+  size?: number;
+}
+
+/**
  * `agent.delete` outcome (§5.5). When the request carried `undoDelayMs > 0`
  * the daemon registers an in-memory pending deletion (protocol 6.7+ delete
  * grace window) and returns `{ success: true, scheduled: true, deleteAt }` —
@@ -508,11 +522,13 @@ export interface AgentsClient {
     messageId: string;
     content: string;
     model?: string;
+    imageBlocks?: ImageBlock[];
+    fileBlocks?: FileBlock[];
   }): Promise<MutationResult>;
   /**
    * Queue a message behind the agent's in-flight turn (`agent.queueMessage`,
-   * §5.5). Optional `imageBlocks` are only forwarded when supplied so queued
-   * attachments survive queue-on-send. The daemon returns
+   * §5.5). Optional `imageBlocks` / `fileBlocks` are only forwarded when
+   * supplied so queued attachments survive queue-on-send. The daemon returns
    * `{ success, queuedMessage, turnId }`, surfaced as `queuedMessage` /
    * `turnId` on the MutationResult (the entry's turn-correlation id,
    * monorepo#1057 — falls back to `queuedMessage.turnId` when the top-level
@@ -524,6 +540,7 @@ export interface AgentsClient {
     message: string,
     options?: {
       imageBlocks?: ImageBlock[];
+      fileBlocks?: FileBlock[];
     },
   ): Promise<MutationResult>;
   /**
@@ -1897,8 +1914,10 @@ export interface EventsClient {
 
 /**
  * Serialized draft attachment (opaque to the daemon; stored verbatim per
- * PROTOCOL §5.16 `drafts.*`). FE-authored projection of an image `ContextItem`
- * — the non-serializable `File` handle is dropped.
+ * PROTOCOL §5.16 `drafts.*`). FE-authored projection of an image or
+ * placed-attachment `ContextItem` — the non-serializable `File` handle is
+ * dropped. Image items persist their base64 bytes; placed attachments
+ * persist only the registry UUID + metadata.
  */
 export interface DraftAttachment {
   id: string;
@@ -1908,6 +1927,21 @@ export interface DraftAttachment {
   path?: string;
   imageData?: string;
   imageMimeType?: string;
+  attachmentId?: string;
+  attachmentMimeType?: string;
+  attachmentSize?: number;
+  /** Absolute host path of a staged (not-yet-placed) non-image file. The
+   * draft persists the path only — no bytes — and placement copies from it
+   * at redemption; a path gone stale by then fails into a failed pill. */
+  sourcePath?: string;
+  /**
+   * Only ever `'failed'`: a chat-input item persisted while its placement
+   * was in flight or failed. The restore renders it as a blocking failed
+   * pill whose retry re-places from `sourcePath` — never a silent drop.
+   * Absent on pre-workspace staged items (placed at create redemption)
+   * and on placed/image attachments.
+   */
+  placementStatus?: 'failed';
 }
 
 /** Drafts client for persistent chat input drafts (PROTOCOL §5.16). */

@@ -31,6 +31,19 @@ export interface AgentSessionSendMessageOptions {
   model?: string;
   agentId?: string;
   contextReferences?: AgentSessionContextReference[];
+  /** Image content blocks riding the message (PROTOCOL §5.5) — plain base64. */
+  imageBlocks?: Array<{ type: "image"; data: string; mimeType: string }>;
+  /**
+   * Attachment-reference file blocks riding the message (PROTOCOL §5.5) —
+   * registry UUID + metadata only, never bytes.
+   */
+  fileBlocks?: Array<{
+    type: "file";
+    attachmentId: string;
+    fileName: string;
+    mimeType?: string;
+    size?: number;
+  }>;
   /**
    * Pre-generated logical app message ID for the user message. When the send
    * path stages an optimistic user message, the canonical user message reuses

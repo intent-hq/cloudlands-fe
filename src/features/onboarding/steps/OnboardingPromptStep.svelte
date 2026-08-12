@@ -23,6 +23,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
+  import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
+  import {
+  hasBlockingAttachments,
+  type ContextItem,
+} from '$lib/components/chat/input/context-api';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -35,6 +40,7 @@
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
+  import { formatFileSize } from '$lib/utils/file-utils';
 
   const COORDINATOR_SPECIALIST_ID = 'spec-writer';
 
@@ -86,6 +92,14 @@
     visibleSuggestions: string[];
     focusedSuggestionIndex: number;
 
+    /**
+     * Staged attachment context items (non-image files, path-only). Owned by
+     * the parent so the submit path can place them into the created
+     * workspace (`file.placeAttachment`, PROTOCOL §5.9) and reference them
+     * from the first message.
+     */
+    stagedContextItems?: ContextItem[];
+
     // Handlers
     onSubmit: () => void;
     onEnhancePrompt: () => void;
@@ -127,6 +141,7 @@
     onModelChange = () => {},
     visibleSuggestions,
     focusedSuggestionIndex = $bindable(),
+    stagedContextItems = $bindable([]),
     onSubmit,
     onEnhancePrompt,
     enhancePromptAvailable = true,
@@ -217,23 +232,53 @@
     target.value = '';
   }
 
-  /** Process image files from file input or drag-and-drop */
+  /** Process files from file input or drag-and-drop: images inline, other
+   * files staged as path-only context items placed at workspace.create
+   * (`file.placeAttachment`, PROTOCOL §5.9) — never inlined, never dropped. */
   async function processImageFiles(files: File[]) {
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (images only — they cross the wire as base64)
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(m.onboarding_promptStep_fileTooLarge_error({ name: file.name }));
-        continue;
-      }
       if (file.type.startsWith('image/')) {
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(m.onboarding_promptStep_fileTooLarge_error({ name: file.name }));
+          continue;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           const dataUrl = reader.result as string;
           onboardingRichTextarea?.insertImage(dataUrl, file.name);
         };
         reader.readAsDataURL(file);
+      } else {
+        // Stage path-only; no resolvable path (e.g. clipboard bytes) is an
+        // immediate failed pill that blocks create until removed.
+        const sourcePath =
+          (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
+            .electronAPI?.getPathForFile?.(file) ?? '';
+        const fileName = file.name || `pasted-file-${Date.now()}`;
+        stagedContextItems = [
+          ...stagedContextItems,
+          {
+            id: `staged-file-${Date.now()}-${stagedContextItems.length}`,
+            type: 'file',
+            label: fileName,
+            description: `${file.type || 'file'} • ${formatFileSize(file.size)}`,
+            path: fileName,
+            attachmentMimeType: file.type || undefined,
+            attachmentSize: file.size,
+            sourcePath,
+            placementStatus: sourcePath ? undefined : 'failed',
+          },
+        ];
+        if (!sourcePath) {
+          toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: fileName }));
+        }
       }
     }
+  }
+
+  function removeStagedItem(id: string) {
+    stagedContextItems = stagedContextItems.filter((item) => item.id !== id);
   }
 
   /** Handle drag enter - track drag state with counter for nested elements */
@@ -458,6 +503,24 @@
           {/if}
         </div>
 
+        <!-- Staged non-image attachments: chips with placement state (failed
+             pills block create until removed) -->
+        {#if stagedContextItems.length > 0}
+          <div class="px-2.5 pt-1 pb-1 flex flex-wrap gap-2 items-center">
+            {#each stagedContextItems as item (item.id)}
+              <AttachmentPreview
+                id={item.id}
+                name={item.label}
+                type={item.attachmentMimeType || ''}
+                size={item.attachmentSize}
+                onRemove={removeStagedItem}
+                variant="chip"
+                placementStatus={item.placementStatus}
+              />
+            {/each}
+          </div>
+        {/if}
+
         <div
           class="flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative"
         >
@@ -675,13 +738,13 @@
       />
     {/if}
 
-    <!-- Create button -->
+    <!-- Create button (blocked while any staged pill is placing/failed) -->
     <div class="flex items-center gap-3 pt-2">
       <Button
         class="group/button"
         size="xl"
         variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
-        disabled={!onboardingInputValue.trim()}
+        disabled={!onboardingInputValue.trim() || hasBlockingAttachments(stagedContextItems)}
         onclick={onSubmit}
       >
         {m.onboarding_promptStep_createWorkspace_label()}

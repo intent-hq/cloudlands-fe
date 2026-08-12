@@ -109,6 +109,10 @@ export interface ContentBlock {
   transcript?: string;
   /** File name (for file type) */
   fileName?: string;
+  /** Attachment-registry UUID for attachment-reference file blocks (no bytes) */
+  attachmentId?: string;
+  /** Byte length for attachment-reference file blocks */
+  size?: number;
 }
 
 /**

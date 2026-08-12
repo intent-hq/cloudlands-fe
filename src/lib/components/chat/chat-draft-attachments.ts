@@ -1,38 +1,68 @@
 /**
- * Serialize/deserialize chat input image attachments for draft persistence
+ * Serialize/deserialize chat input attachments for draft persistence
  * (PROTOCOL §5.16 `drafts.set`/`drafts.get` optional `attachments` array).
  *
  * The daemon stores attachments verbatim as an opaque JSON array, so the FE
- * owns the shape: a projection of image `ContextItem`s with the
- * non-serializable `File` handle dropped. Thumbnails rehydrate from
- * `imageData`/`imageMimeType` alone.
+ * owns the shape: a projection of image, placed-attachment, and staged
+ * (path-only, pre-placement) `ContextItem`s with the non-serializable `File`
+ * handle dropped. Image thumbnails rehydrate from `imageData`/`imageMimeType`;
+ * placed attachments persist only the registry `attachmentId` + metadata;
+ * staged items persist only their `sourcePath` + metadata (no bytes ever —
+ * placement copies from the path at redemption, and a path gone stale by
+ * then fails the placement into a visible failed pill).
  */
 import type { DraftAttachment } from '$lib/client/app-client';
 import type { ContextItem } from './input/context-api';
 
 /**
- * Project image context items into wire-safe draft attachments. Only items
- * carrying `imageData` + `imageMimeType` are persisted; the `File` handle and
- * other non-serializable fields are dropped.
+ * Project attachment context items into wire-safe draft attachments. Items
+ * carrying `imageData` + `imageMimeType` (images), an `attachmentId` (placed
+ * attachments), or a `sourcePath` (staged path-only items awaiting placement)
+ * are persisted; the `File` handle and other non-serializable fields are
+ * dropped. A chat-input item whose placement was still in flight or failed
+ * persists `placementStatus: 'failed'` (an in-flight placement cannot survive
+ * a reload) so the restore renders a blocking, retryable failed pill instead
+ * of silently dropping the attachment from the send. Pre-workspace staged
+ * items (modal/onboarding) carry no `placementStatus` and round-trip
+ * status-free — they are placed at workspace.create redemption.
  */
 export function serializeDraftAttachments(items: ContextItem[]): DraftAttachment[] {
   return items
-    .filter((item) => item.imageData && item.imageMimeType)
+    .filter(
+      (item) => (item.imageData && item.imageMimeType) || item.attachmentId || item.sourcePath,
+    )
     .map((item) => ({
       id: item.id,
       type: item.type,
       label: item.label,
       ...(item.description !== undefined ? { description: item.description } : {}),
       ...(item.path !== undefined ? { path: item.path } : {}),
-      imageData: item.imageData!,
-      imageMimeType: item.imageMimeType!,
+      ...(item.imageData !== undefined ? { imageData: item.imageData } : {}),
+      ...(item.imageMimeType !== undefined ? { imageMimeType: item.imageMimeType } : {}),
+      ...(item.attachmentId !== undefined ? { attachmentId: item.attachmentId } : {}),
+      ...(item.attachmentMimeType !== undefined
+        ? { attachmentMimeType: item.attachmentMimeType }
+        : {}),
+      ...(item.attachmentSize !== undefined ? { attachmentSize: item.attachmentSize } : {}),
+      ...(item.sourcePath !== undefined && !item.attachmentId
+        ? { sourcePath: item.sourcePath }
+        : {}),
+      ...((item.placementStatus === 'placing' || item.placementStatus === 'failed') &&
+      !item.attachmentId
+        ? { placementStatus: 'failed' as const }
+        : {}),
     }));
 }
 
 /**
  * Rehydrate context items from a draft's persisted attachments. No `File`
- * handle exists after a reload; `SimpleRichInput` renders thumbnails from
- * `imageData`/`imageMimeType` directly.
+ * handle exists after a reload; `SimpleRichInput` renders image thumbnails
+ * from `imageData`/`imageMimeType`, placed-attachment pills from the registry
+ * metadata, and staged path-only items rehydrate with their `sourcePath` for
+ * placement at redemption (a stale path fails there, into a failed pill).
+ * A persisted `placementStatus: 'failed'` restores as a failed pill: it
+ * blocks send and its retry re-attempts placement from the `sourcePath` —
+ * never a silent drop.
  */
 export function deserializeDraftAttachments(attachments: DraftAttachment[]): ContextItem[] {
   return attachments.map((a) => ({
@@ -43,5 +73,12 @@ export function deserializeDraftAttachments(attachments: DraftAttachment[]): Con
     ...(a.path !== undefined ? { path: a.path } : {}),
     ...(a.imageData !== undefined ? { imageData: a.imageData } : {}),
     ...(a.imageMimeType !== undefined ? { imageMimeType: a.imageMimeType } : {}),
+    ...(a.attachmentId !== undefined ? { attachmentId: a.attachmentId } : {}),
+    ...(a.attachmentMimeType !== undefined ? { attachmentMimeType: a.attachmentMimeType } : {}),
+    ...(a.attachmentSize !== undefined ? { attachmentSize: a.attachmentSize } : {}),
+    ...(a.sourcePath !== undefined ? { sourcePath: a.sourcePath } : {}),
+    ...(a.placementStatus === 'failed' && a.attachmentId === undefined
+      ? { placementStatus: 'failed' as const }
+      : {}),
   }));
 }

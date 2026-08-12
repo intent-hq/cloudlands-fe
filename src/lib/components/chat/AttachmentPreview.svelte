@@ -17,6 +17,9 @@
   faImage,
   faFileCode,
   faFileAlt,
+  faCircleExclamation,
+  faRotateRight,
+  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
   import Button from '$lib/components/ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -35,6 +38,15 @@
     class?: string;
     /** Display mode - 'chip' for small inline preview, 'thumbnail' for larger Slack-style preview */
     variant?: 'chip' | 'thumbnail';
+    /**
+     * Placement lifecycle for placed workspace attachments (shared across
+     * chat input, new-workspace modal, and onboarding): 'placing' shows a
+     * spinner, 'failed' shows an error state with a retry affordance.
+     * Absent/'placed' renders the normal chip.
+     */
+    placementStatus?: 'placing' | 'failed' | 'placed';
+    /** Retry a failed placement. Rendered only when placementStatus is 'failed'. */
+    onRetry?: (id: string) => void;
   }
 
   let {
@@ -49,6 +61,8 @@
     onRemove,
     class: className = '',
     variant = 'chip',
+    placementStatus = undefined,
+    onRetry,
   }: Props = $props();
 
   // Generate thumbnail URL for images
@@ -87,6 +101,13 @@
   // Format file size
 
   const isImage = $derived(type.startsWith('image/') || !!imageMimeType?.startsWith('image/'));
+
+  // Chip tooltip: only failed placements explain themselves on hover.
+  const chipTitle = $derived(
+    placementStatus === 'failed'
+      ? m.chat_attachmentPreview_placementFailed_tooltip({ name })
+      : undefined,
+  );
 
   // Lightbox state
   let lightboxOpen = $state(false);
@@ -157,11 +178,22 @@
 {:else}
   <!-- Chip variant: small inline preview for all files -->
   <div
-    class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/70 text-subtle rounded text-xs whitespace-nowrap group shrink-0 {className}"
+    class="flex items-center gap-1.5 px-2 py-0.5 rounded text-xs whitespace-nowrap group shrink-0 {placementStatus ===
+    'failed'
+      ? 'bg-destructive/10 text-destructive-foreground border border-destructive/40'
+      : 'bg-muted/70 text-subtle'} {className}"
     in:scale={{ duration: 200, start: 0.9, easing: cubicOut }}
     out:fade={{ duration: 150 }}
+    data-placement-status={placementStatus}
+    title={chipTitle}
   >
-    {#if isImage && thumbnailUrl}
+    {#if placementStatus === 'placing'}
+      <!-- Placement in flight: spinner replaces the file icon -->
+      <Fa icon={faSpinner} size="15" class="opacity-50 shrink-0 animate-spin" />
+    {:else if placementStatus === 'failed'}
+      <!-- Placement failed: error icon -->
+      <Fa icon={faCircleExclamation} size="15" class="shrink-0" />
+    {:else if isImage && thumbnailUrl}
       <!-- Image thumbnail -->
       <div class="w-4 h-4 rounded overflow-hidden shrink-0">
         <img src={thumbnailUrl} alt={name} class="w-full h-full object-cover" />
@@ -173,11 +205,29 @@
 
     <span class="font-medium truncate max-w-30">{name}</span>
 
+    {#if placementStatus === 'failed' && onRetry}
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        class="shrink-0 -my-1"
+        onclick={(e: MouseEvent) => {
+          e.stopPropagation();
+          onRetry(id);
+        }}
+        aria-label={m.chat_attachmentPreview_retryPlacement_ariaLabel({ name })}
+        data-testid="attachment-retry"
+      >
+        <Fa icon={faRotateRight} size="10" />
+      </Button>
+    {/if}
+
     {#if onRemove}
       <Button
         variant="ghost-light"
         size="icon-xs"
-        class="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 -my-1 -mr-1"
+        class="shrink-0 {placementStatus === 'failed'
+          ? ''
+          : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'} transition-opacity duration-150 -my-1 -mr-1"
         onclick={() => onRemove(id)}
         aria-label={m.chat_attachmentPreview_removeAttachment_ariaLabel()}
       >
