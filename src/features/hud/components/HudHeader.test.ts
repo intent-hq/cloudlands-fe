@@ -22,6 +22,13 @@ import { WorkspaceStatus } from '$shared/types';
 
 import HudHeader from './HudHeader.svelte';
 import { HUD_SOUND_ENABLED_STORAGE_KEY, setHudSoundEnabled } from '../sound/hud-sound-state';
+import { playHudSoundCue } from '../sound/hud-sound-player';
+
+// The toggle plays a confirmation cue in-gesture on enable (audio unlock);
+// mock the player so the test asserts the call without real Audio.
+vi.mock('../sound/hud-sound-player', () => ({
+  playHudSoundCue: vi.fn().mockResolvedValue(undefined),
+}));
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 
@@ -268,6 +275,7 @@ describe('HudHeader sound-effects toggle', () => {
   beforeEach(() => {
     setHudSoundEnabled(false);
     vi.mocked(window.localStorage.setItem).mockClear();
+    vi.mocked(playHudSoundCue).mockClear();
   });
 
   afterEach(() => {
@@ -316,6 +324,18 @@ describe('HudHeader sound-effects toggle', () => {
       HUD_SOUND_ENABLED_STORAGE_KEY,
       'false',
     );
+  });
+
+  it('plays the confirmation cue only when toggling ON (in-gesture audio unlock)', async () => {
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+    const soundBtn = screen.getByTestId('hud-header-sound-btn');
+
+    await fireEvent.click(soundBtn); // OFF -> ON
+    expect(playHudSoundCue).toHaveBeenCalledTimes(1);
+    expect(playHudSoundCue).toHaveBeenCalledWith('status-update');
+
+    await fireEvent.click(soundBtn); // ON -> OFF: silent
+    expect(playHudSoundCue).toHaveBeenCalledTimes(1);
   });
 
   it('reflects a pre-existing ON state on mount (persisted-state restore path)', () => {

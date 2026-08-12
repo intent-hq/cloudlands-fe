@@ -1,11 +1,14 @@
 /**
- * HUD sound service — best-effort playback of HUD sound cues, gated by the
+ * HUD sound player — best-effort playback of HUD sound cues, gated by the
  * localStorage enable state (default OFF). Follows the autoplay-safe pattern
  * of `src/lib/utils/notification-sound.ts`: play attempts silently fail under
- * browser autoplay policy (the speaker-toggle click is the unlocking user
- * gesture). Assets resolve through a lazy Vite URL glob so a missing file
- * (e.g. assets still being generated in dev) is a silent no-op, never an
- * import error.
+ * browser autoplay policy. The speaker-toggle click unlocks audio by playing
+ * a quiet confirmation cue inside the click gesture (see HudHeader.svelte).
+ * Assets resolve through a lazy Vite URL glob so a missing file (e.g. assets
+ * still being generated in dev) is a silent no-op, never an import error.
+ * The module-level cache (max one element per cue) deliberately outlives the
+ * overlay — there is no dispose path, matching the notification-sound.ts
+ * singleton pattern.
  */
 import type { HudTakeoverQueueState } from '../takeover/hud-takeover-queue';
 import {
@@ -26,12 +29,16 @@ const cueUrlLoaders = import.meta.glob('../../../assets/sounds/hud/*.mp3', {
   import: 'default',
 }) as CueUrlLoaders;
 
-const audioCache = new Map<HudSoundCue, HTMLAudioElement>();
+// Promises (not elements) are cached, and set synchronously before any await,
+// so two rapid plays of the same un-cached cue share one Audio element instead
+// of racing to construct two.
+const audioCache = new Map<HudSoundCue, Promise<HTMLAudioElement>>();
 
 /**
  * Play one cue at its pack volume. No-ops when HUD sound is disabled or the
  * asset is absent from the glob; playback failures (autoplay policy, decode)
- * never propagate. `loaders` is a test seam defaulting to the real glob.
+ * never propagate, but evict the cue from the cache so the next play retries
+ * the load. `loaders` is a test seam defaulting to the real glob.
  */
 export async function playHudSoundCue(
   cue: HudSoundCue,
@@ -39,21 +46,28 @@ export async function playHudSoundCue(
 ): Promise<void> {
   if (!isHudSoundEnabled()) return;
   try {
-    let audio = audioCache.get(cue);
-    if (!audio) {
+    let audioPromise = audioCache.get(cue);
+    if (!audioPromise) {
       const loader = loaders[`${HUD_SOUND_ASSET_DIR}/${hudSoundCueFile(cue)}`];
       if (!loader) return;
-      const url = await loader();
-      audio = new Audio(url);
-      audio.preload = 'auto';
-      audioCache.set(cue, audio);
+      audioPromise = loader().then((url) => {
+        const audio = new Audio(url);
+        audio.preload = 'auto';
+        return audio;
+      });
+      audioCache.set(cue, audioPromise);
     }
+    const audio = await audioPromise;
+    // Re-check: the user may have disabled sound while the asset loaded.
+    if (!isHudSoundEnabled()) return;
     audio.volume = HUD_SOUND_CUE_VOLUMES[cue];
     audio.currentTime = 0;
     await audio.play();
   } catch {
     // Best-effort sound: autoplay restrictions and decode failures are
     // expected (notification-sound.ts convention) — never disrupt the HUD.
+    // Evict so a corrupt/rejected element doesn't fail silently forever.
+    audioCache.delete(cue);
   }
 }
 

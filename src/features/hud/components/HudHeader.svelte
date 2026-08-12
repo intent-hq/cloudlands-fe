@@ -30,6 +30,7 @@
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
   import { formatHudClock } from '../utils/hud-format';
   import { hudSoundEnabled, toggleHudSoundEnabled } from '../sound/hud-sound-state';
+  import { playHudSoundCue } from '../sound/hud-sound-player';
   import HudHeaderFilters from './HudHeaderFilters.svelte';
 
   let { nowMs, controls }: { nowMs: number; controls?: Snippet } = $props();
@@ -78,16 +79,19 @@
   /**
    * HUD sound-effects toggle — the shared localStorage-backed enable state
    * (default OFF, features/hud/sound/hud-sound-state.ts) the HUD sound
-   * service gates on. Toggling synchronously inside the click handler keeps
-   * the enable within the user gesture, so the service can unlock audio
-   * playback.
+   * player gates on. Toggling ON also plays a quiet confirmation cue: the
+   * real `Audio.play()` inside this click gesture unlocks audio under the
+   * browser autoplay policy (later queue-driven cues run outside a gesture)
+   * and doubles as audible feedback that sound is now on.
    */
   const soundLabel = $derived(
     $hudSoundEnabled ? m.hud_header_soundOn_label() : m.hud_header_soundOff_label(),
   );
 
   function toggleSound() {
-    toggleHudSoundEnabled();
+    if (toggleHudSoundEnabled()) {
+      void playHudSoundCue('status-update');
+    }
   }
 </script>
 

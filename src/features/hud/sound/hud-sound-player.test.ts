@@ -94,6 +94,45 @@ describe('hud-sound-player', () => {
     await expect(playHudSoundCue('task-complete', loaders)).resolves.toBeUndefined();
   });
 
+  it('shares one Audio element across rapid concurrent plays of an un-cached cue', async () => {
+    setHudSoundEnabled(true);
+    await Promise.all([
+      playHudSoundCue('task-complete', loaders),
+      playHudSoundCue('task-complete', loaders),
+    ]);
+    expect(audioInstances).toHaveLength(1);
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts a failing cue from the cache so the next play retries', async () => {
+    setHudSoundEnabled(true);
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances).toHaveLength(1);
+    audioInstances[0].play.mockRejectedValue(new DOMException('decode', 'NotSupportedError'));
+    await playHudSoundCue('task-complete', loaders);
+    // Evicted: a fresh element is constructed and plays fine.
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances).toHaveLength(2);
+    expect(audioInstances[1].play).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not play when sound is disabled while the asset loads', async () => {
+    setHudSoundEnabled(true);
+    let resolveUrl!: (url: string) => void;
+    const slowLoaders = {
+      '../../../assets/sounds/hud/task-complete.mp3': () =>
+        new Promise<string>((resolve) => {
+          resolveUrl = resolve;
+        }),
+    };
+    const playPromise = playHudSoundCue('task-complete', slowLoaders);
+    setHudSoundEnabled(false);
+    resolveUrl('blob:task-complete');
+    await playPromise;
+    expect(audioInstances).toHaveLength(1);
+    expect(audioInstances[0].play).not.toHaveBeenCalled();
+  });
+
   it('playTakeoverTransitionCues plays every mapped cue for the transition', async () => {
     setHudSoundEnabled(true);
     const active = {
