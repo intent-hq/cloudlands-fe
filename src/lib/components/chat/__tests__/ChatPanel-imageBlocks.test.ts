@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
 /**
- * Unit tests for ChatPanel imageBlocks transformation helper (STAB-7 fix).
+ * Unit tests for ChatPanel attachment-block transformation helpers (STAB-7 fix
+ * + unified attachment flow).
  *
- * Verifies that context items with imageData/imageMimeType → imageBlocks mapping works correctly.
- * This tests the transformation step that handleSend/handleForceSubmit use.
+ * Verifies the context-item → imageBlocks / fileBlocks mapping that
+ * handleSend/handleForceSubmit use (mirrors extractAttachmentBlocks).
  */
 
 // Helper function extracted from ChatPanel transformation logic
@@ -20,6 +21,20 @@ function extractImageBlocks(contextItems: any[]): any[] {
       type: 'image' as const,
       data: item.imageData,
       mimeType: item.imageMimeType,
+    }));
+}
+
+// Mirrors the fileBlocks arm of ChatPanel's extractAttachmentBlocks: placed
+// attachments (attachmentId present) become attachment-reference blocks.
+function extractFileBlocks(contextItems: any[]): any[] {
+  return contextItems
+    .filter((item) => item.attachmentId)
+    .map((item) => ({
+      type: 'file' as const,
+      attachmentId: item.attachmentId,
+      fileName: item.label,
+      ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
+      ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
     }));
 }
 
@@ -124,5 +139,67 @@ describe('ChatPanel imageBlocks transformation helper (STAB-7)', () => {
     expect(imageBlocks).toHaveLength(2);
     expect(imageBlocks[0]).toEqual({ type: 'image', data: 'legacydata', mimeType: 'image/png' });
     expect(imageBlocks[1]).toEqual({ type: 'image', data: 'newdata', mimeType: 'image/jpeg' });
+  });
+});
+
+describe('ChatPanel fileBlocks transformation helper (unified attachment flow)', () => {
+  it('transforms placed-attachment context items into attachment-reference blocks', () => {
+    const contextItems = [
+      {
+        id: 'attachment-att-uuid-1',
+        type: 'file' as const,
+        label: 'dump.har',
+        path: '.intent/attachments/dump.har',
+        attachmentId: 'att-uuid-1',
+        attachmentMimeType: 'application/json',
+        attachmentSize: 12_582_912,
+      },
+      { id: 'ctx-1', type: 'file' as const, label: 'README.md' },
+    ];
+
+    const fileBlocks = extractFileBlocks(contextItems);
+
+    expect(fileBlocks).toHaveLength(1);
+    expect(fileBlocks[0]).toEqual({
+      type: 'file',
+      attachmentId: 'att-uuid-1',
+      fileName: 'dump.har',
+      mimeType: 'application/json',
+      size: 12_582_912,
+    });
+  });
+
+  it('omits optional metadata fields when absent and never carries bytes or paths', () => {
+    const contextItems = [
+      {
+        id: 'attachment-att-uuid-2',
+        type: 'file' as const,
+        label: 'notes.txt',
+        attachmentId: 'att-uuid-2',
+      },
+    ];
+
+    const fileBlocks = extractFileBlocks(contextItems);
+
+    expect(fileBlocks).toEqual([
+      { type: 'file', attachmentId: 'att-uuid-2', fileName: 'notes.txt' },
+    ]);
+    expect('data' in fileBlocks[0]).toBe(false);
+    expect('path' in fileBlocks[0]).toBe(false);
+  });
+
+  it('does not treat image context items as file blocks', () => {
+    const contextItems = [
+      {
+        id: 'file-upload-1',
+        type: 'file' as const,
+        label: 'photo.jpg',
+        imageData: 'base64data',
+        imageMimeType: 'image/jpeg',
+      },
+    ];
+
+    expect(extractFileBlocks(contextItems)).toEqual([]);
+    expect(extractImageBlocks(contextItems)).toHaveLength(1);
   });
 });

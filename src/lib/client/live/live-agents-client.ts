@@ -17,6 +17,7 @@ import type {
   AgentCreateRequest,
   AgentDeleteResult,
   AgentsClient,
+  FileBlock,
   ImageBlock,
   MutationResult,
   PermissionOutcome,
@@ -207,14 +208,18 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string;
     content: string;
     model?: string;
+    imageBlocks?: ImageBlock[];
+    fileBlocks?: FileBlock[];
   }): Promise<MutationResult> {
     // `agent.editAndRegenerate` (§5.5 catalog-parity extension) edits a past
     // user message and regenerates from that point. The daemon truncates the
     // transcript to just before the edited message and emits `agent:updated`
     // with `{ truncatedCount, remainingCount }`; the fresh turn then follows
-    // the normal `agent:message` / `agent:stream:*` lifecycle. `model` is only
-    // forwarded when the caller supplied it so the daemon sees an omitted
-    // param rather than an explicit null it would reject.
+    // the normal `agent:message` / `agent:stream:*` lifecycle. `model`,
+    // `imageBlocks`, and `fileBlocks` are only forwarded when the caller
+    // supplied them so the daemon sees an omitted param rather than an
+    // explicit null it would reject — attachment blocks ride the regenerated
+    // message exactly like `agent.sendMessage` (§5.5).
     const rpcParams: Record<string, unknown> = {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
@@ -222,6 +227,8 @@ export class LiveAgentsClient implements AgentsClient {
       content: params.content,
     };
     if (params.model !== undefined) rpcParams.model = params.model;
+    if (params.imageBlocks !== undefined) rpcParams.imageBlocks = params.imageBlocks;
+    if (params.fileBlocks !== undefined) rpcParams.fileBlocks = params.fileBlocks;
     return runMutation("agent.editAndRegenerate", rpcParams);
   }
   async queue(
@@ -229,6 +236,7 @@ export class LiveAgentsClient implements AgentsClient {
     message: string,
     options?: {
       imageBlocks?: ImageBlock[];
+      fileBlocks?: FileBlock[];
     },
   ): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage, turnId }`
@@ -236,11 +244,12 @@ export class LiveAgentsClient implements AgentsClient {
     // render the queue position / id without an extra `agent.getQueue`
     // round-trip, plus the entry's turn-correlation id (monorepo#1057 —
     // top-level `turnId` preferred, `queuedMessage.turnId` as the fallback).
-    // Optional `imageBlocks` only ride along when supplied so the daemon sees
-    // an omitted param otherwise.
+    // Optional `imageBlocks` / `fileBlocks` only ride along when supplied so
+    // the daemon sees an omitted param otherwise.
     try {
       const params: Record<string, unknown> = { agentId, content: message };
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
+      if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       const result = await backendRequest<
         { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
       >("agent.queueMessage", params);

@@ -103,7 +103,9 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
 
-    await waitFor(() => expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined));
+    await waitFor(() =>
+      expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined, undefined),
+    );
     // Confirming closes both the dialog and edit mode (the edit input exits
     // via a slide transition, so wait for its removal).
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -163,6 +165,63 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onEditSubmit).not.toHaveBeenCalled();
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('original text');
+  });
+
+  it('confirm threads attachment blocks (image + attachment-reference file) through onEditSubmit', async () => {
+    // Message carrying both an image block and an attachment-reference file
+    // block (PROTOCOL §5.5/§6.12): the edit restores them as context items
+    // and confirming must rebuild + forward BOTH block kinds — attachments
+    // survive edit/regenerate rather than being dropped to text+model.
+    const message: AgentMessage = {
+      id: 'msg-blocks',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'original text' },
+        { type: 'image', data: 'aW1n', mimeType: 'image/png' },
+        {
+          type: 'file',
+          attachmentId: 'att-uuid-9',
+          fileName: 'report.pdf',
+          mimeType: 'application/pdf',
+          size: 4096,
+        },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message, onEditSubmit } });
+
+    await fireEvent.click(screen.getByText('original text'));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() =>
+      expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined, {
+        imageBlocks: [{ type: 'image', data: 'aW1n', mimeType: 'image/png' }],
+        fileBlocks: [
+          {
+            type: 'file',
+            attachmentId: 'att-uuid-9',
+            fileName: 'report.pdf',
+            mimeType: 'application/pdf',
+            size: 4096,
+          },
+        ],
+      }),
+    );
+  });
+
+  it('confirm passes no blocks argument for a plain text message', async () => {
+    const onEditSubmit = vi.fn();
+    await renderAndSave(onEditSubmit);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() =>
+      expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined, undefined),
+    );
   });
 });
 

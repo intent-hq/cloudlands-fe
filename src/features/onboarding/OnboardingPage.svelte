@@ -72,8 +72,18 @@
     parseInlineImages,
     extractLinearIssue,
     extractSentryIssue,
+    type ContextReference,
   } from '$features/onboarding/utils/parse-context-references';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+  hasBlockingAttachments,
+  type ContextItem,
+} from '$lib/components/chat/input/context-api';
+  import {
+  hasStagedFileItems,
+  redeemStagedAttachments,
+} from '$lib/components/workspace/initializer/staged-attachments';
+  import { backendRequest } from '$lib/client/live/backend-transport';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -298,6 +308,20 @@
   let onboardingInputValue = $state(getInitialOnboardingPrompt());
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
+  // Non-image files staged path-only in the prompt step; placed into the
+  // workspace at create (`file.placeAttachment`, PROTOCOL §5.9) and
+  // referenced from the first message via attachment-reference blocks.
+  let onboardingStagedItems = $state<ContextItem[]>([]);
+  // Set when the workspace was created but staged-attachment placement (or
+  // the held first-message send) failed: submit resumes this flow instead of
+  // creating a second workspace. The created workspace is never rolled back.
+  let onboardingPendingSend = $state<{
+    workspaceId: string;
+    agentId?: string;
+    prompt: string;
+    imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }>;
+    contextReferences: ContextReference[];
+  } | null>(null);
 
   // §5.31 gate — enhance is auggie-only; the daemon derives the effective
   // provider from settings, so the FE mirror gates on the same derivation.
@@ -788,9 +812,73 @@
     }
   }
 
+  /**
+   * Resume a create whose staged-attachment placement or first-message send
+   * failed: the workspace already exists, so re-place the remaining staged
+   * items and deliver the held message instead of creating again.
+   */
+  async function resumeOnboardingPendingSend() {
+    const pending = onboardingPendingSend;
+    if (!pending) return;
+    isOnboardingCreating = true;
+    onboardingCreationError = null;
+    try {
+      const redemption = await redeemStagedAttachments(
+        pending.workspaceId,
+        onboardingStagedItems,
+      );
+      onboardingStagedItems = redemption.items;
+      if (redemption.failedCount > 0) {
+        onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
+        return;
+      }
+      if (pending.agentId) {
+        // `backendRequest` resolves normal daemon send failures as
+        // `{ success: false, error }` rather than rejecting — check it, or a
+        // failed send would silently drop the held prompt and its retry path.
+        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
+          'agent.sendMessage',
+          {
+            agentId: pending.agentId,
+            workspaceId: pending.workspaceId,
+            content: pending.prompt,
+            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
+            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+            contextReferences:
+              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
+          },
+        );
+        if (sendResult?.success === false) {
+          throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
+        }
+      }
+      onboardingPendingSend = null;
+      onboardingStagedItems = [];
+      await goto(`/workspace/${pending.workspaceId}`);
+    } catch (err) {
+      onboardingCreationError =
+        err instanceof Error ? err.message : m.onboarding_page_createFailed_error();
+    } finally {
+      isOnboardingCreating = false;
+    }
+  }
+
   async function handleOnboardingSubmit() {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
+    // Failed staged-attachment pills block create (retry or remove first —
+    // unless a created workspace is waiting on its held first message, in
+    // which case submit IS the retry).
+    if (onboardingPendingSend) {
+      await resumeOnboardingPendingSend();
+      return;
+    }
+    if (hasBlockingAttachments(onboardingStagedItems)) {
+      // The error banner's Retry also lands here — surface why nothing
+      // happened instead of a silent no-op (pills must be retried/removed).
+      toast.error(m.onboarding_page_blockingAttachments_toast());
+      return;
+    }
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -893,6 +981,12 @@
       // not a local path). Mirrors CompactWorkspaceInitializer's flow.
       const isGithubPick = projectSelection.type === 'github' && !!projectSelection.githubUrl;
 
+      // Staged non-image files cannot ride the daemon-owned initial prompt:
+      // placement needs the workspace to exist. With staged files, hold the
+      // prompt out of initialAgent and send it after placement (create →
+      // placeAttachment → agent.sendMessage with the attachment references).
+      const hasStagedFiles = hasStagedFileItems(onboardingStagedItems);
+
       const result = await workspaceClient.create({
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
@@ -907,13 +1001,14 @@
         initialAgent: {
           name: 'Coordinator',
           model: effectiveModel,
-          prompt,
+          prompt: hasStagedFiles ? undefined : prompt,
           agentType,
           specialist: specialistId,
           behaviorPrompt,
           provider,
-          contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
-          imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
+          contextReferences:
+            !hasStagedFiles && contextReferences.length > 0 ? contextReferences : undefined,
+          imageBlocks: !hasStagedFiles && imageBlocks.length > 0 ? imageBlocks : undefined,
           metadata: {
             source: 'onboarding',
             isInitialAgent: true,
@@ -934,6 +1029,50 @@
       // The daemon assigns the initial agent's id and returns it on the
       // create result; the FE no longer pre-mints one.
       const agentId = result.data.initialAgent?.id;
+
+      // Place staged attachments now that the workspace exists and deliver
+      // the held-back first message with the attachment-reference blocks.
+      // On failure the failed pills stay visible (retry or remove) and
+      // `onboardingPendingSend` makes the Create button resume this flow —
+      // the created workspace is never rolled back or duplicated.
+      if (hasStagedFiles) {
+        onboardingPendingSend = {
+          workspaceId: workspace.id,
+          agentId,
+          prompt,
+          imageBlocks,
+          contextReferences,
+        };
+        const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
+        onboardingStagedItems = redemption.items;
+        if (redemption.failedCount > 0) {
+          onboardingCreationErrorCode = null;
+          throw new Error(m.onboarding_page_attachmentPlacementFailed_error());
+        }
+        if (agentId) {
+          // `backendRequest` resolves normal daemon send failures as
+          // `{ success: false, error }` rather than rejecting — check it, or
+          // a failed send would silently drop the held prompt/attachments
+          // and their retry path (`onboardingPendingSend` must stay set).
+          const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
+            'agent.sendMessage',
+            {
+              agentId,
+              workspaceId: workspace.id,
+              content: prompt,
+              imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
+              fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
+              contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
+            },
+          );
+          if (sendResult?.success === false) {
+            onboardingCreationErrorCode = null;
+            throw new Error(sendResult.error || m.onboarding_page_createFailed_error());
+          }
+        }
+        onboardingPendingSend = null;
+        onboardingStagedItems = [];
+      }
       logger.info('Workspace created with paths', {
         id: workspace.id,
         path: workspace.path,
@@ -1314,6 +1453,7 @@
                           {hideSetupScriptControl}
                           {visibleSuggestions}
                           bind:focusedSuggestionIndex
+                          bind:stagedContextItems={onboardingStagedItems}
                           selectedModel={onboardingSelectedModel}
                           modelWasOverridden={onboardingModelWasOverridden}
                           onModelChange={handleOnboardingModelChange}

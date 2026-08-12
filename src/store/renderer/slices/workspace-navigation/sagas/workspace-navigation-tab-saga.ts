@@ -1,6 +1,11 @@
-import { put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import type { TrackedChange } from '$features/file-tracking/types';
+import {
+  getAttachmentInfo,
+  type AttachmentInfo,
+} from '$lib/components/chat/input/context-api';
+import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { selectPanel } from '../../panel-layout/panel-layout-selectors';
 import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
@@ -9,6 +14,7 @@ import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors'
 import {
   chatChangesDedupId,
   openWorkspaceActivityChanges,
+  openWorkspaceAttachment,
   openWorkspaceBrowser,
   openWorkspaceChatChanges,
   openWorkspaceCodeReview,
@@ -18,6 +24,8 @@ import {
   openWorkspaceLocalChanges,
   openWorkspaceNote,
 } from '../workspace-navigation-slice';
+
+const logger = createLogger('WorkspaceNavigationTabSaga');
 
 function* openWorkspaceTab(
   workspaceId: string,
@@ -224,6 +232,28 @@ function* openCodeReview(action: ReturnType<typeof openWorkspaceCodeReview>): Sa
   );
 }
 
+// Attachment-reference chip click: resolve the registry row by attachmentId
+// (`file.getAttachmentInfo`, PROTOCOL §5.9) and open the stored
+// workspace-relative path in a file tab. A missing file (deleted from disk
+// out-of-band) or a failed lookup surfaces a toast — never a crash.
+function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): SagaGenerator<void> {
+  const [workspaceId, attachmentId, fileName] = action.payload;
+  if (!workspaceId || !attachmentId) return;
+  try {
+    const info: AttachmentInfo = yield* call(getAttachmentInfo, attachmentId);
+    if (!info.exists) {
+      const { toast } = yield* call(() => import('svelte-sonner'));
+      toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
+      return;
+    }
+    yield* put(openWorkspaceFile(workspaceId, info.path));
+  } catch (error) {
+    logger.error('Failed to resolve attachment', { attachmentId, error });
+    const { toast } = yield* call(() => import('svelte-sonner'));
+    toast.error(m.chat_chatMessage_attachmentOpenFailed_error({ name: fileName }));
+  }
+}
+
 export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
   yield* takeEvery(openWorkspaceActivityChanges, openActivityChanges);
   yield* takeEvery(openWorkspaceBrowser, openBrowser);
@@ -234,4 +264,5 @@ export function* workspaceNavigationTabSaga(): SagaGenerator<void> {
   yield* takeEvery(openWorkspaceLocalChanges, openLocalChanges);
   yield* takeEvery(openWorkspaceNote, openNote);
   yield* takeEvery(openWorkspaceDiff, openDiff);
+  yield* takeEvery(openWorkspaceAttachment, openAttachment);
 }

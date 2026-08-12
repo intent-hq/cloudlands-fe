@@ -490,6 +490,11 @@ function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMes
   if (Array.isArray(data.imageBlocks)) {
     contentBlocks.push(...data.imageBlocks);
   }
+  // Attachment-reference file blocks ride the event too, so other clients
+  // render the file chips without waiting for a conversation refetch.
+  if (Array.isArray(data.fileBlocks)) {
+    contentBlocks.push(...data.fileBlocks);
+  }
 
   return [
     agentId,

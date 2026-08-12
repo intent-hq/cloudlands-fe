@@ -2758,6 +2758,30 @@
     }
   }
 
+  // Extract imageBlocks from any context item with imageData/imageMimeType
+  // (file-type attachments and legacy inline-image items alike), and
+  // attachment-reference fileBlocks from placed-attachment items
+  // (file.placeAttachment — UUID + metadata, no bytes).
+  function extractAttachmentBlocks(items: ContextItem[]) {
+    const imageBlocks = items
+      .filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData!,
+        mimeType: item.imageMimeType!,
+      }));
+    const fileBlocks = items
+      .filter((item) => item.attachmentId)
+      .map((item) => ({
+        type: 'file' as const,
+        attachmentId: item.attachmentId!,
+        fileName: item.label,
+        ...(item.attachmentMimeType ? { mimeType: item.attachmentMimeType } : {}),
+        ...(item.attachmentSize !== undefined ? { size: item.attachmentSize } : {}),
+      }));
+    return { imageBlocks, fileBlocks };
+  }
+
   // Handle sending messages
   function handleSend(text: string) {
     // Gather DOM state only. Validation, queue decisions, serialization,
@@ -2770,15 +2794,7 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // Extract imageBlocks from any context item with imageData/imageMimeType
-    // Works for both file-type attachments and legacy inline-image items
-    const imageBlocks = allContextItems
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+    const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
 
     // Dispatch all orchestration to the send-message saga
     appStore.dispatch(
@@ -2789,6 +2805,7 @@
         workspaceContextStr,
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+        ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -2939,15 +2956,7 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // Extract imageBlocks from any context item with imageData/imageMimeType
-    // Works for both file-type attachments and legacy inline-image items
-    const imageBlocks = allContextItems
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+    const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
 
     appStore.dispatch(
       sendMessage(agentId, {
@@ -2957,6 +2966,7 @@
         workspaceContextStr,
         noteIds,
         ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+        ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
         forceSubmit: true,
         agentName,
         agentModel,
@@ -2973,15 +2983,40 @@
 
   // Handle editing a user message and regenerating. The confirmation gate
   // lives in ChatMessage (the edit UI) — by the time this runs the user has
-  // already confirmed the destructive truncation.
-  function handleEditMessage(messageId: string, newText: string, model?: string) {
+  // already confirmed the destructive truncation. `blocks` carries the
+  // attachment blocks rebuilt from the edit strip (imageBlocks +
+  // attachment-reference fileBlocks) so attachments ride the regenerated
+  // message (PROTOCOL §5.5).
+  function handleEditMessage(
+    messageId: string,
+    newText: string,
+    model?: string,
+    blocks?: {
+      imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+      fileBlocks?: Array<{
+        type: 'file';
+        attachmentId: string;
+        fileName: string;
+        mimeType?: string;
+        size?: number;
+      }>;
+    },
+  ) {
     if (!workspace) return;
+    const options =
+      model || blocks?.imageBlocks?.length || blocks?.fileBlocks?.length
+        ? {
+            ...(model ? { model } : {}),
+            ...(blocks?.imageBlocks?.length ? { imageBlocks: blocks.imageBlocks } : {}),
+            ...(blocks?.fileBlocks?.length ? { fileBlocks: blocks.fileBlocks } : {}),
+          }
+        : undefined;
     const action = agentSessionEditAndRegenerateRequested(
       agentId,
       workspace.id,
       messageId,
       newText,
-      model ? { model } : undefined,
+      options,
     );
     appStore.dispatch(action);
     // Failures are surfaced via toast by the edit-regenerate middleware;
@@ -3697,8 +3732,8 @@
                                 {workspace}
                                 isSticky={stickyMessageId === message.id}
                                 onStickyClick={() => scrollUserMessageToTop(message.id)}
-                                onEditSubmit={(newText, model) =>
-                                  handleEditMessage(message.id, newText, model)}
+                                onEditSubmit={(newText, model, blocks) =>
+                                  handleEditMessage(message.id, newText, model, blocks)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
                                 enableSticky={shouldEnableSticky}
@@ -3772,8 +3807,8 @@
                               messageId={message.id}
                               {workspace}
                               isStreaming={isCurrentlyStreaming}
-                              onEditSubmit={(newText, model) =>
-                                handleEditMessage(message.id, newText, model)}
+                              onEditSubmit={(newText, model, blocks) =>
+                                handleEditMessage(message.id, newText, model, blocks)}
                               onRegenerate={() => handleRegenerateFromMessage(message.id)}
                               onFork={() => handleForkFromMessage(message.id)}
                               backendSessionId={auggieSessionId}

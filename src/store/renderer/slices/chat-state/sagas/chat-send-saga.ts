@@ -82,6 +82,7 @@ const ORDINARY_CHAT_COMMANDS = [
 
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload['imageBlocks'];
+  fileBlocks?: SendMessagePayload['fileBlocks'];
   noteIds?: string[];
   messageMetadata?: SendMessagePayload['messageMetadata'];
   model?: string;
@@ -211,11 +212,14 @@ function* dispatchToLifecycle(
   if (!skipQueueCheck && isResponding) {
     yield* put(clearChatDraft(wsId, agentId));
     try {
-      const result = options.imageBlocks
-        ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, {
-            imageBlocks: options.imageBlocks,
-          })
-        : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
+      const queueOptions = {
+        ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
+        ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
+      };
+      const result =
+        Object.keys(queueOptions).length > 0
+          ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
+          : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
       if (!result.success) {
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
@@ -272,6 +276,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
     payload.workspaceContextStr,
     {
       imageBlocks: payload.imageBlocks,
+      fileBlocks: payload.fileBlocks,
       noteIds: payload.noteIds,
       messageMetadata: payload.messageMetadata,
       priority: forceSubmit ? 'interrupt' : undefined,
@@ -363,6 +368,7 @@ function* retryLastMessage(
       undefined,
       {
         imageBlocks: lastAttempted.options?.imageBlocks,
+        fileBlocks: lastAttempted.options?.fileBlocks,
         noteIds: lastAttempted.options?.noteIds,
         messageMetadata: lastAttempted.options?.messageMetadata,
         model: model ?? lastAttempted.options?.model,

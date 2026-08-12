@@ -89,7 +89,17 @@ export async function sendMessage(
       [key: string]: unknown;
     }>;
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
-    fileBlocks?: Array<{ type: 'file'; data: string; mimeType: string; fileName: string }>;
+    /**
+     * Attachment-reference file blocks (PROTOCOL §5.5): the attachment
+     * registry UUID plus chip metadata — no bytes cross the wire.
+     */
+    fileBlocks?: Array<{
+      type: 'file';
+      attachmentId: string;
+      fileName: string;
+      mimeType?: string;
+      size?: number;
+    }>;
     model?: string;
     modelId?: string;
     noteIds?: string[];
@@ -229,9 +239,10 @@ export async function sendMessage(
           for (const file of options.fileBlocks) {
             userContentBlocks.push({
               type: 'file' as const,
-              data: file.data,
-              mimeType: file.mimeType,
+              attachmentId: file.attachmentId,
               fileName: file.fileName,
+              ...(file.mimeType !== undefined ? { mimeType: file.mimeType } : {}),
+              ...(file.size !== undefined ? { size: file.size } : {}),
             });
           }
         }
@@ -315,7 +326,8 @@ export async function sendMessage(
                           type: b.type,
                           fileName: b.fileName,
                           mimeType: b.mimeType,
-                          dataLength: b.data?.length || 0,
+                          attachmentId: b.attachmentId,
+                          size: b.size,
                         })) || [],
                     },
                   );

@@ -1,5 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
@@ -8,6 +8,7 @@ import { panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
+  openWorkspaceAttachment,
   openWorkspaceBrowser,
   openWorkspaceChatChanges,
   openWorkspaceCodeReview,
@@ -20,10 +21,23 @@ import {
 } from '../workspace-navigation-slice';
 import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
 
+const mocks = vi.hoisted(() => ({
+  getAttachmentInfo: vi.fn(),
+  toastError: vi.fn(),
+}));
+vi.mock('$lib/components/chat/input/context-api', () => ({
+  getAttachmentInfo: mocks.getAttachmentInfo,
+}));
+vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+// The attachment worker awaits a backend lookup and a dynamic toast import;
+// flush macrotasks so those async chains settle before asserting.
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('workspaceNavigationTabSaga', () => {
   it('opens the sidebar all-changes request as a local-changes panel tab', async () => {
@@ -631,6 +645,91 @@ describe('workspaceNavigationTabSaga', () => {
     expect(dispatch.mock.calls[0]?.[0]?.payload?.tab?.data).toBeUndefined();
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('openWorkspaceAttachment', () => {
+    beforeEach(() => {
+      mocks.getAttachmentInfo.mockReset();
+      mocks.toastError.mockReset();
+    });
+
+    it('resolves the registry row by attachmentId and opens the stored path as a file tab', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'report.pdf',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/report.pdf',
+        exists: true,
+      });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'report.pdf'));
+      await flush();
+
+      expect(mocks.getAttachmentInfo).toHaveBeenCalledWith('att-1');
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+        type: 'workspaceNavigation/openWorkspaceFile',
+        payload: ['ws-1', '.intent/attachments/report.pdf'],
+      });
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('surfaces a missing-file toast without opening a tab when the file was deleted out-of-band', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'report.pdf',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/report.pdf',
+        exists: false,
+      });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'report.pdf'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        m.chat_chatMessage_attachmentMissing_error({ name: 'report.pdf' }),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('surfaces a failure toast labeled with the block fileName when the lookup rejects', async () => {
+      mocks.getAttachmentInfo.mockRejectedValue(new Error('unknown id'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-gone', 'notes.txt'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        m.chat_chatMessage_attachmentOpenFailed_error({ name: 'notes.txt' }),
+      );
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('ignores requests without a workspace or attachment id', async () => {
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('', 'att-1', 'a.txt'));
+      await settle();
+      channel.put(openWorkspaceAttachment('ws-1', '', 'a.txt'));
+      await settle();
+      expect(mocks.getAttachmentInfo).not.toHaveBeenCalled();
+      expect(dispatch).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
   });
 
   it('ignores commit, file, note, diff, chat-changes, and local-changes requests without resolvable identities', async () => {
