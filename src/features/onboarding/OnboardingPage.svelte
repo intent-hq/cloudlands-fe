@@ -494,7 +494,16 @@
   });
 
   let hasConnectedProvider = $state(false);
+  let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
+
+  /** Advance from the welcome step, first committing the grid's resolved
+   *  provider selection so a no-click advance still enables/activates the
+   *  visually-selected provider (D1(B): commit only on explicit advance). */
+  function advanceFromWelcomeStep() {
+    agentGridRef?.commitSelection();
+    appStore.dispatch(goToStep('github'));
+  }
 
   // Pull conflict state
   let onboardingBranchBehind = $state(0);
@@ -795,7 +804,7 @@
 
     if (isWelcomeStep && hasConnectedProvider) {
       e.preventDefault();
-      appStore.dispatch(goToStep('github'));
+      advanceFromWelcomeStep();
     } else if (isGitHubStep) {
       // Continue when connected, skip otherwise — both advance to project.
       // Skipping abandons a still-pending device flow, so cancel it rather
@@ -1357,6 +1366,7 @@
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">
                           <div class="pl-[max(1.5rem,calc((100%-64rem)/2))] pr-32">
                             <AgentGrid
+                              bind:this={agentGridRef}
                               onAvailabilityChange={(hasAny) => {
                                 hasConnectedProvider = hasAny;
                               }}
@@ -1369,7 +1379,7 @@
                             size="xl"
                             variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
-                            onclick={() => appStore.dispatch(goToStep('github'))}
+                            onclick={advanceFromWelcomeStep}
                           >
                             {m.onboarding_page_letsGo_label()}
                             {#if hasConnectedProvider}

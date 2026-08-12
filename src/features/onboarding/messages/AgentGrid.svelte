@@ -16,6 +16,7 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
+  import { commitOnboardingProviderSelection } from '../utils/commit-onboarding-provider-selection';
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
@@ -253,6 +254,22 @@
     appStore.dispatch(setActiveProvider(providerId));
     appStore.dispatch(reloadModelsForProvider());
     onProviderSelected?.(providerId);
+  }
+
+  /**
+   * Commit the currently resolved selection as if the user had clicked its
+   * card. Called by the parent when the user explicitly advances from the
+   * welcome step (button or ⌘↵) so the visually-selected provider becomes
+   * enabled + active (decision D1(B): commit only on an explicit user
+   * action, never on mere render/detection). No-ops when nothing is ready
+   * or the selection is already the active provider.
+   */
+  export function commitSelection(): string | undefined {
+    return commitOnboardingProviderSelection({
+      selectedProviderId,
+      activeProviderId: selectActiveProviderId.select(appStore.state),
+      dispatch: (action) => appStore.dispatch(action),
+    });
   }
 
   // Users complete install/login in their own terminal (the card links out to
