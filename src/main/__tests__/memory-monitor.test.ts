@@ -11,12 +11,14 @@ import {
   DEFAULT_WARN_THRESHOLD_BYTES,
   findSidecarProcesses,
   findThresholdBreaches,
+  FIRST_SAMPLE_DELAY_MS,
   formatSnapshot,
   formatThresholdWarning,
   logMemorySample,
   parseProcessTable,
   processBasename,
   resolveWarnThresholdBytes,
+  SAMPLE_INTERVAL_MS,
   sampleMemory,
   shortProcessName,
   startMemoryMonitor,
@@ -196,6 +198,17 @@ describe('sampleMemory', () => {
     expect(formatSnapshot(result)).toContain('sidecar(intentd)=unknown');
     expect(formatSnapshot(result)).toContain('agents=unknown');
   });
+
+  // The process tree is the dominant term, so a sum without it must never be
+  // presented as Intent's aggregate total.
+  it('reports the total as unknown when the process tree is missing', async () => {
+    const line = formatSnapshot(await sampleMemory({ ...sources, processTable: async () => null }));
+
+    expect(line).toContain('total=unknown');
+    expect(line).toContain('electron-total=1480MB');
+    // No bare `total=<n>MB` token a log scraper could mistake for the real one.
+    expect(line).not.toMatch(/(^|\s)total=\d+MB/);
+  });
 });
 
 describe('formatSnapshot', () => {
@@ -360,6 +373,35 @@ describe('start/stop lifecycle', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps the boot sample ahead of the steady-state interval', () => {
+    expect(FIRST_SAMPLE_DELAY_MS).toBeLessThan(SAMPLE_INTERVAL_MS);
+  });
+
+  // setInterval alone does not fire until a full interval has elapsed, so a
+  // bundle captured in the app's first 60 s would carry no snapshot at all.
+  it('takes a boot-window sample well before one full interval has elapsed', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const processTable = vi.fn(emptyProcessTable);
+    const sources: MemorySources = {
+      appMetrics: () => [metric(1, 'Browser', 0)],
+      mainRssBytes: () => 10 * MB,
+      processTable,
+    };
+
+    startMemoryMonitor({ sources, intervalMs: 60_000, firstSampleMs: 10_000 });
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(processTable).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(processTable).toHaveBeenCalledTimes(1);
+
+    // ...and the interval still runs on its own cadence afterwards.
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(processTable).toHaveBeenCalledTimes(2);
+  });
+
   it('samples on the interval and stops cleanly with no timer left armed', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -370,7 +412,12 @@ describe('start/stop lifecycle', () => {
       processTable,
     };
 
-    startMemoryMonitor({ sources, intervalMs: 1000, thresholdBytes: DEFAULT_WARN_THRESHOLD_BYTES });
+    startMemoryMonitor({
+      sources,
+      intervalMs: 1000,
+      firstSampleMs: 1000,
+      thresholdBytes: DEFAULT_WARN_THRESHOLD_BYTES,
+    });
     expect(__isMemoryMonitorRunningForTesting()).toBe(true);
 
     await vi.advanceTimersByTimeAsync(2000);
@@ -383,6 +430,26 @@ describe('start/stop lifecycle', () => {
     expect(processTable).toHaveBeenCalledTimes(2);
   });
 
+  it('stopping before the boot sample fires leaves nothing armed and never samples', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const processTable = vi.fn(emptyProcessTable);
+    const sources: MemorySources = {
+      appMetrics: () => [],
+      mainRssBytes: () => 0,
+      processTable,
+    };
+
+    startMemoryMonitor({ sources, intervalMs: 60_000, firstSampleMs: 10_000 });
+    expect(__isMemoryMonitorRunningForTesting()).toBe(true);
+
+    stopMemoryMonitor();
+    expect(__isMemoryMonitorRunningForTesting()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(processTable).not.toHaveBeenCalled();
+  });
+
   it('is idempotent — a second start does not arm a second timer', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -393,8 +460,8 @@ describe('start/stop lifecycle', () => {
       processTable,
     };
 
-    startMemoryMonitor({ sources, intervalMs: 1000 });
-    startMemoryMonitor({ sources, intervalMs: 1000 });
+    startMemoryMonitor({ sources, intervalMs: 1000, firstSampleMs: 1000 });
+    startMemoryMonitor({ sources, intervalMs: 1000, firstSampleMs: 1000 });
 
     await vi.advanceTimersByTimeAsync(1000);
     expect(processTable).toHaveBeenCalledTimes(1);
@@ -416,7 +483,7 @@ describe('start/stop lifecycle', () => {
       processTable,
     };
 
-    startMemoryMonitor({ sources, intervalMs: 1000 });
+    startMemoryMonitor({ sources, intervalMs: 1000, firstSampleMs: 1000 });
 
     await vi.advanceTimersByTimeAsync(3000);
     expect(processTable).toHaveBeenCalledTimes(1);

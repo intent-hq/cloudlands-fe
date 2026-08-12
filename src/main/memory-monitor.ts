@@ -43,6 +43,18 @@ const logger = new Logger(CONTEXT);
 /** How often a sample is taken. Constant by design — not user-configurable. */
 export const SAMPLE_INTERVAL_MS = 60_000;
 
+/**
+ * Delay before the FIRST sample, ahead of the steady-state interval.
+ *
+ * `setInterval` alone does not fire until a full interval has elapsed, so a
+ * debug bundle captured in the app's first 60 s would contain the `started`
+ * line and no snapshot at all — losing exactly the window where startup growth
+ * would be visible. 10 s is late enough that the daemon has settled and its
+ * first agent children (if any) exist, early enough that a short session still
+ * records a baseline.
+ */
+export const FIRST_SAMPLE_DELAY_MS = 10_000;
+
 /** Default per-process WARN threshold: 4 GB. */
 export const DEFAULT_WARN_THRESHOLD_BYTES = 4 * 1024 * 1024 * 1024;
 
@@ -423,7 +435,15 @@ export function formatSnapshot(snapshot: MemorySnapshot): string {
     }
   }
 
-  parts.push(`total=${toMB(totalRssBytes(snapshot))}MB`);
+  if (snapshot.processTableUnavailable) {
+    // The daemon + agent tree is the dominant term in the aggregate, so a sum
+    // without it is NOT Intent's total. Emit no bare `total=<n>MB` token here:
+    // anything grepping the sample lines would otherwise read a partial figure
+    // as complete, precisely on the samples where the big component is missing.
+    parts.push(`total=unknown electron-total=${toMB(totalRssBytes(snapshot))}MB`);
+  } else {
+    parts.push(`total=${toMB(totalRssBytes(snapshot))}MB`);
+  }
   return parts.join(' ');
 }
 
@@ -450,6 +470,7 @@ export function resolveWarnThresholdBytes(env: NodeJS.ProcessEnv = process.env):
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+let firstSampleTimer: NodeJS.Timeout | null = null;
 let sampleTimer: NodeJS.Timeout | null = null;
 let sampleInFlight = false;
 
@@ -484,20 +505,24 @@ export interface StartMemoryMonitorOptions {
   sources?: MemorySources;
   thresholdBytes?: number;
   intervalMs?: number;
+  /** Delay before the first (boot-window) sample. */
+  firstSampleMs?: number;
 }
 
 /**
- * Begin sampling. Idempotent — a second call while running is a no-op, so a
- * restart path can never leak a second timer.
+ * Begin sampling: one boot-window sample after {@link FIRST_SAMPLE_DELAY_MS},
+ * then every {@link SAMPLE_INTERVAL_MS}. Idempotent — a second call while
+ * running is a no-op, so a restart path can never leak a second timer.
  */
 export function startMemoryMonitor(options: StartMemoryMonitorOptions = {}): void {
-  if (sampleTimer) return;
+  if (firstSampleTimer || sampleTimer) return;
 
   const intervalMs = options.intervalMs ?? SAMPLE_INTERVAL_MS;
+  const firstSampleMs = options.firstSampleMs ?? FIRST_SAMPLE_DELAY_MS;
   const thresholdBytes = options.thresholdBytes ?? resolveWarnThresholdBytes();
   const sources = options.sources ?? defaultSources();
 
-  sampleTimer = setInterval(() => {
+  const takeSample = () => {
     // A previous sample still waiting on the process table means the machine is
     // loaded; skip this tick rather than piling up subprocesses.
     if (sampleInFlight) return;
@@ -505,24 +530,36 @@ export function startMemoryMonitor(options: StartMemoryMonitorOptions = {}): voi
     void logMemorySample(sources, thresholdBytes).finally(() => {
       sampleInFlight = false;
     });
-  }, intervalMs);
+  };
 
-  // Never hold the event loop open on our account.
-  sampleTimer.unref?.();
+  firstSampleTimer = setTimeout(() => {
+    firstSampleTimer = null;
+    takeSample();
+    sampleTimer = setInterval(takeSample, intervalMs);
+    // Never hold the event loop open on our account.
+    sampleTimer.unref?.();
+  }, firstSampleMs);
+  firstSampleTimer.unref?.();
 
   logger.info(
-    `started interval=${Math.round(intervalMs / 1000)}s warnThreshold=${toMB(thresholdBytes)}MB`,
+    `started firstSample=${Math.round(firstSampleMs / 1000)}s ` +
+      `interval=${Math.round(intervalMs / 1000)}s warnThreshold=${toMB(thresholdBytes)}MB`,
   );
 }
 
-/** Stop sampling and clear the timer. Safe to call when not running. */
+/** Stop sampling and clear both timers. Safe to call when not running. */
 export function stopMemoryMonitor(): void {
-  if (!sampleTimer) return;
-  clearInterval(sampleTimer);
-  sampleTimer = null;
+  if (firstSampleTimer) {
+    clearTimeout(firstSampleTimer);
+    firstSampleTimer = null;
+  }
+  if (sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
+  }
 }
 
-/** Test hook: whether the sampling timer is currently armed. */
+/** Test hook: whether either sampling timer is currently armed. */
 export function __isMemoryMonitorRunningForTesting(): boolean {
-  return sampleTimer !== null;
+  return firstSampleTimer !== null || sampleTimer !== null;
 }
