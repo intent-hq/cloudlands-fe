@@ -53,6 +53,7 @@
   import Fa from 'svelte-fa';
   import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -312,7 +313,14 @@
   }
 </script>
 
-<DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0" portal={true}>
+<DropdownMenu
+  align="end"
+  side="bottom"
+  bind:open={dropdownOpen}
+  contentClass="px-0"
+  contentMaxHeight="var(--bits-dropdown-menu-content-available-height)"
+  portal={true}
+>
   {#snippet trigger({ toggle }: { toggle: () => void })}
     <Tooltip side="bottom">
       {#snippet content()}
@@ -584,81 +592,62 @@
           {#each $connections$ as conn (conn.id)}
             {@const isActive = conn.id === $activeConnectionId$}
             <!--
-              Each connection is its own nested dropdown so Switch/Forget pop out
-              as a side flyout (to the left, since this menu sits at the top-right
-              of the title bar) instead of indenting inline. portal={false} keeps
-              the flyout inside this menu's DOM subtree, so a click inside it does
-              not register as "outside" the parent menu and close it.
+              Each connection row is a real submenu (Menu.Sub), so Switch/Forget
+              pop out as a side flyout that opens on hover/click with bits-ui's
+              pointer-grace (it stays open while the pointer travels into it).
+              The flyout portals to body so the parent menu's overflow scroll
+              cannot clip it; side="left" because this menu sits at the
+              top-right of the title bar.
             -->
-            <DropdownMenu
-              side="left"
-              align="start"
-              portal={false}
-              class="block w-full"
-              contentClass="min-w-28"
-            >
-              {#snippet trigger({ toggle, open }: { toggle: () => void; open: boolean })}
-                <button
-                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center justify-between gap-2"
-                  aria-haspopup="menu"
-                  aria-expanded={open}
-                  onclick={toggle}
-                >
-                  <span class="truncate">
-                    {conn.isLocal
-                      ? m.layout_daemonStatus_localConnection_label()
-                      : formatConnectionLabel(conn)}
-                  </span>
-                  <span class="flex items-center gap-1.5 shrink-0">
-                    {#if $activeProtocolMismatch$?.id === conn.id}
-                      <Tooltip side="left" contentClass="z-[10001]">
-                        {#snippet content()}
-                          <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
-                        {/snippet}
-                        <span
-                          class="text-yellow-600 dark:text-yellow-500"
-                          aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
-                        >
-                          <Fa icon={faTriangleExclamation} />
-                        </span>
-                      </Tooltip>
-                    {/if}
-                    {#if isActive}
+            <Menu.Sub>
+              <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">
+                <span class="min-w-0 flex-1 truncate">
+                  {conn.isLocal
+                    ? m.layout_daemonStatus_localConnection_label()
+                    : formatConnectionLabel(conn)}
+                </span>
+                <span class="flex items-center gap-1.5 shrink-0">
+                  {#if $activeProtocolMismatch$?.id === conn.id}
+                    <Tooltip side="left" contentClass="z-[10001]">
+                      {#snippet content()}
+                        <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
+                      {/snippet}
                       <span
-                        class="text-green-500"
-                        aria-label={m.layout_daemonStatus_connectionActive_label()}
+                        class="text-yellow-600 dark:text-yellow-500"
+                        aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
                       >
-                        <Fa icon={faCheck} />
+                        <Fa icon={faTriangleExclamation} />
                       </span>
-                    {/if}
-                  </span>
-                </button>
-              {/snippet}
-
-              {#snippet content({ close }: { close: () => void })}
-                <button
-                  class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                    </Tooltip>
+                  {/if}
+                  {#if isActive}
+                    <span
+                      class="text-green-500"
+                      aria-label={m.layout_daemonStatus_connectionActive_label()}
+                    >
+                      <Fa icon={faCheck} />
+                    </span>
+                  {/if}
+                </span>
+              </Menu.SubTrigger>
+              <Menu.SubContent side="left" align="start" class="min-w-28">
+                <Menu.Item
+                  class="cursor-pointer text-xs"
                   disabled={isActive}
-                  onclick={() => {
-                    close();
-                    handleSwitchConnection(conn.id);
-                  }}
+                  onSelect={() => handleSwitchConnection(conn.id)}
                 >
                   {m.layout_daemonStatus_switch_action()}
-                </button>
+                </Menu.Item>
                 {#if !conn.isLocal}
-                  <button
-                    class="w-full text-left text-xs text-red-500 hover:bg-muted/50 rounded px-2 py-1 transition-colors cursor-pointer"
-                    onclick={() => {
-                      close();
-                      handleForgetConnection(conn.id);
-                    }}
+                  <Menu.Item
+                    class="cursor-pointer text-xs text-red-500 data-[highlighted]:text-red-500"
+                    onSelect={() => handleForgetConnection(conn.id)}
                   >
                     {m.layout_daemonStatus_forget_action()}
-                  </button>
+                  </Menu.Item>
                 {/if}
-              {/snippet}
-            </DropdownMenu>
+              </Menu.SubContent>
+            </Menu.Sub>
           {/each}
         {/if}
       </div>
