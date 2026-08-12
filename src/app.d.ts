@@ -41,6 +41,8 @@ declare global {
       offById: (channel: string, listenerId: string) => void;
       once: (channel: string, callback: (...args: any[]) => void) => void;
       removeAllListeners: (channel: string) => void;
+      // Diagnostics: live listener registrations per channel (absent in web/mock builds)
+      getIpcListenerCounts?: () => Record<string, number>;
       // Optional structured log sender used by ClientLogger
       sendLog?: (log: {
         level: 'debug' | 'info' | 'warn' | 'error';

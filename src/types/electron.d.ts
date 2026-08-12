@@ -13,6 +13,8 @@ interface ElectronAPI {
   offById: (channel: string, listenerId: string) => void;
   emit?: (channel: string, ...args: any[]) => void;
   removeAllListeners: (channel: string) => void;
+  // Diagnostics: live listener registrations per channel (absent in web/mock builds)
+  getIpcListenerCounts?: () => Record<string, number>;
   // Dev instance info - for running multiple concurrent dev servers
   devInstance: string | null;
   devPort: string | null;
