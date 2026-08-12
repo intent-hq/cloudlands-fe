@@ -34,18 +34,33 @@ import { ChatTranscriptReconciler } from '../live-chat-client';
 import { groupContentBlocks, type ContentBlockGroup } from '$lib/utils/messageParser';
 import type { ContentBlock } from '$lib/types/agent';
 
+const AGENT = 'agent-123';
 const MSG = 'msg-turn-1';
+const MSG_SEQ = 4;
+const TURN_START = '2026-06-27T01:00:00.000Z';
+const TURN_END = '2026-06-27T01:00:03.000Z';
 const LEAD = "I'll start by reading the task note. ";
 const GROUP_HEADER = 'Reading context and searching the codebase.';
 const GROUP_TEXT = `<group:Setup>\n${GROUP_HEADER}`;
 
-/** Wrap a block as a §7.1 chat delta entity for the in-flight assistant message. */
+/**
+ * Wrap a block as a §7.1 chat delta entity for the in-flight assistant message:
+ * the FULL current block plus the `{ agentId, messageId, role }` pointer every
+ * entity carries.
+ */
 const entity = (block: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+  agentId: AGENT,
   messageId: MSG,
   role: 'assistant',
   block,
   ...extra,
 });
+
+/**
+ * The extra fields §7.1 puts on an authoritative frame — the terminal reconcile
+ * carries `messageSeq`/`timestamp` alongside `streamingComplete: true`.
+ */
+const TERMINAL = { streamingComplete: true, messageSeq: MSG_SEQ, timestamp: TURN_END };
 
 const text = (index: number, value: string) => ({
   type: 'text',
@@ -109,10 +124,11 @@ function childShape(group: ContentBlockGroup): string[] {
 function seedTurnThroughGroupOpener(): { reconciler: ChatTranscriptReconciler; seq: number } {
   const reconciler = new ChatTranscriptReconciler();
   reconciler.applySnapshot(0, {
-    agentId: 'agent-1',
+    agentId: AGENT,
     messages: [],
     truncated: false,
     totalMessages: 0,
+    nextToken: null,
   });
   let seq = 1;
   const apply = (added: unknown[], updated: unknown[] = []) =>
@@ -147,10 +163,12 @@ describe('mid-turn <group:Name> rendering over the §7.1 delta stream', () => {
     // `Transcript::snapshot_blocks`, which carries the pushed blocks plus the
     // still-pending text buffer at its final index — byte-identical ids.
     reconciler.applySnapshot(10, {
-      agentId: 'agent-1',
+      agentId: AGENT,
       messages: [
         {
           id: MSG,
+          agentId: AGENT,
+          seq: MSG_SEQ,
           role: 'assistant',
           isStreaming: true,
           contentBlocks: [
@@ -158,10 +176,12 @@ describe('mid-turn <group:Name> rendering over the §7.1 delta stream', () => {
             toolUse(1, 'Read', 'call_a', 'started'),
             text(2, GROUP_TEXT),
           ],
+          timestamp: TURN_START,
         },
       ],
       truncated: false,
       totalMessages: 1,
+      nextToken: null,
       turnInFlight: true,
     });
 
@@ -228,12 +248,12 @@ describe('mid-turn <group:Name> rendering over the §7.1 delta stream', () => {
     apply(
       [],
       [
-        entity(text(0, LEAD), { streamingComplete: true }),
-        entity(toolUse(1, 'Read', 'call_a', 'completed'), { streamingComplete: true }),
-        entity(text(2, GROUP_TEXT), { streamingComplete: true }),
-        entity(toolResult(3, 'call_a'), { streamingComplete: true }),
-        entity(toolUse(4, 'Grep', 'call_b', 'completed'), { streamingComplete: true }),
-        entity(toolResult(5, 'call_b'), { streamingComplete: true }),
+        entity(text(0, LEAD), TERMINAL),
+        entity(toolUse(1, 'Read', 'call_a', 'completed'), TERMINAL),
+        entity(text(2, GROUP_TEXT), TERMINAL),
+        entity(toolResult(3, 'call_a'), TERMINAL),
+        entity(toolUse(4, 'Grep', 'call_b', 'completed'), TERMINAL),
+        entity(toolResult(5, 'call_b'), TERMINAL),
       ],
     );
 
