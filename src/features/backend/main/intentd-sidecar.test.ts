@@ -219,8 +219,8 @@ describe('resolveSocketPath', () => {
     expect(socketPath).toBe('/custom/data/intentd.sock');
   });
 
-  it('returns default macOS path when INTENTD_DATA_DIR is not set', () => {
-    const socketPath = resolveSocketPath({});
+  it('returns default macOS path on darwin when INTENTD_DATA_DIR is not set', () => {
+    const socketPath = resolveSocketPath({}, 'darwin');
     const expected = path.join(
       os.homedir(),
       'Library',
@@ -231,13 +231,31 @@ describe('resolveSocketPath', () => {
     expect(socketPath).toBe(expected);
   });
 
+  it('defaults to ~/.local/share/intentd/intentd.sock on linux', () => {
+    const socketPath = resolveSocketPath({}, 'linux');
+    expect(socketPath).toBe(path.join(os.homedir(), '.local', 'share', 'intentd', 'intentd.sock'));
+  });
+
+  it('honors XDG_DATA_HOME on linux', () => {
+    const socketPath = resolveSocketPath({ XDG_DATA_HOME: '/xdg/data' }, 'linux');
+    expect(socketPath).toBe(path.join('/xdg/data', 'intentd', 'intentd.sock'));
+  });
+
+  it('INTENTD_DATA_DIR wins over XDG_DATA_HOME on linux', () => {
+    const socketPath = resolveSocketPath(
+      { INTENTD_DATA_DIR: '/custom/data', XDG_DATA_HOME: '/xdg/data' },
+      'linux',
+    );
+    expect(socketPath).toBe('/custom/data/intentd.sock');
+  });
+
   it('trims INTENTD_DATA_DIR whitespace', () => {
     const socketPath = resolveSocketPath({ INTENTD_DATA_DIR: '  /custom/data  ' });
     expect(socketPath).toBe('/custom/data/intentd.sock');
   });
 
   it('ignores empty INTENTD_DATA_DIR and uses default', () => {
-    const socketPath = resolveSocketPath({ INTENTD_DATA_DIR: '   ' });
+    const socketPath = resolveSocketPath({ INTENTD_DATA_DIR: '   ' }, 'darwin');
     const expected = path.join(
       os.homedir(),
       'Library',
