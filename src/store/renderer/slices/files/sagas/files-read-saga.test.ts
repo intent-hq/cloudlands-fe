@@ -109,12 +109,55 @@ describe('filesReadSaga', () => {
 
     expect(backendRequest).toHaveBeenCalledWith('search.fileNames', {
       workspaceId: 'ws-1',
-      pattern: 'common.md',
+      pattern: 'crates/res/common.md',
       limit: 50,
     });
     expect(actions).toEqual([
       removeFileContentEntry('ws-1', 'crates/res/common.md'),
       updateFileTabPath('ws-1', 'crates/res/common.md', 'packages/intentd/crates/res/common.md'),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('never surfaces the requested path itself as a candidate', async () => {
+    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    vi.mocked(backendRequest).mockResolvedValue({ files: ['docs/guide.md'] });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(loadFileContentRequested('ws-1', 'docs/guide.md', '/repo/docs/guide.md'));
+    await settle();
+
+    expect(actions).toEqual([
+      loadFileContentFailed(
+        'ws-1',
+        'docs/guide.md',
+        '/repo/docs/guide.md',
+        m.files_read_notFound_error(),
+        [],
+      ),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('filters the self-path out and retargets to the remaining unique match', async () => {
+    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
+    vi.mocked(backendRequest).mockResolvedValue({
+      files: ['docs/guide.md', 'packages/a/docs/guide.md'],
+    });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(loadFileContentRequested('ws-1', 'docs/guide.md', '/repo/docs/guide.md'));
+    await settle();
+
+    expect(actions).toEqual([
+      removeFileContentEntry('ws-1', 'docs/guide.md'),
+      updateFileTabPath('ws-1', 'docs/guide.md', 'packages/a/docs/guide.md'),
     ]);
     task.cancel();
     await task.toPromise();
@@ -167,29 +210,6 @@ describe('filesReadSaga', () => {
         '/repo/docs/guide.md',
         m.files_read_notFound_error(),
         ['packages/a/docs/guide.md', 'packages/b/docs/guide.md'],
-      ),
-    ]);
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('does not retarget when the only candidate is the requested path itself', async () => {
-    vi.spyOn(appClient.files, 'read').mockResolvedValue(null);
-    vi.mocked(backendRequest).mockResolvedValue({ files: ['docs/guide.md'] });
-    const channel = stdChannel();
-    const actions: unknown[] = [];
-    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
-
-    channel.put(loadFileContentRequested('ws-1', 'docs/guide.md', '/repo/docs/guide.md'));
-    await settle();
-
-    expect(actions).toEqual([
-      loadFileContentFailed(
-        'ws-1',
-        'docs/guide.md',
-        '/repo/docs/guide.md',
-        m.files_read_notFound_error(),
-        ['docs/guide.md'],
       ),
     ]);
     task.cancel();

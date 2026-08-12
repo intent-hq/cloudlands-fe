@@ -28,8 +28,10 @@ function* loadFileContentWorker(workspaceId: string, path: string, absolutePath:
     if (!entry) {
       // Not found at the workspace root — the path may be submodule- or
       // worktree-relative (see monorepo#2059). Attempt suffix resolution.
+      // Candidates never include the requested path itself (the helper
+      // excludes the self-match), so a single candidate is a real retarget.
       const { candidates, truncated } = yield* call(resolveFileBySuffix, workspaceId, path);
-      if (!truncated && candidates.length === 1 && candidates[0] !== path) {
+      if (!truncated && candidates.length === 1) {
         // Provably unique match (search not truncated): retarget open file
         // tabs to the resolved path; the tab component re-issues the read
         // (and future saves) against it. A truncated search may hide further
