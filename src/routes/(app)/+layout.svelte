@@ -44,6 +44,7 @@
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
+  import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -1035,6 +1036,9 @@
   <AuggieSetupGate />
 
   <Toast />
+
+  <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
+  <NodeVersionToast />
 
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />
