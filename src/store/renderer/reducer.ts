@@ -90,6 +90,7 @@ import { hostRequirementsReducer } from './slices/host-requirements/host-require
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
+import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -184,4 +185,5 @@ export const reducers = {
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
+  workspaceImport: workspaceImportReducer,
 } as const;

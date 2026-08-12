@@ -5638,5 +5638,19 @@
   "workspace_transfer_finalizing_message": "Finalisation…",
   "workspace_transfer_finalizeFailed_error": "Impossible de finaliser le transfert : {error}",
   "workspace_transfer_unknown_error": "Erreur inconnue",
-  "workspace_transfer_close_label": "Fermer"
+  "workspace_transfer_close_label": "Fermer",
+  "menu_import_workspace": "Importer un espace depuis un fichier…",
+  "workspace_import_modal_title": "Importer un espace",
+  "workspace_import_importing_title": "Importation de l'espace depuis le fichier…",
+  "workspace_import_phase_reading": "Lecture de l'archive…",
+  "workspace_import_phase_uploading": "Téléversement de l'archive…",
+  "workspace_import_phase_committing": "Importation sur le serveur…",
+  "workspace_import_progress_ariaLabel": "Progression de l'importation",
+  "workspace_import_result_success_title": "Importation terminée",
+  "workspace_import_result_success_message": "« {title} » a été importé avec succès.",
+  "workspace_import_result_interrupted_one": "1 agent était en cours de tâche à la création de l'archive. Reprenez-le depuis l'espace.",
+  "workspace_import_result_interrupted_many": "{count} agents étaient en cours de tâche à la création de l'archive. Reprenez-les depuis l'espace.",
+  "workspace_import_result_failed_title": "Échec de l'importation",
+  "workspace_import_result_failed_message": "L'importation ne s'est pas terminée : {error}",
+  "workspace_import_openWorkspace_label": "Ouvrir l'espace"
 }

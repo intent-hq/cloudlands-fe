@@ -5638,5 +5638,19 @@
   "workspace_transfer_finalizing_message": "仕上げ中…",
   "workspace_transfer_finalizeFailed_error": "転送を完了できませんでした: {error}",
   "workspace_transfer_unknown_error": "不明なエラー",
-  "workspace_transfer_close_label": "閉じる"
+  "workspace_transfer_close_label": "閉じる",
+  "menu_import_workspace": "ファイルからスペースをインポート…",
+  "workspace_import_modal_title": "スペースをインポート",
+  "workspace_import_importing_title": "ファイルからスペースをインポートしています…",
+  "workspace_import_phase_reading": "アーカイブを読み込み中…",
+  "workspace_import_phase_uploading": "アーカイブをアップロード中…",
+  "workspace_import_phase_committing": "サーバーでインポート中…",
+  "workspace_import_progress_ariaLabel": "インポートの進行状況",
+  "workspace_import_result_success_title": "インポート完了",
+  "workspace_import_result_success_message": "「{title}」を正常にインポートしました。",
+  "workspace_import_result_interrupted_one": "アーカイブ作成時に 1 個のエージェントがタスク実行中でした。スペースから再開してください。",
+  "workspace_import_result_interrupted_many": "アーカイブ作成時に {count} 個のエージェントがタスク実行中でした。スペースから再開してください。",
+  "workspace_import_result_failed_title": "インポート失敗",
+  "workspace_import_result_failed_message": "インポートが完了しませんでした: {error}",
+  "workspace_import_openWorkspace_label": "スペースを開く"
 }

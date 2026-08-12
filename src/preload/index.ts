@@ -525,6 +525,9 @@ const ALLOWED_CHANNELS = [
   "transfer:finalize",
   "transfer:cancel",
   "transfer:progress",
+  "transfer:import-start",
+  "transfer:import-cancel",
+  "transfer:import-progress",
   "hardware-console:clear-lighting",
   "hardware-console:clear-lighting-done",
   "hardware-console:get-owner-status",
@@ -677,7 +680,9 @@ const ALLOWED_CHANNELS = [
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
   "connections:auth-rejected",
-  "transfer:progress"
+  "transfer:progress",
+  "transfer:import-progress",
+  "menu:import-workspace"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -849,7 +854,9 @@ const EVENT_CHANNELS = [
   "connections:cert-mismatch",
   "connections:protocol-mismatch",
   "connections:auth-rejected",
-  "transfer:progress"
+  "transfer:progress",
+  "transfer:import-progress",
+  "menu:import-workspace"
 ];
 
 /**
