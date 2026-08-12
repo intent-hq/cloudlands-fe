@@ -13,6 +13,11 @@ const EOCD64_SIG = 0x06064b50;
 const CENTRAL_SIG = 0x02014b50;
 const LOCAL_SIG = 0x04034b50;
 
+/** Upper bound on the central directory we are willing to load (~1.4M entries). */
+const MAX_DIRECTORY_BYTES = 64 * 1024 * 1024;
+/** Upper bound on a single extracted entry (manifest.json is a few KiB). */
+const MAX_ENTRY_BYTES = 16 * 1024 * 1024;
+
 /** Random-access reader seam (a file handle in production, Buffer in tests). */
 export interface ZipByteSource {
   size(): Promise<number>;
@@ -35,34 +40,48 @@ async function findEocd(source: ZipByteSource): Promise<Buffer> {
   if (size < 22) throw new Error('not a zip archive (too small)');
   const tail = await source.read(size - maxScan, maxScan);
   for (let i = tail.length - 22; i >= 0; i--) {
-    if (tail.readUInt32LE(i) === EOCD_SIG) return tail.subarray(i);
+    if (tail.readUInt32LE(i) !== EOCD_SIG) continue;
+    // Guard against the signature bytes appearing inside a zip comment: the
+    // candidate's comment-length field must consume exactly the remaining tail.
+    const commentLength = tail.readUInt16LE(i + 20);
+    if (i + 22 + commentLength === tail.length) return tail.subarray(i);
   }
   throw new Error('not a zip archive (no end-of-central-directory record)');
 }
 
-/** Central directory offset + entry count, following zip64 when flagged. */
+/** Central directory offset/size + entry count, following zip64 when flagged. */
 async function centralDirectory(
   source: ZipByteSource,
   eocd: Buffer,
-): Promise<{ offset: number; count: number }> {
-  let count = eocd.readUInt16LE(10);
-  let offset = eocd.readUInt32LE(16);
-  if (offset !== 0xffffffff && count !== 0xffff) return { offset, count };
-  // zip64: locator sits immediately before the EOCD record.
+): Promise<{ offset: number; directorySize: number; count: number }> {
   const size = await source.size();
-  const eocdPos = size - eocd.length;
-  const locator = await source.read(eocdPos - 20, 20);
-  if (locator.readUInt32LE(0) !== EOCD64_LOCATOR_SIG) {
-    throw new Error('zip64 archive without an EOCD64 locator');
+  let directoryEnd = size - eocd.length; // the EOCD position
+  let count = eocd.readUInt16LE(10);
+  let directorySize = eocd.readUInt32LE(12);
+  let offset = eocd.readUInt32LE(16);
+  if (offset === 0xffffffff || count === 0xffff || directorySize === 0xffffffff) {
+    // zip64: locator sits immediately before the EOCD record.
+    const locator = await source.read(directoryEnd - 20, 20);
+    if (locator.readUInt32LE(0) !== EOCD64_LOCATOR_SIG) {
+      throw new Error('zip64 archive without an EOCD64 locator');
+    }
+    const eocd64Pos = Number(locator.readBigUInt64LE(8));
+    const eocd64 = await source.read(eocd64Pos, 56);
+    if (eocd64.readUInt32LE(0) !== EOCD64_SIG) {
+      throw new Error('invalid zip64 end-of-central-directory record');
+    }
+    count = Number(eocd64.readBigUInt64LE(32));
+    directorySize = Number(eocd64.readBigUInt64LE(40));
+    offset = Number(eocd64.readBigUInt64LE(48));
+    directoryEnd = eocd64Pos;
   }
-  const eocd64Pos = Number(locator.readBigUInt64LE(8));
-  const eocd64 = await source.read(eocd64Pos, 56);
-  if (eocd64.readUInt32LE(0) !== EOCD64_SIG) {
-    throw new Error('invalid zip64 end-of-central-directory record');
+  if (directorySize > MAX_DIRECTORY_BYTES) {
+    throw new Error('zip central directory is too large');
   }
-  count = Number(eocd64.readBigUInt64LE(32));
-  offset = Number(eocd64.readBigUInt64LE(48));
-  return { offset, count };
+  if (offset + directorySize > directoryEnd) {
+    throw new Error('invalid zip central directory location');
+  }
+  return { offset, directorySize, count };
 }
 
 /** Parse central-directory entries until `fileName` is found. */
@@ -116,11 +135,13 @@ function findEntry(directory: Buffer, count: number, fileName: string): CentralE
  */
 export async function readZipEntry(source: ZipByteSource, fileName: string): Promise<Buffer | null> {
   const eocd = await findEocd(source);
-  const { offset, count } = await centralDirectory(source, eocd);
-  const size = await source.size();
-  const directory = await source.read(offset, size - eocd.length - offset);
+  const { offset, directorySize, count } = await centralDirectory(source, eocd);
+  const directory = await source.read(offset, directorySize);
   const entry = findEntry(directory, count, fileName);
   if (!entry) return null;
+  if (entry.compressedSize > MAX_ENTRY_BYTES || entry.uncompressedSize > MAX_ENTRY_BYTES) {
+    throw new Error(`zip entry ${fileName} is too large`);
+  }
   // Local header: name/extra lengths there may differ from the central copy.
   const local = await source.read(entry.localHeaderOffset, 30);
   if (local.readUInt32LE(0) !== LOCAL_SIG) {
@@ -131,7 +152,17 @@ export async function readZipEntry(source: ZipByteSource, fileName: string): Pro
   const dataOffset = entry.localHeaderOffset + 30 + nameLength + extraLength;
   const compressed = await source.read(dataOffset, entry.compressedSize);
   if (entry.compressionMethod === 0) return compressed;
-  if (entry.compressionMethod === 8) return inflateRawSync(compressed);
+  if (entry.compressionMethod === 8) {
+    // Bound the inflate so a lying size field cannot expand without limit.
+    try {
+      return inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+        throw new Error(`zip entry ${fileName} is too large`);
+      }
+      throw error;
+    }
+  }
   throw new Error(`unsupported zip compression method ${entry.compressionMethod} for ${fileName}`);
 }
 
