@@ -70,6 +70,29 @@ describe('workspaceImportSaga', () => {
     h.task.cancel();
   });
 
+  it('does not launch a headless import when the reducer rejected the start', async () => {
+    stubBridge();
+    mocks.invoke.mockResolvedValue({ success: true });
+    // Settled success screen: the reducer drops importStartRequested here.
+    let seed = workspaceImportReducer(
+      initialState,
+      importStartRequested({ reuseLastFile: false }),
+    );
+    seed = workspaceImportReducer(
+      seed,
+      importRunSucceeded({ workspaceId: 'ws-1', workspaceTitle: 'My Space', interruptedAgents: [] }),
+    );
+    const h = harness(seed);
+
+    h.channel.put(importStartRequested({ reuseLastFile: false }));
+    await settle();
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(h.state().step).toBe('result');
+    expect(h.state().runStatus).toBe('succeeded');
+    h.task.cancel();
+  });
+
   it('surfaces a failed result with the daemon error verbatim', async () => {
     stubBridge();
     const daemonError = 'archive was created by intentd 1.0.0 but this daemon is 1.2.3';

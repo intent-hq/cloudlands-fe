@@ -60,20 +60,21 @@ async function centralDirectory(
   let directorySize = eocd.readUInt32LE(12);
   let offset = eocd.readUInt32LE(16);
   if (offset === 0xffffffff || count === 0xffff || directorySize === 0xffffffff) {
-    // zip64: locator sits immediately before the EOCD record.
-    const locator = await source.read(directoryEnd - 20, 20);
-    if (locator.readUInt32LE(0) !== EOCD64_LOCATOR_SIG) {
-      throw new Error('zip64 archive without an EOCD64 locator');
+    // Maybe zip64: the locator sits immediately before the EOCD record. A
+    // legitimate non-zip64 archive can hit the count sentinel (exactly 65535
+    // entries), so a missing locator falls back to the EOCD values.
+    const locator = directoryEnd >= 20 ? await source.read(directoryEnd - 20, 20) : null;
+    if (locator && locator.readUInt32LE(0) === EOCD64_LOCATOR_SIG) {
+      const eocd64Pos = Number(locator.readBigUInt64LE(8));
+      const eocd64 = await source.read(eocd64Pos, 56);
+      if (eocd64.readUInt32LE(0) !== EOCD64_SIG) {
+        throw new Error('invalid zip64 end-of-central-directory record');
+      }
+      count = Number(eocd64.readBigUInt64LE(32));
+      directorySize = Number(eocd64.readBigUInt64LE(40));
+      offset = Number(eocd64.readBigUInt64LE(48));
+      directoryEnd = eocd64Pos;
     }
-    const eocd64Pos = Number(locator.readBigUInt64LE(8));
-    const eocd64 = await source.read(eocd64Pos, 56);
-    if (eocd64.readUInt32LE(0) !== EOCD64_SIG) {
-      throw new Error('invalid zip64 end-of-central-directory record');
-    }
-    count = Number(eocd64.readBigUInt64LE(32));
-    directorySize = Number(eocd64.readBigUInt64LE(40));
-    offset = Number(eocd64.readBigUInt64LE(48));
-    directoryEnd = eocd64Pos;
   }
   if (directorySize > MAX_DIRECTORY_BYTES) {
     throw new Error('zip central directory is too large');

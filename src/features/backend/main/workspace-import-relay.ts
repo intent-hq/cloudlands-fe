@@ -46,6 +46,8 @@ export interface ImportRelayDeps {
 
 /** Per-chunk ops get a generous bound (16 MiB base64 frames on slow links). */
 const CHUNK_TIMEOUT_MS = 120_000;
+/** `workspace.import.chunk` is idempotent per seq (PROTOCOL §5.1) — retry once. */
+const CHUNK_ATTEMPTS = 2;
 /** `workspace.import.commit` unpacks + materializes git — the slowest call. */
 const COMMIT_TIMEOUT_MS = 600_000;
 /** Read the archive in 4 MiB slices while hashing. */
@@ -113,11 +115,23 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
       const length = Math.min(maxChunkBytes, sizeBytes - offset);
       const bytes = await file.read(offset, length);
       if (isCancelled()) throw new Error('cancelled');
-      await client.request(
-        'workspace.import.chunk',
-        { importId, seq, data: bytes.toString('base64') },
-        { timeoutMs: CHUNK_TIMEOUT_MS },
-      );
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await client.request(
+            'workspace.import.chunk',
+            { importId, seq, data: bytes.toString('base64') },
+            { timeoutMs: CHUNK_TIMEOUT_MS },
+          );
+          break;
+        } catch (error) {
+          if (attempt >= CHUNK_ATTEMPTS || isCancelled()) throw error;
+          deps.logger.warn('workspace.import.chunk failed; retrying', {
+            seq,
+            attempt,
+            error: errText(error),
+          });
+        }
+      }
       bytesUp += length;
       deps.broadcastProgress({
         phase: 'uploading',
@@ -133,19 +147,21 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
     if (session) {
       return { success: false, error: 'an import is already in progress' };
     }
-    let filePath = params.reuseLastFile ? lastFilePath : undefined;
-    if (!filePath) {
-      filePath = await deps.showOpenDialog();
-      if (!filePath) return { success: false, canceled: true };
-    }
-    lastFilePath = filePath;
-
+    // The session exists across the open dialog too, so a wizard close while
+    // the native dialog is up marks it cancelled and the pick is discarded.
     const current: ImportSession = { cancelled: false };
     session = current;
     const isCancelled = (): boolean => current.cancelled;
 
     let file: ImportFileSource | null = null;
+    let filePath = params.reuseLastFile ? lastFilePath : undefined;
     try {
+      if (!filePath) {
+        filePath = await deps.showOpenDialog();
+        if (!filePath || isCancelled()) return { success: false, canceled: true };
+      }
+      lastFilePath = filePath;
+
       const client = deps.getClient();
       current.client = client;
       file = await deps.openFile(filePath);
@@ -167,6 +183,9 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
       );
       current.importId = begin.importId;
       try {
+        if (!Number.isFinite(begin.maxChunkBytes) || begin.maxChunkBytes <= 0) {
+          throw new Error('invalid maxChunkBytes from workspace.import.begin');
+        }
         await uploadChunks(client, file, sizeBytes, begin.maxChunkBytes, begin.importId, isCancelled);
         if (isCancelled()) throw new Error('cancelled');
         deps.broadcastProgress({

@@ -44,10 +44,15 @@ function broadcastProgress(event: ImportProgressEvent): void {
 }
 
 async function showOpenDialog(): Promise<string | undefined> {
-  const { filePaths, canceled } = await dialog.showOpenDialog({
-    properties: ['openFile'],
+  const options = {
+    properties: ['openFile' as const],
     filters: [{ name: 'Zip archive', extensions: ['zip'] }], // i18n-ignore (file-type filter name)
-  });
+  };
+  // Window-modal when possible so the wizard underneath stays inert.
+  const win = BrowserWindow.getFocusedWindow();
+  const { filePaths, canceled } = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
   return canceled || filePaths.length === 0 ? undefined : filePaths[0];
 }
 

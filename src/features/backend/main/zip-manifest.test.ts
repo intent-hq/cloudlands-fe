@@ -152,6 +152,66 @@ describe('readZipEntry / readZipManifest', () => {
     await expect(readZipManifest(sourceOf(corrupted))).rejects.toThrow(/too large/);
   });
 
+  it('reads a manifest via the zip64 EOCD64 locator/record and extra field', async () => {
+    const data = Buffer.from(JSON.stringify(MANIFEST));
+    const name = Buffer.from('manifest.json', 'utf8');
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const centralOffset = 30 + name.length + data.length;
+    // Central entry with all three fields deferred to a zip64 extra field
+    // (sizes + local header offset all 0xffffffff → three 8-byte values).
+    const extra = Buffer.alloc(4 + 24);
+    extra.writeUInt16LE(0x0001, 0);
+    extra.writeUInt16LE(24, 2);
+    extra.writeBigUInt64LE(BigInt(data.length), 4); // uncompressed
+    extra.writeBigUInt64LE(BigInt(data.length), 12); // compressed
+    extra.writeBigUInt64LE(0n, 20); // local header offset
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0);
+    cen.writeUInt16LE(0, 10);
+    cen.writeUInt32LE(0xffffffff, 20);
+    cen.writeUInt32LE(0xffffffff, 24);
+    cen.writeUInt16LE(name.length, 28);
+    cen.writeUInt16LE(extra.length, 30);
+    cen.writeUInt32LE(0xffffffff, 42);
+    const centralBuf = Buffer.concat([cen, name, extra]);
+    const eocd64Pos = centralOffset + centralBuf.length;
+    const eocd64 = Buffer.alloc(56);
+    eocd64.writeUInt32LE(0x06064b50, 0);
+    eocd64.writeBigUInt64LE(1n, 24); // entries on this disk
+    eocd64.writeBigUInt64LE(1n, 32); // total entries
+    eocd64.writeBigUInt64LE(BigInt(centralBuf.length), 40);
+    eocd64.writeBigUInt64LE(BigInt(centralOffset), 48);
+    const locator = Buffer.alloc(20);
+    locator.writeUInt32LE(0x07064b50, 0);
+    locator.writeBigUInt64LE(BigInt(eocd64Pos), 8);
+    // EOCD with sentinel values pointing at the zip64 structures.
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(0xffff, 8);
+    eocd.writeUInt16LE(0xffff, 10);
+    eocd.writeUInt32LE(0xffffffff, 12);
+    eocd.writeUInt32LE(0xffffffff, 16);
+    const zip = Buffer.concat([local, name, data, centralBuf, eocd64, locator, eocd]);
+    await expect(readZipManifest(sourceOf(zip))).resolves.toEqual(MANIFEST);
+  });
+
+  it('falls back to EOCD values when a count sentinel has no zip64 locator', async () => {
+    // A non-zip64 archive whose entry count happens to read 0xffff must not
+    // be rejected: with no EOCD64 locator the EOCD values are used as-is.
+    const zip = buildZip([
+      { name: 'manifest.json', data: Buffer.from(JSON.stringify(MANIFEST)), method: 0 },
+    ]);
+    const corrupted = Buffer.from(zip);
+    corrupted.writeUInt16LE(0xffff, corrupted.length - 22 + 10);
+    // count only bounds iteration; the directory holds one valid entry.
+    await expect(readZipManifest(sourceOf(corrupted))).resolves.toEqual(MANIFEST);
+  });
+
   it('bounds the inflate output even when the declared sizes lie', async () => {
     // A deflated 64 MiB zero-run compresses to a few KiB; forge the central
     // directory sizes to claim it is small so only the inflate bound trips.

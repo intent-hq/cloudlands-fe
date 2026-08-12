@@ -30,7 +30,11 @@ import {
   importRunSucceeded,
   importStartRequested,
 } from '../workspace-import-slice';
-import { selectImportRunStatus, selectImportWorkspaceId } from '../workspace-import-selectors';
+import {
+  selectImportRunStatus,
+  selectImportStep,
+  selectImportWorkspaceId,
+} from '../workspace-import-selectors';
 
 const logger = createLogger('WorkspaceImportSaga');
 const TRANSFER = IPC_CHANNELS.TRANSFER;
@@ -49,6 +53,12 @@ async function invokeImport<T>(channel: string, params?: unknown): Promise<T> {
 export function* runImport(
   action: ReturnType<typeof importStartRequested>,
 ): SagaGenerator<void> {
+  // Only run when the reducer accepted the start (wizard open + running);
+  // otherwise a start fired against a settled success screen would launch a
+  // headless import whose dispatches the reducer guards drop.
+  const step = yield* selectImportStep.effect();
+  const runStatus = yield* selectImportRunStatus.effect();
+  if (step !== 'importing' || runStatus !== 'running') return;
   const [{ reuseLastFile }] = action.payload;
   try {
     const result = yield* call(invokeImport<ImportStartResult>, TRANSFER.IMPORT_START, {

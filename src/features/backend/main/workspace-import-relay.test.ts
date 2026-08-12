@@ -250,6 +250,70 @@ describe('workspace import relay', () => {
     expect(openFile).toHaveBeenLastCalledWith('/tmp/in.zip');
   });
 
+  it('retries a transiently failing chunk once (idempotent per seq)', async () => {
+    let failures = 0;
+    const client = makeClient({
+      'workspace.import.chunk': ({ seq }: { seq: number }) => {
+        if (seq === 1 && failures === 0) {
+          failures++;
+          return new Error('link hiccup');
+        }
+        return { importId: 'import-1', seq };
+      },
+    });
+    const file = makeFile();
+    const { deps } = makeDeps(client, file);
+    const relay = createWorkspaceImportRelay(deps);
+
+    const result = await relay.start({});
+
+    expect(result).toMatchObject({ success: true });
+    const seqOnes = client.calls.filter(
+      (c) => c.method === 'workspace.import.chunk' && c.params.seq === 1,
+    );
+    expect(seqOnes).toHaveLength(2);
+    expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(false);
+  });
+
+  it('rejects an invalid maxChunkBytes from begin and aborts the staging', async () => {
+    for (const maxChunkBytes of [0, -1, undefined]) {
+      const client = makeClient({
+        'workspace.import.begin': () => ({ importId: 'import-1', maxChunkBytes }),
+      });
+      const file = makeFile();
+      const { deps } = makeDeps(client, file);
+      const relay = createWorkspaceImportRelay(deps);
+
+      const result = await relay.start({});
+
+      expect(result).toEqual({
+        success: false,
+        error: 'invalid maxChunkBytes from workspace.import.begin',
+      });
+      expect(client.calls.some((c) => c.method === 'workspace.import.chunk')).toBe(false);
+      expect(client.calls.some((c) => c.method === 'workspace.import.abort')).toBe(true);
+    }
+  });
+
+  it('a cancel while the open dialog is up discards the picked file', async () => {
+    const client = makeClient();
+    const file = makeFile();
+    let relay: ReturnType<typeof createWorkspaceImportRelay>;
+    const { deps } = makeDeps(client, file, {
+      showOpenDialog: vi.fn(async () => {
+        // The wizard closes (cancel) while the native dialog is still open.
+        await relay.cancel();
+        return '/tmp/in.zip';
+      }),
+    });
+    relay = createWorkspaceImportRelay(deps);
+
+    const result = await relay.start({});
+
+    expect(result).toEqual({ success: false, canceled: true });
+    expect(client.calls).toHaveLength(0);
+  });
+
   it('rejects a second concurrent import', async () => {
     const client = makeClient();
     const file = makeFile();
