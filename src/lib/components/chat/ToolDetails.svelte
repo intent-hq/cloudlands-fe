@@ -16,7 +16,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
 
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+  selectActiveWorkspace,
+  selectActiveWorkspaceId,
+} from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
@@ -41,6 +44,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }
 
   const { input, result, parsedResult, isError = false, workspaceId }: Props = $props();
+
+  // Active workspace readable (init-time selector) — passed to AgentCard so it
+  // can dispatch ensureAgentSessionLoaded and resolve the delegated agent.
+  const activeWorkspace = selectActiveWorkspace();
 
   let copied = $state(false);
   let showRaw = $state(false);
@@ -504,7 +511,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
                 </div>
               {/if}
               {#if parsedResult.agentId}
-                <AgentCard agentId={parsedResult.agentId} />
+                <AgentCard
+                  agentId={parsedResult.agentId}
+                  agentName={parsedResult.delegatedAgentName}
+                  provider={parsedResult.delegatedAgentProvider}
+                  workspace={$activeWorkspace ?? null}
+                />
               {:else}
                 <div class="text-xs text-subtle italic">{m.chat_toolDetails_agentSpawned_label()}</div>
               {/if}
