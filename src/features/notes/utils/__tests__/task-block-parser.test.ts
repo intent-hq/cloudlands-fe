@@ -437,6 +437,35 @@ Build auth system.
     it('should ignore an unterminated block', () => {
       expect(scanTaskBlocks('@@@task key=t1\n# Task\nno close')).toHaveLength(0);
     });
+
+    it('should detect an empty-body block as an invalid block (no title)', () => {
+      const content = '@@@task key=t1\n@@@';
+      const blocks = scanTaskBlocks(content);
+
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0].body).toBe('');
+
+      const result = extractTasksBlocks(content);
+      expect(result.blockCount).toBe(1);
+      expect(result.validTaskCount).toBe(0);
+      expect(result.invalidBlockCount).toBe(1);
+      expect(result.contentWithoutBlocks).toBe('<!-- invalid-task-block-removed -->');
+    });
+
+    it('should detect adjacent fences back-to-back', () => {
+      const content = '@@@task key=a\n# A\n@@@\n@@@task key=b\n# B\n@@@';
+      const blocks = scanTaskBlocks(content);
+
+      expect(blocks).toHaveLength(2);
+
+      const result = extractTasksBlocks(content);
+      expect(result.validTaskCount).toBe(2);
+      expect(result.tasks[0].title).toBe('A');
+      expect(result.tasks[1].title).toBe('B');
+      expect(result.contentWithoutBlocks).toBe(
+        '<!-- task-block-placeholder-0 -->\n<!-- task-block-placeholder-1 -->',
+      );
+    });
   });
 
   describe('nested code blocks (bug reproduction)', () => {
