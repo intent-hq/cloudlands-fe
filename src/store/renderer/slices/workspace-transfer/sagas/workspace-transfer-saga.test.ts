@@ -247,6 +247,29 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     h.task.cancel();
   });
 
+  it('finalize for a download forces archiveSource off and sends no status message', async () => {
+    mocks.invoke.mockResolvedValue({ success: true });
+    let state = workspaceTransferReducer(
+      confirmLoadedState({ kind: 'download' }),
+      transferStartRequested(),
+    );
+    state = workspaceTransferReducer(
+      state,
+      transferRunSucceeded({ interruptedAgents: [], downloadFilePath: '/tmp/ws-1.zip' }),
+    );
+    const h = harness(state);
+
+    h.channel.put(transferFinalizeRequested({ switchToTarget: false }));
+    await settle();
+
+    expect(mocks.invoke).toHaveBeenCalledWith('transfer:finalize', {
+      archiveSource: false,
+      restartAgents: false,
+    });
+    expect(h.dispatch).toHaveBeenCalledWith(closeTransferModal());
+    h.task.cancel();
+  });
+
   it('finalize success with resumeFailed surfaces a warning toast and still closes', async () => {
     mocks.invoke.mockResolvedValue({ success: true, resumeFailed: ['agent-1', 'agent-2'] });
     let state = workspaceTransferReducer(
