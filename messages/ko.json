@@ -5682,5 +5682,19 @@
   "workspace_activityPreview_openAgent_ariaLabel": "에이전트 열기",
   "workspace_activityPreview_showLess_label": "간단히 보기",
   "workspace_activityPreview_showMore_label": "더 보기",
-  "modals_setupScript_saveAndDone_label": "저장 후 완료"
+  "modals_setupScript_saveAndDone_label": "저장 후 완료",
+  "menu_import_workspace": "파일에서 스페이스 가져오기…",
+  "workspace_import_modal_title": "스페이스 가져오기",
+  "workspace_import_importing_title": "파일에서 스페이스를 가져오는 중…",
+  "workspace_import_phase_reading": "아카이브 읽는 중…",
+  "workspace_import_phase_uploading": "아카이브 업로드 중…",
+  "workspace_import_phase_committing": "서버에서 가져오는 중…",
+  "workspace_import_progress_ariaLabel": "가져오기 진행률",
+  "workspace_import_result_success_title": "가져오기 완료",
+  "workspace_import_result_success_message": "“{title}”을(를) 성공적으로 가져왔습니다.",
+  "workspace_import_result_interrupted_one": "아카이브 생성 시 1개의 에이전트가 작업 중이었습니다. 스페이스에서 다시 시작하세요.",
+  "workspace_import_result_interrupted_many": "아카이브 생성 시 {count}개의 에이전트가 작업 중이었습니다. 스페이스에서 다시 시작하세요.",
+  "workspace_import_result_failed_title": "가져오기 실패",
+  "workspace_import_result_failed_message": "가져오기를 완료하지 못했습니다: {error}",
+  "workspace_import_openWorkspace_label": "스페이스 열기"
 }

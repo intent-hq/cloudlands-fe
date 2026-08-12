@@ -5682,5 +5682,19 @@
   "workspace_branchSelector_refreshBranches_ariaLabel": "Refresh branches",
   "workspace_columns_openSpaces_ariaLabel": "Open spaces in columns",
   "workspace_columns_workspaceColumn_ariaLabel": "Workspace column {workspaceId}",
-  "workspace_diskUsagePill_shrink_description": "Opens an agent with a pre-filled safe cleanup request. Nothing runs until you review and send it."
+  "workspace_diskUsagePill_shrink_description": "Opens an agent with a pre-filled safe cleanup request. Nothing runs until you review and send it.",
+  "menu_import_workspace": "Import Workspace from File…",
+  "workspace_import_modal_title": "Import Space",
+  "workspace_import_importing_title": "Importing space from file…",
+  "workspace_import_phase_reading": "Reading archive…",
+  "workspace_import_phase_uploading": "Uploading archive…",
+  "workspace_import_phase_committing": "Importing on the server…",
+  "workspace_import_progress_ariaLabel": "Import progress",
+  "workspace_import_result_success_title": "Import complete",
+  "workspace_import_result_success_message": "“{title}” was imported successfully.",
+  "workspace_import_result_interrupted_one": "1 agent was mid-task when the archive was created. Resume it from the space.",
+  "workspace_import_result_interrupted_many": "{count} agents were mid-task when the archive was created. Resume them from the space.",
+  "workspace_import_result_failed_title": "Import failed",
+  "workspace_import_result_failed_message": "The import did not complete: {error}",
+  "workspace_import_openWorkspace_label": "Open Space"
 }

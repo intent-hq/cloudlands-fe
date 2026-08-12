@@ -5682,5 +5682,19 @@
   "workspace_activityPreview_openAgent_ariaLabel": "エージェントを開く",
   "workspace_activityPreview_showLess_label": "表示を減らす",
   "workspace_activityPreview_showMore_label": "さらに表示",
-  "modals_setupScript_saveAndDone_label": "保存して完了"
+  "modals_setupScript_saveAndDone_label": "保存して完了",
+  "menu_import_workspace": "ファイルからスペースをインポート…",
+  "workspace_import_modal_title": "スペースをインポート",
+  "workspace_import_importing_title": "ファイルからスペースをインポートしています…",
+  "workspace_import_phase_reading": "アーカイブを読み込み中…",
+  "workspace_import_phase_uploading": "アーカイブをアップロード中…",
+  "workspace_import_phase_committing": "サーバーでインポート中…",
+  "workspace_import_progress_ariaLabel": "インポートの進行状況",
+  "workspace_import_result_success_title": "インポート完了",
+  "workspace_import_result_success_message": "「{title}」を正常にインポートしました。",
+  "workspace_import_result_interrupted_one": "アーカイブ作成時に 1 個のエージェントがタスク実行中でした。スペースから再開してください。",
+  "workspace_import_result_interrupted_many": "アーカイブ作成時に {count} 個のエージェントがタスク実行中でした。スペースから再開してください。",
+  "workspace_import_result_failed_title": "インポート失敗",
+  "workspace_import_result_failed_message": "インポートが完了しませんでした: {error}",
+  "workspace_import_openWorkspace_label": "スペースを開く"
 }

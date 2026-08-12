@@ -848,6 +848,12 @@ export const IPC_CHANNELS = {
     FINALIZE: 'transfer:finalize',
     CANCEL: 'transfer:cancel',
     PROGRESS: 'transfer:progress',
+    // Import-from-file (File menu): main reads a transfer zip from disk and
+    // streams it into the CURRENT backend. Bytes never cross renderer IPC —
+    // counters arrive on the `transfer:import-progress` push channel.
+    IMPORT_START: 'transfer:import-start',
+    IMPORT_CANCEL: 'transfer:import-cancel',
+    IMPORT_PROGRESS: 'transfer:import-progress',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
@@ -1049,6 +1055,11 @@ export const EVENT_CHANNELS = [
   // Workspace transfer relay progress (main → renderer): byte/chunk counters
   // for the wizard's step-3 progress UI. Never carries archive bytes.
   'transfer:progress',
+  // Import-from-file progress (main → renderer): byte/chunk counters for the
+  // import wizard. Never carries archive bytes.
+  'transfer:import-progress',
+  // File menu → renderer: open the import-workspace wizard.
+  'menu:import-workspace',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

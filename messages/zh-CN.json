@@ -5682,5 +5682,19 @@
   "workspace_activityPreview_openAgent_ariaLabel": "打开智能体",
   "workspace_activityPreview_showLess_label": "收起",
   "workspace_activityPreview_showMore_label": "显示更多",
-  "modals_setupScript_saveAndDone_label": "保存并完成"
+  "modals_setupScript_saveAndDone_label": "保存并完成",
+  "menu_import_workspace": "从文件导入空间…",
+  "workspace_import_modal_title": "导入空间",
+  "workspace_import_importing_title": "正在从文件导入空间…",
+  "workspace_import_phase_reading": "正在读取归档…",
+  "workspace_import_phase_uploading": "正在上传归档…",
+  "workspace_import_phase_committing": "正在服务器上导入…",
+  "workspace_import_progress_ariaLabel": "导入进度",
+  "workspace_import_result_success_title": "导入完成",
+  "workspace_import_result_success_message": "“{title}”已成功导入。",
+  "workspace_import_result_interrupted_one": "创建归档时有 1 个代理正在执行任务。请在空间中恢复它。",
+  "workspace_import_result_interrupted_many": "创建归档时有 {count} 个代理正在执行任务。请在空间中恢复它们。",
+  "workspace_import_result_failed_title": "导入失败",
+  "workspace_import_result_failed_message": "导入未完成：{error}",
+  "workspace_import_openWorkspace_label": "打开空间"
 }

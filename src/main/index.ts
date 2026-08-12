@@ -290,6 +290,7 @@ import {
   reconcileActiveConnectionOnBoot,
 } from '../features/backend/main/backend.ipc';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
+import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode } from '../features/backend/main/connection-mode';
 import { getActiveId } from '../features/backend/main/connections-store';
 import { startIntentdSidecar, stopIntentdSidecar } from '../features/backend/main/intentd-sidecar';
@@ -796,6 +797,16 @@ app.whenReady().then(async () => {
       {
         label: m.menu_open_recent(),
         submenu: recentWorkspacesSubmenu,
+      },
+      { type: 'separator' },
+      {
+        label: m.menu_import_workspace(),
+        click: () => {
+          const focusedWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
+          if (focusedWindow && !focusedWindow.isDestroyed()) {
+            focusedWindow.webContents.send('menu:import-workspace');
+          }
+        },
       },
       { type: 'separator' },
     ];
@@ -1512,6 +1523,7 @@ app.whenReady().then(async () => {
 
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
+  registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
 
   // Hydrate the main-process provider catalog cache (non-blocking): the
   // JSON-RPC client queues the request until the daemon socket connects.
