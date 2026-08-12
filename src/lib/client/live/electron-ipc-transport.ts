@@ -40,56 +40,73 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
 }
 
 /**
+ * Multiplex one preload-bridge listener for `channel` across any number of
+ * subscribers.
+ *
+ * The bridge listener is registered lazily with the FIRST subscriber and
+ * removed with the LAST one, so a channel consumed by N renderer modules costs
+ * exactly one `ipcRenderer` listener instead of N. Subscribers are stored as
+ * per-subscription entries (not the caller's function) so subscribing the same
+ * handler twice yields two independent subscriptions, and disposers are
+ * idempotent so a double-dispose cannot drop a later subscriber's listener.
+ * Handler exceptions are isolated: one throwing subscriber does not stop
+ * delivery to the rest.
+ */
+function createChannelFanout<TPayload>(channel: string, label: string) {
+  const handlers = new Set<(payload: TPayload) => void>();
+  let listener: { api: NonNullable<Window['electronAPI']>; id: string } | null = null;
+
+  return {
+    subscribe(
+      api: NonNullable<Window['electronAPI']>,
+      handler: (payload: TPayload) => void,
+    ): () => void {
+      if (!listener) {
+        const id = api.on(channel, (payload: TPayload) => {
+          for (const entry of [...handlers]) {
+            try {
+              entry(payload);
+            } catch (error) {
+              console.warn(`[electron-ipc-transport] ${label} handler threw`, error);
+            }
+          }
+        });
+        listener = { api, id };
+      }
+      handlers.add(handler);
+      let disposed = false;
+      return () => {
+        if (disposed) return;
+        disposed = true;
+        handlers.delete(handler);
+        if (handlers.size === 0 && listener) {
+          listener.api.offById(channel, listener.id);
+          listener = null;
+        }
+      };
+    },
+  };
+}
+
+/**
  * Create the Electron-IPC transport. The preload bridge is re-checked on
  * every call (rather than captured at construction) so availability tracks
  * the live `window.electronAPI` state, matching the legacy module behavior.
  */
 export function createElectronIpcBackendTransport(): BackendTransport {
-  // Notification fan-out: all onNotification subscribers share ONE underlying
-  // `backend:notification` IPC listener while retaining independent disposal.
-  const notificationHandlers = new Set<(notification: BackendNotification) => void>();
-  let notificationListener: {
-    api: NonNullable<Window['electronAPI']>;
-    id: string;
-  } | null = null;
-
-  // Reconnect fan-out: all onReconnected subscribers share ONE underlying
-  // `backend:status` IPC listener, so the preload-bridge listener count stays
-  // constant no matter how many modules subscribe (intent-hq/monorepo#1424).
-  const reconnectedHandlers = new Set<() => void>();
-  let statusListener: { api: NonNullable<Window['electronAPI']>; id: string } | null = null;
-
-  function ensureNotificationListener(api: NonNullable<Window['electronAPI']>): void {
-    if (notificationListener) return;
-    const id = api.on(BACKEND.NOTIFICATION, (payload: BackendNotification) => {
-      for (const handler of [...notificationHandlers]) {
-        try {
-          handler(payload);
-        } catch (error) {
-          console.warn('[electron-ipc-transport] onNotification handler threw', error);
-        }
-      }
-    });
-    notificationListener = { api, id };
-  }
-
-  function ensureStatusListener(api: NonNullable<Window['electronAPI']>): void {
-    if (statusListener) return;
-    const id = api.on(
-      BACKEND.STATUS,
-      (payload: { status?: string; reconnected?: boolean } | undefined) => {
-        if (payload?.status !== 'connected' || payload.reconnected !== true) return;
-        for (const handler of [...reconnectedHandlers]) {
-          try {
-            handler();
-          } catch (error) {
-            console.warn('[electron-ipc-transport] onReconnected handler threw', error);
-          }
-        }
-      },
-    );
-    statusListener = { api, id };
-  }
+  // Every `backend:*` broadcast channel is consumed through ONE shared
+  // preload-bridge listener that fans out to its subscribers, so the IPC
+  // listener count per channel is 0 or 1 no matter how many modules subscribe
+  // (`backend:status`, intent-hq/monorepo#1424; `backend:notification`,
+  // intent-hq/monorepo#2034 — 11 renderer modules subscribe at boot and the
+  // per-module listeners tripped ipcRenderer's default cap of 10).
+  const reconnectedFanout = createChannelFanout<
+    { status?: string; reconnected?: boolean } | undefined
+  >(BACKEND.STATUS, 'onReconnected');
+  const notificationFanout = createChannelFanout<BackendNotification>(
+    BACKEND.NOTIFICATION,
+    'onNotification',
+  );
 
   return {
     isAvailable(): boolean {
@@ -131,22 +148,16 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       }
     },
 
+    /**
+     * Daemon JSON-RPC notifications (`events.event` and friends). Subscribers
+     * fan out from a single shared `backend:notification` IPC listener; the
+     * listener is removed when the last subscriber disposes and re-registered
+     * on the next subscribe (intent-hq/monorepo#2034).
+     */
     onNotification(handler: (notification: BackendNotification) => void): () => void {
       const api = electronAPI();
       if (!api) return () => {};
-      ensureNotificationListener(api);
-      const entry = (notification: BackendNotification) => handler(notification);
-      notificationHandlers.add(entry);
-      let disposed = false;
-      return () => {
-        if (disposed) return;
-        disposed = true;
-        notificationHandlers.delete(entry);
-        if (notificationHandlers.size === 0 && notificationListener) {
-          notificationListener.api.offById(BACKEND.NOTIFICATION, notificationListener.id);
-          notificationListener = null;
-        }
-      };
+      return notificationFanout.subscribe(api, (payload) => handler(payload));
     },
 
     /**
@@ -159,22 +170,10 @@ export function createElectronIpcBackendTransport(): BackendTransport {
     onReconnected(handler: () => void): () => void {
       const api = electronAPI();
       if (!api) return () => {};
-      ensureStatusListener(api);
-      // Wrap in a per-subscription entry so subscribing the same handler
-      // twice yields two independent subscriptions (Set semantics would
-      // otherwise dedupe them and one disposer would silently drop both).
-      const entry = () => handler();
-      reconnectedHandlers.add(entry);
-      let disposed = false;
-      return () => {
-        if (disposed) return;
-        disposed = true;
-        reconnectedHandlers.delete(entry);
-        if (reconnectedHandlers.size === 0 && statusListener) {
-          statusListener.api.offById(BACKEND.STATUS, statusListener.id);
-          statusListener = null;
-        }
-      };
+      return reconnectedFanout.subscribe(api, (payload) => {
+        if (payload?.status !== 'connected' || payload.reconnected !== true) return;
+        handler();
+      });
     },
   };
 }
