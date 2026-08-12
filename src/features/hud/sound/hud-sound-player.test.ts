@@ -1,0 +1,141 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { HudTakeoverQueueState } from '../takeover/hud-takeover-queue';
+import { HUD_SOUND_CUE_VOLUMES } from './hud-sound-cues';
+import {
+  playHudSoundCue,
+  playTakeoverTransitionCues,
+  resetHudSoundServiceForTests,
+} from './hud-sound-player';
+import { setHudSoundEnabled } from './hud-sound-state';
+
+class MockAudio {
+  src: string;
+  volume = 1;
+  currentTime = 0;
+  preload = '';
+  play = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  constructor(src: string) {
+    this.src = src;
+  }
+}
+
+let audioInstances: MockAudio[];
+
+const loaders = {
+  '../../../assets/sounds/hud/task-complete.mp3': () => Promise.resolve('blob:task-complete'),
+  '../../../assets/sounds/hud/takeover-open.mp3': () => Promise.resolve('blob:takeover-open'),
+};
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function state(
+  phase: HudTakeoverQueueState['phase'],
+  active: HudTakeoverQueueState['active'],
+): HudTakeoverQueueState {
+  return { phase, active, pending: [], phaseEndsAtMs: null };
+}
+
+describe('hud-sound-player', () => {
+  beforeEach(() => {
+    audioInstances = [];
+    vi.stubGlobal(
+      'Audio',
+      // A `function` (not arrow) implementation so `new Audio(url)` works.
+      vi.fn(function (this: unknown, src: string) {
+        const audio = new MockAudio(src);
+        audioInstances.push(audio);
+        return audio;
+      }),
+    );
+    resetHudSoundServiceForTests();
+    setHudSoundEnabled(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('plays nothing while disabled (the default)', async () => {
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances).toHaveLength(0);
+  });
+
+  it('plays the cue at its pack volume when enabled', async () => {
+    setHudSoundEnabled(true);
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances).toHaveLength(1);
+    expect(audioInstances[0].src).toBe('blob:task-complete');
+    expect(audioInstances[0].volume).toBe(HUD_SOUND_CUE_VOLUMES['task-complete']);
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(1);
+  });
+
+  it('silently no-ops when the asset is missing (dev tolerance)', async () => {
+    setHudSoundEnabled(true);
+    await expect(playHudSoundCue('pr-merged', loaders)).resolves.toBeUndefined();
+    expect(audioInstances).toHaveLength(0);
+  });
+
+  it('reuses the cached element and rewinds on repeat plays', async () => {
+    setHudSoundEnabled(true);
+    await playHudSoundCue('task-complete', loaders);
+    audioInstances[0].currentTime = 3;
+    await playHudSoundCue('task-complete', loaders);
+    expect(audioInstances).toHaveLength(1);
+    expect(audioInstances[0].currentTime).toBe(0);
+    expect(audioInstances[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it('swallows autoplay-policy rejections', async () => {
+    setHudSoundEnabled(true);
+    await playHudSoundCue('task-complete', loaders);
+    audioInstances[0].play.mockRejectedValueOnce(
+      new DOMException('blocked', 'NotAllowedError'),
+    );
+    await expect(playHudSoundCue('task-complete', loaders)).resolves.toBeUndefined();
+  });
+
+  it('playTakeoverTransitionCues plays every mapped cue for the transition', async () => {
+    setHudSoundEnabled(true);
+    const active = {
+      workspaceId: 'ws-1',
+      triggers: [
+        {
+          workspaceId: 'ws-1',
+          kind: 'task_complete' as const,
+          detail: 'Done',
+          raisedAtMs: 0,
+          changedTaskId: null,
+        },
+      ],
+      isViewer: false,
+    };
+    playTakeoverTransitionCues(state('idle', null), state('opening', active), loaders);
+    await flush();
+    expect(audioInstances.map((audio) => audio.src).sort()).toEqual([
+      'blob:takeover-open',
+      'blob:task-complete',
+    ]);
+  });
+
+  it('playTakeoverTransitionCues stays silent while disabled', async () => {
+    playTakeoverTransitionCues(
+      state('idle', null),
+      state('opening', {
+        workspaceId: 'ws-1',
+        triggers: [
+          {
+            workspaceId: 'ws-1',
+            kind: 'task_complete' as const,
+            detail: 'Done',
+            raisedAtMs: 0,
+            changedTaskId: null,
+          },
+        ],
+        isViewer: false,
+      }),
+      loaders,
+    );
+    await flush();
+    expect(audioInstances).toHaveLength(0);
+  });
+});
