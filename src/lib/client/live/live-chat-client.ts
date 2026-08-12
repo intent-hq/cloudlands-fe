@@ -231,6 +231,36 @@ function mergeToolUseBlock(prior: ContentBlock, incoming: ContentBlock): Content
 }
 
 /**
+ * Suffix marking a block the reconciler relocated instead of applying in place.
+ *
+ * The daemon's live `tool_delta` predicts a completed tool's `tool_result` id as
+ * `tool_use index + 1` (`next_block_id` in
+ * `intent-transport/src/subscriptions.rs`). When assistant text was streamed
+ * between the tool call and its completion, the durable transcript flushes that
+ * text into `index + 1` and the real `tool_result` lands at `index + 2` — so the
+ * predicted id collides with a `text` block. Applying it verbatim replaces the
+ * text, and if that text carried a `<group:Name>` opener the group box and its
+ * header sentence vanish for the rest of the turn. The daemon knows the guess
+ * can be wrong and defers correctness to the terminal reconcile.
+ *
+ * Rather than lose the text, a type-changing live upsert is appended under
+ * `${id}${DISPLACED_ID_SUFFIX}`: the block still pairs with its tool call by
+ * `tool_use_id` (so the tool card completes), and the stand-in is dropped at the
+ * terminal reconcile, which re-emits the authoritative persisted blocks.
+ */
+const DISPLACED_ID_SUFFIX = "#displaced";
+
+/** True for a stand-in block parked by a refused type-changing upsert. */
+function isDisplacedId(id: string | undefined): id is string {
+  return id !== undefined && id.endsWith(DISPLACED_ID_SUFFIX);
+}
+
+/** The daemon-assigned id a (possibly displaced) block stands for. */
+function baseBlockId(id: string): string {
+  return isDisplacedId(id) ? id.slice(0, -DISPLACED_ID_SUFFIX.length) : id;
+}
+
+/**
  * Reduces `chat.subscribe` snapshot/delta pushes onto a message-keyed
  * transcript (PROTOCOL §7.1). A snapshot rebuilds the message list; a
  * contiguous delta upserts each entity's FULL block by `block.id` into its
@@ -302,13 +332,13 @@ export class ChatTranscriptReconciler {
     }
     if (delta.removedIds.length > 0) {
       const removed = new Set(delta.removedIds);
+      // Match on the base id so a displaced stand-in is retired with the id it
+      // stands for — the daemon only ever names its own ids in `removedIds`.
+      const isRemoved = (b: ContentBlock) => b.id !== undefined && removed.has(baseBlockId(b.id));
       this.messages = this.messages.map((m) => {
         const blocks = m.contentBlocks;
-        if (!blocks || !blocks.some((b) => b.id !== undefined && removed.has(b.id))) return m;
-        return {
-          ...m,
-          contentBlocks: blocks.filter((b) => b.id === undefined || !removed.has(b.id)),
-        };
+        if (!blocks || !blocks.some(isRemoved)) return m;
+        return { ...m, contentBlocks: blocks.filter((b) => !isRemoved(b)) };
       });
     }
     // Terminal frame: the turn is done; a live (non-terminal) upsert always
@@ -358,10 +388,29 @@ export class ChatTranscriptReconciler {
       this.totalMessages += 1;
     }
     const message = this.messages[index];
-    const blocks = [...(message.contentBlocks ?? [])];
+    let blocks = [...(message.contentBlocks ?? [])];
+    // The terminal frame re-emits every persisted block and is authoritative,
+    // so it settles whatever the live stand-ins were covering for: retire them
+    // before applying it, and let it change types in place freely.
+    if (streamingComplete && blocks.some((b) => isDisplacedId(b.id))) {
+      blocks = blocks.filter((b) => !isDisplacedId(b.id));
+    }
     const blockIndex = blocks.findIndex((b) => b.id === entity.block.id);
-    if (blockIndex >= 0) blocks[blockIndex] = mergeToolUseBlock(blocks[blockIndex], entity.block);
-    else blocks.push(entity.block);
+    if (blockIndex < 0) {
+      blocks.push(entity.block);
+    } else if (!streamingComplete && blocks[blockIndex].type !== entity.block.type) {
+      // A live delta that would change an existing block's type in place is a
+      // mispredicted id, not a real edit — the daemon never re-types a block
+      // mid-turn. Keep the block that owns the id and park the incoming one
+      // under a displaced id (see DISPLACED_ID_SUFFIX).
+      const displacedId = `${entity.block.id}${DISPLACED_ID_SUFFIX}`;
+      const displaced = { ...entity.block, id: displacedId };
+      const displacedIndex = blocks.findIndex((b) => b.id === displacedId);
+      if (displacedIndex >= 0) blocks[displacedIndex] = displaced;
+      else blocks.push(displaced);
+    } else {
+      blocks[blockIndex] = mergeToolUseBlock(blocks[blockIndex], entity.block);
+    }
     const next: AgentMessage = {
       ...message,
       contentBlocks: blocks,
