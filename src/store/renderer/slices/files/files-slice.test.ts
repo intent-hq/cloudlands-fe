@@ -51,6 +51,7 @@ describe("filesReducer", () => {
       error: null,
       isBinary: false,
       truncated: false,
+      notFoundCandidates: null,
     });
 
     const loadedState = filesReducer(
@@ -127,6 +128,43 @@ describe("filesReducer", () => {
       loading: false,
       error: "boom",
       truncated: false,
+      notFoundCandidates: null,
+    });
+  });
+
+  it("stores not-found candidates from a failed load", () => {
+    const candidates = ["packages/a/docs/guide.md", "packages/b/docs/guide.md"];
+    const failedState = filesReducer(
+      initialState,
+      loadFileContentFailed(WS_ID, PATH, ABS_PATH, "boom", candidates),
+    );
+
+    expect(failedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      error: "boom",
+      notFoundCandidates: candidates,
+    });
+  });
+
+  it("clears not-found candidates on reload and on success", () => {
+    const candidates = ["packages/a/docs/guide.md"];
+    const failedState = filesReducer(
+      initialState,
+      loadFileContentFailed(WS_ID, PATH, ABS_PATH, "boom", candidates),
+    );
+
+    const reloadingState = filesReducer(failedState, loadFileContentRequested(WS_ID, PATH, ABS_PATH));
+    expect(reloadingState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      loading: true,
+      notFoundCandidates: null,
+    });
+
+    const loadedState = filesReducer(
+      failedState,
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "hello", false),
+    );
+    expect(loadedState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
+      originalContent: "hello",
+      notFoundCandidates: null,
     });
   });
 

@@ -21,6 +21,7 @@ const {
     error: string | null;
     isBinary: boolean;
     lastUpdated: number;
+    notFoundCandidates?: string[] | null;
   };
 
   type ActiveSelector = { update: () => void };
@@ -130,6 +131,8 @@ const {
     loadFileContentRequested: makeAction('files/loadFileContentRequested'),
     saveFileContentRequested: makeAction('files/saveFileContentRequested'),
     updateFileContent: makeAction('files/updateFileContent'),
+    removeFileContentEntry: makeAction('files/removeFileContentEntry'),
+    updateFileTabPath: makeAction('panelLayout/updateFileTabPath'),
   };
 
   const dispatchMock = vi.fn((action: { type: string; payload?: unknown[] }) => {
@@ -197,6 +200,10 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileLastUpdated: createMockSelector((_wsId: string, path: string | null | undefined) =>
     path ? (mockReduxState.files[path]?.lastUpdated ?? 0) : 0,
   ),
+  selectFileNotFoundCandidates: createMockSelector(
+    (_wsId: string, path: string | null | undefined) =>
+      path ? (mockReduxState.files[path]?.notFoundCandidates ?? null) : null,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/files/files-slice', () => actionMocks);
@@ -226,6 +233,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
     type: 'panelLayout/closeTab',
     payload: [workspaceId, tabId],
   }),
+  updateFileTabPath: actionMocks.updateFileTabPath,
 }));
 
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
@@ -723,6 +731,72 @@ describe('FileTabType Redux integration', () => {
       '/repo/src/main.ts',
     );
     expect(screen.queryByText(m.layout_fileTab_outsideWorkspace_label())).toBeNull();
+  });
+
+  // Not-found error panel: always shows the attempted relative path; when the
+  // read saga recorded suffix-resolution candidates, renders a clickable
+  // "Did you mean" list that retargets the tab to the chosen candidate.
+  function errorFileEntry(overrides: Partial<(typeof mockReduxState.files)[string]> = {}) {
+    return {
+      localContent: null,
+      originalContent: null,
+      loading: false,
+      saving: false,
+      error: 'File not found',
+      isBinary: false,
+      lastUpdated: 0,
+      notFoundCandidates: [] as string[],
+      ...overrides,
+    };
+  }
+
+  it('shows the attempted path without candidates when suffix resolution found none', async () => {
+    mockReduxState.files['src/app.ts'] = errorFileEntry();
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'app.ts', filePath: 'src/app.ts' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorLoading_label())).toBeTruthy();
+    expect(screen.getByText('File not found')).toBeTruthy();
+    expect(screen.getByText('src/app.ts')).toBeTruthy();
+    expect(screen.queryByText(m.layout_fileTab_didYouMean_label())).toBeNull();
+    expect(screen.queryByRole('button', { name: /src\// })).toBeNull();
+  });
+
+  it('renders clickable candidates and retargets the tab on click', async () => {
+    const candidates = ['packages/a/src/app.ts', 'packages/b/src/app.ts'];
+    mockReduxState.files['src/app.ts'] = errorFileEntry({ notFoundCandidates: candidates });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'app.ts', filePath: 'src/app.ts' });
+
+    expect(await screen.findByText(m.layout_fileTab_didYouMean_label())).toBeTruthy();
+    expect(screen.getByText('src/app.ts')).toBeTruthy();
+
+    const candidateButton = screen.getByRole('button', { name: 'packages/b/src/app.ts' });
+    dispatchMock.mockClear();
+    await fireEvent.click(candidateButton);
+
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'files/removeFileContentEntry',
+      payload: ['ws-1', 'src/app.ts'],
+    });
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/updateFileTabPath',
+      payload: ['ws-1', 'src/app.ts', 'packages/b/src/app.ts', 'tab-err'],
+    });
+  });
+
+  it('caps the rendered candidate list at five entries', async () => {
+    const candidates = [1, 2, 3, 4, 5, 6, 7].map((i) => `packages/p${i}/src/app.ts`);
+    mockReduxState.files['src/app.ts'] = errorFileEntry({ notFoundCandidates: candidates });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'app.ts', filePath: 'src/app.ts' });
+
+    await screen.findByText(m.layout_fileTab_didYouMean_label());
+    expect(screen.getAllByRole('button', { name: /packages\/p[0-9]+\/src\/app\.ts/ })).toHaveLength(
+      5,
+    );
+    expect(screen.getByRole('button', { name: 'packages/p5/src/app.ts' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'packages/p6/src/app.ts' })).toBeNull();
   });
 });
 

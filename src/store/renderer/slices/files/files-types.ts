@@ -13,6 +13,11 @@ export type FileContentEntry = {
   error: string | null;
   isBinary: boolean;
   truncated: boolean;
+  /**
+   * Suffix-resolution candidates recorded when a read failed with not-found
+   * (`[]` = resolution attempted, no matches; `null`/absent = not attempted).
+   */
+  notFoundCandidates?: string[] | null;
 };
 
 export type FileContentReadOptions = {
