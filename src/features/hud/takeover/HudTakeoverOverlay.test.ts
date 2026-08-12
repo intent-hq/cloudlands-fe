@@ -951,4 +951,30 @@ describe('HudTakeoverOverlay banner-typewriter sound cue', () => {
     vi.advanceTimersByTime(4000);
     expect(playHudSoundCue).not.toHaveBeenCalled();
   });
+
+  it('cancels the armed timer when reduced motion flips on before the wipe', () => {
+    // Motion allowed at open → timer armed; the preference then flips to
+    // reduced before the 1.0s wipe start → banners re-render with no wipe,
+    // so the pending cue must not fire.
+    let onChange: ((event: { matches: boolean }) => void) | undefined;
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn((_: string, cb: (event: { matches: boolean }) => void) => {
+          onChange = cb;
+        }),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    vi.advanceTimersByTime(500); // Timer armed, wipe not started.
+    onChange?.({ matches: true }); // prefers-reduced-motion flips on.
+    flushSync();
+    vi.advanceTimersByTime(3500);
+    expect(playHudSoundCue).not.toHaveBeenCalled();
+  });
 });

@@ -7,8 +7,10 @@
  * 'dwelling', where a panning display's wipe lands; a `needsPan` flip
  * re-arms the pending timer against the same opening start). At most once
  * per display; cancelled on an early leave (dismiss → 'closing') or viewer
- * conversion. Reduced motion renders banners with no wipe → no cue. Must be
- * created during component init ($effect attaches to the component).
+ * conversion. Reduced motion renders banners with no wipe → no cue (a flip
+ * to reduced motion while a timer is pending cancels it, and motion is
+ * re-checked at fire time). Must be created during component init ($effect
+ * attaches to the component).
  */
 import { bannerDelay } from '../takeover/hud-takeover-layout';
 import type { HudTakeoverQueueState } from '../takeover/hud-takeover-queue';
@@ -36,7 +38,12 @@ export function createTypewriterCue(deps: {
       clearTimeout(timer);
       return;
     }
-    if (!deps.motion()) return;
+    if (!deps.motion()) {
+      // Reduced motion renders no wipe — cancel any timer armed before the
+      // preference flipped ($state-backed, so the flip re-runs this effect).
+      clearTimeout(timer);
+      return;
+    }
     if (queue.active.workspaceId !== key) {
       // A fresh display arms only at its opening start.
       if (queue.phase !== 'opening') return;
@@ -50,6 +57,7 @@ export function createTypewriterCue(deps: {
     clearTimeout(timer);
     timer = setTimeout(() => {
       fired = true;
+      if (!deps.motion()) return;
       void playHudSoundCue('banner-typewriter');
     }, Math.max(0, openedAtMs + delayMs - Date.now()));
   });
