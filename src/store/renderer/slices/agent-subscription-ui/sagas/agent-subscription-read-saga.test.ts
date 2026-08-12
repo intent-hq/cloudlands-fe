@@ -12,7 +12,10 @@ import {
   requestSubscriptionFetch,
   setSubscriptionSnapshot,
 } from '../agent-subscription-ui-slice';
-import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   agentSubscriptionReadSaga,
   COMPLETED_DISPLAY_DURATION_MS,
@@ -22,30 +25,39 @@ const WS = 'ws-subscriptions';
 const AGENT = 'agent-parent';
 const CHILD = 'agent-child';
 const empty = () => ({ subscriptions: [], delegationGroups: [], agentStatuses: {} });
-const active = () => ({
+const active = (agentId = AGENT, childId = CHILD, description = 'Waiting') => ({
   subscriptions: [
     {
       id: 'watch-1',
-      agentId: AGENT,
+      agentId,
       eventTypes: ['agent:idle'],
-      actorIds: [CHILD],
+      actorIds: [childId],
       createdAt: '2026-01-01T00:00:00.000Z',
-      description: 'Waiting',
+      description,
     },
   ],
   delegationGroups: [
     {
       groupId: 'group-1',
-      parentAgentId: AGENT,
+      parentAgentId: agentId,
       awaitMode: 'all',
-      expectedAgentIds: [CHILD],
+      expectedAgentIds: [childId],
       completedAgentIds: [],
       deletedAgentIds: [],
       delivered: false,
     },
   ],
-  agentStatuses: { [AGENT]: 'waiting', [CHILD]: 'responding' },
+  agentStatuses: { [agentId]: 'waiting', [childId]: 'responding' },
 });
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -111,16 +123,80 @@ describe('agentSubscriptionReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('globally suppresses a different direct fetch and refreshes every tracked entry', async () => {
-    let resolve!: (value: ReturnType<typeof active>) => void;
-    mocks.request.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
+  it('coalesces a same-key burst into one authoritative trailing read while other keys run', async () => {
+    const first = deferred<ReturnType<typeof active>>();
+    const other = deferred<ReturnType<typeof active>>();
+    const trailing = deferred<ReturnType<typeof active>>();
+    mocks.request
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(other.promise)
+      .mockReturnValueOnce(trailing.promise);
+    const run = harness();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch('ws-other', 'agent-other'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: 'ws-other', agentId: 'agent-other' }],
+    ]);
+
+    first.resolve(active(AGENT, CHILD, 'Stale'));
+    await settle();
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: 'ws-other', agentId: 'agent-other' }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+    ]);
+
+    trailing.resolve(active(AGENT, CHILD, 'Fresh'));
+    other.resolve(active('agent-other', 'agent-other-child'));
+    await settle();
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions[0]?.description).toBe('Fresh');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('runs the retained trailing read after the active read fails', async () => {
+    const first = deferred<ReturnType<typeof active>>();
+    const trailing = deferred<ReturnType<typeof active>>();
+    mocks.request.mockReturnValueOnce(first.promise).mockReturnValueOnce(trailing.promise);
+    const run = harness();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    first.reject(new Error('read failed'));
+    await settle();
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+    ]);
+    trailing.resolve(active(AGENT, CHILD, 'Recovered'));
+    await settle();
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions[0]?.description).toBe(
+      'Recovered',
     );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('refreshes every tracked workspace entry through the keyed coordinator', async () => {
+    mocks.request.mockResolvedValue(active());
     const seeded = agentSubscriptionUIReducer(
-      initialState,
-      setSubscriptionSnapshot(WS, AGENT, {
+      agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      ),
+      setSubscriptionSnapshot(WS, 'agent-second', {
         subscriptions: [],
         delegationGroups: [],
         agentStatuses: {},
@@ -128,16 +204,13 @@ describe('agentSubscriptionReadSaga', () => {
       }),
     );
     const run = harness(seeded);
-    run.channel.put(requestSubscriptionFetch(WS, AGENT));
-    run.channel.put(requestSubscriptionFetch('ws-other', 'agent-other'));
-    await settle();
-    expect(mocks.request).toHaveBeenCalledTimes(1);
-    resolve(active());
-    await settle();
-    mocks.request.mockResolvedValue(active());
     run.channel.put(refreshWorkspaceSubscriptionEntriesRequested(WS));
     await settle();
-    expect(mocks.request).toHaveBeenCalledTimes(2);
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: 'agent-second' }],
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -185,6 +258,149 @@ describe('agentSubscriptionReadSaga', () => {
     await run.task.toPromise();
   });
 
+  it('does not let completed cleanup suppress an unrelated read', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValue(empty());
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await vi.advanceTimersByTimeAsync(0);
+    run.channel.put(requestSubscriptionFetch('ws-other', 'agent-other'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mocks.request).toHaveBeenCalledWith('agent.getSubscriptions', {
+      workspaceId: 'ws-other',
+      agentId: 'agent-other',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('applies renewed data from completed-state confirmation authoritatively', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValueOnce(empty()).mockResolvedValueOnce(active());
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+    ]);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('waiting');
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('runs one trailing snapshot after triggers overlap an active confirmation', async () => {
+    vi.useFakeTimers();
+    const confirmation = deferred<ReturnType<typeof active>>();
+    const trailing = deferred<ReturnType<typeof active>>();
+    mocks.request
+      .mockResolvedValueOnce(empty())
+      .mockReturnValueOnce(confirmation.promise)
+      .mockReturnValueOnce(trailing.promise);
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    confirmation.resolve(active(AGENT, CHILD, 'Confirmation'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mocks.request.mock.calls).toEqual([
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+      ['agent.getSubscriptions', { workspaceId: WS, agentId: AGENT }],
+    ]);
+    trailing.resolve(active(AGENT, CHILD, 'Trailing'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.subscriptions[0]?.description).toBe('Trailing');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels completed cleanup on workspace unmount without a late confirmation write', async () => {
+    vi.useFakeTimers();
+    mocks.request.mockResolvedValue(empty());
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await vi.advanceTimersByTimeAsync(0);
+    run.channel.put(workspaceUnmounted(WS));
+    await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
+
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('completed');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels an active read and its trailing intent on workspace unmount', async () => {
+    const first = deferred<ReturnType<typeof active>>();
+    mocks.request.mockReturnValue(first.promise);
+    const seeded = agentSubscriptionUIReducer(
+      initialState,
+      setSubscriptionSnapshot(WS, AGENT, {
+        subscriptions: [],
+        delegationGroups: [],
+        agentStatuses: {},
+        waitingState: 'waiting',
+      }),
+    );
+    const run = harness(seeded);
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    first.resolve(active());
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(run.state()).toEqual(seeded);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('cancels late reads and deletes tracked entries on workspace deletion', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
     mocks.request.mockReturnValue(
@@ -204,13 +420,33 @@ describe('agentSubscriptionReadSaga', () => {
     const run = harness(seeded);
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     await settle();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
     run.channel.put(workspaceDeleted(WS, [AGENT]));
     await settle();
     resolve(active());
     await settle();
 
+    expect(mocks.request).toHaveBeenCalledTimes(1);
     expect(run.state().entries[makeKey(WS, AGENT)]).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('cancels a pending trailing read at root teardown without a late write', async () => {
+    const first = deferred<ReturnType<typeof active>>();
+    mocks.request.mockReturnValue(first.promise);
+    const run = harness();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    await settle();
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.channel.put(requestSubscriptionFetch(WS, AGENT));
+    run.task.cancel();
+    await run.task.toPromise();
+    first.resolve(active());
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    expect(run.state().entries[makeKey(WS, AGENT)]).toBeUndefined();
   });
 });

@@ -1,4 +1,17 @@
-import { all, call, delay, put, race, take, takeEvery, takeLeading } from 'typed-redux-saga';
+import type { Task } from 'redux-saga';
+import {
+  all,
+  call,
+  cancel,
+  cancelled,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
@@ -39,6 +52,15 @@ interface WireResult {
   agentStatuses?: Record<string, AgentStatus>;
 }
 
+interface ReadCoordinator {
+  reads: Map<string, Task>;
+  completedCleanups: Map<string, Task>;
+  pendingSnapshots: Set<string>;
+  pendingConfirmations: Set<string>;
+}
+
+type ReadMode = 'snapshot' | 'confirmation';
+
 function matchesWorkspaceCleanup(wsId: string) {
   return (action: { type: string; payload?: unknown }) =>
     (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
@@ -75,15 +97,20 @@ function mapResult(result: WireResult) {
   return { subscriptions, delegationGroups, agentStatuses };
 }
 
-function* completedCleanupSaga(wsId: string, agentId: string) {
-  yield* delay(COMPLETED_DISPLAY_DURATION_MS);
+function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
   try {
     const fresh: WireResult = yield* call(backendRequest<WireResult>, 'agent.getSubscriptions', {
       workspaceId: wsId,
       agentId,
     });
-    if ((fresh.subscriptions?.length ?? 0) > 0 || (fresh.delegationGroups?.length ?? 0) > 0) {
-      yield* put(requestSubscriptionFetch(wsId, agentId));
+    const mapped = mapResult(fresh);
+    if (mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0) {
+      yield* put(
+        setSubscriptionSnapshot(wsId, agentId, {
+          ...mapped,
+          waitingState: 'waiting',
+        }),
+      );
       return;
     }
   } catch {
@@ -109,31 +136,120 @@ function* fetchSnapshotSaga(wsId: string, agentId: string) {
         waitingState: completed ? 'completed' : hasData ? 'waiting' : 'idle',
       }),
     );
-    if (completed) yield* completedCleanupSaga(wsId, agentId);
+    return completed;
   } catch (error) {
     logger.error(`Failed to fetch agent subscriptions for ${key}`, error);
+    return false;
   }
 }
 
-function* requestSubscriptionFetchWorker(action: ReturnType<typeof requestSubscriptionFetch>) {
+function* completedCleanupTask(
+  coordinator: ReadCoordinator,
+  wsId: string,
+  agentId: string,
+): SagaGenerator<void> {
+  const key = makeKey(wsId, agentId);
+  try {
+    const { elapsed } = yield* race({
+      elapsed: delay(COMPLETED_DISPLAY_DURATION_MS, true),
+      cleanup: take(matchesWorkspaceCleanup(wsId)),
+    });
+    if (elapsed) yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+  } finally {
+    coordinator.completedCleanups.delete(key);
+  }
+}
+
+function* scheduleCompletedCleanup(
+  coordinator: ReadCoordinator,
+  wsId: string,
+  agentId: string,
+): SagaGenerator<void> {
+  const key = makeKey(wsId, agentId);
+  if (coordinator.completedCleanups.has(key)) return;
+  const task = yield* fork(completedCleanupTask, coordinator, wsId, agentId);
+  coordinator.completedCleanups.set(key, task);
+}
+
+function* readSnapshotTask(
+  coordinator: ReadCoordinator,
+  wsId: string,
+  agentId: string,
+  mode: ReadMode,
+): SagaGenerator<void> {
+  const key = makeKey(wsId, agentId);
+  let completed = false;
+  let workspaceCleanedUp = false;
+  try {
+    const outcome = yield* race({
+      read: call(
+        mode === 'confirmation' ? confirmCompletedSnapshotSaga : fetchSnapshotSaga,
+        wsId,
+        agentId,
+      ),
+      cleanup: take(matchesWorkspaceCleanup(wsId)),
+    });
+    completed = mode === 'snapshot' && outcome.read === true;
+    workspaceCleanedUp = outcome.cleanup !== undefined;
+  } finally {
+    coordinator.reads.delete(key);
+    const taskCancelled = yield* cancelled();
+    const snapshotPending = coordinator.pendingSnapshots.delete(key);
+    const confirmationPending = coordinator.pendingConfirmations.delete(key);
+    if (!taskCancelled && !workspaceCleanedUp) {
+      if (confirmationPending) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'confirmation');
+      } else if (snapshotPending) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+      } else if (completed) {
+        yield* scheduleCompletedCleanup(coordinator, wsId, agentId);
+      }
+    }
+  }
+}
+
+function* startSnapshotRead(
+  coordinator: ReadCoordinator,
+  wsId: string,
+  agentId: string,
+  mode: ReadMode,
+): SagaGenerator<void> {
+  const key = makeKey(wsId, agentId);
+  if (coordinator.reads.has(key)) {
+    if (mode === 'confirmation') {
+      coordinator.pendingConfirmations.add(key);
+    } else {
+      coordinator.pendingSnapshots.add(key);
+    }
+    return;
+  }
+  if (mode === 'snapshot') {
+    const cleanup = coordinator.completedCleanups.get(key);
+    if (cleanup) yield* cancel(cleanup);
+  }
+  const task = yield* fork(readSnapshotTask, coordinator, wsId, agentId, mode);
+  coordinator.reads.set(key, task);
+}
+
+function* requestSubscriptionFetchWorker(
+  coordinator: ReadCoordinator,
+  action: ReturnType<typeof requestSubscriptionFetch>,
+) {
   const [wsId, agentId] = action.payload;
   if (!wsId || !agentId) return;
-  yield* race({
-    read: call(fetchSnapshotSaga, wsId, agentId),
-    cleanup: take(matchesWorkspaceCleanup(wsId)),
-  });
+  yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
 
 function* refreshWorkspaceSubscriptionsWorker(
+  coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
   const [wsId] = action.payload;
   if (!wsId) return;
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
-  yield* race({
-    reads: all(agentIds.map((agentId) => call(fetchSnapshotSaga, wsId, agentId))),
-    cleanup: take(matchesWorkspaceCleanup(wsId)),
-  });
+  for (const agentId of agentIds) {
+    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  }
 }
 
 function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceDeleted>) {
@@ -143,9 +259,19 @@ function* deleteWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspace
 }
 
 export function* agentSubscriptionReadSaga() {
+  const coordinator: ReadCoordinator = {
+    reads: new Map(),
+    completedCleanups: new Map(),
+    pendingSnapshots: new Set(),
+    pendingConfirmations: new Set(),
+  };
   yield* all([
-    takeLeading(requestSubscriptionFetch, requestSubscriptionFetchWorker),
-    takeLeading(refreshWorkspaceSubscriptionEntriesRequested, refreshWorkspaceSubscriptionsWorker),
+    takeEvery(requestSubscriptionFetch, requestSubscriptionFetchWorker, coordinator),
+    takeEvery(
+      refreshWorkspaceSubscriptionEntriesRequested,
+      refreshWorkspaceSubscriptionsWorker,
+      coordinator,
+    ),
     takeEvery(workspaceDeleted, deleteWorkspaceSubscriptionsWorker),
   ]);
 }

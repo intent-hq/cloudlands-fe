@@ -1,16 +1,19 @@
 /**
- * Unit tests for the Electron-IPC `BackendTransport` reconnect fan-out.
+ * Unit tests for the Electron-IPC `BackendTransport` broadcast fan-outs.
  *
- * `onReconnected` must register at most ONE underlying `backend:status`
- * listener on the preload bridge and fan out to any number of subscribers,
- * so the IPC listener count no longer scales with subscriber modules
- * (intent-hq/monorepo#1424).
+ * `onReconnected` and `onNotification` must each register at most ONE
+ * underlying preload-bridge listener (`backend:status`,
+ * intent-hq/monorepo#1424; `backend:notification`, intent-hq/monorepo#2034)
+ * and fan out to any number of subscribers, so the IPC listener count no
+ * longer scales with subscriber modules.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
+import type { BackendNotification } from "./backend-transport-types";
 import { createElectronIpcBackendTransport } from "./electron-ipc-transport";
 
 const STATUS = IPC_CHANNELS.BACKEND.STATUS;
+const NOTIFICATION = IPC_CHANNELS.BACKEND.NOTIFICATION;
 
 /** Minimal preload-bridge fake tracking per-channel listener registrations. */
 function createFakeApi() {
@@ -175,5 +178,146 @@ describe("electron-ipc-transport onReconnected fan-out", () => {
     const transport = createElectronIpcBackendTransport();
     const dispose = transport.onReconnected(vi.fn());
     expect(() => dispose()).not.toThrow();
+  });
+});
+
+describe("electron-ipc-transport onNotification fan-out", () => {
+  const notification = (method: string): BackendNotification => ({ method, params: { method } });
+
+  it("registers a single backend:notification listener for many subscribers and fans out", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    // The renderer has ~11 modules subscribing at boot; one listener each used
+    // to breach ipcRenderer's default cap of 10 (intent-hq/monorepo#2034).
+    const handlers = Array.from({ length: 20 }, () => vi.fn());
+    const disposers = handlers.map((handler) => transport.onNotification(handler));
+
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+
+    const event = notification("events.event");
+    api.emit(NOTIFICATION, event);
+    for (const handler of handlers) expect(handler).toHaveBeenCalledExactlyOnceWith(event);
+
+    disposers.forEach((dispose) => dispose());
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+  });
+
+  it("isolates a throwing handler so remaining handlers still run", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const first = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const second = vi.fn();
+    const disposeFirst = transport.onNotification(first);
+    const disposeSecond = transport.onNotification(second);
+
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+
+    disposeFirst();
+    disposeSecond();
+  });
+
+  it("removes individual handlers on dispose and the IPC listener with the last one", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const first = vi.fn();
+    const second = vi.fn();
+    const disposeFirst = transport.onNotification(first);
+    const disposeSecond = transport.onNotification(second);
+
+    disposeFirst();
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledOnce();
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+
+    disposeSecond();
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+
+    // Re-subscribing after the last disposal re-registers the shared listener.
+    const third = vi.fn();
+    const disposeThird = transport.onNotification(third);
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(third).toHaveBeenCalledOnce();
+    disposeThird();
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+  });
+
+  it("keeps duplicate subscriptions of the same handler independent", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const handler = vi.fn();
+    const disposeFirst = transport.onNotification(handler);
+    const disposeSecond = transport.onNotification(handler);
+
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(handler).toHaveBeenCalledTimes(2);
+
+    disposeFirst();
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+
+    disposeSecond();
+    expect(api.listenerCount(NOTIFICATION)).toBe(0);
+  });
+
+  it("makes disposers idempotent (double-dispose cannot drop a later subscriber)", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const first = vi.fn();
+    const dispose = transport.onNotification(first);
+    dispose();
+
+    const second = vi.fn();
+    const disposeSecond = transport.onNotification(second);
+    dispose();
+
+    expect(api.listenerCount(NOTIFICATION)).toBe(1);
+    api.emit(NOTIFICATION, notification("events.event"));
+    expect(second).toHaveBeenCalledOnce();
+    disposeSecond();
+  });
+
+  it("returns a no-op disposer when the bridge is unavailable", () => {
+    const transport = createElectronIpcBackendTransport();
+    const dispose = transport.onNotification(vi.fn());
+    expect(() => dispose()).not.toThrow();
+  });
+});
+
+describe("electron-ipc-transport listener counts across mount/unmount cycles", () => {
+  it("returns every backend:* channel to baseline after repeated subscribe/dispose", () => {
+    const api = installFakeApi();
+    const transport = createElectronIpcBackendTransport();
+
+    for (let cycle = 0; cycle < 25; cycle += 1) {
+      // Mount: the boot-time subscriber set (11 notification consumers plus
+      // the reconnect subscribers) re-registers on every window reload.
+      const disposers = [
+        ...Array.from({ length: 11 }, () => transport.onNotification(vi.fn())),
+        ...Array.from({ length: 5 }, () => transport.onReconnected(vi.fn())),
+      ];
+
+      // Never more than one bridge listener per channel, in any cycle.
+      expect(api.listenerCount(NOTIFICATION)).toBe(1);
+      expect(api.listenerCount(STATUS)).toBe(1);
+
+      // Unmount.
+      disposers.forEach((dispose) => dispose());
+      expect(api.listenerCount(NOTIFICATION)).toBe(0);
+      expect(api.listenerCount(STATUS)).toBe(0);
+    }
   });
 });
