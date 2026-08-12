@@ -41,6 +41,7 @@ function createEmptyFileEntry(path: string, absolutePath: string | null = null):
     error: null,
     isBinary: false,
     truncated: false,
+    notFoundCandidates: null,
   };
 }
 
@@ -90,7 +91,7 @@ export const loadFileContentSucceeded = createAction<
 >("files/loadFileContentSucceeded");
 
 export const loadFileContentFailed = createAction<
-  [wsId: string, path: string, absolutePath: string, error: string]
+  [wsId: string, path: string, absolutePath: string, error: string, notFoundCandidates?: string[]]
 >("files/loadFileContentFailed");
 
 export const updateFileContent = createAction<[wsId: string, path: string, content: string]>(
@@ -128,6 +129,7 @@ filesReducer.with(loadFileContentRequested, (state, { payload: [wsId, path, abso
     error: null,
     isBinary: false,
     truncated: false,
+    notFoundCandidates: null,
   })),
 );
 filesReducer.with(
@@ -146,19 +148,23 @@ filesReducer.with(
         error: null,
         isBinary: isBinary ?? false,
         truncated: truncated ?? false,
+        notFoundCandidates: null,
       };
     }),
 );
-filesReducer.with(loadFileContentFailed, (state, { payload: [wsId, path, absolutePath, error] }) =>
-  upsertFileEntry(state, wsId, path, (entry) => ({
-    ...entry,
-    absolutePath,
-    originalContent: null,
-    localContent: null,
-    loading: false,
-    error,
-    truncated: false,
-  })),
+filesReducer.with(
+  loadFileContentFailed,
+  (state, { payload: [wsId, path, absolutePath, error, notFoundCandidates] }) =>
+    upsertFileEntry(state, wsId, path, (entry) => ({
+      ...entry,
+      absolutePath,
+      originalContent: null,
+      localContent: null,
+      loading: false,
+      error,
+      truncated: false,
+      notFoundCandidates: notFoundCandidates ?? null,
+    })),
 );
 filesReducer.with(updateFileContent, (state, { payload: [wsId, path, content] }) =>
   upsertFileEntry(state, wsId, path, (entry) => {
