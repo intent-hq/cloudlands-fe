@@ -1007,11 +1007,32 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 // Pattern priority (left to right):
 //   1. <group:Name> — standard group open
 //   2. <group:Name\n — malformed group open (missing closing >)
-//   3. </group:Name> or </group> — group close
-//   4. <think> or <thinking> — think open
-//   5. </think> or </thinking> — think close
+//   3. <group:Name at end of block — malformed group open (missing both > and \n)
+//   4. </group:Name> or </group> — group close
+//   5. <think> or <thinking> — think open
+//   6. </think> or </thinking> — think close
 const GROUP_AND_THINK_TAG_REGEX =
-  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<\/group(?::([^>\n<]+))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
+  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<\/group(?::([^>\n<]+))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
+
+// Trailing prefix of a group tag that a streamed text block can pause on.
+// Anchored to the end of the block, so it only ever matches a fragment that
+// could still grow into a real tag: `<`, `<g`…`<group`, `<group:`, `<group:Name`
+// (and the `</group…` close-tag equivalents). A `<` followed by anything that
+// is not a group-tag prefix (e.g. `<group without closing bracket`) does not
+// match and stays literal text.
+const TRAILING_PARTIAL_GROUP_TAG_REGEX = /<\/?(?:g(?:r(?:o(?:u(?:p(?::[^>\n<]*)?)?)?)?)?)?$/;
+
+/**
+ * While a message is streaming, the last text block ends mid-delta: a group tag
+ * arrives one character at a time, so every tag passes through prefix states
+ * (`<`, `<gro`, `<group:Investigating auto-c…`) that are not yet matchable.
+ * Withhold that trailing fragment from render instead of flashing raw tag
+ * syntax into the transcript. Once the block settles the fragment reappears —
+ * either as a real tag (grouping), or as literal text if it never became one.
+ */
+function stripTrailingPartialGroupTag(text: string): string {
+  return text.replace(TRAILING_PARTIAL_GROUP_TAG_REGEX, '');
+}
 
 /**
  * Post-processing step: extract group markers from text blocks.
@@ -1198,9 +1219,16 @@ export function groupContentBlocks(
     }
   }
 
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     // Only scan text blocks for group tags and think tags
-    const blockText = block.type === 'text' ? (block.text ?? block.content ?? '') : '';
+    const rawBlockText = block.type === 'text' ? (block.text ?? block.content ?? '') : '';
+    // Only the final block of a streaming message can end mid-delta, so that is
+    // the only place a trailing tag fragment needs withholding.
+    const blockText =
+      isStreaming && blockIndex === blocks.length - 1
+        ? stripTrailingPartialGroupTag(rawBlockText)
+        : rawBlockText;
+    const withheldPartialTag = blockText !== rawBlockText;
 
     if (block.type !== 'text' || !blockText) {
       // Non-text block or empty text block — pass through into current context
@@ -1257,9 +1285,10 @@ export function groupContentBlocks(
       } else if (insideThink) {
         // Inside a think block — group/close-group tags are part of thinking content, skip them
         continue;
-      } else if (match[1] !== undefined || match[2] !== undefined) {
-        // Open tag: <group:Name> (match[1]) or malformed <group:Name\n (match[2])
-        const groupName = (match[1] || match[2] || '').trim();
+      } else if (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined) {
+        // Open tag: <group:Name> (match[1]), malformed <group:Name\n (match[2]),
+        // or malformed <group:Name at end of a settled block (match[3])
+        const groupName = (match[1] || match[2] || match[3] || '').trim();
         hasTags = true;
         if (matchStart > lastIndex) {
           addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
@@ -1298,7 +1327,7 @@ export function groupContentBlocks(
       lastIndex = blockText.length;
     }
 
-    if (!hasTags) {
+    if (!hasTags && !withheldPartialTag) {
       // No group/think tags in this text block — pass through as-is
       addBlock(block);
     } else {

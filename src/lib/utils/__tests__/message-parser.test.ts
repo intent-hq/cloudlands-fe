@@ -1781,3 +1781,130 @@ describe('groupContentBlocks - think tag handling', () => {
     expect((result[2] as ContentBlock).text).toBe('After');
   });
 });
+
+describe('groupContentBlocks - partial group tags', () => {
+  function textBlock(text: string): ContentBlock {
+    return { type: 'text', text } as ContentBlock;
+  }
+  function toolUseBlock(name: string, id: string): ContentBlock {
+    return { type: 'tool_use', name, id, input: {} } as ContentBlock;
+  }
+
+  // Collect every rendered string, so a leaked tag fragment anywhere fails.
+  function renderedText(result: ReturnType<typeof groupContentBlocks>): string {
+    return result
+      .flatMap((block) =>
+        block.type === 'content_group'
+          ? (block as ContentBlockGroup).children
+          : [block as ContentBlock],
+      )
+      .map((block) => block.text ?? block.content ?? '')
+      .join('\n');
+  }
+
+  it('should withhold every prefix state of a group tag as it streams in', () => {
+    // The exact character-by-character sequence a delta stream produces.
+    const prefixes = [
+      '<',
+      '<g',
+      '<gr',
+      '<gro',
+      '<grou',
+      '<group',
+      '<group:',
+      '<group:I',
+      '<group:Investigating auto-commit',
+    ];
+
+    for (const prefix of prefixes) {
+      const result = groupContentBlocks([textBlock(`I'll dig into this.\n\n${prefix}`)], true);
+      const text = renderedText(result);
+      expect(text).toBe("I'll dig into this.");
+      expect(text).not.toContain('<');
+    }
+  });
+
+  it('should withhold a partial tag that is the whole streaming block', () => {
+    const result = groupContentBlocks([textBlock('<group:Investigating auto-commit')], true);
+    // Nothing renderable yet — no raw fragment, and no half-named group either.
+    expect(result).toEqual([]);
+  });
+
+  it('should render the tag as a group once the closing > arrives', () => {
+    const result = groupContentBlocks(
+      [textBlock('<group:Investigating auto-commit>'), toolUseBlock('view', 'tool-1')],
+      true,
+    );
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Investigating auto-commit');
+    expect(group.isStreaming).toBe(true);
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('tool_use');
+  });
+
+  it('should open a group for an unterminated tag at the end of a settled block', () => {
+    // Symptom B: the model drops the closing `>` and the block ends there.
+    // Previously this fell through to literal text with the tool call ungrouped.
+    const result = groupContentBlocks(
+      [textBlock('Here we go.\n\n<group:Investigating auto-commit'), toolUseBlock('view', 'tool-1')],
+      false,
+    );
+    expect(result.length).toBe(2);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('Here we go.');
+    expect(result[1].type).toBe('content_group');
+    const group = result[1] as ContentBlockGroup;
+    expect(group.name).toBe('Investigating auto-commit');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('tool_use');
+    expect(renderedText(result)).not.toContain('<group:');
+  });
+
+  it('should open a group for an unterminated tag in a non-final block while streaming', () => {
+    // Only the final block can end mid-delta; an earlier block has settled.
+    const result = groupContentBlocks(
+      [textBlock('<group:Investigating auto-commit'), toolUseBlock('view', 'tool-1')],
+      true,
+    );
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    expect((result[0] as ContentBlockGroup).name).toBe('Investigating auto-commit');
+  });
+
+  it('should not withhold a "<" that is ordinary prose', () => {
+    const result = groupContentBlocks([textBlock('Use x < y and 3 <= 4 here')], true);
+    expect(result.length).toBe(1);
+    expect((result[0] as ContentBlock).text).toBe('Use x < y and 3 <= 4 here');
+  });
+
+  it('should keep a non-tag fragment starting with "<group" as literal text', () => {
+    // Mirrors the parseAgentMessage assertion at "should treat malformed/partial
+    // tags as text": `<group` with no `:` can never become a tag, so it must not
+    // be withheld even while streaming.
+    const input = 'This has a <group without closing bracket';
+    const result = groupContentBlocks([textBlock(input)], true);
+    expect(result.length).toBe(1);
+    expect((result[0] as ContentBlock).text).toBe(input);
+  });
+
+  it('should withhold a partial close tag and restore it as a close once complete', () => {
+    const partial = groupContentBlocks([textBlock('<group:Work>doing stuff</grou')], true);
+    expect(partial.length).toBe(1);
+    expect(partial[0].type).toBe('content_group');
+    expect((partial[0] as ContentBlockGroup).name).toBe('Work');
+    expect(renderedText(partial)).toBe('doing stuff');
+
+    const complete = groupContentBlocks([textBlock('<group:Work>doing stuff</group>')], true);
+    expect(complete.length).toBe(1);
+    expect((complete[0] as ContentBlockGroup).isStreaming).toBe(false);
+    expect(renderedText(complete)).toBe('doing stuff');
+  });
+
+  it('should not withhold anything once the message settles', () => {
+    // A fragment that never became a tag reappears as literal text on settle.
+    const input = 'Comparing a <';
+    expect((groupContentBlocks([textBlock(input)], false)[0] as ContentBlock).text).toBe(input);
+  });
+});
