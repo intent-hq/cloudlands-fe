@@ -1014,24 +1014,29 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 const GROUP_AND_THINK_TAG_REGEX =
   /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<\/group(?::([^>\n<]+))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
 
-// Trailing prefix of a group tag that a streamed text block can pause on.
-// Anchored to the end of the block, so it only ever matches a fragment that
-// could still grow into a real tag: `<`, `<g`…`<group`, `<group:`, `<group:Name`
-// (and the `</group…` close-tag equivalents). A `<` followed by anything that
-// is not a group-tag prefix (e.g. `<group without closing bracket`) does not
-// match and stays literal text.
-const TRAILING_PARTIAL_GROUP_TAG_REGEX = /<\/?(?:g(?:r(?:o(?:u(?:p(?::[^>\n<]*)?)?)?)?)?)?$/;
+// Trailing prefix of any tag GROUP_AND_THINK_TAG_REGEX scans for, i.e. one a
+// streamed text block can pause on. Anchored to the end of the block, so it
+// only ever matches a fragment that could still grow into a real tag: `<`,
+// `<g`…`<group`, `<group:`, `<group:Name`, `<t`…`<think`…`<thinking` (and the
+// `</group…` / `</think…` close-tag equivalents). The nesting is a prefix trie
+// over the tag names — each letter only opens the next one. A `<` followed by
+// anything that is not a tag prefix (e.g. `<group without closing bracket`, or
+// the `<thing` that `<thin` turned out to be) does not match and stays literal
+// text.
+const TRAILING_PARTIAL_TAG_REGEX =
+  /<\/?(?:g(?:r(?:o(?:u(?:p(?::[^>\n<]*)?)?)?)?)?|t(?:h(?:i(?:n(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)?$/;
 
 /**
- * While a message is streaming, the last text block ends mid-delta: a group tag
- * arrives one character at a time, so every tag passes through prefix states
- * (`<`, `<gro`, `<group:Investigating auto-c…`) that are not yet matchable.
- * Withhold that trailing fragment from render instead of flashing raw tag
- * syntax into the transcript. Once the block settles the fragment reappears —
- * either as a real tag (grouping), or as literal text if it never became one.
+ * While a message is streaming, the last text block ends mid-delta: a group or
+ * think tag arrives one character at a time, so every tag passes through prefix
+ * states (`<`, `<gro`, `<group:Investigating auto-c…`, `<thin`) that are not yet
+ * matchable. Withhold that trailing fragment from render instead of flashing raw
+ * tag syntax into the transcript. Once the block settles the fragment reappears —
+ * either as a real tag (grouping / thinking), or as literal text if it never
+ * became one.
  */
-function stripTrailingPartialGroupTag(text: string): string {
-  return text.replace(TRAILING_PARTIAL_GROUP_TAG_REGEX, '');
+function stripTrailingPartialTag(text: string): string {
+  return text.replace(TRAILING_PARTIAL_TAG_REGEX, '');
 }
 
 /**
@@ -1226,7 +1231,7 @@ export function groupContentBlocks(
     // the only place a trailing tag fragment needs withholding.
     const blockText =
       isStreaming && blockIndex === blocks.length - 1
-        ? stripTrailingPartialGroupTag(rawBlockText)
+        ? stripTrailingPartialTag(rawBlockText)
         : rawBlockText;
     const withheldPartialTag = blockText !== rawBlockText;
 
