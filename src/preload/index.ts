@@ -3,6 +3,11 @@
  *
  * Clean, secure bridge between renderer and main process.
  * Uses contextBridge for security.
+ *
+ * ⚠️  src/preload/index.ts is GENERATED from src/preload/index.template.ts by
+ *     scripts/inline-ipc-channels.ts, which runs on every 'npm run dev' and
+ *     every 'npm run build'. Edit the TEMPLATE. Anything written directly into
+ *     index.ts is overwritten at build time and never reaches a packaged app.
  */
 
 import {
