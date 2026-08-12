@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.28.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.27.0...v2.28.0) (2026-08-12)
+
+
+### 🚀 Features
+
+* redesign the workspace experience ([#1031](https://github.com/intent-hq/cloudlands-fe/issues/1031)) ([df7aa1f](https://github.com/intent-hq/cloudlands-fe/commit/df7aa1f124043e55a2654b24399500acfb7f7438))
+
+
+### 🐛 Bug Fixes
+
+* move getIpcListenerCounts into the preload template ([#1084](https://github.com/intent-hq/cloudlands-fe/issues/1084)) ([3bdd19c](https://github.com/intent-hq/cloudlands-fe/commit/3bdd19c080b66aa87ecbfc07232a3ed6325f5625))
+
 ## [2.27.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.26.0...v2.27.0) (2026-08-12)
 
 
