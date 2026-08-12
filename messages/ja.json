@@ -1924,6 +1924,7 @@
   "chat_richInput_addedImages_toast_one": "1 枚の画像をコンテキストに追加しました",
   "chat_richInput_addedImages_toast_many": "{count} 枚の画像をコンテキストに追加しました",
   "chat_richInput_attachmentPlaceFailed_error": "{name} をワークスペースに配置できませんでした",
+  "chat_richInput_attachmentPlaceFailedDetail_error": "{name} をワークスペースに配置できませんでした: {detail}",
   "chat_richInput_askAnything_placeholder": "何でも質問するか、@ を入力してコンテキストを追加",
   "chat_richInput_attachFiles_label": "ファイルを添付",
   "chat_richInput_cancel_label": "キャンセル",

@@ -147,6 +147,10 @@ export function setupFileIPC() {
           // But skip binary detection for known text extensions
           const isBinaryByContent =
             !isBinaryByExtension && !isKnownTextExtension && detectBinaryContent(buffer);
+          // NOTE: `isBinary` reflects extension/content sniffing only. With an
+          // explicit `encoding: 'base64'` request, `content` is base64 even when
+          // `isBinary` is false — callers that passed an encoding must not use
+          // `isBinary` to decide how to decode `content`.
           const isBinary = isBinaryByExtension || isBinaryByContent;
 
           if (isBinaryByContent) {
@@ -159,8 +163,9 @@ export function setupFileIPC() {
           let content: string;
           let truncated = false;
 
-          if (isBinary) {
-            // For binary files, convert to base64
+          if (validated.encoding === 'base64' || isBinary) {
+            // Explicit base64 requests (e.g. attachment bytes for the remote
+            // placeAttachment data arm) and binary files return base64.
             // Apply truncation if needed for binary files
             if (validated.truncateIfLarge && buffer.length > effectiveMaxSize) {
               content = buffer.subarray(0, effectiveMaxSize).toString('base64');

@@ -2909,6 +2909,7 @@
             onRemove={removeContextItem}
             variant={isImageAttachment(item) ? 'thumbnail' : 'chip'}
             placementStatus={item.placementStatus}
+            placementError={item.placementError}
             onRetry={retryStagedItem}
           />
         {/each}

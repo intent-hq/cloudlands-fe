@@ -1924,6 +1924,7 @@
   "chat_richInput_addedImages_toast_one": "1 imagen agregada al contexto",
   "chat_richInput_addedImages_toast_many": "{count} imágenes agregadas al contexto",
   "chat_richInput_attachmentPlaceFailed_error": "No se pudo colocar {name} en el espacio de trabajo",
+  "chat_richInput_attachmentPlaceFailedDetail_error": "No se pudo colocar {name} en el espacio de trabajo: {detail}",
   "chat_richInput_askAnything_placeholder": "Pregunte lo que quiera o escriba @ para contexto",
   "chat_richInput_attachFiles_label": "Adjuntar archivos",
   "chat_richInput_cancel_label": "Cancelar",

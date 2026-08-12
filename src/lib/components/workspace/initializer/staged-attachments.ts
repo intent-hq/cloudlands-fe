@@ -3,16 +3,17 @@
  * onboarding: non-image files are captured as path-only context items
  * (`sourcePath`, no bytes) because `file.placeAttachment` (PROTOCOL §5.9)
  * needs a workspace that does not exist yet. At `workspace.create`
- * redemption every staged item is placed from its sourcePath; failures mark
- * the item `failed` (visible pill with retry) and block the first-message
- * send — never a silent drop.
+ * redemption every staged item is placed from its sourcePath (transport-
+ * aware: the data arm carries the bytes when the backend is remote);
+ * failures mark the item `failed` (visible pill with retry) and block the
+ * first-message send — never a silent drop.
  */
 import type { FileBlock } from '$lib/client/app-client';
+import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
 import {
-  placeAttachment,
-  type ContextItem,
-  type PlaceAttachmentResult,
-} from '$lib/components/chat/input/context-api';
+  extractPlacementErrorDetail,
+  placeAttachmentViaTransport,
+} from '$lib/components/chat/input/attachment-placement';
 
 /** A staged (not-yet-placed) non-image file item awaiting redemption. */
 export function isStagedFileItem(item: ContextItem): boolean {
@@ -60,7 +61,7 @@ export interface RedeemResult {
 export async function redeemStagedAttachments(
   workspaceId: string,
   items: ContextItem[],
-  place: typeof placeAttachment = placeAttachment,
+  place: typeof placeAttachmentViaTransport = placeAttachmentViaTransport,
 ): Promise<RedeemResult> {
   const out: ContextItem[] = [];
   const fileBlocks: FileBlock[] = [];
@@ -75,7 +76,7 @@ export async function redeemStagedAttachments(
     }
     if (!item.sourcePath) {
       // No captured host path (e.g. clipboard bytes with no backing file) —
-      // placement is impossible; base64 is not a fallback.
+      // placement is impossible without a source to read from.
       failedCount++;
       out.push({ ...item, placementStatus: 'failed' });
       continue;
@@ -88,6 +89,7 @@ export async function redeemStagedAttachments(
       const placed: ContextItem = {
         ...item,
         placementStatus: 'placed',
+        placementError: undefined,
         label: result.fileName,
         path: result.path,
         attachmentId: result.attachmentId,
@@ -97,10 +99,15 @@ export async function redeemStagedAttachments(
       out.push(placed);
       const block = fileBlockFromItem(placed);
       if (block) fileBlocks.push(block);
-    } catch {
-      // Stale/missing source path or daemon error — failed pill, blocks send.
+    } catch (error) {
+      // Stale/missing source path or daemon error — failed pill (with the
+      // daemon's failure detail when available), blocks send.
       failedCount++;
-      out.push({ ...item, placementStatus: 'failed' });
+      out.push({
+        ...item,
+        placementStatus: 'failed',
+        placementError: extractPlacementErrorDetail(error),
+      });
     }
   }
 
