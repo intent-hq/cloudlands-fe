@@ -62,7 +62,7 @@
     <Fa
       icon={faBrain}
       size={14}
-      class="w-4 shrink-0 text-foreground/60 {isStreaming ? 'animate-pulse' : ''}"
+      class="a11y-ignore w-4 shrink-0 text-foreground/60 {isStreaming ? 'animate-pulse' : ''}"
     />
     <button
       class="flex min-w-0 items-center gap-1 overflow-hidden border-0 bg-transparent p-0 text-left cursor-pointer"
@@ -70,20 +70,20 @@
       onclick={toggle}
       aria-expanded={isExpanded}
     >
-      <span class="shrink-0 whitespace-nowrap text-foreground/75">
+      <span class="shrink-0 whitespace-nowrap text-muted-foreground">
         {isStreaming
           ? m.chat_thinkingBlock_thinking_label()
           : m.chat_thinkingBlock_reasoning_label()}
       </span>
       {#if !isExpanded}
-        <span class="min-w-0 truncate whitespace-nowrap text-foreground/70">{summary}</span>
+        <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">{summary}</span>
       {/if}
     </button>
   </div>
 
   {#if isExpanded}
     <div
-      class="type-caption ml-5 pt-1 text-foreground/75 [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-foreground/75"
+      class="type-caption ml-5 pt-1 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
       transition:safeSlide={{ duration: 150 }}
     >
       <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />

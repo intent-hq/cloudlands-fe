@@ -463,7 +463,7 @@
             data-icon={faceIcon.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70')}
+              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
           />
         {:else if codex && key.slot === 6}
           <!-- Codex logo key: terminal inside a hexagon -->
@@ -481,7 +481,7 @@
             data-icon={faTerminal.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70')}
+              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
           />
         {/if}
       </g>
@@ -497,7 +497,7 @@
         data-icon={faMicrophone.iconName}
         aria-hidden="true"
         class={'pointer-events-none ' +
-          (selectedSlot === 4 || selectedSlot === 5 ? 'text-primary' : 'text-foreground/70')}
+          (selectedSlot === 4 || selectedSlot === 5 ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
       />
     {/if}
   </svg>
