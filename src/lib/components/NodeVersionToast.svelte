@@ -41,7 +41,8 @@
   const health$ = selectDaemonHealth();
 
   // Onboarding renders at /workspace/new (WorkspaceSurface); suppress there.
-  const isOnboarding = $derived($page.params.id === 'new');
+  // Pathname form matches the (app) layout's own onboarding exclusion.
+  const isOnboarding = $derived($page.url.pathname.startsWith('/workspace/new'));
 
   // Fresh-probe handshake: request once healthy, then wait for the probe to
   // be observed running (checking true) and settling (checking false). If the

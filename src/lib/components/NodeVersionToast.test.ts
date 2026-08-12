@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const hostRequirements: { value: unknown } = { value: null };
   const daemonHealth: { value: string } = { value: 'healthy' };
-  const route: { params: Record<string, string> } = { params: {} };
+  const route: { pathname: string } = { pathname: '/workspace/abc123' };
   const toastWarning = vi.fn();
   return { dispatch, hostRequirements, daemonHealth, route, toastWarning };
 });
@@ -40,8 +40,8 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$app/stores', () => ({
   page: {
-    subscribe: (run: (value: { params: Record<string, string> }) => void) => {
-      run({ params: mocks.route.params });
+    subscribe: (run: (value: { url: { pathname: string } }) => void) => {
+      run({ url: { pathname: mocks.route.pathname } });
       return () => {};
     },
   },
@@ -84,7 +84,7 @@ const settleProbe = async (node: HostRequirementsState['node']) => {
 beforeEach(() => {
   vi.clearAllMocks();
   resetNodeVersionToastSessionLatch();
-  mocks.route.params = {};
+  mocks.route.pathname = '/workspace/abc123';
   mocks.daemonHealth.value = 'healthy';
   mocks.hostRequirements.value = stateWithNode({ checked: false, ok: false });
 });
@@ -123,7 +123,7 @@ describe('NodeVersionToast', () => {
   });
 
   it('stays quiet during onboarding (/workspace/new)', async () => {
-    mocks.route.params = { id: 'new' };
+    mocks.route.pathname = '/workspace/new';
     render(NodeVersionToast);
     await settleProbe({ checked: true, ok: false, version: '18.19.0' });
     expect(mocks.toastWarning).not.toHaveBeenCalled();
