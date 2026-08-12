@@ -74,6 +74,13 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   if (haystack === needle) return 1000;
   if (haystack.startsWith(needle)) return 200 + Math.max(0, 20 - needle.length);
 
+  const subIdx = haystack.indexOf(needle);
+  if (subIdx !== -1) {
+    const prev = haystack[subIdx - 1];
+    const atBoundary = prev === " " || prev === "/" || prev === "-" || prev === "_" || prev === ".";
+    return (atBoundary ? 100 : 50) + Math.max(0, 20 - needle.length) + Math.max(0, 10 - subIdx);
+  }
+
   let i = 0;
   let score = 0;
   let streak = 0;

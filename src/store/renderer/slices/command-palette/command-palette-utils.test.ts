@@ -44,8 +44,39 @@ describe("fuzzyScore", () => {
 
   it("scores word-boundary matches higher", () => {
     const boundaryScore = fuzzyScore("my-file-name", "mfn");
-    const midScore = fuzzyScore("amfnxyz", "mfn");
+    const midScore = fuzzyScore("amxfxnyz", "mfn");
     expect(boundaryScore).toBeGreaterThan(midScore);
+  });
+
+  it("ranks a word-boundary substring above a scattered subsequence", () => {
+    const substringScore = fuzzyScore("Open HUD ", "hud");
+    const scatteredScore = fuzzyScore(
+      "Hardware update discussion some note description",
+      "hud",
+    );
+    expect(substringScore).toBeGreaterThan(scatteredScore);
+  });
+
+  it("ranks a plain substring above a scattered subsequence", () => {
+    const substringScore = fuzzyScore("shudder", "hud");
+    const scatteredScore = fuzzyScore(
+      "Hardware update discussion some note description",
+      "hud",
+    );
+    expect(substringScore).toBeGreaterThan(scatteredScore);
+  });
+
+  it("ranks a word-boundary substring above a plain substring", () => {
+    expect(fuzzyScore("Open HUD ", "hud")).toBeGreaterThan(fuzzyScore("shudder", "hud"));
+  });
+
+  it("still ranks a prefix match above a substring match", () => {
+    expect(fuzzyScore("hud panel", "hud")).toBeGreaterThan(fuzzyScore("Open HUD ", "hud"));
+  });
+
+  it("still ranks an exact match above everything", () => {
+    expect(fuzzyScore("hud", "hud")).toBe(1000);
+    expect(fuzzyScore("hud", "hud")).toBeGreaterThan(fuzzyScore("hud panel", "hud"));
   });
 });
 // ── parseQueryFilter ───────────────────────────────────────────────────────
