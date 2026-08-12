@@ -170,7 +170,9 @@ export function* finalizeTransfer(
       : undefined;
   try {
     const result = yield* call(invokeTransfer<TransferFinalizeResult>, TRANSFER.FINALIZE, {
-      archiveSource,
+      // Archiving the source only makes sense for server transfers; a download
+      // leaves the workspace in place, so the flag is forced off there.
+      archiveSource: destination?.kind === 'server' ? archiveSource : false,
       restartAgents: destination?.kind === 'server' ? restartAgents : false,
       ...(finalStatusMessage ? { finalStatusMessage } : {}),
     });

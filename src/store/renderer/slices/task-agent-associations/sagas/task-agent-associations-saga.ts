@@ -1,4 +1,5 @@
-import { call, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { buffers, channel, type Channel, type Task } from 'redux-saga';
+import { actionChannel, cancel, call, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -13,7 +14,10 @@ import {
   pruneTaskAgentAssociationsForNote,
   removeTaskAgentAssociation,
 } from '../task-agent-associations-slice';
-import type { TaskAgentAssociationsByTaskKey } from '../task-agent-associations-types';
+import type {
+  TaskAgentAssociation,
+  TaskAgentAssociationsByTaskKey,
+} from '../task-agent-associations-types';
 
 const logger = createLogger('TaskAgentAssociationsSaga');
 // eslint-disable-next-line themis/saga-local-selector -- Keep this port isolated to the saga directory.
@@ -33,12 +37,64 @@ type NoteSnapshotAction =
 type NoteRemovalAction =
   | ReturnType<typeof pruneTaskAgentAssociationsForNote>
   | ReturnType<typeof removeTaskAgentAssociation>;
+type AssociationMutation =
+  | {
+      kind: 'link';
+      workspaceId: string;
+      noteId: string;
+      association: TaskAgentAssociation;
+    }
+  | { kind: 'unlink'; workspaceId: string; noteId: string; taskKey: string };
+type AssociationMutationQueue = {
+  channel: Channel<AssociationMutation>;
+  pending: number;
+  task?: Task;
+};
 type AssociationSnapshotTracker = {
   snapshots: Map<string, TaskAgentAssociationsByTaskKey>;
+  mutationQueues: Map<string, AssociationMutationQueue>;
+  onMutationQueueCountChange?: (count: number) => void;
 };
+type ObservedAssociationAction =
+  | ReturnType<typeof addTaskAgentAssociation>
+  | NoteRemovalAction
+  | NoteSnapshotAction
+  | ReturnType<typeof hydrateTaskAgentAssociations>
+  | ReturnType<typeof workspaceUnmounted>;
+
+function isAddAction(
+  action: ObservedAssociationAction,
+): action is ReturnType<typeof addTaskAgentAssociation> {
+  return action.type === addTaskAgentAssociation.type;
+}
+
+function isRemovalAction(action: ObservedAssociationAction): action is NoteRemovalAction {
+  return (
+    action.type === removeTaskAgentAssociation.type ||
+    action.type === pruneTaskAgentAssociationsForNote.type
+  );
+}
+
+function isSnapshotAction(action: ObservedAssociationAction): action is NoteSnapshotAction {
+  return action.type === applyTaskAgentLinked.type || action.type === applyTaskAgentUnlinked.type;
+}
+
+function isHydrationAction(
+  action: ObservedAssociationAction,
+): action is ReturnType<typeof hydrateTaskAgentAssociations> {
+  return action.type === hydrateTaskAgentAssociations.type;
+}
 
 function noteKey(workspaceId: string, noteId: string): string {
   return `${workspaceId}\u0000${noteId}`;
+}
+
+function mutationKey(workspaceId: string, noteId: string, taskKey: string): string {
+  return `${noteKey(workspaceId, noteId)}\u0000${taskKey}`;
+}
+
+function associationTaskKey(association: TaskAgentAssociation): string {
+  return association.taskKey ?? association.taskText;
 }
 
 function cloneNote(
@@ -51,6 +107,72 @@ function clearWorkspaceSnapshots(tracker: AssociationSnapshotTracker, workspaceI
   for (const key of tracker.snapshots.keys()) {
     if (key.startsWith(`${workspaceId}\u0000`)) tracker.snapshots.delete(key);
   }
+}
+
+function retireMutationQueue(
+  tracker: AssociationSnapshotTracker,
+  key: string,
+  queue: AssociationMutationQueue,
+): boolean {
+  if (tracker.mutationQueues.get(key) !== queue) return false;
+  tracker.mutationQueues.delete(key);
+  tracker.onMutationQueueCountChange?.(tracker.mutationQueues.size);
+  return true;
+}
+
+function* runAssociationMutation(mutation: AssociationMutation): SagaGenerator<void> {
+  if (mutation.kind === 'link') {
+    const { workspaceId, noteId, association } = mutation;
+    try {
+      yield* call([appClient.tasks, appClient.tasks.linkAgent], workspaceId, noteId, association);
+    } catch (error) {
+      logger.error('task.linkAgent failed', { workspaceId, noteId, association, error });
+    }
+    return;
+  }
+
+  const { workspaceId, noteId, taskKey } = mutation;
+  try {
+    yield* call([appClient.tasks, appClient.tasks.unlinkAgent], workspaceId, noteId, taskKey);
+  } catch (error) {
+    logger.error('task.unlinkAgent failed', { workspaceId, noteId, taskKey, error });
+  }
+}
+
+function* consumeAssociationMutations(
+  tracker: AssociationSnapshotTracker,
+  key: string,
+  queue: AssociationMutationQueue,
+): SagaGenerator<void> {
+  try {
+    while (true) {
+      const mutation = yield* take(queue.channel);
+      yield* call(runAssociationMutation, mutation);
+      queue.pending -= 1;
+      if (queue.pending === 0 && retireMutationQueue(tracker, key, queue)) return;
+    }
+  } finally {
+    queue.channel.close();
+    retireMutationQueue(tracker, key, queue);
+  }
+}
+
+function* enqueueAssociationMutation(
+  tracker: AssociationSnapshotTracker,
+  mutation: AssociationMutation,
+): SagaGenerator<void> {
+  const taskKey =
+    mutation.kind === 'link' ? associationTaskKey(mutation.association) : mutation.taskKey;
+  const key = mutationKey(mutation.workspaceId, mutation.noteId, taskKey);
+  let queue = tracker.mutationQueues.get(key);
+  if (!queue) {
+    queue = { channel: channel<AssociationMutation>(buffers.expanding()), pending: 0 };
+    tracker.mutationQueues.set(key, queue);
+    tracker.onMutationQueueCountChange?.(tracker.mutationQueues.size);
+    queue.task = yield* fork(consumeAssociationMutations, tracker, key, queue);
+  }
+  queue.pending += 1;
+  yield* put(queue.channel, mutation);
 }
 
 function* refreshNoteSnapshot(
@@ -69,11 +191,12 @@ function* linkAssociation(
 ): SagaGenerator<void> {
   const [workspaceId, noteId, association] = action.payload;
   yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
-  try {
-    yield* call([appClient.tasks, appClient.tasks.linkAgent], workspaceId, noteId, association);
-  } catch (error) {
-    logger.error('task.linkAgent failed', { workspaceId, noteId, association, error });
-  }
+  yield* enqueueAssociationMutation(tracker, {
+    kind: 'link',
+    workspaceId,
+    noteId,
+    association,
+  });
 }
 
 function* unlinkRemovedAssociations(
@@ -85,11 +208,12 @@ function* unlinkRemovedAssociations(
   const after = yield* call(refreshNoteSnapshot, tracker, workspaceId, noteId);
   for (const taskKey of Object.keys(before)) {
     if (taskKey in after) continue;
-    try {
-      yield* call([appClient.tasks, appClient.tasks.unlinkAgent], workspaceId, noteId, taskKey);
-    } catch (error) {
-      logger.error('task.unlinkAgent failed', { workspaceId, noteId, taskKey, error });
-    }
+    yield* enqueueAssociationMutation(tracker, {
+      kind: 'unlink',
+      workspaceId,
+      noteId,
+      taskKey,
+    });
   }
 }
 
@@ -116,25 +240,72 @@ function* removeWorkspaceSnapshots(
   tracker: AssociationSnapshotTracker,
   action: ReturnType<typeof workspaceUnmounted>,
 ): SagaGenerator<void> {
-  clearWorkspaceSnapshots(tracker, action.payload[0]);
+  const workspaceId = action.payload[0];
+  clearWorkspaceSnapshots(tracker, workspaceId);
+  const prefix = `${workspaceId}\u0000`;
+  for (const [key, queue] of tracker.mutationQueues) {
+    if (!key.startsWith(prefix)) continue;
+    retireMutationQueue(tracker, key, queue);
+    queue.channel.close();
+    if (queue.task?.isRunning()) yield* cancel(queue.task);
+  }
 }
 
-export function* taskAgentAssociationsSaga(): SagaGenerator<void> {
+function* consumeAssociationActions(
+  tracker: AssociationSnapshotTracker,
+  actions: Channel<ObservedAssociationAction>,
+): SagaGenerator<void> {
+  while (true) {
+    const action = yield* take(actions);
+    if (isAddAction(action)) {
+      yield* linkAssociation(tracker, action);
+    } else if (isRemovalAction(action)) {
+      yield* unlinkRemovedAssociations(tracker, action);
+    } else if (isSnapshotAction(action)) {
+      yield* captureNoteSnapshot(tracker, action);
+    } else if (isHydrationAction(action)) {
+      yield* replaceWorkspaceSnapshots(tracker, action);
+    } else {
+      yield* removeWorkspaceSnapshots(tracker, action);
+    }
+  }
+}
+
+export function* taskAgentAssociationsSaga(
+  options: { onMutationQueueCountChange?: (count: number) => void } = {},
+): SagaGenerator<void> {
   const initial = yield* selectAllTaskAgentAssociationWorkspaces.effect();
-  const tracker: AssociationSnapshotTracker = { snapshots: new Map() };
+  const tracker: AssociationSnapshotTracker = {
+    snapshots: new Map(),
+    mutationQueues: new Map(),
+    onMutationQueueCountChange: options.onMutationQueueCountChange,
+  };
   for (const [workspaceId, workspace] of Object.entries(initial)) {
     for (const [noteId, associations] of Object.entries(workspace.byNoteId)) {
       tracker.snapshots.set(noteKey(workspaceId, noteId), cloneNote(associations));
     }
   }
 
-  yield* takeEvery(addTaskAgentAssociation, linkAssociation, tracker);
-  yield* takeEvery(
-    [removeTaskAgentAssociation, pruneTaskAgentAssociationsForNote],
-    unlinkRemovedAssociations,
-    tracker,
+  const actions = yield* actionChannel<ObservedAssociationAction>(
+    [
+      addTaskAgentAssociation,
+      removeTaskAgentAssociation,
+      pruneTaskAgentAssociationsForNote,
+      applyTaskAgentLinked,
+      applyTaskAgentUnlinked,
+      hydrateTaskAgentAssociations,
+      workspaceUnmounted,
+    ],
+    buffers.expanding(),
   );
-  yield* takeEvery([applyTaskAgentLinked, applyTaskAgentUnlinked], captureNoteSnapshot, tracker);
-  yield* takeEvery(hydrateTaskAgentAssociations, replaceWorkspaceSnapshots, tracker);
-  yield* takeEvery(workspaceUnmounted, removeWorkspaceSnapshots, tracker);
+  try {
+    yield* call(consumeAssociationActions, tracker, actions);
+  } finally {
+    actions.close();
+    for (const queue of tracker.mutationQueues.values()) queue.channel.close();
+    const hadMutationQueues = tracker.mutationQueues.size > 0;
+    tracker.mutationQueues.clear();
+    if (hadMutationQueues) tracker.onMutationQueueCountChange?.(0);
+    tracker.snapshots.clear();
+  }
 }

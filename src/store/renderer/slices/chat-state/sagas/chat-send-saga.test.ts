@@ -53,6 +53,7 @@ import { chatSendSaga } from './chat-send-saga';
 
 const WS = 'ws-send';
 const AGENT = 'agent-send';
+const OTHER_AGENT = 'agent-other';
 const settle = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -82,12 +83,13 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function harness(
-  seedSession = session(),
+  seedSession: AgentSession | AgentSession[] = session(),
   getStateError?: () => Error | undefined,
   workspaceRecord?: Workspace,
 ) {
   const channel = stdChannel();
-  let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions([seedSession]));
+  const seedSessions = Array.isArray(seedSession) ? seedSession : [seedSession];
+  let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions(seedSessions));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
   const workspaceEntity =
@@ -127,7 +129,7 @@ function harness(
 describe('chatSendSaga', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('sends exact lifecycle options while global takeEvery processes same-agent work concurrently', async () => {
+  it('sends exact lifecycle options while processing same-agent work FIFO', async () => {
     let resolveFirst!: () => void;
     mocks.send
       .mockReturnValueOnce(
@@ -149,7 +151,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second', forceSubmit: true }));
     await settle();
 
-    expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
     expect(mocks.send).toHaveBeenNthCalledWith(
       1,
       AGENT,
@@ -161,6 +163,8 @@ describe('chatSendSaga', () => {
         priority: 'interrupt',
       },
     );
+    resolveFirst();
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(2));
     expect(mocks.send).toHaveBeenNthCalledWith(
       2,
       AGENT,
@@ -168,8 +172,137 @@ describe('chatSendSaga', () => {
       expect.objectContaining({ id: WS }),
       { imageBlocks: undefined, noteIds: undefined, priority: 'interrupt' },
     );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('processes different agents concurrently', async () => {
+    let resolveFirst!: () => void;
+    mocks.send.mockImplementation((agentId: string) => {
+      if (agentId !== AGENT) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        resolveFirst = resolve;
+      });
+    });
+    const run = harness([
+      session(),
+      session({ id: OTHER_AGENT, backendSessionId: OTHER_AGENT, name: 'Other Agent' }),
+    ]);
+
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'blocked' }));
+    run.channel.put(sendMessage(OTHER_AGENT, { wsId: WS, text: 'concurrent' }));
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(2));
+
+    expect(mocks.send).toHaveBeenNthCalledWith(
+      2,
+      OTHER_AGENT,
+      'concurrent',
+      expect.objectContaining({ id: WS }),
+      expect.any(Object),
+    );
     resolveFirst();
     await settle();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('lets stop bypass a blocked send while ordinary same-agent commands remain FIFO', async () => {
+    const gates = Array.from({ length: 3 }, () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    });
+    const order: string[] = [];
+    let sendCount = 0;
+    mocks.send.mockImplementation(() => {
+      const callIndex = sendCount++;
+      order.push(callIndex === 0 ? 'send' : 'retry');
+      return gates[callIndex === 0 ? 0 : 2].promise;
+    });
+    mocks.removeQueued.mockImplementation(() => {
+      order.push('remove');
+      return gates[1].promise.then(() => ({ success: true }));
+    });
+    mocks.stop.mockImplementation(() => {
+      order.push('stop');
+      return Promise.resolve({ success: true });
+    });
+    const run = harness();
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
+
+    const stop = agentSessionStopChatRequested(AGENT);
+    const retry = agentSessionRetryLastMessageRequested(AGENT, WS);
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'first' }));
+
+    await vi.waitFor(() => expect(order).toEqual(['send']));
+    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-1'));
+    run.channel.put(retry);
+    run.channel.put(stop);
+    await stop.promise;
+
+    expect(order).toEqual(['send', 'stop']);
+    expect(mocks.stop).toHaveBeenCalledWith(AGENT);
+    expect(mocks.removeQueued).not.toHaveBeenCalled();
+    await settle();
+    expect(order).toEqual(['send', 'stop']);
+
+    gates[0].resolve();
+    await vi.waitFor(() => expect(order).toEqual(['send', 'stop', 'remove']));
+    gates[1].resolve();
+    await vi.waitFor(() => expect(order).toEqual(['send', 'stop', 'remove', 'retry']));
+    gates[2].resolve();
+    await retry.promise;
+
+    expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-1');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not let a blocked stop stall an ordinary retry-with-model command', async () => {
+    let resolveStop!: () => void;
+    mocks.stop.mockReturnValue(
+      new Promise<{ success: true }>((resolve) => {
+        resolveStop = () => resolve({ success: true });
+      }),
+    );
+    mocks.send.mockResolvedValue(undefined);
+    const run = harness();
+    run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry me', options: {} }));
+    const stop = agentSessionStopChatRequested(AGENT);
+    const retryWithModel = agentSessionRetryWithModelRequested(AGENT, WS, 'provider:model');
+
+    run.channel.put(stop);
+    await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledTimes(1));
+    run.channel.put(retryWithModel);
+    await retryWithModel.promise;
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      'retry me',
+      expect.objectContaining({ id: WS }),
+      expect.objectContaining({ model: 'provider:model' }),
+    );
+
+    resolveStop();
+    await stop.promise;
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('continues the same-agent queue after a command failure', async () => {
+    mocks.stop.mockRejectedValue(new Error('stop failed'));
+    mocks.removeQueued.mockResolvedValue({ success: true });
+    const run = harness();
+    const stop = agentSessionStopChatRequested(AGENT);
+
+    run.channel.put(stop);
+    run.channel.put(removeQueuedMessageRequested(AGENT, 'queued-after-failure'));
+
+    await expect(stop.promise).rejects.toThrow('stop failed');
+    await vi.waitFor(() =>
+      expect(mocks.removeQueued).toHaveBeenCalledWith(AGENT, 'queued-after-failure'),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -362,19 +495,25 @@ describe('chatSendSaga', () => {
     );
   });
 
-  it('settles concurrent same-agent promise actions once on cancellation', async () => {
+  it('settles active and queued same-agent promise actions once on cancellation', async () => {
     mocks.stop.mockReturnValue(new Promise(() => {}));
+    mocks.send.mockReturnValue(new Promise(() => {}));
     const run = harness();
     run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'retry after stop', options: {} }));
     const activeStop = agentSessionStopChatRequested(AGENT);
     const concurrentRetry = agentSessionRetryLastMessageRequested(AGENT, WS);
+    const concurrentModelRetry = agentSessionRetryWithModelRequested(AGENT, WS, 'provider:model');
     const stopSettlement = activeStop.promise.catch((error) => error);
     const retrySettlement = concurrentRetry.promise.catch((error) => error);
+    const modelRetrySettlement = concurrentModelRetry.promise.catch((error) => error);
 
     run.channel.put(activeStop);
     await vi.waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(AGENT));
     run.channel.put(concurrentRetry);
+    await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledTimes(1));
+    run.channel.put(concurrentModelRetry);
     await settle();
+    expect(mocks.send).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
 
@@ -384,11 +523,19 @@ describe('chatSendSaga', () => {
     await expect(retrySettlement).resolves.toEqual(
       expect.objectContaining({ message: expect.stringContaining('cancelled') }),
     );
+    await expect(modelRetrySettlement).resolves.toEqual(
+      expect.objectContaining({ message: expect.stringContaining('cancelled') }),
+    );
     expect(
       run.dispatch.mock.calls.filter(([action]) => action.type === activeStop.failure.type),
     ).toHaveLength(1);
     expect(
       run.dispatch.mock.calls.filter(([action]) => action.type === concurrentRetry.failure.type),
+    ).toHaveLength(1);
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === concurrentModelRetry.failure.type,
+      ),
     ).toHaveLength(1);
   });
 

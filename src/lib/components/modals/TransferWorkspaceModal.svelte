@@ -10,8 +10,12 @@
    *      counts, size estimate, git summary, and pre-flight warnings.
    *   3. `transferring` — live progress (build stage, bytes down/up vs the
    *      plan estimate) + the "restart in-flight agents" toggle.
-   *   4. `result` — success (archive-source checkbox, Done / Switch buttons)
-   *      or failure (reason + Retry; the source stays usable).
+   *   4. `result` — success (archive-source checkbox and Switch button for
+   *      server transfers, Done) or failure (reason + Retry; the source
+   *      stays usable).
+   *
+   * Download-to-file mode reuses the same steps with download-flavored copy
+   * (see `isDownload`) and without the server-only controls.
    */
 
   import { Button } from '$lib/components/ui/button';
@@ -100,6 +104,9 @@
 
   const canNext = $derived(step === 'destination' && destination != null);
 
+  /** Download-to-file mode swaps transfer-flavored copy for download copy. */
+  const isDownload = $derived(destination?.kind === 'download');
+
   /**
    * Closing is locked while finalize is in flight — a close dispatches the
    * relay cancel, which would race the finalization on the source and
@@ -133,7 +140,11 @@
   const progressLabel = $derived.by(() => {
     if (!progress) return m.workspace_transfer_stage_building();
     if (progress.phase === 'committing') return m.workspace_transfer_phase_committing();
-    if (progress.phase === 'relaying') return m.workspace_transfer_phase_relaying();
+    if (progress.phase === 'relaying') {
+      return isDownload
+        ? m.workspace_transfer_phase_downloading()
+        : m.workspace_transfer_phase_relaying();
+    }
     switch (progress.stage) {
       case 'stopping-agents':
         return m.workspace_transfer_stage_stoppingAgents();
@@ -271,7 +282,11 @@
             </button>
           </div>
         {:else if step === 'confirm'}
-          <p class="text-sm text-subtle">{m.workspace_transfer_confirm_description()}</p>
+          <p class="text-sm text-subtle">
+            {isDownload
+              ? m.workspace_transfer_confirmDownload_description()
+              : m.workspace_transfer_confirm_description()}
+          </p>
           {#if destinationLabel}
             <p class="text-xs text-subtle" data-testid="transfer-destination-summary">
               {destinationLabel}
@@ -300,7 +315,11 @@
             {/if}
 
             <div class="space-y-1">
-              <span class="text-xs text-subtle">{m.workspace_transfer_sizeEstimate_label()}</span>
+              <span class="text-xs text-subtle">
+                {isDownload
+                  ? m.workspace_transfer_sizeEstimateDownload_label()
+                  : m.workspace_transfer_sizeEstimate_label()}
+              </span>
               <p class="text-lg font-semibold" data-testid="transfer-total-size">
                 {formatBytesBinary(plan.totalSizeBytes)}
               </p>
@@ -363,18 +382,26 @@
               {/if}
             </div>
 
-            <p class="text-xs text-subtle">{m.workspace_transfer_notTransferred_message()}</p>
+            <p class="text-xs text-subtle">
+              {isDownload
+                ? m.workspace_transfer_notDownloaded_message()
+                : m.workspace_transfer_notTransferred_message()}
+            </p>
           {/if}
         {:else if step === 'transferring'}
           <p class="text-sm" data-testid="transfer-progress-label">
-            {m.workspace_transfer_transferring_title({ title: workspaceTitle })}
+            {isDownload
+              ? m.workspace_transfer_downloading_title({ title: workspaceTitle })
+              : m.workspace_transfer_transferring_title({ title: workspaceTitle })}
           </p>
           <p class="text-sm text-subtle" data-testid="transfer-progress-stage">{progressLabel}</p>
 
           <div
             class="h-2 w-full rounded bg-muted overflow-hidden"
             role="progressbar"
-            aria-label={m.workspace_transfer_progress_ariaLabel()}
+            aria-label={isDownload
+              ? m.workspace_transfer_downloadProgress_ariaLabel()
+              : m.workspace_transfer_progress_ariaLabel()}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={progressFraction != null ? Math.round(progressFraction * 100) : undefined}
@@ -435,7 +462,11 @@
           {#if runStatus === 'succeeded'}
             <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-success">
               <Fa icon={faCircleCheck} class="text-green-500 shrink-0" />
-              <span class="font-semibold">{m.workspace_transfer_result_success_title()}</span>
+              <span class="font-semibold">
+                {isDownload
+                  ? m.workspace_transfer_result_downloadSuccess_title()
+                  : m.workspace_transfer_result_success_title()}
+              </span>
             </p>
             {#if downloadFilePath}
               <p class="text-sm text-subtle" data-testid="transfer-result-file">
@@ -458,22 +489,24 @@
               {/if}
             {/if}
 
-            <label
-              class="flex items-start gap-2 text-sm cursor-pointer"
-              data-testid="transfer-archive-source"
-            >
-              <Checkbox
-                checked={archiveSource}
-                onCheckedChange={(v) => onSetArchiveSource?.(v)}
-                ariaLabel={m.workspace_transfer_archiveSource_label()}
-              />
-              <span class="flex flex-col">
-                <span>{m.workspace_transfer_archiveSource_label()}</span>
-                <span class="text-xs text-subtle">
-                  {m.workspace_transfer_archiveSource_description()}
+            {#if destination?.kind === 'server'}
+              <label
+                class="flex items-start gap-2 text-sm cursor-pointer"
+                data-testid="transfer-archive-source"
+              >
+                <Checkbox
+                  checked={archiveSource}
+                  onCheckedChange={(v) => onSetArchiveSource?.(v)}
+                  ariaLabel={m.workspace_transfer_archiveSource_label()}
+                />
+                <span class="flex flex-col">
+                  <span>{m.workspace_transfer_archiveSource_label()}</span>
+                  <span class="text-xs text-subtle">
+                    {m.workspace_transfer_archiveSource_description()}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            {/if}
 
             {#if finalizeStatus === 'running'}
               <p class="text-xs text-subtle" data-testid="transfer-finalizing">
@@ -487,10 +520,16 @@
           {:else}
             <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-failed">
               <Fa icon={faCircleXmark} class="text-red-500 shrink-0" />
-              <span class="font-semibold">{m.workspace_transfer_result_failed_title()}</span>
+              <span class="font-semibold">
+                {isDownload
+                  ? m.workspace_transfer_result_downloadFailed_title()
+                  : m.workspace_transfer_result_failed_title()}
+              </span>
             </p>
             <p class="text-xs text-subtle" data-testid="transfer-failed-reason">
-              {m.workspace_transfer_result_failed_message({ error: runError ?? '' })}
+              {isDownload
+                ? m.workspace_transfer_result_downloadFailed_message({ error: runError ?? '' })
+                : m.workspace_transfer_result_failed_message({ error: runError ?? '' })}
             </p>
           {/if}
         {/if}
@@ -518,7 +557,9 @@
             disabled={planStatus !== 'loaded'}
             data-testid="transfer-start-button"
           >
-            {m.workspace_transfer_start_label()}
+            {isDownload
+              ? m.workspace_transfer_startDownload_label()
+              : m.workspace_transfer_start_label()}
           </Button>
         {:else if step === 'transferring'}
           <Button variant="ghost" onclick={() => onCancel?.()}>

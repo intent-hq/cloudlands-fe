@@ -34,13 +34,15 @@ export interface ParsedTask {
 }
 
 /**
- * Result of extracting a single task block
+ * A raw @@@task block located in content by scanTaskBlocks
  */
-export interface TaskBlockExtractResult {
-  /** The parsed task, or null if invalid */
-  task: ParsedTask | null;
-  /** The original full match (for replacement) */
-  fullMatch: string;
+export interface ScannedTaskBlock {
+  /** Index of the first '@' of the opening fence */
+  start: number;
+  /** Index just past the closing '@@@' */
+  end: number;
+  /** Content between the fence line and the closing '@@@' */
+  body: string;
 }
 
 /**
@@ -59,19 +61,107 @@ export interface TasksBlockParseResult {
   invalidBlockCount: number;
 }
 
+const FENCE_KEYWORD = '@@@task';
+
 /**
- * Regex to match @@@task / @@@tasks blocks (one task per block)
- * - Allows optional trailing whitespace after the fence name
- * - Handles both \n and \r\n line endings
- * - Captures the content inside the block
+ * Validate the raw text after the fence keyword on a @@@task / @@@tasks line.
  *
- * Pattern: @@@tasks?[ \t]*\r?\n([\s\S]*?)@@@
+ * Mirrors the daemon parser (intentd note_ops.rs `parse_fence_header`):
+ * - An empty/whitespace-only header is valid (the bare fence, unchanged behavior)
+ * - Otherwise every whitespace-separated token (after re-joining list items
+ *   split around commas, e.g. `a, b` / `a ,b` / `a , b`) must be
+ *   attribute-shaped: `name=value` with a non-empty ASCII-alphanumeric name
+ * - Any non-attribute-shaped token makes the line NOT a fence (prose that
+ *   merely mentions @@@task keeps rendering as plain text)
+ * - Semantic problems on attribute-shaped tokens (unknown name, duplicate,
+ *   empty value) keep the fence valid — the daemon converts with warnings,
+ *   so the FE must still treat the block as a task block
+ * - At most one trailing \r (CRLF) is tolerated; any other \r invalidates
  *
- * Note: Use AT_TASK_BLOCK_REGEX_GLOBAL for matchAll/replace operations
- * and AT_TASK_BLOCK_REGEX for .test() to avoid global regex state issues
+ * The FE does not resolve or display the attribute values; it only needs to
+ * agree with the daemon on what counts as a task block opener.
  */
-const AT_TASK_BLOCK_REGEX = /@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/;
-const AT_TASK_BLOCK_REGEX_GLOBAL = /@@@tasks?[ \t]*\r?\n([\s\S]*?)@@@/g;
+export function isValidTaskFenceHeader(rawHeader: string): boolean {
+  const header = rawHeader.endsWith('\r') ? rawHeader.slice(0, -1) : rawHeader;
+  if (header.includes('\r')) {
+    return false;
+  }
+  const trimmed = header.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+  const tokens = trimmed.split(/\s+/);
+  const attrs: string[] = [];
+  let idx = 0;
+  while (idx < tokens.length) {
+    let acc = tokens[idx];
+    // Re-join list items split around commas: `a, b` / `a ,b` / `a , b`
+    while (idx + 1 < tokens.length && (acc.endsWith(',') || tokens[idx + 1].startsWith(','))) {
+      idx++;
+      acc += tokens[idx];
+    }
+    attrs.push(acc);
+    idx++;
+  }
+  return attrs.every((attr) => {
+    const eq = attr.indexOf('=');
+    if (eq === -1) {
+      return false;
+    }
+    return /^[A-Za-z0-9]+$/.test(attr.slice(0, eq));
+  });
+}
+
+/**
+ * Scan content for @@@task / @@@tasks blocks.
+ *
+ * Mirrors the daemon scanner (intentd note_ops.rs `scan_blocks`): the fence
+ * keyword must be followed by whitespace or end-of-line, the rest of the
+ * fence line must be a valid header (see isValidTaskFenceHeader), and the
+ * block runs to the next '@@@'. A bare fence behaves exactly as before.
+ */
+export function scanTaskBlocks(content: string): ScannedTaskBlock[] {
+  const out: ScannedTaskBlock[] = [];
+  let i = 0;
+  for (;;) {
+    const pos = content.indexOf(FENCE_KEYWORD, i);
+    if (pos === -1) {
+      break;
+    }
+    let j = pos + FENCE_KEYWORD.length;
+    if (content[j] === 's') {
+      j++;
+    }
+    // The keyword must be followed by whitespace or end-of-line
+    const next = content[j];
+    if (next !== undefined && next !== ' ' && next !== '\t' && next !== '\r' && next !== '\n') {
+      i = pos + FENCE_KEYWORD.length;
+      continue;
+    }
+    const lineEnd = content.indexOf('\n', j);
+    if (lineEnd === -1) {
+      // No newline after the fence keyword — not a block
+      i = pos + FENCE_KEYWORD.length;
+      continue;
+    }
+    if (!isValidTaskFenceHeader(content.slice(j, lineEnd))) {
+      i = pos + FENCE_KEYWORD.length;
+      continue;
+    }
+    const bodyStart = lineEnd + 1;
+    const closeIdx = content.indexOf('@@@', bodyStart);
+    if (closeIdx === -1) {
+      break;
+    }
+    out.push({
+      start: pos,
+      end: closeIdx + 3,
+      body: content.slice(bodyStart, closeIdx),
+    });
+    i = closeIdx + 3;
+  }
+  return out;
+}
 
 /**
  * Normalize line endings to \n
@@ -129,56 +219,34 @@ export function parseTaskBlockContent(blockContent: string): ParsedTask | null {
  * @returns ParseResult with tasks, cleaned content, and counts
  */
 export function extractTasksBlocks(content: string): TasksBlockParseResult {
+  const blocks = scanTaskBlocks(content);
   const allTasks: ParsedTask[] = [];
-  const blockResults: TaskBlockExtractResult[] = [];
-  let blockCount = 0;
+  let contentWithoutBlocks = '';
+  let cursor = 0;
+  let taskIndex = 0;
   let invalidBlockCount = 0;
 
-  // Extract @@@task blocks using regex
-  const atMatches = content.matchAll(AT_TASK_BLOCK_REGEX_GLOBAL);
-  for (const match of atMatches) {
-    blockCount++;
-    const blockContent = match[1];
-    const task = parseTaskBlockContent(blockContent);
-
-    blockResults.push({
-      task,
-      fullMatch: match[0],
-    });
-
+  for (const block of blocks) {
+    contentWithoutBlocks += content.slice(cursor, block.start);
+    const task = parseTaskBlockContent(block.body);
     if (task) {
-      allTasks.push(task);
-    } else {
-      invalidBlockCount++;
-    }
-  }
-
-  // Replace each task block with an indexed placeholder
-  // This allows proper 1:1 replacement later
-  let contentWithoutBlocks = content;
-  let taskIndex = 0;
-
-  for (const result of blockResults) {
-    if (result.task) {
       // Valid task - use indexed placeholder
-      contentWithoutBlocks = contentWithoutBlocks.replace(
-        result.fullMatch,
-        `<!-- task-block-placeholder-${taskIndex} -->`,
-      );
+      contentWithoutBlocks += `<!-- task-block-placeholder-${taskIndex} -->`;
+      allTasks.push(task);
       taskIndex++;
     } else {
       // Invalid block - remove entirely with a warning comment
-      contentWithoutBlocks = contentWithoutBlocks.replace(
-        result.fullMatch,
-        '<!-- invalid-task-block-removed -->',
-      );
+      contentWithoutBlocks += '<!-- invalid-task-block-removed -->';
+      invalidBlockCount++;
     }
+    cursor = block.end;
   }
+  contentWithoutBlocks += content.slice(cursor);
 
   return {
     tasks: allTasks,
     contentWithoutBlocks,
-    blockCount,
+    blockCount: blocks.length,
     validTaskCount: allTasks.length,
     invalidBlockCount,
   };
@@ -188,7 +256,7 @@ export function extractTasksBlocks(content: string): TasksBlockParseResult {
  * Check if content contains any @@@task blocks
  */
 export function hasTaskBlocks(content: string): boolean {
-  return AT_TASK_BLOCK_REGEX.test(content);
+  return scanTaskBlocks(content).length > 0;
 }
 
 /**

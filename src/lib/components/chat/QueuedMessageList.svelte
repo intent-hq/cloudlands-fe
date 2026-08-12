@@ -278,7 +278,8 @@
    * ChatMessage. The stored content is never mutated.
    */
   function queuedHookWakeDisplayText(message: QueuedMessage): string {
-    return stripHookWakeStateNote(stripHookWakePrefix(message.content));
+    const attribution = queuedHookWakeAttribution(message);
+    return stripHookWakeStateNote(stripHookWakePrefix(message.content, attribution?.rawName));
   }
 
   /**

@@ -1,5 +1,4 @@
 import {
-  all,
   call,
   cancelled,
   delay,
@@ -18,6 +17,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
@@ -70,6 +70,14 @@ type RemoveAction = ReturnType<typeof removeQueuedMessageRequested>;
 type StopAction = ReturnType<typeof agentSessionStopChatRequested>;
 type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
+type ChatCommand = SendAction | RemoveAction | StopAction | RetryAction | RetryModelAction;
+
+const ORDINARY_CHAT_COMMANDS = [
+  sendMessage,
+  removeQueuedMessageRequested,
+  agentSessionRetryLastMessageRequested,
+  agentSessionRetryWithModelRequested,
+];
 
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload['imageBlocks'];
@@ -381,12 +389,57 @@ function* handleRetryWithModel(action: RetryModelAction): SagaGenerator<void> {
   yield* call(retryLastMessage, action, action.payload[2]);
 }
 
+function getCommandAgentId(action: ChatCommand): string {
+  return action.type === sendMessage.type
+    ? (action as SendAction).payload.agentId
+    : (action as RemoveAction | StopAction | RetryAction | RetryModelAction).payload[0];
+}
+
+function* rejectCommand(action: ChatCommand, error: Error): SagaGenerator<void> {
+  if (action.type === agentSessionStopChatRequested.type) {
+    yield* put((action as StopAction).failure(error));
+  } else if (action.type === agentSessionRetryLastMessageRequested.type) {
+    yield* put((action as RetryAction).failure(error));
+  } else if (action.type === agentSessionRetryWithModelRequested.type) {
+    yield* put((action as RetryModelAction).failure(error));
+  }
+}
+
+function* runChatCommand(action: ChatCommand): SagaGenerator<void> {
+  try {
+    if (action.type === sendMessage.type) {
+      yield* call(handleSend, action as SendAction);
+    } else if (action.type === removeQueuedMessageRequested.type) {
+      yield* call(handleRemove, action as RemoveAction);
+    } else if (action.type === agentSessionStopChatRequested.type) {
+      yield* call(handleStop, action as StopAction);
+    } else if (action.type === agentSessionRetryLastMessageRequested.type) {
+      yield* call(handleRetry, action as RetryAction);
+    } else {
+      yield* call(handleRetryWithModel, action as RetryModelAction);
+    }
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    logger.error('Chat command failed unexpectedly', {
+      agentId: getCommandAgentId(action),
+      actionType: action.type,
+      error: failure,
+    });
+    if (action.type === sendMessage.type) {
+      yield* put(chatSendFailed(getCommandAgentId(action), failure.message));
+    } else {
+      yield* call(rejectCommand, action, failure);
+    }
+  }
+}
+
+function* discardPendingCommand(action: ChatCommand): SagaGenerator<void> {
+  yield* call(rejectCommand, action, new Error(CANCELLED_ERROR));
+}
+
 export function* chatSendSaga(): SagaGenerator<void> {
-  yield* all([
-    takeEvery(sendMessage, handleSend),
-    takeEvery(removeQueuedMessageRequested, handleRemove),
-    takeEvery(agentSessionStopChatRequested, handleStop),
-    takeEvery(agentSessionRetryLastMessageRequested, handleRetry),
-    takeEvery(agentSessionRetryWithModelRequested, handleRetryWithModel),
-  ]);
+  yield* takeEvery(agentSessionStopChatRequested, runChatCommand);
+  yield* takeEveryByContextFIFO(ORDINARY_CHAT_COMMANDS, getCommandAgentId, runChatCommand, {
+    onDiscardPending: discardPendingCommand,
+  });
 }

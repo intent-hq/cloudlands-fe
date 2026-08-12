@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { AgentStatus } from "$shared/types/agent.types";
-import type { AgentMessage, AgentSession } from "$shared/types";
-import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { AgentStatus } from '$shared/types/agent.types';
+import type { AgentMessage, AgentSession } from '$shared/types';
+import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
 // records its handler (so tests can push §7.1-shaped reconciled transcripts
@@ -9,7 +9,7 @@ import type { ChatLiveStreamPhase, ChatTranscript } from "$lib/client/app-client
 // and returns a spy disposer. agents.get/getConversation keep the sibling
 // chat-read saga (same initializeChatRequested trigger, real store) inert.
 // READ-ONLY: never a mutation.
-vi.mock("$lib/client", () => {
+vi.mock('$lib/client', () => {
   const subscriptions: Array<{
     agentId: string;
     handler: (transcript: ChatTranscript) => void;
@@ -47,22 +47,22 @@ vi.mock("$lib/client", () => {
 // Spy seam for the bridge stream-accumulator seeding (single-transfer
 // hydration: the subscribe saga seeds it from the snapshot's in-flight
 // assistant message).
-vi.mock("$features/events/daemon-events-bridge.client", async (importOriginal) => {
+vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("$features/events/daemon-events-bridge.client")>();
+    await importOriginal<typeof import('$features/events/daemon-events-bridge.client')>();
   return { ...actual, seedStreamFromSnapshot: vi.fn() };
 });
 
-import * as clientModule from "$lib/client";
-import { appClient } from "$lib/client";
-import { takeEvery } from "typed-redux-saga";
-import { store as appStore } from "$store/renderer/store";
+import * as clientModule from '$lib/client';
+import { appClient } from '$lib/client';
+import { takeEvery } from 'typed-redux-saga';
+import { store as appStore } from '$store/renderer/store';
 import {
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
-} from "$store/renderer/slices/chat-state/chat-state-slice";
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   addMessage,
   bulkUpsertSessions,
@@ -70,27 +70,27 @@ import {
   removeSession,
   removeWorkspaceSessions,
   updateSession,
-} from "$store/renderer/slices/agent-session/agent-session-slice";
-import { CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
-import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
-import { selectChatLiveStreamPhase } from "$store/renderer/slices/chat-state/chat-state-selectors";
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { selectChatLiveStreamPhase } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   selectAgentMessages,
   selectAgentSession,
-} from "$store/renderer/slices/agent-session/agent-session-selectors";
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
 import {
   clearCurrentlyViewedAgent,
   markAgentAsViewed,
-} from "$store/renderer/slices/unread-tracking/unread-tracking-slice";
-import { chatSubscribeSaga } from "./chat-subscribe-saga";
+} from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
+import { chatSubscribeSaga } from './chat-subscribe-saga';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
   setPendingAgentDeletion,
-} from "$features/agent/utils/pending-agent-deletions";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
-import { selectTranscriptSnapshotMeta } from "$store/renderer/slices/chat-state/chat-state-selectors";
-import { shouldShowStoppedIndicator } from "$lib/components/chat/message-display-utils";
+} from '$features/agent/utils/pending-agent-deletions';
+import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
+import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
+import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 
 type FakeSubscription = {
   agentId: string;
@@ -100,39 +100,79 @@ type FakeSubscription = {
   unsubscribe: ReturnType<typeof vi.fn>;
 };
 
-const fakeSubscriptions = (
-  clientModule as unknown as { __chatSubscriptions: FakeSubscription[] }
-).__chatSubscriptions;
+const fakeSubscriptions = (clientModule as unknown as { __chatSubscriptions: FakeSubscription[] })
+  .__chatSubscriptions;
 const chatApi = appClient.chat as unknown as { subscribe: ReturnType<typeof vi.fn> };
 
-const WS = "ws-chat-sub-1";
+const WS = 'ws-chat-sub-1';
 
 function makeSession(agentId: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     id: agentId,
     backendSessionId: null,
     workspaceId: WS,
-    name: "Agent Sub",
+    name: 'Agent Sub',
     status: AgentStatus.Active,
     messages: [],
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   } as AgentSession;
 }
 
-function makeMessage(id: string, text: string, overrides: Partial<AgentMessage> = {}): AgentMessage {
+function makeMessage(
+  id: string,
+  text: string,
+  overrides: Partial<AgentMessage> = {},
+): AgentMessage {
   return {
     id,
-    role: "assistant",
-    timestamp: "2026-01-01T00:00:01.000Z",
-    contentBlocks: [{ type: "text", id: `${id}:0`, text }],
+    role: 'assistant',
+    timestamp: '2026-01-01T00:00:01.000Z',
+    contentBlocks: [{ type: 'text', id: `${id}:0`, text }],
     ...overrides,
   };
 }
 
 function transcript(messages: AgentMessage[], isStreaming = false): ChatTranscript {
   return { messages, truncated: false, totalMessages: messages.length, isStreaming };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function delayNextSubscription(agentId: string): {
+  acquisition: ReturnType<typeof deferred<() => void>>;
+  subscription: FakeSubscription;
+} {
+  const acquisition = deferred<() => void>();
+  const unsubscribe = vi.fn();
+  let subscription: FakeSubscription | undefined;
+  chatApi.subscribe.mockImplementationOnce(
+    (
+      subscribedAgentId: string,
+      handler: (value: ChatTranscript) => void,
+      onPhase?: (phase: ChatLiveStreamPhase) => void,
+    ) => {
+      expect(subscribedAgentId).toBe(agentId);
+      subscription = { agentId, handler, onPhase, unsubscribe };
+      fakeSubscriptions.push(subscription);
+      return acquisition.promise;
+    },
+  );
+  appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+  expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+    agentId,
+    expect.any(Function),
+    expect.any(Function),
+  );
+  if (!subscription) throw new Error(`no delayed chat.subscribe recorded for ${agentId}`);
+  return { acquisition, subscription };
 }
 
 function seedSession(agentId: string, overrides: Partial<AgentSession> = {}): void {
@@ -146,7 +186,7 @@ function openChat(agentId: string): FakeSubscription {
   return sub;
 }
 
-describe("chatSubscribeSaga (fake seam, real store)", () => {
+describe('chatSubscribeSaga (fake seam, real store)', () => {
   let stopSaga: (() => void) | undefined;
 
   beforeAll(() => {
@@ -161,8 +201,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     vi.clearAllMocks();
   });
 
-  it("initializeChatRequested opens exactly one standing subscription per agent", () => {
-    const agentId = "agent-sub-open";
+  it('initializeChatRequested opens exactly one standing subscription per agent', () => {
+    const agentId = 'agent-sub-open';
     seedSession(agentId);
     appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
     appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
@@ -172,8 +212,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(calls[0][0]).toBe(agentId);
   });
 
-  it("closes standing subscriptions when the root saga is cancelled", () => {
-    const agentId = "agent-sub-cancel";
+  it('closes standing subscriptions when the root saga is cancelled', () => {
+    const agentId = 'agent-sub-cancel';
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
@@ -183,47 +223,173 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     stopSaga = undefined;
 
     expect(sub.unsubscribe).toHaveBeenCalledOnce();
-    sub.handler(transcript([makeMessage("late-after-cancel", "stale")]));
+    sub.handler(transcript([makeMessage('late-after-cancel', 'stale')]));
     expect(selectAgentMessages.select(appStore.state, agentId)).toBe(before);
     stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
 
-  it("hydrates the transcript from the seq-0 snapshot emit and live-updates on delta emits", () => {
-    const agentId = "agent-sub-hydrate";
+  it('disposes a subscription acquired after root cancellation exactly once', async () => {
+    const agentId = 'agent-sub-cancel-pending';
+    seedSession(agentId);
+    const { acquisition, subscription } = delayNextSubscription(agentId);
+
+    stopSaga?.();
+    stopSaga = undefined;
+    acquisition.resolve(subscription.unsubscribe);
+
+    await vi.waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalledOnce());
+    subscription.handler(transcript([makeMessage('late-pending-root', 'stale')]));
+    expect(selectAgentMessages.select(appStore.state, agentId)).toEqual([]);
+    expect(subscription.unsubscribe).toHaveBeenCalledOnce();
+    stopSaga = appStore.runSaga(chatSubscribeSaga);
+  });
+
+  it.each([
+    {
+      name: 'scoped clear',
+      prepare: (agentId: string) => appStore.dispatch(markAgentAsViewed(agentId)),
+      close: (agentId: string) => appStore.dispatch(clearCurrentlyViewedAgent(agentId)),
+    },
+    {
+      name: 'session removal',
+      close: (agentId: string) => appStore.dispatch(removeSession(agentId)),
+    },
+    {
+      name: 'workspace session removal',
+      close: () => appStore.dispatch(removeWorkspaceSessions(WS)),
+    },
+    {
+      name: 'workspace deletion',
+      close: (agentId: string) => appStore.dispatch(workspaceDeleted(WS, [agentId])),
+    },
+    {
+      name: 'clear all',
+      close: () => appStore.dispatch(clearAllSessions()),
+    },
+  ])(
+    'disposes a late-acquired subscription after $name and rejects queued hydration/events',
+    async ({ name, prepare, close }) => {
+      appStore.dispatch(clearCurrentlyViewedAgent());
+      const agentId = `agent-sub-late-${name.replaceAll(' ', '-')}`;
+      seedSession(agentId);
+      const { acquisition, subscription } = delayNextSubscription(agentId);
+      prepare?.(agentId);
+
+      subscription.handler(transcript([makeMessage('late-before-close', 'stale')], true));
+      subscription.onPhase?.('connecting');
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      close(agentId);
+      subscription.handler(transcript([makeMessage('late-after-close', 'stale')], true));
+      acquisition.resolve(subscription.unsubscribe);
+
+      await vi.waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalledOnce());
+      subscription.handler(transcript([makeMessage('late-after-acquire', 'stale')], true));
+      subscription.onPhase?.('delayed');
+      await Promise.resolve();
+
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
+      ).not.toContain('late-before-close');
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
+      ).not.toContain('late-after-close');
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).map((message) => message.id),
+      ).not.toContain('late-after-acquire');
+      expect(selectChatLiveStreamPhase.select(appStore.state, agentId)).toBeNull();
+      expect(subscription.unsubscribe).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('serializes delayed unsubscribe before reopening the same agent while another agent opens independently', async () => {
+    const agentA = 'agent-sub-delayed-close-a';
+    const agentB = 'agent-sub-delayed-close-b';
+    seedSession(agentA);
+    const firstA = openChat(agentA);
+    const close = deferred<void>();
+    firstA.unsubscribe.mockReturnValueOnce(close.promise);
+
+    appStore.dispatch(removeSession(agentA));
+    seedSession(agentA);
+    appStore.dispatch(initializeChatRequested(agentA, { wsId: WS }));
+
+    seedSession(agentB);
+    appStore.dispatch(initializeChatRequested(agentB, { wsId: WS }));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentA)).toHaveLength(1);
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(1);
+
+    close.resolve();
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentA)).toHaveLength(2);
+    });
+    expect(firstA.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('serializes superseding viewed-agent switches across delayed unsubscribe', async () => {
+    const agentA = 'agent-sub-view-race-a';
+    const agentB = 'agent-sub-view-race-b';
+    const agentC = 'agent-sub-view-race-c';
+    seedSession(agentA);
+    seedSession(agentB);
+    seedSession(agentC);
+    const subA = openChat(agentA);
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const close = deferred<void>();
+    subA.unsubscribe.mockReturnValueOnce(close.promise);
+
+    appStore.dispatch(markAgentAsViewed(agentB));
+    appStore.dispatch(markAgentAsViewed(agentC));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(0);
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentC)).toHaveLength(0);
+
+    close.resolve();
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentC)).toHaveLength(1);
+    });
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentB)).toHaveLength(0);
+    expect(subA.unsubscribe).toHaveBeenCalledOnce();
+
+    const before = selectAgentMessages.select(appStore.state, agentA);
+    subA.handler(transcript([makeMessage('late-view-race', 'stale')]));
+    expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
+  });
+
+  it('hydrates the transcript from the seq-0 snapshot emit and live-updates on delta emits', () => {
+    const agentId = 'agent-sub-hydrate';
     seedSession(agentId);
     const sub = openChat(agentId);
 
     // seq-0 snapshot emit: user + assistant page.
-    const user = makeMessage("0190a1b2-user", "Run the tests", {
-      role: "user",
-      timestamp: "2026-01-01T00:00:00.000Z",
+    const user = makeMessage('0190a1b2-user', 'Run the tests', {
+      role: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
     });
-    const asst = makeMessage("0190a200-asst", "Let me check.");
+    const asst = makeMessage('0190a200-asst', 'Let me check.');
     sub.handler(transcript([user, asst]));
 
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "0190a1b2-user",
-      "0190a200-asst",
+      '0190a1b2-user',
+      '0190a200-asst',
     ]);
 
     // Delta emit: the assistant block grew (reconciler emits the full list).
-    const grown = makeMessage("0190a200-asst", "Let me check the logs first.");
+    const grown = makeMessage('0190a200-asst', 'Let me check the logs first.');
     sub.handler(transcript([user, grown], true));
 
     const messages = selectAgentMessages.select(appStore.state, agentId);
-    expect(messages.map((m) => m.id)).toEqual(["0190a1b2-user", "0190a200-asst"]);
+    expect(messages.map((m) => m.id)).toEqual(['0190a1b2-user', '0190a200-asst']);
     expect(messages[1].contentBlocks?.[0]).toMatchObject({
-      text: "Let me check the logs first.",
+      text: 'Let me check the logs first.',
     });
   });
 
-  it("records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)", () => {
-    const agentId = "agent-sub-snapmeta";
+  it('records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)', () => {
+    const agentId = 'agent-sub-snapmeta';
     seedSession(agentId);
     const sub = openChat(agentId);
 
     sub.handler({
-      ...transcript([makeMessage("m-oldest", "first"), makeMessage("m-newest", "second")]),
+      ...transcript([makeMessage('m-oldest', 'first'), makeMessage('m-newest', 'second')]),
       truncated: true,
       totalMessages: 7,
       fromSnapshot: true,
@@ -233,36 +399,36 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(meta).toMatchObject({
       truncated: true,
       totalMessages: 7,
-      oldestMessageId: "m-oldest",
+      oldestMessageId: 'm-oldest',
       seq: 1,
     });
 
     // Delta emits do NOT touch the metadata.
-    sub.handler(transcript([makeMessage("m-oldest", "first"), makeMessage("m-newest", "grown")]));
+    sub.handler(transcript([makeMessage('m-oldest', 'first'), makeMessage('m-newest', 'grown')]));
     expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)?.seq).toBe(1);
 
     // A later snapshot (gap resnapshot / reconnect) bumps the seq.
     sub.handler({
-      ...transcript([makeMessage("m-newest", "second")]),
+      ...transcript([makeMessage('m-newest', 'second')]),
       fromSnapshot: true,
     });
     expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
       truncated: false,
-      oldestMessageId: "m-newest",
+      oldestMessageId: 'm-newest',
       seq: 2,
     });
   });
 
   it("seeds the stream accumulator from the snapshot's in-flight assistant message", () => {
-    const agentId = "agent-sub-seed";
+    const agentId = 'agent-sub-seed';
     seedSession(agentId);
     const sub = openChat(agentId);
 
-    const inFlight = makeMessage("m-inflight", "partial...", {
+    const inFlight = makeMessage('m-inflight', 'partial...', {
       isStreaming: true,
     } as Partial<AgentMessage>);
     sub.handler({
-      ...transcript([makeMessage("m-done", "done"), inFlight], true),
+      ...transcript([makeMessage('m-done', 'done'), inFlight], true),
       fromSnapshot: true,
     });
 
@@ -270,14 +436,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     // No in-flight message → no seeding.
     vi.mocked(seedStreamFromSnapshot).mockClear();
-    sub.handler({ ...transcript([makeMessage("m-done", "done")]), fromSnapshot: true });
+    sub.handler({ ...transcript([makeMessage('m-done', 'done')]), fromSnapshot: true });
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
 
     // A stray isStreaming flag on a non-assistant row never seeds.
     sub.handler({
       ...transcript([
-        makeMessage("m-user-stray", "user text", {
-          role: "user",
+        makeMessage('m-user-stray', 'user text', {
+          role: 'user',
           isStreaming: true,
         } as Partial<AgentMessage>),
       ]),
@@ -286,18 +452,18 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
   });
 
-  it("discards retained store-only rows on a resumed: false fallback snapshot (§7.1)", () => {
-    const agentId = "agent-sub-resume-discard";
+  it('discards retained store-only rows on a resumed: false fallback snapshot (§7.1)', () => {
+    const agentId = 'agent-sub-resume-discard';
     // Retained history from a prior view: rows the daemon may since have
     // pruned past — they can sit BELOW an interior gap toward the served
     // newest page.
     seedSession(agentId, {
-      messages: [makeMessage("m-retained-1", "old1"), makeMessage("m-retained-2", "old2")],
+      messages: [makeMessage('m-retained-1', 'old1'), makeMessage('m-retained-2', 'old2')],
     });
     const sub = openChat(agentId);
 
     sub.handler({
-      ...transcript([makeMessage("m-new-1", "newest page")], false),
+      ...transcript([makeMessage('m-new-1', 'newest page')], false),
       truncated: true,
       totalMessages: 9,
       fromSnapshot: true,
@@ -308,145 +474,145 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // transcript; the background walk refetches real history from the
     // snapshot window's oldest row.
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "m-new-1",
+      'm-new-1',
     ]);
 
     // A resumed: true snapshot (or plain delta) still preserves store-only rows.
     seedSession(agentId, {
-      messages: [makeMessage("m-kept", "kept"), makeMessage("m-new-1", "newest page")],
+      messages: [makeMessage('m-kept', 'kept'), makeMessage('m-new-1', 'newest page')],
     });
     sub.handler({
-      ...transcript([makeMessage("m-new-2", "after anchor")]),
+      ...transcript([makeMessage('m-new-2', 'after anchor')]),
       fromSnapshot: true,
       resumed: true,
     });
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "m-kept",
-      "m-new-1",
-      "m-new-2",
+      'm-kept',
+      'm-new-1',
+      'm-new-2',
     ]);
   });
 
-  it("dedups the optimistic user row against the canonical copy by appMessageId", () => {
-    const agentId = "agent-sub-optimistic";
+  it('dedups the optimistic user row against the canonical copy by appMessageId', () => {
+    const agentId = 'agent-sub-optimistic';
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
 
     // Optimistic append (agent-send path): renderer-minted id +
     // client appMessageId.
-    const appMessageId = "app-msg-opt-1";
+    const appMessageId = 'app-msg-opt-1';
     appStore.dispatch(
       addMessage(agentId, {
-        id: "renderer-minted-user",
+        id: 'renderer-minted-user',
         appMessageId,
-        role: "user",
-        timestamp: "2026-01-01T00:00:02.000Z",
-        contentBlocks: [{ type: "text", text: "hello" }],
+        role: 'user',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'hello' }],
       }),
     );
 
     // Daemon echoes the persisted user row with the same appMessageId lifted
     // (PROTOCOL §5.5 userAppMessageId) under the canonical row id.
     const canonical: AgentMessage = {
-      id: "msg_canonical-user-1",
+      id: 'msg_canonical-user-1',
       appMessageId,
-      role: "user",
-      timestamp: "2026-01-01T00:00:02.100Z",
-      contentBlocks: [{ type: "text", id: "msg_canonical-user-1:0", text: "hello" }],
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.100Z',
+      contentBlocks: [{ type: 'text', id: 'msg_canonical-user-1:0', text: 'hello' }],
     };
     sub.handler(transcript([canonical]));
 
     const messages = selectAgentMessages.select(appStore.state, agentId);
-    const userRows = messages.filter((m) => m.role === "user");
+    const userRows = messages.filter((m) => m.role === 'user');
     expect(userRows).toHaveLength(1);
-    expect(userRows[0].id).toBe("msg_canonical-user-1");
+    expect(userRows[0].id).toBe('msg_canonical-user-1');
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
-  it("dedups the optimistic user row by appMessageId even when the canonical content differs (§7.1 delta path)", () => {
+  it('dedups the optimistic user row by appMessageId even when the canonical content differs (§7.1 delta path)', () => {
     // intentd#781: the daemon echoes appMessageId on §7.1 user-row deltas, so
     // the reconciled canonical copy carries the client-minted logical id.
     // Exact appMessageId matching wins over every content heuristic — the
     // rows collapse even when the daemon-persisted content was normalized
     // and no longer hashes equal to the optimistic copy.
-    const agentId = "agent-sub-optimistic-appid-diff";
+    const agentId = 'agent-sub-optimistic-appid-diff';
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
 
-    const appMessageId = "app-msg-opt-3";
+    const appMessageId = 'app-msg-opt-3';
     appStore.dispatch(
       addMessage(agentId, {
-        id: "0190bbbb-optimistic-user",
+        id: '0190bbbb-optimistic-user',
         appMessageId,
-        role: "user",
-        timestamp: "2026-01-01T00:00:02.000Z",
-        contentBlocks: [{ type: "text", text: "deploy now\r\n" }],
+        role: 'user',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'deploy now\r\n' }],
       }),
     );
 
     // Canonical delta echo: server-minted user-msg id, SAME appMessageId,
     // daemon-normalized content (differs from the optimistic copy).
     const canonical: AgentMessage = {
-      id: "user-msg-aaaa1111-2222-3333-4444-555566667777",
+      id: 'user-msg-aaaa1111-2222-3333-4444-555566667777',
       appMessageId,
-      role: "user",
-      timestamp: "2026-01-01T00:00:02.100Z",
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.100Z',
       contentBlocks: [
         {
-          type: "text",
-          id: "user-msg-aaaa1111-2222-3333-4444-555566667777:0",
-          text: "deploy now",
+          type: 'text',
+          id: 'user-msg-aaaa1111-2222-3333-4444-555566667777:0',
+          text: 'deploy now',
         },
       ],
     };
     sub.handler(transcript([canonical]));
 
     const messages = selectAgentMessages.select(appStore.state, agentId);
-    const userRows = messages.filter((m) => m.role === "user");
+    const userRows = messages.filter((m) => m.role === 'user');
     expect(userRows).toHaveLength(1);
-    expect(userRows[0].id).toBe("user-msg-aaaa1111-2222-3333-4444-555566667777");
+    expect(userRows[0].id).toBe('user-msg-aaaa1111-2222-3333-4444-555566667777');
     expect(userRows[0].appMessageId).toBe(appMessageId);
   });
 
-  it("keeps identical-content sends distinct when their appMessageIds differ (§7.1 delta path)", () => {
+  it('keeps identical-content sends distinct when their appMessageIds differ (§7.1 delta path)', () => {
     // Two messages with the SAME text sent in quick succession are distinct
     // logical messages: each optimistic row and each canonical echo carries
     // its own appMessageId, so id matching pairs them one-to-one and the
     // content fallback (gated off when both sides carry an appMessageId)
     // never collapses them into one row.
-    const agentId = "agent-sub-identical-content";
+    const agentId = 'agent-sub-identical-content';
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
 
     for (const [rendererId, appMessageId] of [
-      ["0190cccc-optimistic-a", "app-msg-same-a"],
-      ["0190cccc-optimistic-b", "app-msg-same-b"],
+      ['0190cccc-optimistic-a', 'app-msg-same-a'],
+      ['0190cccc-optimistic-b', 'app-msg-same-b'],
     ] as const) {
       appStore.dispatch(
         addMessage(agentId, {
           id: rendererId,
           appMessageId,
-          role: "user",
-          timestamp: "2026-01-01T00:00:02.000Z",
-          contentBlocks: [{ type: "text", text: "run it again" }],
+          role: 'user',
+          timestamp: '2026-01-01T00:00:02.000Z',
+          contentBlocks: [{ type: 'text', text: 'run it again' }],
         }),
       );
     }
 
     // First echo lands alone: it must collapse ONLY its own optimistic row.
     const canonicalA: AgentMessage = {
-      id: "user-msg-aaaa0000-1111-2222-3333-444444444444",
-      appMessageId: "app-msg-same-a",
-      role: "user",
-      timestamp: "2026-01-01T00:00:02.050Z",
+      id: 'user-msg-aaaa0000-1111-2222-3333-444444444444',
+      appMessageId: 'app-msg-same-a',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.050Z',
       contentBlocks: [
         {
-          type: "text",
-          id: "user-msg-aaaa0000-1111-2222-3333-444444444444:0",
-          text: "run it again",
+          type: 'text',
+          id: 'user-msg-aaaa0000-1111-2222-3333-444444444444:0',
+          text: 'run it again',
         },
       ],
     };
@@ -454,40 +620,38 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     let userRows = selectAgentMessages
       .select(appStore.state, agentId)
-      .filter((m) => m.role === "user");
+      .filter((m) => m.role === 'user');
     expect(userRows).toHaveLength(2);
     expect(userRows.map((m) => m.appMessageId).sort()).toEqual([
-      "app-msg-same-a",
-      "app-msg-same-b",
+      'app-msg-same-a',
+      'app-msg-same-b',
     ]);
 
     // Second echo arrives: both rows are canonical, still two messages.
     const canonicalB: AgentMessage = {
-      id: "user-msg-bbbb0000-1111-2222-3333-444444444444",
-      appMessageId: "app-msg-same-b",
-      role: "user",
-      timestamp: "2026-01-01T00:00:02.150Z",
+      id: 'user-msg-bbbb0000-1111-2222-3333-444444444444',
+      appMessageId: 'app-msg-same-b',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.150Z',
       contentBlocks: [
         {
-          type: "text",
-          id: "user-msg-bbbb0000-1111-2222-3333-444444444444:0",
-          text: "run it again",
+          type: 'text',
+          id: 'user-msg-bbbb0000-1111-2222-3333-444444444444:0',
+          text: 'run it again',
         },
       ],
     };
     sub.handler(transcript([canonicalA, canonicalB]));
 
-    userRows = selectAgentMessages
-      .select(appStore.state, agentId)
-      .filter((m) => m.role === "user");
+    userRows = selectAgentMessages.select(appStore.state, agentId).filter((m) => m.role === 'user');
     expect(userRows).toHaveLength(2);
     expect(userRows.map((m) => m.id)).toEqual([
-      "user-msg-aaaa0000-1111-2222-3333-444444444444",
-      "user-msg-bbbb0000-1111-2222-3333-444444444444",
+      'user-msg-aaaa0000-1111-2222-3333-444444444444',
+      'user-msg-bbbb0000-1111-2222-3333-444444444444',
     ]);
   });
 
-  it("dedups the optimistic user row against a canonical user-msg echo lacking appMessageId (§7.1 delta path)", () => {
+  it('dedups the optimistic user row against a canonical user-msg echo lacking appMessageId (§7.1 delta path)', () => {
     // Version-skew fallback: an OLDER daemon's §7.1 user-row delta carries no
     // appMessageId, so the reconciled canonical copy arrives with only its
     // server-minted `user-msg-{uuid}` id. The optimistic row must still
@@ -495,93 +659,93 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // user-msg id), or every normal send — including structured-question
     // Q:/A: answers, which take the same send path — renders twice until a
     // refresh. The same shape applies to both, so one test covers them.
-    const agentId = "agent-sub-optimistic-no-appid";
+    const agentId = 'agent-sub-optimistic-no-appid';
     seedSession(agentId);
     const sub = openChat(agentId);
     sub.handler(transcript([]));
 
     appStore.dispatch(
       addMessage(agentId, {
-        id: "0190aaaa-optimistic-user",
-        appMessageId: "app-msg-opt-2",
-        role: "user",
-        timestamp: "2026-01-01T00:00:02.000Z",
-        contentBlocks: [{ type: "text", text: "Q: Deploy now?\nA: Yes" }],
+        id: '0190aaaa-optimistic-user',
+        appMessageId: 'app-msg-opt-2',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Q: Deploy now?\nA: Yes' }],
       }),
     );
 
     // The delta-path echo: canonical daemon row id, same content, NO
     // appMessageId (entity_with_role does not include it).
     const canonical: AgentMessage = {
-      id: "user-msg-7c1f4e0a-1111-2222-3333-444455556666",
-      role: "user",
-      timestamp: "2026-01-01T00:00:02.100Z",
+      id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:02.100Z',
       contentBlocks: [
         {
-          type: "text",
-          id: "user-msg-7c1f4e0a-1111-2222-3333-444455556666:0",
-          text: "Q: Deploy now?\nA: Yes",
+          type: 'text',
+          id: 'user-msg-7c1f4e0a-1111-2222-3333-444455556666:0',
+          text: 'Q: Deploy now?\nA: Yes',
         },
       ],
     };
     sub.handler(transcript([canonical]));
 
     const messages = selectAgentMessages.select(appStore.state, agentId);
-    const userRows = messages.filter((m) => m.role === "user");
+    const userRows = messages.filter((m) => m.role === 'user');
     expect(userRows).toHaveLength(1);
-    expect(userRows[0].id).toBe("user-msg-7c1f4e0a-1111-2222-3333-444455556666");
+    expect(userRows[0].id).toBe('user-msg-7c1f4e0a-1111-2222-3333-444455556666');
     // The optimistic side's logical id survives the merge.
-    expect(userRows[0].appMessageId).toBe("app-msg-opt-2");
+    expect(userRows[0].appMessageId).toBe('app-msg-opt-2');
   });
 
-  it("preserves store-only rows the snapshot page does not cover (older paged history)", () => {
-    const agentId = "agent-sub-paged";
+  it('preserves store-only rows the snapshot page does not cover (older paged history)', () => {
+    const agentId = 'agent-sub-paged';
     // Full-history hydration (chat-read saga) landed an older message the
     // newest snapshot page no longer includes.
-    const older = makeMessage("older-page-msg", "old history", {
-      timestamp: "2025-12-31T23:00:00.000Z",
+    const older = makeMessage('older-page-msg', 'old history', {
+      timestamp: '2025-12-31T23:00:00.000Z',
     });
     seedSession(agentId, { messages: [older] });
     const sub = openChat(agentId);
 
-    const newest = makeMessage("newest-msg", "recent");
+    const newest = makeMessage('newest-msg', 'recent');
     sub.handler(transcript([newest]));
 
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "older-page-msg",
-      "newest-msg",
+      'older-page-msg',
+      'newest-msg',
     ]);
   });
 
-  it("edge-triggers streaming flags from transcript.isStreaming and never clobbers a fresh optimistic turn", () => {
-    const agentId = "agent-sub-flags";
+  it('edge-triggers streaming flags from transcript.isStreaming and never clobbers a fresh optimistic turn', () => {
+    const agentId = 'agent-sub-flags';
     // Simulate the optimistic send: both runtime flags on before the first emit.
     seedSession(agentId, { isStreaming: true, isProcessing: true });
     const sub = openChat(agentId);
 
     // First emit reports isStreaming=false (snapshot raced the turn start).
     // No falling edge has occurred — the optimistic flags must survive.
-    sub.handler(transcript([makeMessage("m-1", "hi")]));
+    sub.handler(transcript([makeMessage('m-1', 'hi')]));
     let session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(true);
     expect(session?.isProcessing).toBe(true);
 
     // Rising edge: a live delta says the turn is in flight.
-    sub.handler(transcript([makeMessage("m-1", "hi there")], true));
+    sub.handler(transcript([makeMessage('m-1', 'hi there')], true));
     session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(true);
 
     // Falling edge: terminal frame — all responding flags clear.
-    sub.handler(transcript([makeMessage("m-1", "hi there!")], false));
+    sub.handler(transcript([makeMessage('m-1', 'hi there!')], false));
     session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(false);
     expect(session?.isProcessing).toBe(false);
     expect(session?.isResponding).toBe(false);
   });
 
-  it("swaps subscriptions on agent switch without leaking the previous registration", () => {
-    const agentA = "agent-sub-switch-a";
-    const agentB = "agent-sub-switch-b";
+  it('swaps subscriptions on agent switch without leaking the previous registration', async () => {
+    const agentA = 'agent-sub-switch-a';
+    const agentB = 'agent-sub-switch-b';
     seedSession(agentA);
     seedSession(agentB);
     const subA = openChat(agentA);
@@ -591,29 +755,32 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     appStore.dispatch(markAgentAsViewed(agentB));
     expect(subA.unsubscribe).toHaveBeenCalledTimes(1);
     // B's subscription opened from the switch (session already in store).
+    await vi.waitFor(() => {
+      expect(fakeSubscriptions.some((s) => s.agentId === agentB)).toBe(true);
+    });
     const subB = fakeSubscriptions.find((s) => s.agentId === agentB);
     expect(subB).toBeDefined();
 
     // A late push from A's disposed registration must not write.
     const before = selectAgentMessages.select(appStore.state, agentA);
-    subA.handler(transcript([makeMessage("late-a", "stale")]));
+    subA.handler(transcript([makeMessage('late-a', 'stale')]));
     expect(selectAgentMessages.select(appStore.state, agentA)).toBe(before);
   });
 
-  describe("resume via sinceMessageId (§7.1)", () => {
-    it("opens the first subscription WITHOUT sinceMessageId (no hydrated transcript yet)", () => {
-      const agentId = "agent-sub-resume-first";
-      seedSession(agentId, { messages: [makeMessage("m-existing", "history")] });
+  describe('resume via sinceMessageId (§7.1)', () => {
+    it('opens the first subscription WITHOUT sinceMessageId (no hydrated transcript yet)', () => {
+      const agentId = 'agent-sub-resume-first';
+      seedSession(agentId, { messages: [makeMessage('m-existing', 'history')] });
       const sub = openChat(agentId);
       // Hydration never settled for this agent — full snapshot wanted.
       expect(sub.options).toBeUndefined();
     });
 
-    it("re-subscribes with the last fully-persisted message id once hydration has settled", () => {
-      const agentA = "agent-sub-resume-a";
-      const agentB = "agent-sub-resume-b";
-      const persisted = makeMessage("m-a-final", "done");
-      const streaming = makeMessage("m-a-partial", "streaming…", { isStreaming: true });
+    it('re-subscribes with the last fully-persisted message id once hydration has settled', () => {
+      const agentA = 'agent-sub-resume-a';
+      const agentB = 'agent-sub-resume-b';
+      const persisted = makeMessage('m-a-final', 'done');
+      const streaming = makeMessage('m-a-partial', 'streaming…', { isStreaming: true });
       seedSession(agentA, { messages: [persisted, streaming] });
       seedSession(agentB);
       appStore.dispatch(transcriptHydrationStarted(agentA));
@@ -628,10 +795,63 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
       const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
       expect(reopened).toBeDefined();
-      expect(reopened!.options).toEqual({ sinceMessageId: "m-a-final" });
+      expect(reopened!.options).toEqual({ sinceMessageId: 'm-a-final' });
     });
 
-    it("dispatches refreshChatTranscriptRequested when the daemon replies resumed: false", () => {
+    it('clears the resume anchor when workspace deletion names an agent whose slot already retired', () => {
+      const agentId = 'agent-sub-resume-retired-delete';
+      const previous = makeMessage('m-before-delete', 'old workspace message');
+      const recycled = makeMessage('m-after-recycle', 'new workspace message');
+      seedSession(agentId, { messages: [previous] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      const first = openChat(agentId);
+      appStore.dispatch(markAgentAsViewed(agentId));
+
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+      appStore.dispatch(workspaceDeleted(WS, [agentId]));
+
+      seedSession(agentId, { messages: [previous, recycled] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+
+      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+    });
+
+    it('clears an active-slot anchor when deletion queues behind a delayed ordinary close', async () => {
+      const agentId = 'agent-sub-resume-active-delete';
+      const previous = makeMessage('m-active-before-delete', 'old workspace message');
+      const recycled = makeMessage('m-active-after-recycle', 'new workspace message');
+      seedSession(agentId, { messages: [previous] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      const first = openChat(agentId);
+      const close = deferred<void>();
+      first.unsubscribe.mockReturnValueOnce(close.promise);
+      appStore.dispatch(markAgentAsViewed(agentId));
+
+      appStore.dispatch(clearCurrentlyViewedAgent(agentId));
+      appStore.dispatch(workspaceDeleted(WS, [agentId]));
+      close.resolve();
+      await vi.waitFor(() => expect(first.unsubscribe).toHaveBeenCalledOnce());
+
+      seedSession(agentId, { messages: [previous, recycled] });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      await vi.waitFor(() => {
+        expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(2);
+      });
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+
+      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+    });
+
+    it('dispatches refreshChatTranscriptRequested when the daemon replies resumed: false', () => {
       const refreshes: Array<[string, string]> = [];
       const stopRecorder = appStore.runSaga(function* recorder() {
         yield* takeEvery(refreshChatTranscriptRequested, function* record(action) {
@@ -640,14 +860,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
         });
       });
       try {
-        const agentId = "agent-sub-resume-fallback";
+        const agentId = 'agent-sub-resume-fallback';
         seedSession(agentId);
         const sub = openChat(agentId);
 
         // Fallback snapshot: the daemon did not honor the anchor. `resumed`
         // rides only snapshot emits, so `fromSnapshot` is always set with it.
         sub.handler({
-          ...transcript([makeMessage("m-new", "newest page")]),
+          ...transcript([makeMessage('m-new', 'newest page')]),
           fromSnapshot: true,
           resumed: false,
         });
@@ -658,7 +878,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       }
     });
 
-    it("does not trigger a rehydration on resumed: true or on plain emits", () => {
+    it('does not trigger a rehydration on resumed: true or on plain emits', () => {
       const refreshes: Array<[string, string]> = [];
       const stopRecorder = appStore.runSaga(function* recorder() {
         yield* takeEvery(refreshChatTranscriptRequested, function* record(action) {
@@ -667,21 +887,21 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
         });
       });
       try {
-        const agentId = "agent-sub-resume-ok";
+        const agentId = 'agent-sub-resume-ok';
         seedSession(agentId);
         const sub = openChat(agentId);
 
         sub.handler({
-          ...transcript([makeMessage("m-delta", "delta rows")]),
+          ...transcript([makeMessage('m-delta', 'delta rows')]),
           fromSnapshot: true,
           resumed: true,
         });
-        sub.handler(transcript([makeMessage("m-delta", "delta rows grown")], true));
+        sub.handler(transcript([makeMessage('m-delta', 'delta rows grown')], true));
 
         expect(refreshes).toEqual([]);
         // The resumed delta snapshot still applies to the store.
         expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-          "m-delta",
+          'm-delta',
         ]);
       } finally {
         stopRecorder();
@@ -689,27 +909,24 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     });
   });
 
-  it("clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)", () => {
+  it('clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)', () => {
     // Viewed mid-turn then navigated away: the delta stream grew a message
     // with isStreaming: true, and nothing else rewrites it after the
     // subscription closes. The stale flag would keep the AgentCard tier-1
     // frozen buffer winning over the push-applied lastAgentResponse that IS
     // advancing (~1s activity pings), so subscription teardown normalizes
     // the flags on teardown.
-    const agentA = "agent-sub-stale-a";
-    const agentB = "agent-sub-stale-b";
+    const agentA = 'agent-sub-stale-a';
+    const agentB = 'agent-sub-stale-b';
     seedSession(agentA);
     seedSession(agentB);
     const subA = openChat(agentA);
 
     subA.handler(
-      transcript(
-        [makeMessage("partial-a", "streamed so far", { isStreaming: true })],
-        true,
-      ),
+      transcript([makeMessage('partial-a', 'streamed so far', { isStreaming: true })], true),
     );
     expect(
-      selectAgentMessages.select(appStore.state, agentA).find((m) => m.id === "partial-a")
+      selectAgentMessages.select(appStore.state, agentA).find((m) => m.id === 'partial-a')
         ?.isStreaming,
     ).toBe(true);
 
@@ -719,15 +936,15 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
 
     const partial = selectAgentMessages
       .select(appStore.state, agentA)
-      .find((m) => m.id === "partial-a");
+      .find((m) => m.id === 'partial-a');
     expect(partial?.isStreaming).toBe(false);
     expect(partial?.streamingComplete).toBe(true);
     // Content untouched — only the flags normalize.
-    expect(partial?.contentBlocks?.[0]).toMatchObject({ text: "streamed so far" });
+    expect(partial?.contentBlocks?.[0]).toMatchObject({ text: 'streamed so far' });
   });
 
-  it("tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)", () => {
-    const agentId = "agent-sub-close";
+  it('tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)', () => {
+    const agentId = 'agent-sub-close';
     seedSession(agentId);
     const sub = openChat(agentId);
 
@@ -735,7 +952,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the interrupted partial row with Stopped metadata after the §7.2 terminal reconcile", () => {
+  it('renders the interrupted partial row with Stopped metadata after the §7.2 terminal reconcile', () => {
     // Interrupt-send during streaming (cloudlands-fe#132): the daemon
     // persists the partial row before agent:stream:end, so the terminal
     // reconcile's transcript CONTAINS the streamed message tagged with
@@ -743,49 +960,45 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // keep the partial blocks and the Stopped indicator must render once the
     // stream is over. On an interrupt-priority send the interrupted row
     // precedes the new user message.
-    const agentId = "agent-sub-interrupt";
+    const agentId = 'agent-sub-interrupt';
     seedSession(agentId);
     const sub = openChat(agentId);
 
     // Live partial mid-turn.
-    const partial = makeMessage("0190a200-asst", "Partial ");
+    const partial = makeMessage('0190a200-asst', 'Partial ');
     sub.handler(transcript([partial], true));
     expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(true);
 
     // Terminal reconcile after the interrupt-priority send: the persisted
     // interrupted row (same id, Stopped metadata) followed by the new user
     // message; isStreaming falls.
-    const interrupted = makeMessage("0190a200-asst", "Partial ", {
-      metadata: { interrupted: true, stopReason: "interrupted" },
+    const interrupted = makeMessage('0190a200-asst', 'Partial ', {
+      metadata: { interrupted: true, stopReason: 'interrupted' },
     });
-    const nextUser = makeMessage("0190a1c0-user2", "Do this instead", {
-      role: "user",
-      timestamp: "2026-01-01T00:00:03.000Z",
+    const nextUser = makeMessage('0190a1c0-user2', 'Do this instead', {
+      role: 'user',
+      timestamp: '2026-01-01T00:00:03.000Z',
     });
     sub.handler(transcript([interrupted, nextUser]));
 
     const messages = selectAgentMessages.select(appStore.state, agentId);
-    expect(messages.map((m) => m.id)).toEqual(["0190a200-asst", "0190a1c0-user2"]);
+    expect(messages.map((m) => m.id)).toEqual(['0190a200-asst', '0190a1c0-user2']);
     // The partial output survives — not wiped, not replaced by a placeholder.
-    expect(messages[0].contentBlocks?.[0]).toMatchObject({ text: "Partial " });
+    expect(messages[0].contentBlocks?.[0]).toMatchObject({ text: 'Partial ' });
     expect(messages[0].metadata).toMatchObject({
       interrupted: true,
-      stopReason: "interrupted",
+      stopReason: 'interrupted',
     });
     const session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(false);
     // The Stopped indicator renders from the persisted metadata now that the
     // stream is over (and stays hidden while one is still in flight).
-    expect(
-      shouldShowStoppedIndicator({ message: messages[0], isStreaming: false }),
-    ).toBe(true);
-    expect(
-      shouldShowStoppedIndicator({ message: messages[0], isStreaming: true }),
-    ).toBe(false);
+    expect(shouldShowStoppedIndicator({ message: messages[0], isStreaming: false })).toBe(true);
+    expect(shouldShowStoppedIndicator({ message: messages[0], isStreaming: true })).toBe(false);
   });
 
-  it("does not open a subscription while a soft-hidden deletion is pending, and tears down on removeSession", () => {
-    const agentId = "agent-sub-deleted";
+  it('does not open a subscription while a soft-hidden deletion is pending, and tears down on removeSession', () => {
+    const agentId = 'agent-sub-deleted';
     seedSession(agentId);
     setPendingAgentDeletion({
       wsId: WS,
@@ -807,7 +1020,7 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it("re-applies the last reconciled transcript when a slower hydrate settles without the finalized row (monorepo#1161)", () => {
+  it('re-applies the last reconciled transcript when a slower hydrate settles without the finalized row (monorepo#1161)', () => {
     // Hydrate/finalize race: the standing subscription's reconcile delivered
     // the finalized assistant row, then a slower chat-read hydrate (whose
     // paged fetch predates the finalize) lands a full-list upsert WITHOUT
@@ -815,43 +1028,43 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // (isStreaming false), so the read-side guard cannot preserve it; the
     // subscription must re-assert its canonical transcript on
     // transcriptHydrationSettled.
-    const agentId = "agent-sub-hydrate-race";
+    const agentId = 'agent-sub-hydrate-race';
     seedSession(agentId);
     const sub = openChat(agentId);
 
-    const user = makeMessage("0190a1b2-user", "Run the tests", {
-      role: "user",
-      timestamp: "2026-01-01T00:00:00.000Z",
+    const user = makeMessage('0190a1b2-user', 'Run the tests', {
+      role: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
     });
-    const finalized = makeMessage("0190a200-asst", "All tests pass.");
+    const finalized = makeMessage('0190a200-asst', 'All tests pass.');
     sub.handler(transcript([user, finalized]));
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "0190a1b2-user",
-      "0190a200-asst",
+      '0190a1b2-user',
+      '0190a200-asst',
     ]);
 
     // The stale hydrate lands: full-list upsert covering only the user row.
     appStore.dispatch(bulkUpsertSessions([makeSession(agentId, { messages: [user] })]));
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "0190a1b2-user",
+      '0190a1b2-user',
     ]);
 
     // Hydration settles: the subscription re-asserts its last transcript.
     appStore.dispatch(transcriptHydrationSettled(agentId));
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "0190a1b2-user",
-      "0190a200-asst",
+      '0190a1b2-user',
+      '0190a200-asst',
     ]);
   });
 
-  it("does not re-fire the streaming edge when re-applying on hydrate settle", () => {
-    const agentId = "agent-sub-settle-no-edge";
+  it('does not re-fire the streaming edge when re-applying on hydrate settle', () => {
+    const agentId = 'agent-sub-settle-no-edge';
     seedSession(agentId);
     const sub = openChat(agentId);
 
     // Rising then falling edge: the turn streamed and finalized.
-    sub.handler(transcript([makeMessage("m-turn", "working")], true));
-    const finalized = makeMessage("m-turn", "done");
+    sub.handler(transcript([makeMessage('m-turn', 'working')], true));
+    const finalized = makeMessage('m-turn', 'done');
     sub.handler(transcript([finalized], false));
     expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(false);
 
@@ -865,35 +1078,35 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // The re-apply restores the finalized row without re-dispatching the
     // already-consumed falling edge — the fresh optimistic flags survive.
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
-      "m-turn",
+      'm-turn',
     ]);
     const session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(true);
     expect(session?.isProcessing).toBe(true);
   });
 
-  it("treats transcriptHydrationSettled as a no-op with no live subscription or before the first emit", () => {
+  it('treats transcriptHydrationSettled as a no-op with no live subscription or before the first emit', () => {
     // No subscription at all.
-    const agentA = "agent-sub-settle-nosub";
-    const seeded = makeMessage("seeded-a", "hydrated history");
+    const agentA = 'agent-sub-settle-nosub';
+    const seeded = makeMessage('seeded-a', 'hydrated history');
     seedSession(agentA, { messages: [seeded] });
     appStore.dispatch(transcriptHydrationSettled(agentA));
     expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
-      "seeded-a",
+      'seeded-a',
     ]);
 
     // Subscription open but nothing emitted yet.
-    const agentB = "agent-sub-settle-preemit";
-    seedSession(agentB, { messages: [makeMessage("seeded-b", "hydrated history")] });
+    const agentB = 'agent-sub-settle-preemit';
+    seedSession(agentB, { messages: [makeMessage('seeded-b', 'hydrated history')] });
     const sub = openChat(agentB);
     appStore.dispatch(transcriptHydrationSettled(agentB));
     expect(sub.unsubscribe).not.toHaveBeenCalled();
     expect(selectAgentMessages.select(appStore.state, agentB).map((m) => m.id)).toEqual([
-      "seeded-b",
+      'seeded-b',
     ]);
   });
 
-  it("keeps the viewed agent's subscription open when a background panel's trailing clearCurrentlyViewedAgent lands after the handoff (missing-live-turn regression)", () => {
+  it("keeps the viewed agent's subscription open when a background panel's trailing clearCurrentlyViewedAgent lands after the handoff (missing-live-turn regression)", async () => {
     // Two agent tabs mounted in ONE panel (the panel system keeps inactive
     // tabs mounted for PANEL_TAB_CACHE_TTL_MS before unmounting). This is the
     // exact action sequence the two ChatPanels emit:
@@ -912,8 +1125,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // subscription (the sole transcript writer) dies and A's next live turn
     // renders NOTHING (no thinking, no stop button) until a remount
     // re-initializes the chat.
-    const agentA = "agent-sub-handoff-a";
-    const agentB = "agent-sub-handoff-b";
+    const agentA = 'agent-sub-handoff-a';
+    const agentB = 'agent-sub-handoff-b';
     seedSession(agentA);
     seedSession(agentB);
 
@@ -930,6 +1143,9 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     // Switch back B → A: A's panel activates first and reopens A's
     // subscription…
     appStore.dispatch(markAgentAsViewed(agentA));
+    await vi.waitFor(() => {
+      expect(fakeSubscriptions.filter((s) => s.agentId === agentA)).toHaveLength(2);
+    });
     const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
     expect(reopened).toBeDefined();
 
@@ -942,14 +1158,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     expect(reopened!.unsubscribe).not.toHaveBeenCalled();
 
     // A live emit for the viewed agent must still apply to the store.
-    reopened!.handler(transcript([makeMessage("live-turn-msg", "thinking…")], true));
+    reopened!.handler(transcript([makeMessage('live-turn-msg', 'thinking…')], true));
     expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toContain(
-      "live-turn-msg",
+      'live-turn-msg',
     );
   });
 
-  describe("chief-workspace exemption from the viewed-agent swap (monorepo#1421)", () => {
-    const CHIEF_AGENT = "agent-sub-chief";
+  describe('chief-workspace exemption from the viewed-agent swap (monorepo#1421)', () => {
+    const CHIEF_AGENT = 'agent-sub-chief';
 
     function seedChiefSession(agentId: string): void {
       seedSession(agentId, { workspaceId: CHIEF_WORKSPACE_ID });
@@ -962,8 +1178,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       return sub;
     }
 
-    it("keeps the chief subscription open — and live — when a workspace agent is marked as viewed", () => {
-      const workspaceAgent = "agent-sub-chief-ws-viewed";
+    it('keeps the chief subscription open — and live — when a workspace agent is marked as viewed', () => {
+      const workspaceAgent = 'agent-sub-chief-ws-viewed';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const chiefSub = openChiefChat(CHIEF_AGENT);
@@ -976,14 +1192,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       expect(chiefSub.unsubscribe).not.toHaveBeenCalled();
 
       // A live emit for the chief agent must still apply to the store.
-      chiefSub.handler(transcript([makeMessage("chief-live", "still streaming")], true));
+      chiefSub.handler(transcript([makeMessage('chief-live', 'still streaming')], true));
       expect(selectAgentMessages.select(appStore.state, CHIEF_AGENT).map((m) => m.id)).toContain(
-        "chief-live",
+        'chief-live',
       );
     });
 
     it("does not close the viewed workspace agent's subscription when the chief agent is marked as viewed (symmetric)", () => {
-      const workspaceAgent = "agent-sub-chief-symmetric";
+      const workspaceAgent = 'agent-sub-chief-symmetric';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const wsSub = openChat(workspaceAgent);
@@ -995,14 +1211,14 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       appStore.dispatch(markAgentAsViewed(CHIEF_AGENT));
 
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
-      wsSub.handler(transcript([makeMessage("ws-live", "still streaming")], true));
+      wsSub.handler(transcript([makeMessage('ws-live', 'still streaming')], true));
       expect(selectAgentMessages.select(appStore.state, workspaceAgent).map((m) => m.id)).toContain(
-        "ws-live",
+        'ws-live',
       );
     });
 
     it("viewing one chief thread still closes another chief thread's subscription", () => {
-      const otherChiefThread = "agent-sub-chief-thread-b";
+      const otherChiefThread = 'agent-sub-chief-thread-b';
       seedChiefSession(CHIEF_AGENT);
       seedChiefSession(otherChiefThread);
       const threadASub = openChiefChat(CHIEF_AGENT);
@@ -1013,8 +1229,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       expect(threadASub.unsubscribe).toHaveBeenCalledTimes(1);
     });
 
-    it("spares the chief subscription when closing the last viewed workspace chat clears the viewed agent", () => {
-      const workspaceAgent = "agent-sub-chief-chat-close";
+    it('spares the chief subscription when closing the last viewed workspace chat clears the viewed agent', () => {
+      const workspaceAgent = 'agent-sub-chief-chat-close';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const chiefSub = openChiefChat(CHIEF_AGENT);
@@ -1028,8 +1244,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       expect(chiefSub.unsubscribe).not.toHaveBeenCalled();
     });
 
-    it("a clear scoped to the chief agent closes exactly the chief subscription, even while a workspace agent stays viewed", () => {
-      const workspaceAgent = "agent-sub-chief-scoped-clear";
+    it('a clear scoped to the chief agent closes exactly the chief subscription, even while a workspace agent stays viewed', () => {
+      const workspaceAgent = 'agent-sub-chief-scoped-clear';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const chiefSub = openChiefChat(CHIEF_AGENT);
@@ -1044,8 +1260,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
     });
 
-    it("a scoped chief clear while the chief agent is itself viewed spares the workspace subscription (applied clear + chief branch)", () => {
-      const workspaceAgent = "agent-sub-chief-viewed-clear";
+    it('a scoped chief clear while the chief agent is itself viewed spares the workspace subscription (applied clear + chief branch)', () => {
+      const workspaceAgent = 'agent-sub-chief-viewed-clear';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const chiefSub = openChiefChat(CHIEF_AGENT);
@@ -1060,8 +1276,8 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
     });
 
-    it("classifies the chief agent from its stored session when no subscription entry exists (readSession fallback)", () => {
-      const workspaceAgent = "agent-sub-chief-session-fallback";
+    it('classifies the chief agent from its stored session when no subscription entry exists (readSession fallback)', () => {
+      const workspaceAgent = 'agent-sub-chief-session-fallback';
       seedChiefSession(CHIEF_AGENT);
       seedSession(workspaceAgent);
       const wsSub = openChat(workspaceAgent);
@@ -1073,12 +1289,10 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
       // chief subscription.
       appStore.dispatch(markAgentAsViewed(CHIEF_AGENT));
       expect(wsSub.unsubscribe).not.toHaveBeenCalled();
-      expect(
-        chatApi.subscribe.mock.calls.filter(([id]) => id === CHIEF_AGENT),
-      ).toHaveLength(1);
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === CHIEF_AGENT)).toHaveLength(1);
     });
 
-    it("still closes chief subscriptions on removeWorkspaceSessions for the chief workspace", () => {
+    it('still closes chief subscriptions on removeWorkspaceSessions for the chief workspace', () => {
       seedChiefSession(CHIEF_AGENT);
       const chiefSub = openChiefChat(CHIEF_AGENT);
 
@@ -1088,86 +1302,85 @@ describe("chatSubscribeSaga (fake seam, real store)", () => {
     });
   });
 
-  describe("live stream phase mirroring", () => {
+  describe('live stream phase mirroring', () => {
     const phaseOf = (agentId: string) => selectChatLiveStreamPhase.select(appStore.state, agentId);
 
-    it("mirrors onPhase reports into the chat-state slice", () => {
-      const agentId = "agent-sub-phase-mirror";
+    it('mirrors onPhase reports into the chat-state slice', () => {
+      const agentId = 'agent-sub-phase-mirror';
       seedSession(agentId);
       const sub = openChat(agentId);
       expect(sub.onPhase).toBeDefined();
 
-      sub.onPhase!("connecting");
-      expect(phaseOf(agentId)).toBe("connecting");
-      sub.onPhase!("awaiting-snapshot");
-      expect(phaseOf(agentId)).toBe("awaiting-snapshot");
-      sub.onPhase!("live");
-      expect(phaseOf(agentId)).toBe("live");
-      sub.onPhase!("resyncing");
-      expect(phaseOf(agentId)).toBe("resyncing");
-      sub.onPhase!("delayed");
-      expect(phaseOf(agentId)).toBe("delayed");
+      sub.onPhase!('connecting');
+      expect(phaseOf(agentId)).toBe('connecting');
+      sub.onPhase!('awaiting-snapshot');
+      expect(phaseOf(agentId)).toBe('awaiting-snapshot');
+      sub.onPhase!('live');
+      expect(phaseOf(agentId)).toBe('live');
+      sub.onPhase!('resyncing');
+      expect(phaseOf(agentId)).toBe('resyncing');
+      sub.onPhase!('delayed');
+      expect(phaseOf(agentId)).toBe('delayed');
     });
 
-    it("resets the phase to null on every subscription teardown path", () => {
+    it('resets the phase to null on every subscription teardown path', () => {
       // removeSession (agent-deletion soft-hide).
-      const agentA = "agent-sub-phase-remove";
+      const agentA = 'agent-sub-phase-remove';
       seedSession(agentA);
-      openChat(agentA).onPhase!("connecting");
-      expect(phaseOf(agentA)).toBe("connecting");
+      openChat(agentA).onPhase!('connecting');
+      expect(phaseOf(agentA)).toBe('connecting');
       appStore.dispatch(removeSession(agentA));
       expect(phaseOf(agentA)).toBeNull();
 
       // clearAllSessions.
-      const agentB = "agent-sub-phase-clearall";
+      const agentB = 'agent-sub-phase-clearall';
       seedSession(agentB);
-      openChat(agentB).onPhase!("awaiting-snapshot");
-      expect(phaseOf(agentB)).toBe("awaiting-snapshot");
+      openChat(agentB).onPhase!('awaiting-snapshot');
+      expect(phaseOf(agentB)).toBe('awaiting-snapshot');
       appStore.dispatch(clearAllSessions());
       expect(phaseOf(agentB)).toBeNull();
 
       // workspaceDeleted (drops the whole chat-state entry too).
-      const agentC = "agent-sub-phase-wsdel";
+      const agentC = 'agent-sub-phase-wsdel';
       seedSession(agentC);
-      openChat(agentC).onPhase!("resyncing");
-      expect(phaseOf(agentC)).toBe("resyncing");
+      openChat(agentC).onPhase!('resyncing');
+      expect(phaseOf(agentC)).toBe('resyncing');
       appStore.dispatch(workspaceDeleted(WS, [agentC]));
       expect(phaseOf(agentC)).toBeNull();
 
       // clearCurrentlyViewedAgent with no agent left viewed (chat close).
-      const agentD = "agent-sub-phase-clearview";
+      const agentD = 'agent-sub-phase-clearview';
       seedSession(agentD);
       appStore.dispatch(markAgentAsViewed(agentD));
-      openChat(agentD).onPhase!("delayed");
-      expect(phaseOf(agentD)).toBe("delayed");
+      openChat(agentD).onPhase!('delayed');
+      expect(phaseOf(agentD)).toBe('delayed');
       appStore.dispatch(clearCurrentlyViewedAgent(agentD));
       expect(phaseOf(agentD)).toBeNull();
     });
 
     it("resets the phase on agent switch (markAgentAsViewed closes the other agent's stream)", () => {
-      const agentA = "agent-sub-phase-switch-a";
-      const agentB = "agent-sub-phase-switch-b";
+      const agentA = 'agent-sub-phase-switch-a';
+      const agentB = 'agent-sub-phase-switch-b';
       seedSession(agentA);
       seedSession(agentB);
-      openChat(agentA).onPhase!("awaiting-snapshot");
-      expect(phaseOf(agentA)).toBe("awaiting-snapshot");
+      openChat(agentA).onPhase!('awaiting-snapshot');
+      expect(phaseOf(agentA)).toBe('awaiting-snapshot');
 
       appStore.dispatch(markAgentAsViewed(agentB));
       expect(phaseOf(agentA)).toBeNull();
     });
 
-    it("ignores phase reports from a superseded subscription entry", () => {
-      const agentId = "agent-sub-phase-stale";
+    it('ignores phase reports from a superseded subscription entry', () => {
+      const agentId = 'agent-sub-phase-stale';
       seedSession(agentId);
       const stale = openChat(agentId);
-      stale.onPhase!("live");
+      stale.onPhase!('live');
       appStore.dispatch(removeSession(agentId));
       expect(phaseOf(agentId)).toBeNull();
 
       // A late report from the closed entry must not resurrect a phase.
-      stale.onPhase!("delayed");
+      stale.onPhase!('delayed');
       expect(phaseOf(agentId)).toBeNull();
     });
   });
-
 });

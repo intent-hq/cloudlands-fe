@@ -796,7 +796,9 @@
     // state note for hook wakes) — the attribution chip already names the
     // hook / PR and conveys the post-fire state.
     const rawText = hookWakeAttribution
-      ? stripHookWakeStateNote(stripHookWakePrefix(extractTextFromMessage()))
+      ? stripHookWakeStateNote(
+          stripHookWakePrefix(extractTextFromMessage(), hookWakeAttribution.rawName),
+        )
       : prMonitorWakeAttribution
         ? stripPrMonitorWakePrefix(extractTextFromMessage())
         : extractTextFromMessage();

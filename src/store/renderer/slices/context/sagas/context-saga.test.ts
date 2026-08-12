@@ -47,7 +47,7 @@ describe('contextSaga', () => {
     await task.toPromise();
   });
 
-  it('cancels an older workspace write when a different workspace triggers global latest', async () => {
+  it('keeps writes for different workspaces concurrent', async () => {
     let resolveFirst!: () => void;
     const cancelFirst = vi.fn();
     const firstWrite = new Promise<void>((resolve) => (resolveFirst = resolve));
@@ -72,17 +72,19 @@ describe('contextSaga', () => {
     channel.put(addContextItem('ws-2', second));
     await settle();
 
-    expect(cancelFirst).toHaveBeenCalledTimes(1);
+    expect(cancelFirst).not.toHaveBeenCalled();
     expect(mocks.updateContext.mock.calls).toEqual([
       ['ws-1', [first]],
       ['ws-2', [second]],
     ]);
     resolveFirst();
+    await settle();
+    expect(cancelFirst).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });
 
-  it('uses global takeLatest cancellation and starts each latest post-reducer snapshot', async () => {
+  it('cancels only stale same-workspace writes and starts each latest snapshot', async () => {
     let resolveFirst!: () => void;
     const cancelFirst = vi.fn();
     const firstWrite = new Promise<void>((resolve) => (resolveFirst = resolve));
@@ -127,18 +129,22 @@ describe('contextSaga', () => {
     await task.toPromise();
   });
 
-  it('cancels the globally latest in-flight workspace persistence with the root', async () => {
+  it('cancels all in-flight workspace persistence with the root', async () => {
     let resolveFirst!: () => void;
-    mocks.updateContext.mockReturnValue(
-      new Promise<void>((resolve) => {
-        resolveFirst = resolve;
-      }),
-    );
+    let resolveSecond!: () => void;
+    const cancelFirst = vi.fn();
+    const cancelSecond = vi.fn();
+    const firstWrite = new Promise<void>((resolve) => (resolveFirst = resolve));
+    const secondWrite = new Promise<void>((resolve) => (resolveSecond = resolve));
+    Object.assign(firstWrite, { [CANCEL]: cancelFirst });
+    Object.assign(secondWrite, { [CANCEL]: cancelSecond });
+    mocks.updateContext.mockReturnValueOnce(firstWrite).mockReturnValueOnce(secondWrite);
     const channel = stdChannel();
     const item = { id: 'first', kind: 'text' as const, content: 'one', position: 0 };
     const state = {
       byWorkspaceId: {
         'ws-1': { items: createCollection('id', [item]), loading: false, error: null },
+        'ws-2': { items: createCollection('id', [item]), loading: false, error: null },
       },
     };
     const task = runSaga(
@@ -146,11 +152,14 @@ describe('contextSaga', () => {
       contextSaga,
     );
     channel.put(addContextItem('ws-1', item));
+    channel.put(addContextItem('ws-2', item));
     await settle();
-    channel.put(updateContextItem('ws-1', 'first', { content: 'queued' }));
     task.cancel();
     await task.toPromise();
+    expect(cancelFirst).toHaveBeenCalledTimes(1);
+    expect(cancelSecond).toHaveBeenCalledTimes(1);
     resolveFirst();
+    resolveSecond();
     await settle();
     expect(mocks.updateContext).toHaveBeenCalledTimes(2);
   });
