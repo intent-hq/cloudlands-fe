@@ -64,8 +64,14 @@ export interface ChatDraftManager {
    * composer takes ownership (a send just cleared it and `drafts.clear` was
    * issued) so a stale `drafts.get` response cannot restore the just-sent
    * prompt into the editor. Also drops a pending debounced save of the
-   * pre-send text and empties the pair's switch-back cache entry, so neither
-   * a flush-at-unmount nor a reopen can resurrect the sent prompt.
+   * pre-send text and resets the pair's switch-back cache entry and
+   * dirty-tracking to the cleared state, so neither a flush-at-unmount nor a
+   * reopen can resurrect the sent prompt.
+   *
+   * Caller contract: the caller owns the composer state after this call — it
+   * must clear the editor itself and persist/clear the daemon-side draft on
+   * its own (ChatPanel's send cleanup empties the composer and issues
+   * `drafts.clear`). The manager only stops competing with that ownership.
    */
   invalidatePendingRestore(): void;
 }
@@ -301,9 +307,26 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           // Only track dirty state if this pair is still the current one.
           if (restoreKey === saveKey) {
             lastPersisted = { text: currentValue, attachmentsJson };
+            // Re-assert the cache on success: an interleaved older save's
+            // failure rollback (below) must not outlive a newer accepted save.
+            setCachedDraft(workspaceId, agentId, {
+              text: currentValue,
+              attachments: currentAttachments,
+            });
           }
         })
         .catch((err) => {
+          // The synchronous cache write above advertised text the daemon
+          // never accepted — roll it back to the last persisted state so a
+          // switch-back cache-hit hydrates what the daemon actually holds.
+          // (When no persisted state is known the optimistic write stands;
+          // there is nothing better to revert to.)
+          if (restoreKey === saveKey && lastPersisted !== null) {
+            setCachedDraft(workspaceId, agentId, {
+              text: lastPersisted.text,
+              attachments: JSON.parse(lastPersisted.attachmentsJson),
+            });
+          }
           options.onSaveError?.(err);
         });
     };

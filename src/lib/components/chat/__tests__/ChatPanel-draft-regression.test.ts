@@ -362,6 +362,42 @@ describe('ChatPanel draft restore/save (mounted)', () => {
     expect(onSaveError).toHaveBeenCalledWith(failure);
   });
 
+  // The save path writes the switch-back cache synchronously (before the wire
+  // save settles) so a flush-at-unmount is visible to an immediate remount. A
+  // rejected drafts.set must roll that optimistic write back to the last
+  // persisted state, so a reopen hydrates what the daemon actually holds.
+  it('rolls the switch-back cache back to the persisted text when drafts.set fails', async () => {
+    const drafts = makeDrafts(() => Promise.resolve(null));
+    const view = render(ChatDraftHarness, { props: { drafts, workspaceId: WS, agentId: AGENT } });
+    flushSync();
+    await flushMicrotasks();
+    flushSync();
+
+    // First save succeeds → daemon and cache hold "persisted text".
+    await typeInComposer('persisted text');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+    expect(drafts.set).toHaveBeenCalledWith(WS, AGENT, 'persisted text', undefined);
+
+    // Second save fails → the optimistic cache write must be rolled back.
+    drafts.set.mockRejectedValueOnce(new Error('wire down'));
+    await typeInComposer('never accepted');
+    await vi.advanceTimersByTimeAsync(600);
+    await flushMicrotasks();
+
+    // Reopen the same pair with a hanging revalidation: the cache hit must
+    // hydrate the daemon-accepted text, not the failed save's text.
+    view.unmount();
+    const hang = deferred<Draft | null>();
+    render(ChatDraftHarness, {
+      props: { drafts: makeDrafts(() => hang.promise), workspaceId: WS, agentId: AGENT },
+    });
+    flushSync();
+
+    expect(composer().value).toBe('persisted text');
+    expect(composer().readOnly).toBe(false);
+  });
+
   // REGRESSION: conditionally unmounting/remounting the composer (e.g. the
   // question wizard replacing it) must not drop the draft, re-arm the gate,
   // or fire an empty save.
