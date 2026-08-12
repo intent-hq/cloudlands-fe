@@ -133,9 +133,35 @@ describe('TransferWorkspaceModal — confirm step', () => {
     expect(screen.getByText(/they will be stopped/)).toBeTruthy();
     expect(screen.getByText(/will be snapshotted/)).toBeTruthy();
     expect(screen.getByText(/Event history, terminal sessions/)).toBeTruthy();
+    // Server mode keeps the transfer-flavored copy and CTA.
+    expect(screen.getByText('Review what will be transferred.')).toBeTruthy();
+    expect(screen.getByText(/Estimated transfer size/)).toBeTruthy();
     // Start button is enabled once the plan is loaded.
     const start = screen.getByTestId('transfer-start-button') as HTMLButtonElement;
     expect(start.disabled).toBe(false);
+    expect(start.textContent).toContain('Start transfer');
+  });
+
+  it('download mode swaps the copy and CTA for download wording', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'confirm',
+        destination: { kind: 'download' },
+        planStatus: 'loaded',
+        plan,
+      },
+    });
+
+    expect(screen.getByText('Review what will be included in the download.')).toBeTruthy();
+    expect(screen.getByText('Estimated download size')).toBeTruthy();
+    expect(screen.getByText(/are not included in the archive/)).toBeTruthy();
+    expect(screen.queryByText(/Estimated transfer size/)).toBeNull();
+    const start = screen.getByTestId('transfer-start-button') as HTMLButtonElement;
+    expect(start.textContent).toContain('Start download');
+    expect(start.textContent).not.toContain('Start transfer');
   });
 
   it('shows the loading and error states', async () => {
@@ -231,6 +257,9 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
+    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
+      'Transferring “My Space”',
+    );
     expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
       'Transferring archive',
     );
@@ -243,12 +272,13 @@ describe('TransferWorkspaceModal — transferring step', () => {
     expect(screen.getByTestId('transfer-restart-agents')).toBeTruthy();
   });
 
-  it('hides the upload counter and restart toggle for downloads', async () => {
+  it('hides the upload counter and restart toggle for downloads, with download copy', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
       props: {
         open: true,
+        workspaceTitle: 'My Space',
         step: 'transferring',
         destination: { kind: 'download' },
         plan,
@@ -263,6 +293,15 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
+    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
+      'Downloading “My Space”',
+    );
+    expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
+      'Downloading archive',
+    );
+    expect(
+      screen.getByTestId('transfer-progress-bar').getAttribute('aria-label'),
+    ).toBe('Download progress');
     const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
     expect(bytes).toContain('Downloaded: 1Mi');
     expect(bytes).not.toContain('Uploaded');
@@ -314,7 +353,9 @@ describe('TransferWorkspaceModal — result step', () => {
       },
     });
 
-    expect(screen.getByTestId('transfer-result-success')).toBeTruthy();
+    expect(screen.getByTestId('transfer-result-success').textContent).toContain(
+      'Transfer complete',
+    );
     expect(screen.getByTestId('transfer-result-interrupted').textContent).toContain('2');
     expect(screen.getByTestId('transfer-archive-source')).toBeTruthy();
 
@@ -327,7 +368,7 @@ describe('TransferWorkspaceModal — result step', () => {
     expect(onFinalize).toHaveBeenCalledWith(false);
   });
 
-  it('success (download): shows the file path, no switch button', async () => {
+  it('success (download): saved-archive copy and path, no archive checkbox, no switch button', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
@@ -340,11 +381,35 @@ describe('TransferWorkspaceModal — result step', () => {
       },
     });
 
-    expect(screen.getByTestId('transfer-result-file').textContent).toContain(
-      '/tmp/ws-1-transfer.zip',
+    expect(screen.getByTestId('transfer-result-success').textContent).toContain(
+      'Download complete',
     );
+    expect(screen.getByTestId('transfer-result-file').textContent).toContain(
+      'Archive saved to /tmp/ws-1-transfer.zip',
+    );
+    expect(screen.queryByTestId('transfer-archive-source')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByTestId('transfer-switch-button')).toBeNull();
     expect(screen.getByTestId('transfer-done-button')).toBeTruthy();
+  });
+
+  it('failure (download): download-flavored title and reason', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        step: 'result',
+        destination: { kind: 'download' },
+        runStatus: 'failed',
+        runError: 'disk full',
+      },
+    });
+
+    expect(screen.getByTestId('transfer-result-failed').textContent).toContain('Download failed');
+    expect(screen.getByTestId('transfer-failed-reason').textContent).toContain(
+      'The download did not complete: disk full',
+    );
   });
 
   it('failure: shows the reason and a Retry affordance', async () => {

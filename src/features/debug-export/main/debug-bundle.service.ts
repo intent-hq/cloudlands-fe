@@ -9,7 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { Logger } from '../../../shared/logger';
 import { createZipFromPaths } from './zip-utils';
-import { collectDebugFiles } from './debug-files-collector';
+import { collectDebugFiles, copyDebugFile } from './debug-files-collector';
 import { generateSystemInfo } from './system-info.service';
 
 const logger = new Logger('DebugBundleService');
@@ -43,7 +43,8 @@ export async function createDebugBundle(workspaceId?: string): Promise<string> {
       await fs.mkdir(destDir, { recursive: true });
 
       try {
-        await fs.copyFile(file.sourcePath, destPath);
+        // Handles literal-content entries and tail-capped copies too
+        await copyDebugFile(file, destPath);
       } catch (error) {
         logger.warn('Failed to copy debug file', {
           file: file.relativePath,

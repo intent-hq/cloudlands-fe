@@ -1,7 +1,8 @@
-import { call, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { takeLatestByWorkspace } from '../../../utils/context-saga-effects';
 import { addContextItem, removeContextItem, updateContextItem } from '../context-slice';
 import { selectContextItems } from '../context-selectors';
 
@@ -24,5 +25,8 @@ function* syncWorkspace(action: ContextMutationAction): SagaGenerator<void> {
 }
 
 export function* contextSaga(): SagaGenerator<void> {
-  yield* takeLatest([addContextItem, removeContextItem, updateContextItem], syncWorkspace);
+  yield* takeLatestByWorkspace(
+    [addContextItem, removeContextItem, updateContextItem],
+    syncWorkspace,
+  );
 }

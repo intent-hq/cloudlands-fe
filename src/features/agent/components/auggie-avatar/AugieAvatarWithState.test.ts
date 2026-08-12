@@ -125,6 +125,22 @@ describe('AugieAvatarWithState avatar wiring', () => {
     expect(selectAgentProviderMock).toHaveBeenCalledTimes(1);
   });
 
+  it('lets the provider prop take precedence over the store lookup', () => {
+    render(AugieAvatarWithState, {
+      props: { agentId: 'auggie-agent', state: 'completed', provider: 'codex' },
+    });
+
+    expect(document.querySelector('[data-icon="check"]')).toBeNull();
+  });
+
+  it('shows the completed checkmark when the provider prop is auggie despite a non-auggie store lookup', () => {
+    render(AugieAvatarWithState, {
+      props: { agentId: 'codex-agent', state: 'completed', provider: 'auggie' },
+    });
+
+    expect(document.querySelector('[data-icon="check"]')).not.toBeNull();
+  });
+
   it('keeps the completed checkmark for auggie avatars', () => {
     render(AugieAvatarWithState, { props: { agentId: 'auggie-agent', state: 'completed' } });
 

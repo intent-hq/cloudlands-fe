@@ -29,6 +29,12 @@
     class?: string;
     /** Specialist type to show a glowing tool icon overlay */
     specialist?: BuiltinSpecialistId | null;
+    /**
+     * ACP provider id (auggie, claude-code, codex, ...). When provided it
+     * takes precedence over the agent-session store lookup — needed when the
+     * agent session has not loaded yet (e.g. delegate-task tool results).
+     */
+    provider?: string;
   }
 
   let {
@@ -37,6 +43,7 @@
     state = 'idle',
     class: className = '',
     specialist = null,
+    provider = undefined,
   }: Props = $props();
 
   // Indicator size scales with avatar size
@@ -51,13 +58,13 @@
     agentIdStore.set(agentId);
   });
   const agentProvider$ = selectAgentProvider(agentIdStore);
-  let hasProviderIcon = $derived(isKnownNonAuggieProvider($agentProvider$));
+  let hasProviderIcon = $derived(isKnownNonAuggieProvider(provider ?? $agentProvider$));
 </script>
 
 <div class={cn('relative inline-flex', className)}>
   <!-- Grayscale/dim only the avatar so the completed check indicator stays colored -->
   <span class={cn('inline-flex', isDimmed ? 'grayscale opacity-60' : '')}>
-    <AuggieAvatar {agentId} {size} {specialist} />
+    <AuggieAvatar {agentId} {size} {specialist} {provider} />
   </span>
 
   {#if state === 'running' || state === 'responding'}

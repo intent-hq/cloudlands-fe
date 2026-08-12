@@ -4,6 +4,7 @@
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
+  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "generate:ipc-channels": "tsx scripts/inline-ipc-channels.ts",
     "generate:build-config": "node scripts/generate-build-config.cjs",
