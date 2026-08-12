@@ -6,6 +6,7 @@ vi.mock('electron', () => ({
 
 import {
   __isMemoryMonitorRunningForTesting,
+  __resetMemoryHistoryForTesting,
   allSamples,
   collectDescendants,
   DEFAULT_WARN_THRESHOLD_BYTES,
@@ -14,20 +15,27 @@ import {
   FIRST_SAMPLE_DELAY_MS,
   formatSnapshot,
   formatThresholdWarning,
+  getMemoryHistory,
   logMemorySample,
+  MAX_RETAINED_AGE_MS,
+  MAX_RETAINED_SAMPLES,
   parseProcessTable,
   processBasename,
+  recordMemorySample,
   resolveWarnThresholdBytes,
+  RETAINED_TOP_PROCESSES,
   SAMPLE_INTERVAL_MS,
   sampleMemory,
   shortProcessName,
   startMemoryMonitor,
   stopMemoryMonitor,
+  summarizeSnapshot,
   totalRssBytes,
   WARN_THRESHOLD_ENV_VAR,
   type AppProcessMetric,
   type MemorySnapshot,
   type MemorySources,
+  type ProcessMemorySample,
   type ProcessTableEntry,
 } from '../memory-monitor';
 
@@ -491,5 +499,149 @@ describe('start/stop lifecycle', () => {
     release?.();
     await vi.advanceTimersByTimeAsync(1000);
     expect(processTable).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('retained history', () => {
+  beforeEach(() => {
+    __resetMemoryHistoryForTesting();
+  });
+
+  function processSample(pid: number, kind: ProcessMemorySample['kind'], rssMB: number, name?: string): ProcessMemorySample {
+    return { pid, kind, rssBytes: rssMB * MB, ...(name === undefined ? {} : { name }) };
+  }
+
+  it('summarizes a snapshot into per-kind totals and the largest few processes', () => {
+    const summary = summarizeSnapshot(
+      snapshot({
+        electron: [processSample(1, 'main', 400), processSample(2, 'renderer', 700)],
+        sidecar: [processSample(3, 'sidecar', 300, 'intentd')],
+        agents: Array.from({ length: 8 }, (_, i) => processSample(100 + i, 'agent', 100 + i, 'claude')),
+      }),
+      '2026-08-12T00:00:00.000Z',
+    );
+
+    expect(summary.processCount).toBe(11);
+    expect(summary.byKind.agent).toEqual({ count: 8, rssBytes: (100 + 101 + 102 + 103 + 104 + 105 + 106 + 107) * MB });
+    expect(summary.byKind.main).toEqual({ count: 1, rssBytes: 400 * MB });
+    // Only the largest few processes are kept, biggest first
+    expect(summary.top).toHaveLength(RETAINED_TOP_PROCESSES);
+    expect(summary.top[0]).toMatchObject({ pid: 2, rssBytes: 700 * MB });
+    expect(summary.top.map((p) => p.rssBytes)).toEqual([700, 400, 300, 107, 106].map((mb) => mb * MB));
+  });
+
+  it('keeps peaks after the overshoot has drained', () => {
+    recordMemorySample(
+      snapshot({ agents: [processSample(50, 'agent', 200, 'claude')] }),
+      '2026-08-12T00:00:00.000Z',
+    );
+    recordMemorySample(
+      snapshot({ agents: [processSample(50, 'agent', 16_000, 'claude')] }),
+      '2026-08-12T00:01:00.000Z',
+    );
+    recordMemorySample(
+      snapshot({ agents: [processSample(50, 'agent', 150, 'claude')] }),
+      '2026-08-12T00:02:00.000Z',
+    );
+
+    const { peaks, samples } = getMemoryHistory();
+
+    // The latest sample is back to normal, but the peak still names the spike
+    expect(samples[samples.length - 1].totalRssBytes).toBe(150 * MB);
+    expect(peaks.total).toEqual({ rssBytes: 16_000 * MB, at: '2026-08-12T00:01:00.000Z' });
+    expect(peaks.byKind.agent).toEqual({ rssBytes: 16_000 * MB, at: '2026-08-12T00:01:00.000Z' });
+    expect(peaks.singleProcess).toMatchObject({ pid: 50, name: 'claude', rssBytes: 16_000 * MB });
+  });
+
+  it('tracks the peak process count independently of the peak footprint', () => {
+    recordMemorySample(
+      snapshot({ agents: Array.from({ length: 95 }, (_, i) => processSample(i, 'agent', 1)) }),
+      '2026-08-12T00:00:00.000Z',
+    );
+    recordMemorySample(
+      snapshot({ agents: [processSample(1, 'agent', 8_000)] }),
+      '2026-08-12T00:01:00.000Z',
+    );
+
+    const { peaks } = getMemoryHistory();
+    expect(peaks.processCount).toEqual({ count: 95, at: '2026-08-12T00:00:00.000Z' });
+    expect(peaks.total?.rssBytes).toBe(8_000 * MB);
+  });
+
+  it('evicts samples older than the age cap but never the peaks they set', () => {
+    const start = Date.parse('2026-08-12T00:00:00.000Z');
+    recordMemorySample(
+      snapshot({ agents: [processSample(1, 'agent', 9_000)] }),
+      new Date(start).toISOString(),
+    );
+    recordMemorySample(
+      snapshot({ agents: [processSample(1, 'agent', 100)] }),
+      new Date(start + MAX_RETAINED_AGE_MS + 60_000).toISOString(),
+    );
+
+    const history = getMemoryHistory();
+    expect(history.samples).toHaveLength(1);
+    expect(history.droppedSamples).toBe(1);
+    expect(history.peaks.total?.rssBytes).toBe(9_000 * MB);
+  });
+
+  it('caps the retained window at MAX_RETAINED_SAMPLES', () => {
+    const start = Date.parse('2026-08-12T00:00:00.000Z');
+    for (let i = 0; i < MAX_RETAINED_SAMPLES + 5; i += 1) {
+      recordMemorySample(
+        snapshot({ agents: [processSample(1, 'agent', 1)] }),
+        new Date(start + i * 1000).toISOString(),
+      );
+    }
+
+    const history = getMemoryHistory();
+    expect(history.samples).toHaveLength(MAX_RETAINED_SAMPLES);
+    expect(history.droppedSamples).toBe(5);
+    expect(history.samples[0].at).toBe(new Date(start + 5 * 1000).toISOString());
+  });
+
+  it('records a sample every time the sampler runs', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const sources: MemorySources = {
+      appMetrics: () => [metric(1, 'Browser', 1024)],
+      mainRssBytes: () => 300 * MB,
+      processTable: emptyProcessTable,
+    };
+
+    await logMemorySample(sources);
+    await logMemorySample(sources);
+
+    const history = getMemoryHistory();
+    expect(history.samples).toHaveLength(2);
+    expect(history.peaks.total?.rssBytes).toBe(300 * MB);
+    expect(history.sampleIntervalMs).toBe(SAMPLE_INTERVAL_MS);
+  });
+
+  it('does not record anything when a sample fails', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sources: MemorySources = {
+      appMetrics: () => {
+        throw new Error('no metrics');
+      },
+      mainRssBytes: () => 0,
+      processTable: emptyProcessTable,
+    };
+
+    expect(await logMemorySample(sources)).toBeNull();
+    expect(getMemoryHistory().samples).toHaveLength(0);
+  });
+
+  it('returns copies so callers cannot mutate sampler state', () => {
+    recordMemorySample(
+      snapshot({ agents: [processSample(1, 'agent', 100)] }),
+      '2026-08-12T00:00:00.000Z',
+    );
+
+    const history = getMemoryHistory();
+    history.samples[0].totalRssBytes = 0;
+    history.samples.length = 0;
+
+    expect(getMemoryHistory().samples[0].totalRssBytes).toBe(100 * MB);
   });
 });

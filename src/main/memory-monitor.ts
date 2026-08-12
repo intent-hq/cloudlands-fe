@@ -467,6 +467,205 @@ export function resolveWarnThresholdBytes(env: NodeJS.ProcessEnv = process.env):
 }
 
 // ---------------------------------------------------------------------------
+// Retention
+// ---------------------------------------------------------------------------
+
+/*
+ * Why retain anything when every sample is already in `console-output.log`:
+ * the debug bundle should be able to answer "how big did this get" without a
+ * human grepping log lines, and the overshoot behind the OOM reports has
+ * typically drained back to normal by the time someone reaches for "export
+ * debug bundle" — a snapshot taken then reports nothing. The retained window
+ * below, and especially the peaks (which are NEVER evicted), are what survive
+ * that drain.
+ */
+
+/** Hard cap on retained samples. At the 60 s interval the age cap bites first. */
+export const MAX_RETAINED_SAMPLES = 2_000;
+
+/** Age cap on retained samples: 24 h. */
+export const MAX_RETAINED_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Largest processes kept per retained sample. Keeping all of them would mean
+ * ~95 rows × 1,440 samples in main-process memory — instrumentation must not
+ * become the memory problem it is measuring.
+ */
+export const RETAINED_TOP_PROCESSES = 5;
+
+/** One process inside a retained sample. */
+export interface RetainedProcess {
+  pid: number;
+  kind: ProcessKind;
+  name?: string;
+  rssBytes: number;
+}
+
+/** Aggregate for one {@link ProcessKind} within a sample. */
+export interface KindTotal {
+  count: number;
+  rssBytes: number;
+}
+
+/** A retained sample: aggregates plus the few largest processes, not the full table. */
+export interface RetainedMemorySample {
+  /** ISO-8601 sample time. */
+  at: string;
+  totalRssBytes: number;
+  processCount: number;
+  byKind: Partial<Record<ProcessKind, KindTotal>>;
+  top: RetainedProcess[];
+  processTableUnavailable: boolean;
+}
+
+export interface MemoryPeak {
+  rssBytes: number;
+  /** ISO-8601 time of the sample that set this peak. */
+  at: string;
+}
+
+export interface ProcessPeak extends MemoryPeak {
+  pid: number;
+  kind: ProcessKind;
+  name?: string;
+}
+
+/** High-water marks since app start. Deliberately outlive the retention window. */
+export interface MemoryPeaks {
+  /** Peak aggregate footprint across every sampled process. */
+  total: MemoryPeak | null;
+  /** Peak group total per kind (e.g. how large the agent tree ever got). */
+  byKind: Partial<Record<ProcessKind, MemoryPeak>>;
+  /** Largest single process ever sampled. */
+  singleProcess: ProcessPeak | null;
+  /** Peak number of processes sampled at once. */
+  processCount: { count: number; at: string } | null;
+}
+
+export interface MemoryHistory {
+  sampleIntervalMs: number;
+  retention: { maxSamples: number; maxAgeMs: number };
+  /** Samples evicted by the retention window since app start (0 ⇒ full history). */
+  droppedSamples: number;
+  peaks: MemoryPeaks;
+  /** Oldest first. */
+  samples: RetainedMemorySample[];
+}
+
+/** Aggregate a snapshot down to what is worth keeping for 24 h. */
+export function summarizeSnapshot(snapshot: MemorySnapshot, at: string): RetainedMemorySample {
+  const samples = allSamples(snapshot);
+  const byKind: Partial<Record<ProcessKind, KindTotal>> = {};
+  for (const sample of samples) {
+    const bucket = byKind[sample.kind] ?? { count: 0, rssBytes: 0 };
+    bucket.count += 1;
+    bucket.rssBytes += sample.rssBytes;
+    byKind[sample.kind] = bucket;
+  }
+
+  return {
+    at,
+    totalRssBytes: totalRssBytes(snapshot),
+    processCount: samples.length,
+    byKind,
+    top: [...samples]
+      .sort(byRssDesc)
+      .slice(0, RETAINED_TOP_PROCESSES)
+      .map((sample) => ({ ...sample })),
+    processTableUnavailable: snapshot.processTableUnavailable,
+  };
+}
+
+let retainedSamples: RetainedMemorySample[] = [];
+let droppedSamples = 0;
+let peaks: MemoryPeaks = { total: null, byKind: {}, singleProcess: null, processCount: null };
+
+/** Drop samples past either retention bound, oldest first. */
+function pruneRetainedSamples(nowMs: number): void {
+  const cutoff = Number.isFinite(nowMs) ? nowMs - MAX_RETAINED_AGE_MS : Number.NEGATIVE_INFINITY;
+
+  let expired = 0;
+  while (expired < retainedSamples.length) {
+    const at = Date.parse(retainedSamples[expired].at);
+    // An unparseable timestamp is kept rather than treated as ancient, so a
+    // clock oddity can never silently empty the window.
+    if (!Number.isFinite(at) || at >= cutoff) break;
+    expired += 1;
+  }
+
+  const overflow = Math.max(0, retainedSamples.length - expired - MAX_RETAINED_SAMPLES);
+  const dropped = expired + overflow;
+  if (dropped === 0) return;
+  retainedSamples = retainedSamples.slice(dropped);
+  droppedSamples += dropped;
+}
+
+function updatePeaks(summary: RetainedMemorySample): void {
+  if (!peaks.total || summary.totalRssBytes > peaks.total.rssBytes) {
+    peaks.total = { rssBytes: summary.totalRssBytes, at: summary.at };
+  }
+
+  for (const kind of Object.keys(summary.byKind) as ProcessKind[]) {
+    const total = summary.byKind[kind];
+    if (!total) continue;
+    const current = peaks.byKind[kind];
+    if (!current || total.rssBytes > current.rssBytes) {
+      peaks.byKind[kind] = { rssBytes: total.rssBytes, at: summary.at };
+    }
+  }
+
+  // `top` is sorted descending, so its head is the largest process in the
+  // whole snapshot even though the tail was discarded.
+  const largest = summary.top[0];
+  if (largest && (!peaks.singleProcess || largest.rssBytes > peaks.singleProcess.rssBytes)) {
+    peaks.singleProcess = { ...largest, at: summary.at };
+  }
+
+  if (!peaks.processCount || summary.processCount > peaks.processCount.count) {
+    peaks.processCount = { count: summary.processCount, at: summary.at };
+  }
+}
+
+/** Fold one snapshot into the retained window and the peaks. Returns what was retained. */
+export function recordMemorySample(
+  snapshot: MemorySnapshot,
+  at: string = new Date().toISOString(),
+): RetainedMemorySample {
+  const summary = summarizeSnapshot(snapshot, at);
+  retainedSamples.push(summary);
+  pruneRetainedSamples(Date.parse(at));
+  updatePeaks(summary);
+  return summary;
+}
+
+/** The retained window plus peaks, copied so callers cannot mutate sampler state. */
+export function getMemoryHistory(): MemoryHistory {
+  return {
+    sampleIntervalMs: SAMPLE_INTERVAL_MS,
+    retention: { maxSamples: MAX_RETAINED_SAMPLES, maxAgeMs: MAX_RETAINED_AGE_MS },
+    droppedSamples,
+    peaks: {
+      total: peaks.total ? { ...peaks.total } : null,
+      byKind: { ...peaks.byKind },
+      singleProcess: peaks.singleProcess ? { ...peaks.singleProcess } : null,
+      processCount: peaks.processCount ? { ...peaks.processCount } : null,
+    },
+    samples: retainedSamples.map((sample) => ({
+      ...sample,
+      byKind: { ...sample.byKind },
+      top: sample.top.map((process) => ({ ...process })),
+    })),
+  };
+}
+
+/** Test hook: forget every retained sample and peak. */
+export function __resetMemoryHistoryForTesting(): void {
+  retainedSamples = [];
+  droppedSamples = 0;
+  peaks = { total: null, byKind: {}, singleProcess: null, processCount: null };
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
@@ -482,13 +681,20 @@ function defaultSources(): MemorySources {
   };
 }
 
-/** Take one sample and log it. Exported for the debug-bundle collector and tests. */
+/**
+ * Take one sample, retain it, and log it. The single sampling path: both the
+ * interval and the debug-bundle collector go through here, so a bundle export
+ * always contributes its own capture-time sample to the retained window.
+ *
+ * Exported for the debug-bundle collector and tests.
+ */
 export async function logMemorySample(
   sources: MemorySources = defaultSources(),
   thresholdBytes: number = resolveWarnThresholdBytes(),
 ): Promise<MemorySnapshot | null> {
   try {
     const snapshot = await sampleMemory(sources);
+    recordMemorySample(snapshot);
     logger.info(formatSnapshot(snapshot));
     const warning = formatThresholdWarning(snapshot, thresholdBytes);
     if (warning) logger.warn(warning);

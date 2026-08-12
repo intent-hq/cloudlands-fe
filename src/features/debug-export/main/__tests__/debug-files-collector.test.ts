@@ -24,11 +24,36 @@ vi.mock('../../../backend/main/intentd-sidecar', () => ({
   getSidecarRunLog: () => sidecarMock.runLog,
 }));
 
+const memoryMock = vi.hoisted(() => ({
+  /** Snapshot the stubbed capture returns, or `null` to simulate a failed sample. */
+  snapshot: null as MemorySnapshot | null,
+}));
+
+// Only the capture is stubbed: retention, peaks and the history shape are the
+// real implementation, so these tests cover the file the collector emits.
+vi.mock('../../../../main/memory-monitor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../main/memory-monitor')>();
+  return {
+    ...actual,
+    logMemorySample: async () => {
+      if (!memoryMock.snapshot) return null;
+      actual.recordMemorySample(memoryMock.snapshot);
+      return memoryMock.snapshot;
+    },
+  };
+});
+
+import {
+  __resetMemoryHistoryForTesting,
+  type MemorySnapshot,
+  type ProcessMemorySample,
+} from '../../../../main/memory-monitor';
 import {
   collectDebugFiles,
   copyDebugFile,
   INTENTD_LOG_FILE_COUNT,
   INTENTD_LOG_TAIL_BYTES,
+  MEMORY_METRICS_SCHEMA_VERSION,
   resolveIntentdDataDir,
 } from '../debug-files-collector';
 
@@ -39,6 +64,8 @@ beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'debug-collector-test-'));
   process.env.INTENTD_DATA_DIR = dataDir;
   sidecarMock.runLog = { ...sidecarMock.runLog, available: false, lines: [] };
+  memoryMock.snapshot = null;
+  __resetMemoryHistoryForTesting();
 });
 
 afterEach(async () => {
@@ -214,6 +241,89 @@ describe('resolveIntentdDataDir', () => {
     );
     expect(resolveIntentdDataDir({}, 'linux')).toBe(
       path.join(os.homedir(), '.local', 'share', 'intentd'),
+    );
+  });
+});
+
+describe('memory metrics collection', () => {
+  const MB = 1024 * 1024;
+
+  function processSample(pid: number, kind: ProcessMemorySample['kind'], rssMB: number, name?: string): ProcessMemorySample {
+    return { pid, kind, rssBytes: rssMB * MB, ...(name === undefined ? {} : { name }) };
+  }
+
+  function snapshotWith(agents: ProcessMemorySample[]): MemorySnapshot {
+    return {
+      electron: [processSample(1, 'main', 330), processSample(2, 'renderer', 719)],
+      sidecar: [processSample(3, 'sidecar', 200, 'intentd')],
+      agents,
+      processTableUnavailable: false,
+    };
+  }
+
+  async function collectMemoryMetrics() {
+    const { files, omissions, memorySnapshot } = await collectDebugFiles();
+    const file = files.find((f) => f.relativePath === 'memory-metrics.json');
+    return {
+      omissions,
+      memorySnapshot,
+      metrics: file?.content ? JSON.parse(file.content) : undefined,
+    };
+  }
+
+  it('writes memory-metrics.json with the retained window and a capture-time snapshot', async () => {
+    memoryMock.snapshot = snapshotWith([processSample(90, 'agent', 400, 'claude')]);
+
+    const { metrics, memorySnapshot, omissions } = await collectMemoryMetrics();
+
+    expect(metrics.schemaVersion).toBe(MEMORY_METRICS_SCHEMA_VERSION);
+    expect(metrics.samples.length).toBeGreaterThan(0);
+    expect(metrics.capturedAt.totalRssBytes).toBe((330 + 719 + 200 + 400) * MB);
+    // The capture-time entry keeps every process, not just the largest few
+    expect(metrics.capturedAt.processes).toHaveLength(4);
+    expect(metrics.capturedAt.byKind.agent).toEqual({ count: 1, rssBytes: 400 * MB });
+    expect(metrics.retention).toEqual({ maxSamples: 2000, maxAgeMs: 24 * 60 * 60 * 1000 });
+    // Returned to the caller so system-info.json can describe the same processes
+    expect(memorySnapshot).toBe(memoryMock.snapshot);
+    expect(omissions.some((o) => o.startsWith('memory-metrics.json'))).toBe(false);
+  });
+
+  it('reports a peak that has already drained by capture time', async () => {
+    const { recordMemorySample } = await import('../../../../main/memory-monitor');
+    recordMemorySample(snapshotWith([processSample(90, 'agent', 16_000, 'claude')]), '2026-08-12T00:00:00.000Z');
+    memoryMock.snapshot = snapshotWith([processSample(90, 'agent', 10, 'claude')]);
+
+    const { metrics } = await collectMemoryMetrics();
+
+    expect(metrics.capturedAt.byKind.agent.rssBytes).toBe(10 * MB);
+    expect(metrics.peaks.byKind.agent).toEqual({ rssBytes: 16_000 * MB, at: '2026-08-12T00:00:00.000Z' });
+    expect(metrics.peaks.singleProcess).toMatchObject({ pid: 90, name: 'claude', rssBytes: 16_000 * MB });
+  });
+
+  it('keeps the retained window when the capture-time sample fails, and records the omission', async () => {
+    const { recordMemorySample } = await import('../../../../main/memory-monitor');
+    recordMemorySample(snapshotWith([processSample(90, 'agent', 5_000, 'claude')]), '2026-08-12T00:00:00.000Z');
+    memoryMock.snapshot = null;
+
+    const { metrics, memorySnapshot, omissions } = await collectMemoryMetrics();
+
+    expect(metrics.capturedAt).toBeNull();
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.peaks.total.rssBytes).toBe((330 + 719 + 200 + 5_000) * MB);
+    expect(memorySnapshot).toBeNull();
+    expect(
+      omissions.some((o) => o.startsWith('memory-metrics.json: capture-time snapshot unavailable')),
+    ).toBe(true);
+  });
+
+  it('omits the file entirely when nothing was ever sampled', async () => {
+    memoryMock.snapshot = null;
+
+    const { metrics, omissions } = await collectMemoryMetrics();
+
+    expect(metrics).toBeUndefined();
+    expect(omissions).toContainEqual(
+      'memory-metrics.json: skipped — no memory samples retained (sampler never ran and the capture-time sample failed)',
     );
   });
 });
