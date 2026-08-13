@@ -104,7 +104,7 @@ describe('workspace column layout contract', () => {
     expect(progress).toContain('data-workspace-header-actions');
     expect(
       progress.indexOf(
-        'aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId })}',
+        "aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId ?? '' })}",
       ),
     ).toBeGreaterThan(progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'));
     expect(columns).not.toContain('w-[26rem]');
