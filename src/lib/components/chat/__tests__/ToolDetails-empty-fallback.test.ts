@@ -153,3 +153,53 @@ describe('ToolDetails empty rich-result fallback', () => {
     expect(container.textContent).toContain('Question queued for the user');
   });
 });
+
+describe('ToolDetails batch delegate rendering', () => {
+  it('renders a disposition summary instead of the "Agent spawned" label', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {
+          code: 'return await ws.agent.delegate({ tasks: ["n-1", "n-2", "n-3"] })',
+          summary: 'Delegate batch',
+        },
+        result: '{"ok":true,"tasks":[]}',
+        parsedResult: {
+          type: 'delegate-task' as const,
+          delegateBatch: {
+            started: 2,
+            held: 1,
+            skipped: 1,
+            errors: 0,
+            startedRows: [
+              { agentId: 'agent-1', agentName: 'Implementor #1' },
+              { agentId: 'agent-2', agentName: 'Implementor #2' },
+            ],
+          },
+        },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('2 started');
+    expect(container.textContent).toContain('1 held');
+    expect(container.textContent).toContain('1 skipped');
+    expect(container.textContent).not.toContain('failed');
+    expect(container.textContent).not.toContain('Agent spawned');
+  });
+
+  it('keeps the single-agent fallback label when no agent id was parsed', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {
+          code: 'return await ws.agent.delegate({ taskNoteId: "n-1" })',
+          summary: 'Delegate task',
+        },
+        result: 'ok',
+        parsedResult: { type: 'delegate-task' as const, content: 'ok' },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('Agent spawned');
+  });
+});

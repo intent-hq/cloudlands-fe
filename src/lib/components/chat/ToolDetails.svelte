@@ -74,6 +74,30 @@
   // Whether this tool call has a rich (non-raw) preview available
   const hasRichPreview = $derived(parsedResult != null && parsedResult.type !== 'unknown');
 
+  // Disposition summary for batch delegate results ("2 started · 1 held · 1 skipped").
+  // The started count always shows; held/skipped/failed only when non-zero.
+  const delegateBatchSummary = $derived.by(() => {
+    const batch = parsedResult?.delegateBatch;
+    if (!batch) return null;
+    const parts = [
+      m.chat_toolDetails_delegateBatchStarted_label({ count: formatInteger(batch.started) }),
+    ];
+    if (batch.held > 0) {
+      parts.push(m.chat_toolDetails_delegateBatchHeld_label({ count: formatInteger(batch.held) }));
+    }
+    if (batch.skipped > 0) {
+      parts.push(
+        m.chat_toolDetails_delegateBatchSkipped_label({ count: formatInteger(batch.skipped) }),
+      );
+    }
+    if (batch.errors > 0) {
+      parts.push(
+        m.chat_toolDetails_delegateBatchFailed_label({ count: formatInteger(batch.errors) }),
+      );
+    }
+    return parts.join(' · ');
+  });
+
   // Special input keys that should be shown at the top of output (not hidden)
   // These are the "query" or "request" that provides important context
   const FEATURED_INPUT_KEYS = new Set([
@@ -557,25 +581,38 @@
               </div>
             </div>
           {:else if parsedResult.type === 'delegate-task'}
-            <!-- Delegate task - show task name and agent card -->
+            <!-- Delegate task - show task name and agent card(s) -->
             <div class="flex flex-col gap-2">
-              {#if parsedResult.delegatedTaskName}
-                <div class="text-sm text-subtle">
-                  {m.chat_toolDetails_task_label()}
-                  <span class="text-foreground font-medium">{parsedResult.delegatedTaskName}</span>
-                </div>
-              {/if}
-              {#if parsedResult.agentId}
-                <AgentCard
-                  agentId={parsedResult.agentId}
-                  agentName={parsedResult.delegatedAgentName}
-                  provider={parsedResult.delegatedAgentProvider}
-                  workspace={$toolWorkspace ?? null}
-                />
+              {#if parsedResult.delegateBatch && delegateBatchSummary}
+                <!-- Batch delegate: disposition summary + cards for started agents -->
+                <div class="text-sm text-subtle">{delegateBatchSummary}</div>
+                {#each parsedResult.delegateBatch.startedRows as row (row.agentId)}
+                  <AgentCard
+                    agentId={row.agentId}
+                    agentName={row.agentName}
+                    workspace={$toolWorkspace ?? null}
+                  />
+                {/each}
               {:else}
-                <div class="text-xs text-subtle italic">
-                  {m.chat_toolDetails_agentSpawned_label()}
-                </div>
+                {#if parsedResult.delegatedTaskName}
+                  <div class="text-sm text-subtle">
+                    {m.chat_toolDetails_task_label()}
+                    <span class="text-foreground font-medium">{parsedResult.delegatedTaskName}</span
+                    >
+                  </div>
+                {/if}
+                {#if parsedResult.agentId}
+                  <AgentCard
+                    agentId={parsedResult.agentId}
+                    agentName={parsedResult.delegatedAgentName}
+                    provider={parsedResult.delegatedAgentProvider}
+                    workspace={$toolWorkspace ?? null}
+                  />
+                {:else}
+                  <div class="text-xs text-subtle italic">
+                    {m.chat_toolDetails_agentSpawned_label()}
+                  </div>
+                {/if}
               {/if}
             </div>
           {:else if parsedResult.type === 'agent-list' && parsedResult.agents?.length}
