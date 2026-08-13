@@ -15,14 +15,14 @@ import {
   installUpdate,
 } from '$store/renderer/slices/auto-update/auto-update-slice';
 import {
-  selectBetaUpdatesEnabled,
+  selectUpdateChannel,
   selectNoteFontStyle,
   selectAgentFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setAgentFontStyle,
-  setBetaUpdatesEnabled,
   setNoteFontStyle,
+  setUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   GENERAL_ACCESSIBILITY_FIXTURE,
@@ -130,7 +130,7 @@ beforeEach(() => {
     return { success: true, data: null };
   });
   registerAutoUpdateBridge();
-  appStore.dispatch(setBetaUpdatesEnabled(false));
+  appStore.dispatch(setUpdateChannel('stable'));
   appStore.dispatch(setNoteFontStyle('monospace'));
   appStore.dispatch(setAgentFontStyle('monospace'));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
@@ -156,14 +156,18 @@ afterAll(() => {
 });
 
 describe('General settings migration', () => {
-  it('dispatches the exact Redux beta preference action without a direct backend request', async () => {
+  it('dispatches the exact Redux update-channel action without a direct backend request', async () => {
     const recorder = installDispatchRecorder();
     renderGeneral();
 
-    await fireEvent.click(screen.getByRole('switch', { name: 'Enable beta updates' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Select update channel' }));
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Beta' }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
 
-    await waitFor(() => expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(true));
-    expect(recorder.calls).toContainEqual(setBetaUpdatesEnabled(true));
+    await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('beta'));
+    expect(recorder.calls).toContainEqual(setUpdateChannel('beta'));
     expect(backendCalls()).toHaveLength(0);
     expect(window.electronAPI!.invoke).not.toHaveBeenCalledWith(
       AUTO_UPDATE_CHANNELS.SET_CHANNEL,
@@ -172,18 +176,25 @@ describe('General settings migration', () => {
     recorder.restore();
   });
 
-  it('keeps the beta switch focusable and dispatches the exact enabled preference action', async () => {
+  it('keeps the channel selector focusable and offers all three channels', async () => {
     const recorder = installDispatchRecorder();
     renderGeneral();
 
-    const toggle = screen.getByRole('switch', { name: 'Enable beta updates' });
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    toggle.focus();
-    expect(document.activeElement).toBe(toggle);
-    await fireEvent.click(toggle);
+    const trigger = screen.getByRole('button', { name: 'Select update channel' });
+    expect(trigger.textContent).toContain('Stable');
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.click(trigger);
 
-    await waitFor(() => expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(true));
-    expect(recorder.calls).toContainEqual(setBetaUpdatesEnabled(true));
+    expect(await screen.findByRole('option', { name: 'Stable' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Beta' })).toBeTruthy();
+    await fireEvent.pointerUp(screen.getByRole('option', { name: 'Alpha' }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
+
+    await waitFor(() => expect(selectUpdateChannel.select(appStore.state)).toBe('alpha'));
+    expect(recorder.calls).toContainEqual(setUpdateChannel('alpha'));
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });
@@ -223,7 +234,7 @@ describe('General settings migration', () => {
     ]);
     expect(selectNoteFontStyle.select(appStore.state)).toBe('sans');
     expect(selectAgentFontStyle.select(appStore.state)).toBe('sans');
-    expect(selectBetaUpdatesEnabled.select(appStore.state)).toBe(false);
+    expect(selectUpdateChannel.select(appStore.state)).toBe('stable');
     expect(backendCalls()).toHaveLength(0);
     recorder.restore();
   });

@@ -60,7 +60,8 @@ const PROVIDER_PATH_KEYS: Record<string, string> = {
  * `linearIssueFilter`, `downloadAttribution`, …) persist under
  * this localStorage namespace — per-user local preferences, same durability
  * class as the electron-store file the reference main process used.
- * Note: `betaUpdatesEnabled` was migrated to main-process local-prefs.json
+ * Note: the update channel pref (`updateChannel`, formerly the boolean
+ * `betaUpdatesEnabled`) was migrated to main-process local-prefs.json
  * and is no longer localStorage-backed. `rtkEnabled` was migrated to daemon
  * settings catalog (rtk.enabled) and is no longer FE-local.
  */

@@ -4,7 +4,13 @@
  * Shared types for the auto-update feature between main and renderer processes.
  */
 
-export type UpdateChannel = 'stable' | 'beta' | 'alpha';
+export const UPDATE_CHANNELS = ['stable', 'beta', 'alpha'] as const;
+
+export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
+
+export function isUpdateChannel(value: unknown): value is UpdateChannel {
+  return (UPDATE_CHANNELS as readonly unknown[]).includes(value);
+}
 
 export type UpdateStatus =
   | 'idle'
