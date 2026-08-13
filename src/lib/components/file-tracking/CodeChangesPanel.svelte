@@ -384,7 +384,7 @@
       <Button
         variant="ghost-light"
         size="icon"
-        aria-label="Refresh changes"
+        aria-label={m.fileTracking_codeChanges_refresh_tooltip()}
         class="h-6 w-6"
         onclick={handleRefresh}
         disabled={isRefreshing || !workspaceId}
@@ -478,7 +478,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  aria-label="Unstage all"
+                  aria-label={m.workspace_fileChanges_unstageAll_label()}
                   disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();
@@ -517,7 +517,7 @@
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  aria-label="Stage all"
+                  aria-label={m.workspace_fileChanges_stageAll_label()}
                   disabled={$autoCommitEnabled}
                   onclick={(e) => {
                     e.stopPropagation();

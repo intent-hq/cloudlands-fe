@@ -38,6 +38,7 @@
       !tooltip?.trim()
     ) {
       throw new Error(
+        // i18n-ignore (developer-facing invariant error, never rendered in UI)
         'Icon-only Button requires a non-empty aria-label, aria-labelledby, title, or tooltip.',
       );
     }

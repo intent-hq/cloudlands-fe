@@ -121,8 +121,14 @@
 {/snippet}
 
 {#snippet canonicalGroupAction(group: ComboboxGroup)}
-  <button type="button" aria-label={`Toggle ${group.label}`} onclick={() => toggleGroup(group.key)}>
-    {collapsedGroups.has(group.key) ? 'Expand' : 'Collapse'}
+  <button
+    type="button"
+    aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
+    onclick={() => toggleGroup(group.key)}
+  >
+    {collapsedGroups.has(group.key)
+      ? m.ui_groupedCombobox_expandGroup_label()
+      : m.ui_groupedCombobox_collapseGroup_label()}
   </button>
   {@render groupAction?.(group as OptionGroup)}
 {/snippet}

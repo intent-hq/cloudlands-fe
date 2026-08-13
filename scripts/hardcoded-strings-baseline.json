@@ -9,132 +9,6 @@
       "count": 1
     },
     {
-      "path": "src/lib/components/chat/ChatImageBlock.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "View {alt.toLowerCase()} full size",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/chat/ChatImageBlock.svelte",
-      "kind": "string literal",
-      "snippet": "Image from agent",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/chat/MessageContent.svelte",
-      "kind": "attribute alt",
-      "snippet": "Image returned by tool",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/chat/RulesInspector.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close rules inspector",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/chat/input/SimpleRichInput.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Save and resend",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/code-review/CodeReviewPanel.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Next review version",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/code-review/CodeReviewPanel.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Previous review version",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-explorer/VSCodeFileExplorer.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Show all files",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-explorer/VSCodeFileExplorer.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Show only changed files",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-explorer/file-tree-view.svelte",
-      "kind": "template text",
-      "snippet": "Retry",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Refresh changes",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Stage all",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/file-tracking/CodeChangesPanel.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Unstage all",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/modals/InputDialog.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close input dialog",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/modals/Modal.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close modal",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/modals/PullConflictDialog.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close pull conflict dialog",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
-      "kind": "string literal",
-      "snippet": "Failed to rename script",
-      "count": 2
-    },
-    {
-      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
-      "kind": "string literal",
-      "snippet": "Failed to script",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/terminal/QuakeTerminalOverlay.svelte",
-      "kind": "string literal",
-      "snippet": "Failed to update script command",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/tiptap/TaskItemNodeView.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Convert to task note",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/tiptap/comments/ResponsiveCommentThread.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Show comment thread",
-      "count": 1
-    },
-    {
       "path": "src/lib/components/ui/badge/badge.fixtures.ts",
       "kind": "string literal",
       "snippet": "Badge semantic states",
@@ -210,12 +84,6 @@
       "path": "src/lib/components/ui/button/button.meta.ts",
       "kind": "string literal",
       "snippet": "Retain while exported and behavior, accessibility, and fixtu",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/button/button.svelte",
-      "kind": "string literal",
-      "snippet": "Icon-only Button requires a non-empty aria-label, aria-label",
       "count": 1
     },
     {
@@ -681,12 +549,6 @@
       "count": 1
     },
     {
-      "path": "src/lib/components/ui/dialog/dialog-content.svelte",
-      "kind": "string literal",
-      "snippet": "Close dialog",
-      "count": 1
-    },
-    {
       "path": "src/lib/components/ui/dialog/dialog.fixtures.ts",
       "kind": "string literal",
       "snippet": "Dialog states",
@@ -744,24 +606,6 @@
       "path": "src/lib/components/ui/file-input/file-input.meta.ts",
       "kind": "string literal",
       "snippet": "Retain while exported and file activation, feedback, and fix",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/file-input/file-input.svelte",
-      "kind": "string literal",
-      "snippet": "Choose file",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/file-input/file-input.svelte",
-      "kind": "string literal",
-      "snippet": "No file selected",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/grouped-combobox/grouped-combobox.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Toggle",
       "count": 1
     },
     {
@@ -972,12 +816,6 @@
       "path": "src/lib/components/ui/scroll-area/scroll-area.meta.ts",
       "kind": "string literal",
       "snippet": "Retain while viewport focus, orientation, long-content, and ",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/searchable-combobox/searchable-combobox.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Rename",
       "count": 1
     },
     {
@@ -1254,12 +1092,6 @@
       "path": "src/lib/components/ui/sidebar/SidebarHarness.svelte",
       "kind": "template text",
       "snippet": "Workspace",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/sidebar/sidebar-trigger.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Toggle sidebar",
       "count": 1
     },
     {
