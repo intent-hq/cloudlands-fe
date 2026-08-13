@@ -282,20 +282,61 @@ describe('AgentBackendSettings — agent memory budget', () => {
     await fireEvent.input(input, { target: { value: '100' } });
     await fireEvent.blur(input);
 
-    // The return to 100 must be sent, not swallowed.
+    // Held back rather than raced against the first write, then sent once it
+    // resolves — the daemon may apply concurrent updates in either order, so
+    // the return to 100 must not be in flight beside the 200.
+    expect(pending).toHaveLength(1);
+    pending[0]();
     await waitFor(() => expect(pending).toHaveLength(2));
     expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
       { path: MEMORY_BUDGET_PATH, value: 100 },
     ]);
 
-    // Resolve in flight order; the superseded 200 must not win the display.
-    pending[0]();
     pending[1]();
     await waitFor(() => expect(screen.getByText(/Current: 100 MB\./)).toBeTruthy());
     expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('100');
   });
 
-  it('ignores a superseded response that resolves after the newer one', async () => {
+  it('never has two writes for the same setting in flight at once', async () => {
+    // Ordering cannot be recovered on the client: the transport allows
+    // concurrent requests, so 100 → 200 → 300 could be applied 300 then 200 and
+    // persist the value the user did not choose. Only one request at a time.
+    mockSettings({ budget: { value: 100, max: TOTAL_RAM_MB } });
+    const pending: Array<(value: unknown) => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    for (const value of ['200', '300', '400']) {
+      await fireEvent.input(input, { target: { value } });
+      await fireEvent.blur(input);
+    }
+
+    expect(pending).toHaveLength(1);
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
+      { path: MEMORY_BUDGET_PATH, value: 200 },
+    ]);
+
+    // The intermediate 300 coalesces away; the user's final 400 is what follows.
+    pending[0]();
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(2);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
+      { path: MEMORY_BUDGET_PATH, value: 400 },
+    ]);
+
+    pending[1]();
+    await waitFor(() => expect(screen.getByText(/Current: 400 MB\./)).toBeTruthy());
+  });
+
+  it('does not overwrite a value the user is typing when an earlier save resolves', async () => {
     mockSettings({ budget: { value: 100, max: TOTAL_RAM_MB } });
     const pending: Array<(value: unknown) => void> = [];
     mocks.mockSettingsUpdate.mockImplementation(
@@ -311,17 +352,13 @@ describe('AgentBackendSettings — agent memory budget', () => {
     await fireEvent.input(input, { target: { value: '200' } });
     await fireEvent.blur(input);
     await waitFor(() => expect(pending).toHaveLength(1));
+
+    // Still typing the next value when the earlier response lands.
     await fireEvent.input(input, { target: { value: '300' } });
-    await fireEvent.blur(input);
-    await waitFor(() => expect(pending).toHaveLength(2));
-
-    // Out-of-order: the newer write lands first, then the stale one.
-    pending[1]();
-    await waitFor(() => expect(screen.getByText(/Current: 300 MB\./)).toBeTruthy());
     pending[0]();
+    await waitFor(() => expect(screen.getByText(/Current: 200 MB\./)).toBeTruthy());
 
-    // The stale 200 must not roll the display back.
-    await waitFor(() => expect(screen.getByText(/Current: 300 MB\./)).toBeTruthy());
+    // The half-typed 300 survives; the field is not rewritten under the cursor.
     expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('300');
   });
 });
@@ -546,15 +583,18 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await waitFor(() => expect(pending).toHaveLength(1));
     await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
 
-    await waitFor(() => expect(pending).toHaveLength(2));
+    // Queued behind the first click rather than raced against it.
+    expect(pending).toHaveLength(1);
     expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
       { path: IDLE_REAP_PATH, value: 0 },
     ]);
+
+    pending[0]();
+    await waitFor(() => expect(pending).toHaveLength(2));
     expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
       { path: IDLE_REAP_PATH, value: 10 },
     ]);
 
-    pending[0]();
     pending[1]();
     await waitFor(() =>
       expect(

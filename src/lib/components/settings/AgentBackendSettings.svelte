@@ -69,11 +69,12 @@
   // the maximum as this machine's total memory would then be false.
   let memoryBudgetMaxIsCatalogBound = $state(false);
   // Write bookkeeping — never rendered, so deliberately not reactive.
-  // `target` is what the daemon will hold once in-flight writes settle, and
-  // `writeId` lets a superseded response bow out instead of committing a value
-  // the user has already moved on from.
+  // `target` is what the daemon will hold once in-flight writes settle;
+  // `writing` + `queued` keep a single write in flight and coalesce whatever
+  // the user does while it is outstanding.
   let memoryBudgetTargetMb = 0;
-  let memoryBudgetWriteId = 0;
+  let memoryBudgetWriting = false;
+  let memoryBudgetQueuedMb: number | null = null;
 
   // Idle reap (minutes). `resumeMinutes` is what the toggle restores when it is
   // switched back on — the last non-zero value, or the daemon's own catalog
@@ -89,7 +90,8 @@
   let idleReapResumeMinutes = $state(IDLE_REAP_MIN_MINUTES);
   // As above: in-flight write bookkeeping, not rendered.
   let idleReapTargetMinutes = 0;
-  let idleReapWriteId = 0;
+  let idleReapWriting = false;
+  let idleReapQueuedMinutes: number | null = null;
 
   const flushModeOptions = $derived([
     { value: 'all', label: m.settings_agentBackend_flushQueuedMessages_all_label() },
@@ -258,36 +260,58 @@
     // read the second 100 as a no-op, skip it, and leave the daemon on 200.
     // The slider reaches this easily — one release per drag.
     if (clamped === memoryBudgetTargetMb) {
-      syncMemoryBudgetFromCommitted();
+      if (!memoryBudgetWriting) syncMemoryBudgetFromCommitted();
       return;
     }
     memoryBudgetTargetMb = clamped;
-    const writeId = ++memoryBudgetWriteId;
-    try {
-      const applied = await appClient.settings.update([
-        { path: MEMORY_BUDGET_PATH, value: clamped },
-      ]);
-      // A later write already owns the outcome — including the error surface,
-      // so an older response must not overwrite it or reorder the committed
-      // value behind the newer one.
-      if (writeId !== memoryBudgetWriteId) return;
-      const entry = applied.find((change) => change.path === MEMORY_BUDGET_PATH);
-      if (!entry || typeof entry.value !== 'number') {
-        settingsError = m.settings_agentBackend_saveError();
-        memoryBudgetTargetMb = memoryBudgetMb;
-        syncMemoryBudgetFromCommitted();
-        return;
-      }
-      memoryBudgetMb = entry.value;
-      memoryBudgetTargetMb = entry.value;
-      settingsError = '';
-    } catch (error) {
-      if (writeId !== memoryBudgetWriteId) return;
-      settingsError = m.settings_agentBackend_saveError();
-      memoryBudgetTargetMb = memoryBudgetMb;
-      console.error('Failed to save agent settings:', error);
+    // Only one write per path may be in flight. Tagging responses would not be
+    // enough: the transport allows concurrent requests and the daemon may apply
+    // them in either order, so overlapping writes could persist the older value
+    // while this UI reports the newer one. Later intents coalesce here and are
+    // sent once the current write resolves, which also makes a stale response
+    // impossible rather than merely ignored.
+    if (memoryBudgetWriting) {
+      memoryBudgetQueuedMb = clamped;
+      return;
     }
-    syncMemoryBudgetFromCommitted();
+    memoryBudgetWriting = true;
+    try {
+      let value: number | null = clamped;
+      while (value !== null) {
+        // Captured before the await so the response can tell whether the user
+        // has moved on from what was sent.
+        const sentInput = memoryBudgetInput;
+        const sentDraft = memoryBudgetDraftMb;
+        const applied = await appClient.settings.update([{ path: MEMORY_BUDGET_PATH, value }]);
+        const entry = applied.find((change) => change.path === MEMORY_BUDGET_PATH);
+        if (!entry || typeof entry.value !== 'number') {
+          settingsError = m.settings_agentBackend_saveError();
+          memoryBudgetQueuedMb = null;
+          memoryBudgetTargetMb = memoryBudgetMb;
+          syncMemoryBudgetFromCommitted();
+          return;
+        }
+        memoryBudgetMb = entry.value;
+        settingsError = '';
+        value = memoryBudgetQueuedMb;
+        memoryBudgetQueuedMb = null;
+        if (value === null) {
+          // Settled. Normalise only the surfaces the user has not touched since
+          // the write went out — a response landing mid-edit must not rewrite
+          // the number being typed or the slider being dragged.
+          if (memoryBudgetInput === sentInput) memoryBudgetInput = String(memoryBudgetMb);
+          if (memoryBudgetDraftMb === sentDraft) memoryBudgetDraftMb = memoryBudgetMb;
+        }
+      }
+    } catch (error) {
+      settingsError = m.settings_agentBackend_saveError();
+      memoryBudgetQueuedMb = null;
+      memoryBudgetTargetMb = memoryBudgetMb;
+      syncMemoryBudgetFromCommitted();
+      console.error('Failed to save agent settings:', error);
+    } finally {
+      memoryBudgetWriting = false;
+    }
   }
 
   function handleMemoryBudgetSlide(value: number) {
@@ -324,32 +348,54 @@
     // off → on → off in quick succession would otherwise read the third click
     // as a no-op and leave reaping enabled.
     if (value === idleReapTargetMinutes) {
-      syncIdleReapFromCommitted();
+      if (!idleReapWriting) syncIdleReapFromCommitted();
       return;
     }
     idleReapTargetMinutes = value;
-    const writeId = ++idleReapWriteId;
-    try {
-      const applied = await appClient.settings.update([{ path: IDLE_REAP_PATH, value }]);
-      if (writeId !== idleReapWriteId) return;
-      const entry = applied.find((change) => change.path === IDLE_REAP_PATH);
-      if (!entry || typeof entry.value !== 'number') {
-        settingsError = m.settings_agentBackend_saveError();
-        idleReapTargetMinutes = idleReapMinutes;
-        syncIdleReapFromCommitted();
-        return;
-      }
-      idleReapMinutes = entry.value > 0 ? entry.value : 0;
-      idleReapTargetMinutes = idleReapMinutes;
-      if (idleReapMinutes > 0) idleReapResumeMinutes = idleReapMinutes;
-      settingsError = '';
-    } catch (error) {
-      if (writeId !== idleReapWriteId) return;
-      settingsError = m.settings_agentBackend_saveError();
-      idleReapTargetMinutes = idleReapMinutes;
-      console.error('Failed to save agent settings:', error);
+    // Serialized and coalesced exactly like the budget, and for the same
+    // reason — see saveMemoryBudget.
+    if (idleReapWriting) {
+      idleReapQueuedMinutes = value;
+      return;
     }
-    syncIdleReapFromCommitted();
+    idleReapWriting = true;
+    try {
+      let next: number | null = value;
+      while (next !== null) {
+        const sentInput = idleReapInput;
+        const applied = await appClient.settings.update([{ path: IDLE_REAP_PATH, value: next }]);
+        const entry = applied.find((change) => change.path === IDLE_REAP_PATH);
+        if (!entry || typeof entry.value !== 'number') {
+          settingsError = m.settings_agentBackend_saveError();
+          idleReapQueuedMinutes = null;
+          idleReapTargetMinutes = idleReapMinutes;
+          syncIdleReapFromCommitted();
+          return;
+        }
+        idleReapMinutes = entry.value > 0 ? entry.value : 0;
+        if (idleReapMinutes > 0) idleReapResumeMinutes = idleReapMinutes;
+        settingsError = '';
+        next = idleReapQueuedMinutes;
+        idleReapQueuedMinutes = null;
+        if (next === null) {
+          // The toggle always follows the settled value — it has no in-progress
+          // state to protect — but the stepper text is left alone if the user
+          // has typed something newer since the write went out.
+          idleReapToggleOn = idleReapMinutes > 0;
+          if (idleReapInput === sentInput) {
+            idleReapInput = String(idleReapMinutes > 0 ? idleReapMinutes : idleReapResumeMinutes);
+          }
+        }
+      }
+    } catch (error) {
+      settingsError = m.settings_agentBackend_saveError();
+      idleReapQueuedMinutes = null;
+      idleReapTargetMinutes = idleReapMinutes;
+      syncIdleReapFromCommitted();
+      console.error('Failed to save agent settings:', error);
+    } finally {
+      idleReapWriting = false;
+    }
   }
 
   async function handleIdleReapToggle(checked: boolean) {
