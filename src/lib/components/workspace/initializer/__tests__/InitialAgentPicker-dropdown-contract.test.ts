@@ -17,4 +17,13 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(dropdownMarkup).toContain('if (isTeamMode)');
     expect(dropdownMarkup).toContain('toggle();');
   });
+
+  it('opts both model pickers into the modal collision boundary without focus rings', () => {
+    expect(
+      picker.match(/collisionBoundary="\[data-model-picker-collision-boundary\]"/g),
+    ).toHaveLength(2);
+    expect(picker.match(/portal=\{false\}/g)).toHaveLength(2);
+    expect(picker).not.toMatch(/:focus-visible\s*\{[^}]*box-shadow:/s);
+    expect(picker).toContain('@media (forced-colors: active)');
+  });
 });
