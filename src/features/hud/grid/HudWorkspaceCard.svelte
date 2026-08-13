@@ -413,7 +413,8 @@
   /* Unread overlay (workspace.attention === 'unread'): the card keeps its
      real state banner/colors and blinks a blue border on top — the HUD's
      non-urgent counterpart to the main app's blue dot. The takeover pre-roll
-     flash (outline) stays independent of this (border) so both can play. */
+     flash targets `outline` (not `border`), so both can play — the combined
+     rule below keeps them running when both classes apply. */
   .hud-ws-card-unread {
     border-color: hsl(var(--ring));
     animation: hudunreadborder 1.6s step-end infinite;
@@ -441,11 +442,20 @@
       outline-color: hsl(var(--primary));
     }
   }
+  /* Both classes set the `animation` shorthand, so an unread card entering the
+     takeover pre-roll needs a combined rule — otherwise the equal-specificity
+     .hud-ws-card-flash rule replaces the unread border blink. */
+  .hud-ws-card-unread.hud-ws-card-flash {
+    animation:
+      hudunreadborder 1.6s step-end infinite,
+      hudwsflash 0.18s step-end 3;
+  }
   @media (prefers-reduced-motion: reduce) {
     .hud-anim-pulse,
     .hud-anim-blink,
     .hud-ws-card-flash,
-    .hud-ws-card-unread {
+    .hud-ws-card-unread,
+    .hud-ws-card-unread.hud-ws-card-flash {
       animation: none;
     }
   }

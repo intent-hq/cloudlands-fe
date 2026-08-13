@@ -194,7 +194,11 @@ export const selectHudAgentStateCounts = store.createSelector(
 export interface HudWorkspaceStateBars {
   /** `not_started` / `idle` / no displayStatus. */
   idle: number;
-  /** Non-urgent `unread` (blue-dot flag on an otherwise idle card). */
+  /**
+   * Non-urgent unread — flag-driven (`attention === 'unread'`): counts cards
+   * in any state below the attention/progress axes (`complete`, the PR
+   * states, `idle`, `not_started`) that carry the unread flag.
+   */
   unread: number;
   /** `in_progress`. */
   progress: number;
