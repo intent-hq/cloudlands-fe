@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { store as appStore } from '$store/renderer/store';
   import { hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
@@ -111,7 +111,7 @@
         }),
   );
 
-  async function handleStartWorkspace() {
+  function handleStartWorkspace() {
     const ref = linkActionMenuState.gitHubRef;
     const { url } = linkActionMenuState;
     hideLinkActionMenu();
@@ -125,7 +125,7 @@
         url,
       }),
     );
-    await goto('/');
+    appStore.dispatch(setShowCreateModal(true));
   }
 
   async function handleOpenInBrowser() {

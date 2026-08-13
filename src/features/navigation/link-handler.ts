@@ -26,6 +26,7 @@ import {
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -136,8 +137,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
                 url,
               }),
             );
-            const { goto } = await import('$app/navigation');
-            await goto('/');
+            appStore.dispatch(setShowCreateModal(true));
             return true;
           }
           case 'show-choices':
