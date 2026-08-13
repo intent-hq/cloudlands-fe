@@ -11,4 +11,11 @@ describe('CodeEditor external content sync source guard', () => {
     expect(source).toContain('if (!isFollowingAgent || hasNewExternalContent)');
     expect(source).toContain('lastSyncedExternalContentVersion = contentVersion;');
   });
+
+  it('gates the file-too-large Open-in-VS-Code and Reveal buttons on workspace host locality (monorepo#2171)', () => {
+    expect(source).toContain("selectIsWorkspaceHostLocal(workspaceIdStore)");
+    expect(source).toContain('{#if workspaceId && filePath && $isWorkspaceHostLocal$}');
+    // No ungated variant of the block remains.
+    expect(source).not.toContain('{#if workspaceId && filePath}');
+  });
 });
