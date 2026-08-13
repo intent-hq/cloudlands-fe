@@ -5,10 +5,7 @@
  * Bridges the auto-update service with the renderer process.
  */
 
-import {
-  BrowserWindow,
-  ipcMain,
-} from 'electron';
+import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
@@ -114,6 +111,27 @@ export function setupAutoUpdateIPC(): void {
       SetChannelRequestSchema,
       async (_event, validated) => {
         await autoUpdateService.setChannel(validated.channel);
+        // User-initiated channel switch: check the new channel's feed right
+        // away with manual-check feedback instead of waiting for the hourly
+        // timer. The service broadcasts 'auto-update:show-toast' first so
+        // the "Checking…" toast appears immediately and a failed check has
+        // a visible surface (mirroring the menu sites). Only user actions
+        // reach this handler — initialize()'s internal setChannel call never
+        // does, so startup keeps its single delayed check. If a
+        // startup/periodic/focus check is already in flight against the
+        // previous feed, the service queues one fresh check for when it
+        // settles, so the new channel is always actually queried;
+        // downloading/downloaded states skip the check, and an uninitialized
+        // service (dev mode) skips both check and toast. Fire-and-forget: a
+        // slow check must not delay or fail the SET_CHANNEL ack, which the
+        // renderer awaits to confirm the switch (check errors are reported
+        // via the broadcast error status, not a rejection — the catch is
+        // defense-in-depth only).
+        void autoUpdateService.checkForUpdatesOnChannelSwitch().catch((error) => {
+          logger.debug('Post-channel-switch update check failed', {
+            error: (error as Error).message,
+          });
+        });
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.SET_CHANNEL,
@@ -124,15 +142,14 @@ export function setupAutoUpdateIPC(): void {
 }
 
 /**
- * Initialize the auto-updater. The window is optional
- * (intent-hq/monorepo#1848): the deferred secondary-startup task can run
- * before any window exists, and initialization must not depend on
- * window-creation timing. When no window exists yet, the ref attaches later
- * via the updateAutoUpdaterWindow() calls in window.ts.
+ * Initialize the auto-updater. Initialization does not depend on
+ * window-creation timing (intent-hq/monorepo#1848): the deferred
+ * secondary-startup task can run before any window exists, and renderer
+ * notifications are broadcast to whatever windows are live at send time.
  */
-export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): void {
+export function initializeAutoUpdater(): void {
   void autoUpdateService
-    .initialize(mainWindow)
+    .initialize()
     .catch((error) => {
       logger.error('AutoUpdateService initialization failed', error as Error);
     })
@@ -148,15 +165,6 @@ export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): 
  */
 export function markAutoUpdaterNotInitialized(): void {
   settleChannelLoaded();
-}
-
-/**
- * Update the auto-updater's main window reference.
- * Call this when a new window is created to ensure status events
- * are sent to the correct (current) window.
- */
-export function updateAutoUpdaterWindow(mainWindow: BrowserWindow): void {
-  autoUpdateService.updateMainWindow(mainWindow);
 }
 
 /**

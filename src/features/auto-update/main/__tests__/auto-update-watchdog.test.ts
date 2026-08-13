@@ -24,6 +24,10 @@ import type { Mock } from 'vitest';
 // Matches the service's private UPDATE_CHECK_TIMEOUT_MS.
 const UPDATE_CHECK_TIMEOUT_MS = 30_000;
 
+// Live windows returned by the mocked BrowserWindow.getAllWindows() — the
+// service broadcasts renderer notifications to every live window.
+const liveWindows: unknown[] = [];
+
 // Mock Electron before importing the service
 vi.mock('electron', () => ({
   app: {
@@ -32,7 +36,7 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     off: vi.fn(),
   },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: { getAllWindows: () => liveWindows },
   powerMonitor: {
     on: vi.fn(),
     off: vi.fn(),
@@ -61,16 +65,26 @@ vi.mock('electron-updater', () => ({
 
 let testUserDataPath: string;
 
+/** A live renderer window as seen by the broadcast path. */
+function makeRendererWindow() {
+  return {
+    isDestroyed: () => false,
+    webContents: {
+      isDestroyed: () => false,
+      getURL: () => 'app://workspaces/workspace/x',
+      send: vi.fn(),
+    },
+  };
+}
+
 /** Import a fresh module instance, initialize it, and drop the startup timers. */
 async function setupService() {
   const svc = await import('../auto-update.service');
   const { default: electronUpdater } = await import('electron-updater');
 
-  const mockWindow = {
-    isDestroyed: () => false,
-    webContents: { send: vi.fn() },
-  } as never;
-  await svc.autoUpdateService.initialize(mockWindow);
+  const mockWindow = makeRendererWindow();
+  liveWindows.push(mockWindow);
+  await svc.autoUpdateService.initialize();
   // initialize() schedules a 10s startup check + hourly interval; clear them
   // so only the timers our test drives remain.
   vi.clearAllTimers();
@@ -85,6 +99,7 @@ async function setupService() {
 describe('AutoUpdateService manual-check watchdog', () => {
   beforeEach(async () => {
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-watchdog-'));
+    liveWindows.length = 0;
     vi.clearAllMocks();
     vi.resetModules();
     vi.useFakeTimers();
@@ -201,14 +216,15 @@ describe('AutoUpdateService manual-check watchdog', () => {
  * (intent-hq/monorepo#1848).
  *
  * The secondary-startup task can run before any window exists, so
- * initialize() must work without a BrowserWindow (the window ref attaches
- * later via updateMainWindow()), and a manual check against a service that
- * was never initialized (no event handlers attached) must fail fast instead
- * of dying in the misleading 30s watchdog "timed out" error.
+ * initialize() must work with no live windows (notifications broadcast to
+ * whatever windows are live at send time), and a manual check against a
+ * service that was never initialized (no event handlers attached) must fail
+ * fast instead of dying in the misleading 30s watchdog "timed out" error.
  */
 describe('windowless initialization and uninitialized checks', () => {
   beforeEach(async () => {
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-windowless-'));
+    liveWindows.length = 0;
     vi.clearAllMocks();
     vi.resetModules();
     vi.useFakeTimers();
@@ -222,11 +238,11 @@ describe('windowless initialization and uninitialized checks', () => {
     await fs.rm(testUserDataPath, { recursive: true, force: true });
   });
 
-  it('initializes without a window: events are handled, and a later updateMainWindow() attaches renderer notifications', async () => {
+  it('initializes without a window: events are handled, and a window created later receives renderer notifications', async () => {
     const svc = await import('../auto-update.service');
     const { default: electronUpdater } = await import('electron-updater');
 
-    await svc.autoUpdateService.initialize(null);
+    await svc.autoUpdateService.initialize();
     // Drop the 10s startup check + hourly interval scheduled by initialize().
     vi.clearAllTimers();
 
@@ -244,13 +260,10 @@ describe('windowless initialization and uninitialized checks', () => {
     await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS);
     expect(svc.autoUpdateService.getState().status).toBe('not-available');
 
-    // Window shows up later (window.ts → updateAutoUpdaterWindow): the same
-    // service instance now notifies the renderer.
-    const mockWindow = {
-      isDestroyed: () => false,
-      webContents: { send: vi.fn() },
-    };
-    svc.autoUpdateService.updateMainWindow(mockWindow as never);
+    // A window shows up later: the same service instance now notifies it,
+    // because notifications broadcast to the windows live at send time.
+    const mockWindow = makeRendererWindow();
+    liveWindows.push(mockWindow);
     await svc.autoUpdateService.checkForUpdatesManual();
     expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
       version: '2.0.0',

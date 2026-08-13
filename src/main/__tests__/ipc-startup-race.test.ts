@@ -61,7 +61,7 @@ describe('IPC Startup Race Condition', () => {
     const source = fs.readFileSync(indexPath, 'utf-8');
     const createWindowEnd = source.indexOf("startupMetrics.end('createWindow')");
     const secondaryStart = source.indexOf('setImmediate(async');
-    const updaterInit = source.indexOf('initializeAutoUpdater(mainWindow)', secondaryStart);
+    const updaterInit = source.indexOf('initializeAutoUpdater()', secondaryStart);
     const preWindowStartup = source.slice(secondaryStart, createWindowEnd);
 
     expect(createWindowEnd).toBeGreaterThan(-1);

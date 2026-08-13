@@ -421,9 +421,6 @@ export function createWindowForSession(session: WindowSession, setAsMain: boolea
 
   if (setAsMain) {
     setMainWindow(window);
-    import('../features/auto-update/main/auto-update.ipc')
-      .then(({ updateAutoUpdaterWindow }) => updateAutoUpdaterWindow(window))
-      .catch(() => {});
   }
 
   // Clear cache in production to ensure fresh file references after rebuilds
@@ -576,11 +573,6 @@ export function createWindow() {
   forwardRendererConsoleToMainLog(window);
 
   setMainWindow(window);
-
-  // Update auto-updater's window reference so status events go to the current window
-  import('../features/auto-update/main/auto-update.ipc')
-    .then(({ updateAutoUpdaterWindow }) => updateAutoUpdaterWindow(window))
-    .catch(() => {});
 
   // Save window bounds when resized or moved (debounced)
   let saveBoundsTimeout: NodeJS.Timeout | null = null;

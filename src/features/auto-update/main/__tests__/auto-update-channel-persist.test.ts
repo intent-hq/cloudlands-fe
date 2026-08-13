@@ -17,7 +17,9 @@ vi.mock('electron', () => ({
     getVersion: () => '2.0.0',
     on: vi.fn(),
   },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: {
+    getAllWindows: () => [],
+  },
   ipcMain: {
     handle: vi.fn(),
   },
@@ -71,8 +73,7 @@ describe('AutoUpdateService channel persistence', () => {
       const { autoUpdateService } = await import('../auto-update.service');
 
       // Initialize the service (this loads the channel from settings)
-      const mockWindow = {} as any;
-      await autoUpdateService.initialize(mockWindow);
+      await autoUpdateService.initialize();
 
       // Set the channel (now awaitable)
       await autoUpdateService.setChannel(channel);
@@ -99,8 +100,7 @@ describe('AutoUpdateService channel persistence', () => {
     const { autoUpdateService } = await import('../auto-update.service');
 
     // Initialize the service (this should load alpha from local-prefs)
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
+    await autoUpdateService.initialize();
 
     // Get the state and verify the channel is alpha
     const state = autoUpdateService.getState();
@@ -112,7 +112,7 @@ describe('AutoUpdateService channel persistence', () => {
     await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: true }), 'utf8');
 
     const { autoUpdateService } = await import('../auto-update.service');
-    await autoUpdateService.initialize({} as any);
+    await autoUpdateService.initialize();
 
     expect(autoUpdateService.getState().channel).toBe('beta');
     await expect.poll(
@@ -129,7 +129,7 @@ describe('AutoUpdateService channel persistence', () => {
     await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: false }), 'utf8');
 
     const { autoUpdateService } = await import('../auto-update.service');
-    await autoUpdateService.initialize({} as any);
+    await autoUpdateService.initialize();
 
     expect(autoUpdateService.getState().channel).toBe('stable');
     await expect.poll(
@@ -150,7 +150,7 @@ describe('AutoUpdateService channel persistence', () => {
     );
 
     const { autoUpdateService } = await import('../auto-update.service');
-    await autoUpdateService.initialize({} as any);
+    await autoUpdateService.initialize();
 
     expect(autoUpdateService.getState().channel).toBe('stable');
   });
@@ -160,8 +160,7 @@ describe('AutoUpdateService channel persistence', () => {
     const { autoUpdateService } = await import('../auto-update.service');
 
     // Initialize the service
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
+    await autoUpdateService.initialize();
 
     // Get the state and verify the channel defaults to stable
     const state = autoUpdateService.getState();
@@ -206,14 +205,14 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     expect(settled).toBe(false);
 
     // The deferred secondary-startup task initializes the updater
-    ipc.initializeAutoUpdater({} as any);
+    ipc.initializeAutoUpdater();
 
     const result = await pending;
     expect(result.success).toBe(true);
     expect(result.data.channel).toBe('beta');
   });
 
-  it('initializeAutoUpdater() with no window (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
+  it('initializeAutoUpdater() before any window exists (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
     // Persisted beta preference — only visible in GET_STATE if initialize()
     // really ran (intent-hq/monorepo#1848: the pre-window race used to skip
     // initialization entirely).
@@ -223,9 +222,9 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     const { ipc, getStateHandler } = await registerAndGetStateHandler();
     const pending = getStateHandler({}, undefined);
 
-    // The deferred secondary-startup task runs before any window exists;
-    // initialization must proceed regardless.
-    ipc.initializeAutoUpdater(null);
+    // The deferred secondary-startup task runs before any window exists
+    // (getAllWindows is mocked to []); initialization must proceed regardless.
+    ipc.initializeAutoUpdater();
 
     const result = await pending;
     expect(result.success).toBe(true);
