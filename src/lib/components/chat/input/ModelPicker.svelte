@@ -1618,7 +1618,7 @@
     contentClass={showReasoning
       ? 'w-85 max-w-[calc(100vw-32px)] min-h-90 max-h-90 flex flex-col'
       : 'w-[332px] max-w-[calc(100vw-32px)]'}
-    contentMaxHeight={showReasoning ? 360 : 300}
+    contentMaxHeight={showReasoning ? 360 : undefined}
     fillContentHeight={showReasoning}
     {portal}
     {collisionBoundary}

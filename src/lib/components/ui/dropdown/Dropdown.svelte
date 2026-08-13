@@ -92,7 +92,7 @@
     class: className = '',
     triggerClass = '',
     contentClass = '',
-    contentMaxHeight = 300,
+    contentMaxHeight,
     fillContentHeight = false,
     headerClass = '',
     onchange,
@@ -298,7 +298,7 @@
     );
     const spaceBelow = Math.max(0, bottomBoundary - rect.bottom - 4);
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
-    const preferredDropdownHeight = contentMaxHeight;
+    const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
