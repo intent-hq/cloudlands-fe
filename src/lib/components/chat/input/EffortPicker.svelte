@@ -185,8 +185,10 @@
 </script>
 
 {#snippet sliderContent()}
-  <div class="flex items-center justify-between gap-3">
-    <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
+  <div class={cn('flex items-center gap-3', embedded ? 'justify-end' : 'justify-between')}>
+    {#if !embedded}
+      <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
+    {/if}
     <span
       class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
       data-testid="effort-current-value"

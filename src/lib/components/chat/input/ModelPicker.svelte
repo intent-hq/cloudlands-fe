@@ -1801,7 +1801,9 @@
             onkeydown={handleReasoningToggleKeydown}
           >
             <span>
-              {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
+              {m.chat_effortPicker_title_label()}{reasoningExpanded
+                ? ''
+                : ` · ${currentReasoningLabel}`}
             </span>
             <Fa
               icon={reasoningExpanded ? faChevronDown : faChevronRight}

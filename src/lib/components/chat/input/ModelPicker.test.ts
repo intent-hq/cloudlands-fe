@@ -407,11 +407,15 @@ describe('ModelPicker combined reasoning mode', () => {
 
     await fireEvent.click(toggle);
 
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort');
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('4');
     expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
     expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
+    expect(screen.getByTestId('effort-picker-content').textContent).not.toContain(
+      'Reasoning effort',
+    );
     expect(screen.getByText('Applies on the next message you send.')).toBeTruthy();
     expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
   });

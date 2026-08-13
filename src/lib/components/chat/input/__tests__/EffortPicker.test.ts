@@ -165,7 +165,9 @@ describe('EffortPicker', () => {
 
     expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByTestId('effort-picker-content')).toBeTruthy();
+    const content = screen.getByTestId('effort-picker-content');
+    expect(content.textContent).not.toContain('Reasoning effort');
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Low');
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('2');
     expect(slider.getAttribute('aria-valuetext')).toBe('Low');
@@ -195,6 +197,7 @@ describe('EffortPicker', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: /reasoning effort/i })).toBeTruthy();
     });
+    expect(screen.getByRole('dialog').textContent).toContain('Reasoning effort');
 
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('4');
