@@ -35,6 +35,7 @@ describe('production route graph', () => {
     expect(routeFiles).toEqual([
       '(app)/+error.svelte',
       '(app)/+layout.svelte',
+      '(app)/+page.svelte',
       '(app)/agent/[id]/+page.svelte',
       '(app)/settings/+page.svelte',
       '(app)/workspace/[id]/+page.svelte',
