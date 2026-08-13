@@ -5,12 +5,17 @@
  * `-webkit-app-region: no-drag` rule on all interactive elements let chat
  * content scrolled under the titlebar carve holes in the titlebar drag region.
  *
- * The rule in src/routes/(app)/app-layout.css must therefore be scoped to
- * interactive elements INSIDE drag regions (`.app-drag-region` descendants) —
- * never app-wide. jsdom does not compute webkitAppRegion, so this suite
- * asserts the selector/structure invariant instead: the extracted no-drag
- * selectors match interactive elements inside a drag-region container and do
- * NOT match the same elements outside one.
+ * The rule in src/app.css must therefore be scoped to interactive elements
+ * INSIDE drag regions (`.app-drag-region` descendants) — never app-wide.
+ * jsdom does not compute webkitAppRegion, so this suite asserts the
+ * selector/structure invariant instead: the extracted no-drag selectors match
+ * interactive elements inside a drag-region container and do NOT match the
+ * same elements outside one.
+ *
+ * Also covers intent-hq/monorepo#2167: the rule must ship in CSS loaded by
+ * EVERY window (src/app.css via the root layout), not only in the (app) route
+ * group — the standalone /hud window is outside (app), and scoping the rule to
+ * (app) left every interactive child of the HUD header draggable.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
@@ -21,9 +26,11 @@ const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const read = (relativeToSrc: string) => readFileSync(resolve(srcDir, relativeToSrc), 'utf8');
 
 const appLayoutSource = read('routes/(app)/+layout.svelte');
-const layoutCss = read('routes/(app)/app-layout.css');
+const appLayoutCss = read('routes/(app)/app-layout.css');
+const rootLayoutSource = read('routes/+layout.svelte');
+const globalCss = read('app.css');
 
-/** Selectors of the no-drag rule in +layout.svelte, unwrapped from :global(). */
+/** Selectors of the no-drag rule in the given CSS, unwrapped from :global(). */
 function extractNoDragSelectors(source: string): string[] {
   const style = source.match(/<style>([\s\S]*)<\/style>/)?.[1] ?? '';
   const css = style.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -40,12 +47,12 @@ function extractNoDragSelectors(source: string): string[] {
   return selectors;
 }
 
-const noDragSelectors = extractNoDragSelectors(`<style>${layoutCss}</style>`).filter(
+const noDragSelectors = extractNoDragSelectors(`<style>${globalCss}</style>`).filter(
   (selector) => selector !== '.app-no-drag',
 );
 const matchesNoDragRule = (el: Element) => noDragSelectors.some((sel) => el.matches(sel));
 
-describe('no-drag rule scoping (+layout.svelte)', () => {
+describe('no-drag rule scoping (app.css)', () => {
   it('extracts a non-empty no-drag selector list', () => {
     expect(noDragSelectors.length).toBeGreaterThan(0);
   });
@@ -113,6 +120,19 @@ describe('drag surfaces carry the .app-drag-region scope class', () => {
     // be swallowed by the drag region).
     const wrapper = appLayoutSource.match(/<div[^>]*>\s*<UpdateDownloadIndicator \/>/)?.[0] ?? '';
     expect(wrapper).toContain('app-no-drag');
-    expect(layoutCss).toMatch(/\.app-no-drag\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
+    expect(globalCss).toMatch(/\.app-no-drag\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
+  });
+});
+
+describe('no-drag rule loads in every window, not only the (app) group (#2167)', () => {
+  it('ships in app.css, which the root layout imports for all routes', () => {
+    // /hud (the standalone HUD window) lives outside (app); scoping the rule
+    // to the (app) layout made every HUD header control start a window drag.
+    expect(noDragSelectors.length).toBeGreaterThan(0);
+    expect(rootLayoutSource).toContain("import '../app.css'");
+  });
+
+  it('the (app)-scoped stylesheet no longer carries the no-drag rule', () => {
+    expect(extractNoDragSelectors(`<style>${appLayoutCss}</style>`)).toEqual([]);
   });
 });

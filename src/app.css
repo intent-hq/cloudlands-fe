@@ -665,3 +665,24 @@ body.panel-resizing webview {
 .placeholder-current::placeholder {
   color: currentColor;
 }
+
+/* Frameless-window drag regions: interactive descendants of .app-drag-region
+   (plus explicit .app-no-drag opt-outs) must stay clickable. This lives here —
+   loaded by the root layout in every window — so standalone routes outside the
+   (app) group (e.g. /hud) get it too (intent-hq/monorepo#2167). Keep it scoped
+   to .app-drag-region descendants: an app-wide no-drag rule carved dead zones
+   into the titlebar drag strip (intent-hq/monorepo#1907; see
+   drag-region-no-drag-scoping.test.ts). */
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region select,
+.app-drag-region textarea,
+.app-drag-region [role='button'],
+.app-drag-region [role='tab'],
+.app-drag-region [role='menuitem'],
+.app-drag-region [data-interactive],
+.app-drag-region [tabindex]:not([tabindex='-1']),
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

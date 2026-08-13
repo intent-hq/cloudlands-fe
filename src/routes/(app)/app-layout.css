@@ -19,16 +19,6 @@ body {
   pointer-events: none;
 }
 
-.app-drag-region button,
-.app-drag-region a,
-.app-drag-region input,
-.app-drag-region select,
-.app-drag-region textarea,
-.app-drag-region [role='button'],
-.app-drag-region [role='tab'],
-.app-drag-region [role='menuitem'],
-.app-drag-region [data-interactive],
-.app-drag-region [tabindex]:not([tabindex='-1']),
-.app-no-drag {
-  -webkit-app-region: no-drag;
-}
+/* The .app-drag-region descendant no-drag rule lives in src/app.css: it must
+   load in EVERY window, not just the (app) route group — standalone windows
+   like /hud carry drag-region headers too (intent-hq/monorepo#2167). */
