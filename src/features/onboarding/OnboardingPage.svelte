@@ -67,6 +67,7 @@
   import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
   import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
   import {
     determineOnboardingInitialStep,
     resolveFastPathSettlement,
@@ -609,7 +610,7 @@
         fullFlowRequested,
         hasReadyProvider: hasReadyProvider($providerStatusMap$),
         hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
-        hasWorkspaces: $workspaceItems$.length > 0,
+        hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
       });
       if (fullFlowRequested) {
         appStore.dispatch(setOnboardingFullFlowRequested(false));
@@ -627,7 +628,7 @@
     const settlement = resolveFastPathSettlement({
       hasReadyProvider: hasReadyProvider($providerStatusMap$),
       providersCheckedOnce: $providersCheckedOnce$,
-      hasWorkspaces: $workspaceItems$.length > 0,
+      hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
     });
     if (settlement === 'pending') return;
     onboardingFastPathPending = false;

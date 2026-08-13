@@ -27,7 +27,10 @@ export function determineOnboardingInitialStep(inputs: {
   hasReadyProvider: boolean;
   /** Persisted local flag: the user completed provider setup before. */
   hasCompletedProviderSetup: boolean;
-  /** At least one (non-chief) workspace already exists. */
+  /**
+   * At least one ACTIVE (non-chief, non-archived/deleted) workspace already
+   * exists — compute with `hasAvailableWorkspace`, not a bare length check.
+   */
   hasWorkspaces: boolean;
 }): OnboardingInitialStepDecision {
   if (inputs.fullFlowRequested) return { step: 'welcome', viaLocalFastPath: false };

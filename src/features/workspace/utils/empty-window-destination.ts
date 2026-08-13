@@ -20,6 +20,27 @@ export interface EmptyWindowDestinationWorkspace {
 }
 
 /**
+ * True when at least one available workspace exists: non-chief, not
+ * archived/deleted, and not the one currently being removed.
+ *
+ * @param workspaces - Known workspaces (e.g. `selectWorkspaceItems.select(...)`)
+ * @param excludedWorkspaceId - A workspace being removed right now, whose
+ *   status may not yet reflect the removal in store state
+ */
+export function hasAvailableWorkspace(
+  workspaces: readonly EmptyWindowDestinationWorkspace[],
+  excludedWorkspaceId?: string,
+): boolean {
+  return workspaces.some(
+    (workspace) =>
+      workspace.id !== CHIEF_WORKSPACE_ID &&
+      workspace.id !== excludedWorkspaceId &&
+      workspace.status !== 'Archived' &&
+      workspace.status !== 'Deleted',
+  );
+}
+
+/**
  * Decide where navigation should land when no workspace tab remains.
  *
  * @param workspaces - Known workspaces (e.g. `selectWorkspaceItems.select(...)`)
@@ -30,12 +51,5 @@ export function resolveEmptyWindowDestination(
   workspaces: readonly EmptyWindowDestinationWorkspace[],
   excludedWorkspaceId?: string,
 ): '/' | '/workspace/new' {
-  const hasAvailableWorkspace = workspaces.some(
-    (workspace) =>
-      workspace.id !== CHIEF_WORKSPACE_ID &&
-      workspace.id !== excludedWorkspaceId &&
-      workspace.status !== 'Archived' &&
-      workspace.status !== 'Deleted',
-  );
-  return hasAvailableWorkspace ? '/' : '/workspace/new';
+  return hasAvailableWorkspace(workspaces, excludedWorkspaceId) ? '/' : '/workspace/new';
 }

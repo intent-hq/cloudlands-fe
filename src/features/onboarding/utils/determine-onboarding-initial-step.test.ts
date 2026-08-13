@@ -11,6 +11,7 @@ import {
   determineOnboardingInitialStep,
   resolveFastPathSettlement,
 } from './determine-onboarding-initial-step';
+import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
 
 const base = {
   fullFlowRequested: false,
@@ -66,6 +67,29 @@ describe('determineOnboardingInitialStep', () => {
         hasWorkspaces: true,
       }),
     ).toEqual({ step: 'welcome', viaLocalFastPath: false });
+  });
+
+  // `hasWorkspaces` is fed by `hasAvailableWorkspace` (OnboardingPage), so
+  // archived/deleted-only workspaces must NOT count as existing workspaces.
+  it('archived-only workspaces + no ready provider + no flag → welcome (full flow)', () => {
+    const archivedOnly = [{ id: 'ws-1', status: 'Archived' }];
+    expect(
+      determineOnboardingInitialStep({
+        ...base,
+        hasWorkspaces: hasAvailableWorkspace(archivedOnly),
+      }),
+    ).toEqual({ step: 'welcome', viaLocalFastPath: false });
+  });
+
+  it('archived-only workspaces + ready provider → project', () => {
+    const archivedOnly = [{ id: 'ws-1', status: 'Archived' }];
+    expect(
+      determineOnboardingInitialStep({
+        ...base,
+        hasReadyProvider: true,
+        hasWorkspaces: hasAvailableWorkspace(archivedOnly),
+      }),
+    ).toEqual({ step: 'project', viaLocalFastPath: false });
   });
 });
 
