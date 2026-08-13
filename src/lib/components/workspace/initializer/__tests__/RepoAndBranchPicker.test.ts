@@ -20,7 +20,123 @@ vi.mock('$lib/client', () => ({
 
 import RepoAndBranchPicker from '../RepoAndBranchPicker.svelte';
 
+const metadataSurfaceTokens = [
+  'rounded-md',
+  'bg-muted/40!',
+  'hover:bg-muted/60!',
+  'active:bg-muted/70!',
+  'data-[state=open]:bg-muted/70!',
+  'focus-visible:bg-muted/70!',
+  'focus-visible:outline-none!',
+  'focus-visible:outline-offset-0!',
+  'focus-visible:ring-0!',
+  'focus-visible:shadow-none!',
+  'disabled:bg-muted/50!',
+  'forced-colors:border-[ButtonText]',
+  'forced-colors:bg-[ButtonFace]',
+];
+
+function expectMetadataPill(element: HTMLElement) {
+  const classes = element.className.split(/\s+/);
+  expect(classes).toEqual(expect.arrayContaining(metadataSurfaceTokens));
+  expect(classes).not.toContain('bg-transparent!');
+  expect(classes).not.toContain('focus-visible:ring-1');
+}
+
 describe('RepoAndBranchPicker', () => {
+  it.each([
+    {
+      kind: 'local',
+      props: { repoType: 'local' as const, repoPath: '/Users/dev/monorepo' },
+    },
+    {
+      kind: 'GitHub',
+      props: {
+        repoType: 'github' as const,
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+      },
+    },
+    {
+      kind: 'remote',
+      props: {
+        repoType: 'remote' as const,
+        remoteSetup: {
+          id: 'remote-1',
+          name: 'cloud-host',
+          host: 'example.test',
+          port: 22,
+          username: 'dev',
+          workspacePath: '/srv/repo',
+          branch: 'main',
+        },
+      },
+    },
+    {
+      kind: 'new-repo',
+      props: { repoType: 'local' as const, repoPath: '/Users/dev/new-repo', isNewRepo: true },
+    },
+  ])('renders a persistent quiet metadata pill for $kind repositories', ({ props }) => {
+    render(RepoAndBranchPicker, {
+      props: { ...props, presentation: 'metadata', field: 'repo' },
+    });
+
+    expectMetadataPill(screen.getByTestId('repo-selector'));
+  });
+
+  it('keeps selected, suggested, loading, open, focus, and disabled branch states on the pill surface', () => {
+    const { container } = render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'local',
+        repoPath: '/Users/dev/monorepo',
+        branch: 'main',
+        suggestedBranch: 'feature/contrast',
+        presentation: 'metadata',
+        field: 'branch',
+        isLoading: true,
+      },
+    });
+
+    const branch = screen.getByTestId('branch-selector');
+    expectMetadataPill(branch);
+    expect(branch.className).toContain('w-full');
+    expect(branch.className).toContain('min-w-0');
+    expect(branch.className).toContain('overflow-hidden');
+    expect(branch.getAttribute('data-suggested-branch')).toBe('feature/contrast');
+    expect(container.querySelector('.animate-spin.text-subtle')?.className).not.toContain(
+      'bg-muted',
+    );
+  });
+
+  it('applies the pill only to the interactive metadata value', () => {
+    const { container } = render(RepoAndBranchPicker, {
+      props: {
+        repoType: 'local',
+        repoPath: '/Users/dev/monorepo',
+        presentation: 'metadata',
+        field: 'repo',
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    expectMetadataPill(trigger);
+    const filledElements = Array.from(container.querySelectorAll<HTMLElement>('[class]')).filter(
+      (element) => element.className.includes('bg-muted/40!'),
+    );
+    expect(filledElements).toEqual([trigger]);
+    expect(container.firstElementChild?.className).not.toContain('bg-');
+  });
+
+  it('leaves the default picker presentation unchanged', () => {
+    render(RepoAndBranchPicker, {
+      props: { repoType: 'local', repoPath: '/Users/dev/monorepo', branch: 'main' },
+    });
+
+    for (const trigger of screen.getAllByRole('button')) {
+      expect(trigger.className).not.toContain('bg-muted/40!');
+      expect(trigger.className).not.toContain('group/metadata-trigger');
+    }
+  });
+
   it('renders GitHub metadata repo display when only githubUrl is present', () => {
     render(RepoAndBranchPicker, {
       props: {
