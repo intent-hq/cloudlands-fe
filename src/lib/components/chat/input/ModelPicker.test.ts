@@ -1098,6 +1098,20 @@ describe('ModelPicker multi-provider mode', () => {
     expect(button.textContent).toContain('GPT 5.4');
   });
 
+  it('uses a two-unit gap between the trigger icon and model label', () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        providerId: 'auggie',
+      },
+    });
+
+    const triggerContent = screen
+      .getByRole('button')
+      .querySelector('span.inline-flex.items-center');
+    expect(triggerContent?.classList.contains('gap-2')).toBe(true);
+  });
+
   it('keeps a just-picked local model through a transient undefined selectedModel prop', async () => {
     const { rerender } = render(ModelPicker, {
       props: {

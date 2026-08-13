@@ -1634,7 +1634,7 @@
     })}
       <span
         class={cn(
-          'inline-flex items-center gap-1 truncate min-w-0',
+          'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
         title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
