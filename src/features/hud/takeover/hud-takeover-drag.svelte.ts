@@ -41,6 +41,7 @@ export interface HudTakeoverMapDrag {
 export function createTakeoverMapDrag(
   getBounds: () => HudTakeoverPanBounds,
   getScale: () => number = () => 1,
+  getPitch: () => number = () => HUD_TAKEOVER_PITCH_PX,
 ): HudTakeoverMapDrag {
   let pan = $state({ x: 0, y: 0 });
   let dragging = $state(false);
@@ -63,7 +64,10 @@ export function createTakeoverMapDrag(
     if (!down) return;
     const dx = e.clientX - down.x;
     const dy = e.clientY - down.y;
-    if (Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX || Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX) {
+    if (
+      Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX ||
+      Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX
+    ) {
       moved = true;
       dragging = true;
       animate = false;
@@ -111,10 +115,8 @@ export function createTakeoverMapDrag(
       if (!workspaceId || !coord) return;
       const apply = () => {
         animate = true;
-        pan = clampTakeoverPan(
-          { x: coord.x * HUD_TAKEOVER_PITCH_PX, y: coord.y * HUD_TAKEOVER_PITCH_PX },
-          getBounds(),
-        );
+        const pitch = getPitch();
+        pan = clampTakeoverPan({ x: coord.x * pitch, y: coord.y * pitch }, getBounds());
       };
       if (delayMs <= 0) apply();
       else autoPanTimer = setTimeout(apply, delayMs);

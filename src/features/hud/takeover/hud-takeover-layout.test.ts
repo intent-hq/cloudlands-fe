@@ -4,11 +4,12 @@ import {
   bannerOutDelay,
   bannerScrollDurationS,
   canvasBounds,
+  cellLeft,
   cellNeedsPan,
+  cellTop,
   clampTakeoverPan,
   clampZoom,
   dependencyGraphLayout,
-  edgeLinePx,
   emptyCellCoords,
   fitScale,
   HUD_TAKEOVER_BANNER_IN_S,
@@ -21,9 +22,13 @@ import {
   HUD_TAKEOVER_ZOOM_MIN,
   takeoverFrameFrom,
   takeoverGraphFits,
+  takeoverGutterPx,
   takeoverPanBounds,
+  takeoverPitchPx,
+  type HudTakeoverGraphLayout,
 } from './hud-takeover-layout';
-import { takeoverEdgeBoxPx } from './hud-takeover-edges';
+import { takeoverEdgeBoxPx, takeoverMapEdges } from './hud-takeover-edges';
+import { takeoverEdgeRoutes } from './hud-takeover-routing';
 import {
   HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
   HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS,
@@ -63,7 +68,13 @@ describe('hud-takeover-layout', () => {
     });
 
     it('is deterministic: same input yields the same coords and edges', () => {
-      const tasks = [t('a'), t('b', ['a']), t('c', ['a']), t('d', ['b', 'c'], ['e']), t('e', ['ghost'])];
+      const tasks = [
+        t('a'),
+        t('b', ['a']),
+        t('c', ['a']),
+        t('d', ['b', 'c'], ['e']),
+        t('e', ['ghost']),
+      ];
       const one = dependencyGraphLayout(tasks);
       const two = dependencyGraphLayout(tasks.map((task) => ({ ...task })));
       expect([...one.coords.entries()]).toEqual([...two.coords.entries()]);
@@ -83,7 +94,12 @@ describe('hud-takeover-layout', () => {
     });
 
     it('diamond: the join sits at 1 + max dep column, deps share a column on distinct rows', () => {
-      const { coords } = dependencyGraphLayout([t('a'), t('b', ['a']), t('c', ['a']), t('d', ['b', 'c'])]);
+      const { coords } = dependencyGraphLayout([
+        t('a'),
+        t('b', ['a']),
+        t('c', ['a']),
+        t('d', ['b', 'c']),
+      ]);
       expect(coords.get('a')).toEqual({ x: 1, y: 0 });
       expect(coords.get('b')!.x).toBe(2);
       expect(coords.get('c')!.x).toBe(2);
@@ -92,7 +108,12 @@ describe('hud-takeover-layout', () => {
     });
 
     it('longest path wins over the shortest dep edge', () => {
-      const { coords } = dependencyGraphLayout([t('a'), t('b', ['a']), t('c', ['b']), t('d', ['a', 'c'])]);
+      const { coords } = dependencyGraphLayout([
+        t('a'),
+        t('b', ['a']),
+        t('c', ['b']),
+        t('d', ['a', 'c']),
+      ]);
       expect(coords.get('d')!.x).toBe(4);
     });
 
@@ -163,7 +184,12 @@ describe('hud-takeover-layout', () => {
     });
 
     it('coords feed the existing lattice helpers unchanged', () => {
-      const { coords } = dependencyGraphLayout([t('a'), t('b', ['a']), t('c', ['b']), t('d', ['c'])]);
+      const { coords } = dependencyGraphLayout([
+        t('a'),
+        t('b', ['a']),
+        t('c', ['b']),
+        t('d', ['c']),
+      ]);
       const list = [...coords.values()];
       expect(canvasBounds(list)).toEqual({ minX: -2, maxX: 5, minY: -1, maxY: 1 });
       expect(takeoverPanBounds(list).maxX).toBe(5 * HUD_TAKEOVER_PITCH_PX);
@@ -174,28 +200,146 @@ describe('hud-takeover-layout', () => {
     });
   });
 
-  describe('edgeLinePx (cell-border to cell-border px lines)', () => {
-    it('trims a horizontal neighbor edge to the 180px cell borders with the arrow gap', () => {
-      const line = edgeLinePx({ x: 0, y: 0 }, { x: 1, y: 0 });
-      expect(line).toEqual({
-        x1: HUD_TAKEOVER_CELL_PX / 2,
-        y1: 0,
-        x2: HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2 - 2,
-        y2: 0,
-      });
+  describe('takeoverGutterPx / takeoverPitchPx (dynamic gutter width)', () => {
+    it('keeps the mock 12px gutter / 192px pitch when no channel carries lanes', () => {
+      expect(takeoverGutterPx(0)).toBe(HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX);
+      expect(takeoverPitchPx(0)).toBe(HUD_TAKEOVER_PITCH_PX);
     });
 
-    it('trims diagonals at the square cell boundary (Chebyshev exit)', () => {
-      const line = edgeLinePx({ x: 0, y: 0 }, { x: 1, y: 1 });
-      // Unit direction (√2/2, √2/2); exit at 90px along the dominant axis.
-      expect(line!.x1).toBeCloseTo(90, 0);
-      expect(line!.y1).toBeCloseTo(90, 0);
-      expect(line!.x2).toBeCloseTo(HUD_TAKEOVER_PITCH_PX - 92, 0);
-      expect(line!.y2).toBeCloseTo(HUD_TAKEOVER_PITCH_PX - 92, 0);
+    it('grows with the busiest channel: lanes·8px + a 4px margin each side', () => {
+      expect(takeoverGutterPx(1)).toBe(16);
+      expect(takeoverGutterPx(3)).toBe(32);
+      expect(takeoverGutterPx(12)).toBe(104);
+      expect(takeoverPitchPx(12)).toBe(HUD_TAKEOVER_CELL_PX + 104);
     });
 
-    it('returns null on degenerate pairs (same coord — no visible segment)', () => {
-      expect(edgeLinePx({ x: 1, y: 1 }, { x: 1, y: 1 })).toBeNull();
+    it('the pitch feeds the px helpers: cells, pan bounds and fit scale widen with it', () => {
+      const pitch = takeoverPitchPx(2); // 204
+      expect(cellLeft(1, pitch)).toBe(`${pitch - 90}px`);
+      expect(cellTop(-1, pitch)).toBe(`${-pitch - 90}px`);
+      expect(takeoverPanBounds([], pitch).maxX).toBe(2 * pitch);
+      // x=4 at pitch 204: half-extent 4·204+90=906 vs 500 → ≈0.552.
+      const viewport = { width: 1000, height: 600 };
+      expect(fitScale([{ x: 4, y: 0 }], viewport, pitch)).toBeCloseTo(500 / 906, 3);
+      expect(takeoverGraphFits([{ x: 4, y: 0 }], viewport, 0.552, pitch)).toBe(true);
+      expect(takeoverGraphFits([{ x: 4, y: 0 }], viewport, 1, pitch)).toBe(false);
+    });
+  });
+
+  describe('takeoverMapEdges (lattice routes → px polylines)', () => {
+    const NO_UNMET: ReadonlyMap<string, ReadonlySet<string>> = new Map();
+    const t = (id: string, dependsOn?: string[], conflictsWith?: string[]) => ({
+      id,
+      dependsOn,
+      conflictsWith,
+    });
+    const route = (tasks: Array<ReturnType<typeof t>>) => {
+      const routing = takeoverEdgeRoutes(dependencyGraphLayout(tasks));
+      return { routing, pitch: takeoverPitchPx(routing.maxLanes) };
+    };
+
+    it('converts a straight spec edge into a border-to-border 2-point line with the arrow gap', () => {
+      const { routing, pitch } = route([t('a')]);
+      expect(pitch).toBe(196); // one lane → 16px gutter
+      const [edge] = takeoverMapEdges(routing, NO_UNMET, pitch);
+      expect(edge.kind).toBe('spec');
+      expect(edge.points).toEqual([
+        { x: 90, y: 0 },
+        { x: pitch - 92, y: 0 },
+      ]);
+    });
+
+    it('offsets collinear edges by lane, centered on the channel', () => {
+      const graph: HudTakeoverGraphLayout = {
+        coords: new Map([
+          ['s', { x: 1, y: 0 }],
+          ['a', { x: 2, y: 0 }],
+          ['b', { x: 2, y: 1 }],
+        ]),
+        edges: [
+          { from: 's', to: 'a', kind: 'dep' },
+          { from: 's', to: 'b', kind: 'dep' },
+        ],
+      };
+      const routing = takeoverEdgeRoutes(graph);
+      const pitch = takeoverPitchPx(routing.maxLanes); // 2 lanes → 204
+      const [toA, toB] = takeoverMapEdges(routing, NO_UNMET, pitch);
+      // Exit stubs share corridor h:0 and spread symmetrically: lanes 0/1 → ∓4px.
+      expect(toA.points).toEqual([
+        { x: pitch + 90, y: -4 },
+        { x: 2 * pitch - 92, y: -4 },
+      ]);
+      // b's route bends through gutter v:1.5 then enters on corridor h:1.
+      expect(toB.points).toEqual([
+        { x: pitch + 90, y: 4 },
+        { x: 1.5 * pitch, y: 4 },
+        { x: 1.5 * pitch, y: pitch },
+        { x: 2 * pitch - 92, y: pitch },
+      ]);
+    });
+
+    it('splits dep kinds by the daemon unmet list; spec kinds pass through', () => {
+      const { routing, pitch } = route([t('a'), t('b', ['a'])]);
+      const kinds = (unmet: ReadonlyMap<string, ReadonlySet<string>>) =>
+        takeoverMapEdges(routing, unmet, pitch).map((edge) => edge.kind);
+      expect(kinds(NO_UNMET)).toEqual(['spec', 'dep']);
+      expect(kinds(new Map([['b', new Set(['a'])]]))).toEqual(['spec', 'unmet']);
+    });
+
+    it('busy fixture: px segments stay orthogonal and never cross a cell interior', () => {
+      const busy = [
+        t('a'),
+        t('b'),
+        t('c', ['a']),
+        t('d', ['a', 'b']),
+        t('e', ['b']),
+        t('f', ['c', 'd'], ['e']),
+        t('g', ['d', 'e']),
+        t('h', ['f', 'g'], ['a']),
+        t('i', ['ghost']),
+        t('j', ['i']),
+        t('k', ['i'], ['j']),
+      ];
+      const layout = dependencyGraphLayout(busy);
+      const routing = takeoverEdgeRoutes(layout);
+      const pitch = takeoverPitchPx(routing.maxLanes);
+      const edges = takeoverMapEdges(routing, NO_UNMET, pitch);
+      expect(edges).toHaveLength(routing.routes.length);
+      const cells = [{ x: 0, y: 0 }, ...layout.coords.values()];
+      const half = HUD_TAKEOVER_CELL_PX / 2;
+      /** True when the run's fixed coord sits strictly inside the cell band
+       *  AND its travel span overlaps the cell's open interior. */
+      const cutsCell = (fixed: number, lo: number, hi: number, cFixed: number, cTravel: number) =>
+        fixed > cFixed - half &&
+        fixed < cFixed + half &&
+        Math.max(lo, cTravel - half) < Math.min(hi, cTravel + half);
+      for (const edge of edges) {
+        expect(edge.points.length).toBeGreaterThanOrEqual(2);
+        for (let i = 0; i < edge.points.length - 1; i++) {
+          const p = edge.points[i];
+          const q = edge.points[i + 1];
+          expect(p.x === q.x || p.y === q.y).toBe(true);
+          for (const cell of cells) {
+            const cut =
+              p.y === q.y
+                ? cutsCell(
+                    p.y,
+                    Math.min(p.x, q.x),
+                    Math.max(p.x, q.x),
+                    cell.y * pitch,
+                    cell.x * pitch,
+                  )
+                : cutsCell(
+                    p.x,
+                    Math.min(p.y, q.y),
+                    Math.max(p.y, q.y),
+                    cell.x * pitch,
+                    cell.y * pitch,
+                  );
+            expect(cut).toBe(false);
+          }
+        }
+      }
     });
   });
 
@@ -332,7 +476,10 @@ describe('hud-takeover-layout', () => {
     it('returns null on degenerate rects (hidden card / unlaid-out shell)', () => {
       expect(takeoverFrameFrom(shell, { left: 0, top: 0, width: 0, height: 0 })).toBeNull();
       expect(
-        takeoverFrameFrom({ left: 0, top: 0, width: 0, height: 0 }, { left: 0, top: 0, width: 10, height: 10 }),
+        takeoverFrameFrom(
+          { left: 0, top: 0, width: 0, height: 0 },
+          { left: 0, top: 0, width: 10, height: 10 },
+        ),
       ).toBeNull();
       // Shell smaller than the frame margin → no usable frame box.
       expect(

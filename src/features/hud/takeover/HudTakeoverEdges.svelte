@@ -46,12 +46,9 @@
       {/each}
     </defs>
     {#each edges as edge (edge.id)}
-      <line
+      <polyline
         class={`ov-edge ov-edge-${edge.kind}`}
-        x1={edge.line.x1}
-        y1={edge.line.y1}
-        x2={edge.line.x2}
-        y2={edge.line.y2}
+        points={edge.points.map((p) => `${p.x},${p.y}`).join(' ')}
         marker-end={edge.kind === 'conflict' ? undefined : `url(#ov-edge-arrow-${edge.kind})`}
         data-testid="hud-takeover-edge"
         data-kind={edge.kind}

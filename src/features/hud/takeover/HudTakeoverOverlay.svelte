@@ -326,7 +326,11 @@
                   <HudTakeoverEdges edges={map.edges} box={map.edgeBox} />
 
                   <!-- Spec cell anchored at (0,0) -->
-                  <div class="ov-cell ov-cell-spec" style:left={cellLeft(0)} style:top={cellTop(0)}>
+                  <div
+                    class="ov-cell ov-cell-spec"
+                    style:left={cellLeft(0, map.pitch)}
+                    style:top={cellTop(0, map.pitch)}
+                  >
                     <div class="ov-spec-tag">{m.hud_takeover_spec_label()}</div>
                     <div class="ov-spec-title">{view.title}</div>
                     <div class="ov-spec-segs">
@@ -345,8 +349,8 @@
                   {#each map.emptyCells as cell (`${cell.x},${cell.y}`)}
                     <div
                       class="ov-cell ov-cell-empty"
-                      style:left={cellLeft(cell.x)}
-                      style:top={cellTop(cell.y)}
+                      style:left={cellLeft(cell.x, map.pitch)}
+                      style:top={cellTop(cell.y, map.pitch)}
                     ></div>
                   {/each}
 
@@ -356,8 +360,8 @@
                     <div
                       class="ov-cell ov-cell-task"
                       class:ov-cell-changed={changed}
-                      style:left={cellLeft(coord.x)}
-                      style:top={cellTop(coord.y)}
+                      style:left={cellLeft(coord.x, map.pitch)}
+                      style:top={cellTop(coord.y, map.pitch)}
                       style:border={`1px ${meta.borderStyle} ${changed ? meta.color : meta.borderColor}`}
                       style:background={meta.bg}
                       style:outline-color={changed ? meta.color : 'transparent'}

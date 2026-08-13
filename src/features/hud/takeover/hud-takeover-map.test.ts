@@ -25,7 +25,7 @@ function measuredMap(tasks: HudTakeoverTask[], key = 'ws-1') {
 
 describe('createTakeoverMapState zoom', () => {
   it('defaults to scale 1 for every display — even a graph wider than the viewport', () => {
-    // Chain t1..t5: half-extent 5·192+90 = 1050px vs the 500px half-viewport.
+    // Chain t1..t5 (1 lane → pitch 196): half-extent 5·196+90 = 1070px vs the 500px half-viewport.
     const map = measuredMap(chainTasks(5));
     expect(map.scale).toBe(1);
     expect(map.panTransform).toBe('translate(0px, 0px)');
@@ -57,9 +57,9 @@ describe('createTakeoverMapState zoom', () => {
   it('zoomReset returns to 1; zoomFit fits the occupied cells to the viewport', () => {
     const map = measuredMap(chainTasks(5));
     map.zoomFit();
-    // 500/1050 = 0.476 (3 decimals).
-    expect(map.scale).toBe(0.476);
-    expect(map.panTransform).toBe('translate(0px, 0px) scale(0.476)');
+    // 500/1070 = 0.467 (3 decimals).
+    expect(map.scale).toBe(0.467);
+    expect(map.panTransform).toBe('translate(0px, 0px) scale(0.467)');
     map.zoomReset();
     expect(map.scale).toBe(1);
   });
@@ -113,7 +113,7 @@ describe('createTakeoverMapState zoom', () => {
 
     // The inverse holds too: a graph that fits at the 1:1 open zoom never
     // gains an auto-pan when the user zooms in past the viewport. t3 at
-    // (3,0) is a "far" cell (|x| ≥ 3) but half-extent 666px ≤ the 700px
+    // (3,0) is a "far" cell (|x| ≥ 3) but half-extent 678px ≤ the 700px
     // half-viewport, so the open-time decision is false — and stays false
     // even when zooming in makes the chain overflow.
     const wide = createTakeoverMapState(() => chainTasks(3));
