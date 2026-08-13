@@ -167,13 +167,9 @@ describe('EffortPicker', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     const content = screen.getByTestId('effort-picker-content');
     expect(content.textContent).not.toContain('Reasoning effort');
-    const currentValue = screen.getByTestId('effort-current-value');
-    expect(currentValue.textContent?.trim()).toBe('Low');
+    expect(screen.queryByTestId('effort-current-value')).toBeNull();
     const nextSendCaption = screen.getByText('Applies on the next message you send.');
-    expect(nextSendCaption.parentElement).toBe(currentValue.parentElement);
-    expect(
-      nextSendCaption.compareDocumentPosition(currentValue) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(nextSendCaption).toBeTruthy();
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('2');
     expect(slider.getAttribute('aria-valuetext')).toBe('Low');

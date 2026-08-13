@@ -185,26 +185,24 @@
 </script>
 
 {#snippet sliderContent()}
-  <div class="flex items-center justify-between gap-2">
-    {#if embedded}
-      <span class="type-caption min-w-0 flex-1 truncate text-subtle">
-        {m.chat_effortPicker_nextSend_description()}
-      </span>
-    {:else}
+  {#if embedded}
+    <div class="type-caption truncate text-subtle">
+      {m.chat_effortPicker_nextSend_description()}
+    </div>
+  {:else}
+    <div class="flex items-center justify-between gap-2">
       <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
-    {/if}
-    <span
-      class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
-      data-testid="effort-current-value"
-    >
-      {#key sliderIndex}
-        <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
-          {steps[sliderIndex]?.label}
-        </span>
-      {/key}
-    </span>
-  </div>
-  {#if !embedded}
+      <span
+        class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
+        data-testid="effort-current-value"
+      >
+        {#key sliderIndex}
+          <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
+            {steps[sliderIndex]?.label}
+          </span>
+        {/key}
+      </span>
+    </div>
     <div class="type-caption mt-0.5 text-subtle">
       {m.chat_effortPicker_nextSend_description()}
     </div>

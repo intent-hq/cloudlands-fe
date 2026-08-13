@@ -99,7 +99,6 @@
   import {
     faCheck,
     faChevronDown,
-    faChevronRight,
     faLock,
     faPlus,
     faTriangleExclamation,
@@ -1802,14 +1801,8 @@
             onkeydown={handleReasoningToggleKeydown}
           >
             <span class="truncate">
-              {m.chat_effortPicker_title_label()}{reasoningExpanded
-                ? ''
-                : ` · ${currentReasoningLabel}`}
+              {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
             </span>
-            <Fa
-              icon={reasoningExpanded ? faChevronDown : faChevronRight}
-              class="size-2.5 shrink-0 text-muted-foreground"
-            />
           </Button>
           {#if reasoningExpanded && reasoningLevels.length > 0}
             <div
