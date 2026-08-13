@@ -3,7 +3,7 @@
   import { page } from '$app/state';
   import Fa from 'svelte-fa';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
 
   let error = $derived(page.error);
