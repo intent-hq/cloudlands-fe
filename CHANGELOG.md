@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.35.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.1...v2.35.2) (2026-08-13)
+
+
+### 🐛 Bug Fixes
+
+* **auto-update:** re-validate downloaded update and cancel in-flight download on channel switch ([#1162](https://github.com/intent-hq/cloudlands-fe/issues/1162)) ([e288c52](https://github.com/intent-hq/cloudlands-fe/commit/e288c52c474e0729f808014a88905aa66d552781))
+* gate welcome flow behind setup state on last-tab close ([#1159](https://github.com/intent-hq/cloudlands-fe/issues/1159)) ([03cef8e](https://github.com/intent-hq/cloudlands-fe/commit/03cef8e39f3f15eb2ea8fa0a7ed68aec6b58a08d))
+
 ## [2.35.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.0...v2.35.1) (2026-08-13)
 
 
