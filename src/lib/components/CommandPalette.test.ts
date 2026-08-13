@@ -176,18 +176,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
     },
   }),
 }));
-vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectResolvedLocale: Object.assign(
-    () => ({
-      subscribe: (fn: (value: string) => void) => {
-        fn('en');
-        return () => {};
-      },
-    }),
-    { select: () => 'en' },
-  ),
-}));
-
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('./ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
