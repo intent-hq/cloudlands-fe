@@ -29,10 +29,10 @@
   import { invoke } from '$lib/electron-bridge';
   import {
   selectActiveWorkspace,
+  selectIsWorkspaceHostLocal,
   selectWorkspaceById,
 } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsFollowing } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
@@ -98,9 +98,6 @@
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const isDarkTheme = selectIsDarkTheme();
   const activeWorkspace = selectActiveWorkspace();
-  // Reveal-in-file-manager targets the daemon host's desktop shell — only
-  // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
-  const isDaemonLocal$ = selectIsDaemonLocal();
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -120,6 +117,11 @@
     workspaceIdStore.set(workspaceId ?? '');
   });
   const workspaceById = selectWorkspaceById(workspaceIdStore);
+  // Reveal-in-file-manager runs against a workspace file path on this
+  // machine's desktop shell — only offered when the daemon runs on this
+  // machine (PROTOCOL §5.14 locality) AND the workspace checkout lives on the
+  // daemon host, i.e. not a remote (SSH) workspace (monorepo#2171).
+  const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
 
   function getResolvedWorkspace() {
     return workspaceId ? $workspaceById : $activeWorkspace;
@@ -973,7 +975,7 @@
                 <Fa icon={faExternalLinkAlt} class="mr-2" />
                 {m.editor_codeEditor_openInVsCode_label()}
               </Button>
-              {#if $isDaemonLocal$}
+              {#if $isWorkspaceHostLocal$}
                 <Button variant="ghost" size="sm" onclick={revealInFolder}>
                   <Fa icon={faFolderOpen} class="mr-2" />
                   {m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName })}
