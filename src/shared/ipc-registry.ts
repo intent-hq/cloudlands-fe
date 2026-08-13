@@ -248,6 +248,8 @@ export const IPC_CHANNELS = {
   // File Management
   FILE: {
     READ: 'file:read',
+    READ_CHUNK: 'file:read-chunk',
+    HASH: 'file:hash',
     WRITE: 'file:write',
     DELETE: 'file:delete',
     EXISTS: 'file:exists',

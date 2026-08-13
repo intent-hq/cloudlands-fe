@@ -209,6 +209,8 @@ const ALLOWED_CHANNELS = [
   "providers:get-paths",
   "providers:check-single",
   "file:read",
+  "file:read-chunk",
+  "file:hash",
   "file:write",
   "file:delete",
   "file:exists",

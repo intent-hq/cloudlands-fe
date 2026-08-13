@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_wokenByCount_one": "L'agent a été réveillé par {count} événement :",
   "chat_agentSubscriptions_wokenByEvents_tooltip": "L'agent a été réveillé par des événements d'abonnement :",
   "chat_agentSubscriptions_wokenUp_label": "Réveillé",
+  "chat_attachmentPlacement_tooLargeRemote_error": "{name} est trop volumineux pour être joint — la limite est de {maxGb} Go",
   "chat_attachmentPreview_placementFailed_tooltip": "Échec de l'ajout de {name} — réessayez ou supprimez-le pour envoyer",
   "chat_attachmentPreview_remove_ariaLabel": "Retirer {name}",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "Retirer la pièce jointe",

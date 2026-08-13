@@ -21,6 +21,7 @@
   import { Button } from '$lib/components/ui/button';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatNumber } from '$lib/i18n/format';
 
   interface Props {
     id: string;
@@ -43,6 +44,12 @@
      */
     placementStatus?: 'placing' | 'failed' | 'placed';
     /**
+     * Chunk-acknowledged upload fraction (0..1) while a chunked remote
+     * placement is in flight — renders a percent label next to the spinner.
+     * Absent for single-shot placements (indeterminate spinner only).
+     */
+    placementProgress?: number;
+    /**
      * Human-readable reason for a failed placement (daemon error detail,
      * e.g. "sourcePath is a directory"). Appended to the failed tooltip.
      */
@@ -64,6 +71,7 @@
     class: className = '',
     variant = 'chip',
     placementStatus = undefined,
+    placementProgress = undefined,
     placementError = undefined,
     onRetry,
   }: Props = $props();
@@ -111,6 +119,14 @@
     if (placementStatus !== 'failed') return undefined;
     const base = m.chat_attachmentPreview_placementFailed_tooltip({ name });
     return placementError ? `${base} — ${placementError}` : base;
+  });
+
+  // Percent label for a chunked upload in flight (chunk-acknowledged
+  // fraction); undefined keeps the indeterminate spinner alone.
+  const progressLabel = $derived.by(() => {
+    if (placementStatus !== 'placing' || placementProgress === undefined) return undefined;
+    const clamped = Math.max(0, Math.min(1, placementProgress));
+    return formatNumber(clamped, { style: 'percent', maximumFractionDigits: 0 });
   });
 
   // Lightbox state
@@ -188,8 +204,14 @@
     title={chipTitle}
   >
     {#if placementStatus === 'placing'}
-      <!-- Placement in flight: spinner replaces the file icon -->
+      <!-- Placement in flight: spinner replaces the file icon; chunked
+           uploads add the chunk-acknowledged percent next to it -->
       <Fa icon={faSpinner} size="15" class="opacity-50 shrink-0 animate-spin" />
+      {#if progressLabel !== undefined}
+        <span class="tabular-nums opacity-70 shrink-0" data-testid="attachment-upload-progress"
+          >{progressLabel}</span
+        >
+      {/if}
     {:else if placementStatus === 'failed'}
       <!-- Placement failed: error icon -->
       <Fa icon={faCircleExclamation} size="15" class="shrink-0" />

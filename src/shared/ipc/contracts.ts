@@ -261,6 +261,34 @@ export namespace FileIpc {
     truncated?: boolean; // Indicates if content was truncated due to size limits
   }
 
+  /** One bounded slice of a host-local file (large-file upload reads). */
+  export interface ReadChunkRequest {
+    path: string;
+    /** Byte offset to start reading from. */
+    offset: number;
+    /** Bytes to read (≤ 16 MiB; the last chunk may return fewer). */
+    length: number;
+  }
+
+  export interface ReadChunkResponse {
+    /** Base64 of the bytes actually read. */
+    content: string;
+    bytesRead: number;
+    /** Total file size at read time. */
+    size: number;
+  }
+
+  export interface HashRequest {
+    path: string;
+  }
+
+  export interface HashResponse {
+    /** Lowercase hex SHA-256 of the full file contents. */
+    sha256: string;
+    /** Total bytes hashed (file size at hash time). */
+    size: number;
+  }
+
   export interface WriteRequest {
     path: string;
     content: string;
@@ -315,6 +343,8 @@ export interface IpcContractMap {
   'workspace:create': [WorkspaceIpc.CreateRequest, WorkspaceIpc.CreateResponse];
   'workspace:get': [WorkspaceIpc.GetRequest, WorkspaceIpc.GetResponse];
   'file:read': [FileIpc.ReadRequest, FileIpc.ReadResponse];
+  'file:read-chunk': [FileIpc.ReadChunkRequest, FileIpc.ReadChunkResponse];
+  'file:hash': [FileIpc.HashRequest, FileIpc.HashResponse];
   'file:write': [FileIpc.WriteRequest, FileIpc.WriteResponse];
   'terminal:create': [TerminalIpc.CreateRequest, TerminalIpc.CreateResponse];
   'terminal:write': [TerminalIpc.WriteRequest, void];

@@ -169,6 +169,7 @@
   import { hasBlockingAttachments, type ContextItem } from './context-api';
   import {
     extractPlacementErrorDetail,
+    isPlacementCancellation,
     placeAttachmentViaTransport,
   } from './attachment-placement';
   import { cn } from '$lib/utils';
@@ -729,7 +730,17 @@
     }
   }
 
+  /**
+   * In-flight placement cancellers keyed by context-item id. Removing an
+   * attachment mid-upload aborts the transfer (and the daemon-side staged
+   * session) instead of letting it commit after the pill disappeared.
+   * Transient UI-only state — never Redux.
+   */
+  const placementAborters = new Map<string, AbortController>();
+
   function removeContextItem(id: string) {
+    placementAborters.get(id)?.abort();
+    placementAborters.delete(id);
     contextItems = contextItems.filter((item) => item.id !== id);
     oncontextRemove?.(id);
   }
@@ -1005,8 +1016,9 @@
         : file.name;
 
     const sourcePath =
-      (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-        .electronAPI?.getPathForFile?.(file) ?? '';
+      (
+        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+      ).electronAPI?.getPathForFile?.(file) ?? '';
 
     const mimeType = file.type || undefined;
     const itemId = `attachment-pending-${Date.now()}-${fileName}`;
@@ -1057,15 +1069,28 @@
       return;
     }
 
-    patchItem({ placementStatus: 'placing', placementError: undefined });
+    patchItem({
+      placementStatus: 'placing',
+      placementError: undefined,
+      placementProgress: undefined,
+    });
+    const aborter = new AbortController();
+    placementAborters.set(itemId, aborter);
     try {
-      const result = await placeAttachmentViaTransport(workspace.id, item.label, {
-        sourcePath: item.sourcePath,
-        mimeType: item.attachmentMimeType,
-      });
+      const result = await placeAttachmentViaTransport(
+        workspace.id,
+        item.label,
+        {
+          sourcePath: item.sourcePath,
+          mimeType: item.attachmentMimeType,
+        },
+        (fraction) => patchItem({ placementProgress: fraction }),
+        aborter.signal,
+      );
 
       patchItem({
         placementStatus: 'placed',
+        placementProgress: undefined,
         label: result.fileName,
         path: result.path,
         attachmentId: result.attachmentId,
@@ -1081,14 +1106,26 @@
       });
       toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
+      if (isPlacementCancellation(error, aborter.signal)) {
+        // User removed the attachment mid-upload — the item is already gone
+        // and the daemon session was aborted; no failure UI.
+        logger.debug('Attachment placement cancelled', { fileName: item.label });
+        return;
+      }
       logger.error('Failed to place attachment', { fileName: item.label, error });
       const detail = extractPlacementErrorDetail(error);
-      patchItem({ placementStatus: 'failed', placementError: detail });
+      patchItem({
+        placementStatus: 'failed',
+        placementError: detail,
+        placementProgress: undefined,
+      });
       toast.error(
         detail
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
           : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
       );
+    } finally {
+      placementAborters.delete(itemId);
     }
   }
 
@@ -1362,6 +1399,7 @@
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
             placementStatus={item.placementStatus}
+            placementProgress={item.placementProgress}
             placementError={item.placementError}
             onRetry={(id) => void runPlacement(id)}
             variant="chip"
