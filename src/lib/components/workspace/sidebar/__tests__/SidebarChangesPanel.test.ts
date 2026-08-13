@@ -2214,5 +2214,101 @@ describe('SidebarChangesPanel', () => {
       expect(viewText).not.toContain('Stage all');
       expect(viewText).not.toContain('Create PR');
     });
+
+    it('PR sections follow the dropdown: selected root PRs on top, own PRs under "Other PRs"', async () => {
+      // Workspace with its own PR + a secondary root on another repo with
+      // its own PR (from the root's wire row pullRequests).
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({
+          pullRequests: [
+            {
+              number: 42,
+              title: 'Workspace PR',
+              url: 'https://github.com/testorg/testrepo/pull/42',
+              status: 'Open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+      await seedGitRoots([
+        makeGitRoot({
+          repoOwner: 'testorg',
+          repoName: 'subrepo',
+          pullRequests: [
+            {
+              id: 'pr-sub',
+              number: 7,
+              title: 'Subrepo PR',
+              url: 'https://github.com/testorg/subrepo/pull/7',
+              status: 'Open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      ]);
+      mockRootGetStatus.mockResolvedValue({
+        ok: true,
+        data: {
+          branch: 'feature/sub',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [],
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+        },
+      });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+
+      // Primary selected: workspace PR renders, root PR under "Other PRs"
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Workspace PR');
+        expect(text).toContain('Other PRs');
+        expect(text).toContain('Subrepo PR');
+      });
+
+      // Select the secondary root
+      const trigger = container.querySelector(
+        '[data-testid="git-root-selector"] button',
+      ) as HTMLButtonElement;
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeTruthy();
+      });
+
+      // PR sections stay visible while browsing the secondary root, and
+      // follow the selection: the root's PR on top, the workspace's own PR
+      // relegated under "Other PRs". No mutation affordances (read-only).
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Subrepo PR');
+        expect(text).toContain('Other PRs');
+        expect(text).toContain('Workspace PR');
+      });
+      const listText = container.textContent || '';
+      expect(listText.indexOf('Subrepo PR')).toBeLessThan(listText.indexOf('Other PRs'));
+      expect(listText.indexOf('Other PRs')).toBeLessThan(listText.indexOf('Workspace PR'));
+      expect(listText).not.toContain('Create PR');
+      expect(listText).not.toContain('Merge');
+    });
   });
 });

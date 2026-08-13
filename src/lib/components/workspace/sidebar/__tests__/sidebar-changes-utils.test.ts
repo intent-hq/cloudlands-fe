@@ -33,8 +33,10 @@ import {
   computeTotalStats,
   mapWorkspacePRs,
   mergeMonitoredPRs,
+  orderPRSectionsForSelection,
   sectionPRs,
   type GitRootPRSource,
+  type SectionedPRs,
   selectPrimaryPr,
   getPRStatusTooltip,
   countOtherMonitors,
@@ -1248,6 +1250,100 @@ describe('sectionPRs', () => {
     const all = [...result.own, ...result.otherRoots, ...result.otherTracked];
     const keys = all.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ─── orderPRSectionsForSelection (dropdown-follow ordering, monorepo#2053) ─────
+
+describe('orderPRSectionsForSelection', () => {
+  const workspaceRepo = 'acme/widgets';
+
+  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 42,
+      title: 'Branch PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      status: 'open',
+      ...overrides,
+    };
+  }
+
+  function makeSectioned(overrides: Partial<SectionedPRs> = {}): SectionedPRs {
+    return {
+      own: [makePR()],
+      otherRoots: [
+        makePR({ number: 7, crossRepo: 'acme/intentd', crossRepoDisplay: 'intentd' }),
+        makePR({ number: 9, crossRepo: 'acme/ios', crossRepoDisplay: 'ios' }),
+      ],
+      otherTracked: [makePR({ number: 5, crossRepo: 'stranger/repo', monitorOnly: true })],
+      ...overrides,
+    };
+  }
+
+  it('passes all three arrays through by reference when primary is selected', () => {
+    const sectioned = makeSectioned();
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, null);
+    expect(result.selected).toBe(sectioned.own);
+    expect(result.others).toBe(sectioned.otherRoots);
+    expect(result.otherTracked).toBe(sectioned.otherTracked);
+  });
+
+  it('moves the selected root PRs on top and own PRs under others', () => {
+    const sectioned = makeSectioned();
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {
+      repoOwner: 'acme',
+      repoName: 'intentd',
+    });
+    expect(result.selected).toHaveLength(1);
+    expect(result.selected[0]).toMatchObject({ number: 7, crossRepo: 'acme/intentd' });
+    // Own PRs first, then the non-selected roots' rows
+    expect(result.others.map((pr) => pr.number)).toEqual([42, 9]);
+    expect(result.otherTracked).toBe(sectioned.otherTracked);
+  });
+
+  it('attributes rows without crossRepo context to a selected root on the workspace repo', () => {
+    // A subtree-checkout root on the workspace repo produces bare rows
+    // (sectionPRs drops the repo context for sameRepo roots).
+    const sectioned = makeSectioned({
+      otherRoots: [makePR({ number: 8 })],
+    });
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    expect(result.selected.map((pr) => pr.number)).toEqual([8]);
+    expect(result.others.map((pr) => pr.number)).toEqual([42]);
+  });
+
+  it('owns no rows when the selected root has no detected owner/name', () => {
+    const sectioned = makeSectioned();
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {});
+    expect(result.selected).toEqual([]);
+    expect(result.others.map((pr) => pr.number)).toEqual([42, 7, 9]);
+    expect(result.otherTracked).toBe(sectioned.otherTracked);
+  });
+
+  it('leaves otherTracked untouched by any selection', () => {
+    const sectioned = makeSectioned();
+    const secondary = orderPRSectionsForSelection(sectioned, workspaceRepo, {
+      repoOwner: 'acme',
+      repoName: 'intentd',
+    });
+    expect(secondary.otherTracked).toBe(sectioned.otherTracked);
+  });
+
+  it('never moves own or tracked rows into selected', () => {
+    const sectioned = makeSectioned();
+    // Selecting a root that shadows the workspace repo: own rows stay
+    // functional-side (they were never in otherRoots).
+    const result = orderPRSectionsForSelection(sectioned, workspaceRepo, {
+      repoOwner: 'stranger',
+      repoName: 'repo',
+    });
+    expect(result.selected).toEqual([]);
+    expect(result.others.map((pr) => pr.number)).toEqual([42, 7, 9]);
+    expect(result.otherTracked).toBe(sectioned.otherTracked);
   });
 });
 

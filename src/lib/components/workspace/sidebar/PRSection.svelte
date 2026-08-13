@@ -139,6 +139,10 @@
     onOpenChange?: (change: TrackedChange) => void;
     /** Snippet for merge panel content */
     mergePanelContent?: import('svelte').Snippet;
+    /** Render only the read-only PR list (no create-PR/push/merge dividers,
+     * no local-files expansion) — the secondary-root browsing view
+     * (monorepo#2053). */
+    listOnly?: boolean;
   }
 
   let {
@@ -180,6 +184,7 @@
     onOpenFullPanel,
     onOpenChange: _onOpenChange,
     mergePanelContent,
+    listOnly = false,
   }: Props = $props();
 
   // Redux selectors
@@ -715,6 +720,7 @@
 
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when remote exists) -->
 {#if hasRemote}
+  {#if !listOnly}
   <TimelineDivider>
     {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
       <!-- Show Push Commits button when open PR exists -->
@@ -1016,6 +1022,7 @@
       </DividerPanel>
     {/if}
   </TimelineDivider>
+  {/if}
 
   <!-- PULL REQUESTS SECTION -->
   {#if hasAnyPRs}
@@ -1188,8 +1195,10 @@
         {/snippet}
         {#if hasAnyPRs}
           <div class="space-y-0.5">
+            <!-- In listOnly mode the top rows belong to a secondary root —
+                 read-only, no local-files expansion (monorepo#2053). -->
             {#each pullRequests as pr (prKey(pr))}
-              {@render prRow(pr, true)}
+              {@render prRow(pr, !listOnly)}
             {/each}
             {#if otherRootPRs.length > 0}
               {@render prSubDivider(m.workspace_prSection_otherPullRequests_label())}
@@ -1212,7 +1221,7 @@
 
 
 <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-{#if !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
+{#if !listOnly && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
   <TimelineDivider>
     {#if !hasRemote}
       <div class="w-full flex gap-1">

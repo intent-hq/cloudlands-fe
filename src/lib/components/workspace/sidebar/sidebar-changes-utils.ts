@@ -503,6 +503,62 @@ export function sectionPRs(
   };
 }
 
+/** The Changes tab's PR sections reordered to follow the git-root dropdown
+ * selection (monorepo#2053). */
+export interface SelectionOrderedPRSections {
+  /** Rows of the dropdown-selected root — the top, undivided section. */
+  selected: PRInfo[];
+  /** Rows of every non-selected root — the "Other PRs" section. Includes
+   * the workspace's own PRs when a secondary root is selected. */
+  others: PRInfo[];
+  /** Monitor rows attributable to no known root — the "Other Tracked PRs"
+   * section; unaffected by selection. */
+  otherTracked: PRInfo[];
+}
+
+/**
+ * Reorder {@link sectionPRs} output to follow the git-root dropdown selection
+ * (monorepo#2053). With the primary root selected (`selectedRoot` null) the
+ * three input arrays pass through by reference — rendering stays byte-
+ * identical to the selection-unaware sectioning. With a secondary root
+ * selected, its rows (attributed by repo `owner/name`, resolving rows
+ * without `crossRepo` context against the workspace repo) move to the top
+ * section while the workspace's own PRs join the remaining roots' rows under
+ * "Other PRs". A selected root without a detected `owner/name` owns no rows.
+ * Purely visual: functional consumers keep keying off `SectionedPRs.own`.
+ */
+export function orderPRSectionsForSelection(
+  sectioned: SectionedPRs,
+  workspaceRepo: string | undefined,
+  selectedRoot: GitRootPRSource | null,
+): SelectionOrderedPRSections {
+  if (!selectedRoot) {
+    return {
+      selected: sectioned.own,
+      others: sectioned.otherRoots,
+      otherTracked: sectioned.otherTracked,
+    };
+  }
+  const selectedRepo =
+    selectedRoot.repoOwner && selectedRoot.repoName
+      ? `${selectedRoot.repoOwner}/${selectedRoot.repoName}`
+      : undefined;
+  const selected: PRInfo[] = [];
+  const rest: PRInfo[] = [];
+  for (const pr of sectioned.otherRoots) {
+    if (selectedRepo !== undefined && (pr.crossRepo ?? workspaceRepo) === selectedRepo) {
+      selected.push(pr);
+    } else {
+      rest.push(pr);
+    }
+  }
+  return {
+    selected,
+    others: [...sectioned.own, ...rest],
+    otherTracked: sectioned.otherTracked,
+  };
+}
+
 /** Comparator fragment: rows with a timestamp sort before rows without one;
  * two present timestamps compare via `cmp`. */
 function compareMissingLast(

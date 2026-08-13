@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
    * Shows the git workflow as a vertical timeline: Unstaged → Staged → Commits → PRs
@@ -67,10 +68,14 @@
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
     mapWorkspacePRs,
+    orderPRSectionsForSelection,
     sectionPRs,
   } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import {
+    selectGitRoots,
+    type WorkspaceGitRootEntry,
+  } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -185,14 +190,22 @@
     ),
   );
   // The workspace's own PRs — every pre-sectioning consumer (merge gating,
-  // post-merge detection, MergePanel) still keys off these alone.
+  // post-merge detection, MergePanel) still keys off these alone,
+  // regardless of the dropdown selection.
   const pullRequests = $derived(sectionedPRs.own);
   const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
 
   // Multi git root browsing (monorepo#2053): while GitRootBrowser has a
-  // secondary root selected this panel hides its primary-root body.
-  let isBrowsingSecondaryRoot = $state(false);
+  // secondary root selected this panel hides its primary-root body and the
+  // PR sections reorder to follow the selection.
+  let selectedSecondaryRoot = $state<WorkspaceGitRootEntry | null>(null);
+  const isBrowsingSecondaryRoot = $derived(selectedSecondaryRoot !== null);
+  // Visual PR section ordering only — primary selection passes sectionedPRs
+  // through unchanged.
+  const orderedPRSections = $derived(
+    orderPRSectionsForSelection(sectionedPRs, workspaceRepo, selectedSecondaryRoot),
+  );
 
   // Truncation state - when there are more changes than we can display
   // Only show truncation warning if there are actual working changes being truncated
@@ -539,6 +552,42 @@
   const hasStaged = $derived(stagedChanges.length > 0);
   const hasCommits = $derived(allCommits.length > 0);
   const hasPRs = $derived(pullRequests.length > 0);
+
+  // Props shared by both PRSection instances (primary timeline + the
+  // list-only secondary-root view, monorepo#2053).
+  const prSectionSharedProps = $derived({
+    workspaceId,
+    activeFilePath,
+    activeFileStaged,
+    hasStaged,
+    hasUnstaged,
+    hasCommits,
+    hasOpenPR,
+    hasRemote,
+    commits,
+    pushedCommits,
+    allCommits,
+    stagedChanges,
+    trunkBranch,
+    targetBranch,
+    repoPath,
+    repoType,
+    commitMessage,
+    hasUnpushedCommits,
+    unpushedCount,
+    hasPushedCommits,
+    isDiverged,
+    isBehind,
+    behindCount,
+    isMergedToTrunk,
+    areAllPRsMerged,
+    hasResetToTrunk,
+    isContentMergedToTrunk,
+    hasNewWorkAfterMerge,
+    isPRMerged,
+    onOpenFullPanel,
+    onOpenChange,
+  });
 
   // Total files changed for "View All Changes" button
   const totalStats = $derived(computeTotalStats(unstagedChanges, stagedChanges, allCommits));
@@ -978,7 +1027,26 @@
         onkeydown={handleChangesKeydown}
       >
         <!-- Git root dropdown + read-only per-root browsing (monorepo#2053) -->
-        <GitRootBrowser {workspaceId} onBrowsingSecondaryChange={(b) => (isBrowsingSecondaryRoot = b)} />
+        <GitRootBrowser {workspaceId} onSelectedRootChange={(entry) => (selectedSecondaryRoot = entry)} />
+
+        {#if isBrowsingSecondaryRoot}
+          <!-- PR sections follow the dropdown while browsing a secondary root:
+               the selected root's PRs on top, the workspace's own PRs under
+               "Other PRs". Read-only list — merge gating and post-merge stay
+               keyed to sectionedPRs.own in the primary view (monorepo#2053). -->
+          <div class="relative flex flex-col pb-2 w-full mt-2">
+            <PRSection
+              {...prSectionSharedProps}
+              hasPRs={orderedPRSections.selected.length > 0}
+              pullRequests={orderedPRSections.selected}
+              otherRootPRs={orderedPRSections.others}
+              otherTrackedPRs={orderedPRSections.otherTracked}
+              mergeDrawerOpen={false}
+              onMergeDrawerToggle={() => {}}
+              listOnly
+            />
+          </div>
+        {/if}
 
         {#if !isBrowsingSecondaryRoot}
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
@@ -1128,45 +1196,15 @@
           {/snippet}
 
           <PRSection
-            {workspaceId}
-            {activeFilePath}
-            {activeFileStaged}
-            {hasStaged}
-            {hasUnstaged}
-            {hasCommits}
-            {hasOpenPR}
-            {hasRemote}
+            {...prSectionSharedProps}
             {hasPRs}
             {pullRequests}
             otherRootPRs={sectionedPRs.otherRoots}
             otherTrackedPRs={sectionedPRs.otherTracked}
-            {commits}
-            {pushedCommits}
-            {allCommits}
-            {stagedChanges}
-            {trunkBranch}
-            {targetBranch}
-            {repoPath}
-            {repoType}
-            {commitMessage}
-            {hasUnpushedCommits}
-            {unpushedCount}
-            {hasPushedCommits}
-            {isDiverged}
-            {isBehind}
-            {behindCount}
-            {isMergedToTrunk}
-            {areAllPRsMerged}
-            {hasResetToTrunk}
-            {isContentMergedToTrunk}
-            {hasNewWorkAfterMerge}
-            {isPRMerged}
             {mergeDrawerOpen}
             onMergeDrawerToggle={(open) => {
               mergeDrawerOpen = open;
             }}
-            {onOpenFullPanel}
-            {onOpenChange}
             {mergePanelContent}
             bind:this={prSectionRef}
           />

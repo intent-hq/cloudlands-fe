@@ -7,7 +7,7 @@
    * secondary roots, shows the root dropdown (first entry = the synthesized
    * primary workspace root) and, when a secondary root is selected, the
    * read-only SecondaryRootChangesView. The parent hides its primary-root
-   * body while `onBrowsingSecondaryChange(true)` is in effect; primary
+   * body while `onSelectedRootChange` reports a non-null entry; primary
    * selection restores today's behavior exactly.
    */
   import { writable } from 'svelte/store';
@@ -15,6 +15,7 @@
   import {
     selectHasSecondaryGitRoots,
     selectWorkspaceGitRootEntries,
+    type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Select } from '$lib/components/ui/select';
@@ -23,12 +24,13 @@
 
   interface Props {
     workspaceId: string;
-    /** Notifies the parent when secondary-root browsing starts/stops so it
-     * can hide/show the primary changes body. */
-    onBrowsingSecondaryChange?: (browsing: boolean) => void;
+    /** Reports the selected secondary root entry (null while the primary
+     * root is selected) so the parent can hide/show the primary changes body
+     * and follow the selection in its PR sections (monorepo#2053). */
+    onSelectedRootChange?: (entry: WorkspaceGitRootEntry | null) => void;
   }
 
-  let { workspaceId, onBrowsingSecondaryChange }: Props = $props();
+  let { workspaceId, onSelectedRootChange }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
@@ -77,10 +79,10 @@
     });
   });
 
-  // Report browsing state to the parent
+  // Report the selected secondary root (or null for primary) to the parent
   $effect(() => {
-    const browsing = isSecondaryRootSelected;
-    untrack(() => onBrowsingSecondaryChange?.(browsing));
+    const entry = isSecondaryRootSelected ? (selectedRootEntry ?? null) : null;
+    untrack(() => onSelectedRootChange?.(entry));
   });
 
   /** Compact display label for a root entry: trailing path segment(s). */
