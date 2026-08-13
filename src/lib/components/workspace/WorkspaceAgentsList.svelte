@@ -3,6 +3,7 @@
   import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import { ListEmpty } from '$lib/components/ui/list';
+  import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -13,7 +14,11 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
-  import { getFlatWorkspaceAgentRows } from './workspace-agents-list-utils';
+  import {
+    getFlatWorkspaceAgentRows,
+    isBackgroundAgentSession as isBackgroundAgent,
+    shouldVirtualizeWorkspaceAgentRows,
+  } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -35,10 +40,6 @@
     runningAgentIds = [],
     loading = false,
   }: Props = $props();
-
-  function isBackgroundAgent(agent: AgentSession): boolean {
-    return !!(agent.isBackground || agent.metadata?.isBackground);
-  }
 
   const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
   const runningAgentIdSet = $derived(new Set(runningAgentIds));
@@ -71,6 +72,10 @@
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // Fall back to the regular list when delegations exist (tree heights are variable).
+  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(flatAgentRows));
+  const itemHeight = 72;
+  const containerHeight = 600;
   let expandedAgentIds = $state(new Set<string>());
   let showBackgroundAgents = $state(false);
   const runningBackgroundCount = $derived(
@@ -217,6 +222,29 @@
   </div>
 {:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
   <ListEmpty message={m.workspace_agentsList_empty_label()} />
+{:else if shouldUseVirtual}
+  <!-- Virtual scrolling fallback (flat, no delegations) -->
+  <div class="h-full max-h-150 overflow-hidden">
+    <VirtualList
+      items={topLevelForegroundAgents}
+      {itemHeight}
+      {containerHeight}
+      getKey={(agent: AgentSession) => agent.id}
+    >
+      {#snippet children({ item: agent }: { item: AgentSession })}
+        <div class="w-full">
+          <LazyAgentCard
+            cacheKey={agent.id}
+            agentId={agent.id}
+            agentName={agent.name}
+            isBackground={false}
+            selected={agent.id === selectedAgentId}
+            onclick={() => handleAgentClick(agent.id)}
+          />
+        </div>
+      {/snippet}
+    </VirtualList>
+  </div>
 {:else}
   <div class="flex flex-col gap-0.5">
     {#if topLevelForegroundAgents.length > 0}

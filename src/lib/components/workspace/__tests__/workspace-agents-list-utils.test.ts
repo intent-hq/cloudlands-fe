@@ -6,6 +6,8 @@ import {
   getDirectChildCounts,
   getFlatWorkspaceAgentRows,
   getVisibleWorkspaceAgentRows,
+  shouldVirtualizeWorkspaceAgentRows,
+  WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
 } from '../workspace-agents-list-utils';
 
 const TIMESTAMP = '2026-01-01T00:00:00.000Z';
@@ -96,6 +98,52 @@ describe('getDirectChildCounts', () => {
     expect(counts.get('worker-1')).toBe(1);
     expect(counts.has('nested-worker')).toBe(false);
     expect(counts.has('standalone')).toBe(false);
+  });
+});
+
+describe('shouldVirtualizeWorkspaceAgentRows', () => {
+  function makeFlatAgents(count: number): AgentSession[] {
+    return Array.from({ length: count }, (_, i) => makeAgent(`agent-${i}`));
+  }
+
+  it('virtualizes flat lists above the top-level foreground threshold', () => {
+    const rows = getFlatWorkspaceAgentRows(
+      makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD + 1),
+    );
+    expect(shouldVirtualizeWorkspaceAgentRows(rows)).toBe(true);
+  });
+
+  it('keeps the regular list at or below the threshold', () => {
+    const rows = getFlatWorkspaceAgentRows(
+      makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD),
+    );
+    expect(shouldVirtualizeWorkspaceAgentRows(rows)).toBe(false);
+  });
+
+  it('never virtualizes when delegations exist (tree heights are variable)', () => {
+    const agents = makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD + 5);
+    agents.push(makeAgent('delegated', { metadata: { createdByAgentId: 'agent-0' } as any }));
+
+    expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
+  });
+
+  it('does not count background agents toward the threshold', () => {
+    const agents = [...makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD)];
+    for (let i = 0; i < 5; i++) {
+      agents.push(makeAgent(`background-${i}`, { isBackground: true }));
+    }
+
+    expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
+  });
+
+  it('renders large flat lists through VirtualList in WorkspaceAgentsList', () => {
+    const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
+
+    expect(list).toContain("import VirtualList from '$lib/components/ui/VirtualList.svelte'");
+    expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(flatAgentRows)');
+    expect(list).toContain('{:else if shouldUseVirtual}');
+    expect(list).toContain('<VirtualList');
+    expect(list).toContain('items={topLevelForegroundAgents}');
   });
 });
 

@@ -5,6 +5,26 @@ export interface FlatWorkspaceAgentRow {
   depth: number;
 }
 
+/** Threshold above which a flat top-level foreground list switches to virtual scrolling. */
+export const WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD = 20;
+
+export function isBackgroundAgentSession(agent: AgentSession): boolean {
+  return !!(agent.isBackground || agent.metadata?.isBackground);
+}
+
+/**
+ * Virtualize only flat lists (no delegations — tree heights are variable) with more
+ * top-level foreground agents than the threshold.
+ */
+export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]): boolean {
+  let topLevelForegroundCount = 0;
+  for (const row of rows) {
+    if (row.depth > 0) return false;
+    if (!isBackgroundAgentSession(row.agent)) topLevelForegroundCount += 1;
+  }
+  return topLevelForegroundCount > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD;
+}
+
 function getParentAgentId(agent: AgentSession): AgentSession['id'] | undefined {
   return typeof agent.metadata?.createdByAgentId === 'string'
     ? (agent.metadata.createdByAgentId as AgentSession['id'])
