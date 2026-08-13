@@ -423,7 +423,38 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     expect(screen.getByText(REAP_OFF)).toBeTruthy();
   });
 
-  it('restores the daemon catalog default when reaping is switched back on', async () => {
+  it("keeps an existing install's own interval rather than migrating it to the new default", async () => {
+    // The 30 → 10 default change ships for new installs only: an existing
+    // config.toml keeps its explicit 30 permanently. This UI must therefore
+    // show 30 and restore 30, never quietly write the daemon's newer default
+    // over a value the user already has.
+    mockSettings({ reap: { value: 30, defaultValue: 10 } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 0 }]);
+
+    render(AgentBackendSettings);
+
+    await waitFor(() => expect(screen.getByText(/Current: 30 min\./)).toBeTruthy());
+    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).value).toBe('30');
+
+    // Off and back on round-trips their 30, not the catalog's 10.
+    const toggle = screen.getByRole('switch', { name: REAP_TOGGLE_LABEL });
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 0 }]),
+    );
+
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 30 }]);
+    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 30 }]),
+    );
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalledWith([
+      { path: IDLE_REAP_PATH, value: 10 },
+    ]);
+  });
+
+  it('restores the daemon catalog default only when there is no interval to keep', async () => {
     mockSettings({ reap: { value: 0, defaultValue: 10 } });
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 10 }]);
 
