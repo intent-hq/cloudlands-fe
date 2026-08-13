@@ -194,8 +194,8 @@ describe('ResponseGroup - collapse state model', () => {
     });
     const btn = header(container);
 
-    expect(btn.className).toContain('type-caption');
-    expect(btn.className).toContain('text-muted-foreground/60');
+    expect(btn.className).toContain('type-body');
+    expect(btn.className).toContain('text-muted-foreground');
     expect(btn.className).not.toContain('text-base');
     expect(btn.className).not.toContain('px-1');
     expect(queryByText('Collapsed preview text')).not.toBeNull();

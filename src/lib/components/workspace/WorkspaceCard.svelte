@@ -90,6 +90,8 @@
     isAgentRunning?: boolean;
     /** Short digest of what the agent is doing */
     agentDigest?: string;
+    /** Optional localized label shown beside the workspace title. */
+    trailingLabel?: string;
     title?: string;
     repoName?: string;
     branch?: string;
@@ -127,6 +129,7 @@
     hasSpec = false,
     isAgentRunning = false,
     agentDigest,
+    trailingLabel,
     title: _title,
     repoName: _repoName,
     branch: _branch,
@@ -469,6 +472,7 @@
       className,
     )}
     role="group"
+    data-pinned={isPinned}
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
     onclick={(e) => onClick?.(e)}
@@ -483,8 +487,9 @@
   >
     <Button
       variant="plain"
-      class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+      class="absolute inset-0 z-0 h-auto w-auto rounded-md focus-visible:border-transparent focus-visible:bg-background/50 focus-visible:ring-0"
       aria-label={workspace.title || m.workspace_links_untitled_label()}
+      aria-describedby={isPinned ? `workspace-pinned-state-${workspace.id}` : undefined}
       aria-current={isCurrent ? 'page' : undefined}
       data-workspace-card-trigger
       onclick={(event) => {
@@ -518,17 +523,47 @@
     </div>
 
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
-      <span
-        class="wc-title type-body min-w-0 flex-1 truncate font-normal!
-        {isCurrent
-          ? 'text-foreground'
-          : workspace.title
+      <span class="flex min-w-0 flex-1 items-center gap-1" data-workspace-card-title-group>
+        <span
+          class="wc-title type-body min-w-0 truncate font-normal!
+          {isCurrent
             ? 'text-foreground'
-            : 'text-muted-foreground'}"
-        data-workspace-card-title
-      >
-        {workspace.title || m.workspace_links_untitled_label()}
+            : workspace.title
+              ? 'text-foreground'
+              : 'text-muted-foreground'}"
+          data-workspace-card-title
+        >
+          {workspace.title || m.workspace_links_untitled_label()}
+        </span>
+        {#if isPinned}
+          <span
+            class="wc-pin-indicator inline-flex shrink-0 items-center text-muted-foreground transition-opacity
+              {onTogglePin
+              ? highlighted
+                ? 'opacity-0'
+                : suppressHover
+                  ? ''
+                  : 'group-hover:opacity-0 group-focus-within:opacity-0'
+              : ''}"
+            data-workspace-card-pin-indicator
+            aria-hidden="true"
+          >
+            <Fa icon={faThumbtack} size="xs" />
+          </span>
+          <span id="workspace-pinned-state-{workspace.id}" class="sr-only">
+            {m.layout_activeCard_pinned_header()}
+          </span>
+        {/if}
       </span>
+
+      {#if trailingLabel}
+        <span
+          class="type-caption shrink-0 rounded-sm bg-muted-foreground/10 px-1.5 font-normal text-muted-foreground"
+          data-workspace-card-trailing-label
+        >
+          {trailingLabel}
+        </span>
+      {/if}
 
       {#if prStatus}
         {@const statusColor =
@@ -596,7 +631,7 @@
 
     {#if actions || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
           {highlighted
           ? 'opacity-100'
           : suppressHover
@@ -609,7 +644,7 @@
             variant="plain"
             size="icon-xs"
             iconOnly
-            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
             onclick={(event) => {
               event.stopPropagation();
               onMarkAsRead?.(event);
@@ -625,7 +660,7 @@
             variant="plain"
             size="icon-xs"
             iconOnly
-            class="transition-all hover:bg-muted/50 hover:text-foreground
+            class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
               {isPinned ? 'text-primary' : 'text-muted-foreground'}"
             onclick={(event) => {
               event.stopPropagation();
@@ -636,7 +671,7 @@
               : m.workspace_card_pin_ariaLabel()}
             title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
           >
-            <Fa icon={faThumbtack} size="xs" />
+            <span aria-hidden="true"><Fa icon={faThumbtack} size="xs" /></span>
           </Button>
         {/if}
       </div>
@@ -849,6 +884,9 @@
     }
     .wc-actions {
       display: none;
+    }
+    .wc-pin-indicator {
+      opacity: 1 !important;
     }
   }
 </style>

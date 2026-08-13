@@ -82,6 +82,7 @@
     toDropdownOptions,
   } from './model-picker-utils';
   import { cn } from '$lib/utils';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { toast } from 'svelte-sonner';
@@ -162,6 +163,8 @@
     agentId?: string;
     showManageLink?: boolean;
     portal?: boolean;
+    modalAware?: boolean;
+    collisionBoundary?: string | HTMLElement | null;
     triggerClass?: string;
     defaultModelId?: string;
     // Trigger label when no explicit model and no defaultModelId resolve
@@ -208,6 +211,8 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
+    modalAware = false,
+    collisionBoundary = null,
     triggerClass = '',
     defaultModelId,
     defaultModelLabel,
@@ -1261,6 +1266,17 @@
   });
 
   let dropdownOpen = $state(false);
+  let dropdownRef = $state<{
+    focusTrigger: () => void;
+    dismissAndFocusTrigger: () => void;
+  } | null>(null);
+
+  $effect(() => {
+    if (!modalAware || !dropdownOpen) return;
+    return pushEscapeLayer(() => {
+      dropdownRef?.dismissAndFocusTrigger();
+    });
+  });
 
   /** Clear any pending deferred model update. Used when the parent handles the IPC call itself. */
   export function clearPendingUpdate() {
@@ -1295,6 +1311,12 @@
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;
       }
+    }
+    if (modalAware) {
+      queueMicrotask(() => {
+        dropdownOpen = false;
+        dropdownRef?.focusTrigger();
+      });
     }
     // User explicitly selected a model in the dropdown — clear any fallback warning
     clearFallbackInfo();
@@ -1359,6 +1381,7 @@
   {/snippet}
 
   <Dropdown
+    bind:this={dropdownRef}
     bind:value={dropdownValue}
     defaultHighlightValue={defaultModelId}
     bind:open={dropdownOpen}
@@ -1377,6 +1400,7 @@
     )}
     contentClass="w-[332px] max-w-[calc(100vw-32px)]"
     {portal}
+    {collisionBoundary}
     {groupHeader}
   >
     {#snippet trigger({

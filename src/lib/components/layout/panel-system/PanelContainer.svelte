@@ -22,6 +22,7 @@
   import { getDraggedPanelId } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
+  import { getAcceptedIndependentPanelResizeWidth } from '$shared/panel-layout-sizing';
 
   import type { DropZone } from './Panel.svelte';
   import type { HandleDropZone } from './PanelSplitHandle.svelte';
@@ -356,13 +357,14 @@
     ) {
       // `delta` is incremental. Keep the live width local so Redux receives one
       // canonical commit at drag end instead of driving DOM layout every frame.
-      const previousWidth = canvasResizeNextWidth ?? canvasResizeStartWidth;
-      const nextWidth = Math.max(1, previousWidth + delta);
       const targetChildStartWidth = canvasResizeStartChildWidths[index] ?? 0;
-      const nextChildWidth = Math.max(
-        1,
-        targetChildStartWidth + (nextWidth - canvasResizeStartWidth),
+      const previousWidth = canvasResizeNextWidth ?? canvasResizeStartWidth;
+      const nextWidth = getAcceptedIndependentPanelResizeWidth(
+        canvasResizeStartWidth,
+        targetChildStartWidth,
+        previousWidth + delta,
       );
+      const nextChildWidth = targetChildStartWidth + nextWidth - canvasResizeStartWidth;
       applyLiveCanvasResizeChildWidths(index, nextChildWidth);
       if (nextWidth === previousWidth) return;
       canvasResizeNextWidth = nextWidth;
@@ -394,26 +396,30 @@
     });
   }
 
-  function handleResizeStart() {
+  function handleResizeStart(panelIndex: number) {
     if (resizeCommitMotionFrame !== null) cancelAnimationFrame(resizeCommitMotionFrame);
     resizeCommitMotionFrame = null;
     suppressResizeCommitMotion = false;
     liveResizeSizes = node.type === 'split' ? [...node.sizes] : null;
     isResizing = true;
-    canvasResizeStartWidth = growsCanvasAtRootHorizontal
-      ? (panelReferenceSize ?? containerRef?.offsetWidth ?? null)
-      : null;
-    canvasResizeNextWidth = canvasResizeStartWidth;
-    canvasResizeStartCanvasWidth = growsCanvasAtRootHorizontal
-      ? (rootPanelReferenceSize ?? containerRef?.offsetWidth ?? null)
-      : null;
-    canvasResizeTargetIndex = null;
     canvasResizeStartChildWidths =
       growsCanvasAtRootHorizontal && containerRef
         ? Array.from(containerRef.querySelectorAll<HTMLElement>(':scope > .panel-split-child')).map(
             (el) => el.getBoundingClientRect().width,
           )
         : null;
+    canvasResizeStartWidth = canvasResizeStartChildWidths
+      ? canvasResizeStartChildWidths.reduce((total, width) => total + width, 0)
+      : null;
+    canvasResizeNextWidth = canvasResizeStartWidth;
+    const rootGutterWidth = growsCanvasAtRootHorizontal
+      ? Array.from(containerRef?.children ?? [])
+          .filter((child) => child.classList.contains('panel-split-handle-wrapper'))
+          .reduce((total, gutter) => total + (gutter as HTMLElement).offsetWidth, 0)
+      : 0;
+    canvasResizeStartCanvasWidth =
+      canvasResizeStartWidth !== null ? canvasResizeStartWidth + rootGutterWidth : null;
+    canvasResizeTargetIndex = growsCanvasAtRootHorizontal ? panelIndex : null;
   }
 
   function handleResizeEnd(panelIndex?: number) {
@@ -750,7 +756,7 @@
             direction={node.direction}
             {nodePath}
             handleIndex={item.index}
-            onResizeStart={handleResizeStart}
+            onResizeStart={() => handleResizeStart(item.index)}
             onResize={(delta) => handleResize(item.index, delta)}
             onResizeEnd={() => handleResizeEnd(item.index)}
             onTabDropToHandle={onTabDropToSplitHandle}
@@ -758,7 +764,7 @@
           <!-- Corner handles at intersection points -->
           {#each getCornerPositions(item.index) as corner (corner.position)}
             <PanelCornerHandle
-              onResizeStart={handleResizeStart}
+              onResizeStart={() => handleResizeStart(item.index)}
               onResize={(deltaX, deltaY) =>
                 handleCornerResize(item.index, corner.targets, deltaX, deltaY)}
               onResizeEnd={() => handleCornerResizeEnd(item.index)}

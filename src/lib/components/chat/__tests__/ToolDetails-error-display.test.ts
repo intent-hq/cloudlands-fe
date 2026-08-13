@@ -58,8 +58,10 @@ describe('ToolDetails error display', () => {
     });
 
     expect(container.textContent).toContain('Tool workspace_api_workspace-mcp not found.');
-    // The nested string is extracted, not shown as a JSON blob
-    expect(container.textContent).not.toContain('"output"');
+    expect(container.querySelector('pre')?.textContent).toBe(
+      'Tool workspace_api_workspace-mcp not found.',
+    );
+    expect(container.querySelector('details')?.open).toBe(false);
     expect(container.textContent).not.toContain('No error details available');
   });
 
@@ -88,12 +90,12 @@ describe('ToolDetails error display', () => {
     });
 
     expect(container.textContent).toContain('Error: exploded while running');
-    // The text item is extracted, not shown as a JSON blob
-    expect(container.textContent).not.toContain('"type"');
+    expect(container.querySelector('pre')?.textContent).toBe('Error: exploded while running');
+    expect(container.querySelector('details')?.open).toBe(false);
     expect(container.textContent).not.toContain('No error details available');
   });
 
-  it('renders object results without an output string as pretty-printed JSON', () => {
+  it('renders an object error message while keeping the raw payload collapsed', () => {
     const { container } = render(ToolDetails, {
       props: {
         input: {},
@@ -103,7 +105,11 @@ describe('ToolDetails error display', () => {
       },
     });
 
-    expect(container.textContent).toContain('"message": "Method not found"');
+    expect(container.querySelector('pre')?.textContent).toBe('Method not found');
+    expect(container.querySelector('details')?.open).toBe(false);
+    expect(container.querySelector('details')?.textContent).toContain(
+      '"message": "Method not found"',
+    );
     expect(container.textContent).not.toContain('No error details available');
   });
 

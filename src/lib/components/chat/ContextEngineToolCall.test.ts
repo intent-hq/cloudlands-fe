@@ -26,10 +26,9 @@ describe('ContextEngineToolCall', () => {
   it('renders a standard compact tool row while running', () => {
     render(ContextEngineToolCall, { props: { toolUse, toolState: 'running' } });
 
-    expect(screen.getByText('Search codebase')).toBeTruthy();
     const query = screen.getByTestId('context-engine-query');
-    expect(query.textContent).toContain(
-      'Where is panel drag-and-drop visual feedback implemented?',
+    expect(query.textContent).toBe(
+      'Search codebase for Where is panel drag-and-drop visual feedback implemented?',
     );
 
     const card = screen.getByTestId('context-engine-tool-call');

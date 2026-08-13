@@ -203,14 +203,30 @@ describe('editorial conversation presentation contract', () => {
   it('keeps tool-call rows compact and dims their leading icon', () => {
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
     const reasoning = source('src/lib/components/chat/ThinkingBlock.svelte');
+    const contextEngine = source('src/lib/components/chat/ContextEngineToolCall.svelte');
+    const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
+    const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
-    expect(toolCall).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(toolCall).toContain('text-foreground/75');
-    expect(toolCall).toContain('text-foreground/60');
-    expect(reasoning).toContain('tool-call-container');
-    expect(reasoning).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(reasoning).toContain('text-foreground/60');
+    expect(operationalRow).toContain(
+      'relative flex min-h-5 w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden py-0',
+    );
+    expect(operationalRow).toContain('type-body font-family-child font-normal');
+    expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground'");
+    expect(operationalRow).toContain("OPERATIONAL_SECONDARY_CLASS =\n  'text-ghost");
+    expect(operationalRow).toContain('group-hover:text-muted-foreground');
+    for (const component of [toolCall, reasoning, contextEngine]) {
+      expect(component).toContain('OPERATIONAL_ROW_CONTAINER_CLASS');
+    }
+    for (const component of [toolCall, contextEngine]) {
+      expect(component).toContain('COMPACT_TOOL_ROW_CLASS');
+      expect(component).toContain('COMPACT_TOOL_ICON_BOX_CLASS');
+      expect(component).toContain('COMPACT_TOOL_SENTENCE_CLASS');
+    }
+    expect(reasoning).toContain('OPERATIONAL_ROW_LINE_CLASS');
+    expect(reasoning).toContain('OPERATIONAL_ICON_CLASS');
+    expect(responseGroup).toContain('OPERATIONAL_ROW_TONE_CLASS');
+    expect(responseGroup).toContain('OPERATIONAL_ROW_LINE_CLASS');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
     expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });

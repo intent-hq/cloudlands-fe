@@ -21,7 +21,7 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
-  import { getPanelViewportContentWidth } from './panel-canvas-width';
+  import { getPanelCanvasWidths, getPanelViewportContentWidth } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
@@ -131,7 +131,7 @@
 
   // Reactive writable store that mirrors the layout scope so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
-  const layoutIdStore = writable(layoutId ?? workspaceId);
+  const layoutIdStore = writable('');
   $effect(() => {
     layoutIdStore.set(effectiveLayoutId);
   });
@@ -172,10 +172,17 @@
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   let panelViewportWidth = $state(0);
-  let panelCanvasWidth = $state(0);
   let panelRootReferenceSize = $state(0);
   let panelCanvasResizeDelta = $state(0);
   let panelOuterResizeDelta = $state(0);
+  let panelOuterResizeStartReferenceSize: number | null = null;
+  const panelGeometryCanvasWidth = $derived(
+    ($panelCanvasWidth$ ??
+      getPanelCanvasWidths(panelViewportWidth, $panelColumnCount$, canvasSizing, null)
+        .defaultWidth) +
+      panelCanvasResizeDelta +
+      panelOuterResizeDelta,
+  );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
 
   function measurePanelViewportWidth(node: HTMLElement) {
@@ -202,10 +209,16 @@
     if (retainedRootPanel && $root$.type !== 'panel') retainedRootPanel = null;
   });
 
+  function handlePanelCanvasResizeStart() {
+    panelOuterResizeStartReferenceSize = panelRootReferenceSize > 0 ? panelRootReferenceSize : null;
+  }
+
   function handlePanelCanvasResizeEnd(previousWidth: number, nextWidth: number) {
+    const startReferenceSize = panelOuterResizeStartReferenceSize;
+    panelOuterResizeStartReferenceSize = null;
     if (previousWidth === nextWidth) return;
     const gutterWidth =
-      panelRootReferenceSize > 0 ? Math.max(0, panelCanvasWidth - panelRootReferenceSize) : 0;
+      startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
     panelOuterResizeDelta = 0;
     appStore.dispatch(
       resizePanelLayoutRightEdge(
@@ -634,7 +647,6 @@
   }
 
   function handlePanelCanvasWidthChange(width: number) {
-    panelCanvasWidth = width;
     onPanelCanvasWidthChange?.(width);
   }
 
@@ -1142,7 +1154,7 @@
           {contained}
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
-          rootPanelReferenceSize={panelCanvasWidth > 0 ? panelCanvasWidth : null}
+          rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
           rootCanvasResizeDelta={panelOuterResizeDelta}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
@@ -1222,6 +1234,7 @@
           transientWidthDelta={panelCanvasResizeDelta}
           scrollContainer={panelWorkspaceInset}
           onWidthChange={handlePanelCanvasWidthChange}
+          onResizeStart={handlePanelCanvasResizeStart}
           onResizePreview={handlePanelOuterResizePreview}
           onResizeEnd={handlePanelCanvasResizeEnd}
         >

@@ -11,6 +11,7 @@ import {
   removePanelPreservingHorizontalWidths,
   resizePanelTreeAtHorizontalIndex,
   resizePanelTreeRightEdge,
+  resizeRootHorizontalPanel,
 } from './panel-layout-tabless';
 
 describe('tabless panel layout', () => {
@@ -408,6 +409,83 @@ describe('tabless panel layout', () => {
       expect(result.sizes[1]).toBeCloseTo((420 / 1020) * 100);
       expect(result.sizes[2]).toBeCloseTo((300 / 1020) * 100);
     }
+  });
+
+  it.each([
+    { panelIndex: 0, delta: 120, expected: [440, 500, 364] },
+    { panelIndex: 1, delta: -80, expected: [320, 420, 364] },
+    { panelIndex: 2, delta: 75, expected: [320, 500, 439] },
+  ])(
+    'resizes root panel $panelIndex by $delta px without changing unequal siblings',
+    ({ panelIndex, delta, expected }) => {
+      const previousWidth = 1184;
+      const root = {
+        type: 'split' as const,
+        direction: 'horizontal' as const,
+        sizes: [320, 500, 364].map((width) => (width / previousWidth) * 100),
+        children: ['p1', 'p2', 'p3'].map((panelId) => ({
+          type: 'panel' as const,
+          panelId,
+        })),
+      };
+
+      const resized = resizeRootHorizontalPanel(
+        root,
+        previousWidth,
+        previousWidth + delta,
+        panelIndex,
+      );
+
+      expect(resized.nextWidth).toBe(previousWidth + delta);
+      expect(resized.node.type).toBe('split');
+      if (resized.node.type === 'split') {
+        expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual(
+          expected.map((width) => expect.closeTo(width, 8)),
+        );
+      }
+    },
+  );
+
+  it('clamps a root shrink at the target minimum without redistributing siblings', () => {
+    const previousWidth = 1184;
+    const root = {
+      type: 'split' as const,
+      direction: 'horizontal' as const,
+      sizes: [320, 500, 364].map((width) => (width / previousWidth) * 100),
+      children: ['p1', 'p2', 'p3'].map((panelId) => ({
+        type: 'panel' as const,
+        panelId,
+      })),
+    };
+
+    const resized = resizeRootHorizontalPanel(root, previousWidth, 184, 0);
+
+    expect(resized.nextWidth).toBeCloseTo(960);
+    expect(resized.node.type).toBe('split');
+    if (resized.node.type === 'split') {
+      expect(resized.node.sizes.map((size) => (size / 100) * resized.nextWidth)).toEqual([
+        expect.closeTo(96, 8),
+        expect.closeTo(500, 8),
+        expect.closeTo(364, 8),
+      ]);
+    }
+  });
+
+  it('does not route root-only resizing through a vertical layout', () => {
+    const root = {
+      type: 'split' as const,
+      direction: 'vertical' as const,
+      sizes: [50, 50],
+      children: [
+        { type: 'panel' as const, panelId: 'p1' },
+        { type: 'panel' as const, panelId: 'p2' },
+      ],
+    };
+
+    expect(resizeRootHorizontalPanel(root, 800, 900, 0)).toEqual({
+      node: root,
+      nextWidth: 800,
+    });
   });
 
   it('falls back to the last panel when the target index is out of range', () => {

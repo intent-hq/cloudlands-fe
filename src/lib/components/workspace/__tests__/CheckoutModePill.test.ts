@@ -279,6 +279,53 @@ describe('CheckoutModePill', () => {
     expect(container.querySelector('span')).toBeNull();
   });
 
+  it.each([
+    ['cow', 'cow'],
+    ['worktree', 'worktree'],
+    ['direct', 'direct'],
+  ] as const)(
+    'renders a mode-specific %s icon in repository presentation',
+    async (checkoutMode, expected) => {
+      const { container } = await renderPill({
+        presentation: 'repository',
+        workspace: { ...baseWorkspace, checkoutMode, cowSupported: true } as Workspace,
+      });
+      await flushLabel();
+
+      expect(
+        container
+          .querySelector('[data-checkout-mode-icon]')
+          ?.getAttribute('data-checkout-mode-icon'),
+      ).toBe(expected);
+      expect(container.querySelector('[data-effective-checkout-mode]')?.textContent).toContain(
+        checkoutMode === 'cow' ? 'CoW' : checkoutMode === 'worktree' ? 'Worktree' : 'Direct',
+      );
+    },
+  );
+
+  it('uses the Direct icon for a cow checkout with ineffective CoW isolation', async () => {
+    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
+    const { container } = await renderPill({
+      presentation: 'repository',
+      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+    });
+    await flushLabel();
+
+    expect(
+      container.querySelector('[data-checkout-mode-icon]')?.getAttribute('data-checkout-mode-icon'),
+    ).toBe('direct');
+    expect(container.textContent).toContain('Checkout mode: Direct');
+  });
+
+  it('renders no repository details when checkoutMode is undefined', async () => {
+    const { container } = await renderPill({
+      presentation: 'repository',
+      workspace: baseWorkspace,
+    });
+
+    expect(container.querySelector('[data-checkout-mode-details]')).toBeNull();
+  });
+
   it('uses the plain checkout-mode title when no workspace is provided', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
@@ -334,6 +381,24 @@ describe('CheckoutModePill', () => {
     expect(tooltip.querySelector('.font-mono')).toBeNull();
     // Fetch settled with refreshing:false — no loading state remains.
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('fetches and exposes disk actions when the repository hover card opens', async () => {
+    const workspace = { ...baseWorkspace, checkoutMode: 'direct' } as Workspace;
+    const { container } = await renderPill({
+      presentation: 'repository',
+      repositoryOpen: true,
+      workspace,
+    });
+    await flushFetch();
+
+    expect(mocks.diskUsage).toHaveBeenCalledWith('ws-1');
+    expect(container.querySelector('[data-checkout-mode-details]')?.textContent).toContain(
+      'Total size: 2.17Gi',
+    );
+    const shrink = screen.getByRole('button', { name: 'Try to shrink this workspace' });
+    await fireEvent.click(shrink);
+    expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledWith(workspace);
   });
 
   it('shows a skeleton while the first walk is in flight (no value yet)', async () => {

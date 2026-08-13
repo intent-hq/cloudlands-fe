@@ -373,19 +373,15 @@ describe('WorkspaceProgressCard status message', () => {
       skipWorktree: false,
     });
     const branch = screen.getByRole('button', { name: 'feature/status' });
-    const icon = container.querySelector('[data-sidebar-branch-icon]');
     const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
 
     expect(branch.className).toContain('h-5');
-    expect(branch.className.split(/\s+/)).toContain('gap-0.5');
+    expect(branch.className.split(/\s+/)).not.toContain('gap-0.5');
     expect(branch.className.split(/\s+/)).not.toContain('gap-1.5');
-    expect(icon?.className).toContain('size-4');
-    expect(icon?.className).toContain('place-items-center');
-    expect(icon?.className).toContain('text-muted-foreground');
+    expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
     expect(hoverCard?.textContent).toContain('feature/status');
     expect(hoverCard?.textContent).toContain('Base main');
     expect(hoverCard?.textContent).toContain('main');
-    expect(hoverCard?.textContent).toContain('Worktree');
     expect(hoverCard?.textContent).not.toContain('Click to copy branch name');
 
     await fireEvent.click(branch);
