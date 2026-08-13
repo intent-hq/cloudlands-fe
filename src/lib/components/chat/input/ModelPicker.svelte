@@ -1616,7 +1616,7 @@
       triggerClass,
     )}
     contentClass={showReasoning
-      ? 'w-[340px] max-w-[calc(100vw-32px)] min-h-[min(360px,calc(100vh-32px))] max-h-[min(360px,calc(100vh-32px))] flex flex-col'
+      ? 'w-85 max-w-[calc(100vw-32px)] min-h-90 max-h-90 flex flex-col'
       : 'w-[332px] max-w-[calc(100vw-32px)]'}
     contentMaxHeight={showReasoning ? 360 : 300}
     fillContentHeight={showReasoning}
@@ -1683,35 +1683,35 @@
           data-testid="model-provider-tabs"
         >
           {#each providerTabIds as providerTabId (providerTabId)}
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon"
+              iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
-                'flex size-8 items-center justify-center rounded-md text-muted-foreground',
-                'hover:bg-muted/40 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                'text-muted-foreground hover:bg-muted/40',
                 providerTabId === activeBrowseProviderId && 'bg-muted text-foreground',
               )}
               onclick={() => selectProviderTab(providerTabId)}
               onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
             >
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
-            </button>
+            </Button>
           {/each}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
+            iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
-            class={cn(
-              'flex size-8 items-center justify-center rounded-md text-muted-foreground',
-              'hover:bg-muted/40 hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-            )}
+            class="text-muted-foreground hover:bg-muted/40"
             data-testid="model-provider-settings-button"
             onclick={openProviderSettings}
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
-          </button>
+          </Button>
         </div>
       {/if}
       {#if showModelWarning && warningMessage}
@@ -1782,8 +1782,9 @@
     {#snippet footer()}
       {#if showReasoning}
         <div class="px-2 py-2" data-testid="model-reasoning-section">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="default"
             aria-expanded={reasoningExpanded}
             aria-disabled={reasoningControlDisabled}
             disabled={reasoningControlDisabled}
@@ -1806,7 +1807,7 @@
               icon={reasoningExpanded ? faChevronDown : faChevronRight}
               class="size-2.5 shrink-0 text-muted-foreground"
             />
-          </button>
+          </Button>
           {#if reasoningExpanded && reasoningLevels.length > 0}
             <div
               class="px-2 pb-1 pt-2"

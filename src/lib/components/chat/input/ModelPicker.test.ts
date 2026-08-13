@@ -524,9 +524,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await fireEvent.click(screen.getByRole('button'));
 
     const popover = screen.getByRole('listbox');
-    expect(popover.className).toContain('w-[340px]');
-    expect(popover.className).toContain('min-h-[min(360px,calc(100vh-32px))]');
-    expect(popover.className).toContain('max-h-[min(360px,calc(100vh-32px))]');
+    expect(popover.className).toContain('w-85');
+    expect(popover.className).toContain('min-h-90');
+    expect(popover.className).toContain('max-h-90');
     expect(popover.className).not.toContain(' h-[min(');
     expect(popover.querySelector('[data-scroll-container]')?.className).toContain('flex-1');
     expect(popover.querySelector('[data-scroll-container]')?.className).toContain(
