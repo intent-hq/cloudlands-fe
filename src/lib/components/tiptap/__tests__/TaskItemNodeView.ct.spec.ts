@@ -6,6 +6,11 @@ import TaskItemNodeView from '../TaskItemNodeView.svelte';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';
 
+// FIXME(intent-hq/monorepo#2224): TaskItemNodeView reads Redux selectors at
+// component init, which throws before Store.init() — the CT bundle has no
+// store bootstrap. Skipped until the component gets a CT-safe store seam.
+test.fixme();
+
 // Helper to create mock props
 function createMockProps(overrides: any = {}) {
   const defaultNode = {

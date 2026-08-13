@@ -54,8 +54,8 @@ test.describe('Phase 2.3: ChoiceQuestion Node (TDD)', () => {
       const editableText = component.locator('[data-testid="editable-content"]');
       await editableText.click();
 
-      // Move cursor to start
-      await page.keyboard.press('Meta+ArrowLeft');
+      // Move cursor to start (Home works on Linux/Windows/macOS; Meta+ArrowLeft is macOS-only)
+      await page.keyboard.press('Home');
       await page.keyboard.type('Start: ');
 
       await expect(component.getByText(/Start: Test question/)).toBeVisible();
