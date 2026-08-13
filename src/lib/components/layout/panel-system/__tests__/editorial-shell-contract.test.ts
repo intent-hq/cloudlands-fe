@@ -149,7 +149,6 @@ describe('editorial workspace shell presentation contract', () => {
     const titlebar = source('../../WindowTitleBar.svelte');
     const tabs = source('../../WorkspaceTabStrip.svelte');
     const nav = source('../../sidebar-nav/SidebarNav.svelte');
-    const chiefTrigger = source('../../sidebar-nav/ChiefTrigger.svelte');
     const workspaceHeader = source('../../../workspace/WorkspaceSidebarHeader.svelte');
     const progressCard = source('../../../workspace/sidebar/WorkspaceProgressCard.svelte');
 
@@ -175,7 +174,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('style="-webkit-app-region: no-drag"');
     expect(titlebar).toContain('<WorkspaceRepoLauncher />');
     expect(titlebar).toContain('data-titlebar-settings');
-    expect(titlebar).toContain('icon={faSettings}');
+    expect(titlebar).toContain('<IntentNavigationIcon name="settings" size={16}');
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
@@ -186,8 +185,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
-    expect(chiefTrigger).toContain("togglePanel('chief')");
-    expect(chiefTrigger).toContain('data-chief-trigger');
+    expect(nav).toContain('data-titlebar-spaces-control');
+    expect(nav).toContain('name="dandelion"');
+    expect(nav).not.toContain('name="spaces"');
+    expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
     expect(progressCard).toContain('label: m.ui_sidebar_toggle_label()');
@@ -202,20 +203,19 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('style:transform="scale({$counterScale})"');
   });
 
-  it('moves the Chief trigger to the title bar and removes its former workspace notch', () => {
+  it('consolidates Chief and Spaces in the title bar and removes the former workspace notch', () => {
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
-    const chiefTrigger = source('../../sidebar-nav/ChiefTrigger.svelte');
+    const navigation = source('../../sidebar-nav/SidebarNav.svelte');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(chiefTrigger).toContain('aria-label="Toggle Chief of Staff"');
-    expect(chiefTrigger).toContain('aria-expanded={isActive}');
-    expect(chiefTrigger).not.toContain('aria-pressed');
-    expect(chiefTrigger).not.toContain('bg-sidebar-accent');
-    expect(chiefTrigger).toContain('<AuggieAvatar size={20} />');
+    expect(navigation).toContain('aria-label={m.ui_shortcuts_toggleSpaces_label()}');
+    expect(navigation).toContain('aria-pressed={active}');
+    expect(navigation).toContain('aria-haspopup="dialog"');
+    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
