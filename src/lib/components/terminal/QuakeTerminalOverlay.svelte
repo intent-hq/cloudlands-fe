@@ -36,6 +36,7 @@
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
+    selectScript,
     clearScriptSelection,
     terminalCreated,
     type TerminalTab,
