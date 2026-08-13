@@ -4,6 +4,11 @@ import {
 } from '@playwright/experimental-ct-svelte';
 import TipTapEditorTestHarness from './TipTapEditorTestHarness.svelte';
 
+// FIXME(intent-hq/monorepo#2224): the harness mounts a real TipTap editor whose
+// CustomTaskItem renders TaskItemNodeView, which reads Redux selectors at init
+// and throws before Store.init() — the CT bundle has no store bootstrap.
+test.fixme();
+
 /**
  * Integration tests for TaskItemNodeView with real TipTap editor
  *

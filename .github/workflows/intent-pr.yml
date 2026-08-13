@@ -414,10 +414,80 @@ jobs:
       - name: Integration tests
         run: pnpm run test:integration
 
+  # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
+  # monorepo#2091). Pinned to ubuntu-latest rather than routed: browser
+  # provisioning needs `playwright install --with-deps` (sudo apt), which the
+  # self-hosted tinybox runner doesn't offer, and the suite is small (~40
+  # tests, minutes) so it isn't worth a tinybox slot. Browsers are installed
+  # via the run-ct-tests.mjs launcher so their version matches the CT-aligned
+  # playwright runner (1.58.x, NOT the repo's top-level playwright — see
+  # monorepo#1586), and the binary cache is keyed on that same version.
+  # Skipped at job level on release-fast-path PRs — see the checks job's
+  # comment for the full skip/fail-safe rationale.
+  test-ct:
+    name: Component Tests
+    needs: [release-fast-path]
+    if: ${{ !cancelled() && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node.js
+        # Always GH-hosted (never tinybox), so the pnpm cache is always
+        # worthwhile — unlike the routed jobs' burst-gated cache.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The CT bundle imports paraglide messages; the compiled output is
+        # gitignored. (build-config / ipc-channels are main-process-only and
+        # not needed by the CT vite build.)
+        run: pnpm run generate:i18n
+      - name: Resolve CT playwright version
+        id: ct-playwright
+        run: echo "version=$(node scripts/run-ct-tests.mjs --print-playwright-version)" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
+      - name: Install Playwright browsers
+        # --with-deps runs even on a cache hit (OS packages aren't cached),
+        # but the browser download itself is skipped when already present.
+        run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
+      - name: Component tests
+        # list for readable logs; html feeds the failure artifact below (it
+        # never auto-opens when CI is set).
+        run: pnpm run test:ct --reporter=list,html
+      - name: Upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   # Single required status check for branch protection: fans in pr-title,
-  # conflict-markers, and the three heavy jobs (checks / build-web / test).
-  # pr-title / conflict-markers must succeed outright on every PR. The heavy
-  # jobs must succeed outright too, EXCEPT on release-fast-path PRs
+  # conflict-markers, and the heavy jobs (checks / build-web / test /
+  # test-ct). pr-title / conflict-markers must succeed outright on every PR.
+  # The heavy jobs must succeed outright too, EXCEPT on release-fast-path PRs
   # (fast_path == 'true'), where their job-level skip is the expected outcome
   # (see release-fast-path). The acceptance keys on the fast-path OUTPUT —
   # never on the skipped status itself — so a skip from any other cause (a
@@ -431,7 +501,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: {}
     if: always()
-    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test]
+    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-ct]
     steps:
       - name: Check results
         env:
@@ -457,3 +527,4 @@ jobs:
           check_heavy "checks" "${{ needs.checks.result }}"
           check_heavy "build-web" "${{ needs.build-web.result }}"
           check_heavy "test" "${{ needs.test.result }}"
+          check_heavy "test-ct" "${{ needs.test-ct.result }}"
