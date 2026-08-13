@@ -67,9 +67,10 @@
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
     mapWorkspacePRs,
-    mergeMonitoredPRs,
+    sectionPRs,
   } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -170,18 +171,21 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : undefined,
   );
-  const pullRequests = $derived(
-    mergeMonitoredPRs(
-      mapWorkspacePRs(
-        $workspace?.pullRequests,
-        $activePullRequest$,
-        constructPrUrl,
-        getPRDisplayTitle,
-      ),
+  // Secondary git roots (monorepo#2053) attribute non-workspace PRs into
+  // "Other PRs"; leftover monitors land in "Other Tracked PRs".
+  const gitRoots$ = selectGitRoots(workspaceIdStore);
+  const sectionedPRs = $derived(
+    sectionPRs(
+      mapWorkspacePRs($workspace?.pullRequests, $activePullRequest$, constructPrUrl, getPRDisplayTitle),
       $prMonitors$,
       workspaceRepo,
+      $gitRoots$,
+      getPRDisplayTitle,
     ),
   );
+  // The workspace's own PRs — every pre-sectioning consumer (merge gating,
+  // post-merge detection, MergePanel) still keys off these alone.
+  const pullRequests = $derived(sectionedPRs.own);
   const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
 
@@ -1137,6 +1141,8 @@
             {hasRemote}
             {hasPRs}
             {pullRequests}
+            otherRootPRs={sectionedPRs.otherRoots}
+            otherTrackedPRs={sectionedPRs.otherTracked}
             {commits}
             {pushedCommits}
             {allCommits}

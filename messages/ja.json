@@ -5555,6 +5555,8 @@
   "chat_monitoredPrs_cancel_label": "監視を停止",
   "workspace_prSection_monitoredBy_label": " · {agent} が監視中",
   "workspace_prSection_monitoredBy_tooltip": "このPRはエージェント {agent} が監視しています",
+  "workspace_prSection_otherPullRequests_label": "その他のPR",
+  "workspace_prSection_otherTrackedPullRequests_label": "その他の監視中のPR",
   "workspace_progress_viewMonitoredPr_tooltip": "監視中のプルリクエスト #{number} をブラウザーのGitHubで開きます。",
   "workspace_progress_viewMonitoredPrCrossRepo_label": "PRを表示({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "監視中のプルリクエスト {repo}#{number} をブラウザーのGitHubで開きます。",

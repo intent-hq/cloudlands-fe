@@ -391,20 +391,116 @@ export function mergeMonitoredPRs(
       updatedAt: monitor.updatedAt,
       monitorAgentId: monitor.agentId,
       crossRepo: sameRepo ? undefined : monitor.repo,
-      // Same-org repos carry no information in the owner segment — show
-      // only the repo name; the full form is kept when the org differs.
-      // GitHub owner names are case-insensitive, so compare lowercased.
-      crossRepoDisplay: sameRepo
-        ? undefined
-        : workspaceOwner &&
-            monitor.repo.toLowerCase().startsWith(`${workspaceOwner.toLowerCase()}/`)
-          ? monitor.repo.slice(workspaceOwner.length + 1)
-          : monitor.repo,
+      crossRepoDisplay: sameRepo ? undefined : shortRepoDisplay(monitor.repo, workspaceOwner),
       monitorSnapshot: monitor.lastSnapshot,
       monitorOnly: true,
     });
   }
   return merged;
+}
+
+/** Same-org repos carry no information in the owner segment — show only the
+ * repo name; the full form is kept when the org differs. GitHub owner names
+ * are case-insensitive, so compare lowercased. */
+function shortRepoDisplay(repo: string, workspaceOwner: string | undefined): string {
+  return workspaceOwner && repo.toLowerCase().startsWith(`${workspaceOwner.toLowerCase()}/`)
+    ? repo.slice(workspaceOwner.length + 1)
+    : repo;
+}
+
+/** PR-bearing subset of a secondary git-root row (monorepo#2053) — structural
+ * so both `GitRootRow` and `WorkspaceGitRootEntry` satisfy it. */
+export interface GitRootPRSource {
+  repoOwner?: string;
+  repoName?: string;
+  pullRequests?: PullRequestInfo[];
+}
+
+/** The Changes tab's three PR sub-sections (monorepo#2053). */
+export interface SectionedPRs {
+  /** The workspace's own PRs, exactly as {@link mergeMonitoredPRs} produced
+   * them before sectioning existed (same-repo monitors only). */
+  own: PRInfo[];
+  /** PRs attributed to secondary git roots by repo `owner/name` — the
+   * "Other PRs" section. */
+  otherRoots: PRInfo[];
+  /** Monitor entries attributable to no known root — the "Other Tracked
+   * PRs" section. */
+  otherTracked: PRInfo[];
+}
+
+/**
+ * Section the Changes tab PR pool (monorepo#2053): the workspace's own PRs
+ * first (with monitors on the workspace repo merged in — byte-identical to
+ * the pre-sectioning `mergeMonitoredPRs` output when the other sections are
+ * empty), then secondary-root PRs, then unattributable monitors. Monitors
+ * are attributed by exact repo `owner/name` match — workspace repo first
+ * (a monitor on the workspace repo always groups under the primary root,
+ * even when a secondary root points at the same repo), then registered
+ * roots; when the workspace repo is unknown every monitor stays in `own`,
+ * mirroring `mergeMonitoredPRs`. Roots without a detected `owner/name`
+ * contribute no rows (the PR sweep cannot discover PRs for them). Root rows
+ * duplicating an `own` row's repo-qualified identity (or an earlier root's)
+ * are dropped; root-attributed monitors annotate their matching root row or
+ * append as monitor-only rows, exactly like `mergeMonitoredPRs`.
+ */
+export function sectionPRs(
+  basePRs: PRInfo[],
+  monitors: PrMonitorRow[],
+  workspaceRepo: string | undefined,
+  secondaryRoots: GitRootPRSource[],
+  getDisplayTitle: (pr: PullRequestInfo) => string,
+): SectionedPRs {
+  const rootRepos = new Set<string>();
+  for (const root of secondaryRoots) {
+    if (root.repoOwner && root.repoName) rootRepos.add(`${root.repoOwner}/${root.repoName}`);
+  }
+
+  const primaryMonitors: PrMonitorRow[] = [];
+  const rootMonitors: PrMonitorRow[] = [];
+  const trackedMonitors: PrMonitorRow[] = [];
+  for (const monitor of monitors) {
+    if (!workspaceRepo || monitor.repo === workspaceRepo) primaryMonitors.push(monitor);
+    else if (rootRepos.has(monitor.repo)) rootMonitors.push(monitor);
+    else trackedMonitors.push(monitor);
+  }
+
+  const own = mergeMonitoredPRs(basePRs, primaryMonitors, workspaceRepo);
+
+  const workspaceOwner = workspaceRepo?.split('/')[0];
+  const seen = new Set(own.map((pr) => `${pr.crossRepo ?? workspaceRepo ?? ''}#${pr.number}`));
+  const rootRows: PRInfo[] = [];
+  for (const root of secondaryRoots) {
+    if (!root.repoOwner || !root.repoName) continue;
+    const repo = `${root.repoOwner}/${root.repoName}`;
+    for (const pr of root.pullRequests ?? []) {
+      const identity = `${repo}#${pr.number}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const url = pr.url || `https://github.com/${repo}/pull/${pr.number}`;
+      // A root on the workspace repo (e.g. a subtree checkout) needs no repo
+      // context; otherwise keep the full identity for row keys, as
+      // mergeMonitoredPRs does for cross-repo monitors.
+      const sameRepo = workspaceRepo !== undefined && repo === workspaceRepo;
+      rootRows.push({
+        number: pr.number,
+        title: getDisplayTitle(pr),
+        url,
+        htmlUrl: url,
+        status: toPRDisplayStatus(pr.status),
+        createdAt: pr.createdAt,
+        updatedAt: pr.updatedAt,
+        crossRepo: sameRepo ? undefined : repo,
+        crossRepoDisplay: sameRepo ? undefined : shortRepoDisplay(repo, workspaceOwner),
+      });
+    }
+  }
+
+  return {
+    own,
+    otherRoots: mergeMonitoredPRs(rootRows, rootMonitors, workspaceRepo),
+    otherTracked: mergeMonitoredPRs([], trackedMonitors, workspaceRepo),
+  };
 }
 
 /** Comparator fragment: rows with a timestamp sort before rows without one;

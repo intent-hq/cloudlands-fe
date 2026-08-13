@@ -5555,6 +5555,8 @@
   "chat_monitoredPrs_cancel_label": "取消監控",
   "workspace_prSection_monitoredBy_label": " · 由 {agent} 監控",
   "workspace_prSection_monitoredBy_tooltip": "此 PR 由代理 {agent} 監控",
+  "workspace_prSection_otherPullRequests_label": "其他 PR",
+  "workspace_prSection_otherTrackedPullRequests_label": "其他受監控的 PR",
   "workspace_progress_viewMonitoredPr_tooltip": "在瀏覽器中的 GitHub 上開啟監控中的提取請求 #{number}。",
   "workspace_progress_viewMonitoredPrCrossRepo_label": "檢視 PR({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "在瀏覽器中的 GitHub 上開啟監控中的提取請求 {repo}#{number}。",

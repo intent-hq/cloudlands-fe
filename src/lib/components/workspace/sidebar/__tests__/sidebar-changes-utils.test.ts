@@ -33,6 +33,8 @@ import {
   computeTotalStats,
   mapWorkspacePRs,
   mergeMonitoredPRs,
+  sectionPRs,
+  type GitRootPRSource,
   selectPrimaryPr,
   getPRStatusTooltip,
   countOtherMonitors,
@@ -1013,6 +1015,238 @@ describe('mergeMonitoredPRs', () => {
     expect(crossRepoRow?.monitorAgentId).toBe('agent-1');
     expect(bareRow?.monitorAgentId).toBe('agent-2');
     const keys = result.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ─── sectionPRs (Changes tab sub-sections, monorepo#2053) ─────────────────────
+
+describe('sectionPRs', () => {
+  const workspaceRepo = 'acme/widgets';
+  const getTitle = (pr: PullRequestInfo) => pr.title;
+
+  function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
+    return {
+      monitorId: 'mon-1',
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      repo: 'acme/widgets',
+      prNumber: 42,
+      state: 'active',
+      pendingChanges: [],
+      hasPendingChanges: false,
+      createdAt: '2026-08-07T10:00:00Z',
+      updatedAt: '2026-08-07T10:05:00Z',
+      title: 'Monitored PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      ...overrides,
+    };
+  }
+
+  function makeBasePR(overrides: Partial<PRInfo> = {}): PRInfo {
+    return {
+      number: 42,
+      title: 'Branch PR',
+      url: 'https://github.com/acme/widgets/pull/42',
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      status: 'open',
+      ...overrides,
+    };
+  }
+
+  function makeRootPR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+    return {
+      id: 'pr-1',
+      number: 7,
+      url: 'https://github.com/acme/intentd/pull/7',
+      title: 'Root PR',
+      status: PullRequestStatus.Open,
+      createdAt: '2026-08-01T00:00:00Z',
+      updatedAt: '2026-08-02T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  function makeRoot(overrides: Partial<GitRootPRSource> = {}): GitRootPRSource {
+    return {
+      repoOwner: 'acme',
+      repoName: 'intentd',
+      pullRequests: [makeRootPR()],
+      ...overrides,
+    };
+  }
+
+  it('matches mergeMonitoredPRs exactly in own when there are no roots or foreign monitors', () => {
+    const base = [makeBasePR()];
+    const monitors = [makeMonitor()];
+    const result = sectionPRs(base, monitors, workspaceRepo, [], getTitle);
+    expect(result.own).toEqual(mergeMonitoredPRs(base, monitors, workspaceRepo));
+    expect(result.otherRoots).toEqual([]);
+    expect(result.otherTracked).toEqual([]);
+  });
+
+  it('returns the base list untouched in own when everything else is empty', () => {
+    const base = [makeBasePR()];
+    const result = sectionPRs(base, [], workspaceRepo, [], getTitle);
+    expect(result.own).toBe(base);
+    expect(result.otherRoots).toEqual([]);
+    expect(result.otherTracked).toEqual([]);
+  });
+
+  it('maps secondary-root pullRequests into otherRoots with repo context', () => {
+    const result = sectionPRs([makeBasePR()], [], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherRoots[0]).toMatchObject({
+      number: 7,
+      title: 'Root PR',
+      url: 'https://github.com/acme/intentd/pull/7',
+      status: 'open',
+      crossRepo: 'acme/intentd',
+      crossRepoDisplay: 'intentd',
+    });
+  });
+
+  it('keeps the full owner/name in crossRepoDisplay when the root org differs', () => {
+    const root = makeRoot({
+      repoOwner: 'other',
+      repoName: 'repo',
+      pullRequests: [makeRootPR({ url: 'https://github.com/other/repo/pull/7' })],
+    });
+    const result = sectionPRs([], [], workspaceRepo, [root], getTitle);
+    expect(result.otherRoots[0].crossRepo).toBe('other/repo');
+    expect(result.otherRoots[0].crossRepoDisplay).toBe('other/repo');
+  });
+
+  it('constructs a GitHub URL when the root PR carries none', () => {
+    const root = makeRoot({ pullRequests: [makeRootPR({ url: '' })] });
+    const result = sectionPRs([], [], workspaceRepo, [root], getTitle);
+    expect(result.otherRoots[0].url).toBe('https://github.com/acme/intentd/pull/7');
+  });
+
+  it('attributes a monitor on a root repo to otherRoots, annotating the matching row', () => {
+    const monitor = makeMonitor({
+      repo: 'acme/intentd',
+      prNumber: 7,
+      url: 'https://github.com/acme/intentd/pull/7',
+    });
+    const result = sectionPRs([], [monitor], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.own).toEqual([]);
+    expect(result.otherTracked).toEqual([]);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherRoots[0].monitorAgentId).toBe('agent-1');
+    expect(result.otherRoots[0].monitorOnly).toBeUndefined();
+  });
+
+  it('appends an unmatched root-repo monitor to otherRoots as a monitor-only row', () => {
+    const monitor = makeMonitor({
+      repo: 'acme/intentd',
+      prNumber: 99,
+      url: 'https://github.com/acme/intentd/pull/99',
+    });
+    const result = sectionPRs([], [monitor], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.otherRoots).toHaveLength(2);
+    expect(result.otherRoots[1]).toMatchObject({
+      number: 99,
+      monitorOnly: true,
+      crossRepo: 'acme/intentd',
+    });
+  });
+
+  it('routes monitors matching no root into otherTracked', () => {
+    const monitor = makeMonitor({
+      repo: 'stranger/repo',
+      prNumber: 5,
+      url: 'https://github.com/stranger/repo/pull/5',
+    });
+    const result = sectionPRs([], [monitor], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherTracked).toHaveLength(1);
+    expect(result.otherTracked[0]).toMatchObject({
+      number: 5,
+      monitorOnly: true,
+      crossRepo: 'stranger/repo',
+    });
+  });
+
+  it('keeps workspace-repo monitors in own even when a root points at the same repo', () => {
+    const root = makeRoot({
+      repoOwner: 'acme',
+      repoName: 'widgets',
+      pullRequests: [],
+    });
+    const result = sectionPRs([makeBasePR()], [makeMonitor()], workspaceRepo, [root], getTitle);
+    expect(result.own).toHaveLength(1);
+    expect(result.own[0].monitorAgentId).toBe('agent-1');
+    expect(result.otherRoots).toEqual([]);
+  });
+
+  it('treats every monitor as own when the workspace repo is unknown, mirroring mergeMonitoredPRs', () => {
+    const monitor = makeMonitor({ repo: 'other/repo' });
+    const result = sectionPRs([], [monitor], undefined, [makeRoot()], getTitle);
+    expect(result.own).toHaveLength(1);
+    expect(result.otherTracked).toEqual([]);
+  });
+
+  it('skips roots without a detected owner/name', () => {
+    const root = makeRoot({ repoOwner: undefined, repoName: undefined });
+    const result = sectionPRs([], [], workspaceRepo, [root], getTitle);
+    expect(result.otherRoots).toEqual([]);
+  });
+
+  it('drops a root PR duplicating an own row identity (same-repo subtree checkout)', () => {
+    const root = makeRoot({
+      repoOwner: 'acme',
+      repoName: 'widgets',
+      pullRequests: [makeRootPR({ number: 42 })],
+    });
+    const result = sectionPRs([makeBasePR({ number: 42 })], [], workspaceRepo, [root], getTitle);
+    expect(result.own).toHaveLength(1);
+    expect(result.otherRoots).toEqual([]);
+  });
+
+  it('leaves crossRepo unset for a root PR on the workspace repo itself', () => {
+    const root = makeRoot({
+      repoOwner: 'acme',
+      repoName: 'widgets',
+      pullRequests: [makeRootPR({ number: 8, url: 'https://github.com/acme/widgets/pull/8' })],
+    });
+    const result = sectionPRs([makeBasePR({ number: 42 })], [], workspaceRepo, [root], getTitle);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherRoots[0].crossRepo).toBeUndefined();
+    expect(result.otherRoots[0].crossRepoDisplay).toBeUndefined();
+  });
+
+  it('dedupes the same PR appearing under two roots on the same repo', () => {
+    const result = sectionPRs(
+      [],
+      [],
+      workspaceRepo,
+      [makeRoot(), makeRoot()],
+      getTitle,
+    );
+    expect(result.otherRoots).toHaveLength(1);
+  });
+
+  it('keeps repo-qualified row keys unique across all three sections', () => {
+    const rootMonitor = makeMonitor({
+      monitorId: 'mon-root',
+      repo: 'acme/intentd',
+      prNumber: 7,
+    });
+    const trackedMonitor = makeMonitor({
+      monitorId: 'mon-tracked',
+      repo: 'stranger/repo',
+      prNumber: 42,
+    });
+    const result = sectionPRs(
+      [makeBasePR({ number: 42 })],
+      [makeMonitor(), rootMonitor, trackedMonitor],
+      workspaceRepo,
+      [makeRoot()],
+      getTitle,
+    );
+    const all = [...result.own, ...result.otherRoots, ...result.otherTracked];
+    const keys = all.map((pr) => (pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number)));
     expect(new Set(keys).size).toBe(keys.length);
   });
 });

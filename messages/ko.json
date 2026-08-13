@@ -5555,6 +5555,8 @@
   "chat_monitoredPrs_cancel_label": "모니터 취소",
   "workspace_prSection_monitoredBy_label": " · {agent} 모니터링 중",
   "workspace_prSection_monitoredBy_tooltip": "이 PR은 에이전트 {agent}이(가) 모니터링하고 있습니다",
+  "workspace_prSection_otherPullRequests_label": "기타 PR",
+  "workspace_prSection_otherTrackedPullRequests_label": "기타 모니터링 중인 PR",
   "workspace_progress_viewMonitoredPr_tooltip": "모니터링 중인 풀 리퀘스트 #{number}을(를) 브라우저의 GitHub에서 엽니다.",
   "workspace_progress_viewMonitoredPrCrossRepo_label": "PR 보기 ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "모니터링 중인 풀 리퀘스트 {repo}#{number}을(를) 브라우저의 GitHub에서 엽니다.",

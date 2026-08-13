@@ -5555,6 +5555,8 @@
   "chat_monitoredPrs_cancel_label": "Cancel monitor",
   "workspace_prSection_monitoredBy_label": " · monitored by {agent}",
   "workspace_prSection_monitoredBy_tooltip": "This PR is monitored by agent {agent}",
+  "workspace_prSection_otherPullRequests_label": "Other PRs",
+  "workspace_prSection_otherTrackedPullRequests_label": "Other Tracked PRs",
   "workspace_progress_viewMonitoredPr_tooltip": "Opens monitored pull request #{number} on GitHub in your browser.",
   "workspace_progress_viewMonitoredPrCrossRepo_label": "View PR ({repo})",
   "workspace_progress_viewMonitoredPrCrossRepo_tooltip": "Opens monitored pull request {repo}#{number} on GitHub in your browser.",
