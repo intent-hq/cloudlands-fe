@@ -6,11 +6,13 @@
 export { stripMarkdownFormatting } from '$shared/utils-client';
 
 /**
- * Strip `<group:Name>` and `</group>` (or `</group:Name>`) tags from text.
+ * Strip `<group:Name>` and `</group>` (or `</group:Name>` / `</group:>`) tags
+ * from text, including the fused malformed form `<group:Name</group:>` (which
+ * the open alternative consumes whole, since `[^>]` also matches `<`).
  * These are internal markers used for response grouping and should never be
  * shown to the user in previews, agent cards, or other plain-text contexts.
  */
-const GROUP_TAG_STRIP_REGEX = /<group:[^>]+>|<\/group(?::[^>]+)?>/g;
+const GROUP_TAG_STRIP_REGEX = /<group:[^>]+>|<\/group(?::[^>]*)?>/g;
 export function stripGroupTags(text: string): string {
   if (!text) return text;
   return text.replace(GROUP_TAG_STRIP_REGEX, '').trim();

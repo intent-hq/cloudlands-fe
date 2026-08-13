@@ -1008,11 +1008,14 @@ function mergeConsecutiveTextBlocks(blocks: ParsedContent[]): ParsedContent[] {
 //   1. <group:Name> — standard group open
 //   2. <group:Name\n — malformed group open (missing closing >)
 //   3. <group:Name at end of block — malformed group open (missing both > and \n)
-//   4. </group:Name> or </group> — group close
-//   5. <think> or <thinking> — think open
-//   6. </think> or </thinking> — think close
+//   4. <group:Name</group:> or <group:Name</group> — fused open+close glitch
+//      (the model finishes the open tag with a close-tag suffix instead of >);
+//      consumed as a single match and treated as a group OPEN named "Name"
+//   5. </group:Name>, </group:> or </group> — group close (empty name allowed)
+//   6. <think> or <thinking> — think open
+//   7. </think> or </thinking> — think close
 const GROUP_AND_THINK_TAG_REGEX =
-  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<\/group(?::([^>\n<]+))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
+  /<group:([^>\n<]+)>|<group:([^\n<]+)\n|<group:([^>\n<]+)$|<group:([^>\n<]+)<\/group(?::[^>\n<]*)?>|<\/group(?::([^>\n<]*))?>|<think(?:ing)?>|<\/think(?:ing)?>/g;
 
 // Trailing prefix of any tag GROUP_AND_THINK_TAG_REGEX scans for, i.e. one a
 // streamed text block can pause on. Anchored to the end of the block, so it
@@ -1290,10 +1293,16 @@ export function groupContentBlocks(
       } else if (insideThink) {
         // Inside a think block — group/close-group tags are part of thinking content, skip them
         continue;
-      } else if (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined) {
+      } else if (
+        match[1] !== undefined ||
+        match[2] !== undefined ||
+        match[3] !== undefined ||
+        match[4] !== undefined
+      ) {
         // Open tag: <group:Name> (match[1]), malformed <group:Name\n (match[2]),
-        // or malformed <group:Name at end of a settled block (match[3])
-        const groupName = (match[1] || match[2] || match[3] || '').trim();
+        // malformed <group:Name at end of a settled block (match[3]),
+        // or fused <group:Name</group:> treated as an open (match[4])
+        const groupName = (match[1] || match[2] || match[3] || match[4] || '').trim();
         hasTags = true;
         if (matchStart > lastIndex) {
           addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
@@ -1311,7 +1320,7 @@ export function groupContentBlocks(
         };
         lastIndex = matchEnd;
       } else {
-        // Close tag: </group:Name> or </group>
+        // Close tag: </group:Name>, </group:> or </group>
         hasTags = true;
         if (matchStart > lastIndex) {
           addTextIfNonEmpty(blockText.slice(lastIndex, matchStart));
