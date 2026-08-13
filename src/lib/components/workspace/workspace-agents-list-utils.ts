@@ -12,15 +12,23 @@ export function isBackgroundAgentSession(agent: AgentSession): boolean {
   return !!(agent.isBackground || agent.metadata?.isBackground);
 }
 
+export function isCoordinatorAgentSession(agent: AgentSession): boolean {
+  return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
+}
+
 /**
  * Virtualize only flat lists (no delegations — tree heights are variable) with more
- * top-level foreground agents than the threshold.
+ * top-level foreground agents than the threshold. Coordinator workspaces keep the
+ * regular rendering: its Coordinator / "Your agents" section headers have no
+ * equivalent in the uniform-row virtual path.
  */
 export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]): boolean {
   let topLevelForegroundCount = 0;
   for (const row of rows) {
     if (row.depth > 0) return false;
-    if (!isBackgroundAgentSession(row.agent)) topLevelForegroundCount += 1;
+    if (isBackgroundAgentSession(row.agent)) continue;
+    if (isCoordinatorAgentSession(row.agent)) return false;
+    topLevelForegroundCount += 1;
   }
   return topLevelForegroundCount > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD;
 }
@@ -38,8 +46,8 @@ function getAgentRecency(agent: AgentSession): number {
 }
 
 function sortAgents(a: AgentSession, b: AgentSession): number {
-  const aIsCoordinator = (a.metadata?.specialist ?? a.agentMetadata?.specialist) === 'spec-writer';
-  const bIsCoordinator = (b.metadata?.specialist ?? b.agentMetadata?.specialist) === 'spec-writer';
+  const aIsCoordinator = isCoordinatorAgentSession(a);
+  const bIsCoordinator = isCoordinatorAgentSession(b);
   if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
   return getAgentRecency(b) - getAgentRecency(a);
 }

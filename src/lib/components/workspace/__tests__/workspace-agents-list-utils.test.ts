@@ -136,6 +136,13 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
   });
 
+  it('never virtualizes coordinator workspaces (section headers need the regular list)', () => {
+    const agents = makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD + 5);
+    agents.push(makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }));
+
+    expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
+  });
+
   it('renders large flat lists through VirtualList in WorkspaceAgentsList', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 

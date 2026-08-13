@@ -18,6 +18,7 @@
   import {
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
+    isCoordinatorAgentSession as isCoordinator,
     shouldVirtualizeWorkspaceAgentRows,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -73,7 +74,8 @@
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
-  // Fall back to the regular list when delegations exist (tree heights are variable).
+  // Fall back to the regular list when delegations exist (tree heights are variable)
+  // or a coordinator is present (its section headers need the regular rendering).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(flatAgentRows));
   // Matches the slim card's base height (LazyAgentCard's estimatedHeight default);
   // virtualized rows hide the preview line so every row stays uniform.
@@ -84,10 +86,6 @@
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
-
-  function isCoordinator(agent: AgentSession): boolean {
-    return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
-  }
 
   function isAgentRunning(agentId: string): boolean {
     return runningAgentIdSet.has(agentId);
@@ -226,7 +224,7 @@
 {:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
   <ListEmpty message={m.workspace_agentsList_empty_label()} />
 {:else if shouldUseVirtual}
-  <!-- Virtual scrolling fallback (flat, no delegations) -->
+  <!-- Virtual scrolling fallback (flat, no delegations, no coordinator) -->
   <div class="h-full max-h-150 overflow-hidden">
     <VirtualList
       items={topLevelForegroundAgents}
