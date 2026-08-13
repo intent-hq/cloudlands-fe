@@ -74,7 +74,7 @@ import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persi
 import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
 import { unreadTrackingSaga } from './slices/unread-tracking/sagas/unread-tracking-saga';
-import { betaUpdatesSaga } from './slices/user-preferences/sagas/beta-updates-saga';
+import { updateChannelSaga } from './slices/user-preferences/sagas/update-channel-saga';
 import { notificationSettingsSaga } from './slices/user-preferences/sagas/notification-settings-saga';
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
@@ -177,7 +177,7 @@ export const sagas = [
   terminalPersistenceSaga,
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,
-  betaUpdatesSaga,
+  updateChannelSaga,
   notificationSettingsSaga,
   userPreferencesPersistenceSaga,
   workspaceInitializerSaga,

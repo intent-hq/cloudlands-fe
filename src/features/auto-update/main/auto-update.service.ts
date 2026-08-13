@@ -14,13 +14,15 @@ import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
 import { saveWindowSessions } from '../../../main/window';
 import { getActiveId } from '../../backend/main/connections-store';
-import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
+import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
 
 const logger = new Logger('AutoUpdateService');
 
-// Storage key for beta updates setting (must match renderer store)
+// Storage key for the update channel preference
+const UPDATE_CHANNEL_STORAGE_KEY = 'updateChannel';
+// Legacy boolean key, migrated to UPDATE_CHANNEL_STORAGE_KEY on first load
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
 
 // How often to check for updates (1 hour in milliseconds)
@@ -155,14 +157,25 @@ class AutoUpdateService {
     try {
       // FE-local pref (PROTOCOL.md §5.12 "Not exposed (FE-only)"). The
       // legacy `settings` electron-store is retired.
-      const { getLocalPref } = await import('../../../main/local-prefs');
-      const betaEnabled = await getLocalPref<boolean>(BETA_UPDATES_STORAGE_KEY);
+      const { getLocalPref, setLocalPref, deleteLocalPref } =
+        await import('../../../main/local-prefs');
+      const channel = await getLocalPref<string>(UPDATE_CHANNEL_STORAGE_KEY);
 
-      if (typeof betaEnabled === 'boolean' && betaEnabled) {
-        this.state.channel = 'beta';
-        logger.info('Beta updates enabled from local-prefs');
-      } else {
-        this.state.channel = 'stable';
+      if (isUpdateChannel(channel)) {
+        this.state.channel = channel;
+        return;
+      }
+
+      // One-time migration from the legacy boolean pref:
+      // betaUpdatesEnabled=true → 'beta', otherwise → 'stable'.
+      const betaEnabled = await getLocalPref<boolean>(BETA_UPDATES_STORAGE_KEY);
+      this.state.channel = betaEnabled === true ? 'beta' : 'stable';
+      if (typeof betaEnabled === 'boolean') {
+        await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, this.state.channel);
+        await deleteLocalPref(BETA_UPDATES_STORAGE_KEY);
+        logger.info('Migrated legacy betaUpdatesEnabled pref to updateChannel', {
+          channel: this.state.channel,
+        });
       }
     } catch (error) {
       logger.error('Failed to load channel setting, defaulting to stable', error as Error);
@@ -255,7 +268,7 @@ class AutoUpdateService {
 
   private async persistChannelSetting(channel: UpdateChannel): Promise<void> {
     const { setLocalPref } = await import('../../../main/local-prefs');
-    await setLocalPref(BETA_UPDATES_STORAGE_KEY, channel === 'beta');
+    await setLocalPref(UPDATE_CHANNEL_STORAGE_KEY, channel);
   }
 
   private async checkForUpdates(): Promise<UpdateState> {

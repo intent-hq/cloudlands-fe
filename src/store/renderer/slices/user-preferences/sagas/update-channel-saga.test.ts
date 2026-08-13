@@ -14,12 +14,12 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: mocks.warn }),
 }));
 
-import { setBetaUpdatesEnabled, toggleBetaUpdates } from '../user-preferences-slice';
+import { setUpdateChannel } from '../user-preferences-slice';
 import {
-  betaUpdatesSaga,
-  hydrateBetaUpdatesWorker,
-  persistBetaUpdatesWorker,
-} from './beta-updates-saga';
+  updateChannelSaga,
+  hydrateUpdateChannelWorker,
+  persistUpdateChannelWorker,
+} from './update-channel-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -27,26 +27,29 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-describe('betaUpdatesSaga', () => {
+describe('updateChannelSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('hydrates the exact beta and stable actions', async () => {
+  it('hydrates the exact channel actions for every channel', async () => {
     const dispatch = vi.fn();
     mocks.getState.mockResolvedValueOnce({ channel: 'beta', status: 'idle' });
-    await runSaga({ dispatch, getState: () => ({}) }, hydrateBetaUpdatesWorker).toPromise();
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUpdateChannelWorker).toPromise();
     mocks.getState.mockResolvedValueOnce({ channel: 'stable', status: 'idle' });
-    await runSaga({ dispatch, getState: () => ({}) }, hydrateBetaUpdatesWorker).toPromise();
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUpdateChannelWorker).toPromise();
+    mocks.getState.mockResolvedValueOnce({ channel: 'alpha', status: 'idle' });
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUpdateChannelWorker).toPromise();
 
     expect(dispatch.mock.calls).toEqual([
-      [setBetaUpdatesEnabled(true)],
-      [setBetaUpdatesEnabled(false)],
+      [setUpdateChannel('beta')],
+      [setUpdateChannel('stable')],
+      [setUpdateChannel('alpha')],
     ]);
   });
 
   it('swallows hydration failures without dispatching', async () => {
     const dispatch = vi.fn();
     mocks.getState.mockRejectedValue(new Error('offline'));
-    await runSaga({ dispatch, getState: () => ({}) }, hydrateBetaUpdatesWorker).toPromise();
+    await runSaga({ dispatch, getState: () => ({}) }, hydrateUpdateChannelWorker).toPromise();
 
     expect(dispatch.mock.calls).toEqual([]);
     expect(mocks.warn.mock.calls).toHaveLength(1);
@@ -55,15 +58,15 @@ describe('betaUpdatesSaga', () => {
   it('persists the post-reducer channel and swallows failures', async () => {
     mocks.setChannel.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'));
     await runSaga(
-      { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
-      persistBetaUpdatesWorker,
+      { dispatch: vi.fn(), getState: () => ({ userPreferences: { updateChannel: 'alpha' } }) },
+      persistUpdateChannelWorker,
     ).toPromise();
     await runSaga(
-      { dispatch: vi.fn(), getState: () => ({ userPreferences: { betaUpdatesEnabled: false } }) },
-      persistBetaUpdatesWorker,
+      { dispatch: vi.fn(), getState: () => ({ userPreferences: { updateChannel: 'stable' } }) },
+      persistUpdateChannelWorker,
     ).toPromise();
 
-    expect(mocks.setChannel.mock.calls).toEqual([['beta'], ['stable']]);
+    expect(mocks.setChannel.mock.calls).toEqual([['alpha'], ['stable']]);
     expect(mocks.warn.mock.calls).toHaveLength(1);
   });
 
@@ -77,8 +80,8 @@ describe('betaUpdatesSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ userPreferences: { betaUpdatesEnabled: true } }) },
-      betaUpdatesSaga,
+      { channel, dispatch, getState: () => ({ userPreferences: { updateChannel: 'beta' } }) },
+      updateChannelSaga,
     );
     channel.put({ type: 'unrelated/action' });
     task.cancel();
@@ -94,35 +97,35 @@ describe('betaUpdatesSaga', () => {
     mocks.getState.mockResolvedValue({ channel: 'stable', status: 'idle' });
     const completions: string[] = [];
     let resolveBeta!: () => void;
-    let resolveStable!: () => void;
+    let resolveAlpha!: () => void;
     mocks.setChannel.mockImplementation(
-      (nextChannel: 'beta' | 'stable') =>
+      (nextChannel: 'beta' | 'alpha') =>
         new Promise<void>((resolve) => {
           const complete = () => {
             completions.push(nextChannel);
             resolve();
           };
           if (nextChannel === 'beta') resolveBeta = complete;
-          else resolveStable = complete;
+          else resolveAlpha = complete;
         }),
     );
-    const state = { userPreferences: { betaUpdatesEnabled: true } };
+    const state = { userPreferences: { updateChannel: 'beta' } };
     const channel = stdChannel();
-    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, betaUpdatesSaga);
+    const task = runSaga({ channel, dispatch: vi.fn(), getState: () => state }, updateChannelSaga);
     await settle();
-    channel.put(setBetaUpdatesEnabled(true));
+    channel.put(setUpdateChannel('beta'));
     await settle();
-    state.userPreferences.betaUpdatesEnabled = false;
-    channel.put(toggleBetaUpdates());
+    state.userPreferences.updateChannel = 'alpha';
+    channel.put(setUpdateChannel('alpha'));
     await settle();
 
     expect(mocks.setChannel.mock.calls).toEqual([['beta']]);
     resolveBeta();
     await settle();
-    expect(mocks.setChannel.mock.calls).toEqual([['beta'], ['stable']]);
-    resolveStable();
+    expect(mocks.setChannel.mock.calls).toEqual([['beta'], ['alpha']]);
+    resolveAlpha();
     await settle();
-    expect(completions).toEqual(['beta', 'stable']);
+    expect(completions).toEqual(['beta', 'alpha']);
     task.cancel();
     await task.toPromise();
   });

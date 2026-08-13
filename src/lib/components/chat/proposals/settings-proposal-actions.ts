@@ -3,6 +3,7 @@ import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import { isUpdateChannel } from '$features/auto-update/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -31,7 +32,6 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import {
   selectAgentFontStyle,
-  selectBetaUpdatesEnabled,
   selectCodeFontFamily,
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
@@ -44,6 +44,7 @@ import {
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
   selectSpellcheckEnabled,
+  selectUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   selectBgDefaultModel,
@@ -79,7 +80,6 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import {
   setAgentFontStyle,
-  setBetaUpdatesEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -91,6 +91,7 @@ import {
   setSoundEnabled,
   setSoundOnlyWhenUnfocused,
   setSpellcheckEnabled,
+  setUpdateChannel,
   setVolume,
   type FontStyle,
   type NoteFontStyle,
@@ -248,8 +249,8 @@ function writeLocalStorageValue(key: string, value: unknown): void {
 async function readCurrentSettingValue(definition: AppSettingDefinition): Promise<unknown> {
   const state = appStore.state;
   switch (definition.path) {
-    case 'preferences.betaUpdatesEnabled':
-      return selectBetaUpdatesEnabled.select(state);
+    case 'preferences.updateChannel':
+      return selectUpdateChannel.select(state);
     case 'preferences.spellcheckEnabled':
       return selectSpellcheckEnabled.select(state);
     case 'workspaceList.showArchived':
@@ -335,11 +336,12 @@ function isNoteFontStyle(value: unknown): value is NoteFontStyle {
 
 function dispatchReduxAction(path: string, value: unknown): boolean {
   switch (path) {
-    case 'preferences.betaUpdatesEnabled': {
-      // Dispatch only: the beta-updates persistence middleware owns the
+    case 'preferences.updateChannel': {
+      // Dispatch only: the update-channel persistence saga owns the
       // SET_CHANNEL write (persist + feed switch) — a direct setChannel here
       // would duplicate it.
-      appStore.dispatch(setBetaUpdatesEnabled(Boolean(value)));
+      if (!isUpdateChannel(value)) return false;
+      appStore.dispatch(setUpdateChannel(value));
       return true;
     }
     case 'preferences.spellcheckEnabled':
