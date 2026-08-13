@@ -1,4 +1,33 @@
 export const DEFAULT_PANEL_WIDTH = 480;
+export const MIN_PANEL_SIZE_PERCENT = 10;
+
+/**
+ * Clamp a root-panel resize so the target alone can absorb the accepted delta.
+ * The minimum is expressed against the resized canvas, matching persisted
+ * percentage sizing without changing any sibling pixel width.
+ */
+export function getAcceptedIndependentPanelResizeWidth(
+  previousReferenceWidth: number,
+  previousTargetWidth: number,
+  requestedNextReferenceWidth: number,
+): number {
+  if (
+    !Number.isFinite(previousReferenceWidth) ||
+    !Number.isFinite(previousTargetWidth) ||
+    !Number.isFinite(requestedNextReferenceWidth) ||
+    previousReferenceWidth <= 0 ||
+    previousTargetWidth <= 0
+  ) {
+    return previousReferenceWidth;
+  }
+
+  const minimumShare = MIN_PANEL_SIZE_PERCENT / 100;
+  const minimumDeltaForShare =
+    (minimumShare * previousReferenceWidth - previousTargetWidth) / (1 - minimumShare);
+  const minimumDelta = Math.min(0, Math.max(1 - previousTargetWidth, minimumDeltaForShare));
+  const requestedDelta = requestedNextReferenceWidth - previousReferenceWidth;
+  return previousReferenceWidth + Math.max(minimumDelta, requestedDelta);
+}
 
 export type PanelCanvasSizing = 'viewport' | 'content';
 

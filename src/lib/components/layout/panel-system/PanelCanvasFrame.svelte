@@ -12,6 +12,7 @@
     transientWidthDelta = 0,
     scrollContainer,
     onWidthChange,
+    onResizeStart,
     onResizePreview,
     onResizeEnd,
     children,
@@ -33,6 +34,7 @@
     transientWidthDelta?: number;
     scrollContainer: HTMLElement | null;
     onWidthChange: (width: number) => void;
+    onResizeStart: () => void;
     onResizePreview: (delta: number) => void;
     onResizeEnd: (previousWidth: number, nextWidth: number) => void;
     children: Snippet;
@@ -56,7 +58,8 @@
   showHandleIndicator={true}
   handleClassName="right-0! panel-canvas-resize-handle"
   {onWidthChange}
-  onResize={(width) => onResizePreview(width - widths.defaultWidth)}
+  {onResizeStart}
+  onResize={(_previousWidth, nextWidth) => onResizePreview(nextWidth - widths.defaultWidth)}
   {onResizeEnd}
   className="h-full min-h-0 mx-0!"
 >

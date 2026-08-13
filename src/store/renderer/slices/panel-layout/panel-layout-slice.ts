@@ -34,7 +34,7 @@ import {
   countHorizontalPanelColumns,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
-  resizePanelTreeAtHorizontalIndex,
+  resizeRootHorizontalPanel,
   resizePanelTreeRightEdge,
   type PanelMovePosition,
 } from './panel-layout-tabless';
@@ -1541,9 +1541,15 @@ panelLayoutReducer.with(
       return state;
     }
     const ws = getWorkspaceState(state, wsId);
-    const root = resizePanelTreeAtHorizontalIndex(ws.root, previousWidth, nextWidth, panelIndex);
-    if (root === ws.root && ws.canvasWidth === nextCanvasWidth) return state;
-    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextCanvasWidth });
+    const resized = resizeRootHorizontalPanel(ws.root, previousWidth, nextWidth, panelIndex);
+    const acceptedCanvasWidth = nextCanvasWidth + resized.nextWidth - nextWidth;
+    if (!Number.isFinite(acceptedCanvasWidth) || acceptedCanvasWidth <= 0) return state;
+    if (resized.node === ws.root && ws.canvasWidth === acceptedCanvasWidth) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      root: resized.node,
+      canvasWidth: acceptedCanvasWidth,
+    });
   },
 );
 // --- Toggle Expand Panel ---
