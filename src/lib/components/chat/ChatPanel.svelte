@@ -205,6 +205,7 @@
     shouldShowPendingAssistantStatus,
     shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
+  import { isVisibleQueuedMessage } from '$lib/utils/queued-message-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -505,13 +506,21 @@
     }
   });
 
+  // Queue entries the user should see: user-authored ones plus daemon-origin
+  // entries with a renderable attribution row (agent sends, event wakes, hook
+  // wakes, PR-monitor wakes). System entries (`questions_dismissed`,
+  // `source: 'system'`, unknown types) stay hidden — the list, its count, and
+  // the up-arrow edit path all use this filtered view (display-only; the
+  // daemon queue and drain order are untouched).
+  const visibleQueuedMessages = $derived($queuedMessages$.filter(isVisibleQueuedMessage));
+
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown with a held-for-questions hint while Ignore-collapsed (the daemon
   // parks automatic deliveries behind the pending Q&A — question hold,
   // PROTOCOL §5.5). Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
-      queueLength: $queuedMessages$.length,
+      queueLength: visibleQueuedMessages.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
     }),
@@ -2562,9 +2571,10 @@
 
   // Input history navigation callbacks (terminal-like up/down arrow)
   function handleHistoryPrev(): string | null {
-    // If there are queued messages and we're not already navigating history,
-    // edit the last queued message instead of cycling through sent history
-    if ($queuedMessages$.length > 0 && historyIndex === -1 && !inputValue.trim()) {
+    // If there are visible queued messages and we're not already navigating
+    // history, edit the last queued message instead of cycling through sent
+    // history
+    if (visibleQueuedMessages.length > 0 && historyIndex === -1 && !inputValue.trim()) {
       const editStarted = queuedMessageListRef?.editLastMessage?.();
       if (editStarted) {
         // Return null so TipTapEditor doesn't change the input content
@@ -3907,8 +3917,11 @@
   {#if queuedMessagesVisibility.showQueue}
     <QueuedMessageList
       bind:this={queuedMessageListRef}
-      messages={$queuedMessages$}
+      messages={visibleQueuedMessages}
       heldForQuestions={queuedMessagesVisibility.heldForQuestions}
+      workspaceRepo={workspace?.repositoryOwner && workspace?.repositoryName
+        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
+        : undefined}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}
