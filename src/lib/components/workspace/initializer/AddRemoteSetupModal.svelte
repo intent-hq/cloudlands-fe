@@ -212,11 +212,10 @@
           {:else}
             <div>
               <Label for="wsUrl">{m.workspace_addRemoteSetupModal_wsUrl_label()}</Label>
-              <!-- i18n-ignore (example URL placeholder) -->
               <Input
                 id="wsUrl"
                 bind:value={wsUrl}
-                placeholder="wss://dev.example.com/ws"
+                placeholder={/* i18n-ignore (example URL placeholder) */ 'wss://dev.example.com/ws'}
                 class="mt-1"
               />
             </div>
@@ -345,11 +344,10 @@
         <!-- Repository Path -->
         <div>
           <Label for="workspacePath">{m.workspace_addRemoteSetupModal_repoPath_label()}</Label>
-          <!-- i18n-ignore (example path placeholder) -->
           <Input
             id="workspacePath"
             bind:value={workspacePath}
-            placeholder="/home/user/myrepo"
+            placeholder={/* i18n-ignore (example path placeholder) */ '/home/user/myrepo'}
             class="mt-1"
           />
           <p class="text-xs text-subtle mt-1">

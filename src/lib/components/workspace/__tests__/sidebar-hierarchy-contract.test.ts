@@ -134,7 +134,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(sidebar).toContain('rounded-lg bg-card border border-border p-3');
     expect(sidebar).toContain('sidebar-expanded-card relative');
-    expect(tabs).toContain("label: 'Context'");
+    expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('TAB_DEFINITIONS.filter');
     expect(sidebar).not.toContain('tab-bar-container');
     expect(sidebar).not.toContain('transition:slide');
@@ -223,7 +223,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(browserLauncher).toContain('data-sidebar-launcher="browser"');
     expect(browserLauncher).toContain('onclick={openBrowser}');
     expect(browserLauncher).toContain('getPanelLayoutManager(panelLayoutId).openBrowserPanel()');
-    expect(browserLauncher).toContain('aria-label="Open Browser"');
+    expect(browserLauncher).toContain(
+      'aria-label={m.workspace_browserLauncher_openBrowser_ariaLabel()}',
+    );
     expect(browserLauncher).toContain('icon={faWindowMaximize}');
     expect(browserLauncher).toContain('hover:bg-background/70');
     expect(browserLauncher).toContain('focus-visible:bg-background/70');

@@ -5,6 +5,7 @@
  */
 
 import type { TaskStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 // Named exports keep the status presentation on one shared visual contract.
 
@@ -20,14 +21,30 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
 ];
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  not_started: 'Not started',
-  waiting: 'Waiting',
-  discussion_needed: 'Discussion needed',
-  blocked: 'Blocked',
-  in_progress: 'In progress',
-  review_required: 'Review required',
-  complete: 'Complete',
-  cancelled: 'Cancelled',
+  get not_started() {
+    return m.workspace_taskStatus_notStarted_label();
+  },
+  get waiting() {
+    return m.workspace_taskStatus_waiting_label();
+  },
+  get discussion_needed() {
+    return m.workspace_taskStatus_discussionNeeded_label();
+  },
+  get blocked() {
+    return m.workspace_taskStatus_blocked_label();
+  },
+  get in_progress() {
+    return m.workspace_taskStatus_inProgress_label();
+  },
+  get review_required() {
+    return m.workspace_taskStatus_reviewRequired_label();
+  },
+  get complete() {
+    return m.workspace_taskStatus_complete_label();
+  },
+  get cancelled() {
+    return m.workspace_taskStatus_cancelled_label();
+  },
 };
 
 /** Small round indicator dot classes used in task-list tooltips. */

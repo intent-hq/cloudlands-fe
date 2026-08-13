@@ -920,7 +920,7 @@
             <Button
               variant="ghost-light"
               size="icon-sm"
-              aria-label="Workspace actions"
+              aria-label={m.workspace_progressCard_actions_ariaLabel()}
               class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
               onclick={toggle}
               disabled={isDeleting}
@@ -963,7 +963,7 @@
           <Button
             variant="ghost-light"
             size="icon-sm"
-            aria-label={`Close workspace ${workspaceId}`}
+            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId })}
             data-workspace-close
             class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
             onpointerdown={(event) => event.stopPropagation()}
@@ -1015,7 +1015,7 @@
               {#if copiedRepoPath}
                 <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                   <Fa icon={faCheck} size="xs" />
-                  Copied
+                  {m.workspace_progressCard_copied_label()}
                 </span>
               {/if}
             </div>
@@ -1069,13 +1069,15 @@
                 {#if copiedBranchName}
                   <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                     <Fa icon={faCheck} size="xs" />
-                    Copied
+                    {m.workspace_progressCard_copied_label()}
                   </span>
                 {/if}
               </div>
               <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                 {#if $workspace.baseRef}
-                  <span class="min-w-0 truncate">Base {$workspace.baseRef}</span>
+                  <span class="min-w-0 truncate"
+                    >{m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}</span
+                  >
                   <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
                 {/if}
                 <span class="shrink-0">

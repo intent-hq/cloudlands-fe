@@ -1308,6 +1308,9 @@
   "workspace_multiSelectSidebar_browser_label": [
     "de"
   ],
+  "workspace_multiSelectSidebar_sync_label": [
+    "de"
+  ],
   "workspace_nav_dashboard_label": [
     "de"
   ],
@@ -1340,9 +1343,17 @@
   "workspace_prSection_pullRequests_label": [
     "de"
   ],
+  "workspace_progressCard_base_label": [
+    "es",
+    "fr"
+  ],
   "workspace_setupScriptEditor_variables_label": [
     "fr",
     "es"
+  ],
+  "workspace_sidebarHeader_base_label": [
+    "es",
+    "fr"
   ],
   "workspace_skills_title": [
     "de"
@@ -1355,6 +1366,13 @@
     "de",
     "fr",
     "es"
+  ],
+  "workspace_terminalDock_shell_label": [
+    "de",
+    "es",
+    "fr",
+    "zh-CN",
+    "zh-TW"
   ],
   "workspace_tokenUsage_agentFallback_label": [
     "de",
