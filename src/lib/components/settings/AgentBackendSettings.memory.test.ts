@@ -45,7 +45,7 @@ const REAP_TOGGLE_LABEL = 'Reap idle agents';
 const RESTART_NOTE = /Changes apply on daemon restart\./;
 // Both rows read "Current: Off." when disabled, so anchor each assertion on the
 // sentence that follows it rather than on the shared prefix.
-const BUDGET_OFF = /Current: Off\. A soft admission gate/;
+const BUDGET_OFF = /Current: Off\. A soft cap on total agent memory/;
 const REAP_OFF = /Current: Off\. How long an agent process/;
 
 type Entry = Record<string, unknown> | null;
