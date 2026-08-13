@@ -26,6 +26,12 @@ export async function createZipFromPaths(
 
   async function addDir(dir: string, prefix: string): Promise<void> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
+    if (entries.length === 0 && prefix) {
+      // Emit an explicit directory entry so empty directories (and trees of
+      // only empty directories) survive the archive.
+      zipfile.addEmptyDirectory(prefix);
+      return;
+    }
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       const zipName = prefix ? `${prefix}/${entry.name}` : entry.name;

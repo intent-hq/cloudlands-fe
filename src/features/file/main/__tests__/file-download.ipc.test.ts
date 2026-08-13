@@ -126,7 +126,7 @@ describe('file:download IPC handler', () => {
     expect(mocks.showSaveDialog).not.toHaveBeenCalled();
   });
 
-  it('returns a DOWNLOAD_FAILED error when the copy fails', async () => {
+  it('returns a localized DOWNLOAD_FAILED error when the copy fails', async () => {
     mocks.stat.mockResolvedValue({ isDirectory: () => false });
     mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/report.txt', canceled: false });
     mocks.copyFile.mockRejectedValue(new Error('disk full'));
@@ -135,7 +135,12 @@ describe('file:download IPC handler', () => {
 
     expect(result).toEqual({
       success: false,
-      error: { code: 'DOWNLOAD_FAILED', message: 'disk full' },
+      error: {
+        code: 'DOWNLOAD_FAILED',
+        message: expect.stringContaining('/src/docs/report.txt'),
+      },
     });
+    // The raw error message is logged in the main process, not surfaced.
+    expect(result.error.message).not.toContain('disk full');
   });
 });

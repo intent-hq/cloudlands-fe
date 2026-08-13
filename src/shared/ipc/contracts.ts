@@ -270,6 +270,10 @@ export namespace FileIpc {
   export interface WriteResponse {
     bytesWritten: number;
   }
+
+  export interface DownloadResponse {
+    filePath: string;
+  }
 }
 
 // ============================================================================

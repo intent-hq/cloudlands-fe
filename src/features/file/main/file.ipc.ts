@@ -944,10 +944,13 @@ export function setupFileIPC() {
   // Download (save a copy of) a file, or a zip of a folder, to a user-chosen
   // location.
   ipcMain.handle(
-    IPC_CHANNELS.FILE.DOWNLOAD,
+    FILE_CHANNELS.DOWNLOAD,
     createSafeValidatedHandler(
       FileDownloadSchema,
-      async (_, validated) => {
+      async (
+        _,
+        validated,
+      ): Promise<IpcResponse<FileIpc.DownloadResponse> & { canceled?: boolean }> => {
         const expandedPath = expandPath(validated.path);
 
         let stats;
@@ -995,20 +998,20 @@ export function setupFileIPC() {
           logger.info('File downloaded', { source: expandedPath, filePath });
           return { success: true, data: { filePath } };
         } catch (error) {
-          logger.error('Failed to download path', error as Error, { path: validated.path });
+          logger.error('Failed to download path', error as Error, {
+            path: validated.path,
+            errorMsg: error instanceof Error ? error.message : String(error),
+          });
           return {
             success: false,
             error: {
               code: 'DOWNLOAD_FAILED',
-              message:
-                error instanceof Error
-                  ? error.message
-                  : m.file_ipc_downloadFailed_error({ path: validated.path }),
+              message: m.file_ipc_downloadFailed_error({ path: validated.path }),
             },
           };
         }
       },
-      IPC_CHANNELS.FILE.DOWNLOAD,
+      FILE_CHANNELS.DOWNLOAD,
     ),
   );
 }

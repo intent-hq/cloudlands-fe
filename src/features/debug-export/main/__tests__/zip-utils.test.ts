@@ -46,4 +46,16 @@ describe('createZipFromPaths', () => {
     expect(content).toContain('myfolder/top.txt');
     expect(content).toContain('myfolder/sub/inner.txt');
   });
+
+  it('preserves empty directories (including nested empty-only trees) under the root prefix', async () => {
+    await fs.mkdir(path.join(sourceDir, 'emptydir'));
+    await fs.mkdir(path.join(sourceDir, 'onlyempties', 'nested'), { recursive: true });
+
+    await createZipFromPaths(sourceDir, zipPath, 'myfolder');
+
+    const buffer = await fs.readFile(zipPath);
+    const content = buffer.toString('latin1');
+    expect(content).toContain('myfolder/emptydir/');
+    expect(content).toContain('myfolder/onlyempties/nested/');
+  });
 });
