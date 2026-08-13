@@ -909,7 +909,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
   const flags = state.hud.attentionByWorkspaceId;
   // Resolved hardware-console key assignment, served verbatim from its
   // owning slice (same resolution the sidebar badge uses — no re-derivation).
-  const keySlots = state.hardwareConsole ? selectHardwareConsoleKeySlots.select(state) : [];
+  const keySlots = selectHardwareConsoleKeySlots.select(state);
   return selectHudWorkspaces.select(state).map((workspace) => {
     const workspaceId = String(workspace.id);
     const keySlotIndex = keySlots.indexOf(workspaceId);

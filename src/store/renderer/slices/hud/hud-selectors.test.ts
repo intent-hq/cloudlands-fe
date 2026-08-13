@@ -80,7 +80,11 @@ function mockState(
   for (const question of questions) {
     hudState = hudReducer(hudState, hudQuestionCaptured(question));
   }
-  return { workspace: workspaceState, hud: hudState } as StoreState;
+  return {
+    workspace: workspaceState,
+    hud: hudState,
+    hardwareConsole: hardwareConsoleInitialState,
+  } as StoreState;
 }
 
 function withStatus(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
@@ -836,7 +840,9 @@ describe('selectHudWorkspaceCards', () => {
         statusMessage: 'Wiring the release-channel fetch',
         attentionSnippet: null,
         prNumber: 482,
-        keySlot: null,
+        // Auto-filled into the first open slot by the seeded hardware-console
+        // slice (production behavior for a lone assignable workspace).
+        keySlot: 0,
         tasks: { total: 0, completed: 0, inProgress: 0 },
         tokens: 0,
         agents: [],
