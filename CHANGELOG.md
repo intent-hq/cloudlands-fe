@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.31.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.30.1...v2.31.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* polish workspace UI and navigation ([#1117](https://github.com/intent-hq/cloudlands-fe/issues/1117)) ([0e20ba9](https://github.com/intent-hq/cloudlands-fe/commit/0e20ba9c0fbf8e9087b79b40fb213c4b9fe81f59))
+* **settings:** move Agent Backend to Advanced and surface the memory bounds ([#1087](https://github.com/intent-hq/cloudlands-fe/issues/1087)) ([9a9bf63](https://github.com/intent-hq/cloudlands-fe/commit/9a9bf636a7d2a8aa920ec805fb4598c3b52c8809))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** recover fused group open tags and empty-name close tags ([#1122](https://github.com/intent-hq/cloudlands-fe/issues/1122)) ([e3b3d4f](https://github.com/intent-hq/cloudlands-fe/commit/e3b3d4f44d31fcfd8b0559d1824bbfa26cfd9638))
+* **hud:** make HUD shell fill viewport height ([#1125](https://github.com/intent-hq/cloudlands-fe/issues/1125)) ([1a17be0](https://github.com/intent-hq/cloudlands-fe/commit/1a17be0d740beb2e349db9d6c37b118953e4a9aa))
+* **onboarding:** exclude workspace-owned and daemon-managed checkouts from LocalRepoTab recents ([#1129](https://github.com/intent-hq/cloudlands-fe/issues/1129)) ([b93b76a](https://github.com/intent-hq/cloudlands-fe/commit/b93b76ad7740d9849a20155944ccadee588fdd1c))
+
 ## [2.30.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.30.0...v2.30.1) (2026-08-13)
 
 

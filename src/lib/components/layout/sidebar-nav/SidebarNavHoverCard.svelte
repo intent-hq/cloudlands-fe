@@ -166,6 +166,10 @@
   <div
     bind:this={cardEl}
     class="sidebar-hover-card fixed z-100"
+    id="spaces-navigation-menu"
+    role="dialog"
+    tabindex="-1"
+    aria-label={m.layout_sidebarNav_allWorkspaces_title()}
     style={cardStyle}
     onmouseenter={handleCardMouseEnter}
     onmouseleave={handleCardMouseLeave}

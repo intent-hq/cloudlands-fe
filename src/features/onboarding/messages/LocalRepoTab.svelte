@@ -13,6 +13,10 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectKnownRepos } from '$store/renderer/slices/known-repos/known-repos-selectors';
   import { invoke } from '$lib/electron-bridge';
+  import {
+    getWorkspaceOwnedCheckoutPaths,
+    isDaemonManagedRepoPath,
+  } from '$lib/components/workspace/initializer/recent-repo-display';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
@@ -52,6 +56,13 @@
   const recentRepos = $derived.by(() => {
     const repoMap = new Map<string, { path: string; name: string; owner?: string }>();
 
+    // Daemon-managed paths (`/.clones/`, `/.repo-cache/`) and workspace-owned
+    // standalone checkouts are not copyable local repos (same exclusions as
+    // RepoSelector). Manually picked folders are exempt — the user chose them.
+    const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths($workspaceItems$);
+    const isExcluded = (path: string) =>
+      isDaemonManagedRepoPath(path) || workspaceOwnedCheckouts.has(path);
+
     // Add manually picked folders first so they appear at the top
     for (const p of manuallyAddedPaths) {
       repoMap.set(p, { path: p, name: p.split('/').pop() || p });
@@ -60,10 +71,13 @@
     // Add known repos from registry (skip path-less GitHub picks — their
     // `path` is an owner/repo shorthand, not a local checkout)
     for (const repo of $knownRepos$) {
-      if (repo.path && !repo.githubUrl && !repo.path.includes('/.clones/')) {
+      if (repo.path && !repo.githubUrl && !isExcluded(repo.path)) {
         repoMap.set(repo.path, {
           path: repo.path,
-          name: repo.name || repo.path.split('/').pop() || m.onboarding_localRepoTab_unknownProject_label(),
+          name:
+            repo.name ||
+            repo.path.split('/').pop() ||
+            m.onboarding_localRepoTab_unknownProject_label(),
           owner: repo.owner,
         });
       }
@@ -74,8 +88,7 @@
     for (const repo of wsRepos) {
       const isLocal =
         repo.path.startsWith('/') || repo.path.startsWith('~') || repo.path.startsWith('.');
-      const isLegacyClone = repo.path.includes('/.clones/');
-      if (isLocal && !isLegacyClone) {
+      if (isLocal && !isExcluded(repo.path)) {
         repoMap.set(repo.path, { path: repo.path, name: repo.name, owner: repo.owner });
       }
     }

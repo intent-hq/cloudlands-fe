@@ -8,20 +8,19 @@ function source(relativePath: string) {
 describe('workspace sidebar hierarchy presentation contract', () => {
   it('moves compact semantic global navigation beside the title-bar workspace tabs', () => {
     const navigation = source('../../layout/sidebar-nav/SidebarNav.svelte');
-    const chiefTrigger = source('../../layout/sidebar-nav/ChiefTrigger.svelte');
     const titleBar = source('../../layout/WindowTitleBar.svelte');
     const appLayout = source('../../../../routes/(app)/+layout.svelte');
 
     expect(navigation).toContain('data-top-navigation');
     expect(navigation).toContain('variant="ghost-light"');
-    expect(navigation).toContain('size="icon-xs"');
-    expect(navigation).toContain("? 'text-sidebar-accent-foreground'");
+    expect(navigation).toContain('size="icon"');
+    expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
     expect(navigation).toContain('data-nav-item={item.id}');
-    expect(navigation).toContain('<AsteriskIcon');
+    expect(navigation).toContain('name="dandelion"');
+    expect(navigation).not.toContain('name="spaces"');
     expect(titleBar).toContain('<SidebarNav />');
-    expect(titleBar.indexOf('<ChiefTrigger />')).toBeLessThan(titleBar.indexOf('<SidebarNav />'));
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
-    expect(chiefTrigger).toContain('data-chief-trigger');
+    expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
     expect(titleBar).toContain('class="flex min-w-0 items-center gap-1"');
@@ -74,10 +73,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(fullMode).not.toContain('pb-2 pl-1 text-left');
     expect(fullMode).not.toContain('px-0.5 py-1');
     expect(fullMode).toContain('{$workspace.branch}');
-    expect(fullMode).toContain('<CheckoutModePill workspace={$workspace} />');
-    expect(fullMode).not.toContain(
-      'aria-hidden="true">·</span>\n          <CheckoutModePill workspace={$workspace} />',
-    );
+    expect(fullMode).toContain('presentation="repository"');
+    expect(fullMode).toContain('repositoryOpen={repoTooltipOpen}');
+    expect(fullMode).not.toContain('data-sidebar-branch-icon');
+    expect(fullMode).not.toContain('<CheckoutModePill workspace={$workspace} />');
     expect(fullMode).not.toContain('data-workspace-title-section class="bg-');
   });
 

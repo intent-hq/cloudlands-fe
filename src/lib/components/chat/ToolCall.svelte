@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { ToolUseBlock } from '$shared/types';
-  import { faCheckCircle, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import ToolDetails from './ToolDetails.svelte';
@@ -11,15 +9,18 @@
   import { noteUrl } from '$shared/constants/intent-links';
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import McpIcon from '$lib/components/settings/mcp/McpIcon.svelte';
-
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-
-  import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    COMPACT_TOOL_ICON_BOX_CLASS,
+    COMPACT_TOOL_ROW_CLASS,
+    COMPACT_TOOL_SENTENCE_CLASS,
+    COMPACT_TOOL_TRAILING_CLASS,
+    OPERATIONAL_ROW_CONTAINER_CLASS,
+  } from './operational-disclosure-row';
+  import { buildToolDisplayModel } from './tool-display-model';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -83,28 +84,30 @@
     return baseToolDisplay;
   });
 
-  // For agent-message tools, get the target agent's display name
-  const isAgentMessage = $derived(
-    parsedResult?.type === 'agent-message' && parsedResult?.toAgentId,
+  const displayModel = $derived(
+    buildToolDisplayModel({
+      toolName: toolUse.name,
+      display: toolDisplay,
+      input: toolUse.input || {},
+      result,
+      parsedResult,
+      toolState,
+    }),
   );
-  const targetAgentName = $derived.by(() => {
-    if (!isAgentMessage || !parsedResult?.toAgentId) return null;
-    const state = appStore.state;
-    const workspaceId = selectActiveWorkspaceId.select(state);
-    const session = workspaceId
-      ? selectAgentSession.select(state, parsedResult.toAgentId)
-      : undefined;
-    if (session?.name && !isGenericAgentName(session.name)) {
-      return session.name;
-    }
-    // Fallback to shortened ID
-    return `Agent ${parsedResult.toAgentId.substring(0, 8)}`;
-  });
 
   let expanded = $state(false);
-  // Allow expansion for all completed or errored tools so users can always
-  // inspect input details and results (even when there's no rich parsed result)
-  const isExpandable = $derived(toolState === 'completed' || toolState === 'error');
+  const isExpandable = $derived(displayModel.hasDetails);
+  const detailsId = $derived(`tool-details-${toolUse.id}`);
+
+  function toggleExpanded() {
+    if (isExpandable) expanded = !expanded;
+  }
+
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggleExpanded();
+  }
 
   // Transition function for expand/collapse animation
   function expand(node: Element) {
@@ -117,81 +120,71 @@
   <ContextEngineToolCall {toolUse} {toolState} {result} />
 {:else if !toolDisplay.hidden}
   <div
-    class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-foreground/75 transition-all duration-[var(--motion-fast)] ease-out hover:text-foreground focus-within:text-foreground"
+    class={OPERATIONAL_ROW_CONTAINER_CLASS}
     data-tool-use-id={toolUse.id}
     data-tool-call-id={toolUse.toolCallId || undefined}
+    data-conversation-layer="tool-activity"
   >
     <!-- Running state: animate-pulse on the icon indicates running state -->
-    <div class="relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0">
+    <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
       <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
       {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
         <div
-          class="flex w-4 shrink-0 items-center justify-center opacity-60 {toolState === 'running'
-            ? 'animate-pulse'
-            : ''}"
+          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+          data-tool-icon
         >
           <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
         </div>
       {:else}
-        <Fa
-          icon={toolDisplay.icon}
-          size={14}
-          class="a11y-ignore w-4 shrink-0 text-foreground/60 {toolState === 'running'
-            ? 'animate-pulse'
-            : ''}"
-        />
+        <div
+          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+          data-tool-icon
+        >
+          <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
+        </div>
       {/if}
 
-      <!-- Clickable text area for expand/collapse -->
-      <button
-        class="flex items-center gap-[0.5ch] min-w-0 overflow-hidden bg-transparent border-0 p-0 {isExpandable
-          ? 'cursor-pointer'
-          : ''} text-left"
-        style="flex: 0 0.01 auto;"
-        onclick={() => {
-          if (isExpandable) expanded = !expanded;
-        }}
-      >
-        {#if isAgentMessage && parsedResult?.toAgentId}
-          <!-- Agent message: show avatar + name + message preview -->
-          <span class="shrink-0 whitespace-nowrap text-muted-foreground"
-            >{m.chat_toolCall_message_label()}</span
-          >
-          <AuggieAvatar agentId={parsedResult.toAgentId} size={16} class="shrink-0" />
-          <span class="max-w-[120px] shrink-0 truncate whitespace-nowrap text-foreground">
-            {targetAgentName}
-          </span>
-          {#if parsedResult.messageContent}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
-              "{parsedResult.messageContent.slice(0, 30)}{parsedResult.messageContent.length > 30
-                ? '...'
-                : ''}"
-            </span>
-          {/if}
-        {:else}
-          <!-- Standard tool display -->
-          <!-- Verb (never truncates) - omitted entirely when empty so it adds no flex gap -->
-          {#if toolDisplay.verb}
-            <span class="shrink-0 whitespace-nowrap text-muted-foreground">
-              {toolDisplay.verb}
-            </span>
-          {/if}
+      {#if isExpandable}
+        <button
+          type="button"
+          class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
+          data-testid="tool-call-summary"
+          data-tool-sentence
+          aria-label={displayModel.accessibleSentence}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          title={m.chat_toolCall_technicalDetails_label()}
+          onclick={toggleExpanded}
+          onkeydown={handleDisclosureKeydown}>{displayModel.sentence}</button
+        >
+      {:else}
+        <span
+          class={COMPACT_TOOL_SENTENCE_CLASS}
+          data-testid="tool-call-summary"
+          data-tool-sentence
+          aria-label={displayModel.accessibleSentence}
+          title={displayModel.accessibleSentence}>{displayModel.sentence}</span
+        >
+      {/if}
 
-          <!-- Subject (truncates) - separate from button if it's a note link or file link -->
-          {#if toolDisplay.subject && !toolDisplay.noteId && !toolDisplay.filePath}
-            <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">
-              {toolDisplay.subject}
-            </span>
-          {/if}
-        {/if}
-      </button>
-
-      <!-- Note link - separate from button so it can be clickable independently -->
-      {#if toolDisplay.subject && toolDisplay.noteId}
+      {#if displayModel.status === 'success'}
+        <span
+          class="{COMPACT_TOOL_TRAILING_CLASS} text-success"
+          data-testid="tool-call-status"
+          data-tool-status="success">{m.chat_toolCall_success_label()}</span
+        >
+      {:else if displayModel.status === 'error'}
+        <span
+          class="{COMPACT_TOOL_TRAILING_CLASS} text-destructive"
+          data-testid="tool-call-status"
+          data-tool-status="error">{m.chat_toolCall_failed_label()}</span
+        >
+      {:else if toolDisplay.noteId}
         <a
           href={noteUrl(toolDisplay.noteId)}
-          class="min-w-0 truncate whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
-          style="flex: 0 0.01 auto;"
+          data-testid="tool-call-note-link"
+          class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+          aria-label={displayModel.accessibleSentence}
           onclick={async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -203,76 +196,33 @@
             });
           }}
         >
-          {toolDisplay.subject}
+          {m.chat_toolClassifier_open_label()}
         </a>
+      {:else if toolDisplay.filePath && !toolDisplay.isDirectory}
+        <button
+          type="button"
+          data-testid="tool-call-file-link"
+          class="{COMPACT_TOOL_TRAILING_CLASS} cursor-pointer border-0 bg-transparent p-0 hover:underline"
+          aria-label={displayModel.accessibleSentence}
+          onclick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const openInAdjacentPanel = e.metaKey || e.ctrlKey;
+            const sourcePanelId = getPanelIdFromEvent(e);
+            if (workspaceId && toolDisplay.filePath) {
+              appStore.dispatch(
+                openWorkspaceFile(workspaceId, toolDisplay.filePath, {
+                  line: toolDisplay.fileLine ?? undefined,
+                  openInAdjacentPanel,
+                  sourcePanelId,
+                }),
+              );
+            }
+          }}
+        >
+          {m.chat_toolClassifier_open_label()}
+        </button>
       {/if}
-
-      <!-- File link - separate from button so it can be clickable independently -->
-      <!-- Directories are shown as non-clickable text (no viewer for folders) -->
-      {#if toolDisplay.subject && toolDisplay.filePath && !toolDisplay.noteId}
-        {#if toolDisplay.isDirectory}
-          <span class="flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden text-left">
-            <span class="truncate text-muted-foreground" style="flex: 0 0.01 auto;">
-              {toolDisplay.subject}
-            </span>
-            {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
-                {toolDisplay.path}
-              </span>
-            {/if}
-          </span>
-        {:else}
-          <button
-            type="button"
-            class="group/button flex items-baseline gap-[0.5ch] shrink min-w-0 overflow-hidden bg-transparent border-0 p-0 cursor-pointer hover:text-foreground text-left"
-            onclick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-              const sourcePanelId = getPanelIdFromEvent(e);
-              if (workspaceId && toolDisplay.filePath) {
-                appStore.dispatch(
-                  openWorkspaceFile(workspaceId, toolDisplay.filePath, {
-                    line: toolDisplay.fileLine ?? undefined,
-                    openInAdjacentPanel,
-                    sourcePanelId,
-                  }),
-                );
-              }
-            }}
-          >
-            <span
-              class="truncate text-muted-foreground group-hover/button:underline"
-              style="flex: 0 0.01 auto;"
-            >
-              {toolDisplay.subject}
-            </span>
-            {#if toolDisplay.path}
-              <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
-                {toolDisplay.path}
-              </span>
-            {/if}
-          </button>
-        {/if}
-      {/if}
-
-      <!-- Path (muted, truncated, takes remaining space) - only when NOT a file link -->
-      {#if toolDisplay.path && !toolDisplay.filePath}
-        <span class="-mb-px min-w-0 flex-1 truncate pl-1 text-muted-foreground">
-          {toolDisplay.path}
-        </span>
-      {/if}
-
-      <!-- Status indicator and chevron -->
-      <div class="ml-auto flex items-center gap-2 shrink-0">
-        {#if toolState === 'running'}
-          <!-- No spinner — the animate-pulse on the icon indicates running state -->
-        {:else if toolState === 'completed' && expanded}
-          <Fa icon={faCheckCircle} size={14} class="text-success opacity-60" />
-        {:else if toolState === 'error'}
-          <Fa icon={faExclamationTriangle} size={14} class="text-destructive" />
-        {/if}
-      </div>
     </div>
   </div>
 
@@ -297,13 +247,14 @@
   {/if}
 
   {#if expanded}
-    <div class="ml-1" transition:expand>
+    <div id={detailsId} class="ml-1" transition:expand>
       <ToolDetails
         input={toolUse.input}
         {result}
         {parsedResult}
         isError={toolState === 'error'}
         {workspaceId}
+        suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
       />
     </div>
   {/if}

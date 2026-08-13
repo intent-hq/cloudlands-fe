@@ -10,6 +10,27 @@ import { describe, it, expect } from 'vitest';
 import { classifyTool, cleanToolName, extractMcpSource, isRawMcpName } from '../tool-classifier';
 
 describe('tool-classifier', () => {
+  it('uses natural punctuation instead of middle-dot separators in compact sentences', () => {
+    const displays = [
+      classifyTool('codebase-retrieval', { information_request: 'Find the login function' }),
+      classifyTool('sentry-find-projects', { organizationSlug: 'intent-hq' }),
+      classifyTool('mcp__custom__find_organizations', { query: 'intent-hq' }),
+      classifyTool('launch-process', { command: 'pnpm test' }),
+      classifyTool('view', { path: 'src/index.ts', type: 'file' }),
+      classifyTool('delegate_task', { taskText: 'Verify editable focus guard' }),
+      classifyTool('workspace_api', { summary: 'Update workspace status', code: 'return true' }),
+    ];
+
+    for (const display of displays) {
+      expect([display.verb, display.subject, display.path].filter(Boolean).join(' ')).not.toContain(
+        '·',
+      );
+    }
+    expect(displays[0].subject).toContain(': ');
+    expect(displays[1].subject).toContain(': ');
+    expect(displays[2].subject).toBe('intent-hq');
+  });
+
   describe('file operations', () => {
     it('should classify "view" tool as file-read with verb "Read"', () => {
       const result = classifyTool('view', { path: 'src/index.ts', type: 'file' });

@@ -35,6 +35,20 @@ function cleanupDropdownEnv() {
   document.body.innerHTML = '';
 }
 
+function rect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../__tests__/mocks/Fa.svelte'));
@@ -146,6 +160,49 @@ describe('Dropdown portal positioning', () => {
       expect(listbox?.style.bottom).toBeTruthy();
       expect(listbox?.style.top).toBe('');
     });
+  });
+
+  it('keeps opt-in inline content inside its collision boundary and flips on resize', async () => {
+    const boundary = document.createElement('div');
+    boundary.dataset.dropdownBoundary = '';
+    boundary.getBoundingClientRect = vi.fn(() => rect(80, 60, 440, 500));
+    document.body.appendChild(boundary);
+
+    const { container } = render(Dropdown, {
+      target: boundary,
+      props: {
+        options: Array.from({ length: 12 }, (_, index) => ({
+          value: `option-${index}`,
+          label: `Option ${index}`,
+        })),
+        portal: false,
+        collisionBoundary: '[data-dropdown-boundary]',
+      },
+    });
+    const trigger = container.querySelector('button') as HTMLButtonElement;
+    trigger.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
+    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 500, 120, 28));
+
+    await fireEvent.click(trigger);
+    const listbox = await screen.findByRole('listbox');
+    expect(listbox.dataset.collisionAware).toBe('true');
+    expect(listbox.dataset.side).toBe('top');
+    expect(listbox.style.maxHeight).toBe('360px');
+    expect(listbox.style.bottom).toBe('32px');
+    expect(boundary.contains(listbox)).toBe(true);
+
+    trigger.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
+    trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(120, 90, 120, 28));
+    await fireEvent(window, new Event('resize'));
+    expect(listbox.dataset.side).toBe('bottom');
+    expect(listbox.style.top).toBe('32px');
+    expect(listbox.style.maxHeight).toBe('360px');
+
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    await fireEvent.keyDown(search, { key: 'End' });
+    expect(screen.getByRole('option', { name: 'Option 11' }).dataset.highlighted).toBe('true');
+    await fireEvent.keyDown(search, { key: 'Home' });
+    expect(screen.getByRole('option', { name: 'Option 0' }).dataset.highlighted).toBe('true');
   });
 });
 

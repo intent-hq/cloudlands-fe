@@ -179,18 +179,14 @@ test.describe('Phase 2.4: Choice Block Integration (TDD)', () => {
         },
       });
 
-      // Edit question - click at the end of the text
+      // Edit question - click it and move the cursor to the end of the line
+      // (raw coordinate clicks are flaky across platforms and can select the
+      // whole node, so typing would replace the entire document)
       const question = component.locator('[data-type="choice-question"]');
-      const questionBox = await question.boundingBox();
-      if (questionBox) {
-        // Click near the end of the question text
-        await page.mouse.click(
-          questionBox.x + questionBox.width - 10,
-          questionBox.y + questionBox.height / 2,
-        );
-      }
+      await question.click();
 
       await page.waitForTimeout(100);
+      await page.keyboard.press('End');
       await page.keyboard.type(' edited');
 
       // Edit first option - use triple-click to select all, then type

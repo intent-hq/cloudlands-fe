@@ -17,7 +17,13 @@ import { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `host.status` result the fake client answers with; individual tests override.
-const hostStatus = vi.hoisted(() => ({ value: {} as unknown }));
+// `byHost` lets a test give each backend its own (possibly deferred) answer,
+// keyed by the client config's `host` — for exercising a SLOW backend whose
+// probe resolves only after later switches (serialization regression below).
+const hostStatus = vi.hoisted(() => ({
+  value: {} as unknown,
+  byHost: new Map<string, () => Promise<unknown>>(),
+}));
 
 vi.mock('../json-rpc-client', () => {
   class FakeJsonRpcClient {
@@ -40,7 +46,12 @@ vi.mock('../json-rpc-client', () => {
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async (method: string) => (method === 'host.status' ? hostStatus.value : {}));
+    request = vi.fn(async (method: string) => {
+      if (method !== 'host.status') return {};
+      const host = (this.config as { host?: string } | null)?.host;
+      const deferred = host !== undefined ? hostStatus.byHost.get(host) : undefined;
+      return deferred ? deferred() : hostStatus.value;
+    });
     registerMethod(): () => void {
       return () => {};
     }
@@ -133,6 +144,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   hostStatus.value = {};
+  hostStatus.byHost.clear();
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
   store.setActiveId.mockResolvedValue(undefined);
@@ -193,5 +205,132 @@ describe('switchBackend hostname labeling', () => {
     const mod = await loadModule();
 
     await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Serialization regression (monorepo#2221): overlapping switches used to
+// interleave across switchBackend's await points, so switch-to-B could reuse
+// the client still pinned to slow backend A — its hostname capture then issued
+// `host.status` against A's socket and persisted A's hostname onto B's record
+// (and could leave the live transport on A while `activeId` said B).
+// ---------------------------------------------------------------------------
+
+describe('switchBackend serialization (monorepo#2221)', () => {
+  const REMOTE_B = {
+    id: 'remote-2',
+    label: '10.0.0.6:8443',
+    host: '10.0.0.6',
+    port: 8443,
+    fingerprint: 'EE:FF:00:11',
+    hostname: null,
+    isLocal: false,
+  };
+
+  it('a slow previous backend never overwrites the new backend label; the live client ends on B', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE_B]);
+
+    // Backend A (remote-1) answers `host.status` only when the test says so;
+    // backend B (remote-2) answers immediately with its own hostname.
+    let resolveSlowA!: (value: unknown) => void;
+    hostStatus.byHost.set('10.0.0.5', () => new Promise((r) => (resolveSlowA = r)));
+    hostStatus.byHost.set('10.0.0.6', () => Promise.resolve({ hostname: 'beta.local' }));
+
+    // Park switch-to-A at its first await point so switch-to-B is issued while
+    // A's switch is still in flight.
+    let releaseSwitchA!: () => void;
+    const captureGate = new Promise<void>((r) => (releaseSwitchA = r));
+    const captureAndClose = vi.fn(async () => {
+      if (captureAndClose.mock.calls.length === 1) await captureGate;
+    });
+    const mod = await loadModule();
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+    const switchToA = mod.switchBackend('remote-1');
+    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+    const switchToB = mod.switchBackend('remote-2');
+
+    // Serialized: the queued switch-to-B makes no progress while A is in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.setActiveId).not.toHaveBeenCalled();
+
+    releaseSwitchA();
+    await expect(switchToA).resolves.toEqual({ activeId: 'remote-1' });
+    await expect(switchToB).resolves.toEqual({ activeId: 'remote-2' });
+    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'remote-2']);
+
+    // B's own capture (against B's client) labels B with B's hostname.
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-2', 'beta.local'),
+    );
+
+    // Slow A finally answers; let its dangling capture fully settle, then
+    // assert A's hostname never landed on B's record.
+    resolveSlowA({ hostname: 'alpha.local' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.setHostname).not.toHaveBeenCalledWith('remote-2', 'alpha.local');
+
+    // The live client and the pinned connection identity both target B.
+    expect((mod.getBackendClient().getConfig() as { host?: string }).host).toBe('10.0.0.6');
+    expect(mod.__getActiveConnectionMetaForTesting()?.id).toBe('remote-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stale-completion guard (monorepo#2221): a `host.status` result that resolves
+// only after the active connection has switched away must be discarded — no
+// setHostname persist, no connections:changed broadcast from the dangling
+// capture. Mirrors the guard refreshRemoteHosts already has.
+// ---------------------------------------------------------------------------
+
+describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
+  const REMOTE_B = {
+    id: 'remote-2',
+    label: '10.0.0.6:8443',
+    host: '10.0.0.6',
+    port: 8443,
+    fingerprint: 'EE:FF:00:11',
+    hostname: null,
+    isLocal: false,
+  };
+
+  it('discards a host.status result that arrives after the active connection switched away', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE_B]);
+
+    // Backend A (remote-1) answers `host.status` only when the test says so;
+    // backend B (remote-2) answers immediately with its own hostname.
+    let resolveSlowA!: (value: unknown) => void;
+    hostStatus.byHost.set('10.0.0.5', () => new Promise((r) => (resolveSlowA = r)));
+    hostStatus.byHost.set('10.0.0.6', () => Promise.resolve({ hostname: 'beta.local' }));
+
+    const send = installWindow();
+    const mod = await loadModule();
+
+    // Switch to A completes (the capture is fire-and-forget and stays pending
+    // on A's slow probe), then switch away to B before A's probe resolves.
+    await mod.switchBackend('remote-1');
+    await mod.switchBackend('remote-2');
+
+    // B's own capture persists B's hostname as usual.
+    await vi.waitFor(() =>
+      expect(store.setHostname).toHaveBeenCalledWith('remote-2', 'beta.local'),
+    );
+    const broadcastsBeforeLateResult = send.mock.calls.filter(
+      ([c]) => c === 'connections:changed',
+    ).length;
+
+    // Slow A finally answers; let its dangling capture fully settle.
+    resolveSlowA({ hostname: 'alpha.local' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The late result is dropped: no persist for A, no extra broadcast.
+    expect(store.setHostname).not.toHaveBeenCalledWith('remote-1', 'alpha.local');
+    expect(store.setHostname).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBe(
+      broadcastsBeforeLateResult,
+    );
   });
 });

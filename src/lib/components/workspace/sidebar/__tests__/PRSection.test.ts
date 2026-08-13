@@ -431,6 +431,58 @@ describe('PRSection', () => {
     });
   });
 
+  it('suppresses the PR refresh action in listOnly mode (read-only secondary-root browsing)', async () => {
+    // Baseline: the refresh action renders in the normal (primary) mode.
+    const primary = await renderPR({ hasPRs: true, pullRequests: [testPR] });
+    await waitFor(() => {
+      const btn = Array.from(primary.container.querySelectorAll('button')).find(
+        (b) => b.getAttribute('title') === 'Refresh PR status',
+      );
+      expect(btn).toBeDefined();
+    });
+    primary.unmount();
+
+    // listOnly: refresh would fetch/refresh the PRIMARY workspace's git and
+    // PR state, so the read-only secondary-root view must not offer it.
+    const { container } = await renderPR({
+      hasPRs: true,
+      pullRequests: [testPR],
+      listOnly: true,
+    });
+    await waitFor(() => expect(container.textContent).toContain('Pull Requests'));
+    const refreshBtn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('title') === 'Refresh PR status',
+    );
+    expect(refreshBtn).toBeUndefined();
+  });
+
+  it('renders the PR section when PRs exist even though the primary workspace has no remote', async () => {
+    // listOnly with a remoteless primary: the selected secondary root's PRs
+    // must still render.
+    const { container, unmount } = await renderPR({
+      hasRemote: false,
+      hasPRs: true,
+      pullRequests: [testPR],
+      listOnly: true,
+    });
+    await waitFor(() => expect(container.textContent).toContain('Pull Requests'));
+    expect(container.textContent).toContain('feat: something');
+    // Primary-only affordances stay gated on the primary remote.
+    expect(container.textContent).not.toContain('Create PR');
+    unmount();
+
+    // Same for monitor-attributed rows in the normal (primary) mode.
+    const second = await renderPR({
+      hasRemote: false,
+      hasPRs: false,
+      pullRequests: [],
+      otherTrackedPRs: [{ ...testPR, monitorOnly: true }],
+    });
+    await waitFor(() => expect(second.container.textContent).toContain('Pull Requests'));
+    expect(second.container.textContent).toContain('feat: something');
+    expect(second.container.textContent).not.toContain('Create PR');
+  });
+
   it('renders the short crossRepoDisplay prefix and a hover status tooltip on the PR row', async () => {
     const { container } = await renderPR({
       hasPRs: true,

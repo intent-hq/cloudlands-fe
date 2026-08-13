@@ -76,7 +76,6 @@
     WorkspaceProgressInput,
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
-  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -988,6 +987,7 @@
         contentClass="border-0!"
         contentContainerClass="p-0! space-y-0!"
         showArrow={false}
+        interactive
         class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
         bind:open={repoTooltipOpen}
         onOpenChange={handleRepoTooltipOpenChange}
@@ -1022,9 +1022,15 @@
             <p class="mt-1 truncate text-xs text-muted-foreground" title={workspacePath}>
               {workspacePath}
             </p>
-            <p class="mt-1 text-xs text-subtle">
-              {$workspace?.skipWorktree ? 'Direct checkout' : 'Worktree'}
-            </p>
+            {#if $workspace?.checkoutMode}
+              <div class="mt-1.5 border-t border-border/50 pt-1.5">
+                <CheckoutModePill
+                  workspace={$workspace}
+                  presentation="repository"
+                  repositoryOpen={repoTooltipOpen}
+                />
+              </div>
+            {/if}
           </div>
         {/snippet}
       </TooltipRich>
@@ -1038,7 +1044,7 @@
           contentClass="border-0!"
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
-          class="h-5 min-w-0 shrink cursor-copy items-center justify-start gap-0.5 overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+          class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
           bind:open={branchTooltipOpen}
           onOpenChange={handleBranchTooltipOpenChange}
           disableCloseOnTriggerClick
@@ -1046,14 +1052,10 @@
         >
           {#snippet trigger()}
             <span
-              class="grid size-4 shrink-0 place-items-center text-muted-foreground"
-              data-sidebar-branch-icon
+              class="min-w-0 flex-1 truncate"
               data-sidebar-branch-control
-              aria-hidden="true"
+              data-sidebar-branch-label
             >
-              <GitBranchIcon size={16} class="block size-4" />
-            </span>
-            <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
               {$workspace.branch}
             </span>
           {/snippet}
@@ -1073,23 +1075,14 @@
                   </span>
                 {/if}
               </div>
-              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                {#if $workspace.baseRef}
-                  <span class="min-w-0 truncate"
-                    >{m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}</span
-                  >
-                  <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
-                {/if}
-                <span class="shrink-0">
-                  {$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
-                </span>
-              </div>
+              {#if $workspace.baseRef}
+                <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                  {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
+                </p>
+              {/if}
             </div>
           {/snippet}
         </TooltipRich>
-      {/if}
-      {#if $workspace?.checkoutMode}
-        <CheckoutModePill workspace={$workspace} />
       {/if}
     </div>
   </div>

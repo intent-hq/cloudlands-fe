@@ -1482,7 +1482,7 @@ function contextEngineDisplay(name: string, input: Record<string, any>): ToolDis
   // If there's a query, append a snippet of it
   const query = input.information_request || input.query;
   if (query) {
-    subject = `${subject} · ${truncate(query, 60)}`;
+    subject = `${subject}: ${truncate(query, 60)}`;
   }
 
   return {
@@ -1580,7 +1580,7 @@ function apiDisplay(name: string, input: Record<string, any>): ToolDisplay {
         .replace(/^[-_]+|[-_]+$/g, '')
         .replace(/[-_]/g, ' ')
         .trim();
-      subject = action ? `${action} · ${input.organizationSlug}` : input.organizationSlug;
+      subject = action ? `${action}: ${input.organizationSlug}` : input.organizationSlug;
     } else {
       // Fallback: extract action from tool name for tools with minimal input
       const action = name
@@ -2259,7 +2259,7 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
   }
 
   // Combine: prefer input-derived subject, fall back to name-derived subject
-  // If we have both, show name-derived as context: "Find organizations · my-org"
+  // If we have both, show the name-derived context before the input: "Find organizations: my-org"
   // But if one contains the other, just use the longer one to avoid duplication
   let subject: string | null;
   if (inputSubject && nameSubject) {
@@ -2268,7 +2268,7 @@ function genericDisplay(toolName: string, input: Record<string, any>): ToolDispl
     if (inputLower.includes(nameLower) || nameLower.includes(inputLower)) {
       subject = inputSubject.length >= nameSubject.length ? inputSubject : nameSubject;
     } else {
-      subject = `${nameSubject} · ${inputSubject}`;
+      subject = `${nameSubject}: ${inputSubject}`;
     }
   } else {
     subject = inputSubject || nameSubject;

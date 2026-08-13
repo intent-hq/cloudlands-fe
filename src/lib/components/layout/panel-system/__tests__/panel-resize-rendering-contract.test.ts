@@ -86,6 +86,17 @@ describe('panel resize rendering', () => {
     expect(container).toContain('applyLiveCanvasResizeChildWidths');
     expect(container).toMatch(/style\.flex = `0 0 \$\{pinnedWidth\}px`/);
     expect(container).toContain('return `0 0 ${pinnedWidth}px`;');
+    expect(container).toContain('onResizeStart={() => handleResizeStart(item.index)}');
+  });
+
+  it('bypasses adjacent redistribution for every root horizontal handle', () => {
+    const container = source('PanelContainer.svelte');
+    const rootBranch = container.indexOf('if (\n      growsCanvasAtRootHorizontal');
+    const adjacentFallback = container.indexOf('const newSizes = resizeAdjacentPanels');
+
+    expect(rootBranch).toBeGreaterThan(0);
+    expect(rootBranch).toBeLessThan(adjacentFallback);
+    expect(container.slice(rootBranch, adjacentFallback)).toContain('return;');
   });
 
   it('applies outer canvas resize preview only to the final root panel', () => {

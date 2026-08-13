@@ -475,6 +475,8 @@
     <div
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key teamModeModel}
@@ -489,6 +491,9 @@
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
+          portal={false}
+          modalAware={true}
+          collisionBoundary="[data-model-picker-collision-boundary]"
         />
       {/key}
     </div>
@@ -625,6 +630,8 @@
     <div
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key singleAgentModel}
@@ -639,6 +646,9 @@
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
+          portal={false}
+          modalAware={true}
+          collisionBoundary="[data-model-picker-collision-boundary]"
         />
       {/key}
     </div>
@@ -666,7 +676,8 @@
 
   .agent-card:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ring) 40%, transparent);
+    border-color: var(--color-foreground);
+    background: color-mix(in srgb, var(--color-accent) 72%, var(--color-card));
   }
 
   .model-picker-row {
@@ -698,6 +709,12 @@
     background: var(--color-muted);
   }
 
+  .specialist-trigger:focus-visible {
+    outline: none;
+    border-color: var(--color-foreground);
+    background: var(--color-muted);
+  }
+
   .specialist-option {
     display: flex;
     align-items: center;
@@ -714,6 +731,24 @@
 
   .specialist-option:hover {
     background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 60%, transparent);
+  }
+
+  .specialist-option:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 75%, transparent);
+  }
+
+  @media (forced-colors: active) {
+    .agent-card:focus-visible,
+    .specialist-trigger:focus-visible {
+      border-color: Highlight;
+      background: Canvas;
+    }
+
+    .specialist-option:focus-visible {
+      background: Highlight;
+      color: HighlightText;
+    }
   }
 
   .specialist-option-selected {

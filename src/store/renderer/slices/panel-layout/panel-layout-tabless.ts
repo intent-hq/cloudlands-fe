@@ -1,6 +1,7 @@
 import type { PanelLayoutNode, PanelState, WorkspacePanelLayout } from './panel-layout-types';
 import {
   DEFAULT_PANEL_WIDTH,
+  getAcceptedIndependentPanelResizeWidth,
   getAutomaticPanelCanvasWidth,
 } from '../../../../shared/panel-layout-sizing';
 
@@ -116,6 +117,41 @@ export function resizePanelTreeAtHorizontalIndex(
   );
 
   return { ...node, children, sizes: nextSizes };
+}
+
+export function resizeRootHorizontalPanel(
+  node: PanelLayoutNode,
+  previousWidth: number,
+  requestedNextWidth: number,
+  panelIndex: number,
+): { node: PanelLayoutNode; nextWidth: number } {
+  if (
+    node.type !== 'split' ||
+    node.direction !== 'horizontal' ||
+    previousWidth <= 0 ||
+    requestedNextWidth <= 0 ||
+    !Number.isFinite(previousWidth) ||
+    !Number.isFinite(requestedNextWidth) ||
+    !Number.isFinite(panelIndex)
+  ) {
+    return { node, nextWidth: previousWidth };
+  }
+
+  const sizes = normalizeSizes(node.sizes, node.children.length);
+  const lastIndex = node.children.length - 1;
+  if (lastIndex < 1) return { node, nextWidth: previousWidth };
+  const targetIndex =
+    panelIndex < 0 || panelIndex > lastIndex ? lastIndex : Math.max(0, panelIndex);
+  const previousTargetWidth = (previousWidth * sizes[targetIndex]) / 100;
+  const nextWidth = getAcceptedIndependentPanelResizeWidth(
+    previousWidth,
+    previousTargetWidth,
+    requestedNextWidth,
+  );
+  return {
+    node: resizePanelTreeAtHorizontalIndex(node, previousWidth, nextWidth, targetIndex),
+    nextWidth,
+  };
 }
 
 export function createHorizontalRoot(panelIds: string[]): PanelLayoutNode {

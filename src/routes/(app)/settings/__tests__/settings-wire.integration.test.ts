@@ -116,12 +116,16 @@ describe('Settings deterministic mock-BE contracts', () => {
     );
   });
 
-  it('hydrates both Agent Backend settings from exact settings.get requests', async () => {
+  it('hydrates all four Agent Backend settings from exact settings.get requests', async () => {
     const maxConcurrent = SETTINGS_PROTOCOL_FIXTURES.maxConcurrent;
     const flushQueuedMessages = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
+    const memoryBudgetMb = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
+    const idleReapMinutes = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
     const assertComplete = mockBackendSequence([
       { request: maxConcurrent.request, response: maxConcurrent.response },
       { request: flushQueuedMessages.request, response: flushQueuedMessages.response },
+      { request: memoryBudgetMb.request, response: memoryBudgetMb.response },
+      { request: idleReapMinutes.request, response: idleReapMinutes.response },
     ]);
 
     render(AgentBackendSettings);
@@ -130,16 +134,21 @@ describe('Settings deterministic mock-BE contracts', () => {
     await waitFor(() => expect(input.value).toBe('12'));
     expect(await screen.findByText('System Messages Only')).toBeTruthy();
     assertComplete();
-    expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
-      1,
-      IPC_CHANNELS.BACKEND.REQUEST,
-      maxConcurrent.request,
-    );
-    expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
-      2,
-      IPC_CHANNELS.BACKEND.REQUEST,
-      flushQueuedMessages.request,
-    );
+    for (const [nth, fixture] of [
+      [1, maxConcurrent],
+      [2, flushQueuedMessages],
+      [3, memoryBudgetMb],
+      [4, idleReapMinutes],
+    ] as const) {
+      expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
+        nth,
+        IPC_CHANNELS.BACKEND.REQUEST,
+        fixture.request,
+      );
+    }
+    // The budget's ceiling is whatever bound the catalog carried on the wire.
+    const slider = (await screen.findByRole('slider')) as HTMLInputElement;
+    expect(slider.max).toBe(String(memoryBudgetMb.response.definition.max));
   });
 
   it.each([
@@ -150,6 +159,8 @@ describe('Settings deterministic mock-BE contracts', () => {
     async (activation, value) => {
       const get = SETTINGS_PROTOCOL_FIXTURES.maxConcurrent;
       const getFlush = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
+      const getBudget = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
+      const getIdleReap = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
       const update = {
         request: {
           method: 'settings.update',
@@ -160,6 +171,8 @@ describe('Settings deterministic mock-BE contracts', () => {
       const assertComplete = mockBackendSequence([
         { request: get.request, response: get.response },
         { request: getFlush.request, response: getFlush.response },
+        { request: getBudget.request, response: getBudget.response },
+        { request: getIdleReap.request, response: getIdleReap.response },
         update,
       ]);
 
@@ -183,7 +196,7 @@ describe('Settings deterministic mock-BE contracts', () => {
         getFlush.request,
       );
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
-        3,
+        5,
         IPC_CHANNELS.BACKEND.REQUEST,
         update.request,
       );

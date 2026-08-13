@@ -230,18 +230,21 @@ describe('WorkspaceSidebarHeader status message', () => {
     );
   });
 
-  it('aligns the branch icon and shows compact branch context', async () => {
-    const { container } = await renderHeader({ baseRef: 'main', skipWorktree: false });
-    const icon = container.querySelector('[data-sidebar-branch-icon]');
-    const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
+  it.each(['worktree', 'direct', 'cow', undefined] as const)(
+    'shows compact branch context without a glyph or checkout mode for %s',
+    async (checkoutMode) => {
+      const { container } = await renderHeader({ baseRef: 'main', checkoutMode });
+      const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
 
-    expect(icon?.className).toContain('size-4');
-    expect(icon?.className).toContain('place-items-center');
-    expect(hoverCard?.textContent).toContain('feature/status');
-    expect(hoverCard?.textContent).toContain('Base main');
-    expect(hoverCard?.textContent).toContain('Worktree');
-    expect(hoverCard?.textContent).not.toContain('Click to rename');
-  });
+      expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
+      expect(hoverCard?.textContent).toContain('feature/status');
+      expect(hoverCard?.textContent).toContain('Base main');
+      expect(hoverCard?.textContent).not.toContain('Worktree');
+      expect(hoverCard?.textContent).not.toContain('Direct');
+      expect(hoverCard?.textContent).not.toContain('CoW');
+      expect(hoverCard?.textContent).not.toContain('Click to rename');
+    },
+  );
 
   it('renames on click and copies the branch name on Shift-click', async () => {
     await renderHeader();

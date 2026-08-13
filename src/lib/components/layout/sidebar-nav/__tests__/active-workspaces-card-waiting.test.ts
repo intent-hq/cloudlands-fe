@@ -13,6 +13,10 @@ import {
   setWorkspaceHasLoaded,
   resetWorkspaceState,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  setPinnedWorkspaceIds,
+  togglePinWorkspace,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import ActiveWorkspacesCardHarness from './mocks/ActiveWorkspacesCardHarness.svelte';
 
@@ -73,6 +77,7 @@ describe('ActiveWorkspacesCard Waiting section', () => {
   beforeEach(async () => {
     appStore.init();
     appStore.dispatch(resetWorkspaceState());
+    appStore.dispatch(setPinnedWorkspaceIds([]));
     const { activeStreamsTracker } =
       await import('$features/agent/services/active-streams-tracker');
     streamingIdsMap = (
@@ -160,5 +165,36 @@ describe('ActiveWorkspacesCard Waiting section', () => {
     await waitFor(() => {
       expect(getSectionHeaders()).toEqual(['Unread', 'Running', 'Waiting']);
     });
+  });
+
+  it('passes pinned state through every active-list section', async () => {
+    streamingIdsMap.set('ws-run', ['agent-1']);
+    const workspaces = [
+      makeWorkspace('ws-unread', 'Unread pinned', { attention: 'unread' }),
+      makeWorkspace('ws-run', 'Running pinned', { displayStatus: 'in_progress' }),
+      makeWorkspace('ws-wait', 'Waiting pinned', { displayStatus: 'in_progress' }),
+      makeWorkspace('ws-pin', 'Pinned only'),
+    ];
+
+    render(ActiveWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          workspaces.forEach((workspace) => {
+            appStore.dispatch(setWorkspaceEntity(workspace));
+            appStore.dispatch(togglePinWorkspace(workspace.id));
+          });
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => expect(screen.getAllByTestId('workspace-card')).toHaveLength(4));
+    expect(
+      screen
+        .getAllByTestId('workspace-card')
+        .every((card) => card.getAttribute('data-pinned') === 'true'),
+    ).toBe(true);
+    expect(getSectionHeaders()).toEqual(['Unread', 'Running', 'Waiting', 'Pinned']);
   });
 });

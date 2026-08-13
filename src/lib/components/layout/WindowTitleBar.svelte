@@ -31,9 +31,12 @@
     selectCounterScale,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateBackFromSettings, navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { faSettings } from '$lib/icons/phosphor-icons';
-  import Fa from 'svelte-fa';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    TITLEBAR_NAVIGATION_CONTROL_CLASS,
+    TITLEBAR_NAVIGATION_GLYPH_CLASS,
+  } from './titlebar-navigation';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
@@ -258,18 +261,17 @@
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
     <Button
       variant="ghost"
-      size="icon-xs"
+      size="icon"
       iconOnly
-      class={cn(
-        'text-foreground hover:text-foreground',
-        page.url.pathname.startsWith('/settings') && 'text-accent-foreground',
-      )}
+      class={TITLEBAR_NAVIGATION_CONTROL_CLASS}
       onclick={() => void handleSettings()}
       aria-label={m.layout_sidebarNav_settings_label()}
       aria-current={page.url.pathname.startsWith('/settings') ? 'page' : undefined}
       data-titlebar-settings
     >
-      <Fa icon={faSettings} class="pointer-events-none size-3.5!" />
+      <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+        <IntentNavigationIcon name="settings" size={16} class="pointer-events-none size-4!" />
+      </span>
     </Button>
   </Tooltip>
 {/snippet}

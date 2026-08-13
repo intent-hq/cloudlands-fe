@@ -382,8 +382,10 @@ jobs:
       - name: Decode DigiCert client certificate
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
         shell: bash
+        env:
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+          echo "$INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
 
       - name: Setup DigiCert Software Trust Manager
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
@@ -447,15 +449,16 @@ jobs:
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing env (pattern: intent-manual-windows-build.yml). When
-          # sign=false the gate step is skipped, this stays empty, and
-          # scripts/windows-sign.cjs skips silently.
+          # Signing env (pattern: intent-manual-windows-build.yml). Emptied
+          # when sign=false — the gate step is skipped, and
+          # scripts/windows-sign.cjs skips silently — mirroring how the macOS
+          # leg gates its signing env on inputs.sign.
           INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
-          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ inputs.sign && vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS || '' }}
+          SM_HOST: ${{ inputs.sign && vars.INTENT_WINDOWS_SM_HOST || '' }}
+          SM_API_KEY: ${{ inputs.sign && secrets.INTENT_WINDOWS_SM_API_KEY || '' }}
+          SM_CLIENT_CERT_FILE: ${{ inputs.sign && format('{0}\Certificate_pkcs12.p12', runner.temp) || '' }}
+          SM_CLIENT_CERT_PASSWORD: ${{ inputs.sign && secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD || '' }}
         run: |
           pnpm run dist:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

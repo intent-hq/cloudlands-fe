@@ -105,6 +105,12 @@
     hasRemote: boolean;
     hasPRs: boolean;
     pullRequests: PRInfo[];
+    /** PRs attributed to secondary git roots — the "Other PRs" sub-section
+     * (monorepo#2053). */
+    otherRootPRs?: PRInfo[];
+    /** Monitor rows attributable to no known root — the "Other Tracked PRs"
+     * sub-section (monorepo#2053). */
+    otherTrackedPRs?: PRInfo[];
     commits: any[];
     pushedCommits: any[];
     allCommits: any[];
@@ -133,6 +139,10 @@
     onOpenChange?: (change: TrackedChange) => void;
     /** Snippet for merge panel content */
     mergePanelContent?: import('svelte').Snippet;
+    /** Render only the read-only PR list (no create-PR/push/merge dividers,
+     * no local-files expansion) — the secondary-root browsing view
+     * (monorepo#2053). */
+    listOnly?: boolean;
   }
 
   let {
@@ -146,6 +156,8 @@
     hasRemote,
     hasPRs,
     pullRequests,
+    otherRootPRs = [],
+    otherTrackedPRs = [],
     commits,
     pushedCommits,
     allCommits,
@@ -172,6 +184,7 @@
     onOpenFullPanel,
     onOpenChange: _onOpenChange,
     mergePanelContent,
+    listOnly = false,
   }: Props = $props();
 
   // Redux selectors
@@ -654,6 +667,12 @@
     return pr.crossRepo ? `${pr.crossRepo}#${pr.number}` : String(pr.number);
   }
 
+  // Any PR content across the three sub-sections (monorepo#2053) — the
+  // section header renders when any of them has rows.
+  const hasAnyPRs = $derived(
+    hasPRs || otherRootPRs.length > 0 || otherTrackedPRs.length > 0,
+  );
+
   function togglePRExpanded(key: string) {
     const newSet = new Set(expandedPRs);
     if (newSet.has(key)) {
@@ -699,8 +718,9 @@
   }
 </script>
 
-<!-- Divider with Create PR, Push Commits button, or Synced status (only when remote exists) -->
-{#if hasRemote}
+<!-- Divider with Create PR, Push Commits button, or Synced status (only when
+     the primary workspace has a remote, and never in listOnly mode) -->
+{#if hasRemote && !listOnly}
   <TimelineDivider>
     {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
       <!-- Show Push Commits button when open PR exists -->
@@ -1002,17 +1022,24 @@
       </DividerPanel>
     {/if}
   </TimelineDivider>
+{/if}
 
-  <!-- PULL REQUESTS SECTION -->
-  {#if hasPRs}
+<!-- PULL REQUESTS SECTION — outside the hasRemote guard: a selected
+     secondary root (or a monitor-only row) can supply PRs even when the
+     primary workspace has no remote (monorepo#2053). Primary-only
+     affordances (create PR / push / merge) stay gated on hasRemote above. -->
+{#if hasAnyPRs}
     <div transition:slide={{ duration: 200 }}>
       <TimelineSection
         title={m.workspace_prSection_pullRequests_label()}
-        active={hasPRs}
+        active={hasAnyPRs}
         activeColor="bg-purple-500"
       >
         {#snippet action()}
-          {#if hasPRs || $githubAuthIsAuthenticated$}
+          <!-- Refresh fetches/refreshes the PRIMARY workspace's git + PR
+               state, so it is suppressed in the read-only listOnly
+               (secondary-root browsing) mode (monorepo#2053). -->
+          {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
             <button
               type="button"
               class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
@@ -1045,136 +1072,161 @@
             />
           {/key}
         {/if}
-        {#if hasPRs}
-          <div class="space-y-0.5">
-            {#each pullRequests as pr (prKey(pr))}
-              {@const statusColor =
-                pr.status === 'open'
-                  ? 'text-emerald-500'
-                  : pr.status === 'merged'
-                    ? 'text-purple-500'
-                    : pr.status === 'closed'
-                      ? 'text-red-500'
-                      : 'text-subtle'}
-              {@const statusIcon =
-                pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
-              {@const isPRExpanded = expandedPRs.has(prKey(pr))}
-              <!-- prFiles reflects the workspace branch PR only — monitor-only
-                   rows (incl. cross-repo) have no local file data to expand. -->
-              {@const hasPRFiles = !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
-              <div>
-                <!-- PR header -->
-                <div
-                  class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
-                  title={getPRStatusTooltip(pr)}
+        {#snippet prRow(pr: PRInfo, localFiles: boolean)}
+          {@const statusColor =
+            pr.status === 'open'
+              ? 'text-emerald-500'
+              : pr.status === 'merged'
+                ? 'text-purple-500'
+                : pr.status === 'closed'
+                  ? 'text-red-500'
+                  : 'text-subtle'}
+          {@const statusIcon =
+            pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
+          {@const isPRExpanded = expandedPRs.has(prKey(pr))}
+          <!-- prFiles reflects the workspace branch PR only — monitor-only
+               rows (incl. cross-repo) and the other sub-sections' rows have
+               no local file data to expand. -->
+          {@const hasPRFiles =
+            localFiles && !pr.monitorOnly && (prFiles.length > 0 || prFilesUnknown)}
+          <div>
+            <!-- PR header -->
+            <div
+              class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
+              title={getPRStatusTooltip(pr)}
+            >
+              {#if hasPRFiles}
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+                  onclick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    togglePRExpanded(prKey(pr));
+                  }}
+                  title={m.workspace_prSection_toggleFileList_tooltip()}
                 >
-                  {#if hasPRFiles}
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
-                      onclick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        togglePRExpanded(prKey(pr));
-                      }}
-                      title={m.workspace_prSection_toggleFileList_tooltip()}
+                  <Fa
+                    icon={faChevronDown}
+                    size={12}
+                    class="text-subtle shrink-0 transition-transform {isPRExpanded
+                      ? 'rotate-0'
+                      : '-rotate-90'}"
+                  />
+                  <LineChangesBadge
+                    additions={prTotalAdditions}
+                    deletions={prTotalDeletions}
+                    size="xs"
+                  />
+                </Button>
+              {/if}
+
+              <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
+              <button
+                type="button"
+                class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                onclick={onOpenFullPanel}
+              >
+                <span class="text-ui text-subtle truncate flex-1">
+                  {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepoDisplay ?? pr.crossRepo}:</span>
+                  {/if}{pr.title}{#if monitorAgentName(pr.monitorAgentId)}
+                    <span
+                      class="text-ghost"
+                      title={m.workspace_prSection_monitoredBy_tooltip({
+                        agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                      })}
+                      >{m.workspace_prSection_monitoredBy_label({
+                        agent: monitorAgentName(pr.monitorAgentId) ?? '',
+                      })}</span
                     >
-                      <Fa
-                        icon={faChevronDown}
-                        size={12}
-                        class="text-subtle shrink-0 transition-transform {isPRExpanded
-                          ? 'rotate-0'
-                          : '-rotate-90'}"
-                      />
-                      <LineChangesBadge
-                        additions={prTotalAdditions}
-                        deletions={prTotalDeletions}
-                        size="xs"
-                      />
-                    </Button>
                   {/if}
-
-                  <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
-                  <button
-                    type="button"
-                    class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
-                    onclick={onOpenFullPanel}
-                  >
-                    <span class="text-ui text-subtle truncate flex-1">
-                      {#if pr.crossRepo}<span class="text-ghost">{pr.crossRepoDisplay ?? pr.crossRepo}:</span>
-                      {/if}{pr.title}{#if monitorAgentName(pr.monitorAgentId)}
-                        <span
-                          class="text-ghost"
-                          title={m.workspace_prSection_monitoredBy_tooltip({
-                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
-                          })}
-                          >{m.workspace_prSection_monitoredBy_label({
-                            agent: monitorAgentName(pr.monitorAgentId) ?? '',
-                          })}</span
-                        >
-                      {/if}
-                    </span>
-                    <span class="text-ui text-subtle">#{pr.number}</span>
-                    {#if pr.status === 'merged'}
-                      <span class="text-ui text-purple-500 font-medium">{m.workspace_prSection_merged_label()}</span>
-                    {:else if pr.status === 'closed'}
-                      <span class="text-ui text-red-500 font-medium">{m.workspace_prSection_closed_label()}</span>
-                    {/if}
-                  </button>
-
-                  <div
-                    class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Button
-                      variant="ghost-light"
-                      size="icon-xs"
-                      class="shrink-0"
-                      onclick={() =>
-                        handleLink(pr.url, {
-                          workspaceId: workspaceId as WorkspaceId,
-                          forceExternal: true,
-                        })}
-                      tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
-                      tooltipSide="top"
-                    >
-                      <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                    </Button>
-                  </div>
-                </div>
-
-                <!-- Expanded panel content - PR files -->
-                {#if isPRExpanded}
-                  <div
-                    class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
-                    transition:slide={{ duration: 150 }}
-                  >
-                    {#each prFiles as file (file.path)}
-                      <FileRow
-                        {file}
-                        muted={true}
-                        active={activeFilePath === file.path && activeFileStaged === null}
-                        onFileClick={(filePath) => {
-                          handlePRFileClick(filePath).catch((error) => {
-                            logger.error('Error in handlePRFileClick', { error });
-                          });
-                        }}
-                        onOpenFile={handleOpenFile}
-                      />
-                    {/each}
-                  </div>
+                </span>
+                <span class="text-ui text-subtle">#{pr.number}</span>
+                {#if pr.status === 'merged'}
+                  <span class="text-ui text-purple-500 font-medium">{m.workspace_prSection_merged_label()}</span>
+                {:else if pr.status === 'closed'}
+                  <span class="text-ui text-red-500 font-medium">{m.workspace_prSection_closed_label()}</span>
                 {/if}
+              </button>
+
+              <div
+                class="absolute -right-1 pl-1 bg-sidebar flex items-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Button
+                  variant="ghost-light"
+                  size="icon-xs"
+                  class="shrink-0"
+                  onclick={() =>
+                    handleLink(pr.url, {
+                      workspaceId: workspaceId as WorkspaceId,
+                      forceExternal: true,
+                    })}
+                  tooltip={m.workspace_sidebar_openInBrowser_tooltip()}
+                  tooltipSide="top"
+                >
+                  <Fa icon={faArrowUpRightFromSquare} size="xs" />
+                </Button>
               </div>
+            </div>
+
+            <!-- Expanded panel content - PR files -->
+            {#if isPRExpanded}
+              <div
+                class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px"
+                transition:slide={{ duration: 150 }}
+              >
+                {#each prFiles as file (file.path)}
+                  <FileRow
+                    {file}
+                    muted={true}
+                    active={activeFilePath === file.path && activeFileStaged === null}
+                    onFileClick={(filePath) => {
+                      handlePRFileClick(filePath).catch((error) => {
+                        logger.error('Error in handlePRFileClick', { error });
+                      });
+                    }}
+                    onOpenFile={handleOpenFile}
+                  />
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/snippet}
+        {#snippet prSubDivider(label: string)}
+          <!-- Labeled divider between PR sub-sections (monorepo#2053) -->
+          <div class="flex items-center gap-2 pt-2 pb-1">
+            <span class="text-xs text-ghost shrink-0">{label}</span>
+            <div class="h-px flex-1 bg-border dark:bg-border/20"></div>
+          </div>
+        {/snippet}
+        {#if hasAnyPRs}
+          <div class="space-y-0.5">
+            <!-- In listOnly mode the top rows belong to a secondary root —
+                 read-only, no local-files expansion (monorepo#2053). -->
+            {#each pullRequests as pr (prKey(pr))}
+              {@render prRow(pr, !listOnly)}
             {/each}
+            {#if otherRootPRs.length > 0}
+              {@render prSubDivider(m.workspace_prSection_otherPullRequests_label())}
+              {#each otherRootPRs as pr (prKey(pr))}
+                {@render prRow(pr, false)}
+              {/each}
+            {/if}
+            {#if otherTrackedPRs.length > 0}
+              {@render prSubDivider(m.workspace_prSection_otherTrackedPullRequests_label())}
+              {#each otherTrackedPRs as pr (prKey(pr))}
+                {@render prRow(pr, false)}
+              {/each}
+            {/if}
           </div>
         {/if}
       </TimelineSection>
     </div>
-  {/if}
 {/if}
 
 
 <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-{#if !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
+{#if !listOnly && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
   <TimelineDivider>
     {#if !hasRemote}
       <div class="w-full flex gap-1">
