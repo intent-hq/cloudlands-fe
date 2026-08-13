@@ -11,10 +11,12 @@
     faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
+    faDownload,
     faPencil,
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
+  import { toast } from 'svelte-sonner';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
@@ -760,6 +762,28 @@
     );
   }
 
+  // Save a copy of a file (or a zip of a folder) via the main process's native
+  // save dialog. Daemon-local only — the local main process reads the path.
+  async function handleDownload(node: FileNode) {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        canceled?: boolean;
+        data?: { filePath: string };
+        error?: { code: string; message: string };
+      }>('file:download', { path: node.path });
+      if (result?.success && result.data?.filePath) {
+        toast.success(
+          m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
+        );
+      } else if (!result?.canceled) {
+        toast.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
+      }
+    } catch {
+      toast.error(m.fileExplorer_tree_downloadFailed_error());
+    }
+  }
+
   function getBackgroundContextMenuItems(): SidebarMenuEntry[] {
     const items: SidebarMenuEntry[] = [];
     if (onCreateFile) {
@@ -852,10 +876,23 @@
       });
     }
 
-    // Add reveal-in-file-manager option — daemon-host desktop action, only
-    // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
+    // Add download and reveal-in-file-manager options — daemon-host desktop
+    // actions, only offered when the daemon runs on this machine (PROTOCOL
+    // §5.14 locality).
     if (selectIsDaemonLocal.select(appStore.state)) {
       items.push({ type: 'separator' });
+      items.push({
+        id: 'download',
+        label:
+          node.type === 'file'
+            ? m.fileExplorer_tree_download_label()
+            : m.fileExplorer_tree_downloadZip_label(),
+        icon: faDownload,
+        onClick: () => {
+          closeContextMenu();
+          void handleDownload(node);
+        },
+      });
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),

@@ -426,6 +426,10 @@ export const FileExistsSchema = z.object({
   workspaceId: z.string().optional(), // For remote workspace file routing
 });
 
+export const FileDownloadSchema = z.object({
+  path: z.string().min(1, 'Path is required'),
+});
+
 export const FileReadDirWithStatsSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
