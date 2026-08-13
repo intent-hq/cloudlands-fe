@@ -2578,6 +2578,7 @@
   "hud_takeover_idleAgents_title": "閒置代理",
   "hud_takeover_footerMap_label": "地圖 · 語義",
   "hud_takeover_footerSpec_label": "規格 · 錨定",
+  "hud_takeover_zoom_ariaLabel": "地圖縮放",
   "hud_takeover_zoomFit_label": "符合",
   "hud_takeover_zoomFit_ariaLabel": "縮放以符合檢視",
   "hud_takeover_zoomOut_label": "−",

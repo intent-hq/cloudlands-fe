@@ -2578,6 +2578,7 @@
   "hud_takeover_idleAgents_title": "AGENTES INACTIVOS",
   "hud_takeover_footerMap_label": "MAPA · SEMÁNTICO",
   "hud_takeover_footerSpec_label": "ESPEC. · ANCLADA",
+  "hud_takeover_zoom_ariaLabel": "Zoom del mapa",
   "hud_takeover_zoomFit_label": "AJUSTAR",
   "hud_takeover_zoomFit_ariaLabel": "Ajustar a la vista",
   "hud_takeover_zoomOut_label": "−",

@@ -2578,6 +2578,7 @@
   "hud_takeover_idleAgents_title": "待機エージェント",
   "hud_takeover_footerMap_label": "マップ · セマンティック",
   "hud_takeover_footerSpec_label": "仕様 · 固定",
+  "hud_takeover_zoom_ariaLabel": "マップのズーム",
   "hud_takeover_zoomFit_label": "フィット",
   "hud_takeover_zoomFit_ariaLabel": "表示範囲に合わせる",
   "hud_takeover_zoomOut_label": "−",

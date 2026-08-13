@@ -11,7 +11,12 @@
   let { map }: { map: HudTakeoverMapState } = $props();
 </script>
 
-<div class="ov-map-zoom" data-testid="hud-takeover-zoom">
+<div
+  class="ov-map-zoom"
+  role="group"
+  aria-label={m.hud_takeover_zoom_ariaLabel()}
+  data-testid="hud-takeover-zoom"
+>
   <button
     class="ov-map-zoom-btn"
     onclick={() => map.zoomFit()}

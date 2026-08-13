@@ -1031,6 +1031,80 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     expect(button('hud-takeover-zoom-in').disabled).toBe(false);
   });
 
+  it('exposes the cluster as a labelled group for screen readers', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cluster = screen.getByTestId('hud-takeover-zoom');
+    expect(cluster.getAttribute('role')).toBe('group');
+    expect(cluster.getAttribute('aria-label')).toBe('Map zoom');
+  });
+
+  it('manual zoom after open never resets the pan or re-schedules the auto-pan (latched needsPan)', () => {
+    // Chain t1..t5: t5 at (5,0) is far and the chain overflows the 1000px
+    // viewport at 1:1 → needsPan latches true at open.
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'T5',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 't5',
+    });
+    flushSync();
+
+    // Pan-delayed banner timing from the latched decision.
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // The scheduled 2s glide lands on the changed cell (5,0).
+    vi.advanceTimersByTime(2100);
+    flushSync();
+    expect(panTransform()).toBe(`translate(${-5 * HUD_TAKEOVER_PITCH_PX}px, 0px)`);
+
+    // Manual drag to a custom camera position.
+    const map = screen.getByTestId('hud-takeover-map');
+    for (const [type, x, y] of [
+      ['pointerdown', 500, 300],
+      ['pointermove', 530, 310],
+      ['pointerup', 530, 310],
+    ] as const) {
+      map.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
+      flushSync();
+    }
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+
+    // FIT makes the whole graph visible: the latched decision must not flip
+    // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
+    click('hud-takeover-zoom-fit');
+    expect(panTransform()).toBe(
+      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
+    );
+    // Banner timing never flips mid-display either.
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // Zooming back to 100% must not re-schedule a surprise 2s glide.
+    click('hud-takeover-zoom-reset');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+    vi.advanceTimersByTime(2500);
+    flushSync();
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+  });
+
   it('a drag gesture across a control never suppresses its click', () => {
     seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });

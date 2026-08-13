@@ -149,8 +149,11 @@
   });
 
   // Auto-pan to a far changed cell (mock: 2s after open; reduced motion
-  // pans immediately, drags stay live) — suppressed when the fitted graph
-  // is already entirely visible.
+  // pans immediately, drags stay live) — suppressed when the graph is
+  // entirely visible at the display's 1:1 open zoom. A once-per-display
+  // decision: needsPan ignores the live zoom, so manual zoom never re-keys
+  // syncAutoPan (which would reset the pan / re-schedule the glide) or
+  // flips banner timing mid-display.
   const needsPan = $derived(map.needsPan(primaryTrigger?.changedTaskId));
   $effect(() => {
     const workspaceId = queue.active?.workspaceId ?? '';

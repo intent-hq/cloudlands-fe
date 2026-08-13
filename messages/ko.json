@@ -2578,6 +2578,7 @@
   "hud_takeover_idleAgents_title": "유휴 에이전트",
   "hud_takeover_footerMap_label": "맵 · 시맨틱",
   "hud_takeover_footerSpec_label": "스펙 · 고정",
+  "hud_takeover_zoom_ariaLabel": "맵 확대/축소",
   "hud_takeover_zoomFit_label": "맞춤",
   "hud_takeover_zoomFit_ariaLabel": "화면에 맞추기",
   "hud_takeover_zoomOut_label": "−",

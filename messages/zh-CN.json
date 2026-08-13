@@ -2578,6 +2578,7 @@
   "hud_takeover_idleAgents_title": "空闲代理",
   "hud_takeover_footerMap_label": "地图 · 语义",
   "hud_takeover_footerSpec_label": "规格 · 锚定",
+  "hud_takeover_zoom_ariaLabel": "地图缩放",
   "hud_takeover_zoomFit_label": "适应",
   "hud_takeover_zoomFit_ariaLabel": "缩放以适应视图",
   "hud_takeover_zoomOut_label": "−",

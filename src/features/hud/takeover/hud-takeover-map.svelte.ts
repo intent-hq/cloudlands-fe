@@ -47,7 +47,12 @@ export interface HudTakeoverMapState {
   readonly panTransform: string;
   /** Coord of `changedTaskId`, null when none/absent. */
   changedCoord(changedTaskId: string | null | undefined): HudTakeoverCellCoord | null;
-  /** Auto-pan needed: far changed cell AND the graph does not fit at the current zoom. */
+  /**
+   * Auto-pan needed: far changed cell AND the graph does not fit at the
+   * display's 1:1 open zoom. A once-per-display decision — deliberately
+   * independent of the live zoom, so manual zoom interaction never
+   * re-triggers or cancels the auto-pan (or flips banner timing) mid-display.
+   */
   needsPan(changedTaskId: string | null | undefined): boolean;
   /** Measure the map viewport once per display key ('' resets; idle clears). */
   measure(displayKey: string, clip: HTMLElement | null): void;
@@ -135,9 +140,10 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     changedCoord,
     needsPan(changedTaskId) {
       const coord = changedCoord(changedTaskId);
-      return (
-        coord !== null && cellNeedsPan(coord) && !takeoverGraphFits(occupied, viewport, zoom)
-      );
+      // Evaluated at the constant 1:1 open zoom (measure() resets zoom to 1
+      // per display), never the live zoom: the decision is latched for the
+      // display, so manual zoom can't reset the pan or re-schedule the glide.
+      return coord !== null && cellNeedsPan(coord) && !takeoverGraphFits(occupied, viewport, 1);
     },
     measure(displayKey, clip) {
       if (!displayKey) {

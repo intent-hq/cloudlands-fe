@@ -97,9 +97,31 @@ describe('createTakeoverMapState zoom', () => {
     const map = measuredMap(chainTasks(5));
     // t5 at (5,0): cellNeedsPan true and the chain overflows at scale 1.
     expect(map.needsPan('t5')).toBe(true);
-    // Fitted (0.476) the whole graph is visible — no auto-pan.
+  });
+
+  it('needsPan is latched per display: manual zoom never flips it', () => {
+    const map = measuredMap(chainTasks(5));
+    expect(map.needsPan('t5')).toBe(true);
+    // Fitting the whole graph on screen must NOT flip the decision — the
+    // overlay's syncAutoPan $effect would re-key and reset the user's pan.
     map.zoomFit();
-    expect(map.needsPan('t5')).toBe(false);
+    expect(map.needsPan('t5')).toBe(true);
+    // Zooming back in must not re-arm it as a "new" decision either.
+    map.zoomReset();
+    map.zoomIn();
+    expect(map.needsPan('t5')).toBe(true);
+
+    // The inverse holds too: a graph that fits at the 1:1 open zoom never
+    // gains an auto-pan when the user zooms in past the viewport. t3 at
+    // (3,0) is a "far" cell (|x| ≥ 3) but half-extent 666px ≤ the 700px
+    // half-viewport, so the open-time decision is false — and stays false
+    // even when zooming in makes the chain overflow.
+    const wide = createTakeoverMapState(() => chainTasks(3));
+    wide.measure('ws-2', { clientWidth: 1400, clientHeight: 600 } as HTMLElement);
+    expect(wide.needsPan('t3')).toBe(false);
+    wide.zoomIn();
+    wide.zoomIn();
+    expect(wide.needsPan('t3')).toBe(false);
   });
 
   it('the drag controller divides pointer deltas by the current zoom', () => {
