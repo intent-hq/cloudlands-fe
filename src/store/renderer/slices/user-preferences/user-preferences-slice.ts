@@ -3,6 +3,7 @@ import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import type { UpdateChannel } from '$features/auto-update/types';
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -36,7 +37,7 @@ export interface ActivityLogPresetPreference {
 }
 
 export type UserPreferencesState = {
-  betaUpdatesEnabled: boolean;
+  updateChannel: UpdateChannel;
   spellcheckEnabled: boolean;
   zoomFactor: number;
   showArchived: boolean;
@@ -83,7 +84,7 @@ const notificationSettingsInitialState: NotificationSettingsState = {
 };
 
 export const initialState: UserPreferencesState = {
-  betaUpdatesEnabled: false,
+  updateChannel: 'stable',
   spellcheckEnabled: false,
   zoomFactor: 1.0,
   showArchived: false,
@@ -97,19 +98,8 @@ export const initialState: UserPreferencesState = {
   githubLinkDefaultAction: 'show-choices',
 };
 
-const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
-  sliceName: 'userPreferences',
-  field: 'betaUpdatesEnabled',
-  setActionName: 'setBetaUpdatesEnabled',
-  toggleActionName: 'toggleBetaUpdates',
-});
-
-export const setBetaUpdatesEnabled = betaUpdatesPreference.setAction;
-
-export const toggleBetaUpdates = betaUpdatesPreference.toggleAction;
-
-export const loadBetaUpdatesSettings = createAction<[enabled: boolean]>(
-  'userPreferences/loadBetaUpdatesSettings',
+export const setUpdateChannel = createAction<[channel: UpdateChannel]>(
+  'userPreferences/setUpdateChannel',
 );
 
 const spellcheckPreference = createBooleanPreference<UserPreferencesState>({
@@ -226,15 +216,14 @@ export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
 export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
 
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
-betaUpdatesPreference.register(userPreferencesReducer);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
 showReasoningBlocksPreference.register(userPreferencesReducer);
-userPreferencesReducer.with(loadBetaUpdatesSettings, (state, { payload: [enabled] }) => ({
+userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
-  betaUpdatesEnabled: enabled,
+  updateChannel: channel,
 }));
 userPreferencesReducer.with(setZoomFactor, (state, { payload: [factor] }) => {
   if (!Number.isFinite(factor) || factor <= 0) return state;

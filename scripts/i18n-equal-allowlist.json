@@ -973,6 +973,21 @@
   "settings_theme_system": [
     "de"
   ],
+  "settings_updateChannel_alpha_label": [
+    "de",
+    "fr",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_beta_label": [
+    "de",
+    "es",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_stable_label": [
+    "fr"
+  ],
   "settings_voice_inputDevice_label": [
     "fr"
   ],

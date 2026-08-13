@@ -22,8 +22,8 @@ export const selectIsAgentMonospace = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle === 'monospace';
 });
 
-export const selectBetaUpdatesEnabled = store.createSelector((state) => {
-  return state.userPreferences.betaUpdatesEnabled;
+export const selectUpdateChannel = store.createSelector((state) => {
+  return state.userPreferences.updateChannel;
 });
 
 export const selectSpellcheckEnabled = store.createSelector((state) => {

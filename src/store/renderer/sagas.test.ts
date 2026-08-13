@@ -79,7 +79,7 @@ describe('renderer app saga registry', () => {
       'terminalPersistenceSaga',
       'externalEditorsPersistenceSaga',
       'workspaceSettingsSaga',
-      'betaUpdatesSaga',
+      'updateChannelSaga',
       'notificationSettingsSaga',
       'userPreferencesPersistenceSaga',
       'workspaceInitializerSaga',
