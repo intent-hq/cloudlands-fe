@@ -3177,6 +3177,7 @@
                 m.chat_chatPanel_yourProject_fallback()}
               repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
               worktreePath={onboardingContext.worktreePath}
+              workspaceId={workspace?.id}
               branch={onboardingContext.branch}
               baseRef={onboardingContext.baseRef || 'origin/main'}
               specialistName={onboardingContext.specialistName}
@@ -3203,6 +3204,7 @@
                   m.chat_chatPanel_yourProject_fallback()}
                 repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                 worktreePath={onboardingContext.worktreePath}
+                workspaceId={workspace?.id}
                 branch={onboardingContext.branch}
                 baseRef={onboardingContext.baseRef || 'origin/main'}
                 specialistName={onboardingContext.specialistName}
@@ -3276,6 +3278,7 @@
                         m.chat_chatPanel_yourProject_fallback()}
                       repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                       worktreePath={onboardingContext.worktreePath}
+                      workspaceId={workspace?.id}
                       branch={onboardingContext.branch}
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
@@ -3383,6 +3386,7 @@
                         m.chat_chatPanel_yourProject_fallback()}
                       repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                       worktreePath={onboardingContext.worktreePath}
+                      workspaceId={workspace?.id}
                       branch={onboardingContext.branch}
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
@@ -3521,6 +3525,7 @@
                       m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
+                    workspaceId={workspace?.id}
                     branch={onboardingContext.branch}
                     baseRef={onboardingContext.baseRef || 'origin/main'}
                     specialistName={onboardingContext.specialistName}

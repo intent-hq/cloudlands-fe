@@ -22,7 +22,8 @@
     selectInstalledEditorsFiltered,
     selectOpenAction,
   } from '$store/renderer/slices/external-editors/external-editors-selectors';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -72,6 +73,8 @@
 
   interface Props {
     filePath: string;
+    /** Workspace whose files `filePath` belongs to; tightens the locality gate to workspace locality (monorepo#2171) */
+    workspaceId?: string;
     isDirectory?: boolean;
     /** The workspace/folder path to open first before the file. Required for proper editor context when isDirectory=false */
     workspaceFolderPath?: string;
@@ -94,6 +97,7 @@
 
   let {
     filePath,
+    workspaceId = '',
     isDirectory = true,
     workspaceFolderPath,
     class: className = '',
@@ -111,9 +115,21 @@
     variant === 'sidebar' ? 'bg-sidebar hover:bg-sidebar/80' : 'bg-background hover:bg-muted',
   );
 
+  // Mirror the workspaceId prop into a store so the selectors below re-run
+  // when it changes.
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
   const openAction = selectOpenAction();
-  const installedEditors$ = selectInstalledEditorsFiltered();
-  const isDaemonLocal$ = selectIsDaemonLocal();
+  const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
+  // With an empty workspaceId this reduces to daemon locality (a missing
+  // workspace entity is treated as local), so it is the single gate for both
+  // the daemon-remote (monorepo#883) and workspace-remote (monorepo#2171)
+  // cases.
+  const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
 
   let dropdownOpen = $state(false);
 
@@ -186,11 +202,12 @@
       return specialActions;
     }
 
-    // "Other…" shows a LOCAL app picker and spawns a local app against the
-    // daemon-host path, so it is meaningless on a remote daemon. Same locality
-    // gate as selectInstalledEditorsFiltered (monorepo#883); omitting it also
-    // makes the `actions[0]` primary-action fallback land on "Copy path".
-    if (!$isDaemonLocal$) {
+    // "Other…" shows a LOCAL app picker and spawns a local app against a
+    // workspace file path, so it is meaningless on a remote daemon
+    // (monorepo#883) or a remote workspace (monorepo#2171). Same locality
+    // gate as selectInstalledEditorsFiltered; omitting it also makes the
+    // `actions[0]` primary-action fallback land on "Copy path".
+    if (!$isWorkspaceHostLocal$) {
       return specialActions;
     }
 

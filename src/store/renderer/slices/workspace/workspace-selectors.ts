@@ -10,6 +10,7 @@ import {
   selectFileTrackingCommits,
 } from '../changes/changes-selectors';
 import { selectGitStatus } from '../git/git-selectors';
+import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import type {
   WorkflowStage,
@@ -86,6 +87,34 @@ export const selectWorkspaceEnvironmentConfig = store.createSelector<
   [wsId: string],
   EnvironmentConfig | undefined
 >((state, wsId) => selectWorkspaceById.select(state, wsId)?.environmentConfig);
+
+/**
+ * True when a workspace's files live on THIS machine (monorepo#2171).
+ *
+ * Two distinct localities must both hold:
+ * - Daemon locality (`selectIsDaemonLocal`): the daemon host is the user's
+ *   machine.
+ * - Workspace locality: the workspace's checkout lives on the daemon host —
+ *   i.e. it is not a remote (SSH) environment
+ *   (`environmentConfig?.type !== 'remote'`, legacy `isRemote !== true`).
+ *
+ * Gates host-shell affordances that act on workspace file paths (reveal in
+ * file manager, download, editor opens): a remote workspace on a LOCAL daemon
+ * has no files on the local desktop, so those actions must be hidden.
+ *
+ * A missing workspace entity is treated as local, matching the optimistic
+ * daemon-locality default — remote workspaces always carry
+ * `environmentConfig`, so the entity resolves to remote as soon as it is
+ * hydrated.
+ */
+export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    if (!selectIsDaemonLocal.select(state)) return false;
+    const workspace = selectWorkspaceById.select(state, wsId);
+    if (!workspace) return true;
+    return workspace.environmentConfig?.type !== 'remote' && workspace.isRemote !== true;
+  },
+);
 
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces).filter(

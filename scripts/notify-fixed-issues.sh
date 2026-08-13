@@ -8,7 +8,9 @@
 # issue URL) from commit messages in <from-ref>..<to-ref>, additionally
 # resolving squash-merge "(#N)" subject suffixes to PR bodies on SOURCE_REPO
 # via the GitHub API and scanning those too. Posts one comment per referenced
-# issue naming the component, version, and channel. When the optional
+# issue naming the component, version, and channel: "Fixed in … (alpha)" for
+# the alpha channel (every tag build), "promoted to beta"/"promoted to
+# stable" for the promotion channels. When the optional
 # [bundled-intentd-version] argument is given, the comment also mentions the
 # bundled intentd version ("bundles intentd vA.B.C").
 #
@@ -19,8 +21,9 @@
 # without posting (ISSUES_GH_TOKEN is then optional and the marker check is
 # best-effort).
 #
-# This script is best-effort by design: callers (release-beta.yml) run it
-# fail-soft so a notification failure never blocks a release.
+# This script is best-effort by design: callers (release-beta.yml,
+# promote-beta.yml, release-stable.yml) run it fail-soft so a notification
+# failure never blocks a release.
 # Requires: git (a checkout with full history for the range) and gh
 # (authenticated via GH_TOKEN for the SOURCE_REPO PR-body reads).
 #
@@ -77,8 +80,8 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   echo "error: version must look like [v]X.Y.Z[-<prerelease>] (prerelease limited to [0-9A-Za-z.-])" >&2
   exit 1
 fi
-if [[ "$CHANNEL" != "beta" && "$CHANNEL" != "stable" ]]; then
-  echo "error: channel must be beta or stable" >&2
+if [[ "$CHANNEL" != "alpha" && "$CHANNEL" != "beta" && "$CHANNEL" != "stable" ]]; then
+  echo "error: channel must be alpha, beta, or stable" >&2
   exit 1
 fi
 if [[ -n "$BUNDLED_INTENTD" ]]; then
@@ -147,10 +150,10 @@ fi
 echo "issues referenced in $range: $(tr '\n' ' ' <<<"$issue_nums")" >&2
 
 marker="<!-- release-notifier: ${COMPONENT} v${VERSION} ${CHANNEL} -->"
-if [[ "$CHANNEL" == "beta" ]]; then
-  message="Fixed in ${COMPONENT} v${VERSION} (beta)"
+if [[ "$CHANNEL" == "alpha" ]]; then
+  message="Fixed in ${COMPONENT} v${VERSION} (alpha)"
 else
-  message="${COMPONENT} v${VERSION} promoted to stable"
+  message="${COMPONENT} v${VERSION} promoted to ${CHANNEL}"
 fi
 if [[ -n "$BUNDLED_INTENTD" ]]; then
   message="${message}, bundles intentd v${BUNDLED_INTENTD}"
