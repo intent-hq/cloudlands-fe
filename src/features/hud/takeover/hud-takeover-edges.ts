@@ -78,11 +78,15 @@ const CONSUMED_DEST_STATUSES: ReadonlySet<string> = new Set([
 /** Live-attention pulse on an edge: red conflict / green ready / none. */
 export type HudTakeoverEdgePulse = 'conflict' | 'ready' | null;
 
+/** Endpoint statuses that resolve a conflict — the task can no longer conflict. */
+const RESOLVED_CONFLICT_STATUSES: ReadonlySet<string> = new Set(['complete', 'cancelled']);
+
 /**
  * Pulse state for one edge (pure edge → visual-state mapping):
  * - `conflict` edges pulse red while the conflict is live — NEITHER endpoint
- *   task is complete; once either endpoint completes, the pulse stops (the
- *   edge then renders static and muted via `dimmed`).
+ *   task is complete nor cancelled; once either endpoint completes or is
+ *   cancelled, the pulse stops (the edge then renders static and muted via
+ *   `dimmed`).
  * - `dep` edges pulse green when their DESTINATION task is ready to start:
  *   non-empty `dependsOn`, empty/absent `unmetDependsOn`, and status
  *   `not_started`. Any other status never pulses green; dependency-free
@@ -95,7 +99,9 @@ export function takeoverEdgePulse(
   to: HudTakeoverEdgeTask | undefined,
 ): HudTakeoverEdgePulse {
   if (kind === 'conflict') {
-    return from?.status === 'complete' || to?.status === 'complete' ? null : 'conflict';
+    const resolved = (task: HudTakeoverEdgeTask | undefined) =>
+      task !== undefined && RESOLVED_CONFLICT_STATUSES.has(task.status);
+    return resolved(from) || resolved(to) ? null : 'conflict';
   }
   if (kind !== 'dep' || !to) return null;
   const ready =
@@ -115,7 +121,7 @@ export interface HudTakeoverMapEdge {
   /**
    * Renders at reduced opacity: a dep edge whose destination is
    * underway/finished, or a conflict edge whose conflict is resolved
-   * (either endpoint complete).
+   * (either endpoint complete or cancelled).
    */
   dimmed: boolean;
   /** Pulse treatment (see `takeoverEdgePulse`). */

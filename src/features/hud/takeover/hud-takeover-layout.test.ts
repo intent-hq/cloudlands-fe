@@ -334,7 +334,7 @@ describe('hud-takeover-layout', () => {
       }
 
       // Conflict edges never take a palette color; a resolved conflict
-      // (either endpoint complete) dims to static muted.
+      // (either endpoint complete or cancelled) dims to static muted.
       const conflicted = [t('a'), t('b', undefined, ['a'])];
       const { routing: cRouting, pitch: cPitch } = route(conflicted);
       const conflict = takeoverMapEdges(
@@ -343,7 +343,15 @@ describe('hud-takeover-layout', () => {
         cPitch,
       ).find((edge) => edge.kind === 'conflict');
       expect(conflict).toMatchObject({ colorIndex: null, dimmed: true, pulse: null });
-      // A live conflict (neither complete) never dims — it pulses instead.
+      // A cancelled endpoint resolves the conflict the same way.
+      const cancelled = takeoverMapEdges(
+        cRouting,
+        infos(conflicted, { a: 'in_progress', b: 'cancelled' }),
+        cPitch,
+      ).find((edge) => edge.kind === 'conflict');
+      expect(cancelled).toMatchObject({ colorIndex: null, dimmed: true, pulse: null });
+      // A live conflict (neither complete nor cancelled) never dims — it
+      // pulses instead.
       const live = takeoverMapEdges(
         cRouting,
         infos(conflicted, { a: 'in_progress', b: 'not_started' }),
@@ -464,16 +472,19 @@ describe('hud-takeover-layout', () => {
       'cancelled',
     ];
 
-    it('conflict edges pulse red while NEITHER endpoint is complete', () => {
+    it('conflict edges pulse red while NEITHER endpoint is complete nor cancelled', () => {
+      const resolved = ['complete', 'cancelled'];
       for (const a of STATUSES) {
         for (const b of STATUSES) {
-          const expected = a === 'complete' || b === 'complete' ? null : 'conflict';
+          const expected = resolved.includes(a) || resolved.includes(b) ? null : 'conflict';
           expect(takeoverEdgePulse('conflict', task(a), task(b)), `${a} × ${b}`).toBe(expected);
         }
       }
-      // Unknown endpoints are not complete → still live.
+      // Unknown endpoints are neither complete nor cancelled → still live.
       expect(takeoverEdgePulse('conflict', undefined, undefined)).toBe('conflict');
       expect(takeoverEdgePulse('conflict', task('complete'), undefined)).toBeNull();
+      expect(takeoverEdgePulse('conflict', task('cancelled'), undefined)).toBeNull();
+      expect(takeoverEdgePulse('conflict', undefined, task('cancelled'))).toBeNull();
     });
 
     it('dep edges pulse green ONLY into a ready task (deps met, not started)', () => {
