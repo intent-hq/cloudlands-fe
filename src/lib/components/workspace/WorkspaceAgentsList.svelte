@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AgentSession } from '$shared/types';
+  import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import { ListEmpty } from '$lib/components/ui/list';
@@ -74,7 +75,9 @@
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
   // Fall back to the regular list when delegations exist (tree heights are variable).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(flatAgentRows));
-  const itemHeight = 72;
+  // Matches the slim card's base height (LazyAgentCard's estimatedHeight default);
+  // virtualized rows hide the preview line so every row stays uniform.
+  const itemHeight = 48;
   const containerHeight = 600;
   let expandedAgentIds = $state(new Set<string>());
   let showBackgroundAgents = $state(false);
@@ -233,12 +236,12 @@
     >
       {#snippet children({ item: agent }: { item: AgentSession })}
         <div class="w-full">
-          <LazyAgentCard
-            cacheKey={agent.id}
+          <AgentCard
             agentId={agent.id}
             agentName={agent.name}
             isBackground={false}
             selected={agent.id === selectedAgentId}
+            hidePreview
             onclick={() => handleAgentClick(agent.id)}
           />
         </div>
