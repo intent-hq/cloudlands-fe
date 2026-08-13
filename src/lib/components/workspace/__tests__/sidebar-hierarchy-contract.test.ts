@@ -74,10 +74,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(fullMode).not.toContain('pb-2 pl-1 text-left');
     expect(fullMode).not.toContain('px-0.5 py-1');
     expect(fullMode).toContain('{$workspace.branch}');
-    expect(fullMode).toContain('<CheckoutModePill workspace={$workspace} />');
-    expect(fullMode).not.toContain(
-      'aria-hidden="true">·</span>\n          <CheckoutModePill workspace={$workspace} />',
-    );
+    expect(fullMode).toContain('presentation="repository"');
+    expect(fullMode).toContain('repositoryOpen={repoTooltipOpen}');
+    expect(fullMode).not.toContain('data-sidebar-branch-icon');
+    expect(fullMode).not.toContain('<CheckoutModePill workspace={$workspace} />');
     expect(fullMode).not.toContain('data-workspace-title-section class="bg-');
   });
 

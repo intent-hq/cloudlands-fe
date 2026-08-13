@@ -19,6 +19,9 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     expect(source.match(/w-56 p-2\.5/g)).toHaveLength(2);
     expect(source).not.toContain('Click to copy repository path');
     expect(source).not.toContain('Click to copy branch name');
-    expect(source).not.toContain('border-t border-border');
+    expect(source).toContain('presentation="repository"');
+    expect(source).toContain('repositoryOpen={repoTooltipOpen}');
+    expect(source).not.toContain('data-sidebar-branch-icon');
+    expect(source).not.toContain("$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'");
   });
 });

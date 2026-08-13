@@ -1,11 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * Checkout-mode pill visibility in WorkspaceProgressCard. The pill
- * renders "CoW" / "Worktree" next to the org/repo subtitle in both the full
- * (sidebar) and compact (homepage card) variants, and renders nothing for
- * direct workspaces (`checkoutMode` absent). It must sit outside the
- * copy-on-click repo button so the copy affordance is preserved.
+ * Checkout-mode repository metadata in WorkspaceProgressCard. The second
+ * line stays limited to repository and branch text; checkout mode and disk
+ * usage live in the repository hover card.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
@@ -148,6 +146,9 @@ vi.mock('$lib/components/ui/WorkspaceActionsMenu.svelte', async () => ({
 vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
   default: (await import('./mocks/MockTooltip.svelte')).default,
 }));
+vi.mock('$lib/components/ui/tooltip', async () => ({
+  TooltipRich: (await import('./mocks/MockTooltipRich.svelte')).default,
+}));
 vi.mock('$lib/components/icons/SidebarIcon.svelte', async () => ({
   default: (await import('./mocks/MockSimple.svelte')).default,
 }));
@@ -210,10 +211,11 @@ async function renderProgressCard(
 warmImport(() => import('../../../terminal/__tests__/mocks/MockButton.svelte'));
 warmImport(() => import('./mocks/MockSimple.svelte'));
 warmImport(() => import('./mocks/MockTooltip.svelte'));
+warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../WorkspaceProgressCard.svelte'));
 
-describe('WorkspaceProgressCard checkout-mode pill', () => {
+describe('WorkspaceProgressCard checkout mode in repository hover card', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
@@ -221,63 +223,39 @@ describe('WorkspaceProgressCard checkout-mode pill', () => {
     mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
   });
 
-  it('renders "CoW" beside the repo text, outside the copy button (full mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow' });
+  it.each([
+    ['cow', 'cow', 'CoW'],
+    ['worktree', 'worktree', 'Worktree'],
+    ['direct', 'direct', 'Direct'],
+  ] as const)(
+    'renders %s mode inside the repository hover card',
+    async (checkoutMode, mode, label) => {
+      const { container } = await renderProgressCard({ checkoutMode });
 
-    const pill = screen.getByText('CoW');
-    expect(pill).toBeTruthy();
+      const metadata = container.querySelector('[data-sidebar-repository-branch-metadata]');
+      const repositoryCard = container.querySelector('[data-sidebar-repository-hover-card]');
+      const modeDetails = repositoryCard?.querySelector('[data-checkout-mode-details]');
+      const modeIcon = repositoryCard?.querySelector('[data-checkout-mode-icon]');
 
-    const repoButton = screen.getByRole('button', { name: 'augment/intent' });
-    expect(repoButton.contains(pill)).toBe(false);
-  });
+      expect(modeDetails?.textContent).toContain(`Checkout mode: ${label}`);
+      expect(modeIcon?.getAttribute('data-checkout-mode-icon')).toBe(mode);
+      expect(metadata?.querySelector('[data-checkout-mode]')).toBeNull();
+      expect(metadata?.querySelector('[data-sidebar-branch-icon]')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: 'augment/intent' }).contains(modeDetails ?? null),
+      ).toBe(false);
+    },
+  );
 
-  it('renders the checkout pill directly after the branch metadata (full mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow' });
+  it('omits checkout details when checkoutMode is missing', async () => {
+    const { container } = await renderProgressCard({ checkoutMode: undefined });
 
-    const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
-  });
-
-  it('renders the checkout pill directly after the branch metadata (compact mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow' }, { compact: true });
-
-    const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
-  });
-
-  it('renders an accessible Worktree icon pill when checkoutMode is worktree (full mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'worktree' });
-
-    expect(screen.getByLabelText('Checkout mode: Worktree')).toBeTruthy();
-  });
-
-  it('renders no pill when checkoutMode is undefined (full mode)', async () => {
-    await renderProgressCard({ checkoutMode: undefined });
-
-    expect(screen.queryByText('CoW')).toBeNull();
-    expect(screen.queryByText('Worktree')).toBeNull();
+    expect(container.querySelector('[data-checkout-mode-details]')).toBeNull();
     expect(screen.getByRole('button', { name: 'augment/intent' })).toBeTruthy();
-  });
-
-  it('renders "CoW" beside the repo text, outside the copy button (compact mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow' }, { compact: true });
-
-    const pill = screen.getByText('CoW');
-    expect(pill).toBeTruthy();
-
-    const repoButton = screen.getByRole('button', { name: 'augment/intent' });
-    expect(repoButton.contains(pill)).toBe(false);
-  });
-
-  it('renders no pill in compact mode for direct workspaces', async () => {
-    await renderProgressCard({ checkoutMode: undefined }, { compact: true });
-
-    expect(screen.queryByText('CoW')).toBeNull();
-    expect(screen.queryByText('Worktree')).toBeNull();
   });
 });
 
-describe('WorkspaceProgressCard disk-usage tooltip on pill', () => {
+describe('WorkspaceProgressCard disk usage in repository hover flow', () => {
   const diskUsage = {
     bytes: 2_330_000_000,
     fileCount: 10,
@@ -292,24 +270,13 @@ describe('WorkspaceProgressCard disk-usage tooltip on pill', () => {
     mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
   });
 
-  it('renders no visible size text in the subtitle (full mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow', diskUsage });
+  it('keeps size out of the second line and mode details in the repository card', async () => {
+    const { container } = await renderProgressCard({ checkoutMode: 'cow', diskUsage });
 
-    expect(screen.getByText('CoW')).toBeTruthy();
+    const metadata = container.querySelector('[data-sidebar-repository-branch-metadata]');
+    const repositoryCard = container.querySelector('[data-sidebar-repository-hover-card]');
+    expect(metadata?.querySelector('[data-checkout-mode]')).toBeNull();
+    expect(repositoryCard?.textContent).toContain('Checkout mode: CoW');
     expect(screen.queryByText('2.17Gi')).toBeNull();
-  });
-
-  it('renders no visible size text in the subtitle (compact mode)', async () => {
-    await renderProgressCard({ checkoutMode: 'cow', diskUsage }, { compact: true });
-
-    expect(screen.getByText('CoW')).toBeTruthy();
-    expect(screen.queryByText('2.17Gi')).toBeNull();
-  });
-
-  it('keeps the pill directly after branch metadata when diskUsage is present', async () => {
-    await renderProgressCard({ checkoutMode: 'cow', diskUsage });
-
-    const pill = screen.getByText('CoW');
-    expect(pill.previousElementSibling?.getAttribute('data-tooltip-trigger')).not.toBeNull();
   });
 });

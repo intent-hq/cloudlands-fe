@@ -1232,6 +1232,15 @@
     "fr",
     "es"
   ],
+  "workspace_checkoutModePill_cow_label": [
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "de",
+    "fr",
+    "es"
+  ],
   "workspace_compactInitializer_setupDevEnvWith_after": [
     "fr",
     "es"
