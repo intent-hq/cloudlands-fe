@@ -268,7 +268,7 @@
         {/snippet}
 
         {#snippet content({ close }: { close: () => void })}
-          <div class="flex w-48 flex-col p-1" data-testid="monitored-pr-menu">
+          <div class="flex flex-col" data-testid="monitored-pr-menu">
             <Button
               variant="ghost-light"
               size="xs"

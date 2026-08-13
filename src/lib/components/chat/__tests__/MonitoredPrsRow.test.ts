@@ -250,6 +250,20 @@ describe('MonitoredPrsRow', () => {
     ]);
   });
 
+  it('chip menu container has no fixed width so wide labels are not cropped', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+    await waitFor(() => screen.getByTestId('monitored-pr-menu'));
+    const menu = screen.getByTestId('monitored-pr-menu');
+    // A fixed width (w-48) cropped "Open in External Browser": Button applies
+    // whitespace-nowrap and Menu.Content's overflow-y-auto clips x-overflow.
+    // The menu must size to its widest item (Menu.Content provides min-w-40).
+    expect(Array.from(menu.classList)).not.toContain('w-48');
+    expect(Array.from(menu.classList).some((cls) => /^w-\d/.test(cls))).toBe(false);
+  });
+
   it('chip menu Check and Flush dispatches the flush trigger with check: true', async () => {
     monitorsState.monitors = [makeMonitor({ hasPendingChanges: true, pendingChanges: ['x'] })];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
