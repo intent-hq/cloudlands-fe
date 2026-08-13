@@ -71,6 +71,7 @@
   } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -188,6 +189,10 @@
   const pullRequests = $derived(sectionedPRs.own);
   const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
+
+  // Multi git root browsing (monorepo#2053): while GitRootBrowser has a
+  // secondary root selected this panel hides its primary-root body.
+  let isBrowsingSecondaryRoot = $state(false);
 
   // Truncation state - when there are more changes than we can display
   // Only show truncation warning if there are actual working changes being truncated
@@ -972,6 +977,10 @@
         aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}
         onkeydown={handleChangesKeydown}
       >
+        <!-- Git root dropdown + read-only per-root browsing (monorepo#2053) -->
+        <GitRootBrowser {workspaceId} onBrowsingSecondaryChange={(b) => (isBrowsingSecondaryRoot = b)} />
+
+        {#if !isBrowsingSecondaryRoot}
         <div class="branch-labels w-full flex justify-between mb-1 mt-1">
           <p class="text-subtle leading-snug text-ui">
             {m.workspace_sidebarChanges_codeLivesIn_label()}
@@ -1030,18 +1039,6 @@
             </div>
           {/if}
 
-          <!-- Code Review Button -->
-          <!-- {#if hasAnyChanges}
-            <Tooltip content="Open AI code review" side="bottom">
-              <button
-                onclick={handleOpenCodeReviewClick}
-                class="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground rounded-sm transition-colors cursor-pointer border border-transparent hover:border-border hover:bg-background"
-              >
-                <Fa icon={faMagnifyingGlass} class="opacity-50" size="xs" />
-                <span class="text-xs">Review</span>
-              </button>
-            </Tooltip>
-          {/if} -->
         </div>
 
         <!-- Truncation warning banner -->
@@ -1179,6 +1176,7 @@
             <PostMergeActions {workspaceId} {hasNoLocalChanges} {trunkBranch} />
           {/if}
         </div>
+        {/if}
       </div>
     {/if}
   </div>
