@@ -435,6 +435,54 @@ describe('switchToLocalAndSpawn — atomic recovery survives window teardown', (
     }
   });
 
+  it('decides the no-op switch inside the switch queue (monorepo#2228)', async () => {
+    // Stateful active-id so the in-flight switch's setActiveId is visible to
+    // the recovery's enqueued re-read.
+    let activeId = 'remote-1';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-switch-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    try {
+      const mod = await loadModule();
+      // Park the user's own switch to local at its window-teardown await point.
+      let releaseSwitch!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
+      const captureAndClose = vi.fn(async () => {
+        if (captureAndClose.mock.calls.length === 1) await gate;
+      });
+      mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+      const userSwitch = mod.switchBackend('local');
+      await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+      // Recovery kicks in while the user's switch is still in flight. A stale
+      // pre-queue read would see 'remote-1' and perform a redundant second
+      // switch-to-local (another full window teardown).
+      const recovery = mod.switchToLocalAndSpawn();
+
+      releaseSwitch();
+      await expect(userSwitch).resolves.toEqual({ activeId: 'local' });
+      const result = await recovery;
+
+      // The no-op decision ran AFTER the user's switch inside the queue:
+      // already local → no second teardown/switch, just the spawn.
+      expect(captureAndClose).toHaveBeenCalledTimes(1);
+      expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['local']);
+      expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(true);
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
+  });
+
   it('spawns without switching when the active backend is already local', async () => {
     store.getActiveId.mockResolvedValue('local');
     const priorSocket = process.env.INTENTD_SOCKET;
