@@ -1012,6 +1012,15 @@ export interface HudTakeoverTask {
    * non-complete tasks and when neither source has text.
    */
   report: string | null;
+  /** Task-note ids this task depends on (hard ordering edges §5.4); omitted when empty. */
+  dependsOn?: string[];
+  /** Task-note ids this task may conflict with (advisory §5.4); omitted when empty. */
+  conflictsWith?: string[];
+  /**
+   * Daemon-computed `dependsOn` ids whose task is not yet `complete` (§5.4);
+   * served verbatim — never re-derived client-side. Omitted when empty.
+   */
+  unmetDependsOn?: string[];
 }
 
 /** View-model for the takeover overlay (one workspace, joined rollups). */
@@ -1090,6 +1099,9 @@ export const selectHudTakeoverView = store.createSelector(
                 task.status === 'complete'
                   ? completeTaskReport(state, workspaceId, task.id, links)
                   : null,
+              ...(task.dependsOn ? { dependsOn: task.dependsOn } : {}),
+              ...(task.conflictsWith ? { conflictsWith: task.conflictsWith } : {}),
+              ...(task.unmetDependsOn ? { unmetDependsOn: task.unmetDependsOn } : {}),
             };
           })
       : [];

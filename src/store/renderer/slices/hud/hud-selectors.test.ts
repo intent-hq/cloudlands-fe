@@ -2727,3 +2727,49 @@ describe('selectHudTakeoverView complete-cell reports', () => {
     expect(view?.tasks[0].report).toBeNull();
   });
 });
+
+describe('selectHudTakeoverView task relation projection', () => {
+  function relationsState(tasks: Array<Partial<WorkspaceTask>>): StoreState {
+    const base = mockState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })]);
+    return {
+      ...base,
+      workspaceTasks: {
+        byWorkspaceId: {
+          'ws-1': {
+            tasks: createCollection<WorkspaceTask, 'id'>('id', tasks as WorkspaceTask[]),
+            stats: { total: tasks.length, completed: 0, inProgress: 0 },
+          },
+        },
+      },
+    } as StoreState;
+  }
+
+  it('copies dependsOn/conflictsWith/unmetDependsOn verbatim from the wire task', () => {
+    const state = relationsState([
+      { id: 'task-a', title: 'Upstream', status: 'in_progress' },
+      {
+        id: 'task-b',
+        title: 'Downstream',
+        status: 'not_started',
+        dependsOn: ['task-a'],
+        conflictsWith: ['task-c'],
+        unmetDependsOn: ['task-a'],
+      } as WorkspaceTask,
+    ]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const downstream = view?.tasks.find((task) => task.id === 'task-b');
+    expect(downstream?.dependsOn).toEqual(['task-a']);
+    expect(downstream?.conflictsWith).toEqual(['task-c']);
+    expect(downstream?.unmetDependsOn).toEqual(['task-a']);
+  });
+
+  it('omits the relation fields when absent on the source task', () => {
+    const state = relationsState([{ id: 'task-a', title: 'Standalone', status: 'not_started' }]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const task = view?.tasks[0];
+    expect(task).toBeDefined();
+    expect(task && 'dependsOn' in task).toBe(false);
+    expect(task && 'conflictsWith' in task).toBe(false);
+    expect(task && 'unmetDependsOn' in task).toBe(false);
+  });
+});
