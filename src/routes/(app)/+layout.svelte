@@ -337,7 +337,7 @@
           logger.info(
             `[+layout] Initializing release notes: version=${currentVersion}, channel=${channel}`,
           );
-          appStore.dispatch(initializeReleaseNotes(currentVersion, channel));
+          appStore.dispatch(initializeReleaseNotes());
         } catch (e) {
           logger.warn('[+layout] Failed to initialize release notes store', e);
         }

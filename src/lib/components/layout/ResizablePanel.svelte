@@ -748,7 +748,12 @@
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
-    if (isResizing) onResizeEnd?.();
+    if (isResizing) {
+      onResizeEnd?.(
+        orientation === 'horizontal' ? startWidth : startHeight,
+        orientation === 'horizontal' ? (isExpanded ? expandedWidth : panelWidth) : panelHeight,
+      );
+    }
   });
 
   // Compute the actual dimensions to use based on orientation and expanded state

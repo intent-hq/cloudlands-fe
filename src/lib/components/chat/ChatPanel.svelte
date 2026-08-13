@@ -3312,8 +3312,6 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
-                      showTimestamp={false}
-                      enableSticky={shouldEnableSticky}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -3420,7 +3418,6 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
-                      enableSticky={shouldEnableSticky}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -3657,7 +3654,6 @@
                                   handleEditMessage(message.id, newText, model, blocks)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
-                                enableSticky={shouldEnableSticky}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
                               />

@@ -132,7 +132,6 @@
     }
     return m.chat_monitoredPrs_hover_checksPassing_label({
       passed: formatInteger(checks.passed),
-      total: formatInteger(checks.total),
     });
   }
 
@@ -142,7 +141,6 @@
     if (!approvals) return undefined;
     if (approvals.needed != null) {
       return m.chat_monitoredPrs_hover_approvalsRequired_label({
-        decision: approvals.decision,
         have: formatInteger(approvals.have),
         needed: formatInteger(approvals.needed),
       });

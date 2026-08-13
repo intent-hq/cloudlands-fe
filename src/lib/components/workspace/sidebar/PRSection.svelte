@@ -1063,6 +1063,7 @@
             </button>
           {/if}
         {/snippet}
+        {#snippet children()}
         {#if !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
@@ -1220,6 +1221,7 @@
             {/if}
           </div>
         {/if}
+        {/snippet}
       </TimelineSection>
     </div>
 {/if}

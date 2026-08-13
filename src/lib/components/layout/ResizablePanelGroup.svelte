@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import type { Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import {
     requestResizablePanelGroupLayout,
@@ -30,7 +31,7 @@
     orientation?: 'horizontal' | 'vertical';
     storageKey?: string | null;
     className?: string;
-    children?: any;
+    children?: Snippet<[Panel, number, boolean]>;
   } = $props();
 
   const storageKeyStore = writable(storageKey ?? '');

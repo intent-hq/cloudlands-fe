@@ -18,6 +18,8 @@
   }: Omit<MenuPrimitive.ContentProps, 'children'> & {
     groups: StackedMenuGroup[];
     submenuClass?: string;
+    portal?: boolean;
+    portalProps?: MenuPrimitive.PortalProps;
   } = $props();
 </script>
 

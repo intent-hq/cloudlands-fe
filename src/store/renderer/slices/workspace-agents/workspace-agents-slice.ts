@@ -213,11 +213,11 @@ export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>
 export const hydrateAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/hydrateAgentsRequested',
 );
-export const createAgentRequested = createAction<[wsId: string, agentType?: string]>(
-  'workspaceAgents/createAgentRequested',
-);
+export const createAgentRequested = createAction<
+  [wsId: string, agentType?: string, options?: { panelLayoutId?: string }]
+>('workspaceAgents/createAgentRequested');
 export const createAgentWithSpecialistRequested = createAction<
-  [wsId: string, specialistId: string | null]
+  [wsId: string, specialistId: string | null, options?: { panelLayoutId?: string }]
 >('workspaceAgents/createAgentWithSpecialistRequested');
 export const createAgentFromConfigRequested = createAsyncAction<
   [wsId: string, config: UnifiedAgentConfig, options?: AgentCreationRequestOptions],

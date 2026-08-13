@@ -962,7 +962,7 @@
           <Button
             variant="ghost-light"
             size="icon-sm"
-            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId })}
+            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId ?? '' })}
             data-workspace-close
             class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
             onpointerdown={(event) => event.stopPropagation()}
