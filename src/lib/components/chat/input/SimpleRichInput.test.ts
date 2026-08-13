@@ -1599,6 +1599,7 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
           mimeType: 'application/json',
         },
         expect.any(Function),
+        expect.any(AbortSignal),
       );
     });
     // The placed file becomes a context item carrying the registry UUID +
@@ -1721,6 +1722,7 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
         mimeType: 'text/plain',
       },
       expect.any(Function),
+      expect.any(AbortSignal),
     );
     await waitFor(() => {
       expect(oncontextAdd).toHaveBeenCalledTimes(1);
@@ -1907,6 +1909,7 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
           mimeType: 'text/plain',
         },
         expect.any(Function),
+        expect.any(AbortSignal),
       );
     });
     await waitFor(() => {
