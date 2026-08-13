@@ -36,6 +36,23 @@ export type ToolResultType =
   | 'confirmation'
   | 'unknown';
 
+/** A started row from a batch delegate result (agentId/agentName per row). */
+export interface DelegateBatchStartedRow {
+  agentId: string;
+  agentName?: string;
+  taskNoteId?: string;
+  title?: string;
+}
+
+/** Disposition summary of a batch delegate result (`ws.agent.delegate({ tasks })`). */
+export interface DelegateBatchSummary {
+  started: number;
+  held: number;
+  skipped: number;
+  errors: number;
+  startedRows: DelegateBatchStartedRow[];
+}
+
 export interface ParsedToolResult {
   type: ToolResultType;
   filePath?: string;
@@ -62,6 +79,8 @@ export interface ParsedToolResult {
   delegatedAgentProvider?: string;
   agentId?: string;
   taskNoteId?: string;
+  // For batch delegate-task (tasks array with per-task dispositions)
+  delegateBatch?: DelegateBatchSummary;
   // For directory listing
   directoryPath?: string;
   files?: string[];
@@ -1291,10 +1310,66 @@ function parseAgentResultJson(result: string): {
 }
 
 /**
+ * Extract a disposition summary from a batch delegate JSON result (daemon
+ * shape: `{ "ok": true, "greedy": false, "tasks": [{ "taskNoteId", "title",
+ * "disposition", "agentId"?, "agentName"?, ... }], "startedTaskIds": [...],
+ * "unlockPlan": {...} }`). Dispositions are `started` / `held:blocked-on-deps`
+ * / `held:conflict` / `skipped` / `error`. Returns null when the result is not
+ * the batch shape (e.g. the single-agent result, which carries a top-level
+ * `agentId`).
+ */
+function parseDelegateBatchJson(result: string): DelegateBatchSummary | null {
+  const trimmed = result.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const data = JSON.parse(trimmed);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    if (typeof data.agentId === 'string') return null;
+    if (!Array.isArray(data.tasks)) return null;
+    const rows = (data.tasks as unknown[]).filter(
+      (row): row is Record<string, unknown> => typeof row === 'object' && row !== null,
+    );
+    if (rows.length > 0 && !rows.some((row) => typeof row.disposition === 'string')) return null;
+    const summary: DelegateBatchSummary = {
+      started: 0,
+      held: 0,
+      skipped: 0,
+      errors: 0,
+      startedRows: [],
+    };
+    for (const row of rows) {
+      const disposition = typeof row.disposition === 'string' ? row.disposition : '';
+      if (disposition === 'started') {
+        summary.started++;
+        if (typeof row.agentId === 'string') {
+          summary.startedRows.push({
+            agentId: row.agentId,
+            agentName: typeof row.agentName === 'string' ? row.agentName : undefined,
+            taskNoteId: typeof row.taskNoteId === 'string' ? row.taskNoteId : undefined,
+            title: typeof row.title === 'string' ? row.title : undefined,
+          });
+        }
+      } else if (disposition.startsWith('held:')) {
+        summary.held++;
+      } else if (disposition === 'skipped') {
+        summary.skipped++;
+      } else if (disposition === 'error') {
+        summary.errors++;
+      }
+    }
+    return summary;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse delegate task result
  *
  * JSON format (daemon):
  *   '{ "ok": true, "agentId": "agent-<uuid>", "name": "...", "taskNoteId": "...", "provider": "..." }'
+ * Batch JSON format (daemon, `tasks: [...]` input): per-task dispositions —
+ * see parseDelegateBatchJson.
  * Legacy prose format:
  *   'Task "{name}" delegated to new agent.\nAgent ID: {agentId}\nTask Note ID: {noteId}'
  */
@@ -1318,6 +1393,15 @@ function parseDelegateTaskResult(
   }
 
   if (!result) return parsed;
+
+  // Batch delegate (tasks/dispositions array, no top-level agentId): expose a
+  // truthful disposition summary instead of the single-agent fields.
+  const batch = parseDelegateBatchJson(result);
+  if (batch) {
+    parsed.delegateBatch = batch;
+    parsed.content = result;
+    return parsed;
+  }
 
   // JSON-first: the daemon returns a JSON object with agentId/name/taskNoteId/provider
   const json = parseAgentResultJson(result);
@@ -2069,8 +2153,7 @@ function parseAgentCreationResult(
   // Legacy prose fallback. The bare-id fallback matches full `agent-<uuid>` ids
   // only, so it can never capture a truncated id.
   const idMatch =
-    result.match(/Agent ID:\s*(\S+)/i) ||
-    result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
+    result.match(/Agent ID:\s*(\S+)/i) || result.match(/agentId["':\s]*(agent-[0-9a-f-]{36})/i);
   if (idMatch) {
     parsed.agentId = idMatch[1];
   }
