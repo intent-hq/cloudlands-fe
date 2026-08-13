@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   cancelDelete: vi.fn(),
   create: vi.fn(),
   navigate: vi.fn(),
+  navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -25,6 +26,7 @@ vi.mock('../../workspace/utils/workspace.client', () => ({
 vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
   navigateAwayIfViewing: mocks.navigate,
 }));
+vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));
@@ -166,7 +168,6 @@ describe('workspaceOperationsSaga', () => {
   afterEach(() => vi.useRealTimers());
 
   it('uses the exact archive wire call and reports a failed result without updating state', async () => {
-    mocks.navigate.mockResolvedValue(undefined);
     mocks.archive
       .mockResolvedValueOnce({ ok: true, data: workspace('ws-1', WorkspaceStatusEnum.Archived) })
       .mockResolvedValueOnce({ ok: false, error: 'denied' });
@@ -177,6 +178,8 @@ describe('workspaceOperationsSaga', () => {
     await settle();
     expect(mocks.archive.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    // Tab close + navigation are driven by the daemon workspace:updated event
+    expect(mocks.navigate).not.toHaveBeenCalled();
     expect(
       run.dispatch.mock.calls
         .flat()
@@ -441,6 +444,12 @@ describe('workspaceOperationsSaga', () => {
     await settle();
     latestUndo()?.();
     await settle();
+    // Undo focuses the restored workspace: tab reopen + navigation
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+    expect(mocks.navigateToRoute).toHaveBeenCalledExactlyOnceWith('/workspace/ws-1');
     run.send(requestUnarchiveWorkspace('ws-2'));
     await settle();
     run.send(requestUnarchiveWorkspace('ws-3'));
@@ -448,6 +457,8 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.unarchive.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
     expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    // Direct unarchive gets no focus behavior — only the undo path does
+    expect(mocks.navigateToRoute).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });

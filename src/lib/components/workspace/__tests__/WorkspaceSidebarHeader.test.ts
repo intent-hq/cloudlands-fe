@@ -108,10 +108,6 @@ vi.mock('$lib/utils/delete-warning-utils', () => ({
   getRunningAgentNames: vi.fn(() => []),
 }));
 
-vi.mock('$lib/utils/workspace-navigation', () => ({
-  navigateAfterWorkspaceRemoval: vi.fn(() => Promise.resolve()),
-}));
-
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../terminal/__tests__/mocks/MockButton.svelte')).default,
 }));

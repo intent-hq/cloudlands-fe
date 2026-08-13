@@ -37,7 +37,6 @@
   import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { m } from '$shared/paraglide/messages.js';
-  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import { logger, createLogger } from '$lib/utils/client-logger';
@@ -384,7 +383,6 @@
           },
         },
       });
-      await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }

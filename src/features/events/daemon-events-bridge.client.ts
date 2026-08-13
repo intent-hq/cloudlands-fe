@@ -186,7 +186,11 @@ import {
   removeWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
+import {
+  closeWorkspaceTabAndNavigateAway,
+  navigateAwayIfViewing,
+} from '$features/workspace/navigate-away-if-viewing';
+import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
@@ -2066,6 +2070,21 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
   // standalone case; the slice folds it through `bulkUpdateWorkspaceEntities`.
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+
+  // Tab-bar sync: the daemon `workspace:updated` event is the single driver
+  // for archive transitions. Archived → close the tab unconditionally (the
+  // reducer no-ops when it is not open) and navigate away only when the
+  // archived workspace is on screen; Active/unarchive → restore the tab in
+  // the background (no focus steal). Deltas carrying neither field leave tab
+  // state untouched — `changes` only holds fields the wire delta explicitly
+  // carried.
+  if (changes.status === WorkspaceStatus.Archived || changes.archived === true) {
+    closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+      logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:updated archive', error);
+    });
+  } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
+    appStore.dispatch(restoreWorkspaceTab(workspaceId));
+  }
 }
 
 /**
