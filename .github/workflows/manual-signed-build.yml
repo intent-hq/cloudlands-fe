@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
       build_linux:
-        description: 'Build Linux (x64 AppImage/deb + arm64 AppImage)'
+        description: 'Build Linux (x64 + arm64, AppImage/deb)'
         required: false
         type: boolean
         default: false
@@ -518,8 +518,8 @@ jobs:
           # passing at 8192 earlier the same day; the bundle sits right at
           # that limit), while 12288 (run 30764745052) and later 10240 plus
           # node/vite overhead trip the OS OOM killer. tinybox has the RAM
-          # for the same 12288 cap as the other self-hosted legs. Fall back
-          # to a hosted runner only if it offers well over 16 GB.
+          # for the same 12288 cap as the arm64 leg's 32 GB hosted runner.
+          # Fall back to a hosted runner only if it offers well over 16 GB.
           - arch: x64
             runner: [self-hosted, Linux, X64, tinybox]
             intentd_target: x86_64-unknown-linux-musl
