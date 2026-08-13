@@ -135,7 +135,7 @@
     stroke: hsl(var(--destructive-foreground) / 0.55);
     stroke-dasharray: 4 5;
   }
-  /* Live conflict (neither endpoint complete): full-strength red. */
+  /* Live conflict (neither endpoint complete or cancelled): full-strength red. */
   .ov-edge-conflict-live {
     stroke: hsl(var(--destructive-foreground) / 0.9);
   }
@@ -146,7 +146,7 @@
     stroke-width: 2.5;
   }
   /* Consumed dep edge (destination underway/finished) or resolved conflict
-     (either endpoint complete): dim line + arrowhead, static. */
+     (either endpoint complete or cancelled): dim line + arrowhead, static. */
   .ov-edge-dim {
     opacity: 0.35;
   }
