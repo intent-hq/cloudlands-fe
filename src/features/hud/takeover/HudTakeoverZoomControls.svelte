@@ -5,6 +5,7 @@
    * (OUTSIDE the drag clip), so button clicks never reach the drag /
    * click-suppression handlers; in/out disable at the zoom range limits.
    */
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { HudTakeoverMapState } from './hud-takeover-map.svelte';
 
@@ -17,7 +18,7 @@
   aria-label={m.hud_takeover_zoom_ariaLabel()}
   data-testid="hud-takeover-zoom"
 >
-  <button
+  <Button
     class="ov-map-zoom-btn"
     onclick={() => map.zoomFit()}
     aria-label={m.hud_takeover_zoomFit_ariaLabel()}
@@ -25,8 +26,8 @@
     data-testid="hud-takeover-zoom-fit"
   >
     {m.hud_takeover_zoomFit_label()}
-  </button>
-  <button
+  </Button>
+  <Button
     class="ov-map-zoom-btn"
     onclick={() => map.zoomOut()}
     disabled={!map.canZoomOut}
@@ -35,8 +36,8 @@
     data-testid="hud-takeover-zoom-out"
   >
     {m.hud_takeover_zoomOut_label()}
-  </button>
-  <button
+  </Button>
+  <Button
     class="ov-map-zoom-btn"
     onclick={() => map.zoomIn()}
     disabled={!map.canZoomIn}
@@ -45,8 +46,8 @@
     data-testid="hud-takeover-zoom-in"
   >
     {m.hud_takeover_zoomIn_label()}
-  </button>
-  <button
+  </Button>
+  <Button
     class="ov-map-zoom-btn"
     onclick={() => map.zoomReset()}
     aria-label={m.hud_takeover_zoomReset_ariaLabel()}
@@ -54,7 +55,7 @@
     data-testid="hud-takeover-zoom-reset"
   >
     {m.hud_takeover_zoomReset_label()}
-  </button>
+  </Button>
 </div>
 
 <style>
@@ -68,9 +69,13 @@
     display: flex;
     gap: 6px;
   }
-  .ov-map-zoom-btn {
+  /* Unlayered scoped CSS intentionally outranks the Button primitive's
+     layered Tailwind utilities to keep the takeover HUD's monospace look. */
+  .ov-map-zoom :global(.ov-map-zoom-btn) {
     cursor: pointer;
+    height: auto;
     border: 1px solid hsl(var(--border));
+    border-radius: 0;
     background: hsl(var(--card) / 0.92);
     min-width: 28px;
     padding: 5px 9px;
@@ -81,11 +86,14 @@
     color: hsl(var(--muted-foreground));
     text-transform: uppercase;
   }
-  .ov-map-zoom-btn:hover:not(:disabled) {
+  .ov-map-zoom :global(.ov-map-zoom-btn:hover:not(:disabled)) {
+    border-color: hsl(var(--border));
     background: hsl(var(--muted) / 0.5);
+    color: hsl(var(--muted-foreground));
   }
-  .ov-map-zoom-btn:disabled {
+  .ov-map-zoom :global(.ov-map-zoom-btn:disabled) {
     cursor: default;
+    pointer-events: auto;
     opacity: 0.35;
   }
 </style>
