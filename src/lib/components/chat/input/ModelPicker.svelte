@@ -1788,10 +1788,9 @@
             size="default"
             aria-expanded={reasoningExpanded}
             aria-disabled={reasoningControlDisabled}
-            title={`${m.chat_effortPicker_title_label()} · ${currentReasoningLabel}`}
             disabled={reasoningControlDisabled}
             class={cn(
-              'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-sm focus:bg-transparent focus:outline-none',
+              'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
               reasoningControlDisabled
                 ? 'cursor-not-allowed text-muted-foreground/50'
                 : 'hover:bg-muted/20',
@@ -1802,17 +1801,10 @@
             }}
             onkeydown={handleReasoningToggleKeydown}
           >
-            <span class="flex min-w-0 items-center gap-1.5">
-              <span class="truncate">{m.chat_effortPicker_title_label()}</span>
-              {#if reasoningLevels.length > 0}
-                <EffortGauge
-                  value={currentReasoningGaugeValue}
-                  max={Math.max(0, reasoningLevels.length - 1)}
-                  centered={!currentReasoningEffort}
-                  size="compact"
-                  class="shrink-0"
-                />
-              {/if}
+            <span class="truncate">
+              {m.chat_effortPicker_title_label()}{reasoningExpanded
+                ? ''
+                : ` · ${currentReasoningLabel}`}
             </span>
             <Fa
               icon={reasoningExpanded ? faChevronDown : faChevronRight}

@@ -399,17 +399,9 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
     const toggle = screen.getByTestId('model-reasoning-toggle');
     expect(toggle.hasAttribute('disabled')).toBe(false);
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort');
-    expect(toggle.getAttribute('title')).toBe('Reasoning effort · Medium');
-    const toggleGauge = toggle.querySelector('[data-testid="effort-gauge"]');
-    expect(toggleGauge?.getAttribute('data-gauge-value')).toBe('1');
-    expect(toggleGauge?.getAttribute('data-gauge-centered')).toBe('false');
-    const toggleLabel = toggle.querySelector('.truncate');
-    expect(
-      toggleLabel &&
-        toggleGauge &&
-        toggleLabel.compareDocumentPosition(toggleGauge) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Medium');
+    expect(toggle.className).toContain('text-xs');
+    expect(toggle.querySelector('[data-testid="effort-gauge"]')).toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.classList.contains('bg-transparent')).toBe(true);
     expect(toggle.className).not.toContain('focus:bg-muted');
@@ -422,12 +414,14 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(slider.getAttribute('max')).toBe('4');
     expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
     expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
-    expect(screen.queryByTestId('effort-current-value')).toBeNull();
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
     expect(screen.getByTestId('effort-picker-content').textContent).not.toContain(
       'Reasoning effort',
     );
     const nextSendCaption = screen.getByText('Applies on the next message you send.');
-    expect(nextSendCaption).toBeTruthy();
+    expect(nextSendCaption.parentElement).toBe(
+      screen.getByTestId('effort-current-value').parentElement,
+    );
     expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
   });
 
@@ -691,11 +685,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await fireEvent.click(trigger);
     const toggle = screen.getByTestId('model-reasoning-toggle');
     await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    expect(toggle.textContent?.trim()).toBe('Reasoning effort');
-    expect(toggle.getAttribute('title')).toBe('Reasoning effort · Default');
-    expect(
-      toggle.querySelector('[data-testid="effort-gauge"]')?.getAttribute('data-gauge-centered'),
-    ).toBe('true');
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
+    expect(toggle.className).toContain('text-xs');
+    expect(toggle.querySelector('[data-testid="effort-gauge"]')).toBeNull();
   });
 });
 
