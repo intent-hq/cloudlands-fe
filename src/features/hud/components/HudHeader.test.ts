@@ -122,6 +122,26 @@ describe('HudHeader macOS traffic-light spacer', () => {
     expect(screen.getByTestId('hud-header')).toBeTruthy();
   });
 
+  it('hides the spacer strip on darwin in full screen (traffic lights hidden)', () => {
+    (window as any).electronAPI.platform = 'darwin';
+    render(HudHeader, { props: { nowMs: NOW_MS, isFullScreen: true } });
+
+    expect(screen.queryByTestId('hud-titlebar-spacer')).toBeNull();
+    expect(screen.getByTestId('hud-header')).toBeTruthy();
+  });
+
+  it('re-shows the spacer when full screen exits (prop reactivity)', async () => {
+    (window as any).electronAPI.platform = 'darwin';
+    const { rerender } = render(HudHeader, { props: { nowMs: NOW_MS, isFullScreen: false } });
+    expect(screen.getByTestId('hud-titlebar-spacer')).toBeTruthy();
+
+    await rerender({ nowMs: NOW_MS, isFullScreen: true });
+    expect(screen.queryByTestId('hud-titlebar-spacer')).toBeNull();
+
+    await rerender({ nowMs: NOW_MS, isFullScreen: false });
+    expect(screen.getByTestId('hud-titlebar-spacer')).toBeTruthy();
+  });
+
   it('keeps the wordmark in the header row (left gutter unchanged), not in the spacer', () => {
     (window as any).electronAPI.platform = 'darwin';
     render(HudHeader, { props: { nowMs: NOW_MS } });

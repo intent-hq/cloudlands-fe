@@ -78,7 +78,7 @@
     <div class="hud-scan-band"></div>
   </div>
 
-  <HudHeader {nowMs}>
+  <HudHeader {nowMs} {isFullScreen}>
     {#snippet controls()}
       {#if isFullScreen}
         <button
