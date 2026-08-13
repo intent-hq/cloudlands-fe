@@ -29,7 +29,12 @@ import { WorkspaceStatus } from '$shared/types';
 
 import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
-import { HUD_TAKEOVER_BLINK_MS } from './hud-takeover-queue';
+import {
+  HUD_TAKEOVER_BLINK_MS,
+  HUD_TAKEOVER_CLOSE_MS,
+  HUD_TAKEOVER_DWELL_MIN_MS,
+  HUD_TAKEOVER_OPEN_MS,
+} from './hud-takeover-queue';
 import { HUD_TAKEOVER_PITCH_PX } from './hud-takeover-layout';
 import { playHudSoundCue } from '../sound/hud-sound-player';
 
@@ -929,6 +934,7 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
   afterEach(() => {
     Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
     Object.defineProperty(Element.prototype, 'clientHeight', originalClientHeight);
+    vi.unstubAllGlobals();
     vi.useRealTimers();
     cleanup();
     appStore.dispose();
@@ -1103,6 +1109,45 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     vi.advanceTimersByTime(2500);
     flushSync();
     expect(panTransform()).toBe('translate(-930px, 10px)');
+  });
+
+  it('reduced motion: a chained second takeover for the same workspace re-opens at 100%', () => {
+    // prefers-reduced-motion disables the pre-roll blink, so the queue
+    // chains closing → opening directly — no idle/blinking phase resets the
+    // measurement between the two displays. The spec still requires every
+    // open to start at 100% zoom.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // blink:false → instant open.
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
+
+    // A trigger for the SAME workspace queues at the front and re-opens
+    // right after the close ('Port the fetch loop' dwells the 3s minimum).
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Port the fetch loop',
+      raisedAtMs: NOW_MS + 100,
+      changedTaskId: null,
+    });
+    flushSync();
+    vi.advanceTimersByTime(
+      HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MIN_MS + HUD_TAKEOVER_CLOSE_MS + 50,
+    );
+    flushSync();
+
+    expect(screen.getByTestId('hud-takeover-overlay')).toBeTruthy();
+    expect(panTransform()).toBe('translate(0px, 0px)');
   });
 
   it('a drag gesture across a control never suppresses its click', () => {

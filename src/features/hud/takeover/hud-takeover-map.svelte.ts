@@ -3,8 +3,9 @@
  * manual zoom and the drag/auto-pan camera for the overlay's task map.
  * Every display renders 1:1 by default; zoom is manual (in/out steps,
  * reset, zoom-to-fit against the measured viewport) and resets to 1 per
- * display. Owns the per-display viewport measurement (keyed by workspace
- * like the banner overflow measurement); the drag controller divides
+ * display. Owns the per-display viewport measurement (the overlay keys it
+ * by workspace + display counter so back-to-back displays of the same
+ * workspace still re-measure); the drag controller divides
  * pointer deltas by the current zoom so panning stays 1:1 on screen. Must
  * be created during component init (uses $state/$derived and an
  * $effect-free measure() the component calls from its own $effect).

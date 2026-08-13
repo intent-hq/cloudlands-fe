@@ -139,13 +139,16 @@
   const map = createTakeoverMapState(() => $view$?.tasks ?? []);
   const drag = $derived(map.drag);
 
-  // Measure the map viewport once per display (keyed like the banner
-  // overflow measurement); idle/blinking resets so the next display
-  // re-measures. Unmeasured viewports (jsdom, pre-layout) stay 1:1.
+  // Measure the map viewport once per display, keyed by workspace PLUS the
+  // controller's display counter: reduced motion chains closing → opening
+  // directly (no idle/blinking reset between displays), so a chained second
+  // takeover for the SAME workspace must still re-key to re-open at 100%
+  // zoom. Idle/blinking resets so the next display re-measures. Unmeasured
+  // viewports (jsdom, pre-layout) stay 1:1.
   let mapClipEl = $state<HTMLElement | null>(null);
   $effect(() => {
     const active = queue.phase !== 'idle' && queue.phase !== 'blinking' && queue.active;
-    map.measure(active ? queue.active!.workspaceId : '', mapClipEl);
+    map.measure(active ? `${queue.active!.workspaceId}#${controller.displaySeq}` : '', mapClipEl);
   });
 
   // Auto-pan to a far changed cell (mock: 2s after open; reduced motion
