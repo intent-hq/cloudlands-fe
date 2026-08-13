@@ -718,9 +718,9 @@
   }
 </script>
 
-<!-- Divider with Create PR, Push Commits button, or Synced status (only when remote exists) -->
-{#if hasRemote}
-  {#if !listOnly}
+<!-- Divider with Create PR, Push Commits button, or Synced status (only when
+     the primary workspace has a remote, and never in listOnly mode) -->
+{#if hasRemote && !listOnly}
   <TimelineDivider>
     {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
       <!-- Show Push Commits button when open PR exists -->
@@ -1022,10 +1022,13 @@
       </DividerPanel>
     {/if}
   </TimelineDivider>
-  {/if}
+{/if}
 
-  <!-- PULL REQUESTS SECTION -->
-  {#if hasAnyPRs}
+<!-- PULL REQUESTS SECTION — outside the hasRemote guard: a selected
+     secondary root (or a monitor-only row) can supply PRs even when the
+     primary workspace has no remote (monorepo#2053). Primary-only
+     affordances (create PR / push / merge) stay gated on hasRemote above. -->
+{#if hasAnyPRs}
     <div transition:slide={{ duration: 200 }}>
       <TimelineSection
         title={m.workspace_prSection_pullRequests_label()}
@@ -1033,7 +1036,10 @@
         activeColor="bg-purple-500"
       >
         {#snippet action()}
-          {#if hasAnyPRs || $githubAuthIsAuthenticated$}
+          <!-- Refresh fetches/refreshes the PRIMARY workspace's git + PR
+               state, so it is suppressed in the read-only listOnly
+               (secondary-root browsing) mode (monorepo#2053). -->
+          {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
             <button
               type="button"
               class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
@@ -1216,7 +1222,6 @@
         {/if}
       </TimelineSection>
     </div>
-  {/if}
 {/if}
 
 

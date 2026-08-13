@@ -64,8 +64,10 @@
     if (wsId && rootId) load(wsId, rootId);
   });
 
+  // Prefer the freshly loaded status over the cached git-root list entry so
+  // a refresh after a branch checkout shows the new branch immediately.
   const branchLabel = $derived(
-    entry.branch || status?.branch || m.workspace_branchDisplay_noBranch_label(),
+    status?.branch || entry.branch || m.workspace_branchDisplay_noBranch_label(),
   );
 
   // Porcelain status char → display color (GitFileStatus wire values)
