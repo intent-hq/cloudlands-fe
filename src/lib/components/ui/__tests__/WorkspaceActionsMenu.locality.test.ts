@@ -1,9 +1,11 @@
 /**
- * WorkspaceActionsMenu daemon-locality gating (monorepo#883).
+ * WorkspaceActionsMenu locality gating (monorepo#883, monorepo#2171).
  *
- * "Choose app" shows a LOCAL app picker against a daemon-host path, so the
+ * "Choose app" shows a LOCAL app picker against a workspace file path, so the
  * editors block (editor list + "Choose app") must disappear when the daemon
- * is remote, while locality-safe copy actions stay.
+ * is remote (monorepo#883) — or when the workspace checkout itself is remote
+ * even though the daemon is local (monorepo#2171) — while locality-safe copy
+ * actions stay.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
@@ -64,6 +66,11 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const mockWorkspaces = [
+  { id: 'ws-local' },
+  { id: 'ws-remote', environmentConfig: { type: 'remote' } },
+];
+
 function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
@@ -78,15 +85,18 @@ function makeState(
       lastFetched: 0,
     },
     daemonHealth: { transport, hostLocality },
+    workspace: {
+      workspaces: createCollection('id', mockWorkspaces),
+    },
   } as unknown as Partial<StoreState>;
 }
 
-async function renderMenu() {
+async function renderMenu(workspaceId = '') {
   const WorkspaceActionsMenu = (
     await import('$features/workspace/components/WorkspaceActionsMenu.svelte')
   ).default;
   const { container } = render(WorkspaceActionsMenu, {
-    props: { filePath: '/tmp/project', showFileActions: true },
+    props: { filePath: '/tmp/project', workspaceId, showFileActions: true },
   });
   await waitFor(() => {
     expect(container.textContent).toContain('Copy Absolute Path');
@@ -137,6 +147,47 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
     // daemon that reports itself local restores the editors block.
     mockStoreState = makeState({ mode: 'external-ws' }, 'local');
     const container = await renderMenu();
+
+    expect(container.textContent).toContain('Open in Visual Studio Code');
+    expect(container.textContent).toContain('Choose app');
+  });
+});
+
+describe('WorkspaceActionsMenu workspace-locality gating (monorepo#2171)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows the editors block for a local workspace on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderMenu('ws-local');
+
+    expect(container.textContent).toContain('Open in Visual Studio Code');
+    expect(container.textContent).toContain('Choose app');
+  });
+
+  it('hides the editors block for a remote (SSH) workspace even on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderMenu('ws-remote');
+
+    expect(container.textContent).not.toContain('Choose app');
+    expect(container.textContent).not.toContain('Open in');
+    // Locality-safe copy actions stay available.
+    expect(container.textContent).toContain('Copy Absolute Path');
+    expect(container.textContent).toContain('Copy Relative Path');
+  });
+
+  it('hides the editors block for a remote workspace on a remote daemon too', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    const container = await renderMenu('ws-remote');
+
+    expect(container.textContent).not.toContain('Choose app');
+    expect(container.textContent).toContain('Copy Absolute Path');
+  });
+
+  it('treats an unknown workspace entity as local (optimistic default)', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderMenu('ws-unknown');
 
     expect(container.textContent).toContain('Open in Visual Studio Code');
     expect(container.textContent).toContain('Choose app');

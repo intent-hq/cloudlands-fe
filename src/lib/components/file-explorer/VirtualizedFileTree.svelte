@@ -32,7 +32,7 @@
   } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -763,7 +763,7 @@
   }
 
   // Save a copy of a file (or a zip of a folder) via the main process's native
-  // save dialog. Daemon-local only — the local main process reads the path.
+  // save dialog. Workspace-host-local only — the local main process reads the path.
   async function handleDownload(node: FileNode) {
     try {
       const result = await invoke<{
@@ -876,10 +876,11 @@
       });
     }
 
-    // Add download and reveal-in-file-manager options — daemon-host desktop
-    // actions, only offered when the daemon runs on this machine (PROTOCOL
-    // §5.14 locality).
-    if (selectIsDaemonLocal.select(appStore.state)) {
+    // Add download and reveal-in-file-manager options — desktop actions on
+    // workspace file paths, only offered when the daemon runs on this machine
+    // (PROTOCOL §5.14 locality) AND the workspace checkout lives on the daemon
+    // host, i.e. not a remote (SSH) workspace (monorepo#2171).
+    if (selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)) {
       items.push({ type: 'separator' });
       items.push({
         id: 'download',

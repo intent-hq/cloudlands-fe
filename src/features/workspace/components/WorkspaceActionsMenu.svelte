@@ -33,7 +33,7 @@
   import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
@@ -55,6 +55,7 @@
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { toast } from 'svelte-sonner';
   import { Button } from '$lib/components/ui/button';
@@ -122,7 +123,15 @@
   // actions are offered.
   const canOpenExternalEditors = hasCapability('externalEditors');
 
-  const installedEditors$ = selectInstalledEditorsFiltered();
+  // Mirror the workspaceId prop into a store so the selectors below re-run
+  // when it changes.
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
+  const workspaceIdStore = writable(workspaceId);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+
+  const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
 
   // Editors arrive priority-sorted; show only the top few and rely on "Choose app" for the rest.
   const MAX_VISIBLE_EDITORS = 3;
@@ -132,10 +141,11 @@
   const menuItemClass =
     'w-full min-w-0 justify-start gap-2 pl-2! pr-2.5! focus-visible:border-transparent! focus-visible:bg-secondary focus-visible:ring-0!';
   const iconSlotClass = 'flex size-4 shrink-0 items-center justify-center';
-  // "Choose app" shows a LOCAL app picker against a daemon-host path, so like
-  // the editor list above it, it must disappear on a remote daemon
-  // (monorepo#883). Same gate as selectInstalledEditorsFiltered.
-  const isDaemonLocal$ = selectIsDaemonLocal();
+  // "Choose app" shows a LOCAL app picker against a workspace file path, so
+  // like the editor list above it, it must disappear when the daemon is
+  // remote (monorepo#883) or the workspace checkout is remote (monorepo#2171).
+  // Same gate as selectInstalledEditorsFiltered.
+  const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
 
   let resolvedPath: string = $state('');
   let resolvedFolderPath: string = $state('');
@@ -648,7 +658,7 @@
 
 <div class="w-full overflow-hidden">
   {#if showFileActions}
-    {#if canOpenExternalEditors && $isDaemonLocal$}
+    {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">
         {#each visibleEditors as editor (editor.id)}

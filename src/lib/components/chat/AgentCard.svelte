@@ -59,7 +59,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
 
   interface Props {
     agentId: string;
@@ -285,11 +285,18 @@
       },
     ];
 
-    // Reveal the agent's CoW sandbox directory — daemon-host desktop action,
-    // only offered when the agent has a sandbox and the daemon runs on this
-    // machine (PROTOCOL §5.14 locality; same gate as other reveal affordances).
+    // Reveal the agent's CoW sandbox directory. Sandboxes are cloned from the
+    // workspace checkout, so they live on the workspace's host — only offered
+    // when the agent has a sandbox, the daemon runs on this machine (PROTOCOL
+    // §5.14 locality) AND the workspace checkout lives on the daemon host,
+    // i.e. not a remote (SSH) workspace (monorepo#2171).
     const sandboxPath = agentSandboxPath;
-    if (sandboxPath && selectIsDaemonLocal.select(appStore.state)) {
+    const sandboxWsId = $agent$?.workspaceId
+      ? String($agent$.workspaceId)
+      : workspace?.id
+        ? String(workspace.id)
+        : '';
+    if (sandboxPath && selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)) {
       items.push({
         id: 'reveal-sandbox',
         label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
