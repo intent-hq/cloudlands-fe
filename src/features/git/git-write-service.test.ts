@@ -21,8 +21,12 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { setGitStatus } from "$store/renderer/slices/git/git-slice";
 import { selectGitStatus } from "$store/renderer/slices/git/git-selectors";
-import { setChanges } from "$store/renderer/slices/changes/changes-slice";
-import { selectFileTrackingChanges } from "$store/renderer/slices/changes/changes-selectors";
+import { setChanges, setChangesData } from "$store/renderer/slices/changes/changes-slice";
+import {
+  selectFileTrackingChanges,
+  selectFileTrackingChangesTruncated,
+  selectFileTrackingTotalChangesCount,
+} from "$store/renderer/slices/changes/changes-selectors";
 import { ChangeStage } from "$features/file-tracking/types";
 import type { TrackedChange } from "$features/file-tracking/types";
 import { commit, discardFiles, stageFiles, unstageFiles } from "./git-write-service";
@@ -133,7 +137,7 @@ describe("gitWriteService (fake seam, real store)", () => {
 
   it("converges the changes slice to the fresh status before stageFiles resolves", async () => {
     appStore.dispatch(setGitStatus(WS, makeStatus()));
-    appStore.dispatch(setChanges(WS, [makeTracked("a.ts", ChangeStage.Unstaged)]));
+    appStore.dispatch(setChangesData(WS, [makeTracked("a.ts", ChangeStage.Unstaged)], true, 5));
     gitApi.status.mockResolvedValueOnce(
       makeStatus({ files: [{ path: "a.ts", status: GitFileStatus.Modified, staged: true }] }) as never,
     );
@@ -148,6 +152,9 @@ describe("gitWriteService (fake seam, real store)", () => {
       // Enriched from the pre-existing tracked row, not rebuilt from scratch.
       stats: { additions: 3, deletions: 1 },
     });
+    // Truncation fields track the rebuilt rows (same dispatch as the read saga).
+    expect(selectFileTrackingChangesTruncated.select(appStore.state, WS)).toBe(false);
+    expect(selectFileTrackingTotalChangesCount.select(appStore.state, WS)).toBe(1);
   });
 
   it("converges the changes slice to the fresh status before unstageFiles resolves", async () => {
@@ -227,6 +234,30 @@ describe("gitWriteService (fake seam, real store)", () => {
 
     expect(result).toEqual({ success: false, error: "boom" });
     expect(gitApi.status).toHaveBeenCalledWith(WS);
+  });
+
+  it("converges the changes slice even when discard fails (reconciled regardless of outcome)", async () => {
+    appStore.dispatch(setGitStatus(WS, makeStatus()));
+    appStore.dispatch(setChanges(WS, [makeTracked("a.ts", ChangeStage.Unstaged)]));
+    gitApi.discard.mockResolvedValueOnce({ success: false, error: "boom" } as never);
+    gitApi.status.mockResolvedValueOnce(makeStatus({ files: [], hasUncommittedChanges: false }) as never);
+
+    const result = await discardFiles(WS, ["a.ts"]);
+
+    expect(result.success).toBe(false);
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toEqual([]);
+  });
+
+  it("converges the changes slice even when commit fails (reconciled regardless of outcome)", async () => {
+    appStore.dispatch(setGitStatus(WS, makeStatus()));
+    appStore.dispatch(setChanges(WS, [makeTracked("a.ts", ChangeStage.Staged)]));
+    gitApi.commit.mockResolvedValueOnce({ success: false, error: "boom" } as never);
+    gitApi.status.mockResolvedValueOnce(makeStatus({ files: [], hasUncommittedChanges: false }) as never);
+
+    const result = await commit(WS, { message: "msg", userRequested: true });
+
+    expect(result.success).toBe(false);
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toEqual([]);
   });
 
   it("commit forwards params and reconciles the store on success", async () => {
