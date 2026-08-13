@@ -15,20 +15,23 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('<div class="w-full pb-2">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain('conversation-composer relative z-20 w-full');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
   });
 
-  it('pins a separate compact prompt without mutating the normal-flow source', () => {
+  it('sticks the single user prompt without restoring the duplicate compact layer', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
-    const pinned = source('src/lib/components/chat/PinnedUserPrompt.svelte');
 
     expect(panel).not.toContain('formatMessageForStickyHeader');
     expect(panel).not.toContain('h-0 overflow-visible');
-    expect(panel).not.toContain('class:sticky={shouldEnableSticky}');
-    expect(panel).not.toContain('class:-top-px={shouldEnableSticky}');
+    expect(panel).toMatch(
+      /data-message-role="user"[\s\S]{0,400}class:sticky=\{shouldEnableSticky\}/,
+    );
+    expect(panel).toMatch(
+      /data-message-role="user"[\s\S]{0,440}class:-top-px=\{shouldEnableSticky\}/,
+    );
     expect(panel).toMatch(
       /data-message-role="user"[\s\S]{0,300}class="message-nav-target relative z-20 mb-4/,
     );
@@ -37,27 +40,19 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
-    expect(panel).toContain('data-pinnable-user-prompt={!isAutomatedMessage(message)');
-    expect(panel).toContain('pointer-events-none absolute inset-x-0 top-0 z-40');
-    expect(panel).toContain('<PinnedUserPrompt');
-    expect(panel).toContain('use:trackPinnedPrompt');
+    expect(panel).toContain('isSticky={stickyMessageId === message.id}');
+    expect(panel).toContain('onStickyClick={() => scrollUserMessageToTop(message.id)}');
     expect(panel).toMatch(
-      /function scrollUserMessageToTop[\s\S]{0,500}pinnedPromptMessageId = null[\s\S]{0,300}smoothScrollTo\(target, 'start'\)/,
+      /function scrollUserMessageToTop[\s\S]{0,500}closest\('\.conversation-turn'\)[\s\S]{0,160}smoothScrollTo\(target, 'start'\)/,
     );
-    expect(pinned).toContain('USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS');
-    expect(pinned).toContain('data-surface-role="pinned-user-prompt-bubble"');
-    expect(pinned).toContain('truncate whitespace-nowrap {USER_MESSAGE_TEXT_CLASS}');
-    expect(pinned).toContain('title={text}');
-    expect(pinned).toContain('class="sr-only"');
 
     const message = source('src/lib/components/chat/ChatMessage.svelte');
-    expect(message).not.toContain('isSticky');
-    expect(message).not.toContain('onStickyClick');
+    expect(message).toMatch(/isSticky \|\|[\s\S]{0,100}'line-clamp-2'/);
     expect(message).toContain(
       "agentAttribution\n                ? ''\n                : 'line-clamp-6'",
     );
-    expect(message).toContain('imageBlocks.length > 0');
-    expect(message).toContain('fileBlocks.length > 0');
+    expect(message).toContain('imageBlocks.length > 0 && !isSticky');
+    expect(message).toContain('fileBlocks.length > 0 && !isSticky');
     expect(message).toContain('transition: height var(--motion-slow) var(--ease-emphasized-out)');
     expect(message).toContain('@media (prefers-reduced-motion: reduce)');
   });
@@ -85,25 +80,19 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses an inset semantic user surface and body typography', () => {
+  it('uses an aligned accent user prompt and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
-    expect(message).toContain('USER_MESSAGE_SURFACE_CLASS');
-    expect(source('src/lib/components/chat/user-message-surface.ts')).toContain(
-      'rounded-lg border border-border/50 bg-muted px-3 py-2 shadow-sm',
-    );
+    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0');
     expect(message).toContain(
       "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
     );
-    expect(message).toContain('class="{USER_MESSAGE_TEXT_CLASS} select-text');
-    expect(message).toContain('class="type-body text-pretty text-foreground"');
-    expect(message).toContain('<span class="sr-only">{m.chat_agentThread_you_label()}</span>');
+    expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(
-      '<span class="sr-only">{m.chat_agentThread_assistant_label()}</span>',
+      'class="type-body select-text font-medium! text-pretty text-foreground',
     );
-    expect(message).toContain('data-conversation-role="user"');
-    expect(message).toContain('data-conversation-role="assistant"');
+    expect(message).toContain('<div class="type-body text-pretty text-foreground">');
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
   });
@@ -133,14 +122,13 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
-    expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS');
-    expect(source('src/lib/components/chat/user-message-surface.ts')).toContain('bg-muted');
+    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass}');
     expect(message).toContain(
       "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
     );
   });
 
-  it('uses the original Thinking indicator with the active response start time', () => {
+  it('uses the original Thinking indicator without the staged hydration line', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const status = source('src/lib/components/chat/StreamingStatus.svelte');
     const indicator = source('src/lib/components/chat/StreamingTypingIndicator.svelte');
@@ -150,13 +138,13 @@ describe('editorial conversation presentation contract', () => {
     expect(status).toContain(
       "import StreamingTypingIndicator from './StreamingTypingIndicator.svelte'",
     );
-    expect(status).toContain('startTime={streamingStartTime}');
+    expect(status).toContain('<StreamingTypingIndicator visible message={statusMessage}');
     expect(indicator).toContain('getRandomColorsWithSeed(seed)');
     expect(indicator).toContain('--duration: 800ms');
     expect(indicator).toContain('animation: legacy-spinner-wave');
   });
 
-  it('renders wake-up details as one compact normal-flow row', () => {
+  it('renders wake-up details as one compact sticky row', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const wakeup = source('src/lib/components/chat/EventWakeupBanner.svelte');
     const agentCard = source('src/lib/components/chat/AgentCard.svelte');
@@ -166,9 +154,10 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
-    expect(wakeup).toContain('items-center gap-1.5 bg-transparent py-1.5 pr-3 pl-0');
-    expect(wakeup).not.toContain('isSticky');
-    expect(wakeup).not.toContain('stickySurfaceClass');
+    expect(wakeup).toMatch(
+      /items-center gap-1.5 py-1.5 pr-3 pl-0 \{isSticky[\s\S]{0,80}\? stickySurfaceClass[\s\S]{0,50}: 'bg-transparent'/,
+    );
+    expect(wakeup).toContain("workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-sidebar' : 'bg-card'");
     expect(wakeup).toContain('{#if showSummary && !(showAgentCards && agentEvents.length > 0)}');
     expect(wakeup).toContain('statusLabel={event.type ===');
     expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
@@ -177,8 +166,7 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeup).not.toContain('isCompleted={event.type');
     expect(agentCard).toContain("? 'flex-row items-center gap-2'");
     expect(agentCard).toContain("? 'type-body items-center rounded-md");
-    expect(agentCard).toContain("? 'inline-agent-card-header'");
-    expect(agentCard).toContain('agent-card-header flex w-full min-w-0 max-w-full');
+    expect(agentCard).toContain("? 'inline-agent-card-header overflow-hidden'");
     expect(agentCard).toContain('<div class="relative shrink-0 {inline ?');
     expect(agentCard).toContain('{#if delegatedByName && !inline}');
     expect(agentCard).toContain('{#if inline && statusLabel}');
@@ -257,20 +245,10 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
-    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
+    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'");
     expect(panel).not.toContain("'pb-1 pt-3'");
-    expect(panel).toContain('data-testid="subscription-flex-spacer"');
-    expect(panel).toContain('<EventSubscriptionsCard');
-    expect(panel).toContain('data-testid="queued-message-utility-area"');
-    expect(panel.indexOf('<EventSubscriptionsCard')).toBeLessThan(
-      panel.indexOf('data-testid="queued-message-utility-area"'),
-    );
-    expect(panel.indexOf('data-testid="queued-message-utility-area"')).toBeLessThan(
-      panel.indexOf('conversation-composer relative z-20 w-full'),
-    );
-    expect(panel).not.toContain('<BackgroundHooksRow');
-    expect(panel).not.toContain('<MonitoredPrsRow');
+    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-4'");
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable;"');

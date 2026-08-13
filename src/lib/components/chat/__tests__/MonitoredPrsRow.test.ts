@@ -164,8 +164,8 @@ describe('MonitoredPrsRow', () => {
     const card = await openHoverCard();
     expect(card.textContent).toContain('Fix widget rendering');
     expect(card.textContent).toContain('open');
-    expect(card.textContent).toContain('checks: 1/4 running');
-    expect(card.textContent).toContain('REVIEW_REQUIRED');
+    expect(card.textContent).toContain('1 of 4 checks are still running.');
+    expect(card.textContent).toContain('0 of 1 required approvals received.');
     expect(card.textContent).toContain('2 unresolved threads');
     expect(card.textContent).toContain('Mergeable');
     expect(screen.getByTestId('monitored-pr-pending').textContent).toContain(
@@ -194,8 +194,8 @@ describe('MonitoredPrsRow', () => {
     );
     expect(lines).toEqual([
       'acme/widgets#42',
-      'checks: 1/4 running',
-      'approvals: REVIEW_REQUIRED (0/1 required)',
+      '1 of 4 checks are still running.',
+      '0 of 1 required approvals received.',
       '2 unresolved threads',
       'Mergeable',
       expect.stringContaining('Last change'),

@@ -225,7 +225,7 @@ describe('AgentSubscriptions sections', () => {
     });
 
     const header = screen.getByTestId('one-shot-header');
-    expect(header.textContent).toContain('Waiting on 1 agent');
+    expect(header.textContent).toContain('Waiting for 1 agent');
     const agentList = screen.getByTestId('one-shot-agent-list');
     expect(agentList.className).toContain('pl-0');
     expect(agentList.className).not.toContain('pl-4.5');
@@ -261,7 +261,7 @@ describe('AgentSubscriptions sections', () => {
     ).toBeTruthy();
   });
 
-  it('shows a counted "Waiting on 1 agent" header with a single one-shot watch', async () => {
+  it('shows a counted "Waiting for 1 agent" header with a single one-shot watch', async () => {
     const WS = 'ws-sections-header-one';
     await renderWithSnapshot(WS, {
       subscriptions: [oneShotSubscription('watch-solo', WS, 'child-solo')],
@@ -270,10 +270,10 @@ describe('AgentSubscriptions sections', () => {
     });
 
     const header = screen.getByTestId('one-shot-header');
-    expect(header.textContent).toContain('Waiting on 1 agent');
+    expect(header.textContent).toContain('Waiting for 1 agent');
   });
 
-  it('shows a distributive "Waiting on each of {count} agents" header with multiple one-shot watches', async () => {
+  it('shows a counted "Waiting for {count} agents" header with multiple one-shot watches', async () => {
     const WS = 'ws-sections-header-many';
     await renderWithSnapshot(WS, {
       subscriptions: [
@@ -285,7 +285,7 @@ describe('AgentSubscriptions sections', () => {
     });
 
     const header = screen.getByTestId('one-shot-header');
-    expect(header.textContent).toContain('Waiting on each of 2 agents');
+    expect(header.textContent).toContain('Waiting for 2 agents');
     expect(header.className).toContain('pl-0');
     expect(header.className).not.toContain('px-3');
   });
@@ -329,7 +329,7 @@ describe('AgentSubscriptions sections', () => {
     const oneShots = screen.getByTestId('one-shot-watches');
     expect(within(oneShots).getAllByTestId('agent-list-item')).toHaveLength(1);
     const header = screen.getByTestId('one-shot-header');
-    expect(header.textContent).toContain('Waiting on 1 agent');
+    expect(header.textContent).toContain('Waiting for 1 agent');
   });
 
   it('merged single-agent group cancel sends the scoped agent.cancelSubscriptions { groupId }', async () => {

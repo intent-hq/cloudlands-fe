@@ -16,8 +16,7 @@ describe('primary navigation icon contract', () => {
     expect(spaces).not.toContain('name="spaces"');
     expect(viewMode).toContain("name={isColumns ? 'tabs' : 'spaces'}");
     expect(titleBar).toContain('<IntentNavigationIcon name="settings" size={16}');
-    expect(launcher).toContain('<Fa icon={faPlus} class="pointer-events-none size-4!" />');
-    expect(launcher).toContain('[&_svg]:size-4!');
+    expect(launcher).toContain('triggerIcon={faPlus}');
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar.match(/<SidebarNav \/>/g)).toHaveLength(1);
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(
@@ -34,8 +33,8 @@ describe('primary navigation icon contract', () => {
     expect(spaces).toContain('size="icon"');
     expect(titleBar).toContain('size="icon"');
     expect(viewMode).toContain("'app-no-drag size-8 shrink-0");
-    expect(launcher).toContain('<Button');
-    expect(launcher).toContain('class="size-8 shrink-0');
+    expect(launcher).toContain('<RepoSelector');
+    expect(launcher).toContain('triggerClass="size-7 min-w-7 justify-center');
     for (const navSource of [spaces, viewMode, titleBar]) {
       expect(navSource).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
       expect(navSource).toContain('TITLEBAR_NAVIGATION_GLYPH_CLASS');

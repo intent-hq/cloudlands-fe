@@ -116,9 +116,10 @@ describe('workspace column layout contract', () => {
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
     expect(titleBar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
-    expect(titleBar).toContain('<Fa icon={faSettings} class="pointer-events-none size-3.5!" />');
-    expect(viewModeToggle).toContain('<ColumnsPlusRightIcon');
-    expect(viewModeToggle).toContain('<TabsIcon');
+    expect(titleBar).toContain(
+      '<IntentNavigationIcon name="settings" size={16} class="pointer-events-none size-4!" />',
+    );
+    expect(viewModeToggle).toContain("name={isColumns ? 'tabs' : 'spaces'}");
     expect(appLayout).toContain('overlayWorkspaceColumns={showWorkspaceColumns}');
     expect(appLayout).toContain('style:padding-top={showWorkspaceColumns');
     expect(columns).not.toContain('data-titlebar-clearance');

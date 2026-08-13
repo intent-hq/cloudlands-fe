@@ -18,6 +18,11 @@
   import CylinderScroller from './CylinderScroller.svelte';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { getResponseGroupPreviewBlock } from './response-group-blocks';
+  import {
+    OPERATIONAL_ROW_LINE_CLASS,
+    OPERATIONAL_ROW_TONE_CLASS,
+    OPERATIONAL_SUMMARY_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     name: string;
@@ -221,14 +226,15 @@
 <div class={className}>
   <button
     type="button"
-    class="type-caption flex w-full cursor-pointer items-center gap-2.5 rounded-md border-none py-1 text-left text-muted-foreground/60 transition-colors duration-[var(--motion-fast)] hover:text-muted-foreground focus-visible:text-muted-foreground"
+    class="{OPERATIONAL_ROW_TONE_CLASS} {OPERATIONAL_ROW_LINE_CLASS} cursor-pointer rounded-md border-none text-left"
+    data-operational-disclosure-row
     onclick={toggle}
     aria-expanded={isExpanded}
   >
     <!-- Name and snippet share one line box so their text baselines coincide;
          a flex sibling with `truncate` (overflow: hidden) would synthesize its
          baseline from the box edge and sit visibly raised. -->
-    <span class="min-w-0 truncate">
+    <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="response-group-summary">
       <span class="text-foreground">{name}</span>{#if textSnippet && !isExpanded}<span
           class="ml-2.5 text-muted-foreground">{textSnippet}</span
         >{/if}

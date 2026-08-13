@@ -14,9 +14,12 @@ describe('chat typography contract', () => {
     expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 
-  it('keeps prose at body hierarchy and operational rows at caption hierarchy', () => {
+  it('keeps prose at body hierarchy and operational rows on the shared quiet tone', () => {
     expect(source('src/lib/components/chat/ChatMessage.svelte')).toContain('type-body text-pretty');
-    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain('type-caption');
+    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain(
+      'OPERATIONAL_ROW_CONTAINER_CLASS',
+    );
+    expect(source('src/lib/components/chat/operational-disclosure-row.ts')).toContain('type-body');
     expect(source('src/lib/components/chat/ResponseGroup.svelte')).toContain('type-caption');
     expect(source('src/lib/components/chat/ChatFileChangesSummary.svelte')).toContain(
       'type-caption',
