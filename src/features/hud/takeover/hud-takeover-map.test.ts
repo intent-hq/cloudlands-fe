@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { flushSync } from 'svelte';
 import type { HudTakeoverTask } from '$store/renderer/slices/hud/hud-selectors';
+import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
 import { HUD_TAKEOVER_ZOOM_MIN } from './hud-takeover-layout';
 import { createTakeoverMapState } from './hud-takeover-map.svelte';
 
@@ -25,7 +26,7 @@ function measuredMap(tasks: HudTakeoverTask[], key = 'ws-1') {
 
 describe('createTakeoverMapState zoom', () => {
   it('defaults to scale 1 for every display — even a graph wider than the viewport', () => {
-    // Chain t1..t5: half-extent 5·192+90 = 1050px vs the 500px half-viewport.
+    // Chain t1..t5 (1 lane → pitch 196): half-extent 5·196+90 = 1070px vs the 500px half-viewport.
     const map = measuredMap(chainTasks(5));
     expect(map.scale).toBe(1);
     expect(map.panTransform).toBe('translate(0px, 0px)');
@@ -57,9 +58,9 @@ describe('createTakeoverMapState zoom', () => {
   it('zoomReset returns to 1; zoomFit fits the occupied cells to the viewport', () => {
     const map = measuredMap(chainTasks(5));
     map.zoomFit();
-    // 500/1050 = 0.476 (3 decimals).
-    expect(map.scale).toBe(0.476);
-    expect(map.panTransform).toBe('translate(0px, 0px) scale(0.476)');
+    // 500/1070 = 0.467 (3 decimals).
+    expect(map.scale).toBe(0.467);
+    expect(map.panTransform).toBe('translate(0px, 0px) scale(0.467)');
     map.zoomReset();
     expect(map.scale).toBe(1);
   });
@@ -113,7 +114,7 @@ describe('createTakeoverMapState zoom', () => {
 
     // The inverse holds too: a graph that fits at the 1:1 open zoom never
     // gains an auto-pan when the user zooms in past the viewport. t3 at
-    // (3,0) is a "far" cell (|x| ≥ 3) but half-extent 666px ≤ the 700px
+    // (3,0) is a "far" cell (|x| ≥ 3) but half-extent 678px ≤ the 700px
     // half-viewport, so the open-time decision is false — and stays false
     // even when zooming in makes the chain overflow.
     const wide = createTakeoverMapState(() => chainTasks(3));
@@ -141,5 +142,59 @@ describe('createTakeoverMapState zoom', () => {
     // Content pan = delta/0.8; rendered translate scales back to 1:1 on screen.
     expect(map.drag.pan).toEqual({ x: 62.5, y: 25 });
     expect(map.panTransform).toBe('translate(-50px, -20px) scale(0.8)');
+  });
+});
+
+describe('createTakeoverMapDrag syncAutoPan pitch keying', () => {
+  const bounds = { minX: -10000, maxX: 10000, minY: -10000, maxY: 10000 };
+
+  it('re-pans when the pitch changes for the same workspace/cell pair', () => {
+    let pitch = 196;
+    const drag = createTakeoverMapDrag(
+      () => bounds,
+      () => 1,
+      () => pitch,
+    );
+    drag.syncAutoPan('ws-1', { x: 3, y: 1 }, 0);
+    expect(drag.pan).toEqual({ x: 588, y: 196 });
+    // Same pair at the same pitch: deduped no-op.
+    drag.syncAutoPan('ws-1', { x: 3, y: 1 }, 0);
+    expect(drag.pan).toEqual({ x: 588, y: 196 });
+    // Lane growth widened the pitch: the cell's px position shifted, so the
+    // same pair must re-key and re-center instead of deduping stale.
+    pitch = 232;
+    drag.syncAutoPan('ws-1', { x: 3, y: 1 }, 0);
+    expect(drag.pan).toEqual({ x: 696, y: 232 });
+    drag.destroy();
+  });
+
+  it('a pitch change with no target cell never resets a manual pan', () => {
+    let pitch = 196;
+    const drag = createTakeoverMapDrag(
+      () => bounds,
+      () => 1,
+      () => pitch,
+    );
+    drag.syncAutoPan('ws-1', null, 0);
+
+    const node = document.createElement('div');
+    const detach = drag.attach(node);
+    const pointer = (type: string, x: number, y: number) => {
+      node.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0 }));
+      flushSync();
+    };
+    pointer('pointerdown', 500, 300);
+    pointer('pointermove', 450, 280);
+    pointer('pointerup', 450, 280);
+    expect(drag.pan).toEqual({ x: 50, y: 20 });
+
+    // A reactive re-run after a pitch change (deps updated) with no auto-pan
+    // target stays deduped — the manual drag survives.
+    pitch = 232;
+    drag.syncAutoPan('ws-1', null, 0);
+    expect(drag.pan).toEqual({ x: 50, y: 20 });
+
+    detach();
+    drag.destroy();
   });
 });

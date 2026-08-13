@@ -3,18 +3,31 @@
    * Dependency-edge layer for the takeover task map — an absolutely
    * positioned SVG spanning the whole canvas box, rendered UNDER the cells
    * inside `.ov-map-pan` so it pans/scales with them. Edge kinds: `dep`
-   * (met dependency), `unmet` (daemon-computed `unmetDependsOn`), `spec`
-   * (spec root → rootless task, subtler), `conflict` (advisory, dashed, no
-   * arrowhead). Arrowheads point at the dependent task.
+   * (dependency, stroked with its source task's palette color and dimmed
+   * once the destination is underway/finished), `spec` (spec root →
+   * rootless task, subtler), `conflict` (advisory, dashed, no arrowhead).
+   * Arrowheads point at the dependent task and take the edge's color via
+   * per-palette-slot markers. Pulse treatments (derived upstream, see
+   * `takeoverEdgePulse`): live conflicts pulse red, dep edges into a
+   * ready-to-start task render green and pulse; the pulse animation is
+   * gated on the overlay's `motion` flag — reduced motion keeps the same
+   * static colors (parity with the overlay's `.ov-no-motion` handling).
    */
-  import type { HudTakeoverMapEdge } from './hud-takeover-edges';
+  import {
+    HUD_TAKEOVER_EDGE_PALETTE,
+    HUD_TAKEOVER_EDGE_READY_COLOR,
+    takeoverEdgePathD,
+    type HudTakeoverMapEdge,
+  } from './hud-takeover-edges';
 
   let {
     edges,
     box,
+    motion,
   }: {
     edges: HudTakeoverMapEdge[];
     box: { left: number; top: number; width: number; height: number };
+    motion: boolean;
   } = $props();
 </script>
 
@@ -30,10 +43,21 @@
     data-testid="hud-takeover-edges"
   >
     <defs>
-      {#each ['dep', 'unmet', 'spec'] as kind (kind)}
+      <marker
+        id="ov-edge-arrow-spec"
+        class="ov-edge-arrow-spec"
+        viewBox="0 0 8 8"
+        refX="7"
+        refY="4"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"
+      >
+        <path d="M0 0.5 L7.5 4 L0 7.5 Z" />
+      </marker>
+      {#each HUD_TAKEOVER_EDGE_PALETTE as color, i (color)}
         <marker
-          id={`ov-edge-arrow-${kind}`}
-          class={`ov-edge-arrow-${kind}`}
+          id={`ov-edge-arrow-c${i}`}
           viewBox="0 0 8 8"
           refX="7"
           refY="4"
@@ -41,20 +65,44 @@
           markerHeight="7"
           orient="auto-start-reverse"
         >
-          <path d="M0 0.5 L7.5 4 L0 7.5 Z" />
+          <path d="M0 0.5 L7.5 4 L0 7.5 Z" fill={color} />
         </marker>
       {/each}
+      <marker
+        id="ov-edge-arrow-ready"
+        viewBox="0 0 8 8"
+        refX="7"
+        refY="4"
+        markerWidth="7"
+        markerHeight="7"
+        orient="auto-start-reverse"
+      >
+        <path d="M0 0.5 L7.5 4 L0 7.5 Z" fill={HUD_TAKEOVER_EDGE_READY_COLOR} />
+      </marker>
     </defs>
     {#each edges as edge (edge.id)}
-      <line
+      <path
         class={`ov-edge ov-edge-${edge.kind}`}
-        x1={edge.line.x1}
-        y1={edge.line.y1}
-        x2={edge.line.x2}
-        y2={edge.line.y2}
-        marker-end={edge.kind === 'conflict' ? undefined : `url(#ov-edge-arrow-${edge.kind})`}
+        class:ov-edge-dim={edge.dimmed}
+        class:ov-edge-conflict-live={edge.pulse === 'conflict'}
+        class:ov-edge-ready={edge.pulse === 'ready'}
+        class:ov-edge-pulse={motion && edge.pulse !== null}
+        d={takeoverEdgePathD(edge.points)}
+        style:stroke={edge.pulse === 'ready'
+          ? HUD_TAKEOVER_EDGE_READY_COLOR
+          : edge.colorIndex === null
+            ? undefined
+            : HUD_TAKEOVER_EDGE_PALETTE[edge.colorIndex]}
+        marker-end={edge.kind === 'conflict'
+          ? undefined
+          : edge.pulse === 'ready'
+            ? 'url(#ov-edge-arrow-ready)'
+            : edge.colorIndex === null
+              ? 'url(#ov-edge-arrow-spec)'
+              : `url(#ov-edge-arrow-c${edge.colorIndex})`}
         data-testid="hud-takeover-edge"
         data-kind={edge.kind}
+        data-pulse={edge.pulse}
       />
     {/each}
   </svg>
@@ -79,14 +127,7 @@
     fill: none;
     stroke-width: 1.5;
   }
-  .ov-edge-dep {
-    stroke: hsl(var(--muted-foreground) / 0.75);
-  }
-  .ov-edge-unmet {
-    /* Thicker stroke doubles as a non-color cue vs met deps (a11y). */
-    stroke: hsl(var(--warning) / 0.85);
-    stroke-width: 2.5;
-  }
+  /* Dep strokes come inline from the source task's palette color. */
   .ov-edge-spec {
     stroke: hsl(var(--muted-foreground) / 0.35);
   }
@@ -94,11 +135,34 @@
     stroke: hsl(var(--destructive-foreground) / 0.55);
     stroke-dasharray: 4 5;
   }
-  .ov-edge-arrow-dep path {
-    fill: hsl(var(--muted-foreground) / 0.75);
+  /* Live conflict (neither endpoint complete): full-strength red. */
+  .ov-edge-conflict-live {
+    stroke: hsl(var(--destructive-foreground) / 0.9);
   }
-  .ov-edge-arrow-unmet path {
-    fill: hsl(var(--warning) / 0.85);
+  /* Ready-to-start pathway: stroke comes inline (success green). The wide
+     stroke is the static differentiator from a plain slot-1 (same green)
+     dep edge under reduced motion — dashes stay reserved for conflicts. */
+  .ov-edge-ready {
+    stroke-width: 2.5;
+  }
+  /* Consumed dep edge (destination underway/finished) or resolved conflict
+     (either endpoint complete): dim line + arrowhead, static. */
+  .ov-edge-dim {
+    opacity: 0.35;
+  }
+  /* Attention pulse (live conflict / ready pathway); class applied only
+     when the overlay's motion flag allows animation. */
+  .ov-edge-pulse {
+    animation: ovedgepulse 2.1s ease-in-out infinite;
+  }
+  @keyframes ovedgepulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
   }
   .ov-edge-arrow-spec path {
     fill: hsl(var(--muted-foreground) / 0.35);
@@ -110,8 +174,14 @@
     .ov-map-edges {
       animation: none;
     }
+    .ov-edge-pulse {
+      animation: none;
+    }
   }
   :global(.ov-no-motion) .ov-map-edges {
+    animation: none;
+  }
+  :global(.ov-no-motion) .ov-edge-pulse {
     animation: none;
   }
 </style>
