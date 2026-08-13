@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.32.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.31.0...v2.32.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* add root '/' home route (empty state) ([#1141](https://github.com/intent-hq/cloudlands-fe/issues/1141)) ([c530332](https://github.com/intent-hq/cloudlands-fe/commit/c530332bf71d4ec87ba4fa5a507d947d068e4bcd))
+* multi git root tracking — Changes tab root dropdown, sectioned PRs, read-only root browsing ([#1127](https://github.com/intent-hq/cloudlands-fe/issues/1127)) ([c96d3ca](https://github.com/intent-hq/cloudlands-fe/commit/c96d3ca036ba897a0b1a4be893bbd42a0c4a7605))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.14 ([#1139](https://github.com/intent-hq/cloudlands-fe/issues/1139)) ([5b4edb9](https://github.com/intent-hq/cloudlands-fe/commit/5b4edb9911959bcce3cf58183fae65da52bc1825))
+* **chat:** render batch delegate dispositions instead of 'Agent spawned' ([#1135](https://github.com/intent-hq/cloudlands-fe/issues/1135)) ([3b3977c](https://github.com/intent-hq/cloudlands-fe/commit/3b3977c94724264bfc7e6b09dc3fcf3957750916))
+* **git:** converge changes slice before stage/unstage seam resolves ([#1130](https://github.com/intent-hq/cloudlands-fe/issues/1130)) ([aa2a408](https://github.com/intent-hq/cloudlands-fe/commit/aa2a408c1d0cf60ccca3c7ecaa697f6624f5bbe1))
+* **hud:** hide macOS traffic-light spacer in full screen ([#1144](https://github.com/intent-hq/cloudlands-fe/issues/1144)) ([b49e87a](https://github.com/intent-hq/cloudlands-fe/commit/b49e87a0834776a0f1ddb133e25cb1fee44fb77f))
+* **hud:** keep takeover map at 1:1 zoom and add zoom controls ([#1140](https://github.com/intent-hq/cloudlands-fe/issues/1140)) ([d5eed99](https://github.com/intent-hq/cloudlands-fe/commit/d5eed99efd84ef687ed8cea94e63d36d61ffa3c8))
+* **i18n:** restore immediate UI refresh on locale change and localize user-facing strings ([#1133](https://github.com/intent-hq/cloudlands-fe/issues/1133)) ([4b270fe](https://github.com/intent-hq/cloudlands-fe/commit/4b270fea899e4453b6744f9a9ec2831fd20264d1))
+* make svelte-check gate actually check (exclude generated paraglide, add plausibility guard) ([#1138](https://github.com/intent-hq/cloudlands-fe/issues/1138)) ([e3e286f](https://github.com/intent-hq/cloudlands-fe/commit/e3e286f3536bc61bf7ae86ba6d38f326118b70f4))
+* move forget/add active-id decisions inside the backend-switch queue ([#1137](https://github.com/intent-hq/cloudlands-fe/issues/1137)) ([bc1eacc](https://github.com/intent-hq/cloudlands-fe/commit/bc1eaccfb7f80dfff3765ca9cc5ba012f025ae5d))
+* play HUD sound cues when manually opening a workspace ([#1143](https://github.com/intent-hq/cloudlands-fe/issues/1143)) ([034ac3e](https://github.com/intent-hq/cloudlands-fe/commit/034ac3ef1e9f203da9d00b6c100b9b9019abcd66))
+* remove fixed width cropping monitored-PR chip menu labels ([#1145](https://github.com/intent-hq/cloudlands-fe/issues/1145)) ([abc69eb](https://github.com/intent-hq/cloudlands-fe/commit/abc69ebd62991d378f29fcf3ff5f219cbf65475b))
+* serialize backend switches and guard stale hostname capture ([#1128](https://github.com/intent-hq/cloudlands-fe/issues/1128)) ([509cccb](https://github.com/intent-hq/cloudlands-fe/commit/509cccb153e0f4454fcf15f3bb8de8c9c57761be))
+* **settings:** shorten agent memory budget and idle reap descriptions ([#1142](https://github.com/intent-hq/cloudlands-fe/issues/1142)) ([59e8217](https://github.com/intent-hq/cloudlands-fe/commit/59e8217c1724dfdceed92bf906dcd608bfb5d779))
+* **terminal:** restore selectScript import in QuakeTerminalOverlay ([#1136](https://github.com/intent-hq/cloudlands-fe/issues/1136)) ([c6c6b3a](https://github.com/intent-hq/cloudlands-fe/commit/c6c6b3a8aa870483d7e3598a35738cf70bb4e309))
+
+
+### ⚡ Performance
+
+* restore guarded VirtualList path in WorkspaceAgentsList ([#1134](https://github.com/intent-hq/cloudlands-fe/issues/1134)) ([ff6cc1a](https://github.com/intent-hq/cloudlands-fe/commit/ff6cc1a7d60ccc0e197743ea58beff475cf248be))
+
 ## [2.31.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.30.1...v2.31.0) (2026-08-13)
 
 
