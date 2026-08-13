@@ -28,6 +28,7 @@ import type { TaskAgentAssociation } from '../task-agent-associations/task-agent
 import type { HudAgentStateBucket, HudCardStateKey } from './hud-types';
 import {
   HUD_AGENT_STATE_BUCKETS,
+  HUD_UNREAD_ATTENTION_VALUE,
   displayStatusCardStateKey,
   isHudAttentionValue,
   isHudTrackedAttentionValue,
@@ -214,13 +215,16 @@ export interface HudWorkspaceStateBars {
 /**
  * WORKSPACE STATS: per-state workspace counts shared by the header counters
  * and the WORKSPACES panel bars — derived from the card `stateKey` (the
- * verbatim BE displayStatus plus the HUD attention overlays) so the rollups
- * always agree with the center grid: `wait`/`blocked` bucket as ATTENTION,
- * `failed` as FAILED, `in_progress` as PROGRESS, `complete` as COMPLETED,
- * PR states as PR OPEN / PR MERGED, `unread` as UNREAD, and everything else
- * (`idle`/`not_started`) as IDLE. An unread `complete`/`pr_merged` workspace
- * folds to UNREAD (its card `stateKey` does — see `cardStateKey`), so it
- * counts as UNREAD, not COMPLETED / PR MERGED.
+ * verbatim BE displayStatus) so the rollups always agree with the center
+ * grid: `wait`/`blocked` bucket as ATTENTION, `failed` as FAILED,
+ * `in_progress` as PROGRESS, `complete` as COMPLETED, PR states as
+ * PR OPEN / PR MERGED, and everything else (`idle`/`not_started`) as IDLE.
+ * UNREAD is the one flag-driven bucket (intentd#1186 — unread is no longer a
+ * displayStatus): an unread card in any state below the attention/progress
+ * axes (complete, the PR states, idle, not_started) folds to UNREAD — the
+ * old daemon precedence `failed > blocked > needs_attention > in_progress >
+ * unread > PR/task rollup`, kept here so the bars match what the promotion
+ * used to produce. Buckets stay disjoint (each card counts once).
  */
 export const selectHudWorkspaceStateBars = store.createSelector((state): HudWorkspaceStateBars => {
   const bars: HudWorkspaceStateBars = {
@@ -241,27 +245,24 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
       case 'blocked':
         bars.attention += 1;
         break;
-      case 'unread':
-        bars.unread += 1;
-        break;
       case 'failed':
         bars.failed += 1;
         break;
       case 'in_progress':
         bars.progress += 1;
         break;
-      case 'complete':
-        bars.completed += 1;
-        break;
-      case 'pr_open':
-      case 'pr_ready':
-        bars.prOpen += 1;
-        break;
-      case 'pr_merged':
-        bars.prMerged += 1;
-        break;
       default:
-        bars.idle += 1;
+        if (card.isUnread) {
+          bars.unread += 1;
+        } else if (card.stateKey === 'complete') {
+          bars.completed += 1;
+        } else if (card.stateKey === 'pr_open' || card.stateKey === 'pr_ready') {
+          bars.prOpen += 1;
+        } else if (card.stateKey === 'pr_merged') {
+          bars.prMerged += 1;
+        } else {
+          bars.idle += 1;
+        }
     }
   }
   return bars;
@@ -507,6 +508,13 @@ export interface HudWorkspaceCard {
   stateKey: HudCardStateKey;
   /** Raised live attention value, null when none. */
   attention: string | null;
+  /**
+   * Non-urgent unread overlay (`workspace.attention === 'unread'`, §5.1 —
+   * unread is a flag, not a displayStatus since intentd#1186): the card keeps
+   * its real state and adds the blue border blink; also the UNREAD state-bar
+   * bucket for cards below the attention/progress axes.
+   */
+  isUnread: boolean;
   /** Workspace status message (agent content; i18n-exempt), null when empty. */
   statusMessage: string | null;
   /** Attention-reason strip content; null outside `wait`/`blocked`/`failed` or when no reason is known. */
@@ -528,13 +536,14 @@ const ZERO_TASKS = { total: 0, completed: 0, inProgress: 0 };
  * Card state key: the BE-owned `workspace.displayStatus` rendered VERBATIM
  * (cloudlands-fe#578). The daemon owns the whole canonical precedence
  * (intentd#945 — `failed` > `blocked` > `needs_attention` > `in_progress` >
- * `unread` > the PR/task rollup, PROTOCOL §5.1), including the agent-running
- * promotion, the idle demotion (intentd#793), the blocker/failed axes and the
- * blue-dot `unread` promotion — so the HUD applies NO local promotion or
- * demotion over live sessions or attention flags. The only mapping left is
- * presentational: the wire `needs_attention` renders as `wait` (NEEDS
- * ATTENTION, yellow). Unknown or absent wire values default to `not_started`
- * so the card never vanishes (same convention as `AllWorkspacesCard`).
+ * the PR/task rollup, PROTOCOL §5.1), including the agent-running
+ * promotion, the idle demotion (intentd#793) and the blocker/failed axes —
+ * so the HUD applies NO local promotion or demotion over live sessions or
+ * attention flags (unread travels on the `attention` flag and overlays the
+ * card, intentd#1186). The only mapping left is presentational: the wire
+ * `needs_attention` renders as `wait` (NEEDS ATTENTION, yellow). Unknown or
+ * absent wire values default to `not_started` so the card never vanishes
+ * (same convention as `AllWorkspacesCard`).
  */
 function cardStateKey(workspace: Workspace): HudCardStateKey {
   const displayStatus = isWorkspaceDisplayStatus(workspace.displayStatus)
@@ -903,7 +912,8 @@ function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
  * when one arrived, else the entity's daemon-served `attention` field
  * (`workspace.list`/`workspace.get` §5.1, kept fresh by the events bridge)
  * when it is a tracked value — so a workspace already unread at app start
- * renders UNREAD without waiting for a live event.
+ * renders its unread overlay without waiting for a live event. `isUnread`
+ * derives from the same resolved value (`=== 'unread'`).
  */
 export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
   const flags = state.hud.attentionByWorkspaceId;
@@ -934,6 +944,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
         : workspace.branch,
       stateKey,
       attention,
+      isUnread: attention === HUD_UNREAD_ATTENTION_VALUE,
       statusMessage,
       attentionSnippet: cardAttentionSnippet(state, stateKey, agents),
       prNumber: typeof workspace.prNumber === 'number' ? workspace.prNumber : null,

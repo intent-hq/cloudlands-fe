@@ -94,6 +94,7 @@
 <button
   class="hud-ws-card"
   class:hud-ws-card-flash={blinking}
+  class:hud-ws-card-unread={card.isUnread}
   data-testid="hud-ws-card"
   data-workspace-id={card.workspaceId}
   onclick={handleClick}
@@ -409,6 +410,23 @@
   .hud-anim-blink {
     animation: hudblink 1.6s step-end infinite;
   }
+  /* Unread overlay (workspace.attention === 'unread'): the card keeps its
+     real state banner/colors and blinks a blue border on top — the HUD's
+     non-urgent counterpart to the main app's blue dot. The takeover pre-roll
+     flash (outline) stays independent of this (border) so both can play. */
+  .hud-ws-card-unread {
+    border-color: hsl(var(--ring));
+    animation: hudunreadborder 1.6s step-end infinite;
+  }
+  @keyframes hudunreadborder {
+    0%,
+    100% {
+      border-color: hsl(var(--ring));
+    }
+    50% {
+      border-color: hsl(var(--border) / 0.8);
+    }
+  }
   /* Takeover pre-roll flash: 3 fast blinks (0.18s × 3 = 540ms, inside the
      630ms HUD_TAKEOVER_BLINK_MS pend window — kept in sync with the queue). */
   .hud-ws-card-flash {
@@ -426,7 +444,8 @@
   @media (prefers-reduced-motion: reduce) {
     .hud-anim-pulse,
     .hud-anim-blink,
-    .hud-ws-card-flash {
+    .hud-ws-card-flash,
+    .hud-ws-card-unread {
       animation: none;
     }
   }
