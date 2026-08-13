@@ -186,8 +186,15 @@
 
 {#snippet sliderContent()}
   {#if embedded}
-    <div class="type-caption truncate text-subtle">
-      {m.chat_effortPicker_nextSend_description()}
+    <div class="flex items-center justify-between gap-2">
+      <div class="type-caption truncate text-subtle">
+        {m.chat_effortPicker_nextSend_description()}
+      </div>
+      <EffortGauge
+        value={Math.max(0, sliderIndex - 1)}
+        max={levels.length - 1}
+        centered={steps[sliderIndex]?.value === null}
+      />
     </div>
   {:else}
     <div class="flex items-center justify-between gap-2">

@@ -170,6 +170,12 @@ describe('EffortPicker', () => {
     expect(screen.queryByTestId('effort-current-value')).toBeNull();
     const nextSendCaption = screen.getByText('Applies on the next message you send.');
     expect(nextSendCaption).toBeTruthy();
+    expect(nextSendCaption.className).toContain('text-subtle');
+    expect(nextSendCaption.parentElement?.className).toContain('justify-between');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(nextSendCaption.parentElement?.contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('0');
+    expect(gauge.dataset.gaugeCentered).toBe('false');
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('2');
     expect(slider.getAttribute('aria-valuetext')).toBe('Low');
@@ -177,6 +183,7 @@ describe('EffortPicker', () => {
 
     await fireEvent.change(slider, { target: { value: '2' } });
     expect(onEffortChange).toHaveBeenCalledWith('high');
+    expect(gauge.dataset.gaugeValue).toBe('1');
     expect(applyReasoningEffort).not.toHaveBeenCalled();
   });
 
