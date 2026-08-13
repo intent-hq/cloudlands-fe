@@ -29,7 +29,12 @@ import { WorkspaceStatus } from '$shared/types';
 
 import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
-import { HUD_TAKEOVER_BLINK_MS } from './hud-takeover-queue';
+import {
+  HUD_TAKEOVER_BLINK_MS,
+  HUD_TAKEOVER_CLOSE_MS,
+  HUD_TAKEOVER_DWELL_MIN_MS,
+  HUD_TAKEOVER_OPEN_MS,
+} from './hud-takeover-queue';
 import { HUD_TAKEOVER_PITCH_PX } from './hud-takeover-layout';
 import { playHudSoundCue } from '../sound/hud-sound-player';
 
@@ -815,9 +820,9 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
   });
 });
 
-describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
+describe('HudTakeoverOverlay map zoom (default 1:1)', () => {
   // jsdom has no layout: mock the map clip's client size so the per-display
-  // viewport measurement sees a real box and computes a fit scale < 1.
+  // viewport measurement sees a real box (needsPan evaluates against it).
   const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
   const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!;
 
@@ -846,16 +851,11 @@ describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
     appStore.dispose();
   });
 
-  function pointer(el: Element, type: string, x: number, y: number): void {
-    el.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
-    flushSync();
-  }
-
   function panTransform(): string {
     return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
   }
 
-  /** Chain a→…→e spans columns 1..5; half-extent 5·192+90=1050 vs 500 → 0.476. */
+  /** Chain a→…→e spans columns 1..5; half-extent 5·192+90=1050 vs the 500px half-viewport. */
   function seedWideChain(): void {
     const tasks = Array.from({ length: 5 }, (_, i) => ({
       id: `t${i + 1}`,
@@ -872,13 +872,12 @@ describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
     );
   }
 
-  it('applies the fit scale to the pan transform for a graph wider than the viewport', () => {
+  it('renders 1:1 by default even for a graph wider than the viewport (no auto-fit)', () => {
     seedWideChain();
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
     openTakeover();
 
-    // 500/1050 = 0.476 (3 decimals); pan 0 → scaled translate stays 0.
-    expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
+    expect(panTransform()).toBe('translate(0px, 0px)');
   });
 
   it('a small graph keeps the 1:1 transform (never scales up)', () => {
@@ -889,26 +888,11 @@ describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
     expect(panTransform()).toBe('translate(0px, 0px)');
   });
 
-  it('drags stay 1:1 on screen: pointer deltas divide by the scale, translate scales back', () => {
+  it('auto-pans to a far changed cell at 1:1 (the graph no longer auto-fits)', () => {
     seedWideChain();
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
-    openTakeover();
-
-    const map = screen.getByTestId('hud-takeover-map');
-    pointer(map, 'pointerdown', 500, 300);
-    pointer(map, 'pointermove', 450, 280);
-    pointer(map, 'pointerup', 450, 280);
-    // Content pan = 50/0.476 ≈ 105.04…, rendered = pan·0.476 = 50px again.
-    const match = panTransform().match(/^translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(0.476\)$/);
-    expect(match).not.toBeNull();
-    expect(Number(match![1])).toBeCloseTo(-50, 6);
-    expect(Number(match![2])).toBeCloseTo(-20, 6);
-  });
-
-  it('suppresses the far-cell auto-pan when the fitted graph is fully visible', () => {
-    seedWideChain();
-    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
-    // t5 sits at (5,0) — cellNeedsPan true, but the 0.476 fit shows it all.
+    // t5 sits at (5,0) — cellNeedsPan true, and at 1:1 the chain overflows
+    // the 1000px viewport, so the glide onto the changed cell takes over.
     emitTakeoverTrigger({
       workspaceId: WS,
       kind: 'task_complete',
@@ -918,9 +902,275 @@ describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
     });
     flushSync();
 
+    expect(panTransform()).toBe('translate(0px, 0px)');
     vi.advanceTimersByTime(2500);
     flushSync();
+    expect(panTransform()).toBe(`translate(${-5 * HUD_TAKEOVER_PITCH_PX}px, 0px)`);
+  });
+});
+
+describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
+  // Same measured-viewport mock as the zoom suite: 1000×600 map clip.
+  const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+  const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!;
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 1000 : 0;
+      },
+    });
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 600 : 0;
+      },
+    });
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
+    Object.defineProperty(Element.prototype, 'clientHeight', originalClientHeight);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function panTransform(): string {
+    return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
+  }
+
+  function button(id: string): HTMLButtonElement {
+    return screen.getByTestId(id) as HTMLButtonElement;
+  }
+
+  function click(id: string): void {
+    button(id).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+  }
+
+  it('renders fit / − / + / 100% outside the drag clip', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const map = screen.getByTestId('hud-takeover-map');
+    const ids = [
+      'hud-takeover-zoom-fit',
+      'hud-takeover-zoom-out',
+      'hud-takeover-zoom-in',
+      'hud-takeover-zoom-reset',
+    ];
+    for (const id of ids) {
+      const btn = button(id);
+      expect(btn.getAttribute('aria-label')).toBeTruthy();
+      // Sibling of the clip, not inside it: pointer events on the buttons
+      // never reach the drag/click-suppression handlers.
+      expect(map.contains(btn)).toBe(false);
+    }
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+    expect(button('hud-takeover-zoom-out').disabled).toBe(false);
+  });
+
+  it('+/− step the scale multiplicatively; 100% resets to 1:1', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.563)');
+
+    click('hud-takeover-zoom-reset');
+    expect(panTransform()).toBe('translate(0px, 0px)');
+
+    click('hud-takeover-zoom-out');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.8)');
+  });
+
+  it('FIT shrinks a wide chain to the measured viewport', () => {
+    // Chain a→…→e spans columns 1..5; half-extent 5·192+90=1050 vs the
+    // 500px half-viewport → fit scale 500/1050 = 0.476.
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    click('hud-takeover-zoom-fit');
     expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
+  });
+
+  it('+/− disable at the zoom limits', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // 1 → 1.25 → 1.563 → 1.954 → 2 (clamped max).
+    for (let i = 0; i < 4; i++) click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(2)');
+    expect(button('hud-takeover-zoom-in').disabled).toBe(true);
+    expect(button('hud-takeover-zoom-out').disabled).toBe(false);
+
+    click('hud-takeover-zoom-reset');
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+
+    // 7 downward steps land on the 0.25 floor.
+    for (let i = 0; i < 7; i++) click('hud-takeover-zoom-out');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.25)');
+    expect(button('hud-takeover-zoom-out').disabled).toBe(true);
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+  });
+
+  it('exposes the cluster as a labelled group for screen readers', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cluster = screen.getByTestId('hud-takeover-zoom');
+    expect(cluster.getAttribute('role')).toBe('group');
+    expect(cluster.getAttribute('aria-label')).toBe('Map zoom');
+  });
+
+  it('manual zoom after open never resets the pan or re-schedules the auto-pan (latched needsPan)', () => {
+    // Chain t1..t5: t5 at (5,0) is far and the chain overflows the 1000px
+    // viewport at 1:1 → needsPan latches true at open.
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'T5',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 't5',
+    });
+    flushSync();
+
+    // Pan-delayed banner timing from the latched decision.
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // The scheduled 2s glide lands on the changed cell (5,0).
+    vi.advanceTimersByTime(2100);
+    flushSync();
+    expect(panTransform()).toBe(`translate(${-5 * HUD_TAKEOVER_PITCH_PX}px, 0px)`);
+
+    // Manual drag to a custom camera position.
+    const map = screen.getByTestId('hud-takeover-map');
+    for (const [type, x, y] of [
+      ['pointerdown', 500, 300],
+      ['pointermove', 530, 310],
+      ['pointerup', 530, 310],
+    ] as const) {
+      map.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
+      flushSync();
+    }
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+
+    // FIT makes the whole graph visible: the latched decision must not flip
+    // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
+    click('hud-takeover-zoom-fit');
+    expect(panTransform()).toBe(
+      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
+    );
+    // Banner timing never flips mid-display either.
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // Zooming back to 100% must not re-schedule a surprise 2s glide.
+    click('hud-takeover-zoom-reset');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+    vi.advanceTimersByTime(2500);
+    flushSync();
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+  });
+
+  it('reduced motion: a chained second takeover for the same workspace re-opens at 100%', () => {
+    // prefers-reduced-motion disables the pre-roll blink, so the queue
+    // chains closing → opening directly — no idle/blinking phase resets the
+    // measurement between the two displays. The spec still requires every
+    // open to start at 100% zoom.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // blink:false → instant open.
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
+
+    // A trigger for the SAME workspace queues at the front and re-opens
+    // right after the close ('Port the fetch loop' dwells the 3s minimum).
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Port the fetch loop',
+      raisedAtMs: NOW_MS + 100,
+      changedTaskId: null,
+    });
+    flushSync();
+    vi.advanceTimersByTime(
+      HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MIN_MS + HUD_TAKEOVER_CLOSE_MS + 50,
+    );
+    flushSync();
+
+    expect(screen.getByTestId('hud-takeover-overlay')).toBeTruthy();
+    expect(panTransform()).toBe('translate(0px, 0px)');
+  });
+
+  it('a drag gesture across a control never suppresses its click', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // Pointer travel over the button (well past the 6px drag threshold):
+    // the cluster sits outside .ov-map-clip, so the drag controller never
+    // sees it — no pan, and the button's click still lands.
+    const zoomIn = button('hud-takeover-zoom-in');
+    for (const [type, x] of [
+      ['pointerdown', 500],
+      ['pointermove', 440],
+      ['pointerup', 440],
+    ] as const) {
+      zoomIn.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: 300, bubbles: true }));
+      flushSync();
+    }
+    expect(panTransform()).toBe('translate(0px, 0px)');
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
   });
 });
 
