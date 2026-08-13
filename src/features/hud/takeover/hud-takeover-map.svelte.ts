@@ -56,6 +56,9 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     return takeoverMapEdges(graph, unmet);
   });
 
+  const edgeBox = $derived(takeoverEdgeBoxPx(occupied));
+  const emptyCells = $derived(emptyCellCoords(occupied));
+
   let viewport = $state({ width: 0, height: 0 });
   let measureKey = '';
   const scale = $derived(fitScale(occupied, viewport));
@@ -66,6 +69,11 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     () => scale,
   );
 
+  const changedCoord = (changedTaskId: string | null | undefined): HudTakeoverCellCoord | null => {
+    if (!changedTaskId) return null;
+    return cells.find((cell) => cell.task.id === changedTaskId)?.coord ?? null;
+  };
+
   return {
     get cells() {
       return cells;
@@ -74,10 +82,10 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
       return edges;
     },
     get edgeBox() {
-      return takeoverEdgeBoxPx(occupied);
+      return edgeBox;
     },
     get emptyCells() {
-      return emptyCellCoords(occupied);
+      return emptyCells;
     },
     get scale() {
       return scale;
@@ -87,12 +95,9 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
         ? `translate(${-drag.pan.x}px, ${-drag.pan.y}px)`
         : `translate(${-drag.pan.x * scale}px, ${-drag.pan.y * scale}px) scale(${scale})`;
     },
-    changedCoord(changedTaskId) {
-      if (!changedTaskId) return null;
-      return cells.find((cell) => cell.task.id === changedTaskId)?.coord ?? null;
-    },
+    changedCoord,
     needsPan(changedTaskId) {
-      const coord = this.changedCoord(changedTaskId);
+      const coord = changedCoord(changedTaskId);
       return (
         coord !== null && cellNeedsPan(coord) && !takeoverGraphFits(occupied, viewport, scale)
       );

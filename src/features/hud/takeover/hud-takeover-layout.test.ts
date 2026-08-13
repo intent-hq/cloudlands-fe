@@ -21,6 +21,7 @@ import {
   takeoverGraphFits,
   takeoverPanBounds,
 } from './hud-takeover-layout';
+import { takeoverEdgeBoxPx } from './hud-takeover-edges';
 import {
   HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
   HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS,
@@ -193,6 +194,27 @@ describe('hud-takeover-layout', () => {
 
     it('returns null on degenerate pairs (same coord — no visible segment)', () => {
       expect(edgeLinePx({ x: 1, y: 1 }, { x: 1, y: 1 })).toBeNull();
+    });
+  });
+
+  describe('takeoverEdgeBoxPx (edge SVG canvas box)', () => {
+    it('spans the base canvas (x −2…2, y −1…1) when no cells extend it', () => {
+      expect(takeoverEdgeBoxPx([])).toEqual({
+        left: -2 * HUD_TAKEOVER_PITCH_PX - 90,
+        top: -1 * HUD_TAKEOVER_PITCH_PX - 90,
+        width: 4 * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX,
+        height: 2 * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX,
+      });
+    });
+
+    it('grows with the dashed ring around far occupied cells', () => {
+      // Cell at (4, 3) → ring pushes bounds to x −2…5, y −1…4.
+      expect(takeoverEdgeBoxPx([{ x: 4, y: 3 }])).toEqual({
+        left: -2 * HUD_TAKEOVER_PITCH_PX - 90,
+        top: -1 * HUD_TAKEOVER_PITCH_PX - 90,
+        width: 7 * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX,
+        height: 5 * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX,
+      });
     });
   });
 

@@ -83,7 +83,9 @@
     stroke: hsl(var(--muted-foreground) / 0.75);
   }
   .ov-edge-unmet {
+    /* Thicker stroke doubles as a non-color cue vs met deps (a11y). */
     stroke: hsl(var(--warning) / 0.85);
+    stroke-width: 2.5;
   }
   .ov-edge-spec {
     stroke: hsl(var(--muted-foreground) / 0.35);
