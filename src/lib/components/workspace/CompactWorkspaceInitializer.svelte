@@ -6,6 +6,7 @@
     getLastSelectedRepoHydrationAction,
     getInitialRepoKey,
     mapInitialRepoToFormState,
+    mapRecentRepoToSelection,
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
@@ -645,12 +646,7 @@
       applyLastSelectedRepo(lastSelectedRepo);
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
-      const mostRecentRepo = recentRepos[0];
-      applyLastSelectedRepo({
-        path: mostRecentRepo.path,
-        type: mostRecentRepo.type,
-        isValidPath: true,
-      });
+      applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
     }
   });
 
