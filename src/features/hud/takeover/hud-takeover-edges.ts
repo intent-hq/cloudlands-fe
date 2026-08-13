@@ -3,10 +3,11 @@
  * (`takeoverEdgeRoutes`) into drawable px polylines for the SVG layer. Runs
  * travel through the gutters between cells; a segment's lane index becomes a
  * px offset off its channel centerline (lanes centered per channel), so
- * collinear edges never overlap. Dep edges split into met (`dep`) vs unmet
- * (`unmet`) off the daemon-computed `unmetDependsOn` lists (served verbatim,
- * PROTOCOL §5.4 — never re-derived client-side); spec and conflict edges
- * keep their layout kinds.
+ * collinear edges never overlap. Every dep edge (met or unmet alike) takes
+ * its SOURCE task's palette color — a stable rotating assignment by layout
+ * input order — and dims once its destination task is underway or finished;
+ * spec and conflict edges keep their layout kinds and muted/destructive
+ * styling.
  */
 import {
   canvasBounds,
@@ -17,33 +18,125 @@ import {
 } from './hud-takeover-layout';
 import type { HudTakeoverEdgeRouting, HudTakeoverRouteSegment } from './hud-takeover-routing';
 
-/** Rendered edge kind: met dep / unmet dep / spec root / advisory conflict. */
-export type HudTakeoverMapEdgeKind = 'dep' | 'unmet' | 'spec' | 'conflict';
+/** Rendered edge kind: dependency / spec root / advisory conflict. */
+export type HudTakeoverMapEdgeKind = 'dep' | 'spec' | 'conflict';
+
+/**
+ * Per-source edge palette — 10 distinct hues tuned to read against the HUD's
+ * dark map background (mid-60s lightness like the dark-theme accent tokens:
+ * success 145 58% 55%, warning 42 91% 63%, info 260 80% 72%). Ordered so
+ * neighboring assignments contrast; pure red stays reserved for conflicts.
+ */
+export const HUD_TAKEOVER_EDGE_PALETTE: readonly string[] = [
+  'hsl(205 85% 64%)', // sky
+  'hsl(145 58% 55%)', // green
+  'hsl(42 91% 63%)', // amber
+  'hsl(260 80% 72%)', // violet
+  'hsl(180 65% 52%)', // teal
+  'hsl(320 70% 68%)', // magenta
+  'hsl(90 55% 58%)', // lime
+  'hsl(25 88% 62%)', // orange
+  'hsl(228 90% 74%)', // indigo
+  'hsl(350 75% 70%)', // rose
+];
+
+/** Palette slot for a task's stable index in layout input order (rotates past 10). */
+export function takeoverEdgeColorIndex(orderIndex: number): number {
+  const n = HUD_TAKEOVER_EDGE_PALETTE.length;
+  return ((orderIndex % n) + n) % n;
+}
+
+/** Task inputs the edge layer needs: id + wire status, in layout input order. */
+export interface HudTakeoverEdgeTask {
+  id: string;
+  status: string;
+}
+
+/**
+ * Destination statuses that dim an incoming dep edge — the dependent is
+ * underway or finished, so the edge is consumed; edges into a task that has
+ * not started yet stay full-strength.
+ */
+const CONSUMED_DEST_STATUSES: ReadonlySet<string> = new Set([
+  'in_progress',
+  'review_required',
+  'complete',
+  'cancelled',
+]);
 
 /** One drawable edge: stable id, rendered kind, orthogonal px polyline (≥2 points). */
 export interface HudTakeoverMapEdge {
   id: string;
   kind: HudTakeoverMapEdgeKind;
   points: Array<{ x: number; y: number }>;
+  /** Source task's palette slot (dep edges only; null for spec/conflict). */
+  colorIndex: number | null;
+  /** Dep edge whose destination is underway/finished → renders at reduced opacity. */
+  dimmed: boolean;
 }
 
 /** Extra trim (px) past the target cell's border so the arrowhead sits clear of it. */
 const HUD_TAKEOVER_EDGE_TARGET_GAP_PX = 2;
 
+/** Corner radius (px) for the rounded bends in the rendered edge paths. */
+export const HUD_TAKEOVER_EDGE_CORNER_PX = 2.5;
+
+/**
+ * SVG path `d` for an orthogonal polyline: `M`/`L` runs with each interior
+ * bend rounded by a small quadratic corner (radius clamped to half the
+ * shorter adjacent run so short jogs never overshoot). Coordinates round to
+ * 0.1px like the polyline points for stable markup.
+ */
+export function takeoverEdgePathD(
+  points: ReadonlyArray<{ x: number; y: number }>,
+  cornerPx: number = HUD_TAKEOVER_EDGE_CORNER_PX,
+): string {
+  if (points.length < 2) return '';
+  const fmt = (v: number) => `${Math.round(v * 10) / 10}`;
+  const pt = (p: { x: number; y: number }) => `${fmt(p.x)} ${fmt(p.y)}`;
+  let d = `M${pt(points[0])}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const p = points[i];
+    const next = points[i + 1];
+    const inLen = Math.hypot(p.x - prev.x, p.y - prev.y);
+    const outLen = Math.hypot(next.x - p.x, next.y - p.y);
+    const r = Math.min(cornerPx, inLen / 2, outLen / 2);
+    if (r <= 0) {
+      d += `L${pt(p)}`;
+      continue;
+    }
+    const entry = { x: p.x - ((p.x - prev.x) / inLen) * r, y: p.y - ((p.y - prev.y) / inLen) * r };
+    const exit = { x: p.x + ((next.x - p.x) / outLen) * r, y: p.y + ((next.y - p.y) / outLen) * r };
+    d += `L${pt(entry)}Q${pt(p)} ${pt(exit)}`;
+  }
+  return `${d}L${pt(points[points.length - 1])}`;
+}
+
 /**
  * Px polylines for the routed edges at the map's computed pitch.
- * `unmetByTaskId` maps a task id to the set of its unmet dependency ids; a
- * dep edge whose target lists the source as unmet renders as `unmet`.
- * Endpoints land on the cell borders (the target end pulled back a hair so
- * the arrowhead sits in the gutter); interior vertices come from each
- * segment's channel centerline plus its lane offset, lanes centered within
- * the channel. Coordinates round to 0.1px for stable, diff-friendly markup.
+ * `tasks` is the layout input order (id + status): a dep edge takes its
+ * SOURCE task's palette slot (input index mod palette size, stable across
+ * re-renders) and dims when its destination task's status says the edge is
+ * consumed (underway or finished). Endpoints land on the cell borders (the
+ * target end pulled back a hair so the arrowhead sits in the gutter);
+ * interior vertices come from each segment's channel centerline plus its
+ * lane offset, lanes centered within the channel. Coordinates round to
+ * 0.1px for stable, diff-friendly markup.
  */
 export function takeoverMapEdges(
   routing: HudTakeoverEdgeRouting,
-  unmetByTaskId: ReadonlyMap<string, ReadonlySet<string>>,
+  tasks: readonly HudTakeoverEdgeTask[],
   pitchPx: number = HUD_TAKEOVER_PITCH_PX,
 ): HudTakeoverMapEdge[] {
+  const orderIndex = new Map<string, number>();
+  const statusById = new Map<string, string>();
+  tasks.forEach((task, i) => {
+    if (!orderIndex.has(task.id)) {
+      orderIndex.set(task.id, i);
+      statusById.set(task.id, task.status);
+    }
+  });
   // Lane counts per channel so offsets center the used lanes on the gutter.
   const laneCounts = new Map<string, number>();
   for (const route of routing.routes) {
@@ -91,12 +184,15 @@ export function takeoverMapEdges(
       const y = borderPx(last.y);
       points.push({ x: prev.x, y: y - Math.sign(y - prev.y) * HUD_TAKEOVER_EDGE_TARGET_GAP_PX });
     }
-    const kind =
-      route.kind === 'dep' && unmetByTaskId.get(route.to)?.has(route.from) ? 'unmet' : route.kind;
+    const sourceIndex = route.kind === 'dep' ? orderIndex.get(route.from) : undefined;
+    const destStatus = statusById.get(route.to);
     edges.push({
       id: route.id,
-      kind,
+      kind: route.kind,
       points: points.map((p) => ({ x: round(p.x), y: round(p.y) })),
+      colorIndex: sourceIndex !== undefined ? takeoverEdgeColorIndex(sourceIndex) : null,
+      dimmed:
+        route.kind === 'dep' && destStatus !== undefined && CONSUMED_DEST_STATUSES.has(destStatus),
     });
   }
   return edges;

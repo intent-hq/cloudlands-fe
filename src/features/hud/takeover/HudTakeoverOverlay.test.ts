@@ -772,7 +772,7 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     }
   });
 
-  it('renders spec/met/unmet/conflict edges with their kinds (arrowless conflicts)', () => {
+  it('renders per-source colored dep paths, muted spec, and arrowless conflicts', () => {
     seedGraphTasks([
       { id: 'a', title: 'A', status: 'complete' },
       { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'], conflictsWith: ['c'] },
@@ -784,26 +784,34 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     expect(screen.getByTestId('hud-takeover-edges')).toBeTruthy();
     const edges = screen.getAllByTestId('hud-takeover-edge');
     const kinds = edges.map((edge) => edge.getAttribute('data-kind')).sort();
-    expect(kinds).toEqual(['conflict', 'dep', 'spec', 'unmet']);
+    expect(kinds).toEqual(['conflict', 'dep', 'dep', 'spec']);
 
-    const byKind = new Map(edges.map((edge) => [edge.getAttribute('data-kind'), edge]));
-    // Met dep a→b and the spec edge carry arrowheads; conflicts render none.
-    expect(byKind.get('dep')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-dep)');
-    expect(byKind.get('unmet')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-unmet)');
-    expect(byKind.get('spec')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-spec)');
-    expect(byKind.get('conflict')?.getAttribute('marker-end')).toBeNull();
-    // The unmet dep and the conflict both run b→c on the row-0 corridor →
-    // 2 lanes (pitch 204), the pair straddling the centerline by ∓4px.
+    // The b→c dep and the conflict both run b→c on the row-0 corridor →
+    // 2 lanes (pitch 204), row-0 edges straddling the centerline by ∓4px.
     const pitch = takeoverPitchPx(2);
-    expect(byKind.get('unmet')?.getAttribute('points')).toBe(
-      `${2 * pitch + 90},-4 ${3 * pitch - 92},-4`,
-    );
-    expect(byKind.get('conflict')?.getAttribute('points')).toBe(
-      `${2 * pitch + 90},4 ${3 * pitch - 92},4`,
-    );
+    const byD = new Map(edges.map((edge) => [edge.getAttribute('d'), edge]));
+    const aToB = byD.get(`M${pitch + 90} -4L${2 * pitch - 92} -4`);
+    const bToC = byD.get(`M${2 * pitch + 90} -4L${3 * pitch - 92} -4`);
+    const conflict = byD.get(`M${2 * pitch + 90} 4L${3 * pitch - 92} 4`);
+    const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec');
+
+    // Dep arrowheads take the SOURCE task's palette slot (input order: a=0, b=1);
+    // the spec edge keeps the muted arrow, conflicts render none.
+    expect(aToB?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c0)');
+    expect(bToC?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c1)');
+    expect(spec?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-spec)');
+    expect(conflict?.getAttribute('data-kind')).toBe('conflict');
+    expect(conflict?.getAttribute('marker-end')).toBeNull();
+
+    // Consumption dimming: a→b enters in-progress b (dim); b→c enters
+    // not-started c (full-strength); spec/conflict never dim.
+    expect(aToB?.classList.contains('ov-edge-dim')).toBe(true);
+    expect(bToC?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(spec?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-dim')).toBe(false);
   });
 
-  it('renders a met dep edge into a complete dependent despite a stale unmetDependsOn', () => {
+  it('dims the dep edge into a complete dependent (no unmet override anymore)', () => {
     seedGraphTasks([
       { id: 'a', title: 'A', status: 'in_progress' },
       { id: 'b', title: 'B', status: 'complete', dependsOn: ['a'], unmetDependsOn: ['a'] },
@@ -811,11 +819,11 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
     openTakeover();
 
-    const kinds = screen
-      .getAllByTestId('hud-takeover-edge')
-      .map((edge) => edge.getAttribute('data-kind'))
-      .sort();
-    expect(kinds).toEqual(['dep', 'spec']);
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    expect(edges.map((edge) => edge.getAttribute('data-kind')).sort()).toEqual(['dep', 'spec']);
+    const dep = edges.find((edge) => edge.getAttribute('data-kind') === 'dep');
+    expect(dep?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c0)');
+    expect(dep?.classList.contains('ov-edge-dim')).toBe(true);
   });
 
   it('renders no edge layer when the workspace has no tasks', () => {

@@ -27,7 +27,13 @@ import {
   takeoverPitchPx,
   type HudTakeoverGraphLayout,
 } from './hud-takeover-layout';
-import { takeoverEdgeBoxPx, takeoverMapEdges } from './hud-takeover-edges';
+import {
+  HUD_TAKEOVER_EDGE_PALETTE,
+  takeoverEdgeBoxPx,
+  takeoverEdgeColorIndex,
+  takeoverEdgePathD,
+  takeoverMapEdges,
+} from './hud-takeover-edges';
 import { takeoverEdgeRoutes } from './hud-takeover-routing';
 import {
   HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS,
@@ -227,21 +233,23 @@ describe('hud-takeover-layout', () => {
   });
 
   describe('takeoverMapEdges (lattice routes → px polylines)', () => {
-    const NO_UNMET: ReadonlyMap<string, ReadonlySet<string>> = new Map();
     const t = (id: string, dependsOn?: string[], conflictsWith?: string[]) => ({
       id,
       dependsOn,
       conflictsWith,
     });
+    const infos = (tasks: Array<ReturnType<typeof t>>, statuses: Record<string, string> = {}) =>
+      tasks.map((task) => ({ id: task.id, status: statuses[task.id] ?? 'not_started' }));
     const route = (tasks: Array<ReturnType<typeof t>>) => {
       const routing = takeoverEdgeRoutes(dependencyGraphLayout(tasks));
       return { routing, pitch: takeoverPitchPx(routing.maxLanes) };
     };
 
     it('converts a straight spec edge into a border-to-border 2-point line with the arrow gap', () => {
-      const { routing, pitch } = route([t('a')]);
+      const tasks = [t('a')];
+      const { routing, pitch } = route(tasks);
       expect(pitch).toBe(196); // one lane → 16px gutter
-      const [edge] = takeoverMapEdges(routing, NO_UNMET, pitch);
+      const [edge] = takeoverMapEdges(routing, infos(tasks), pitch);
       expect(edge.kind).toBe('spec');
       expect(edge.points).toEqual([
         { x: 90, y: 0 },
@@ -263,7 +271,7 @@ describe('hud-takeover-layout', () => {
       };
       const routing = takeoverEdgeRoutes(graph);
       const pitch = takeoverPitchPx(routing.maxLanes); // 2 lanes → 204
-      const [toA, toB] = takeoverMapEdges(routing, NO_UNMET, pitch);
+      const [toA, toB] = takeoverMapEdges(routing, [], pitch);
       // Exit stubs share corridor h:0 and spread symmetrically: lanes 0/1 → ∓4px.
       expect(toA.points).toEqual([
         { x: pitch + 90, y: -4 },
@@ -278,12 +286,65 @@ describe('hud-takeover-layout', () => {
       ]);
     });
 
-    it('splits dep kinds by the daemon unmet list; spec kinds pass through', () => {
-      const { routing, pitch } = route([t('a'), t('b', ['a'])]);
-      const kinds = (unmet: ReadonlyMap<string, ReadonlySet<string>>) =>
-        takeoverMapEdges(routing, unmet, pitch).map((edge) => edge.kind);
-      expect(kinds(NO_UNMET)).toEqual(['spec', 'dep']);
-      expect(kinds(new Map([['b', new Set(['a'])]]))).toEqual(['spec', 'unmet']);
+    it('colors dep edges by the source task, rotating past the 10-entry palette', () => {
+      // Chain t0 → t1 → … → t11: dep edge i has source index i (input order).
+      const tasks = Array.from({ length: 12 }, (_, i) =>
+        t(`t${i}`, i === 0 ? undefined : [`t${i - 1}`]),
+      );
+      const { routing, pitch } = route(tasks);
+      const edges = takeoverMapEdges(routing, infos(tasks), pitch);
+      expect(edges.map((edge) => edge.kind)).toEqual(['spec', ...Array(11).fill('dep')]);
+      // Spec root edge stays uncolored; sources 0..10 rotate mod 10.
+      expect(edges.map((edge) => edge.colorIndex)).toEqual([null, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+    });
+
+    it('a source task fans all its outgoing dep edges out in the same color', () => {
+      const tasks = [t('root'), t('a', ['root']), t('b', ['root'])];
+      const { routing, pitch } = route(tasks);
+      const deps = takeoverMapEdges(routing, infos(tasks), pitch).filter((e) => e.kind === 'dep');
+      expect(deps).toHaveLength(2);
+      expect(deps.map((edge) => edge.colorIndex)).toEqual([0, 0]);
+    });
+
+    it('color assignment is stable across re-renders (same input ⇒ same output)', () => {
+      const tasks = [t('a'), t('b', ['a']), t('c', ['a'], ['b'])];
+      const { routing, pitch } = route(tasks);
+      const statuses = { a: 'complete', b: 'in_progress' };
+      const first = takeoverMapEdges(routing, infos(tasks, statuses), pitch);
+      const second = takeoverMapEdges(routing, infos(tasks, statuses), pitch);
+      expect(second).toEqual(first);
+    });
+
+    it('dims dep edges whose destination is underway/finished; conflict/spec never dim', () => {
+      const consumed = ['in_progress', 'review_required', 'complete', 'cancelled'];
+      const fresh = ['not_started', 'waiting', 'blocked', 'discussion_needed'];
+      const deps = Object.fromEntries(
+        [...consumed, ...fresh].map((status, i) => [`d${i}`, status]),
+      );
+      const tasks = [t('src'), ...Object.keys(deps).map((id) => t(id, ['src']))];
+      const { routing, pitch } = route(tasks);
+      const edges = takeoverMapEdges(routing, infos(tasks, deps), pitch);
+      const dimmedTo = new Map(
+        routing.routes.map((r, i) => [r.to, edges[i]] as const).filter(([, e]) => e.kind === 'dep'),
+      );
+      for (const [id, status] of Object.entries(deps)) {
+        expect(dimmedTo.get(id)?.dimmed, `${id} (${status})`).toBe(consumed.includes(status));
+      }
+
+      // Conflict edges never dim or take a palette color, whatever the states.
+      const conflicted = [t('a'), t('b', undefined, ['a'])];
+      const { routing: cRouting, pitch: cPitch } = route(conflicted);
+      const conflict = takeoverMapEdges(
+        cRouting,
+        infos(conflicted, { a: 'complete', b: 'in_progress' }),
+        cPitch,
+      ).find((edge) => edge.kind === 'conflict');
+      expect(conflict).toMatchObject({ colorIndex: null, dimmed: false });
+      // Spec edges likewise, even into an in-progress task.
+      const spec = takeoverMapEdges(cRouting, infos(conflicted, { a: 'in_progress' }), cPitch).find(
+        (edge) => edge.kind === 'spec',
+      );
+      expect(spec).toMatchObject({ colorIndex: null, dimmed: false });
     });
 
     it('busy fixture: px segments stay orthogonal and never cross a cell interior', () => {
@@ -303,7 +364,7 @@ describe('hud-takeover-layout', () => {
       const layout = dependencyGraphLayout(busy);
       const routing = takeoverEdgeRoutes(layout);
       const pitch = takeoverPitchPx(routing.maxLanes);
-      const edges = takeoverMapEdges(routing, NO_UNMET, pitch);
+      const edges = takeoverMapEdges(routing, infos(busy), pitch);
       expect(edges).toHaveLength(routing.routes.length);
       const cells = [{ x: 0, y: 0 }, ...layout.coords.values()];
       const half = HUD_TAKEOVER_CELL_PX / 2;
@@ -340,6 +401,47 @@ describe('hud-takeover-layout', () => {
           }
         }
       }
+    });
+  });
+
+  describe('takeoverEdgePathD (polyline → path with rounded bends)', () => {
+    it('renders a 2-point run as a plain M/L line', () => {
+      expect(
+        takeoverEdgePathD([
+          { x: 90, y: 0 },
+          { x: 104, y: -4 },
+        ]),
+      ).toBe('M90 0L104 -4');
+    });
+
+    it('rounds each interior bend with a quadratic corner', () => {
+      expect(
+        takeoverEdgePathD([
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 10 },
+        ]),
+      ).toBe('M0 0L7.5 0Q10 0 10 2.5L10 10');
+    });
+
+    it('clamps the corner radius to half the shorter adjacent run', () => {
+      expect(
+        takeoverEdgePathD([
+          { x: 0, y: 0 },
+          { x: 3, y: 0 },
+          { x: 3, y: 10 },
+        ]),
+      ).toBe('M0 0L1.5 0Q3 0 3 1.5L3 10');
+    });
+  });
+
+  describe('takeoverEdgeColorIndex (palette assignment)', () => {
+    it('rotates the 10-entry palette by input-order index', () => {
+      expect(HUD_TAKEOVER_EDGE_PALETTE).toHaveLength(10);
+      expect(takeoverEdgeColorIndex(0)).toBe(0);
+      expect(takeoverEdgeColorIndex(9)).toBe(9);
+      expect(takeoverEdgeColorIndex(10)).toBe(0);
+      expect(takeoverEdgeColorIndex(23)).toBe(3);
     });
   });
 

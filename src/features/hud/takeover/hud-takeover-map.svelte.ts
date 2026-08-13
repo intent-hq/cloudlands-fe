@@ -70,18 +70,9 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
   const occupied = $derived(cells.map((cell) => cell.coord));
   const routing = $derived(takeoverEdgeRoutes(graph));
   const pitch = $derived(takeoverPitchPx(routing.maxLanes));
-  const edges = $derived.by(() => {
-    // Unmet emphasis is daemon-computed (`unmetDependsOn`, served verbatim)
-    // but suppressed once the dependent itself is complete — a finished task
-    // never renders an amber "waiting on" edge into it.
-    const unmet = new Map(
-      getTasks().map((task) => [
-        task.id,
-        new Set(task.status === 'complete' ? [] : (task.unmetDependsOn ?? [])),
-      ]),
-    );
-    return takeoverMapEdges(routing, unmet, pitch);
-  });
+  // Task input order drives the per-source palette rotation; statuses drive
+  // the consumed-edge dimming (destination underway/finished).
+  const edges = $derived(takeoverMapEdges(routing, getTasks(), pitch));
 
   const edgeBox = $derived(takeoverEdgeBoxPx(occupied, pitch));
   const emptyCells = $derived(emptyCellCoords(occupied));
