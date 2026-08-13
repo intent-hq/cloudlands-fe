@@ -9,7 +9,7 @@
    *
    * The HUD window has no WindowTitleBar, so this header is the frameless
    * window's drag region (-webkit-app-region: drag; interactive children are
-   * no-drag via the layout rule scoped to .app-drag-region). It shares the
+   * no-drag via the global app.css rule scoped to .app-drag-region). It shares the
    * grid's 24px gutter so the wordmark's left edge aligns with the SYSTEM
    * card below.
    *
@@ -198,7 +198,7 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     flex-shrink: 0;
     /* Frameless-window drag region (no WindowTitleBar on the HUD route);
-       interactive children are no-drag via the layout rule scoped to
+       interactive children are no-drag via the global app.css rule scoped to
        .app-drag-region (which this header carries). */
     -webkit-app-region: drag;
   }

@@ -29,6 +29,7 @@ import {
   type PersistedWorkspaceTabsState,
   type TabState,
   unmarkWorkspaceTabOptimistic,
+  workspaceTabsHydrated,
 } from './tab-state-slice';
 
 const makeDropInfo = (zoneType: HandleDropInfo['zoneType']): HandleDropInfo => ({
@@ -53,6 +54,7 @@ describe('tabStateReducer', () => {
     recentlyClosedTabAt: {},
     viewMode: 'single',
     version: 0,
+    hydratedBackendId: null,
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -62,6 +64,15 @@ describe('tabStateReducer', () => {
 
   it('returns the initial state', () => {
     expect(tabStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('records the hydrated backend id (idempotently)', () => {
+    const hydrated = tabStateReducer(initialState, workspaceTabsHydrated('local'));
+    expect(hydrated.hydratedBackendId).toBe('local');
+    expect(tabStateReducer(hydrated, workspaceTabsHydrated('local'))).toBe(hydrated);
+    expect(tabStateReducer(hydrated, workspaceTabsHydrated('remote-1')).hydratedBackendId).toBe(
+      'remote-1',
+    );
   });
 
   it('handles drag lifecycle actions', () => {

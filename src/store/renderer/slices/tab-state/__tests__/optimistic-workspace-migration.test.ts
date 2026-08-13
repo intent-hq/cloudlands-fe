@@ -33,6 +33,7 @@ const initialState: TabState = {
   recentlyClosedTabAt: {},
   viewMode: 'single',
   version: 0,
+  hydratedBackendId: null,
 };
 
 const makeState = (overrides: Partial<TabState> = {}): TabState => ({

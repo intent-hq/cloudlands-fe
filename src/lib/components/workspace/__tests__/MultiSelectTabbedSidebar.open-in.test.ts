@@ -146,9 +146,6 @@ vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
 vi.mock('../CreateAgentSection.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
-vi.mock('../OverviewTimelinePanel.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
 vi.mock('../WorkspaceAgentsList.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));

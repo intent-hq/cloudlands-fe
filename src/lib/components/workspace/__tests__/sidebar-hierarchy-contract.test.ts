@@ -136,7 +136,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain("label: 'Context'");
     expect(sidebar).toContain('TAB_DEFINITIONS.filter');
-    expect(sidebar).not.toContain('OverviewTimelinePanel');
     expect(sidebar).not.toContain('tab-bar-container');
     expect(sidebar).not.toContain('transition:slide');
   });

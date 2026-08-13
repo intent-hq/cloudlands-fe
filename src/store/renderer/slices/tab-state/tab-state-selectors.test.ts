@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
 import type { TabState } from './tab-state-slice';
-import { selectPersistedWorkspaceTabsState, selectWorkspaceTabOrder } from './tab-state-selectors';
+import {
+  selectPersistedWorkspaceTabsState,
+  selectWorkspaceTabOrder,
+  selectWorkspaceTabsHydrated,
+} from './tab-state-selectors';
 
 const tabState: TabState = {
   isDragging: false,
@@ -17,6 +22,7 @@ const tabState: TabState = {
   recentlyClosedTabAt: {},
   viewMode: 'columns',
   version: 1,
+  hydratedBackendId: null,
 };
 
 const state = { tabState } as unknown as StoreState;
@@ -30,6 +36,31 @@ describe('tab state selectors', () => {
     expect(selectPersistedWorkspaceTabsState.select(state)).toMatchObject({
       tabOrder: ['ws-2', 'ws-1', 'ws-3'],
       workspaceStacks: [['ws-2', 'ws-1'], ['ws-3']],
+    });
+  });
+
+  describe('selectWorkspaceTabsHydrated', () => {
+    const withHydration = (
+      hydratedBackendId: string | null,
+      activeId: string = LOCAL_CONNECTION_ID,
+    ): StoreState =>
+      ({
+        tabState: { ...tabState, hydratedBackendId },
+        connections: { activeId },
+      }) as unknown as StoreState;
+
+    it('is false before any hydration settles', () => {
+      expect(selectWorkspaceTabsHydrated.select(withHydration(null))).toBe(false);
+    });
+
+    it('is true once hydration settled for the active backend', () => {
+      expect(selectWorkspaceTabsHydrated.select(withHydration(LOCAL_CONNECTION_ID))).toBe(true);
+    });
+
+    it('is false when hydration settled for a DIFFERENT backend (switch in flight)', () => {
+      expect(selectWorkspaceTabsHydrated.select(withHydration(LOCAL_CONNECTION_ID, 'remote-1'))).toBe(
+        false,
+      );
     });
   });
 });

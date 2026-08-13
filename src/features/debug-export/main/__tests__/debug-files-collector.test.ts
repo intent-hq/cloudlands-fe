@@ -235,11 +235,23 @@ describe('resolveIntentdDataDir', () => {
     );
   });
 
+  it('falls back to ~/AppData/Roaming when APPDATA is unset on win32', () => {
+    expect(resolveIntentdDataDir({}, 'win32')).toBe(
+      path.win32.join(os.homedir(), 'AppData', 'Roaming', 'intentd', 'data'),
+    );
+  });
+
   it('honors XDG_DATA_HOME on linux with a ~/.local/share fallback', () => {
     expect(resolveIntentdDataDir({ XDG_DATA_HOME: '/xdg/data' }, 'linux')).toBe(
       path.join('/xdg/data', 'intentd'),
     );
     expect(resolveIntentdDataDir({}, 'linux')).toBe(
+      path.join(os.homedir(), '.local', 'share', 'intentd'),
+    );
+  });
+
+  it('ignores a relative XDG_DATA_HOME (XDG spec: non-absolute paths are invalid)', () => {
+    expect(resolveIntentdDataDir({ XDG_DATA_HOME: 'relative/path' }, 'linux')).toBe(
       path.join(os.homedir(), '.local', 'share', 'intentd'),
     );
   });
