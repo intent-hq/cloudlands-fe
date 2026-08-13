@@ -1592,6 +1592,74 @@ describe('groupContentBlocks', () => {
       'Some real text <!-- suggested-prompts\nRun tests\n-->',
     );
   });
+
+  it('should treat fused open+close tag <group:Name</group:> as a group open', () => {
+    // Mirrors intentd DB message 019ff9fc: the model fuses the open tag with a
+    // close-tag suffix. The tool calls that follow belong in the group.
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Wrapping up</group:>\n'),
+      toolUseBlock('view', 'tool-1'),
+      toolResultBlock('tool-1', 'result'),
+    ];
+    const result = groupContentBlocks(blocks, false);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Wrapping up');
+    expect(group.children.length).toBe(2);
+    expect(group.children[0].type).toBe('tool_use');
+    expect(group.children[1].type).toBe('tool_result');
+  });
+
+  it('should treat fused open+close tag <group:Name</group> as a group open', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Checking</group>'),
+      toolUseBlock('view', 'tool-1'),
+    ];
+    const result = groupContentBlocks(blocks, false);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Checking');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].type).toBe('tool_use');
+  });
+
+  it('should close an open group on empty-name close tag </group:>', () => {
+    const blocks: ContentBlock[] = [
+      textBlock('<group:Work>doing stuff</group:>after'),
+    ];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(2);
+    expect(result[0].type).toBe('content_group');
+    const group = result[0] as ContentBlockGroup;
+    expect(group.name).toBe('Work');
+    expect(group.children.length).toBe(1);
+    expect(group.children[0].text).toBe('doing stuff');
+    expect(result[1].type).toBe('text');
+    expect((result[1] as ContentBlock).text).toBe('after');
+  });
+
+  it('should silently consume a stray empty-name close tag </group:>', () => {
+    const blocks: ContentBlock[] = [textBlock('before</group:>after')];
+    const result = groupContentBlocks(blocks);
+
+    expect(result.length).toBe(2);
+    expect((result[0] as ContentBlock).text).toBe('before');
+    expect((result[1] as ContentBlock).text).toBe('after');
+  });
+
+  it('should leave ordinary prose with < characters unaffected', () => {
+    const blocks: ContentBlock[] = [textBlock('a < b and 3 <= 4, plain prose without tags')];
+    const result = groupContentBlocks(blocks, false);
+
+    expect(result.length).toBe(1);
+    expect(result[0].type).toBe('text');
+    expect((result[0] as ContentBlock).text).toBe('a < b and 3 <= 4, plain prose without tags');
+  });
 });
 
 describe('groupContentBlocks - think tag handling', () => {
