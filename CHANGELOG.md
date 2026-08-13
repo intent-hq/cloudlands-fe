@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.33.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.32.0...v2.33.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* drop unread displayStatus; unread overlays the real status ([#1151](https://github.com/intent-hq/cloudlands-fe/issues/1151)) ([e84fe2f](https://github.com/intent-hq/cloudlands-fe/commit/e84fe2fd3a0fc1aebfdcddaecde6c1388a0e5348))
+* **hud:** orthogonal routed, color-coded dependency edges on the takeover task map ([#1146](https://github.com/intent-hq/cloudlands-fe/issues/1146)) ([0900676](https://github.com/intent-hq/cloudlands-fe/commit/09006760c5ea4d941feb75293bb534d24932ea6a))
+
+
+### 🐛 Bug Fixes
+
+* **auto-update:** broadcast update toasts to all workspace windows and check immediately on channel switch ([#1148](https://github.com/intent-hq/cloudlands-fe/issues/1148)) ([c43b5b7](https://github.com/intent-hq/cloudlands-fe/commit/c43b5b73fee3a025fb2ed73cb0367559da97388e))
+* drive workspace tab bar from daemon workspace:updated archive events ([#1152](https://github.com/intent-hq/cloudlands-fe/issues/1152)) ([2822eeb](https://github.com/intent-hq/cloudlands-fe/commit/2822eebe4ff3d04cb44aa85bc6011e597cf891c4))
+* **hud:** stop conflict pulse when an endpoint is cancelled ([#1150](https://github.com/intent-hq/cloudlands-fe/issues/1150)) ([5154e5f](https://github.com/intent-hq/cloudlands-fe/commit/5154e5fc01552d60b6cbbd6469e5f1543fe2522d))
+* open create modal from GitHub link action and auto-redirect 404s to root route ([#1147](https://github.com/intent-hq/cloudlands-fe/issues/1147)) ([a9ccd8b](https://github.com/intent-hq/cloudlands-fe/commit/a9ccd8b7da73ae1d9abc4cd3adb89ff0fb645ad0))
+
 ## [2.32.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.31.0...v2.32.0) (2026-08-13)
 
 
