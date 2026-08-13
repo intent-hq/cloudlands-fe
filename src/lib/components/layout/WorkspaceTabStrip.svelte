@@ -5,10 +5,10 @@
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { cubicOut } from 'svelte/easing';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
+  import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
@@ -27,8 +27,6 @@
     selectWorkspaceTabOrder,
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { selectWorkspaceTasksByWorkspaceId } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -45,7 +43,6 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceViewMode$ = selectWorkspaceViewMode();
   const workspaceItems$ = selectWorkspaceItems();
-  const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -99,20 +96,6 @@
       onActiveTabTrackingChange?.(false);
     };
   });
-
-  function handlePreviewOpen(workspaceId: string, open: boolean) {
-    if (open) appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
-  }
-
-  function getTaskProgress(workspaceId: string) {
-    return (
-      $workspaceTasksByWorkspaceId$[workspaceId]?.stats ?? {
-        total: 0,
-        completed: 0,
-        inProgress: 0,
-      }
-    );
-  }
 
   function getRunningAgentIds(workspaceId: string) {
     void activeStreamsVersion;
@@ -185,9 +168,10 @@
     };
   }
 
-  function openWorkspace(workspaceId: string) {
+  async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
-    void goto(`/workspace/${workspaceId}`);
+    await goto(`/workspace/${workspaceId}`);
+    if (restoreFocus) requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
   }
 
   function closeWorkspace(workspaceId: string, event?: Event) {
@@ -242,7 +226,7 @@
 
     event.preventDefault();
     tabButtons.get(targetId)?.focus();
-    openWorkspace(targetId);
+    void openWorkspace(targetId, true);
   }
 
   function handleDragStart(event: DragEvent, workspaceId: string) {
@@ -321,184 +305,136 @@
         animate:flip={{ duration: 180, easing: cubicOut }}
       >
         {#if workspace}
-          {@const taskProgress = getTaskProgress(workspaceId)}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
-          <TooltipRich
-            side="bottom"
-            align="start"
-            delayDuration={500}
-            disabled={draggedWorkspaceId !== null}
-            showArrow={false}
-            maxWidth="18rem"
-            class="min-w-0 shrink-0"
-            contentClass="border-border/80 bg-popover/98"
-            onOpenChange={(open) => handlePreviewOpen(workspaceId, open)}
+          <div
+            class={cn(
+              'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
+              isCurrent
+                ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
+                : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
+              draggedWorkspaceId === workspaceId && 'scale-[0.98] opacity-45',
+              dragOverWorkspaceId === workspaceId &&
+                isWorkspaceStackPlacement(dragOverPlacement) &&
+                'ring-1 ring-ring/40',
+            )}
+            data-workspace-tab={workspaceId}
+            data-active={isCurrent}
+            data-dragging={draggedWorkspaceId === workspaceId}
+            data-workspace-drop-placement={dragOverWorkspaceId === workspaceId
+              ? dragOverPlacement
+              : undefined}
+            style:view-transition-name={$workspaceViewMode$ === 'single'
+              ? getWorkspaceViewTransitionName(workspaceId)
+              : undefined}
+            use:reportActiveTabBounds={isCurrent}
+            role="presentation"
+            draggable={true}
+            ondragstart={(event) => handleDragStart(event, workspaceId)}
+            ondragover={(event) => handleDragOver(event, workspaceId)}
+            ondragleave={(event) => handleDragLeave(event, workspaceId)}
+            ondrop={(event) => handleDrop(event, workspaceId)}
+            ondragend={handleDragEnd}
           >
-            {#snippet content()}
-              <div class="grid min-w-60 gap-2.5 text-left">
-                {#if workspace.statusMessage?.trim() || workspace.initialPrompt?.trim()}
-                  <p
-                    class="line-clamp-3 leading-4 text-muted-foreground"
-                    data-workspace-tab-description
-                  >
-                    {workspace.statusMessage?.trim() || workspace.initialPrompt?.trim()}
-                  </p>
-                {/if}
-                {#if taskProgress.total > 0}
-                  <div
-                    class="flex items-center gap-2"
-                    aria-label={m.layout_workspaceTabStrip_tasksComplete_ariaLabel({
-                      completed: taskProgress.completed,
-                      total: taskProgress.total,
-                    })}
-                    data-workspace-tab-progress
-                  >
-                    <div class="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span
-                        class="h-full bg-success"
-                        style:width={`${(taskProgress.completed / taskProgress.total) * 100}%`}
-                      ></span>
-                      <span
-                        class="h-full bg-info"
-                        style:width={`${(taskProgress.inProgress / taskProgress.total) * 100}%`}
-                      ></span>
-                    </div>
-                    <span class="shrink-0 tabular-nums text-subtle">
-                      {taskProgress.completed}/{taskProgress.total}
-                    </span>
-                  </div>
-                {/if}
-                {#if runningAgentIds.length > 0}
-                  <div
-                    class="flex items-center -space-x-1.5"
-                    role="list"
-                    aria-label={m.layout_workspaceTabStrip_runningAgents_ariaLabel()}
-                  >
-                    {#each runningAgentIds.slice(0, 5) as agentId (agentId)}
-                      <span
-                        role="listitem"
-                        aria-label={m.layout_workspaceTabStrip_runningAgent_ariaLabel()}
-                      >
-                        <AugieAvatarWithState {agentId} size={18} state="running" />
-                      </span>
-                    {/each}
-                    {#if runningAgentIds.length > 5}
-                      <span class="pl-2 text-subtle">+{runningAgentIds.length - 5}</span>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-            {/snippet}
-            <div
-              class={cn(
-                'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
-                isCurrent
-                  ? 'rounded-t-md border-border border-b-transparent bg-sidebar text-foreground'
-                  : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
-                draggedWorkspaceId === workspaceId && 'scale-[0.98] opacity-45',
-                dragOverWorkspaceId === workspaceId &&
-                  isWorkspaceStackPlacement(dragOverPlacement) &&
-                  'ring-1 ring-ring/40',
-              )}
-              data-workspace-tab={workspaceId}
-              data-active={isCurrent}
-              data-dragging={draggedWorkspaceId === workspaceId}
-              data-workspace-drop-placement={dragOverWorkspaceId === workspaceId
-                ? dragOverPlacement
-                : undefined}
-              style:view-transition-name={$workspaceViewMode$ === 'single'
-                ? getWorkspaceViewTransitionName(workspaceId)
-                : undefined}
-              use:reportActiveTabBounds={isCurrent}
-              role="presentation"
-              draggable={true}
-              ondragstart={(event) => handleDragStart(event, workspaceId)}
-              ondragover={(event) => handleDragOver(event, workspaceId)}
-              ondragleave={(event) => handleDragLeave(event, workspaceId)}
-              ondrop={(event) => handleDrop(event, workspaceId)}
-              ondragend={handleDragEnd}
-            >
-              {#if isCurrent}
-                <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
+            {#if isCurrent}
+              <!-- Concave outward flare: extends bg-sidebar below-outside the tab's bottom corners
                      so the active tab appears to flow into the panel below (Chrome-tab style).
                      Uses a 12x12 quarter-arc dropped 2px past the tab bottom so the concave
                      curve terminates on the panel's top border. The right flare's `-12.5px`
                      offset + 1px seam-fill rect compensates for the arc-stroke straddling the
                      right-edge pixel boundary so no gap shows between flare and tab side. -->
-                <svg
-                  class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                  viewBox="0 0 12 12"
-                  aria-hidden="true"
-                >
-                  <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
-                  <path
-                    class="stroke-border"
-                    d="M 12 0 A 12 12 0 0 1 0 12"
-                    fill="none"
-                    stroke-width="1"
-                  />
-                </svg>
-                <svg
-                  class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
-                  viewBox="0 0 12 12"
-                  aria-hidden="true"
-                >
-                  <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
-                  <rect x="-1" width="1" height="100%" fill="currentColor" />
-                  <path
-                    class="stroke-border"
-                    d="M 0 0 A 12 12 0 0 0 12 12"
-                    fill="none"
-                    stroke-width="1"
-                  />
-                </svg>
-              {/if}
-              {#if dragOverWorkspaceId === workspaceId && isWorkspaceStackPlacement(dragOverPlacement)}
-                <span
-                  class={cn(
-                    'pointer-events-none absolute inset-x-4 z-10 h-[38%] rounded-sm bg-ring/15 ring-1 ring-inset ring-ring/50 transition-[top,bottom] duration-(--motion-fast)',
-                    dragOverPlacement === 'above' ? 'top-0.5' : 'bottom-0.5',
-                  )}
-                  aria-hidden="true"
-                  data-workspace-stack-preview={dragOverPlacement}
-                ></span>
-              {/if}
+              <svg
+                class="pointer-events-none absolute left-[-12px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path d="M 0 12 L 12 12 L 12 0 A 12 12 0 0 1 0 12 Z" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 12 0 A 12 12 0 0 1 0 12"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
+              <svg
+                class="pointer-events-none absolute right-[-12.5px] -bottom-0.5 size-[12px] overflow-visible text-sidebar"
+                viewBox="0 0 12 12"
+                aria-hidden="true"
+              >
+                <path d="M 12 12 L 0 12 L 0 0 A 12 12 0 0 0 12 12 Z" fill="currentColor" />
+                <rect x="-1" width="1" height="100%" fill="currentColor" />
+                <path
+                  class="stroke-border"
+                  d="M 0 0 A 12 12 0 0 0 12 12"
+                  fill="none"
+                  stroke-width="1"
+                />
+              </svg>
+            {/if}
+            {#if dragOverWorkspaceId === workspaceId && isWorkspaceStackPlacement(dragOverPlacement)}
+              <span
+                class={cn(
+                  'pointer-events-none absolute inset-x-4 z-10 h-[38%] rounded-sm bg-ring/15 ring-1 ring-inset ring-ring/50 transition-[top,bottom] duration-(--motion-fast)',
+                  dragOverPlacement === 'above' ? 'top-0.5' : 'bottom-0.5',
+                )}
+                aria-hidden="true"
+                data-workspace-stack-preview={dragOverPlacement}
+              ></span>
+            {/if}
+            <TooltipRich
+              side="bottom"
+              align="start"
+              delayDuration={500}
+              disabled={draggedWorkspaceId !== null}
+              showArrow={false}
+              maxWidth="none"
+              class="absolute -inset-px rounded-[inherit]"
+              contentClass="border-0 bg-transparent p-0 shadow-none"
+              contentContainerClass="space-y-0! p-0!"
+            >
+              {#snippet content()}
+                <div data-workspace-tab-hover-content={workspaceId}>
+                  <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
+                </div>
+              {/snippet}
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 truncate px-3 text-left text-xs font-medium outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
-                onclick={() => openWorkspace(workspaceId)}
+                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] px-3 pr-8 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
                 tabindex={isCurrent ? 0 : -1}
+                data-workspace-tab-hover-trigger
               >
                 {#if workspace.activity === 'agent_running'}
                   <span
                     class="size-1.5 shrink-0 rounded-full bg-success"
+                    data-workspace-tab-status-dot
                     aria-label={m.layout_workspaceTabStrip_agentWorking_ariaLabel()}
                   ></span>
                 {/if}
-                <span class="truncate"
+                <span class="truncate" data-workspace-tab-title
                   >{workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}</span
                 >
               </button>
-              <button
-                type="button"
-                class={cn(
-                  'mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                  isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
-                )}
-                onclick={(event) => closeWorkspace(workspaceId, event)}
-                aria-label={m.layout_workspaceTabStrip_close_ariaLabel({
-                  name: workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label(),
-                })}
-              >
-                <Fa icon={faXmark} size="xs" />
-              </button>
-            </div>
-          </TooltipRich>
+            </TooltipRich>
+            <button
+              type="button"
+              class={cn(
+                'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
+              )}
+              onclick={(event) => closeWorkspace(workspaceId, event)}
+              aria-label={m.layout_workspaceTabStrip_close_ariaLabel({
+                name: workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label(),
+              })}
+              data-workspace-tab-close
+            >
+              <Fa icon={faXmark} size="xs" />
+            </button>
+          </div>
         {:else}
           <div
             class={cn(
@@ -548,25 +484,28 @@
             <button
               type="button"
               use:registerTabButton={workspaceId}
-              class="flex min-w-0 flex-1 items-center px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
-              onclick={() => openWorkspace(workspaceId)}
+              class="absolute -inset-px flex min-w-0 cursor-pointer items-center rounded-[inherit] px-3 pr-8 text-left outline-none! forced-colors:focus-visible:text-[HighlightText]"
+              onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
               aria-label={m.layout_workspaceTabStrip_loading_ariaLabel({ workspaceId })}
               aria-selected={isCurrent}
               aria-current={isCurrent ? 'page' : undefined}
               tabindex={isCurrent ? 0 : -1}
+              data-workspace-tab-loading-target
             >
               <span
                 class="h-2.5 w-24 animate-pulse rounded-full bg-sidebar-foreground/10 motion-reduce:animate-none"
                 aria-hidden="true"
+                data-workspace-tab-loading-indicator
               ></span>
             </button>
             <button
               type="button"
-              class="mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => closeWorkspace(workspaceId, event)}
               aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
+              data-workspace-tab-close
             >
               <Fa icon={faXmark} size="xs" />
             </button>
@@ -577,3 +516,20 @@
     <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
   </div>
 {/if}
+
+<style>
+  button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
+  button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator] {
+    background-color: currentColor;
+    opacity: 0.45;
+  }
+
+  button[data-workspace-tab-close]:focus-visible :global(svg) {
+    transform: scale(1.15);
+  }
+</style>
