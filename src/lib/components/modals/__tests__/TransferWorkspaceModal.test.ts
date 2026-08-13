@@ -93,6 +93,7 @@ describe('TransferWorkspaceModal — destination step', () => {
       const className = screen.getByTestId(testId).className;
       expect(className).toContain('h-auto');
       expect(className).not.toMatch(/\bh-\d/);
+      expect(className).not.toMatch(/\bsize-\d/);
       expect(className).toContain('whitespace-normal');
       expect(className).not.toContain('whitespace-nowrap');
       expect(className).not.toContain('!px-0');
