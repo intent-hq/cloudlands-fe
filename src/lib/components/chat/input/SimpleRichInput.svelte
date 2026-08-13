@@ -22,6 +22,8 @@
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   import { agentClient } from '$features/agent/agent.client';
+  import { reconcileAgentReasoningEffort } from '$features/agent/reasoning-effort';
+  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -54,7 +56,6 @@
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
-  import EffortPicker from './EffortPicker.svelte';
   import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
@@ -680,6 +681,13 @@
       if (!result.ok || !result.data.success) {
         throw new Error(result.ok ? result.data.error : result.error);
       }
+      const supportedEfforts = selectModelEffortLevels.select(appStore.state, newModel);
+      await reconcileAgentReasoningEffort(
+        agentId,
+        workspace.id,
+        previousSession?.reasoningEffort,
+        supportedEfforts,
+      );
       onmodelChange?.(newModel);
     } catch (error) {
       logger.error('Failed to switch agent provider via model change', {
@@ -1466,7 +1474,7 @@
     class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
     data-chat-input-action-bar
   >
-    <div class="flex items-center gap-1 min-w-0" data-chat-input-primary-actions>
+    <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
@@ -1480,6 +1488,8 @@
         {agentId}
         portal
         updateGlobalStore
+        showReasoning
+        reasoningDisabled={disabled}
         onModelChange={(newModel) => {
           if (!newModel) return;
 
@@ -1499,10 +1509,6 @@
         }}
       />
 
-      <!-- Reasoning effort indicator + slider popover; renders only when the
-           session's model advertises effort levels. -->
-      <EffortPicker {agentId} workspaceId={workspace?.id} {disabled} />
-
       <!-- Context picker stays mounted for its popover API; its trigger lives in the action menu. -->
       <ContextPickerButton
         bind:this={contextPickerRef}
@@ -1516,7 +1522,9 @@
         onInsertMention={(mention) => tiptap?.insertMention(mention)}
         renderTrigger={false}
       />
+    </div>
 
+    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       <div class="relative inline-block">
         <Menu.Root>
           <Menu.Trigger>
@@ -1533,12 +1541,10 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent groups={promptActionGroups} align="start" side="top" class="w-52" />
+          <Menu.StackedContent groups={promptActionGroups} align="end" side="top" class="w-52" />
         </Menu.Root>
       </div>
-    </div>
 
-    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       {#if micTranscribing}
         <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
           <Button

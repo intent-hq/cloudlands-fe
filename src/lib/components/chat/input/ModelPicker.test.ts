@@ -38,6 +38,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faChevronRight: { iconName: 'chevron-right' },
   faCircleNotch: { iconName: 'circle-notch' },
   faLock: { iconName: 'lock' },
+  faPlus: { iconName: 'plus' },
   faRotateRight: { iconName: 'rotate-right' },
   faArrowsRotate: { iconName: 'arrows-rotate' },
   faExclamationTriangle: { iconName: 'exclamation-triangle' },
@@ -89,6 +90,10 @@ vi.mock('$store/renderer/store', async () => {
 
 const providerWarnings$ = writable<Record<string, string>>({});
 const providerStaleFlags$ = writable<Record<string, boolean>>({});
+const reasoningEffort$ = writable<string | null | undefined>(undefined);
+const agentModelEffortLevels$ = writable<string[] | undefined>(undefined);
+const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
+const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
     if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
@@ -127,8 +132,15 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', as
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   const selectAgentSession = vi.fn(() => mockAgentSession$);
   selectAgentSession.select = vi.fn(() => undefined);
-  return { selectAgentSession };
+  const selectAgentReasoningEffort = vi.fn(() => reasoningEffort$);
+  selectAgentReasoningEffort.select = vi.fn(() => get(reasoningEffort$));
+  return { selectAgentSession, selectAgentReasoningEffort };
 });
+
+vi.mock('$features/agent/reasoning-effort', () => ({
+  applyReasoningEffort: applyReasoningEffortMock,
+  reconcileAgentReasoningEffort: reconcileAgentReasoningEffortMock,
+}));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   updateSession: (agentId: string, fields: Record<string, unknown>) => ({
@@ -154,6 +166,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => providerStaleFlags$,
+  selectAgentModelEffortLevels: () => agentModelEffortLevels$,
 }));
 
 const hasCheckedOnce$ = writable(true);
@@ -229,6 +242,8 @@ afterEach(() => {
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
   mockProviderModelsState.clearEpoch = 0;
+  reasoningEffort$.set(undefined);
+  agentModelEffortLevels$.set(undefined);
 });
 
 describe('ModelPicker locked state', () => {
@@ -316,6 +331,351 @@ describe('ModelPicker locked state', () => {
     });
 
     expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.5');
+  });
+});
+
+describe('ModelPicker combined reasoning mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'codex:gpt-5.6-sol';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      {
+        value: 'codex:gpt-5.6-sol',
+        label: 'GPT-5.6-Sol',
+        description: 'Codex model',
+        effortLevels: ['low', 'medium', 'high', 'max'],
+      },
+    ];
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [
+        {
+          value: 'codex:gpt-5.6-sol',
+          label: 'GPT-5.6-Sol',
+          description: 'Codex model',
+          effortLevels: ['low', 'medium', 'high', 'max'],
+        },
+      ],
+    });
+    enabledProviderIds$.set(['codex']);
+    activeProviderId$.set('codex');
+    reasoningEffort$.set('medium');
+    agentModelEffortLevels$.set(['minimal', 'xhigh']);
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  it('shows a compact collapsed reasoning row by default', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    const triggerGauge = await waitFor(() => screen.getByTestId('effort-gauge'));
+    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    expect(trigger.textContent).not.toContain('Medium');
+    expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy();
+    expect(triggerGauge.dataset.gaugeValue).toBe('1');
+    expect(triggerGauge.dataset.gaugeCentered).toBe('false');
+    expect(triggerGauge.dataset.gaugeSize).toBe('compact');
+
+    await fireEvent.click(trigger);
+
+    const modelOption = await screen.findByRole('option', { name: /GPT-5\.6-Sol/ });
+    expect(modelOption.textContent).toContain('Codex model');
+    expect(modelOption.textContent).not.toContain('Effort:');
+    expect(modelOption.textContent).not.toContain('low · medium · high · max');
+    expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    expect(toggle.textContent).toContain('Reasoning effort · Medium');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.classList.contains('bg-transparent')).toBe(true);
+    expect(toggle.className).not.toContain('focus:bg-muted');
+    expect(screen.queryByRole('slider')).toBeNull();
+
+    await fireEvent.click(toggle);
+
+    const slider = screen.getByRole('slider');
+    expect(slider.getAttribute('max')).toBe('4');
+    expect(slider.getAttribute('aria-valuetext')).toBe('Medium');
+    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(5);
+    expect(screen.getByTestId('effort-current-value').textContent?.trim()).toBe('Medium');
+    expect(screen.getByText('Applies on the next message you send.')).toBeTruthy();
+    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+  });
+
+  it('renders expanded Codex effort rows as one base model option', async () => {
+    const expandedModels = [
+      {
+        value: 'codex:gpt-5.6-sol[low]',
+        label: 'GPT-5.6-Sol',
+        description: 'Low reasoning effort',
+        effortLevels: ['low'],
+      },
+      {
+        value: 'codex:gpt-5.6-sol[medium]',
+        label: 'GPT-5.6-Sol',
+        description: 'Balanced Codex model',
+        effortLevels: ['medium'],
+      },
+      {
+        value: 'codex:gpt-5.6-sol[ultra]',
+        label: 'GPT-5.6-Sol (ultra)',
+        description: 'Ultra reasoning effort',
+        effortLevels: ['ultra'],
+      },
+    ];
+    mockModelState.availableModels = expandedModels;
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: expandedModels });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findAllByRole('option', { name: /GPT-5\.6-Sol/ })).toHaveLength(1);
+    expect(screen.getByTestId('model-reasoning-toggle').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('uses applyReasoningEffort when a reasoning level is selected', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    await fireEvent.click(toggle);
+    await fireEvent.change(screen.getByRole('slider'), { target: { value: '3' } });
+
+    await waitFor(() => {
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
+    });
+  });
+
+  it('expands by keyboard, lets Escape collapse first, and resets after reopening', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    await fireEvent.keyDown(toggle, { key: 'Enter' });
+    expect(screen.getByRole('slider')).toBeTruthy();
+
+    await fireEvent.keyDown(screen.getByRole('slider'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('slider')).toBeNull());
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    await fireEvent.click(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ }));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    await fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByTestId('model-reasoning-toggle').getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+  });
+
+  it('keeps the chat popover height stable while allowing the model list to scroll', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    const popover = screen.getByRole('listbox');
+    expect(popover.className).toContain('w-[340px]');
+    expect(popover.className).toContain('min-h-[min(360px,calc(100vh-32px))]');
+    expect(popover.className).toContain('max-h-[min(360px,calc(100vh-32px))]');
+    expect(popover.className).not.toContain(' h-[min(');
+    expect(popover.querySelector('[data-scroll-container]')?.className).toContain('flex-1');
+    expect(popover.querySelector('[data-scroll-container]')?.className).toContain(
+      'overflow-y-auto',
+    );
+  });
+
+  it('closes the open menu when the trigger is clicked again', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    expect(screen.getByRole('listbox')).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('filters by provider tabs and supports arrow-key navigation', async () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'codex'
+          ? [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }]
+          : [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Auggie model' }],
+    }));
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+
+    const codexTab = screen.getByRole('tab', { name: /Codex/ });
+    expect(codexTab.getAttribute('aria-selected')).toBe('true');
+    expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT 5\.4/ })).toBeNull();
+
+    await fireEvent.keyDown(codexTab, { key: 'ArrowLeft' });
+
+    const auggieTab = screen.getByRole('tab', { name: /Auggie/ });
+    expect(auggieTab.getAttribute('aria-selected')).toBe('true');
+    expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull();
+  });
+
+  it('opens provider settings from the control after the provider tabs', async () => {
+    const { navigateToSettings } = await import('$lib/utils/workspace-navigation');
+    vi.mocked(navigateToSettings).mockResolvedValue(undefined);
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    const settingsButton = screen.getByTestId('model-provider-settings-button');
+    expect(settingsButton).toBeTruthy();
+
+    await fireEvent.click(settingsButton);
+
+    expect(vi.mocked(navigateToSettings)).toHaveBeenCalledWith({
+      tab: 'accounts',
+      hash: 'providers',
+    });
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('disables Reasoning when the selected catalog model has no levels', async () => {
+    agentModelEffortLevels$.set(['low', 'medium', 'high']);
+    mockModelState.availableModels = [
+      { value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' },
+    ];
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' }],
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    expect(trigger.textContent).not.toContain('Medium');
+
+    await fireEvent.click(trigger);
+    expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    expect(toggle.hasAttribute('disabled')).toBe(true);
+    expect(toggle.getAttribute('aria-disabled')).toBe('true');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(toggle);
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
+
+  it('omits the Default reasoning suffix from the trigger', async () => {
+    reasoningEffort$.set(null);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    expect(trigger.textContent).not.toContain('Default');
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+
+    await fireEvent.click(trigger);
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(toggle.textContent).toContain('Reasoning effort · Default');
   });
 });
 
@@ -1612,6 +1972,38 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     // The global default (selectModel → model.providerDefaults /
     // providers.active persistence) must never fire from the chat input.
     expect(dispatchedTypes()).not.toContain(selectModel.type);
+  });
+
+  it('reconciles the current effort against the picked model after the model update succeeds', async () => {
+    reasoningEffort$.set('xhigh');
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    mockModelState.availableModels = [
+      {
+        value: 'model-1',
+        label: 'Model 1',
+        description: 'A model',
+        effortLevels: ['low', 'high'],
+      },
+    ];
+    vi.mocked(getModelsForProvider).mockResolvedValue(mockModelState.availableModels);
+
+    render(ModelPicker, {
+      props: {
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await pickModelOne();
+
+    await waitFor(() => {
+      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
+        'low',
+        'high',
+      ]);
+    });
   });
 
   it('cross-provider pick (intent-hq/monorepo#1657): session on claude-code, bare default-provider model → explicit providerId on the wire', async () => {

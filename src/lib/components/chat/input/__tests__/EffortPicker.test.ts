@@ -150,6 +150,32 @@ describe('EffortPicker', () => {
     expect(screen.getByTestId('effort-gauge').getAttribute('height')).toBe('16');
   });
 
+  it('reuses the slider content without a trigger or popover in embedded mode', async () => {
+    const onEffortChange = vi.fn(async () => true);
+    render(EffortPicker, {
+      props: {
+        mode: 'embedded',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        effortLevels: ['low', 'high'],
+        effort: 'low',
+        onEffortChange,
+      },
+    });
+
+    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('effort-picker-content')).toBeTruthy();
+    const slider = screen.getByRole('slider');
+    expect(slider.getAttribute('max')).toBe('2');
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low');
+    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
+
+    await fireEvent.change(slider, { target: { value: '2' } });
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+  });
+
   it('represents the current effort level on the gauge', () => {
     mount({
       id: 'agent-1',
