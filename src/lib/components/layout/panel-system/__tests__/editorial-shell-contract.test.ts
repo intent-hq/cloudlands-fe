@@ -119,7 +119,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('sidebarMinWidth = 280');
     expect(workspace).toContain('sidebarDefaultWidth = 360');
     expect(workspace).toContain('sidebarPercentageWeight = 0');
-    expect(tabDefinitions).toContain("label: 'Context'");
+    expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
     expect(launcherMarkup).toContain('rounded-lg bg-card border border-border p-3');

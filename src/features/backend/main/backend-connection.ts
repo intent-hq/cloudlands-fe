@@ -174,6 +174,7 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     return createWssSocket(config);
   }
   throw new Error(
+    // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
     'Legacy INTENTD_TCP transport is disabled because authenticated remote transport is not implemented; use INTENTD_SOCKET or INTENTD_WS_URL',
   );
 }

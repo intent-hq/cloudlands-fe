@@ -17,6 +17,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { startAllAppSagas } from '$store/renderer/sagas';
+  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import {
     attachMouseHistoryNavigation,
@@ -31,6 +32,11 @@
     startSagas: startAllAppSagas,
   });
   onDestroy(disposeStore);
+
+  // The {#key} below remounts everything rendered by the app — product chrome,
+  // modals, and HUD surfaces — so every mounted m.*() string re-renders when
+  // the language preference changes (no reload needed).
+  const resolvedLocale$ = selectResolvedLocale();
 
   onMount(() => {
     // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
@@ -56,7 +62,9 @@
   });
 </script>
 
-{@render children?.()}
+{#key $resolvedLocale$}
+  {@render children?.()}
 
-<!-- Global hardware-console action HUD; product chrome remains scoped to (app). -->
-<ActionKeyHud />
+  <!-- Global hardware-console action HUD; product chrome remains scoped to (app). -->
+  <ActionKeyHud />
+{/key}

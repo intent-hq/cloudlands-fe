@@ -135,7 +135,7 @@
   <Button
     variant="ghost-light"
     size="icon-xs"
-    aria-label="Add context"
+    aria-label={m.workspace_addContext_addContext_label()}
     class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-none"
     onclick={() => onAddNote?.()}
   >

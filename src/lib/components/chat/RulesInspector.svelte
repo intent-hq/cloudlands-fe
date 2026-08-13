@@ -41,7 +41,12 @@
       <h2 id="rules-inspector-title" class="text-lg font-semibold text-foreground">
         {m.chat_rulesInspector_title()}
       </h2>
-      <Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close rules inspector">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onclick={onClose}
+        aria-label={m.chat_rulesInspector_close_ariaLabel()}
+      >
         <Fa icon={faXmark} />
       </Button>
     </div>

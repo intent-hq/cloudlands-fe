@@ -512,7 +512,7 @@
               <ChatImageBlock
                 data={nestedBlock.data}
                 mimeType={nestedBlock.mimeType}
-                alt="Image returned by tool"
+                alt={m.chat_messageContent_toolResultImage_alt()}
               />
             {:else if nestedBlock.type === 'tool_use'}
               {@const nestedToolBlock = nestedBlock as ToolUseBlock}

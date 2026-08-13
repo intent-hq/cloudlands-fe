@@ -2,6 +2,7 @@
   import { faGlobe, faWindowMaximize } from '@fortawesome/free-solid-svg-icons';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
+  import { m } from '$shared/paraglide/messages.js';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRunningScriptBrowserTarget } from '$features/scripts/utils/running-script-browser-target';
   import { Button } from '$lib/components/ui/button';
@@ -42,10 +43,12 @@
     variant="plain"
     class="absolute inset-0 z-0 h-auto cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
     onclick={openBrowser}
-    aria-label="Open Browser"
+    aria-label={m.workspace_browserLauncher_openBrowser_ariaLabel()}
   ></Button>
   <div class="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-2.5">
-    <span class="truncate text-sm font-medium flex-1">Browser</span>
+    <span class="truncate text-sm font-medium flex-1"
+      >{m.workspace_multiSelectSidebar_browser_label()}</span
+    >
     {#if browserTarget && !hasOpenBrowserTab}
       <Button
         variant="plain"
@@ -53,8 +56,14 @@
         iconOnly
         class="pointer-events-auto relative z-20 rounded text-muted-foreground hover:bg-background/70 hover:text-foreground focus-visible:bg-background/70"
         onclick={openRunningScriptUrl}
-        tooltip={`Open ${browserTarget.name} at ${browserTarget.url}`}
-        aria-label={`Open ${browserTarget.name} at ${browserTarget.url} in Browser`}
+        tooltip={m.workspace_browserLauncher_openAt_tooltip({
+          name: browserTarget.name,
+          url: browserTarget.url,
+        })}
+        aria-label={m.workspace_browserLauncher_openAtInBrowser_ariaLabel({
+          name: browserTarget.name,
+          url: browserTarget.url,
+        })}
         data-sidebar-running-url={browserTarget.url}
       >
         <Fa icon={faWindowMaximize} class="size-3" />

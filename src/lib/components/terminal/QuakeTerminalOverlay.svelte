@@ -300,9 +300,15 @@
     const ownership = workspaceOwnership;
     const mutationWorkspaceId = ownership.workspaceId;
     if (!mutationWorkspaceId) return;
+    const scriptActionErrors = {
+      start: m.terminal_quakeOverlay_startScriptFailed_error,
+      stop: m.terminal_quakeOverlay_stopScriptFailed_error,
+      restart: m.terminal_quakeOverlay_restartScriptFailed_error,
+      delete: m.terminal_quakeOverlay_deleteScriptFailed_error,
+    };
     const succeeded = await runScriptMutation(
       () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
-      `Failed to ${action} script`,
+      scriptActionErrors[action](),
     );
     if (!succeeded) return;
 
@@ -372,7 +378,7 @@
       if (trimmed && trimmed !== selectedScript.name) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
-          'Failed to rename script',
+          m.terminal_quakeOverlay_renameScriptFailed_error(),
         );
         if (!succeeded) return;
         appStore.dispatch(refreshScripts(mutationWorkspaceId));
@@ -428,7 +434,7 @@
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
-          'Failed to update script command',
+          m.terminal_quakeOverlay_updateCommandFailed_error(),
         );
         if (!succeeded) return;
         appStore.dispatch(refreshScripts(mutationWorkspaceId));
@@ -616,7 +622,7 @@
           scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
             name: mutationValue.trim(),
           }),
-        'Failed to rename script',
+        m.terminal_quakeOverlay_renameScriptFailed_error(),
       );
       if (!succeeded) return;
       appStore.dispatch(refreshScripts(mutationWorkspaceId));

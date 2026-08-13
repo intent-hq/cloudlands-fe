@@ -573,7 +573,9 @@
     {#if $feError$}
       <div class="flex flex-col items-center gap-2 px-3 py-6 text-center">
         <p class="text-xs text-destructive-foreground">{$feError$}</p>
-        <Button variant="outline" size="xs" onclick={retryInitialization}>Retry</Button>
+        <Button variant="outline" size="xs" onclick={retryInitialization}
+          >{m.fileExplorer_treeView_retry_label()}</Button
+        >
       </div>
     {:else if $feIsLoading$ || externalLoading || !$feIsInitialized$}
       <!-- Skeleton loaders for file tree -->

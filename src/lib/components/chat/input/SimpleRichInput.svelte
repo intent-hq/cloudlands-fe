@@ -1650,7 +1650,7 @@
             <Button
               variant="ghost-light"
               size="icon-sm"
-              aria-label="Save and resend"
+              aria-label={m.chat_richInput_saveAndResend_label()}
               onclick={handleSubmit}
               disabled={disabled || inputLocked || !canSend || isEnhancing}
             >

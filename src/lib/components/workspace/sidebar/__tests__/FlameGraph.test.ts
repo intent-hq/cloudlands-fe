@@ -38,9 +38,9 @@ describe('FlameGraph task progress', () => {
 
     render(FlameGraph, { props: { notes, progress: 0.5, onTaskClick } });
 
-    const row = screen.getByRole('button', { name: 'Open Build UI, In progress' });
+    const row = screen.getByRole('button', { name: 'Open Build UI, In Progress' });
     const summary = screen.getByRole('button', { name: 'Open spec, 0 of 1 tasks complete' });
-    const status = screen.getByText('In progress');
+    const status = screen.getByText('In Progress');
     const tooltipContent = screen.getByTestId('mock-tooltip-content');
     const tooltipTrigger = screen.getByTestId('mock-tooltip-trigger');
     expect(status.className).toContain('font-normal');

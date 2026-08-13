@@ -223,7 +223,7 @@
             variant="ghost"
             size="icon"
             onclick={close}
-            aria-label="Close pull conflict dialog"
+            aria-label={m.modals_pullConflict_close_ariaLabel()}
           >
             <Fa icon={faXmark} />
           </Button>
