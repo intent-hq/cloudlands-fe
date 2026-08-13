@@ -257,6 +257,73 @@ describe('AgentBackendSettings — agent memory budget', () => {
     // Nothing was written back: hydration must not rewrite the daemon's value.
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });
+
+  it('does not drop a return to the previous value while the first write is in flight', async () => {
+    // 100 → 200 → 100 with the first write still outstanding. Comparing the
+    // second 100 against the last acknowledgement (still 100) would read it as
+    // a no-op, skip the write, and strand the daemon on 200. Two slider
+    // releases in quick succession are enough to reach this.
+    mockSettings({ budget: { value: 100, max: TOTAL_RAM_MB } });
+    const pending: Array<(value: unknown) => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '200' } });
+    await fireEvent.blur(input);
+    await waitFor(() => expect(pending).toHaveLength(1));
+
+    await fireEvent.input(input, { target: { value: '100' } });
+    await fireEvent.blur(input);
+
+    // The return to 100 must be sent, not swallowed.
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
+      { path: MEMORY_BUDGET_PATH, value: 100 },
+    ]);
+
+    // Resolve in flight order; the superseded 200 must not win the display.
+    pending[0]();
+    pending[1]();
+    await waitFor(() => expect(screen.getByText(/Current: 100 MB\./)).toBeTruthy());
+    expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('100');
+  });
+
+  it('ignores a superseded response that resolves after the newer one', async () => {
+    mockSettings({ budget: { value: 100, max: TOTAL_RAM_MB } });
+    const pending: Array<(value: unknown) => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '200' } });
+    await fireEvent.blur(input);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await fireEvent.input(input, { target: { value: '300' } });
+    await fireEvent.blur(input);
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    // Out-of-order: the newer write lands first, then the stale one.
+    pending[1]();
+    await waitFor(() => expect(screen.getByText(/Current: 300 MB\./)).toBeTruthy());
+    pending[0]();
+
+    // The stale 200 must not roll the display back.
+    await waitFor(() => expect(screen.getByText(/Current: 300 MB\./)).toBeTruthy());
+    expect((screen.getByLabelText(BUDGET_LABEL) as HTMLInputElement).value).toBe('300');
+  });
 });
 
 describe('AgentBackendSettings — idle reap minutes', () => {
@@ -457,5 +524,43 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     await waitFor(() => expect(screen.getByLabelText(BUDGET_LABEL)).toBeTruthy());
     expect(screen.queryByLabelText(REAP_STEPPER_LABEL)).toBeNull();
     expect(screen.queryByRole('switch', { name: REAP_TOGGLE_LABEL })).toBeNull();
+  });
+
+  it('sends every toggle click even when the previous write is still in flight', async () => {
+    // on → off → on with the first write outstanding. Comparing against the
+    // last acknowledgement would read the third click as a no-op and leave
+    // reaping disabled while the toggle shows it enabled.
+    mockSettings({ reap: { value: 10 } });
+    const pending: Array<(value: unknown) => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+
+    render(AgentBackendSettings);
+
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
+      { path: IDLE_REAP_PATH, value: 0 },
+    ]);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(2, [
+      { path: IDLE_REAP_PATH, value: 10 },
+    ]);
+
+    pending[0]();
+    pending[1]();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }).getAttribute('aria-checked'),
+      ).toBe('true'),
+    );
+    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);
   });
 });
