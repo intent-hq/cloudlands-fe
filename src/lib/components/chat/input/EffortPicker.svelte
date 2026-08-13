@@ -192,17 +192,17 @@
       </span>
     {:else}
       <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
+      <span
+        class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
+        data-testid="effort-current-value"
+      >
+        {#key sliderIndex}
+          <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
+            {steps[sliderIndex]?.label}
+          </span>
+        {/key}
+      </span>
     {/if}
-    <span
-      class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
-      data-testid="effort-current-value"
-    >
-      {#key sliderIndex}
-        <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
-          {steps[sliderIndex]?.label}
-        </span>
-      {/key}
-    </span>
   </div>
   {#if !embedded}
     <div class="type-caption mt-0.5 text-subtle">
