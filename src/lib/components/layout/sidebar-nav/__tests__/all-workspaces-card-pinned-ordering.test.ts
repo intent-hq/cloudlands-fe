@@ -4,13 +4,17 @@
  * mount time (hydrated) and when toggled live.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { togglePinWorkspace, setPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  togglePinWorkspace,
+  setPinnedWorkspaceIds,
+  setAllSpacesViewMode,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
@@ -60,11 +64,18 @@ function renderedOrder(): string[] {
     .map((el) => el.getAttribute('data-workspace-id') ?? '');
 }
 
+function renderedCard(id: string): HTMLElement {
+  return screen
+    .getAllByTestId('workspace-card')
+    .find((element) => element.getAttribute('data-workspace-id') === id)!;
+}
+
 describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
   // The renderer store is a shared singleton and Store.init() is idempotent, so
   // pin state set in one test would otherwise leak into the next. Reset it here.
   afterEach(() => {
     appStore.dispatch(setPinnedWorkspaceIds([]));
+    appStore.dispatch(setAllSpacesViewMode('recent'));
   });
 
   it('sorts hydrated pinned workspaces to the top on initial render', async () => {
@@ -80,7 +91,9 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
 
     await waitFor(() => {
       expect(renderedOrder()).toEqual(['ws-oldest', 'ws-newest', 'ws-middle']);
+      expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true');
     });
+    expect(document.querySelector('.border-t')).toBeTruthy();
   });
 
   it('moves a workspace to the top when pinned, and back when unpinned', async () => {
@@ -102,13 +115,43 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
 
     await waitFor(() => {
       expect(renderedOrder()).toEqual(['ws-oldest', 'ws-newest', 'ws-middle']);
+      expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true');
     });
+    expect(document.querySelector('.border-t')).toBeTruthy();
 
     appStore.dispatch(togglePinWorkspace('ws-oldest'));
 
     await waitFor(() => {
       expect(renderedOrder()).toEqual(['ws-newest', 'ws-middle', 'ws-oldest']);
+      expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('false');
     });
+    expect(document.querySelector('.border-t')).toBeNull();
+  });
+
+  it('preserves pinned presentation in repository, status, and searched rows', async () => {
+    const wsExtra = makeWorkspace('ws-extra', 'Extra', '2026-06-07T12:00:00.000Z');
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          seedWorkspaces();
+          appStore.dispatch(setWorkspaceEntity(wsExtra));
+          appStore.dispatch(togglePinWorkspace('ws-oldest'));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+          appStore.dispatch(setAllSpacesViewMode('repo'));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true'));
+
+    const search = await screen.findByPlaceholderText('Search spaces...');
+    await fireEvent.input(search, { target: { value: 'Oldest' } });
+    await waitFor(() => expect(renderedOrder()).toEqual(['ws-oldest']));
+    expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true');
+
+    appStore.dispatch(setAllSpacesViewMode('status'));
+    await waitFor(() => expect(renderedOrder()).toEqual(['ws-oldest']));
+    expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true');
   });
 });
-
