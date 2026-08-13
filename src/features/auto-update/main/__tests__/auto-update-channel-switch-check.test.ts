@@ -4,10 +4,12 @@
  * A user-initiated channel switch (SET_CHANNEL IPC) must fire exactly one
  * immediate update check with manual-check feedback, while initialize()'s
  * internal setChannel call must not trigger an early duplicate check. A
- * switch while an update is downloaded/downloading must not keep the old
- * feed's artifact (intent-hq/monorepo#2270): the pending quit-install is
- * neutralized, an in-flight download is cancelled (error suppressed), and a
- * fresh check runs against the new feed.
+ * switch while an update is available/downloaded/downloading must not keep
+ * the old feed's artifact (intent-hq/monorepo#2270): the pending quit-install
+ * is neutralized, an in-flight download is cancelled (settled via
+ * electron-updater's 'update-cancelled' event, never 'error'), and a fresh
+ * check runs against the new feed — including when the old-feed outcome only
+ * lands after a switch made during the 'checking' state.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -247,18 +249,66 @@ describe('channel-switch immediate update check', () => {
     expect(updater.autoInstallOnAppQuit).toBe(false);
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
 
-    // The cancellation rejects the download promise and fires 'error' — both
-    // are suppressed: the DOWNLOAD caller resolves, no error status/toast.
+    // The cancellation rejects the download promise with CancellationError
+    // and electron-updater emits 'update-cancelled' (never 'error'): the
+    // DOWNLOAD caller resolves and no error status/toast appears.
     const cancellation = new Error('cancelled');
     rejectDownload(cancellation);
     await expect(downloadPromise).resolves.toBeUndefined();
-    updaterHandlers['error'](cancellation);
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
     expect(service.getState().status).not.toBe('error');
     expect(service.getState().error).toBeNull();
     expect(mockWindow.webContents.send).not.toHaveBeenCalledWith(
       'auto-update:status-changed',
       expect.objectContaining({ status: 'error' }),
     );
+  });
+
+  it("a genuine error after the cancellation settled via 'update-cancelled' still surfaces", async () => {
+    const { setChannelHandler, checkMock, downloadMock, service } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    let rejectDownload!: (e: Error) => void;
+    downloadMock.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDownload = reject;
+        }),
+    );
+    const downloadPromise = service.downloadUpdate();
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+
+    // electron-updater 6.x settles the cancellation via the promise
+    // rejection + 'update-cancelled'; the 'error' event is never dispatched
+    // for a CancellationError.
+    rejectDownload(new Error('cancelled'));
+    await expect(downloadPromise).resolves.toBeUndefined();
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
+
+    // Regression (PR #1162 review): the expecting-cancel flag used to be
+    // cleared only by the 'error' event, so it stayed latched and swallowed
+    // the fresh check's first genuine error.
+    updaterHandlers['error'](new Error('network down'));
+    expect(service.getState().status).toBe('error');
+    expect(service.getState().error).toBe('network down');
+  });
+
+  it("an unexpected 'update-cancelled' during a download resets to idle instead of sticking in downloading", async () => {
+    const { service } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['download-progress']({
+      percent: 10,
+      bytesPerSecond: 1000,
+      transferred: 10,
+      total: 100,
+    });
+    expect(service.getState().status).toBe('downloading');
+
+    updaterHandlers['update-cancelled']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('idle');
   });
 
   it('SET_CHANNEL during an autoDownload cancels the token captured from the check result', async () => {
@@ -352,6 +402,58 @@ describe('channel-switch immediate update check', () => {
     // Settled recheck does not re-queue itself.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(checkMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('switch during checking: an old-feed update outcome is neutralized and the new feed is still checked', async () => {
+    const { setChannelHandler, checkMock, feedMock, service, updater } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    // A check is in flight against the previous feed at the service level.
+    const oldToken = new TokenCtor();
+    let resolveOldCheck!: (result: unknown) => void;
+    checkMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOldCheck = resolve;
+        }),
+    );
+    const oldCheck = service.checkForUpdatesManual();
+    updaterHandlers['checking-for-update']();
+
+    await setChannelHandler({}, { channel: 'beta' });
+    expect(checkMock).toHaveBeenCalledTimes(1); // recheck queued, not started
+
+    // The OLD feed's check finds an update: autoDownload starts the old
+    // channel's download and progress lands before the queued recheck runs;
+    // the check result (carrying the download's token) resolves last, as in
+    // electron-updater, where 'update-available' fires inside
+    // doCheckForUpdates() before the checkForUpdates() promise settles.
+    updaterHandlers['update-available']({ version: '9.9.9', releaseDate: '2026-01-01' });
+    updaterHandlers['download-progress']({
+      percent: 5,
+      bytesPerSecond: 1,
+      transferred: 5,
+      total: 100,
+    });
+    expect(service.getState().status).toBe('downloading');
+    resolveOldCheck({ updateInfo: { version: '9.9.9' }, cancellationToken: oldToken });
+    await oldCheck;
+
+    // Regression (PR #1162 review): the queued recheck used to hit
+    // checkForUpdatesManual()'s downloading early-return, adopting the old
+    // feed's artifact and never querying the new feed — and the late-captured
+    // token was stored, never cancelled. Both the cancel + disarm +
+    // reset-then-fresh-check treatment must apply.
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+    expect(oldToken.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    expect(service.getState().updateInfo).toBeNull();
+    expect(feedMock).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: expect.stringMatching(/\/beta$/),
+    });
   });
 
   it('a queued channel-switch recheck also fires when the in-flight check settles with an error', async () => {
