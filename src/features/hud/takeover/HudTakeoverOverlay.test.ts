@@ -1209,11 +1209,11 @@ describe('HudTakeoverOverlay banner-typewriter sound cue', () => {
     expect(playHudSoundCue).not.toHaveBeenCalled();
   });
 
-  // NOTE: manual VIEWER silence is not renderable here — the redux
-  // card-click request flows through an argument-less cached selector
-  // readable that freezes across this file's store dispose/init cycles
-  // (viewer choreography is queue-tested in hud-takeover-queue.test.ts).
-  // The overlay's isViewer guard plus the cue-map viewer tests cover it.
+  // NOTE: manual VIEWER cue behavior (structural transients only, no kind
+  // cue) is not renderable here — the redux card-click request flows through
+  // an argument-less cached selector readable that freezes across this
+  // file's store dispose/init cycles (viewer choreography is queue-tested in
+  // hud-takeover-queue.test.ts). The cue-map viewer tests cover it.
 
   it('stays silent under reduced motion (banners render with no wipe)', () => {
     vi.stubGlobal(
