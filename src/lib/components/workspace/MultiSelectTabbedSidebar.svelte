@@ -220,7 +220,7 @@
     };
   }
 
-  function launcherGridReveal(): TransitionConfig {
+  function launcherGridReveal(_node: Element): TransitionConfig {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
 
     return {

@@ -189,8 +189,8 @@
           }
 
           const resultBlock = block as ToolResultBlock;
-          if (typeof resultBlock.content === 'string') {
-            const contentStr = resultBlock.content;
+          if (typeof resultBlock.output === 'string') {
+            const contentStr = resultBlock.output;
             // i18n-ignore (wire-content sniffing of tool result payloads, not rendered)
             if (contentStr.includes('\u001b[') || contentStr.includes('🔧 Tool call:')) {
               return false;

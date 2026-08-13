@@ -14,7 +14,6 @@
         repoPath: repo.path,
         repoType: repo.type,
         githubUrl: repo.githubUrl,
-        clonePath: repo.clonePath,
         isNewRepo: repo.isNewRepo,
         isValidPath: repo.isValidPath,
         scope: repo.scope,

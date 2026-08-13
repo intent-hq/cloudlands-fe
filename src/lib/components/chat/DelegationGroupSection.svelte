@@ -96,7 +96,7 @@
       {:else}
         <Fa icon={faHourglass} size="13" />
         {totalCount === 1
-          ? m.chat_agentSubscriptions_waitingForAgents_one()
+          ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(totalCount) })
           : m.chat_agentSubscriptions_waitingForAll_label()}
       {/if}
       {#if totalCount > 0}

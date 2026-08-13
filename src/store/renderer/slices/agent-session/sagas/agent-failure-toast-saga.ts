@@ -23,7 +23,10 @@
  * Switch To performs the SAME navigation but never calls `agent.retry`.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import type { ComponentProps } from 'svelte';
 import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
+
+import type AgentFailureToast from '$lib/components/ui/toast/AgentFailureToast.svelte';
 
 import {
   getAgentFailureEntry,
@@ -143,7 +146,7 @@ function* buildToastProps(
   entry: AgentFailureEntry,
   state: AgentToastState,
   emit: FailureEmitter,
-): SagaGenerator<Record<string, unknown>> {
+): SagaGenerator<ComponentProps<typeof AgentFailureToast>> {
   const session = yield* selectAgentSession.effect(entry.agentId);
   const agentName = session?.name && session.name.length > 0 ? session.name : undefined;
   const workspace = yield* selectWorkspaceById.effect(entry.workspaceId);

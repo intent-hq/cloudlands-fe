@@ -171,25 +171,18 @@
   const sidebarSide$ = selectSidebarSide();
 
   // Create unified state for this workspace
-  // @ts-expect-error - Svelte 5 rune scoping issue
-  let workspaceState = $state(null);
-  // @ts-expect-error - Svelte 5 rune scoping issue
+  let workspaceState = $state<ReturnType<typeof createWorkspacePageState> | null>(null);
   let stateDisposing = $state(false);
-  // @ts-expect-error - Svelte 5 rune scoping issue
-  let previousWorkspaceId = $state(null);
+  let previousWorkspaceId = $state<string | null>(null);
   // Fade-in transition for fresh workspace creation (crossfade with onboarding page)
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let isFreshCreation = $state(false);
 
   // Crossfade transition state: onboardingHoldActive keeps onboarding visible
   // during the fade-out after workspaceId changes from 'new' to a real ID.
   // showOnboarding is derived after workspaceId is defined (see below).
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let onboardingHoldActive = $state(false);
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let onboardingFadingOut = $state(false);
   // Create file dialog state
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let createFileDialogOpen = $state(false);
   let createFileFolderPath = '';
   let surfaceElement = $state<HTMLElement | null>(null);
@@ -292,7 +285,6 @@
   // and explicitly click to proceed, so they can review agent setup.
 
   // Track previous showOnboarding state to detect onboarding→workspace transition
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let prevShowOnboarding = $state(true);
 
   // Expand the sidebar when transitioning from onboarding to workspace.

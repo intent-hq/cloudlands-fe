@@ -558,6 +558,17 @@
   const hasCommits = $derived(allCommits.length > 0);
   const hasPRs = $derived(pullRequests.length > 0);
 
+  // Detect new work after a merge. Checks uncommitted changes, unpushed commits,
+  // and pushed-but-not-PR'd commits (aheadOfTrunk). The aheadOfTrunk check is
+  // guarded by !isContentMergedToTrunk because after a squash merge, aheadOfTrunk
+  // is always > 0 (local SHAs differ from the squash commit) even without new work.
+  const hasNewWorkAfterMerge = $derived(
+    hasUnstaged ||
+      hasStaged ||
+      commits.length > 0 ||
+      (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
+  );
+
   // Props shared by both PRSection instances (primary timeline + the
   // list-only secondary-root view, monorepo#2053).
   const prSectionSharedProps = $derived({
@@ -603,16 +614,7 @@
   // This persists across refreshes since it's based on actual git state
   const hasNoLocalChanges = $derived(!hasUnstaged && !hasStaged && commits.length === 0);
 
-  // Detect new work after a merge. Checks uncommitted changes, unpushed commits,
-  // and pushed-but-not-PR'd commits (aheadOfTrunk). The aheadOfTrunk check is
-  // guarded by !isContentMergedToTrunk because after a squash merge, aheadOfTrunk
-  // is always > 0 (local SHAs differ from the squash commit) even without new work.
-  const hasNewWorkAfterMerge = $derived(
-    hasUnstaged ||
-      hasStaged ||
-      commits.length > 0 ||
-      (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
-  );
+
 
   // Note: mergeHeadSha is ONLY set during in-session merges (see merge handlers below at lines ~2354/~2423).
   // For external merges (areAllPRsMerged, isContentMergedToTrunk), we do NOT capture mergeHeadSha
