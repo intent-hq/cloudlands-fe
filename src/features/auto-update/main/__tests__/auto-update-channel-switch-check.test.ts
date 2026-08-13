@@ -85,7 +85,8 @@ async function setup() {
   await autoUpdateService.initialize();
 
   const checkMock = electronUpdater.autoUpdater.checkForUpdates as unknown as Mock;
-  return { setChannelHandler, checkMock, mockWindow };
+  const feedMock = electronUpdater.autoUpdater.setFeedURL as unknown as Mock;
+  return { setChannelHandler, checkMock, feedMock, mockWindow };
 }
 
 beforeEach(async () => {
@@ -147,5 +148,59 @@ describe('channel-switch immediate update check', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it('SET_CHANNEL during an in-flight check queues one fresh check against the new feed', async () => {
+    const { setChannelHandler, checkMock, feedMock, mockWindow } = await setup();
+
+    // A startup/periodic/focus check is in flight against the previous feed.
+    updaterHandlers['checking-for-update']();
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    // Two rapid switches while the check is in flight still queue only one recheck.
+    await setChannelHandler({}, { channel: 'beta' });
+    const result = await setChannelHandler({}, { channel: 'alpha' });
+    expect(result.success).toBe(true);
+
+    // No new updater check while the old-feed request is still in flight.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(checkMock).not.toHaveBeenCalled();
+
+    // The in-flight (old feed) check settles: no manual "up to date" toast for
+    // the previous feed's answer...
+    updaterHandlers['update-not-available']({ version: '2.0.0' });
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith(
+      'auto-update:up-to-date',
+      expect.anything(),
+    );
+
+    // ...and exactly one fresh check fires, after the feed was re-pointed.
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+    expect(feedMock).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: expect.stringMatching(/\/alpha$/),
+    });
+
+    // The recheck carries manual feedback for the new feed's answer.
+    updaterHandlers['update-not-available']({ version: '2.0.0' });
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:up-to-date', {
+      version: '2.0.0',
+    });
+    // Settled recheck does not re-queue itself.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(checkMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a queued channel-switch recheck also fires when the in-flight check settles with an error', async () => {
+    const { setChannelHandler, checkMock } = await setup();
+
+    updaterHandlers['checking-for-update']();
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+    expect(checkMock).not.toHaveBeenCalled();
+
+    updaterHandlers['error'](new Error('network down'));
+
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
   });
 });

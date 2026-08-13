@@ -66,6 +66,9 @@ class AutoUpdateService {
   // `state.status === 'checking'` so it still fires when electron-updater
   // dedups onto a hung earlier check and never re-emits 'checking-for-update'.
   private checkSessionActive = false;
+  // A user channel switch arrived while a check was in flight against the
+  // previous feed; run one fresh manual check when that check settles.
+  private channelSwitchRecheckQueued = false;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
 
@@ -373,6 +376,30 @@ class AutoUpdateService {
     return this.checkForUpdates();
   }
 
+  /**
+   * User-initiated channel-switch check. Behaves like a manual check, except
+   * when a check is already in flight (startup / periodic / focus-triggered):
+   * that request targets the PREVIOUS feed, so instead of adopting its result
+   * (checkForUpdatesManual()'s 'checking' early return), queue exactly one
+   * fresh manual check to run once the in-flight one settles — the new
+   * channel is always actually queried. The in-flight old-feed check is left
+   * non-manual so its result produces no user-facing toast; the queued
+   * recheck carries the manual feedback for the new feed. Downloading /
+   * downloaded states keep the manual-check treatment (notify, no new check).
+   */
+  async checkForUpdatesOnChannelSwitch(): Promise<UpdateState> {
+    if (this.state.status === 'checking') {
+      logger.info('Channel switched during in-flight check; queueing recheck against new feed');
+      this.channelSwitchRecheckQueued = true;
+      // Ensure the watchdog is armed so a hung in-flight check still reaches
+      // a terminal state (which releases the queued recheck).
+      this.startCheckTimeout();
+      this.sendToRenderer('auto-update:status-changed', this.state);
+      return this.state;
+    }
+    return this.checkForUpdatesManual();
+  }
+
   async downloadUpdate(): Promise<void> {
     if (this.state.status !== 'available') {
       throw new Error('No update available to download');
@@ -435,6 +462,31 @@ class AutoUpdateService {
       this.state.progress = null;
     }
     this.sendToRenderer('auto-update:status-changed', this.state);
+    this.maybeRunQueuedChannelSwitchRecheck(status);
+  }
+
+  /**
+   * Release a queued channel-switch recheck when the in-flight check reaches
+   * a terminal state. Every terminal path funnels through updateStatus()
+   * (update-available / update-not-available / error event, watchdog timeout,
+   * null-result and rejection paths in checkForUpdates()), so this is the
+   * single choke point. Deferred to a microtask so the settling handler's
+   * trailing logic (isManualCheck bookkeeping) runs before the fresh check
+   * flips the flags for its own session. The recheck goes through
+   * checkForUpdatesManual(), keeping the downloading/downloaded guards.
+   */
+  private maybeRunQueuedChannelSwitchRecheck(status: UpdateStatus) {
+    if (!this.channelSwitchRecheckQueued) return;
+    if (status !== 'available' && status !== 'not-available' && status !== 'error') return;
+    this.channelSwitchRecheckQueued = false;
+    queueMicrotask(() => {
+      logger.info('Running queued channel-switch update check against new feed');
+      void this.checkForUpdatesManual().catch((error) => {
+        logger.debug('Queued channel-switch update check failed', {
+          error: (error as Error).message,
+        });
+      });
+    });
   }
 
   private setupFocusResumeHandlers() {

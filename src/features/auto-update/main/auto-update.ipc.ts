@@ -116,11 +116,13 @@ export function setupAutoUpdateIPC(): void {
         // update-available toast) instead of waiting for the hourly timer.
         // Only user actions reach this handler — initialize()'s internal
         // setChannel call never does, so startup keeps its single delayed
-        // check. checkForUpdatesManual() itself skips the check while a
-        // download is in progress or already complete. Fire-and-forget: a
+        // check. If a startup/periodic/focus check is already in flight
+        // against the previous feed, the service queues one fresh check for
+        // when it settles, so the new channel is always actually queried;
+        // downloading/downloaded states skip the check. Fire-and-forget: a
         // slow or failed check must not delay or fail the SET_CHANNEL ack,
         // which the renderer awaits to confirm the switch.
-        void autoUpdateService.checkForUpdatesManual().catch((error) => {
+        void autoUpdateService.checkForUpdatesOnChannelSwitch().catch((error) => {
           logger.debug('Post-channel-switch update check failed', {
             error: (error as Error).message,
           });
