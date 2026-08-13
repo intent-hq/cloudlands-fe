@@ -187,7 +187,7 @@
 {#snippet sliderContent()}
   {#if embedded}
     <div class="flex items-center justify-between gap-2">
-      <div class="type-caption truncate text-subtle">
+      <div class="type-caption truncate text-muted-foreground">
         {m.chat_effortPicker_nextSend_description()}
       </div>
       <EffortGauge

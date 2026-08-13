@@ -170,7 +170,7 @@ describe('EffortPicker', () => {
     expect(screen.queryByTestId('effort-current-value')).toBeNull();
     const nextSendCaption = screen.getByText('Applies on the next message you send.');
     expect(nextSendCaption).toBeTruthy();
-    expect(nextSendCaption.className).toContain('text-subtle');
+    expect(nextSendCaption.className).toContain('text-muted-foreground');
     expect(nextSendCaption.parentElement?.className).toContain('justify-between');
     const gauge = screen.getByTestId('effort-gauge');
     expect(nextSendCaption.parentElement?.contains(gauge)).toBe(true);
