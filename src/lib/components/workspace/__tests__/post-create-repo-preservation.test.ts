@@ -323,6 +323,50 @@ describe('post-create repo-field preservation', () => {
     expect(formState.repoPath).toBe('/tmp/test-repo');
   });
 
+  it('resets a remote selection to defaults (unusable without its cleared remoteSetup)', async () => {
+    mockCreateSuccess();
+    // A restored remote selection: submission depends on remoteSetup
+    // (workspacePath/environmentConfig), which clearForm always nulls, so
+    // preserving repoType 'remote' would leave a valid-looking broken form.
+    mocks.savedFormState = {
+      repoPath: '/remote/workspace/app',
+      repoType: 'remote',
+      githubUrl: '',
+      branch: 'main',
+      isNewRepo: false,
+      isValidPath: true,
+      scope: '',
+      remoteSetup: {
+        type: 'remote',
+        host: 'remote-host',
+        port: 22,
+        username: 'dev',
+        workspacePath: '/remote/workspace/app',
+      },
+    } satisfies CompactWorkspaceInitializerFormState;
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({ prompt: 'Build the thing', autoCreate: true }),
+    );
+
+    const { component } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+
+    expect(lastPersistedFormState()).toMatchObject({
+      repoPath: '',
+      repoType: 'local',
+      githubUrl: '',
+      branch: '',
+      isNewRepo: false,
+      isValidPath: false,
+      scope: '',
+      remoteSetup: null,
+    });
+  });
+
   it('restores the last used setup script for the preserved local repo', async () => {
     mockCreateSuccess();
     sessionStorage.setItem(

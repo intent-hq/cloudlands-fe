@@ -2189,7 +2189,20 @@
     // branch, isNewRepo, isValidPath, scope) — it is preserved so the next
     // new-workspace form re-opens on the same repo (intent-hq/monorepo#2148).
     // remoteSetup IS cleared: it is per-create connection state and stale
-    // values must not leak into the next create.
+    // values must not leak into the next create. Because a 'remote' selection
+    // is unusable without its remoteSetup (submission reads
+    // remoteSetup.workspacePath/environmentConfig, and isValid waives the
+    // branch requirement for remote), a remote selection cannot be preserved —
+    // reset it to defaults instead of leaving a valid-looking broken form.
+    if (repoType === 'remote') {
+      repoPath = '';
+      repoType = 'local';
+      githubUrl = '';
+      branch = '';
+      isNewRepo = false;
+      isValidPath = false;
+      scope = '';
+    }
     remoteSetup = null;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
