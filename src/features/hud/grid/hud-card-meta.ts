@@ -57,8 +57,6 @@ export function cardStateLabel(stateKey: HudCardStateKey): string {
       return m.hud_card_stateBlocked_label();
     case 'failed':
       return m.hud_card_stateFailed_label();
-    case 'unread':
-      return m.hud_card_stateUnread_label();
     case 'idle':
       return m.hud_card_stateIdle_label();
   }
@@ -74,8 +72,6 @@ export function cardStateColor(stateKey: HudCardStateKey): string {
     case 'pr_ready':
     case 'pr_open':
       return HUD_STATE_COLORS.pr;
-    case 'unread':
-      return HUD_STATE_COLORS.unread;
     case 'pr_merged':
       return HUD_STATE_COLORS.prMerged;
     case 'wait':
