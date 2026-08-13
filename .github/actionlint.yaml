@@ -6,6 +6,9 @@ self-hosted-runner:
     - tinybox
     # GH-hosted larger runner the route job bursts the heavy jobs to.
     - gh-linux-8x
+    # GH-hosted larger ARM64 Linux runner (8-core/32 GB) the release/manual
+    # Linux arm64 legs run on (monorepo#1340 sizing).
+    - gh-linux-arm64-8x
     # GH-hosted larger Windows runner (16-core/64 GB, Server 2022 image) the
     # Windows release/manual-build legs run on.
     - gh-windows-16x
