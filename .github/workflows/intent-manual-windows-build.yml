@@ -109,8 +109,10 @@ jobs:
       - name: Decode DigiCert client certificate
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
         shell: bash
+        env:
+          INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+          echo "$INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
 
       - name: Setup DigiCert Software Trust Manager
         if: ${{ steps.integrated_signing.outputs.enabled == 'true' }}
