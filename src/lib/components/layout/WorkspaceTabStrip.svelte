@@ -28,6 +28,7 @@
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -181,7 +182,11 @@
     if (!wasCurrent) return;
 
     const nextWorkspaceId = selectCurrentWorkspaceTabId.select(appStore.state);
-    void goto(nextWorkspaceId ? `/workspace/${nextWorkspaceId}` : '/workspace/new');
+    void goto(
+      nextWorkspaceId
+        ? `/workspace/${nextWorkspaceId}`
+        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+    );
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {

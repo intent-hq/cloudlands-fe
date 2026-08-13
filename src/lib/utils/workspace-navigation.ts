@@ -25,6 +25,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { dispatchWindowEvent } from './window-events';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
@@ -412,10 +413,12 @@ function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
     );
 }
 
-/** Navigate to an available workspace, or workspace creation when none exist. */
+/** Navigate to an available workspace, or the shared empty-window destination when none exist. */
 export async function navigateToFirstWorkspace(): Promise<void> {
   const workspace = getFirstAvailableWorkspace();
-  const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+  const target = workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
   await goto(target);
 }

@@ -27,6 +27,7 @@ export const initialState: OnboardingState = {
     message: null,
   },
   workspaceId: null,
+  fullFlowRequested: false,
 };
 
 // =============================================================================
@@ -39,6 +40,9 @@ export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>('
 export const setAgentStatus = createAction<[status: Partial<AgentStatus>]>('onboarding/setAgentStatus');
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
 export const resetOnboarding = createAction('onboarding/reset');
+export const setOnboardingFullFlowRequested = createAction<[value: boolean]>(
+  'onboarding/setFullFlowRequested',
+);
 
 // =============================================================================
 // Reducer
@@ -68,4 +72,14 @@ onboardingReducer.with(setOnboardingWorkspaceId, (state, { payload: [id] }) => (
     ...state,
     workspaceId: id,
   }));
-onboardingReducer.with(resetOnboarding, () => initialState);
+// Reset preserves a pending full-flow request: explicit restart paths dispatch
+// it before navigating, and OnboardingPage's own mount reset must not clear it
+// before the initial-step decision consumes it.
+onboardingReducer.with(resetOnboarding, (state) => ({
+    ...initialState,
+    fullFlowRequested: state.fullFlowRequested,
+  }));
+onboardingReducer.with(setOnboardingFullFlowRequested, (state, { payload: [value] }) => ({
+    ...state,
+    fullFlowRequested: value,
+  }));

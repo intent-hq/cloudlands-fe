@@ -348,5 +348,13 @@ describe('workspace-navigation', () => {
 
       expect(goto).toHaveBeenCalledWith('/workspace/new');
     });
+
+    it('navigates to workspace creation when only archived workspaces exist', async () => {
+      mockWorkspaceItems.value = [{ id: 'archived-workspace', status: 'Archived' }];
+
+      await navigateToFirstWorkspace();
+
+      expect(goto).toHaveBeenCalledWith('/workspace/new');
+    });
   });
 });

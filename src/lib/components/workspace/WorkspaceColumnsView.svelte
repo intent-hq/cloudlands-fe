@@ -30,6 +30,8 @@
     type PanelCycleDirection,
   } from '$features/layout/panel-cycle-navigation';
   import { findAdjacentWorkspaceColumnId } from '$features/workspace/utils/workspace-tab-navigation';
+  import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
+  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     getWorkspaceDragPlacement,
     isWorkspaceStackPlacement,
@@ -256,7 +258,11 @@
     if (!wasCurrent) return;
 
     const nextWorkspaceId = selectCurrentWorkspaceTabId.select(appStore.state);
-    void goto(nextWorkspaceId ? `/workspace/${nextWorkspaceId}` : '/workspace/new');
+    void goto(
+      nextWorkspaceId
+        ? `/workspace/${nextWorkspaceId}`
+        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+    );
   }
 
   function handleColumnDragStart(event: DragEvent, workspaceId: string) {
