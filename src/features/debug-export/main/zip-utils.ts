@@ -13,8 +13,15 @@ const logger = new Logger('ZipUtils');
 
 /**
  * Create a zip file from all files in a directory (recursive)
+ *
+ * When `rootPrefix` is provided, every entry is placed under that folder name
+ * inside the archive (e.g. `rootPrefix/nested/file.txt`).
  */
-export async function createZipFromPaths(sourceDir: string, zipPath: string): Promise<void> {
+export async function createZipFromPaths(
+  sourceDir: string,
+  zipPath: string,
+  rootPrefix?: string,
+): Promise<void> {
   const zipfile = new yazl.ZipFile();
 
   async function addDir(dir: string, prefix: string): Promise<void> {
@@ -31,7 +38,7 @@ export async function createZipFromPaths(sourceDir: string, zipPath: string): Pr
   }
 
   try {
-    await addDir(sourceDir, '');
+    await addDir(sourceDir, rootPrefix ?? '');
     zipfile.end();
 
     await new Promise<void>((resolve, reject) => {

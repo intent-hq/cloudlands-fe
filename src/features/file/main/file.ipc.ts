@@ -4,7 +4,7 @@
  * IPC layer for file operations.
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -37,9 +37,11 @@ import {
   FileCopySchema,
   FileGetTreeWithSizesSchema,
   FileGetDirectoryStatusSchema,
+  FileDownloadSchema,
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 import { renameWithRetry } from '../../../shared/main/file-sync-utils';
+import { createZipFromPaths } from '../../debug-export/main/zip-utils';
 
 const logger = new Logger('FileIPC');
 
@@ -936,6 +938,77 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.GET_DIRECTORY_STATUS,
+    ),
+  );
+
+  // Download (save a copy of) a file, or a zip of a folder, to a user-chosen
+  // location.
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.DOWNLOAD,
+    createSafeValidatedHandler(
+      FileDownloadSchema,
+      async (_, validated) => {
+        const expandedPath = expandPath(validated.path);
+
+        let stats;
+        try {
+          stats = await fs.stat(expandedPath);
+        } catch (error) {
+          logger.warn('Download source path not found', {
+            path: validated.path,
+            error: (error as Error).message,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: m.file_ipc_downloadNotFound_error({ path: validated.path }),
+            },
+          };
+        }
+
+        try {
+          const baseName = path.basename(expandedPath);
+
+          if (stats.isDirectory()) {
+            const { filePath, canceled } = await dialog.showSaveDialog({
+              defaultPath: `${baseName}.zip`,
+              filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
+            });
+            if (canceled || !filePath) {
+              return { success: false, canceled: true };
+            }
+            // Prefix entries with the folder name so the archive unpacks
+            // into a folder rather than spilling its contents.
+            await createZipFromPaths(expandedPath, filePath, baseName);
+            logger.info('Folder downloaded as zip', { source: expandedPath, filePath });
+            return { success: true, data: { filePath } };
+          }
+
+          const { filePath, canceled } = await dialog.showSaveDialog({
+            defaultPath: baseName,
+          });
+          if (canceled || !filePath) {
+            return { success: false, canceled: true };
+          }
+          await fs.copyFile(expandedPath, filePath);
+          logger.info('File downloaded', { source: expandedPath, filePath });
+          return { success: true, data: { filePath } };
+        } catch (error) {
+          logger.error('Failed to download path', error as Error, { path: validated.path });
+          return {
+            success: false,
+            error: {
+              code: 'DOWNLOAD_FAILED',
+              message:
+                error instanceof Error
+                  ? error.message
+                  : m.file_ipc_downloadFailed_error({ path: validated.path }),
+            },
+          };
+        }
+      },
+      IPC_CHANNELS.FILE.DOWNLOAD,
     ),
   );
 }
