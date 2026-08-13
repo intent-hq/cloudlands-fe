@@ -15,8 +15,10 @@ const initializerSource = readFileSync(
 const windowSource = readFileSync(resolve(process.cwd(), 'src/main/window.ts'), 'utf8');
 
 describe('root route removal', () => {
-  it('does not ship a home page route', () => {
-    expect(existsSync(resolve(appRoute, '+page.svelte'))).toBe(false);
+  it('ships only the minimal home empty state, not the legacy home page', () => {
+    const pageSource = readFileSync(resolve(appRoute, '+page.svelte'), 'utf8');
+    expect(pageSource).toContain('setShowCreateModal(true)');
+    expect(pageSource).not.toContain('workspace_home_');
     expect(uiTargetsSource).not.toContain("id: 'home'");
     expect(initializerSource).not.toContain('stayOnHomePage');
     expect(initializerSource).not.toContain('rapidFire');

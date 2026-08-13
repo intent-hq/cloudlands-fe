@@ -209,15 +209,16 @@
     }
   });
 
-  // The root route has no page and fresh windows boot at /workspace/new,
-  // which renders onboarding. Gate boot (and legacy `/`) loads on the
-  // backend-derived setup evaluation: land on an existing workspace when the
-  // backend has one, and only fall through to onboarding when the local
-  // backend genuinely needs first-run setup (no workspaces and no ready
-  // providers). The decision logic lives in decideBootRoute (boot-route-gate);
-  // it fires at most once per full page load, so deliberate in-app navigation
-  // to /workspace/new is unaffected. While it holds, WorkspaceSurface
-  // suppresses onboarding so the wizard never flashes before a redirect.
+  // The root route is a minimal empty state and fresh windows boot at
+  // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
+  // loads on the backend-derived setup evaluation: land on an existing
+  // workspace when the backend has one, and only fall through to onboarding
+  // when the local backend genuinely needs first-run setup (no workspaces and
+  // no ready providers). The decision logic lives in decideBootRoute
+  // (boot-route-gate); it fires at most once per full page load, so
+  // deliberate in-app navigation to `/` or /workspace/new is unaffected.
+  // While it holds, WorkspaceSurface suppresses onboarding so the wizard
+  // never flashes before a redirect.
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),

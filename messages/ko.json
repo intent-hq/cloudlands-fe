@@ -5929,5 +5929,9 @@
   "workspace_shortcuts_previousSpaceTab_description": "이전 스페이스 탭",
   "workspace_shortcuts_reopenClosedTabOrSpace_description": "닫은 탭 또는 스페이스 다시 열기",
   "workspace_shortcuts_selectLastSpaceTab_description": "마지막 스페이스 탭 선택",
-  "workspace_shortcuts_selectSpaceTab_description": "스페이스 탭 {digit} 선택"
+  "workspace_shortcuts_selectSpaceTab_description": "스페이스 탭 {digit} 선택",
+  "home_page_title": "홈",
+  "home_emptyState_noSpaceSelected_label": "선택된 스페이스가 없습니다",
+  "home_emptyState_selectOrCreate_description": "사이드바에서 스페이스를 선택하거나 새로 만드세요.",
+  "home_emptyState_newSpace_label": "새 스페이스"
 }

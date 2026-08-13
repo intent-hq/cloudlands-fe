@@ -5929,5 +5929,9 @@
   "workspace_shortcuts_previousSpaceTab_description": "Pestaña de espacio anterior",
   "workspace_shortcuts_reopenClosedTabOrSpace_description": "Reabrir pestaña o espacio cerrado",
   "workspace_shortcuts_selectLastSpaceTab_description": "Seleccionar la última pestaña de espacio",
-  "workspace_shortcuts_selectSpaceTab_description": "Seleccionar pestaña de espacio {digit}"
+  "workspace_shortcuts_selectSpaceTab_description": "Seleccionar pestaña de espacio {digit}",
+  "home_page_title": "Inicio",
+  "home_emptyState_noSpaceSelected_label": "Ningún espacio seleccionado",
+  "home_emptyState_selectOrCreate_description": "Seleccione un espacio en la barra lateral o cree uno nuevo.",
+  "home_emptyState_newSpace_label": "Espacio nuevo"
 }

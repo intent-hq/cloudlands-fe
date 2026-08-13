@@ -5929,5 +5929,9 @@
   "workspace_shortcuts_previousSpaceTab_description": "Previous Space Tab",
   "workspace_shortcuts_reopenClosedTabOrSpace_description": "Reopen Closed Tab or Space",
   "workspace_shortcuts_selectLastSpaceTab_description": "Select Last Space Tab",
-  "workspace_shortcuts_selectSpaceTab_description": "Select Space Tab {digit}"
+  "workspace_shortcuts_selectSpaceTab_description": "Select Space Tab {digit}",
+  "home_page_title": "Home",
+  "home_emptyState_noSpaceSelected_label": "No space selected",
+  "home_emptyState_selectOrCreate_description": "Select a space from the sidebar, or create a new one.",
+  "home_emptyState_newSpace_label": "New Space"
 }
