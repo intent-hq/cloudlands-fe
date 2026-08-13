@@ -16,6 +16,8 @@
   export let variant: string | undefined = undefined;
   export let size: string | undefined = undefined;
   export let triggerClass: string | undefined = undefined;
+  export let showReasoning: boolean = false;
+  export let reasoningDisabled: boolean = false;
 
   export function open() {}
   export function clearFallbackWarning() {}
@@ -39,6 +41,8 @@
   data-testid="model-picker"
   data-locked={isLocked ? 'true' : 'false'}
   data-show-lock-icon={showLockIconWhenLocked ? 'true' : 'false'}
+  data-show-reasoning={showReasoning ? 'true' : 'false'}
+  data-reasoning-disabled={reasoningDisabled ? 'true' : 'false'}
   title={lockedTitle}
 >
   <span data-testid="model-picker-provider">{providerId}</span>

@@ -22,8 +22,10 @@ import {
   HUD_TAKEOVER_ZOOM_STEP,
   takeoverGraphFits,
   takeoverPanBounds,
+  takeoverPitchPx,
   type HudTakeoverCellCoord,
 } from './hud-takeover-layout';
+import { takeoverEdgeRoutes } from './hud-takeover-routing';
 import { takeoverEdgeBoxPx, takeoverMapEdges, type HudTakeoverMapEdge } from './hud-takeover-edges';
 import { createTakeoverMapDrag, type HudTakeoverMapDrag } from './hud-takeover-drag.svelte';
 
@@ -32,6 +34,8 @@ export interface HudTakeoverMapState {
   readonly edges: HudTakeoverMapEdge[];
   readonly edgeBox: { left: number; top: number; width: number; height: number };
   readonly emptyCells: HudTakeoverCellCoord[];
+  /** Grid pitch (px) — cell size + the gutter sized for the busiest channel. */
+  readonly pitch: number;
   /** Current manual zoom scale (1 by default for every display). */
   readonly scale: number;
   /** False at the zoom range limits so buttons can disable. */
@@ -62,24 +66,16 @@ export interface HudTakeoverMapState {
 
 export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTakeoverMapState {
   const graph = $derived(dependencyGraphLayout(getTasks()));
-  const cells = $derived(
-    getTasks().map((task) => ({ task, coord: graph.coords.get(task.id)! })),
-  );
+  const cells = $derived(getTasks().map((task) => ({ task, coord: graph.coords.get(task.id)! })));
   const occupied = $derived(cells.map((cell) => cell.coord));
-  const edges = $derived.by(() => {
-    // Unmet emphasis is daemon-computed (`unmetDependsOn`, served verbatim)
-    // but suppressed once the dependent itself is complete — a finished task
-    // never renders an amber "waiting on" edge into it.
-    const unmet = new Map(
-      getTasks().map((task) => [
-        task.id,
-        new Set(task.status === 'complete' ? [] : (task.unmetDependsOn ?? [])),
-      ]),
-    );
-    return takeoverMapEdges(graph, unmet);
-  });
+  const routing = $derived(takeoverEdgeRoutes(graph));
+  const pitch = $derived(takeoverPitchPx(routing.maxLanes));
+  // Task input order drives the per-source palette rotation; statuses drive
+  // the consumed-edge dimming (destination underway/finished) and the pulse
+  // treatments (live conflicts, ready-to-start dependents).
+  const edges = $derived(takeoverMapEdges(routing, getTasks(), pitch));
 
-  const edgeBox = $derived(takeoverEdgeBoxPx(occupied));
+  const edgeBox = $derived(takeoverEdgeBoxPx(occupied, pitch));
   const emptyCells = $derived(emptyCellCoords(occupied));
 
   let viewport = $state({ width: 0, height: 0 });
@@ -88,10 +84,11 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
   // measure() resets it so each display opens at 100%.
   let zoom = $state(1);
 
-  const panBounds = $derived(takeoverPanBounds(occupied));
+  const panBounds = $derived(takeoverPanBounds(occupied, pitch));
   const drag = createTakeoverMapDrag(
     () => panBounds,
     () => zoom,
+    () => pitch,
   );
 
   const changedCoord = (changedTaskId: string | null | undefined): HudTakeoverCellCoord | null => {
@@ -112,6 +109,9 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     get emptyCells() {
       return emptyCells;
     },
+    get pitch() {
+      return pitch;
+    },
     get scale() {
       return zoom;
     },
@@ -131,7 +131,7 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
       zoom = 1;
     },
     zoomFit() {
-      zoom = fitScale(occupied, viewport);
+      zoom = fitScale(occupied, viewport, pitch);
     },
     get panTransform() {
       return zoom === 1
@@ -144,7 +144,9 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
       // Evaluated at the constant 1:1 open zoom (measure() resets zoom to 1
       // per display), never the live zoom: the decision is latched for the
       // display, so manual zoom can't reset the pan or re-schedule the glide.
-      return coord !== null && cellNeedsPan(coord) && !takeoverGraphFits(occupied, viewport, 1);
+      return (
+        coord !== null && cellNeedsPan(coord) && !takeoverGraphFits(occupied, viewport, 1, pitch)
+      );
     },
     measure(displayKey, clip) {
       if (!displayKey) {

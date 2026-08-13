@@ -35,9 +35,24 @@
     workspaceId?: string;
     disabled?: boolean;
     class?: string;
+    mode?: 'popover' | 'embedded';
+    effortLevels?: readonly string[];
+    effort?: string | null;
+    onEffortChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
+    onkeydown?: (event: KeyboardEvent) => void;
   }
 
-  let { agentId, workspaceId, disabled = false, class: className = '' }: Props = $props();
+  let {
+    agentId,
+    workspaceId,
+    disabled = false,
+    class: className = '',
+    mode = 'popover',
+    effortLevels = [],
+    effort = null,
+    onEffortChange,
+    onkeydown,
+  }: Props = $props();
 
   const agentIdStore = writable(untrack(() => agentId ?? ''));
   $effect(() => {
@@ -71,8 +86,9 @@
 
   type Step = { value: string | null; label: string };
 
-  const levels = $derived($effortLevels$ ?? []);
-  const hasLevels = $derived(!!agentId && levels.length > 0);
+  const embedded = $derived(mode === 'embedded');
+  const levels = $derived(embedded ? [...effortLevels] : ($effortLevels$ ?? []));
+  const hasLevels = $derived((embedded || !!agentId) && levels.length > 0);
 
   const steps = $derived<Step[]>([
     { value: null, label: m.chat_effortPicker_level_default() },
@@ -81,8 +97,9 @@
 
   // An effort the newly selected model does not advertise falls back to the
   // default position; the daemon/adapter reconciliation stays authoritative.
+  const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
   const currentValue = $derived(
-    $reasoningEffort$ && levels.includes($reasoningEffort$) ? $reasoningEffort$ : null,
+    persistedValue && levels.includes(persistedValue) ? persistedValue : null,
   );
   const currentIndex = $derived(
     Math.max(
@@ -104,6 +121,12 @@
     labelDirection = index > sliderIndex ? 'up' : 'down';
     sliderIndex = index;
   }
+
+  $effect(() => {
+    if (!embedded) return;
+    sliderIndex = currentIndex;
+    labelDirection = 'up';
+  });
 
   function updatePosition() {
     if (!triggerRef) return;
@@ -144,110 +167,139 @@
 
   async function commit(index: number) {
     const step = steps[index];
-    if (!step || !agentId || !workspaceId) return;
+    if (!step || disabled || !workspaceId) return;
 
     // Compare against the persisted field, not `currentValue`: an effort the
     // model no longer advertises also maps to the "Default" position, and
     // picking Default must still clear that stale value on the daemon.
-    const previous = $reasoningEffort$ ?? null;
+    const previous = persistedValue ?? null;
     if (step.value === previous) return;
 
-    const applied = await applyReasoningEffort(agentId, workspaceId, step.value, previous);
-    if (!applied) sliderIndex = currentIndex;
+    const applied = embedded
+      ? await onEffortChange?.(step.value)
+      : agentId
+        ? await applyReasoningEffort(agentId, workspaceId, step.value, previous)
+        : false;
+    if (applied === false) sliderIndex = currentIndex;
   }
 </script>
 
-{#if hasLevels}
-  <TooltipShortcut label={m.chat_effortPicker_trigger_tooltip({ level: currentLabel })} side="top">
-    <Button
-      bind:ref={triggerRef}
-      variant="ghost-light"
-      size="icon-sm"
-      onclick={toggleOpen}
-      disabled={disabled || !workspaceId}
-      aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: currentLabel })}
-      aria-haspopup="true"
-      aria-expanded={isOpen}
-      class={cn('shrink-0', className)}
-      data-testid="effort-picker-trigger"
-    >
-      <EffortGauge
-        value={Math.max(0, (isOpen ? sliderIndex : currentIndex) - 1)}
-        max={levels.length - 1}
-        centered={(isOpen ? steps[sliderIndex]?.value : currentValue) === null}
-      />
-    </Button>
-  </TooltipShortcut>
-
-  {#if isOpen}
-    <Portal zIndex={60}>
-      <div
-        bind:this={popoverRef}
-        class={cn(
-          'rounded-lg border border-border px-3 py-2.5',
-          'bg-popover text-popover-foreground shadow-lg',
-        )}
-        style={popoverStyle}
-        role="dialog"
-        aria-label={m.chat_effortPicker_popover_ariaLabel()}
-      >
-        <div class="flex items-center justify-between gap-3">
-          <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
-          <span
-            class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
-            data-testid="effort-current-value"
-          >
-            {#key sliderIndex}
-              <span
-                class="effort-value-label block truncate"
-                data-motion-direction={labelDirection}
-              >
-                {steps[sliderIndex]?.label}
-              </span>
-            {/key}
-          </span>
-        </div>
-        <div class="type-caption mt-0.5 text-subtle">
-          {m.chat_effortPicker_nextSend_description()}
-        </div>
-
-        <div class="relative mt-2.5">
-          <Slider
-            min="0"
-            max={steps.length - 1}
-            step="1"
-            value={sliderIndex}
-            aria-label={m.chat_effortPicker_slider_ariaLabel()}
-            aria-valuetext={steps[sliderIndex]?.label}
-            onValueChange={(value) => {
-              preview(value);
-            }}
-            onchange={(event) => {
-              const index = Number((event.currentTarget as HTMLInputElement).value);
-              preview(index);
-              void commit(index);
-            }}
-          />
-          <div
-            class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
-            aria-hidden="true"
-          >
-            {#each steps as step (step.value ?? 'default')}
-              <span
-                class="flex h-3 w-px items-center justify-center"
-                data-testid="effort-slider-tick"
-                data-effort-level={step.value ?? 'default'}
-              >
-                <span
-                  class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"
-                  data-testid="effort-slider-tick-marker"
-                ></span>
-              </span>
-            {/each}
-          </div>
-        </div>
+{#snippet sliderContent()}
+  {#if embedded}
+    <div class="flex items-center justify-between gap-2">
+      <div class="type-caption truncate text-muted-foreground">
+        {m.chat_effortPicker_nextSend_description()}
       </div>
-    </Portal>
+      <EffortGauge
+        value={Math.max(0, sliderIndex - 1)}
+        max={levels.length - 1}
+        centered={steps[sliderIndex]?.value === null}
+      />
+    </div>
+  {:else}
+    <div class="flex items-center justify-between gap-2">
+      <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
+      <span
+        class="type-caption flex h-4 max-w-28 items-center overflow-hidden font-medium text-foreground"
+        data-testid="effort-current-value"
+      >
+        {#key sliderIndex}
+          <span class="effort-value-label block truncate" data-motion-direction={labelDirection}>
+            {steps[sliderIndex]?.label}
+          </span>
+        {/key}
+      </span>
+    </div>
+    <div class="type-caption mt-0.5 text-subtle">
+      {m.chat_effortPicker_nextSend_description()}
+    </div>
+  {/if}
+
+  <div class={cn('relative', embedded ? 'mt-2' : 'mt-2.5')}>
+    <Slider
+      min="0"
+      max={steps.length - 1}
+      step="1"
+      value={sliderIndex}
+      {disabled}
+      {onkeydown}
+      aria-label={m.chat_effortPicker_slider_ariaLabel()}
+      aria-valuetext={steps[sliderIndex]?.label}
+      onValueChange={(value) => {
+        preview(value);
+      }}
+      onchange={(event) => {
+        const index = Number((event.currentTarget as HTMLInputElement).value);
+        preview(index);
+        void commit(index);
+      }}
+    />
+    <div
+      class="pointer-events-none absolute inset-x-px top-1/2 flex -translate-y-1/2 justify-between"
+      aria-hidden="true"
+    >
+      {#each steps as step (step.value ?? 'default')}
+        <span
+          class="flex h-3 w-px items-center justify-center"
+          data-testid="effort-slider-tick"
+          data-effort-level={step.value ?? 'default'}
+        >
+          <span
+            class="h-2 w-px shrink-0 rounded-full bg-muted-foreground/55"
+            data-testid="effort-slider-tick-marker"
+          ></span>
+        </span>
+      {/each}
+    </div>
+  </div>
+{/snippet}
+
+{#if hasLevels}
+  {#if embedded}
+    <div class={className} data-testid="effort-picker-content">
+      {@render sliderContent()}
+    </div>
+  {:else}
+    <TooltipShortcut
+      label={m.chat_effortPicker_trigger_tooltip({ level: currentLabel })}
+      side="top"
+    >
+      <Button
+        bind:ref={triggerRef}
+        variant="ghost-light"
+        size="icon-sm"
+        onclick={toggleOpen}
+        disabled={disabled || !workspaceId}
+        aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: currentLabel })}
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        class={cn('shrink-0', className)}
+        data-testid="effort-picker-trigger"
+      >
+        <EffortGauge
+          value={Math.max(0, (isOpen ? sliderIndex : currentIndex) - 1)}
+          max={levels.length - 1}
+          centered={(isOpen ? steps[sliderIndex]?.value : currentValue) === null}
+        />
+      </Button>
+    </TooltipShortcut>
+
+    {#if isOpen}
+      <Portal zIndex={60}>
+        <div
+          bind:this={popoverRef}
+          class={cn(
+            'rounded-lg border border-border px-3 py-2.5',
+            'bg-popover text-popover-foreground shadow-lg',
+          )}
+          style={popoverStyle}
+          role="dialog"
+          aria-label={m.chat_effortPicker_popover_ariaLabel()}
+        >
+          {@render sliderContent()}
+        </div>
+      </Portal>
+    {/if}
   {/if}
 {/if}
 

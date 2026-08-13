@@ -24,8 +24,6 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { dispatchWindowEvent } from './window-events';
-import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
 import {
@@ -399,50 +397,6 @@ export async function navigateBackFromSettings(): Promise<void> {
     return;
   }
   await goto(prevPath);
-}
-
-/**
- * Navigate after a workspace has been archived or deleted.
- *
- * Closes the tab for the removed workspace and navigates to:
- * - The next available workspace tab (if any exist)
- * - The shared empty-window destination otherwise ('/' when other workspaces
- *   remain, workspace creation when none do)
- *
- * Uses the tab manager's built-in "pick next or previous" logic.
- *
- * @param removedWorkspaceId - The ID of the workspace being archived/deleted
- */
-export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
-  logger.info(
-    '[navigateAfterWorkspaceRemoval] Navigating after workspace removal:',
-    removedWorkspaceId,
-  );
-
-  // Close the tab - this automatically sets currentTabId to the next available tab
-  appStore.dispatch(closeWorkspaceTab(removedWorkspaceId));
-
-  // Get the next tab ID (already set by closeTab)
-  const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
-
-  if (
-    nextTabId &&
-    typeof nextTabId === 'string' &&
-    nextTabId.length > 0 &&
-    nextTabId !== 'undefined' &&
-    nextTabId !== 'null' &&
-    nextTabId !== removedWorkspaceId
-  ) {
-    logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);
-    await goto(`/workspace/${nextTabId}`);
-  } else {
-    const target = resolveEmptyWindowDestination(
-      selectWorkspaceItems.select(appStore.state),
-      removedWorkspaceId,
-    );
-    logger.info('[navigateAfterWorkspaceRemoval] Navigating to fallback:', target);
-    await goto(target);
-  }
 }
 
 /**

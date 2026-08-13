@@ -4,6 +4,7 @@ import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
@@ -707,7 +708,8 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       setWorkspaceInitializerPendingGitHubPrefill({ ...ref, url }),
     );
-    expect(gotoMock).toHaveBeenCalledWith('/');
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+    expect(gotoMock).not.toHaveBeenCalled();
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
   });
 

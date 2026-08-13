@@ -68,6 +68,7 @@ function makeCard(
     repoRef: 'intent-hq/monorepo',
     stateKey: 'in_progress',
     attention: null,
+    isUnread: false,
     statusMessage: null,
     attentionSnippet: null,
     prNumber: null,
@@ -211,5 +212,29 @@ describe('HudWorkspaceCard failed attention strip', () => {
     const strip = container.querySelector('.hud-ws-card-question');
     expect(strip?.textContent?.trim()).toBe('ERR: agent failed');
     expect(container.textContent).not.toContain('Wiring the release-channel fetch');
+  });
+});
+
+describe('HudWorkspaceCard unread overlay', () => {
+  it('binds the unread border-blink class from the flag, over the real state', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([], { stateKey: 'complete', isUnread: true }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const card = container.querySelector('.hud-ws-card');
+    expect(card?.classList.contains('hud-ws-card-unread')).toBe(true);
+    // The real state banner still renders — unread overlays, never masks.
+    expect(container.textContent).toContain('COMPLETE');
+  });
+
+  it('omits the unread class when the flag is off', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { stateKey: 'complete' }), nowMs: NOW_MS },
+    });
+
+    expect(container.querySelector('.hud-ws-card-unread')).toBeNull();
   });
 });

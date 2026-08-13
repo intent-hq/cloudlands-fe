@@ -140,13 +140,14 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("buckets the BE `unread` displayStatus as UNREAD; the flag alone never does", () => {
+  it("buckets the unread flag as UNREAD below the attention/progress axes (intentd#1186)", () => {
     const state = mockState(
       [
-        // The daemon already applied the unread promotion (§5.1 step 6), so
-        // only its `unread` displayStatus buckets as UNREAD — the live flag
-        // on the other rows leaves their verbatim bucket alone.
-        withStatus('ws-1', 'unread'),
+        // Unread is flag-driven (no `unread` displayStatus anymore): flagged
+        // rows below the attention/progress axes (idle, complete, PR states,
+        // absent) fold to UNREAD — the old daemon promotion precedence — while
+        // flagged in_progress keeps its own bucket.
+        withStatus('ws-1', 'idle'),
         withStatus('ws-2', 'in_progress'),
         withStatus('ws-3'),
         withStatus('ws-4', 'complete'),
@@ -161,14 +162,14 @@ describe('selectHudWorkspaceStateBars', () => {
       ],
     );
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
-      idle: 1,
-      unread: 1,
+      idle: 0,
+      unread: 4,
       progress: 1,
       attention: 0,
       prOpen: 0,
-      prMerged: 1,
+      prMerged: 0,
       failed: 0,
-      completed: 1,
+      completed: 0,
       total: 5,
     });
   });
@@ -837,6 +838,7 @@ describe('selectHudWorkspaceCards', () => {
         repoRef: 'intent-hq/intentd',
         stateKey: 'in_progress',
         attention: null,
+        isUnread: false,
         statusMessage: 'Wiring the release-channel fetch',
         attentionSnippet: null,
         prNumber: 482,
@@ -1950,7 +1952,6 @@ describe('selectHudWorkspaceCards', () => {
     ['blocked', 'blocked'],
     ['needs_attention', 'wait'],
     ['in_progress', 'in_progress'],
-    ['unread', 'unread'],
     ['complete', 'complete'],
     ['pr_ready', 'pr_ready'],
     ['pr_open', 'pr_open'],
@@ -1991,13 +1992,23 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attention).toBe('review_required');
   });
 
-  it("an 'unread' attention flag is exposed but never changes the card state", () => {
-    // The daemon already applied the §5.1 step-6 unread promotion, so the
-    // flag is presentation metadata only — the card renders its wire value.
+  it("an 'unread' attention flag sets isUnread but never changes the card state", () => {
+    // Unread is a flag, not a displayStatus (intentd#1186): the card keeps
+    // its real state and exposes the overlay boolean for the border blink.
     const state = cardState([makeWorkspace('ws-1', { displayStatus: 'idle' })], [['ws-1', 'unread']]);
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBe('unread');
+    expect(card.isUnread).toBe(true);
+  });
+
+  it("a non-unread attention flag leaves isUnread false", () => {
+    const state = cardState(
+      [makeWorkspace('ws-1', { displayStatus: 'complete' })],
+      [['ws-1', 'review_required']],
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.isUnread).toBe(false);
   });
 
   it("the entity's daemon-served attention is exposed with no live event (app start)", () => {
@@ -2005,17 +2016,18 @@ describe('selectHudWorkspaceCards', () => {
     // (§5.1); a workspace already unread at launch exposes the flag without
     // waiting for a live `workspace:attention-changed` event.
     const state = cardState([
-      makeWorkspace('ws-1', { displayStatus: 'unread', attention: 'unread' }),
+      makeWorkspace('ws-1', { displayStatus: 'complete', attention: 'unread' }),
     ]);
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.stateKey).toBe('unread');
+    expect(card.stateKey).toBe('complete');
     expect(card.attention).toBe('unread');
+    expect(card.isUnread).toBe(true);
   });
 
   it('a live clear never falls back to a stale entity attention (bridge keeps both fresh)', () => {
     // markSeen: the live 'none' event deletes the flag map entry and the
     // events bridge writes `attention: "none"` onto the entity (§9.9) — the
-    // card must not resurrect UNREAD from the entity fallback.
+    // card must not resurrect the unread overlay from the entity fallback.
     const state = cardState(
       [makeWorkspace('ws-1', { displayStatus: 'idle', attention: 'none' })],
       [
@@ -2026,12 +2038,13 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBeNull();
+    expect(card.isUnread).toBe(false);
   });
 
-  it("marking seen (attention 'none') recomputes the UNREAD card back to idle", () => {
+  it("marking seen (attention 'none') drops the unread overlay", () => {
     // `workspace.markSeen` clears the unread flag and emits
     // `workspace:attention-changed` with "none" (§9.9) — the fold drops the
-    // flag and the card falls back to its displayStatus.
+    // flag and the overlay boolean with it; the card state never moved.
     const state = cardState(
       [makeWorkspace('ws-1', { displayStatus: 'idle' })],
       [
@@ -2042,6 +2055,7 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBeNull();
+    expect(card.isUnread).toBe(false);
   });
 
   /** Workspace with one top-level and one delegated agent plus session overlays. */

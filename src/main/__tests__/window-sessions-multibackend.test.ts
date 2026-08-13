@@ -99,10 +99,6 @@ vi.mock('../utils/resolve-app-title', () => ({
   resolveAppTitle: () => 'Intent',
 }));
 
-vi.mock('../../features/auto-update/main/auto-update.ipc', () => ({
-  updateAutoUpdaterWindow: vi.fn(),
-}));
-
 import {
   _resetWindowSessionsCacheForTests,
   captureAndCloseWindowsForBackendSwitch,

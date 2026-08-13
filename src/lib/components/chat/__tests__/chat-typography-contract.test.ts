@@ -62,7 +62,7 @@ describe('chat typography contract', () => {
     expect(pickerFiles.slice(0, 2).concat(pickerFiles.slice(3)).join('')).not.toMatch(
       /text-(?:xs|sm)|font-(?:semibold|bold)/,
     );
-    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{currentModelLabel}</span>');
+    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{triggerLabel}</span>');
   });
 
   it('keeps transcript metadata semantic and the unread divider neutral and legible', () => {

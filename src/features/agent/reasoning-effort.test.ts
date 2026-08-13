@@ -70,7 +70,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('svelte-sonner', () => ({ toast: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { applyReasoningEffort } from './reasoning-effort';
+import { applyReasoningEffort, reconcileAgentReasoningEffort } from './reasoning-effort';
 
 function setStoredEffort(agentId: string, effort: string | null) {
   storeState.agentSessions.byAgentId[agentId] = {
@@ -206,5 +206,54 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(false);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('medium');
+  });
+});
+
+describe('reconcileAgentReasoningEffort', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSetReasoningEffort.mockResolvedValue({ success: true });
+    storeState.agentSessions.byAgentId = {};
+    mockDispatch.mockImplementation((action: { payload?: unknown[] }) => {
+      const [agentId, patch] = (action.payload ?? []) as [
+        string,
+        { reasoningEffort?: string | null },
+      ];
+      if (agentId && patch && 'reasoningEffort' in patch) {
+        setStoredEffort(agentId, patch.reasoningEffort ?? null);
+      }
+    });
+  });
+
+  it('persists a nearest supported effort after a model change', async () => {
+    setStoredEffort('agent-1', 'xhigh');
+
+    await reconcileAgentReasoningEffort('agent-1', 'ws-1', 'xhigh', ['low', 'high']);
+
+    expect(mockSetReasoningEffort).toHaveBeenCalledWith({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      reasoningEffort: 'high',
+    });
+  });
+
+  it('does not write when the current effort remains supported', async () => {
+    setStoredEffort('agent-1', 'high');
+
+    await reconcileAgentReasoningEffort('agent-1', 'ws-1', 'high', ['low', 'high']);
+
+    expect(mockSetReasoningEffort).not.toHaveBeenCalled();
+  });
+
+  it('persists null when the new model advertises no effort levels', async () => {
+    setStoredEffort('agent-1', 'high');
+
+    await reconcileAgentReasoningEffort('agent-1', 'ws-1', 'high', undefined);
+
+    expect(mockSetReasoningEffort).toHaveBeenCalledWith({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      reasoningEffort: null,
+    });
   });
 });

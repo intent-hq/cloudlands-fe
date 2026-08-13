@@ -1,16 +1,41 @@
 /**
  * HUD takeover task-map layout — deterministic placement of task cells
  * around the spec cell at (0,0) on the mock's infinite canvas (180px 1:1
- * cells on a 192px pitch). Real tasks carry no coordinates, so the FE lays
- * them out as a left→right layered dependency DAG rooted at the spec
- * (`dependencyGraphLayout`), with drawable px edges (`edgeLinePx`) and a
- * fit scale for the manual zoom-to-fit action (`fitScale`). The same task
+ * cells on a pitch that widens with edge-lane demand, 192px floor). Real
+ * tasks carry no coordinates, so the FE lays them out as a left→right
+ * layered dependency DAG rooted at the spec (`dependencyGraphLayout`), with
+ * a fit scale for the manual zoom-to-fit action (`fitScale`). The same task
  * list always yields the same map on every HUD instance.
  */
 
-/** Mock canvas metrics: cell size and grid pitch (`renderVals` PITCH/CS). */
+/** Mock canvas metrics: cell size and default grid pitch (`renderVals` PITCH/CS). */
 export const HUD_TAKEOVER_CELL_PX = 180;
 export const HUD_TAKEOVER_PITCH_PX = 192;
+
+/** Edge-lane metrics inside a gutter: px between lanes, margin at each side. */
+export const HUD_TAKEOVER_LANE_PITCH_PX = 8;
+export const HUD_TAKEOVER_LANE_MARGIN_PX = 4;
+
+/** Gutter floor — the mock's 192 − 180, so an edge-free map keeps today's metrics. */
+export const HUD_TAKEOVER_GUTTER_MIN_PX = HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX;
+
+/**
+ * Uniform gutter width (px) between cells, sized so the busiest channel's
+ * lanes fit with a margin on each side, floored at the mock's 12px. One
+ * global width for the whole map (horizontal and vertical), driven by the
+ * router's `maxLanes`.
+ */
+export function takeoverGutterPx(maxLanes: number): number {
+  return Math.max(
+    HUD_TAKEOVER_GUTTER_MIN_PX,
+    maxLanes * HUD_TAKEOVER_LANE_PITCH_PX + 2 * HUD_TAKEOVER_LANE_MARGIN_PX,
+  );
+}
+
+/** Grid pitch (px) for a global lane demand: cell size + uniform gutter. */
+export function takeoverPitchPx(maxLanes: number): number {
+  return HUD_TAKEOVER_CELL_PX + takeoverGutterPx(maxLanes);
+}
 
 /** Overlay frame sizing (mock `openOv`: min(1560, rw−120) × min(850, rh−120)). */
 export const HUD_TAKEOVER_FRAME_MAX_W_PX = 1560;
@@ -199,7 +224,9 @@ export function dependencyGraphLayout(
             : 0;
           return { id, barycenter };
         })
-        .sort((a, b) => a.barycenter - b.barycenter || inputIndex.get(a.id)! - inputIndex.get(b.id)!);
+        .sort(
+          (a, b) => a.barycenter - b.barycenter || inputIndex.get(a.id)! - inputIndex.get(b.id)!,
+        );
       ordered.forEach(({ id }, i) => {
         const y = i - Math.floor(ordered.length / 2);
         localY.set(id, y);
@@ -271,13 +298,16 @@ export interface HudTakeoverPanBounds {
  * (occupied cells plus the dashed ring, `canvasBounds`) but no further — so
  * cells can never be dragged fully off-screen.
  */
-export function takeoverPanBounds(coords: HudTakeoverCellCoord[]): HudTakeoverPanBounds {
+export function takeoverPanBounds(
+  coords: HudTakeoverCellCoord[],
+  pitchPx: number = HUD_TAKEOVER_PITCH_PX,
+): HudTakeoverPanBounds {
   const { minX, maxX, minY, maxY } = canvasBounds(coords);
   return {
-    minX: minX * HUD_TAKEOVER_PITCH_PX,
-    maxX: maxX * HUD_TAKEOVER_PITCH_PX,
-    minY: minY * HUD_TAKEOVER_PITCH_PX,
-    maxY: maxY * HUD_TAKEOVER_PITCH_PX,
+    minX: minX * pitchPx,
+    maxX: maxX * pitchPx,
+    minY: minY * pitchPx,
+    maxY: maxY * pitchPx,
   };
 }
 
@@ -293,45 +323,11 @@ export function clampTakeoverPan(
 }
 
 /** CSS left/top for a cell coord on the canvas (cell centered on the pitch). */
-export function cellLeft(x: number): string {
-  return `${x * HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2}px`;
+export function cellLeft(x: number, pitchPx: number = HUD_TAKEOVER_PITCH_PX): string {
+  return `${x * pitchPx - HUD_TAKEOVER_CELL_PX / 2}px`;
 }
-export function cellTop(y: number): string {
-  return `${y * HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX / 2}px`;
-}
-
-/** Extra trim (px) past the target cell's border so the arrowhead sits clear of it. */
-const HUD_TAKEOVER_EDGE_TARGET_GAP_PX = 2;
-
-/**
- * Px line for a graph edge between two cell coords: cell-center to
- * cell-center, trimmed at each end to the 180px cell's border (Chebyshev
- * exit of the square), the target end pulled back a hair further so the
- * arrowhead sits in the gutter pointing at the dependent cell. Null on
- * degenerate pairs (same coord, or no visible segment left after trimming).
- * Endpoints round to 0.1px for stable, diff-friendly markup.
- */
-export function edgeLinePx(
-  from: HudTakeoverCellCoord,
-  to: HudTakeoverCellCoord,
-): { x1: number; y1: number; x2: number; y2: number } | null {
-  const dx = (to.x - from.x) * HUD_TAKEOVER_PITCH_PX;
-  const dy = (to.y - from.y) * HUD_TAKEOVER_PITCH_PX;
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return null;
-  const ux = dx / len;
-  const uy = dy / len;
-  const exit = Math.max(Math.abs(ux), Math.abs(uy));
-  const trimFrom = HUD_TAKEOVER_CELL_PX / 2 / exit;
-  const trimTo = (HUD_TAKEOVER_CELL_PX / 2 + HUD_TAKEOVER_EDGE_TARGET_GAP_PX) / exit;
-  if (trimFrom + trimTo >= len) return null;
-  const round = (v: number) => Math.round(v * 10) / 10;
-  return {
-    x1: round(from.x * HUD_TAKEOVER_PITCH_PX + ux * trimFrom),
-    y1: round(from.y * HUD_TAKEOVER_PITCH_PX + uy * trimFrom),
-    x2: round(to.x * HUD_TAKEOVER_PITCH_PX - ux * trimTo),
-    y2: round(to.y * HUD_TAKEOVER_PITCH_PX - uy * trimTo),
-  };
+export function cellTop(y: number, pitchPx: number = HUD_TAKEOVER_PITCH_PX): string {
+  return `${y * pitchPx - HUD_TAKEOVER_CELL_PX / 2}px`;
 }
 
 /** Measured size (px) of the map viewport (`.ov-map-clip`). */
@@ -358,7 +354,10 @@ export function clampZoom(scale: number): number {
  * from the canvas origin. The canvas renders centered on the viewport, so
  * the fit is symmetric about (0,0).
  */
-function occupiedHalfExtents(coords: HudTakeoverCellCoord[]): { halfW: number; halfH: number } {
+function occupiedHalfExtents(
+  coords: HudTakeoverCellCoord[],
+  pitchPx: number,
+): { halfW: number; halfH: number } {
   let ex = 0;
   let ey = 0;
   for (const { x, y } of coords) {
@@ -366,8 +365,8 @@ function occupiedHalfExtents(coords: HudTakeoverCellCoord[]): { halfW: number; h
     ey = Math.max(ey, Math.abs(y));
   }
   return {
-    halfW: ex * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX / 2,
-    halfH: ey * HUD_TAKEOVER_PITCH_PX + HUD_TAKEOVER_CELL_PX / 2,
+    halfW: ex * pitchPx + HUD_TAKEOVER_CELL_PX / 2,
+    halfH: ey * pitchPx + HUD_TAKEOVER_CELL_PX / 2,
   };
 }
 
@@ -382,9 +381,10 @@ function occupiedHalfExtents(coords: HudTakeoverCellCoord[]): { halfW: number; h
 export function fitScale(
   coords: HudTakeoverCellCoord[],
   viewport: HudTakeoverViewportSize,
+  pitchPx: number = HUD_TAKEOVER_PITCH_PX,
 ): number {
   if (viewport.width <= 0 || viewport.height <= 0) return 1;
-  const { halfW, halfH } = occupiedHalfExtents(coords);
+  const { halfW, halfH } = occupiedHalfExtents(coords, pitchPx);
   const s = Math.min(1, viewport.width / 2 / halfW, viewport.height / 2 / halfH);
   return Math.round(Math.max(HUD_TAKEOVER_ZOOM_MIN, s) * 1000) / 1000;
 }
@@ -398,9 +398,10 @@ export function takeoverGraphFits(
   coords: HudTakeoverCellCoord[],
   viewport: HudTakeoverViewportSize,
   scale: number,
+  pitchPx: number = HUD_TAKEOVER_PITCH_PX,
 ): boolean {
   if (viewport.width <= 0 || viewport.height <= 0) return false;
-  const { halfW, halfH } = occupiedHalfExtents(coords);
+  const { halfW, halfH } = occupiedHalfExtents(coords, pitchPx);
   return halfW * scale <= viewport.width / 2 + 0.5 && halfH * scale <= viewport.height / 2 + 0.5;
 }
 

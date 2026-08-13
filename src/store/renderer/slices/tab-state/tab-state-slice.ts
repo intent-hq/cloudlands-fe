@@ -245,6 +245,15 @@ export const closeWorkspaceTab = createAction(
   ],
 );
 export const reopenLastClosedWorkspaceTab = createAction('tabState/reopenLastClosedWorkspaceTab');
+/**
+ * Re-add a workspace tab to the strip WITHOUT focusing it — unlike
+ * `openWorkspaceTab`, `currentTabId` is never touched. Used by the daemon
+ * events bridge when a workspace transitions back to Active (unarchive) so the
+ * tab reappears in the background instead of stealing focus.
+ */
+export const restoreWorkspaceTab = createAction<[workspaceId: string]>(
+  'tabState/restoreWorkspaceTab',
+);
 export const clearCurrentWorkspaceTab = createAction('tabState/clearCurrentWorkspaceTab');
 export const cleanupInvalidWorkspaceTabs = createAction<[validIds: string[]]>(
   'tabState/cleanupInvalidWorkspaceTabs',
@@ -410,6 +419,21 @@ tabStateReducer.with(closeWorkspaceTab, (state, { payload: [workspaceId, timesta
       { ...state.recentlyClosedTabAt, [workspaceId]: timestamp },
       nextRecentlyClosedTabIds,
     ),
+  });
+});
+tabStateReducer.with(restoreWorkspaceTab, (state, { payload: [workspaceId] }) => {
+  if (!isWorkspaceTabId(workspaceId)) return state;
+  if (state.openTabs[workspaceId]) return state;
+
+  const nextRecentlyClosedTabIds = state.recentlyClosedTabIds.filter(
+    (tabId) => tabId !== workspaceId,
+  );
+
+  return withNextVersion(state, {
+    openTabs: addTabFlag(state.openTabs, workspaceId),
+    workspaceStacks: [...state.workspaceStacks, [workspaceId]],
+    recentlyClosedTabIds: nextRecentlyClosedTabIds,
+    recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
   });
 });
 tabStateReducer.with(reopenLastClosedWorkspaceTab, (state) => {

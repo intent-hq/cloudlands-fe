@@ -27,8 +27,10 @@ export interface HudTakeoverMapDrag {
   /**
    * Sync the auto-pan with the active takeover: recenters on a new
    * workspace/changed-cell pair, then schedules the glide onto a far cell
-   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same pair
-   * are no-ops so reactive re-runs never clobber a manual drag.
+   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same
+   * pair at the same pitch are no-ops so reactive re-runs never clobber a
+   * manual drag; a pitch change re-keys (the target cell's px position
+   * moved) so the pan re-centers on the shifted cell.
    */
   syncAutoPan(workspaceId: string, coord: HudTakeoverCellCoord | null, delayMs: number): void;
   /** Recenter and cancel any pending auto-pan or in-flight drag. */
@@ -41,6 +43,7 @@ export interface HudTakeoverMapDrag {
 export function createTakeoverMapDrag(
   getBounds: () => HudTakeoverPanBounds,
   getScale: () => number = () => 1,
+  getPitch: () => number = () => HUD_TAKEOVER_PITCH_PX,
 ): HudTakeoverMapDrag {
   let pan = $state({ x: 0, y: 0 });
   let dragging = $state(false);
@@ -63,7 +66,10 @@ export function createTakeoverMapDrag(
     if (!down) return;
     const dx = e.clientX - down.x;
     const dy = e.clientY - down.y;
-    if (Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX || Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX) {
+    if (
+      Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX ||
+      Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX
+    ) {
       moved = true;
       dragging = true;
       animate = false;
@@ -104,17 +110,18 @@ export function createTakeoverMapDrag(
       return animate;
     },
     syncAutoPan(workspaceId, coord, delayMs) {
-      const key = `${workspaceId}|${coord ? `${coord.x},${coord.y}` : ''}`;
+      // Pitch keys the dedupe only while a target cell exists: the cell's px
+      // position is coord × pitch, so a lane-count change must re-pan; with
+      // no target, a pitch change must not reset a manual drag.
+      const key = coord ? `${workspaceId}|${coord.x},${coord.y}|${getPitch()}` : `${workspaceId}|`;
       if (key === autoPanKey) return;
       autoPanKey = key;
       this.reset();
       if (!workspaceId || !coord) return;
       const apply = () => {
         animate = true;
-        pan = clampTakeoverPan(
-          { x: coord.x * HUD_TAKEOVER_PITCH_PX, y: coord.y * HUD_TAKEOVER_PITCH_PX },
-          getBounds(),
-        );
+        const pitch = getPitch();
+        pan = clampTakeoverPan({ x: coord.x * pitch, y: coord.y * pitch }, getBounds());
       };
       if (delayMs <= 0) apply();
       else autoPanTimer = setTimeout(apply, delayMs);

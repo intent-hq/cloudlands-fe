@@ -5,7 +5,7 @@
  * Manages update lifecycle: check → download → install
  */
 
-import { app, BrowserWindow, powerMonitor } from 'electron';
+import { app, powerMonitor } from 'electron';
 import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
@@ -14,6 +14,7 @@ import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
 import { saveWindowSessions } from '../../../main/window';
 import { getActiveId } from '../../backend/main/connections-store';
+import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -53,7 +54,6 @@ class AutoUpdateService {
     channel: 'stable',
   };
 
-  private mainWindow: BrowserWindow | null = null;
   private initialized = false;
   private isManualCheck = false;
   private isConfirmingInstall = false;
@@ -66,22 +66,24 @@ class AutoUpdateService {
   // `state.status === 'checking'` so it still fires when electron-updater
   // dedups onto a hung earlier check and never re-emits 'checking-for-update'.
   private checkSessionActive = false;
+  // A user channel switch arrived while a check was in flight against the
+  // previous feed; run one fresh manual check when that check settles.
+  private channelSwitchRecheckQueued = false;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
 
   /**
-   * Initialize the updater. The window is optional (intent-hq/monorepo#1848):
-   * the secondary-startup task can run before any window exists, and the only
-   * window consumer (`sendToRenderer`) null-guards. The window ref attaches
-   * later via `updateMainWindow()` when window.ts creates a window.
+   * Initialize the updater. Initialization does not depend on any window
+   * existing (intent-hq/monorepo#1848): the secondary-startup task can run
+   * before window creation, and renderer notifications are broadcast to
+   * whatever windows are live at send time (`sendToRenderer`).
    */
-  async initialize(mainWindow: BrowserWindow | null = null) {
+  async initialize() {
     if (this.initialized) {
       logger.warn('AutoUpdateService already initialized');
       return;
     }
 
-    this.mainWindow = mainWindow;
     this.state.currentVersion = app.getVersion();
 
     // Configure auto-updater
@@ -121,14 +123,6 @@ class AutoUpdateService {
         logger.debug('Periodic update check failed', { error: err.message });
       });
     }, UPDATE_CHECK_INTERVAL_MS);
-  }
-
-  /**
-   * Update the main window reference.
-   * Call this when a new window is created to ensure events are sent to the correct window.
-   */
-  updateMainWindow(mainWindow: BrowserWindow) {
-    this.mainWindow = mainWindow;
   }
 
   /**
@@ -382,6 +376,50 @@ class AutoUpdateService {
     return this.checkForUpdates();
   }
 
+  /**
+   * User-initiated channel-switch check. Behaves like a manual check, except
+   * when a check is already in flight (startup / periodic / focus-triggered):
+   * that request targets the PREVIOUS feed, so instead of adopting its result
+   * (checkForUpdatesManual()'s 'checking' early return), queue exactly one
+   * fresh manual check to run once the in-flight one settles — the new
+   * channel is always actually queried. The in-flight old-feed check is left
+   * non-manual so its result produces no user-facing toast; the queued
+   * recheck carries the manual feedback for the new feed. Downloading /
+   * downloaded states keep the manual-check treatment (notify, no new check).
+   * Broadcasts 'auto-update:show-toast' first so the "Checking…" toast is
+   * visible immediately and error outcomes have a surface; skips everything
+   * (check + toast) when the service was never initialized (dev mode).
+   */
+  async checkForUpdatesOnChannelSwitch(): Promise<UpdateState> {
+    // Dev mode / pre-init: the updater never initializes, so a check would
+    // only hit checkForUpdates()'s not-initialized fail-fast path and pollute
+    // the state GET_STATE consumers read with an error on every dev channel
+    // switch. Skip the check — and the toast below, so no "Checking…"
+    // surface appears that nothing will ever resolve.
+    if (!this.initialized) {
+      logger.info('Skipping channel-switch update check: service not initialized');
+      return this.state;
+    }
+
+    // Make the toast surface visible before any status lands (mirrors the
+    // menu "Check for Updates" sites): a 'checking' status broadcast alone
+    // never sets toastVisible in the renderer, and an error outcome has no
+    // other visible surface — without this, the switch shows no "Checking…"
+    // feedback and a failed check is completely silent.
+    broadcastToRenderers('auto-update:show-toast');
+
+    if (this.state.status === 'checking') {
+      logger.info('Channel switched during in-flight check; queueing recheck against new feed');
+      this.channelSwitchRecheckQueued = true;
+      // Ensure the watchdog is armed so a hung in-flight check still reaches
+      // a terminal state (which releases the queued recheck).
+      this.startCheckTimeout();
+      this.sendToRenderer('auto-update:status-changed', this.state);
+      return this.state;
+    }
+    return this.checkForUpdatesManual();
+  }
+
   async downloadUpdate(): Promise<void> {
     if (this.state.status !== 'available') {
       throw new Error('No update available to download');
@@ -444,6 +482,31 @@ class AutoUpdateService {
       this.state.progress = null;
     }
     this.sendToRenderer('auto-update:status-changed', this.state);
+    this.maybeRunQueuedChannelSwitchRecheck(status);
+  }
+
+  /**
+   * Release a queued channel-switch recheck when the in-flight check reaches
+   * a terminal state. Every terminal path funnels through updateStatus()
+   * (update-available / update-not-available / error event, watchdog timeout,
+   * null-result and rejection paths in checkForUpdates()), so this is the
+   * single choke point. Deferred to a microtask so the settling handler's
+   * trailing logic (isManualCheck bookkeeping) runs before the fresh check
+   * flips the flags for its own session. The recheck goes through
+   * checkForUpdatesManual(), keeping the downloading/downloaded guards.
+   */
+  private maybeRunQueuedChannelSwitchRecheck(status: UpdateStatus) {
+    if (!this.channelSwitchRecheckQueued) return;
+    if (status !== 'available' && status !== 'not-available' && status !== 'error') return;
+    this.channelSwitchRecheckQueued = false;
+    queueMicrotask(() => {
+      logger.info('Running queued channel-switch update check against new feed');
+      void this.checkForUpdatesManual().catch((error) => {
+        logger.debug('Queued channel-switch update check failed', {
+          error: (error as Error).message,
+        });
+      });
+    });
   }
 
   private setupFocusResumeHandlers() {
@@ -509,9 +572,7 @@ class AutoUpdateService {
   }
 
   private sendToRenderer(channel: string, data: unknown) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
-    }
+    broadcastToRenderers(channel, data);
   }
 }
 

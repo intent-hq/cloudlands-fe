@@ -8,7 +8,6 @@
   - not_started: Empty outline circle (gray)
   - idle: Empty outline circle (gray)
   - in_progress: Half-filled circle (blue)
-  - unread: Filled circle (cyan)
   - complete: Filled circle with checkmark (green)
   - pr_open: Filled circle with PR icon (purple)
   - pr_merged: Filled circle with merge icon (purple, darker)
@@ -39,7 +38,6 @@
     failed: { stroke: '#EF4444', fill: '#EF4444', innerCircleRPercentage: 100 },
     blocked: { stroke: '#F97316', fill: '#F97316', innerCircleRPercentage: 100 },
     needs_attention: { stroke: '#F59E0B', fill: '#F59E0B', innerCircleRPercentage: 100 },
-    unread: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 100 },
     not_started: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     idle: { stroke: '#99999966', fill: 'transparent', innerCircleRPercentage: 0 },
     in_progress: { stroke: '#00BCFF', fill: '#00BCFF', innerCircleRPercentage: 55 },
@@ -58,9 +56,6 @@
     },
     get needs_attention() {
       return m.workspace_statusIcon_needsAttention_label();
-    },
-    get unread() {
-      return m.workspace_statusIcon_unread_label();
     },
     get not_started() {
       return m.workspace_statusIcon_notStarted_label();

@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import LinkActionMenu from './LinkActionMenu.svelte';
 import { showLinkActionMenu, hideLinkActionMenu, linkActionMenuState } from './link-action-menu-state.svelte';
-
-const gotoMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock('$app/navigation', () => ({ goto: gotoMock }));
 
 const reduxDispatchMock = vi.hoisted(() => vi.fn());
 vi.mock('$store/renderer/store', async () => {
@@ -71,7 +69,7 @@ describe('LinkActionMenu', () => {
     expect(screen.getAllByRole('menuitem')).toHaveLength(3);
   });
 
-  it('start new workspace dispatches the prefill action and navigates home', async () => {
+  it('start new workspace dispatches the prefill action and opens the create modal', async () => {
     render(LinkActionMenu);
     showIssueMenu(TEST_WORKSPACE_ID);
     await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
@@ -87,7 +85,7 @@ describe('LinkActionMenu', () => {
         url: ISSUE_URL,
       }),
     );
-    expect(gotoMock).toHaveBeenCalledWith('/');
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
     expect(linkActionMenuState.visible).toBe(false);
   });
 

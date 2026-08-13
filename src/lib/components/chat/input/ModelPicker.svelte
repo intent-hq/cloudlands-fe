@@ -2,10 +2,16 @@
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
+  import { slide } from 'svelte/transition';
 
   import { agentClient } from '$features/agent/agent.client';
+  import {
+    applyReasoningEffort,
+    reconcileAgentReasoningEffort,
+  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
@@ -19,6 +25,8 @@
   } from '$features/agent/components/AgentProviderIcon.svelte';
   import { faSettings } from '$lib/icons/phosphor-icons';
   import ModelPickerEmptyState from './ModelPickerEmptyState.svelte';
+  import EffortGauge from './EffortGauge.svelte';
+  import EffortPicker from './EffortPicker.svelte';
   import ModelPickerGroupHeader from './ModelPickerGroupHeader.svelte';
   import ModelPickerProviderNotice, {
     createProviderWarningNotice,
@@ -36,6 +44,7 @@
     selectLoadError,
     selectAllProviderWarnings,
     selectAllProviderStaleFlags,
+    selectAgentModelEffortLevels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
@@ -91,6 +100,7 @@
     faCheck,
     faChevronDown,
     faLock,
+    faPlus,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -184,6 +194,8 @@
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
+    showReasoning?: boolean;
+    reasoningDisabled?: boolean;
     showProviderWarningNotice?: boolean;
     /**
      * Extra classes for the provider notice boxes. Callers that render the
@@ -223,6 +235,8 @@
     updateGlobalStore = false,
     updateGlobalDefault = false,
     silentFallback = false,
+    showReasoning = false,
+    reasoningDisabled = false,
     showProviderWarningNotice,
     noticeClass,
   }: Props = $props();
@@ -648,6 +662,17 @@
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
+          const targetOption = flatModelOptions.find(
+            (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
+          );
+          const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
+          const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
+          await reconcileAgentReasoningEffort(
+            agentId,
+            workspaceId,
+            currentEffort,
+            supportedEfforts,
+          );
         } else {
           const errorMsg = result.ok ? result.data.error : result.error;
           logger.warn('Failed to update agent model:', {
@@ -829,6 +854,14 @@
       : toDropdownOptions(availableModels)),
   ]);
 
+  const selectedCatalogOption = $derived.by(() => {
+    const selectedId = hasExplicitModel ? localModel : defaultModelId;
+    if (!selectedId) return undefined;
+    return flatModelOptions.find(
+      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
+    );
+  });
+
   const hasLoadedModelOptions = $derived(
     flatModelOptions.some((option) => option.value !== USE_DEFAULT_VALUE && !option.disabled),
   );
@@ -896,6 +929,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
     });
@@ -963,19 +997,52 @@
     dropdownValue = localModel ?? USE_DEFAULT_VALUE;
   });
 
-  // Display groups — same as groupedModelOptions but with collapsed groups' options hidden
-  const displayGroups = $derived(
-    groupedModelOptions.map((group) => ({
-      ...group,
-      options: collapsedGroups.has(group.key) ? [] : group.options,
-    })),
-  );
-
   // Provider the explicitly selected model belongs to ('' when inheriting).
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
       ? normalizeProviderId(parseCompoundModelId(localModel).providerId)
       : '',
+  );
+
+  const providerTabIds = $derived.by(() => [
+    ...new Set([
+      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...groupedModelOptions.map((group) => group.key).filter((key) => key !== 'default'),
+    ]),
+  ]);
+  const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
+  const preferredBrowseProviderId = $derived(
+    providerTabIds.includes(selectedModelProviderId)
+      ? selectedModelProviderId
+      : providerTabIds.includes(normalizeProviderId(effectiveProviderId))
+        ? normalizeProviderId(effectiveProviderId)
+        : (providerTabIds[0] ?? ''),
+  );
+  let activeBrowseProviderId = $state('');
+
+  $effect(() => {
+    if (!providerTabIds.includes(activeBrowseProviderId)) {
+      activeBrowseProviderId = preferredBrowseProviderId;
+    }
+  });
+
+  $effect(() => {
+    if (dropdownOpen && providerTabsEnabled) {
+      activeBrowseProviderId = preferredBrowseProviderId;
+    }
+  });
+
+  // Display groups — provider tabs replace the tall group stack in the chat picker.
+  const displayGroups = $derived(
+    groupedModelOptions
+      .filter(
+        (group) =>
+          !providerTabsEnabled || group.key === 'default' || group.key === activeBrowseProviderId,
+      )
+      .map((group) => ({
+        ...group,
+        options: providerTabsEnabled || !collapsedGroups.has(group.key) ? group.options : [],
+      })),
   );
 
   // True while a settled fetch result for the selected model's own provider is
@@ -1020,6 +1087,136 @@
   // Keyed by agentId so warnings don't leak across agents/workspaces.
   const agentIdStore = writable('');
   const fallbackInfo$ = selectModelFallbackInfo(agentIdStore);
+  const reasoningEffort$ = (
+    'withStore' in selectAgentReasoningEffort
+      ? selectAgentReasoningEffort.withStore(appStore)
+      : selectAgentReasoningEffort
+  )(agentIdStore);
+  const agentModelEffortLevels$ = (
+    'withStore' in selectAgentModelEffortLevels
+      ? selectAgentModelEffortLevels.withStore(appStore)
+      : selectAgentModelEffortLevels
+  )(agentIdStore);
+
+  const selectedModelEffortLevels = $derived.by<string[]>(() => {
+    if (Array.isArray($agentModelEffortLevels$) && $agentModelEffortLevels$.length > 0) {
+      return $agentModelEffortLevels$;
+    }
+    const levels = selectedCatalogOption?.data?.effortLevels;
+    return Array.isArray(levels) ? (levels as string[]) : [];
+  });
+
+  const LEVEL_LABELS: Record<string, () => string> = {
+    minimal: () => m.chat_effortPicker_level_minimal(),
+    low: () => m.chat_effortPicker_level_low(),
+    medium: () => m.chat_effortPicker_level_medium(),
+    high: () => m.chat_effortPicker_level_high(),
+    xhigh: () => m.chat_effortPicker_level_xhigh(),
+    max: () => m.chat_effortPicker_level_max(),
+  };
+
+  function reasoningLevelLabel(level: string): string {
+    return LEVEL_LABELS[level]?.() ?? level;
+  }
+
+  const reasoningLevels = $derived(showReasoning ? selectedModelEffortLevels : []);
+  const currentReasoningEffort = $derived(
+    $reasoningEffort$ && reasoningLevels.includes($reasoningEffort$) ? $reasoningEffort$ : null,
+  );
+  const currentReasoningLabel = $derived(
+    currentReasoningEffort
+      ? reasoningLevelLabel(currentReasoningEffort)
+      : m.chat_effortPicker_level_default(),
+  );
+  const triggerLabel = $derived(currentModelLabel);
+  const triggerAccessibleLabel = $derived(
+    currentReasoningEffort ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
+  );
+  const currentReasoningGaugeValue = $derived(
+    currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : 0,
+  );
+  let updatingReasoningEffort = $state(false);
+  let reasoningExpanded = $state(false);
+  const reasoningControlDisabled = $derived(
+    reasoningDisabled ||
+      updatingReasoningEffort ||
+      !agentId ||
+      !workspaceId ||
+      reasoningLevels.length === 0,
+  );
+
+  $effect(() => {
+    void dropdownOpen;
+    reasoningExpanded = false;
+  });
+
+  $effect(() => {
+    if (reasoningLevels.length === 0) reasoningExpanded = false;
+  });
+
+  function handleReasoningToggleKeydown(event: KeyboardEvent) {
+    if (reasoningControlDisabled) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.stopPropagation();
+      reasoningExpanded = true;
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      dropdownOpen = false;
+    }
+  }
+
+  function handleReasoningSliderKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      reasoningExpanded = false;
+      return;
+    }
+    event.stopPropagation();
+  }
+
+  function selectProviderTab(providerId: string) {
+    activeBrowseProviderId = providerId;
+  }
+
+  function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
+    const currentIndex = providerTabIds.indexOf(providerId);
+    if (currentIndex < 0) return;
+
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % providerTabIds.length;
+    if (event.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + providerTabIds.length) % providerTabIds.length;
+    }
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
+    if (nextIndex === undefined) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
+    const tabs = (event.currentTarget as HTMLButtonElement).parentElement?.querySelectorAll<
+      HTMLButtonElement
+    >('[role="tab"]');
+    tabs?.[nextIndex]?.focus();
+  }
+
+  async function handleReasoningSelect(value: string | null): Promise<boolean> {
+    if (!agentId || !workspaceId || reasoningControlDisabled) return false;
+    const previous = $reasoningEffort$ ?? null;
+    if (value === previous) return true;
+
+    updatingReasoningEffort = true;
+    try {
+      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+    } finally {
+      updatingReasoningEffort = false;
+    }
+  }
 
   // Load persisted fallback info for this agent
   $effect(() => {
@@ -1355,7 +1552,15 @@
       {#if hasProviderIcon(triggerProviderId)}
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
-      <span class="flex-1 text-left truncate">{currentModelLabel}</span>
+      <span class="flex-1 text-left truncate">{triggerLabel}</span>
+      {#if currentReasoningEffort}
+        <EffortGauge
+          value={currentReasoningGaugeValue}
+          max={reasoningLevels.length - 1}
+          centered={false}
+          size="compact"
+        />
+      {/if}
     {:else}
       <span class={cn('flex items-center', shouldShowLockIconWhenLocked && 'gap-1.5')}>
         {#if shouldShowLockIconWhenLocked}
@@ -1364,20 +1569,31 @@
         {#if hasProviderIcon(triggerProviderId)}
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
-        <span class="text-xs truncate">{currentModelLabel}</span>
+        <span class="text-xs truncate">{triggerLabel}</span>
+        {#if currentReasoningEffort}
+          <EffortGauge
+            value={currentReasoningGaugeValue}
+            max={reasoningLevels.length - 1}
+            centered={false}
+            size="compact"
+            class="ml-1"
+          />
+        {/if}
       </span>
     {/if}
   </Button>
 {:else}
   {#snippet groupHeader({ group, groupIndex }: DropdownGroupProps)}
-    <ModelPickerGroupHeader
-      {group}
-      {groupIndex}
-      collapsed={collapsedGroups.has(group.key)}
-      refreshing={refreshingProviders.has(group.key)}
-      onToggle={toggleGroup}
-      onRefresh={handleRefreshProvider}
-    />
+    {#if !providerTabsEnabled}
+      <ModelPickerGroupHeader
+        {group}
+        {groupIndex}
+        collapsed={collapsedGroups.has(group.key)}
+        refreshing={refreshingProviders.has(group.key)}
+        onToggle={toggleGroup}
+        onRefresh={handleRefreshProvider}
+      />
+    {/if}
   {/snippet}
 
   <Dropdown
@@ -1398,7 +1614,12 @@
       (variant === 'outline' || variant === 'default') && 'w-full justify-between',
       triggerClass,
     )}
-    contentClass="w-[332px] max-w-[calc(100vw-32px)]"
+    contentClass={cn(
+      'max-w-[calc(100vw-32px)]',
+      showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
+    )}
+    contentMaxHeight={showReasoning ? 360 : undefined}
+    fillContentHeight={showReasoning}
     {portal}
     {collisionBoundary}
     {groupHeader}
@@ -1413,10 +1634,11 @@
     })}
       <span
         class={cn(
-          'inline-flex items-center gap-1 truncate min-w-0',
+          'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={isTriggerLabelResolved ? currentModelLabel : ''}
+        title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
+        aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
       >
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
@@ -1434,7 +1656,15 @@
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
-          <span class="truncate">{currentModelLabel}</span>
+          <span class="truncate">{triggerLabel}</span>
+          {#if currentReasoningEffort}
+            <EffortGauge
+              value={currentReasoningGaugeValue}
+              max={reasoningLevels.length - 1}
+              centered={false}
+              size="compact"
+            />
+          {/if}
         {:else}
           <div class="h-3.5 w-24 bg-muted/50 rounded-sm animate-pulse"></div>
         {/if}
@@ -1445,6 +1675,45 @@
     {/snippet}
 
     {#snippet header()}
+      {#if providerTabsEnabled}
+        <div
+          class="flex items-center gap-1 px-2 pt-2"
+          role="tablist"
+          aria-label={m.chat_modelPicker_modelProviders_label()}
+          data-testid="model-provider-tabs"
+        >
+          {#each providerTabIds as providerTabId (providerTabId)}
+            <Button
+              variant="ghost"
+              size="icon"
+              iconOnly={true}
+              role="tab"
+              aria-selected={providerTabId === activeBrowseProviderId}
+              aria-label={providerDisplayName(providerTabId)}
+              tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
+              class={cn(
+                'text-muted-foreground hover:bg-muted/40',
+                providerTabId === activeBrowseProviderId && 'bg-muted text-foreground',
+              )}
+              onclick={() => selectProviderTab(providerTabId)}
+              onkeydown={(event) => handleProviderTabKeydown(event, providerTabId)}
+            >
+              <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
+            </Button>
+          {/each}
+          <Button
+            variant="ghost"
+            size="icon"
+            iconOnly={true}
+            aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
+            class="text-muted-foreground hover:bg-muted/40"
+            data-testid="model-provider-settings-button"
+            onclick={openProviderSettings}
+          >
+            <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
+          </Button>
+        </div>
+      {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
@@ -1466,7 +1735,6 @@
     {/snippet}
 
     {#snippet item({ option, selected }: DropdownItemProps)}
-      {@const effortLevels = option.data?.effortLevels as string[] | undefined}
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
@@ -1486,12 +1754,6 @@
             hint={providerLoadError.hint}
           />
         {:else}
-          {#if option.value !== USE_DEFAULT_VALUE}
-            <ProviderIcon
-              providerId={parseCompoundModelId(option.value).providerId}
-              class="size-3.5 shrink-0 mt-0.5"
-            />
-          {/if}
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline justify-between gap-2">
               <span
@@ -1512,17 +1774,57 @@
                 {option.description}
               </div>
             {/if}
-            {#if effortLevels && effortLevels.length > 0}
-              <div class="text-xs text-subtle/60 truncate">
-                {m.chat_modelPicker_effort_label({ levels: effortLevels.join(' · ') })}
-              </div>
-            {/if}
           </div>
         {/if}
       </div>
     {/snippet}
 
     {#snippet footer()}
+      {#if showReasoning}
+        <div class="px-2 py-2" data-testid="model-reasoning-section">
+          <Button
+            variant="ghost"
+            size="default"
+            aria-expanded={reasoningExpanded}
+            aria-disabled={reasoningControlDisabled}
+            disabled={reasoningControlDisabled}
+            class={cn(
+              'flex w-full items-center justify-between rounded bg-transparent px-2 py-1.5 text-left text-xs focus:bg-transparent focus:outline-none',
+              reasoningControlDisabled
+                ? 'cursor-not-allowed text-muted-foreground/50'
+                : 'hover:bg-muted/20',
+            )}
+            data-testid="model-reasoning-toggle"
+            onclick={() => {
+              if (!reasoningControlDisabled) reasoningExpanded = !reasoningExpanded;
+            }}
+            onkeydown={handleReasoningToggleKeydown}
+          >
+            <span class="truncate">
+              {m.chat_effortPicker_title_label()} · {currentReasoningLabel}
+            </span>
+          </Button>
+          {#if reasoningExpanded && reasoningLevels.length > 0}
+            <div
+              class="px-2 pb-1 pt-2"
+              role="group"
+              aria-label={m.chat_effortPicker_popover_ariaLabel()}
+              transition:slide={{ duration: 180, axis: 'y' }}
+            >
+              <EffortPicker
+                mode="embedded"
+                {agentId}
+                {workspaceId}
+                effortLevels={reasoningLevels}
+                effort={currentReasoningEffort}
+                disabled={reasoningControlDisabled}
+                onEffortChange={handleReasoningSelect}
+                onkeydown={handleReasoningSliderKeydown}
+              />
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
         <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
           <div

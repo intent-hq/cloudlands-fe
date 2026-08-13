@@ -150,6 +150,43 @@ describe('EffortPicker', () => {
     expect(screen.getByTestId('effort-gauge').getAttribute('height')).toBe('16');
   });
 
+  it('reuses the slider content without a trigger or popover in embedded mode', async () => {
+    const onEffortChange = vi.fn(async () => true);
+    render(EffortPicker, {
+      props: {
+        mode: 'embedded',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        effortLevels: ['low', 'high'],
+        effort: 'low',
+        onEffortChange,
+      },
+    });
+
+    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const content = screen.getByTestId('effort-picker-content');
+    expect(content.textContent).not.toContain('Reasoning effort');
+    expect(screen.queryByTestId('effort-current-value')).toBeNull();
+    const nextSendCaption = screen.getByText('Applies on the next message you send.');
+    expect(nextSendCaption).toBeTruthy();
+    expect(nextSendCaption.className).toContain('text-muted-foreground');
+    expect(nextSendCaption.parentElement?.className).toContain('justify-between');
+    const gauge = screen.getByTestId('effort-gauge');
+    expect(nextSendCaption.parentElement?.contains(gauge)).toBe(true);
+    expect(gauge.dataset.gaugeValue).toBe('0');
+    expect(gauge.dataset.gaugeCentered).toBe('false');
+    const slider = screen.getByRole('slider');
+    expect(slider.getAttribute('max')).toBe('2');
+    expect(slider.getAttribute('aria-valuetext')).toBe('Low');
+    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(3);
+
+    await fireEvent.change(slider, { target: { value: '2' } });
+    expect(onEffortChange).toHaveBeenCalledWith('high');
+    expect(gauge.dataset.gaugeValue).toBe('1');
+    expect(applyReasoningEffort).not.toHaveBeenCalled();
+  });
+
   it('represents the current effort level on the gauge', () => {
     mount({
       id: 'agent-1',
@@ -169,6 +206,7 @@ describe('EffortPicker', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: /reasoning effort/i })).toBeTruthy();
     });
+    expect(screen.getByRole('dialog').textContent).toContain('Reasoning effort');
 
     const slider = screen.getByRole('slider');
     expect(slider.getAttribute('max')).toBe('4');

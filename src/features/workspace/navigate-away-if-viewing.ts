@@ -44,3 +44,29 @@ export async function navigateAwayIfViewing(workspaceId: string): Promise<void> 
   const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
   if (goto) await goto(target);
 }
+
+/**
+ * Close the workspace's tab UNCONDITIONALLY (the reducer no-ops when the tab
+ * is not open, so background tabs are covered too), then route to the next tab
+ * (or the shared empty-window destination) only when the closed workspace is
+ * the one on screen.
+ * Used by the daemon events bridge when a workspace transitions to Archived.
+ */
+export async function closeWorkspaceTabAndNavigateAway(workspaceId: string): Promise<void> {
+  const { closeWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+  appStore.dispatch(closeWorkspaceTab(workspaceId));
+  if (!isViewingWorkspace(workspaceId)) return;
+  const { selectCurrentWorkspaceTabId } =
+    await import('$store/renderer/slices/tab-state/tab-state-selectors');
+  const { selectWorkspaceItems } =
+    await import('$store/renderer/slices/workspace/workspace-selectors');
+
+  const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
+  const target =
+    typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== workspaceId
+      ? `/workspace/${nextTabId}`
+      : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state), workspaceId);
+
+  const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
+  if (goto) await goto(target);
+}
