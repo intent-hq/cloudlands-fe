@@ -3,6 +3,8 @@
  * Extracted from CompactWorkspaceInitializer.svelte $effect logic.
  */
 
+import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+
 export interface InitialRepoInfo {
   repoPath?: string;
   isGithub?: boolean;
@@ -27,13 +29,6 @@ export interface InitialRepoFormState {
 }
 
 export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore' | 'restore-recent';
-
-export interface WorkspaceInitializerRecentRepo {
-  path: string;
-  type: 'local' | 'github' | 'remote';
-  githubUrl?: string;
-  name: string;
-}
 
 export interface LastSelectedRepoHydrationInput {
   isHydrated: boolean;
@@ -100,7 +95,7 @@ export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFor
  */
 export function mapRecentRepoToSelection(repo: WorkspaceInitializerRecentRepo): {
   path: string;
-  type: 'local' | 'github' | 'remote';
+  type: 'local' | 'github';
   githubUrl?: string;
   isValidPath: boolean;
 } {
