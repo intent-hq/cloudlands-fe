@@ -336,6 +336,62 @@ describe('status forwarder', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Switch serialization (monorepo#2221): switchBackend invocations queue behind
+// a module-level promise-chain mutex, so overlapping switches can never
+// interleave across the orchestration's await points.
+// ---------------------------------------------------------------------------
+
+describe('switchBackend serialization', () => {
+  it('runs overlapping switches strictly sequentially', async () => {
+    const mod = await loadModule();
+    // Park the first switch at its window-teardown await point.
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((r) => (releaseFirst = r));
+    const captureAndClose = vi.fn(async () => {
+      if (captureAndClose.mock.calls.length === 1) await gate;
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+    const first = mod.switchBackend('remote-1');
+    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+    const second = mod.switchBackend('local');
+
+    // The queued switch makes no progress while the first is still in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(captureAndClose).toHaveBeenCalledTimes(1);
+    expect(store.setActiveId).not.toHaveBeenCalled();
+
+    releaseFirst();
+    await expect(first).resolves.toEqual({ activeId: 'remote-1' });
+    await expect(second).resolves.toEqual({ activeId: 'local' });
+
+    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'local']);
+    // Strict client lifecycle: switch 1 builds+starts its client, then switch 2
+    // disposes it before building its own — never interleaved.
+    expect(lifecycle.events.map((e) => e.type)).toEqual([
+      'construct',
+      'start',
+      'dispose',
+      'construct',
+      'start',
+    ]);
+    // The final switch targeted local, so no remote identity is pinned.
+    expect(mod.isRemoteBackendActive()).toBe(false);
+  });
+
+  it('a rejected switch does not block the switches queued behind it', async () => {
+    const mod = await loadModule();
+
+    const first = mod.switchBackend('unknown-id');
+    const second = mod.switchBackend('remote-1');
+
+    await expect(first).rejects.toThrow('Unknown or incomplete connection');
+    await expect(second).resolves.toEqual({ activeId: 'remote-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T22 review — "Start local intentd" recovery is atomic in main: switching to
 // local tears down every window (captureAndClose) before the switch resolves, so
 // the spawn MUST NOT depend on the initiating renderer surviving. switchToLocalAndSpawn
