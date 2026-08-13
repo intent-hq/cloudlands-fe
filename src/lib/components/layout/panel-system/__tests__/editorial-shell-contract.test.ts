@@ -119,7 +119,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(workspace).toContain('sidebarMinWidth = 280');
     expect(workspace).toContain('sidebarDefaultWidth = 360');
     expect(workspace).toContain('sidebarPercentageWeight = 0');
-    expect(tabDefinitions).toContain("label: 'Context'");
+    expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
     expect(launcherMarkup).toContain('rounded-lg bg-card border border-border p-3');
@@ -211,7 +211,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(chiefTrigger).toContain('aria-label="Toggle Chief of Staff"');
+    expect(chiefTrigger).toContain('aria-label={m.layout_chiefTrigger_toggle_ariaLabel()}');
     expect(chiefTrigger).toContain('aria-expanded={isActive}');
     expect(chiefTrigger).not.toContain('aria-pressed');
     expect(chiefTrigger).not.toContain('bg-sidebar-accent');
