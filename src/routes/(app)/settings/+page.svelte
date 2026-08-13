@@ -144,7 +144,7 @@
     'cli-optimization': 'tools',
     'workspace-api': 'tools',
     'agent-features': 'tools',
-    'agent-backend': 'tools',
+    'agent-backend': 'advanced',
     'utility-default-model': 'tools',
     hardware: 'advanced',
     'websocket-api': 'advanced',
@@ -162,7 +162,12 @@
     if (tabParam === 'fonts-colors' || tabParam === 'interface-system') return 'appearance';
     if (tabParam === 'setup') {
       const targetTab = hashToTab[targetId];
-      return targetTab === 'git-workspace' || targetTab === 'general' ? targetTab : 'tools';
+      // `advanced` is here because Agent Backend moved off Tools: a shipped
+      // `?tab=setup#agent-backend` link must still land on the tab that now
+      // renders that anchor, not on a Tools pane without it.
+      return targetTab === 'git-workspace' || targetTab === 'general' || targetTab === 'advanced'
+        ? targetTab
+        : 'tools';
     }
   }
 
@@ -545,18 +550,6 @@
             <AgentFeaturesSettings />
           </div>
 
-          <!-- Agent Backend -->
-          <div id="agent-backend" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_agentBackend()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <AgentBackendSettings />
-              </section>
-            </div>
-          </div>
-
           <!-- Quick Actions -->
           <div
             id="utility-default-model"
@@ -798,6 +791,18 @@
 
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
+          <!-- Agent Backend -->
+          <div id="agent-backend" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_agentBackend()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <AgentBackendSettings />
+              </section>
+            </div>
+          </div>
+
           <!-- WebSocket API -->
           <div
             id="websocket-api"
