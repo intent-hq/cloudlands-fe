@@ -29,6 +29,12 @@ export type OnboardingState = {
   projectConfig: ProjectConfig;
   agentStatus: AgentStatus;
   workspaceId: string | null;
+  /**
+   * Explicit "show the full onboarding flow" request (e.g. Command Palette
+   * "Show onboarding"). Consumed by OnboardingPage's initial-step decision so
+   * an explicit restart never skips ahead on setup state.
+   */
+  fullFlowRequested: boolean;
 };
 
 export const STEP_ORDER: OnboardingStep[] = [

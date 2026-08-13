@@ -23,6 +23,8 @@ import {
   selectFocusedPanelId,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -83,7 +85,9 @@ function navigateToSelectedWorkspace(
   navigate: (path: string) => unknown,
 ): string | null {
   const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
-  const nextPath = workspaceId ? `/workspace/${workspaceId}` : '/workspace/new';
+  const nextPath = workspaceId
+    ? `/workspace/${workspaceId}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(store.state));
   if (currentPath !== nextPath) navigate(nextPath);
   return workspaceId;
 }

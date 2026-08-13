@@ -419,7 +419,7 @@ describe('workspace-navigation', () => {
       expect(goto).toHaveBeenCalledWith('/workspace/new');
     });
 
-    it('should navigate to another available workspace when no tab remains', async () => {
+    it('should navigate to home when no tab remains but other workspaces exist', async () => {
       mockWorkspaceItems.value = [
         { id: 'workspace-to-remove', status: 'Active' },
         { id: 'available-workspace', status: 'Active' },
@@ -427,7 +427,15 @@ describe('workspace-navigation', () => {
 
       await navigateAfterWorkspaceRemoval('workspace-to-remove');
 
-      expect(goto).toHaveBeenCalledWith('/workspace/available-workspace');
+      expect(goto).toHaveBeenCalledWith('/');
+    });
+
+    it('should navigate to workspace creation when only the removed workspace exists', async () => {
+      mockWorkspaceItems.value = [{ id: 'workspace-to-remove', status: 'Active' }];
+
+      await navigateAfterWorkspaceRemoval('workspace-to-remove');
+
+      expect(goto).toHaveBeenCalledWith('/workspace/new');
     });
   });
 
@@ -444,6 +452,14 @@ describe('workspace-navigation', () => {
     });
 
     it('navigates to workspace creation when no workspace is available', async () => {
+      await navigateToFirstWorkspace();
+
+      expect(goto).toHaveBeenCalledWith('/workspace/new');
+    });
+
+    it('navigates to workspace creation when only archived workspaces exist', async () => {
+      mockWorkspaceItems.value = [{ id: 'archived-workspace', status: 'Archived' }];
+
       await navigateToFirstWorkspace();
 
       expect(goto).toHaveBeenCalledWith('/workspace/new');

@@ -14,6 +14,7 @@ import {
   nextStep,
   onboardingReducer,
   resetOnboarding,
+  setOnboardingFullFlowRequested,
 } from './onboarding-slice';
 import { STEP_ORDER, type OnboardingStep } from './onboarding-types';
 
@@ -67,5 +68,34 @@ describe('onboarding step ordering', () => {
   it('resetOnboarding returns to requirements', () => {
     const onGitHub = onboardingReducer(initialState, goToStep('github'));
     expect(onboardingReducer(onGitHub, resetOnboarding()).step).toBe('requirements');
+  });
+});
+
+describe('onboarding full-flow request flag', () => {
+  it('starts unset', () => {
+    expect(initialState.fullFlowRequested).toBe(false);
+  });
+
+  it('setOnboardingFullFlowRequested sets and clears the flag', () => {
+    const set = onboardingReducer(initialState, setOnboardingFullFlowRequested(true));
+    expect(set.fullFlowRequested).toBe(true);
+    const cleared = onboardingReducer(set, setOnboardingFullFlowRequested(false));
+    expect(cleared.fullFlowRequested).toBe(false);
+  });
+
+  it('resetOnboarding preserves a pending full-flow request', () => {
+    // Explicit restart paths dispatch the request before navigating;
+    // OnboardingPage's mount reset must not clear it before the initial-step
+    // decision consumes it.
+    const requested = onboardingReducer(initialState, setOnboardingFullFlowRequested(true));
+    const onProject = onboardingReducer(requested, goToStep('project'));
+    const reset = onboardingReducer(onProject, resetOnboarding());
+    expect(reset.step).toBe('requirements');
+    expect(reset.fullFlowRequested).toBe(true);
+  });
+
+  it('resetOnboarding keeps the flag unset when no request is pending', () => {
+    const onProject = onboardingReducer(initialState, goToStep('project'));
+    expect(onboardingReducer(onProject, resetOnboarding()).fullFlowRequested).toBe(false);
   });
 });

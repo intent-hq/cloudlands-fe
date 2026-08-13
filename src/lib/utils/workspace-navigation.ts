@@ -27,6 +27,7 @@ import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
@@ -405,7 +406,8 @@ export async function navigateBackFromSettings(): Promise<void> {
  *
  * Closes the tab for the removed workspace and navigates to:
  * - The next available workspace tab (if any exist)
- * - Another available workspace, or workspace creation when none remain
+ * - The shared empty-window destination otherwise ('/' when other workspaces
+ *   remain, workspace creation when none do)
  *
  * Uses the tab manager's built-in "pick next or previous" logic.
  *
@@ -434,8 +436,10 @@ export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string):
     logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);
     await goto(`/workspace/${nextTabId}`);
   } else {
-    const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
-    const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+    const target = resolveEmptyWindowDestination(
+      selectWorkspaceItems.select(appStore.state),
+      removedWorkspaceId,
+    );
     logger.info('[navigateAfterWorkspaceRemoval] Navigating to fallback:', target);
     await goto(target);
   }
@@ -455,10 +459,12 @@ function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
     );
 }
 
-/** Navigate to an available workspace, or workspace creation when none exist. */
+/** Navigate to an available workspace, or the shared empty-window destination when none exist. */
 export async function navigateToFirstWorkspace(): Promise<void> {
   const workspace = getFirstAvailableWorkspace();
-  const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+  const target = workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
   await goto(target);
 }

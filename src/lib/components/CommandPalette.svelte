@@ -47,7 +47,10 @@
     openAgentTabRequested,
     openTerminalTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import {
+    resetOnboarding,
+    setOnboardingFullFlowRequested,
+  } from '$store/renderer/slices/onboarding/onboarding-slice';
   import {
     setShowCreateModal,
     setStatsOverlayOpen,
@@ -773,6 +776,9 @@
         }
         return true;
       case 'show-onboarding':
+        // Explicit restart: request the full flow so OnboardingPage's
+        // initial-step decision never skips ahead on setup state.
+        appStore.dispatch(setOnboardingFullFlowRequested(true));
         appStore.dispatch(resetOnboarding());
         goto('/workspace/new');
         return true;

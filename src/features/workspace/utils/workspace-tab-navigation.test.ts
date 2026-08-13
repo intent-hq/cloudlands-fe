@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
+import type { Workspace } from '$shared/types';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 import { tabStateReducer, type TabState } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceTabOrder } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
@@ -47,10 +50,15 @@ function makeStore(
   currentTabId?: string | null,
   panelLayout?: PanelLayoutSliceState,
   viewMode?: TabState['viewMode'],
+  workspaces: Array<{ id: string; status?: string }> = [],
 ) {
   let state = {
     tabState: makeTabState(currentTabId, viewMode),
     panelLayout: panelLayout ?? panelLayoutInitialState,
+    workspace: {
+      ...workspaceInitialState,
+      workspaces: createCollection('id', workspaces as unknown as Workspace[]),
+    },
   } as StoreState;
   return {
     get state() {
@@ -129,6 +137,30 @@ describe('global workspace tab navigation', () => {
     navigate.mockClear();
     expect(closeActiveWorkspaceTab(store, '/', navigate)).toBeNull();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("routes to '/' when the last tab closes and other workspaces exist", () => {
+    const store = makeStore('ws-1', undefined, undefined, [{ id: 'ws-other', status: 'Active' }]);
+    const navigate = vi.fn();
+
+    closeActiveWorkspaceTab(store, '/workspace/ws-1', navigate);
+    closeActiveWorkspaceTab(store, '/workspace/ws-2', navigate);
+    navigate.mockClear();
+
+    expect(closeActiveWorkspaceTab(store, '/workspace/ws-3', navigate)).toBe('ws-3');
+    expect(navigate).toHaveBeenCalledWith('/');
+  });
+
+  it('routes to workspace creation when the last tab closes and no workspaces remain', () => {
+    const store = makeStore('ws-1');
+    const navigate = vi.fn();
+
+    closeActiveWorkspaceTab(store, '/workspace/ws-1', navigate);
+    closeActiveWorkspaceTab(store, '/workspace/ws-2', navigate);
+    navigate.mockClear();
+
+    expect(closeActiveWorkspaceTab(store, '/workspace/ws-3', navigate)).toBe('ws-3');
+    expect(navigate).toHaveBeenCalledWith('/workspace/new');
   });
 
   it('reopens the last closed workspace and selects tabs by position', () => {
