@@ -54,7 +54,6 @@
     setDraggedPanelId,
     takePanelDragSnapshot,
   } from './panel-drag';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 
   import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
@@ -69,7 +68,10 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectIsWorkspaceHostLocal,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     selectAgentIsResponding,
@@ -184,9 +186,6 @@
 
   const isDragging = selectIsDragging();
   const allPermissionRequests = selectPermissionRequests();
-  // Reveal-in-file-manager targets the daemon host's desktop shell — only
-  // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
-  const isDaemonLocal$ = selectIsDaemonLocal();
 
   // Access layout manager from context for expand-on-double-click
   const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
@@ -218,6 +217,12 @@
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
+
+  // Reveal-in-file-manager runs against workspace file paths on this
+  // machine's desktop shell — only offered when the daemon runs on this
+  // machine (PROTOCOL §5.14 locality) AND the workspace checkout lives on the
+  // daemon host, i.e. not a remote (SSH) workspace (monorepo#2171).
+  const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
 
   // Reactive list of agent sessions for this workspace. Tab titles, avatar
   // state, specialist, and delegation info all derive from this store so the
@@ -1771,7 +1776,7 @@
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
           </button>
-          {#if $isDaemonLocal$}
+          {#if $isWorkspaceHostLocal$}
             <button
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
@@ -1842,7 +1847,7 @@
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
           </button>
-          {#if $isDaemonLocal$}
+          {#if $isWorkspaceHostLocal$}
             <button
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {
@@ -1887,7 +1892,7 @@
             <Fa icon={faCopy} size="xs" class="text-ghost" />
             {m.layout_panelTabBar_copyFilename_label()}
           </button>
-          {#if $isDaemonLocal$}
+          {#if $isWorkspaceHostLocal$}
             <button
               class="w-full px-3 py-1.5 text-sm text-left hover:bg-sidebar cursor-pointer flex items-center gap-2"
               onclick={() => {

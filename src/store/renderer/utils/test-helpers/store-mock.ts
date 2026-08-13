@@ -12,6 +12,24 @@ const noop = () => {};
 const resolveState = (state: AppStoreMockOptions['state']) =>
   typeof state === 'function' ? (state as () => unknown)() : (state ?? {});
 
+// Mirror the real Themis selector runtime, which unwraps svelte-store args
+// (readReadableArg) before calling the selector function with plain values.
+const isReadable = (arg: unknown): arg is { subscribe: (l: (v: unknown) => void) => unknown } =>
+  !!arg &&
+  typeof arg === 'object' &&
+  'subscribe' in arg &&
+  typeof (arg as { subscribe: unknown }).subscribe === 'function';
+
+const readReadableArg = (arg: unknown): unknown => {
+  if (!isReadable(arg)) return arg;
+  let value: unknown;
+  const unsubscribe = arg.subscribe((v) => {
+    value = v;
+  });
+  if (typeof unsubscribe === 'function') unsubscribe();
+  return value;
+};
+
 export const createStoreMockModule = <TStore extends object>(appStore: TStore) => ({
   appStore,
   store: appStore,
@@ -46,7 +64,8 @@ export const createAppStoreMock = ({
     getReadableState: () => readable(() => appStore.state),
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => {
       const selector = Object.assign(
-        (...args: any[]) => readable(() => selectorFunc(appStore.state, ...args)),
+        (...args: any[]) =>
+          readable(() => selectorFunc(appStore.state, ...args.map(readReadableArg))),
         {
           select: selectorFunc,
           effect: function* (..._args: any[]): Generator<any, any, any> {
@@ -55,7 +74,10 @@ export const createAppStoreMock = ({
             );
           },
           withStore: (storeSource: StoreReadableStateSource) =>
-            (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? appStore.state, ...args)),
+            (...args: any[]) =>
+              readable(() =>
+                selectorFunc(storeSource.state ?? appStore.state, ...args.map(readReadableArg)),
+              ),
         },
       );
 

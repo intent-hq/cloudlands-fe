@@ -42,6 +42,8 @@
     repoPath?: string;
     /** Where the worktree/clone was created */
     worktreePath?: string;
+    /** Workspace the worktree belongs to; gates editor opens on workspace locality (monorepo#2171) */
+    workspaceId?: string;
     /** Branch name for the workspace */
     branch?: string;
     /** Base ref the branch was created from (e.g. "origin/main") */
@@ -72,6 +74,7 @@
     repoName,
     repoPath,
     worktreePath,
+    workspaceId,
     branch,
     baseRef = 'origin/main',
     projectType,
@@ -234,6 +237,7 @@
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
+            {workspaceId}
             isDirectory={true}
             variant="sidebar"
             compact
@@ -250,6 +254,7 @@
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
+            {workspaceId}
             isDirectory={true}
             variant="sidebar"
             compact

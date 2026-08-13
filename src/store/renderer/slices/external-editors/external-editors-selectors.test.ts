@@ -48,6 +48,11 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const mockWorkspaces = [
+  { id: "ws-local" },
+  { id: "ws-remote", environmentConfig: { type: "remote" } },
+];
+
 function mockState(
   editors: InstalledEditor[] = mockEditors,
   transport: BackendTransportInfo | null = { mode: "sidecar-uds" },
@@ -62,6 +67,9 @@ function mockState(
       lastFetched: 123,
     },
     daemonHealth: { transport },
+    workspace: {
+      workspaces: createCollection("id", mockWorkspaces),
+    },
   } as unknown as StoreState;
 }
 
@@ -99,6 +107,30 @@ describe("external-editors selectors", () => {
     const state = mockState(mockEditors, { mode: "external-ws" });
 
     expect(selectInstalledEditorsFiltered.select(state)).toEqual([]);
+  });
+
+  it("keeps editors offered for a local workspace on a local daemon", () => {
+    const state = mockState();
+
+    expect(selectInstalledEditorsFiltered.select(state, "ws-local")).toEqual([mockEditors[0]]);
+  });
+
+  it("hides editors for a remote (SSH) workspace even on a local daemon (monorepo#2171)", () => {
+    const state = mockState();
+
+    expect(selectInstalledEditorsFiltered.select(state, "ws-remote")).toEqual([]);
+  });
+
+  it("hides editors for any workspace when the daemon is remote", () => {
+    const state = mockState(mockEditors, { mode: "external-ws" });
+
+    expect(selectInstalledEditorsFiltered.select(state, "ws-local")).toEqual([]);
+  });
+
+  it("treats an unknown workspace entity as local (optimistic default)", () => {
+    const state = mockState();
+
+    expect(selectInstalledEditorsFiltered.select(state, "ws-unknown")).toEqual([mockEditors[0]]);
   });
 
   it("returns hidden editor ids", () => {

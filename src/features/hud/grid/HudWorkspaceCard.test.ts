@@ -5,13 +5,34 @@
  * the row shows just dot + name (no placeholder). Running rows keep the
  * `HH:MM:SS` timer.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 
 import type {
   HudCardAgent,
   HudWorkspaceCard as HudWorkspaceCardModel,
 } from '$store/renderer/slices/hud/hud-selectors';
+
+// Controllable stand-in for `microConnectedReadable()` (a minimal Svelte
+// readable; hoisted because `vi.mock` factories run before imports).
+const micro = vi.hoisted(() => {
+  let value = false;
+  const subs = new Set<(v: boolean) => void>();
+  return {
+    set(v: boolean) {
+      value = v;
+      subs.forEach((run) => run(v));
+    },
+    subscribe(run: (v: boolean) => void) {
+      subs.add(run);
+      run(value);
+      return () => subs.delete(run);
+    },
+  };
+});
+vi.mock('$features/hardware-console/device/connection-status', () => ({
+  microConnectedReadable: () => micro,
+}));
 
 import HudWorkspaceCard from './HudWorkspaceCard.svelte';
 
@@ -50,6 +71,7 @@ function makeCard(
     statusMessage: null,
     attentionSnippet: null,
     prNumber: null,
+    keySlot: null,
     tasks: { total: 4, completed: 1, inProgress: 1 },
     tokens: 1200,
     agents,
@@ -58,6 +80,7 @@ function makeCard(
 }
 
 afterEach(() => cleanup());
+beforeEach(() => micro.set(false));
 
 describe('HudWorkspaceCard agent-row elapsed timer', () => {
   it('renders no timer text on an idle (grey) agent row', () => {
@@ -112,6 +135,43 @@ describe('HudWorkspaceCard agent-row elapsed timer', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('.hud-ws-card-agent-elapsed')).toBeNull();
     expect(rows[1].querySelector('.hud-ws-card-agent-elapsed')?.textContent).toBe('00:01:25');
+  });
+});
+
+describe('HudWorkspaceCard hardware-key square', () => {
+  const squareOf = (container: HTMLElement) =>
+    container.querySelector('.hud-ws-card-title-row span[title]');
+
+  it('renders the large square-cornered slot square while a micro is connected and the workspace holds a slot', () => {
+    micro.set(true);
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { keySlot: 2 }), nowMs: NOW_MS },
+    });
+
+    const square = squareOf(container);
+    expect(square).toBeTruthy();
+    expect(square?.textContent?.trim()).toBe('3');
+    // Clearly larger than the 16px sidebar badge, with square corners.
+    expect(square?.classList.contains('h-6')).toBe(true);
+    expect(square?.classList.contains('w-6')).toBe(true);
+    expect(square?.classList.contains('rounded-none')).toBe(true);
+  });
+
+  it('renders nothing when the workspace holds no slot', () => {
+    micro.set(true);
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { keySlot: null }), nowMs: NOW_MS },
+    });
+
+    expect(squareOf(container)).toBeNull();
+  });
+
+  it('renders nothing while no micro is connected, even with a slot', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { keySlot: 2 }), nowMs: NOW_MS },
+    });
+
+    expect(squareOf(container)).toBeNull();
   });
 });
 

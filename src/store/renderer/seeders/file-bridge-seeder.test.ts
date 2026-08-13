@@ -246,4 +246,36 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('file:download → real preload bridge (native save dialog)', () => {
+    const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI;
+
+    afterEach(() => {
+      (window as { electronAPI?: unknown }).electronAPI = originalElectronAPI;
+    });
+
+    it('forwards verbatim to the real preload bridge on electron and returns its response', async () => {
+      const invokeSpy = vi.fn(async () => ({ success: true, data: { filePath: '/dl/x.zip' } }));
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD, { path: '/ws/dir' });
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.DOWNLOAD, {
+        path: '/ws/dir',
+      });
+      expect(result).toEqual({ success: true, data: { filePath: '/dl/x.zip' } });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects loudly on web (no native bridge) instead of folding to a fake success', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD, { path: '/ws/a.txt' })).rejects.toThrow(
+        /requires the native Electron bridge/,
+      );
+    });
+  });
 });

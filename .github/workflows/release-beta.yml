@@ -1,4 +1,11 @@
-name: Release Beta
+# Tag builds publish to the rolling *alpha* channel: every v*.*.* tag builds
+# the desktop app and publishes an immutable versioned release plus the
+# rolling 'alpha' release on intent-hq/cloudlands-releases. The rolling
+# 'beta' release is NOT touched by tag builds — beta is a promotion of an
+# existing versioned release via promote-beta.yml (and stable via
+# release-stable.yml). The file name is historical: tag builds used to
+# publish straight to beta.
+name: Release Alpha
 
 on:
   push:
@@ -848,31 +855,31 @@ jobs:
             dist-electron/latest-linux-arm64.yml \
             release-manifest.json
 
-      - name: Publish to GitHub Releases (rolling beta tag)
+      - name: Publish to GitHub Releases (rolling alpha tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          # Ensure the rolling 'beta' release tag exists
-          if ! gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
-            echo "Creating rolling 'beta' release tag"
-            gh release create beta \
+          # Ensure the rolling 'alpha' release tag exists
+          if ! gh release view alpha --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "Creating rolling 'alpha' release tag"
+            gh release create alpha \
               --repo intent-hq/cloudlands-releases \
-              --title "Intent Beta Channel (Rolling)" \
-              --notes "Rolling beta channel - always points to the latest beta release. Auto-updater uses this." \
+              --title "Intent Alpha Channel (Rolling)" \
+              --notes "Rolling alpha channel - always points to the latest tagged release. Auto-updater uses this." \
               --draft=false \
               --prerelease
           fi
 
           # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
-          echo "Cleaning up old assets from rolling beta release"
-          gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+          echo "Cleaning up old assets from rolling alpha release"
+          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             echo "Deleting old asset: $asset"
-            gh release delete-asset beta "$asset" --repo intent-hq/cloudlands-releases --yes || true
+            gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes || true
           done
 
           # Upload new artifacts
-          gh release upload beta --repo intent-hq/cloudlands-releases \
+          gh release upload alpha --repo intent-hq/cloudlands-releases \
             dist-electron/*.dmg \
             dist-electron/*.zip \
             dist-electron/*.exe \
@@ -884,23 +891,23 @@ jobs:
             dist-electron/latest-linux.yml \
             dist-electron/latest-linux-arm64.yml
 
-          # Update beta release body to match versioned release notes
-          gh release edit beta --repo intent-hq/cloudlands-releases \
+          # Update alpha release body to match versioned release notes
+          gh release edit alpha --repo intent-hq/cloudlands-releases \
             --notes-file release-notes.md
 
-      # Re-stamps published_at on the rolling beta release (GitHub renders its
+      # Re-stamps published_at on the rolling alpha release (GitHub renders its
       # "released N ago" from that field, which otherwise sticks at first
       # publication) by toggling draft on→off via the REST API. Reading state
       # and entering draft are fail-soft — the refresh is cosmetic and must
       # never block a release — but once the release is drafted its download
       # URLs (auto-updater feeds) 404, so the un-draft retries with backoff
       # and fails the job loudly if the release is left drafted.
-      - name: Refresh published date on rolling beta release
+      - name: Refresh published date on rolling alpha release
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           REPO=intent-hq/cloudlands-releases
-          TAG=beta
+          TAG=alpha
 
           # Read current state so the un-draft re-applies it (re-publishing
           # defaults make_latest to true; prereleases can never be latest)
@@ -985,7 +992,7 @@ jobs:
           # (authoritative); fall back to the intentd.version pin
           BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
           BUNDLED_INTENTD="${BUNDLED_INTENTD:-$INTENTD_PIN}"
-          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" alpha \
             "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}"
 
       - name: Post summary
@@ -999,22 +1006,22 @@ jobs:
           EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
           APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
           APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
-          BETA_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta"
+          ALPHA_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/alpha"
           {
-            echo "## Beta Release"
+            echo "## Alpha Release"
             echo ""
             echo "**Version:** v$VERSION"
             echo "**Tag:** \`v$VERSION\`"
-            echo "**Channel:** beta"
+            echo "**Channel:** alpha"
             echo ""
             echo "### Download URLs"
-            echo "- [Apple Silicon Mac (DMG)]($BETA_URL/$(encode "$DMG_FILE"))"
-            echo "- [Windows x64 installer (EXE, unsigned)]($BETA_URL/$(encode "$EXE_FILE"))"
-            echo "- [Linux x64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_X64"))"
-            echo "- [Linux arm64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_ARM64"))"
-            echo "- Auto-updater feeds: [latest-mac.yml]($BETA_URL/latest-mac.yml), [latest.yml]($BETA_URL/latest.yml), [latest-linux.yml]($BETA_URL/latest-linux.yml), [latest-linux-arm64.yml]($BETA_URL/latest-linux-arm64.yml)"
+            echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_FILE"))"
+            echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
+            echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
+            echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
+            echo "- Auto-updater feeds: [latest-mac.yml]($ALPHA_URL/latest-mac.yml), [latest.yml]($ALPHA_URL/latest.yml), [latest-linux.yml]($ALPHA_URL/latest-linux.yml), [latest-linux-arm64.yml]($ALPHA_URL/latest-linux-arm64.yml)"
             echo ""
             echo "### Releases"
             echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"
-            echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
+            echo "- [Rolling alpha channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/alpha)"
           } >> "$GITHUB_STEP_SUMMARY"

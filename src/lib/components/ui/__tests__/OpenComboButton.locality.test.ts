@@ -1,9 +1,11 @@
 /**
- * OpenComboButton daemon-locality gating (monorepo#883).
+ * OpenComboButton locality gating (monorepo#883, monorepo#2171).
  *
- * "Other…" shows a LOCAL app picker against a daemon-host path, so it must
- * disappear when the daemon is remote — and the `actions[0]` primary-action
- * fallback must land on "Copy path" instead of "Other".
+ * "Other…" shows a LOCAL app picker against a workspace file path, so it must
+ * disappear when the daemon is remote (monorepo#883) — or when the workspace
+ * checkout itself is remote even though the daemon is local (monorepo#2171) —
+ * and the `actions[0]` primary-action fallback must land on "Copy path"
+ * instead of "Other".
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
@@ -72,6 +74,11 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const mockWorkspaces = [
+  { id: 'ws-local' },
+  { id: 'ws-remote', environmentConfig: { type: 'remote' } },
+];
+
 function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
@@ -87,6 +94,9 @@ function makeState(
       lastFetched: 0,
     },
     daemonHealth: { transport, hostLocality },
+    workspace: {
+      workspaces: createCollection('id', mockWorkspaces),
+    },
   } as unknown as Partial<StoreState>;
 }
 
@@ -100,8 +110,8 @@ async function renderCombo(props: Record<string, unknown> = {}) {
   return container;
 }
 
-async function renderAndOpenDropdown() {
-  const container = await renderCombo();
+async function renderAndOpenDropdown(props: Record<string, unknown> = {}) {
+  const container = await renderCombo(props);
 
   // Full mode renders [primary, dropdown-toggle] buttons; open the dropdown.
   const buttons = container.querySelectorAll('button');
@@ -172,6 +182,53 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
     // daemon that reports itself local restores the full action set.
     mockStoreState = makeState({ mode: 'external-ws' }, 'local');
     const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+});
+
+describe('OpenComboButton workspace-locality gating (monorepo#2171)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('offers editors and "Other" for a local workspace on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderAndOpenDropdown({ workspaceId: 'ws-local' });
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('omits "Other" (and editors) for a remote (SSH) workspace even on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
+
+    expect(actionLabels(container)).toEqual(['Copy path', 'Copy branch name']);
+  });
+
+  it('falls back the primary action to "Copy path" for a remote workspace', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
+
+    const primary = container.querySelector('button[title]');
+    expect(primary?.getAttribute('title')).toBe('Copy path');
+  });
+
+  it('treats an unknown workspace entity as local (optimistic default)', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderAndOpenDropdown({ workspaceId: 'ws-unknown' });
 
     expect(actionLabels(container)).toEqual([
       'Visual Studio Code',

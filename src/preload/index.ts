@@ -223,6 +223,7 @@ const ALLOWED_CHANNELS = [
   "file:getGitStatus",
   "file:getTreeWithSizes",
   "file:getDirectoryStatus",
+  "file:download",
   "codebase:search",
   "terminal:runCommand",
   "terminal:killProcess",

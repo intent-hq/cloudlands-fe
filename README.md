@@ -121,6 +121,24 @@ The platform/arch → release-asset mapping lives in
 `scripts/fetch-sidecar-lib.test.ts`); update it there if the intentd release
 target list changes.
 
+## Release channels
+
+Desktop builds are distributed through three rolling releases (`alpha`, `beta`,
+`stable`) on
+[intent-hq/cloudlands-releases](https://github.com/intent-hq/cloudlands-releases),
+each pointing the auto-updater at the latest build for that channel:
+
+- **alpha** — every `vX.Y.Z` tag (cut by merging the release-please PR) builds
+  the app and publishes both an immutable versioned release and the rolling
+  `alpha` release (`.github/workflows/release-beta.yml`; the file name is
+  historical).
+- **beta** — a manual promotion of an existing versioned release (no new
+  build): dispatch `.github/workflows/promote-beta.yml` with the `version`
+  input to copy that release's assets and updater feeds into the rolling
+  `beta` release.
+- **stable** — same promotion model via `.github/workflows/release-stable.yml`;
+  it additionally marks the promoted version as Latest.
+
 ## Project layout
 
 ```text
