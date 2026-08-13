@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.34.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.33.0...v2.34.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* embed reasoning effort slider in model picker ([#1105](https://github.com/intent-hq/cloudlands-fe/issues/1105)) ([e72efe8](https://github.com/intent-hq/cloudlands-fe/commit/e72efe827ef6ca19610fee48b6c5d81c52047b48))
+
 ## [2.33.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.32.0...v2.33.0) (2026-08-13)
 
 
