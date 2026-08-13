@@ -121,9 +121,10 @@ export function setupAutoUpdateIPC(): void {
         // startup/periodic/focus check is already in flight against the
         // previous feed, the service queues one fresh check for when it
         // settles, so the new channel is always actually queried;
-        // downloading/downloaded states skip the check, and an uninitialized
-        // service (dev mode) skips both check and toast. Fire-and-forget: a
-        // slow check must not delay or fail the SET_CHANNEL ack, which the
+        // downloading/downloaded states cancel/neutralize the old-feed
+        // artifact and recheck the new feed (intent-hq/monorepo#2270), and
+        // an uninitialized service (dev mode) skips both check and toast.
+        // Fire-and-forget: a slow check must not delay or fail the SET_CHANNEL ack, which the
         // renderer awaits to confirm the switch (check errors are reported
         // via the broadcast error status, not a rejection — the catch is
         // defense-in-depth only).

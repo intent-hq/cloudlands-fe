@@ -6,7 +6,11 @@
  */
 
 import { app, powerMonitor } from 'electron';
-import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-updater';
+import type {
+  CancellationToken,
+  UpdateInfo as ElectronUpdateInfo,
+  ProgressInfo,
+} from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
@@ -69,6 +73,16 @@ class AutoUpdateService {
   // A user channel switch arrived while a check was in flight against the
   // previous feed; run one fresh manual check when that check settles.
   private channelSwitchRecheckQueued = false;
+  // Token for the in-flight download, from either entry point: the manual
+  // downloadUpdate() path constructs one, the autoDownload path captures
+  // UpdateCheckResult.cancellationToken. Lets a channel switch cancel a
+  // download that targets the old channel's feed (intent-hq/monorepo#2270).
+  // Cleared on every terminal updater event.
+  private downloadCancellationToken: CancellationToken | null = null;
+  // Set just before cancelling the in-flight download on a channel switch so
+  // the resulting CancellationError / 'error' event is suppressed instead of
+  // surfacing an error status for a cancellation we initiated ourselves.
+  private expectingDownloadCancel = false;
   private onWindowFocus: (() => void) | null = null;
   private onResume: (() => void) | null = null;
 
@@ -203,6 +217,8 @@ class AutoUpdateService {
     autoUpdater.on('update-not-available', (info: ElectronUpdateInfo) => {
       this.clearCheckTimeout();
       this.checkSessionActive = false;
+      this.downloadCancellationToken = null;
+      this.expectingDownloadCancel = false;
       logger.info('No update available', {
         currentVersion: info.version,
         isManualCheck: this.isManualCheck,
@@ -230,12 +246,33 @@ class AutoUpdateService {
 
     autoUpdater.on('update-downloaded', (info: ElectronUpdateInfo) => {
       logger.info('Update downloaded', { version: info.version });
+      this.downloadCancellationToken = null;
+      this.expectingDownloadCancel = false;
+      // Re-enable quit-install for this fresh artifact: a channel switch
+      // while downloaded/downloading disables autoInstallOnAppQuit so the
+      // stale artifact cannot install; this download validated against the
+      // current feed (possibly re-resolved from cache for a same-version
+      // channel), so installing it on quit is correct again.
+      autoUpdater.autoInstallOnAppQuit = true;
       this.updateStatus('downloaded');
     });
 
     autoUpdater.on('error', (error: Error) => {
+      // A channel switch cancelled the in-flight download: the cancellation
+      // is an expected outcome, not an error to surface — swallowing it here
+      // (without touching the check session) lets the switch flow straight
+      // into the fresh check against the new feed.
+      if (this.expectingDownloadCancel) {
+        this.expectingDownloadCancel = false;
+        this.downloadCancellationToken = null;
+        logger.info('Ignoring expected download-cancellation error after channel switch', {
+          error: error.message,
+        });
+        return;
+      }
       this.clearCheckTimeout();
       this.checkSessionActive = false;
+      this.downloadCancellationToken = null;
       logger.error('Auto-update error', error);
       this.state.error = error.message;
       this.updateStatus('error');
@@ -314,6 +351,13 @@ class AutoUpdateService {
       this.checkSessionActive = true;
       this.startCheckTimeout();
       const result = await autoUpdater.checkForUpdates();
+      // autoDownload path: when this check found an update and started
+      // downloading it, the result carries the token that can cancel that
+      // download. Keep it so a channel switch can cancel the in-flight
+      // download (the manual downloadUpdate() path constructs its own token).
+      if (result?.cancellationToken) {
+        this.downloadCancellationToken = result.cancellationToken;
+      }
       // checkForUpdates() resolving null/undefined means the updater is not
       // active (e.g. dev config, unsupported platform) and no further event
       // will ever arrive for this check — without an explicit terminal state
@@ -384,8 +428,14 @@ class AutoUpdateService {
    * fresh manual check to run once the in-flight one settles — the new
    * channel is always actually queried. The in-flight old-feed check is left
    * non-manual so its result produces no user-facing toast; the queued
-   * recheck carries the manual feedback for the new feed. Downloading /
-   * downloaded states keep the manual-check treatment (notify, no new check).
+   * recheck carries the manual feedback for the new feed. A downloaded or
+   * downloading state targets the OLD channel's feed, so it is not kept
+   * (intent-hq/monorepo#2270): the pending quit-install is neutralized (and
+   * an in-flight download cancelled), state resets to idle, and a fresh
+   * manual check runs against the new feed — 'update-downloaded' re-enables
+   * autoInstallOnAppQuit when a download for the new channel completes
+   * (same-version case included: electron-updater re-resolves from its
+   * downloaded-file cache without a full re-download).
    * Broadcasts 'auto-update:show-toast' first so the "Checking…" toast is
    * visible immediately and error outcomes have a surface; skips everything
    * (check + toast) when the service was never initialized (dev mode).
@@ -417,6 +467,32 @@ class AutoUpdateService {
       this.sendToRenderer('auto-update:status-changed', this.state);
       return this.state;
     }
+
+    if (this.state.status === 'downloaded' || this.state.status === 'downloading') {
+      // The artifact (pending or in flight) came from the OLD channel's
+      // feed. Neutralize the quit-install synchronously — before anything
+      // async below — so a quit mid-revalidation cannot install the stale
+      // artifact; 'update-downloaded' re-enables it once a download for the
+      // new channel completes.
+      autoUpdater.autoInstallOnAppQuit = false;
+      if (this.state.status === 'downloading') {
+        if (this.downloadCancellationToken) {
+          logger.info('Channel switched during download; cancelling in-flight download');
+          this.expectingDownloadCancel = true;
+          this.downloadCancellationToken.cancel();
+          this.downloadCancellationToken = null;
+        } else {
+          logger.warn('Channel switched during download but no cancellation token is held');
+        }
+      } else {
+        logger.info('Channel switched with update downloaded; re-validating against new feed');
+      }
+      // Reset so the fresh check can actually run — checkForUpdatesManual()
+      // and checkForUpdates() both skip downloading/downloaded states.
+      this.state.updateInfo = null;
+      this.updateStatus('idle'); // also clears progress and error
+    }
+
     return this.checkForUpdatesManual();
   }
 
@@ -427,7 +503,19 @@ class AutoUpdateService {
 
     logger.info('Starting update download...');
     this.updateStatus('downloading');
-    await autoUpdater.downloadUpdate();
+    const token = new electronUpdater.CancellationToken();
+    this.downloadCancellationToken = token;
+    try {
+      await autoUpdater.downloadUpdate(token);
+    } catch (error) {
+      // A channel-switch cancel rejects this promise (CancellationError);
+      // that outcome is expected — don't surface it to the DOWNLOAD caller.
+      if (token.cancelled) {
+        logger.info('Update download cancelled');
+        return;
+      }
+      throw error;
+    }
   }
 
   async installUpdate(): Promise<void> {

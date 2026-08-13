@@ -3,8 +3,11 @@
  *
  * A user-initiated channel switch (SET_CHANNEL IPC) must fire exactly one
  * immediate update check with manual-check feedback, while initialize()'s
- * internal setChannel call must not trigger an early duplicate check, and a
- * switch during an active download must not start a check at all.
+ * internal setChannel call must not trigger an early duplicate check. A
+ * switch while an update is downloaded/downloading must not keep the old
+ * feed's artifact (intent-hq/monorepo#2270): the pending quit-install is
+ * neutralized, an in-flight download is cancelled (error suppressed), and a
+ * fresh check runs against the new feed.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,23 +42,37 @@ vi.mock('electron', () => ({
 
 const updaterHandlers: Record<string, (arg?: unknown) => void> = {};
 
-vi.mock('electron-updater', () => ({
-  __esModule: true,
-  default: {
-    autoUpdater: {
-      autoDownload: false,
-      autoInstallOnAppQuit: false,
-      allowDowngrade: false,
-      setFeedURL: vi.fn(),
-      checkForUpdates: vi.fn(),
-      downloadUpdate: vi.fn(),
-      quitAndInstall: vi.fn(),
-      on: vi.fn((event: string, handler: (arg?: unknown) => void) => {
-        updaterHandlers[event] = handler;
-      }),
+interface MockToken {
+  cancelled: boolean;
+  cancel: Mock;
+}
+
+vi.mock('electron-updater', () => {
+  class MockCancellationToken {
+    cancelled = false;
+    cancel = vi.fn(() => {
+      this.cancelled = true;
+    });
+  }
+  return {
+    __esModule: true,
+    default: {
+      autoUpdater: {
+        autoDownload: false,
+        autoInstallOnAppQuit: false,
+        allowDowngrade: false,
+        setFeedURL: vi.fn(),
+        checkForUpdates: vi.fn(),
+        downloadUpdate: vi.fn(),
+        quitAndInstall: vi.fn(),
+        on: vi.fn((event: string, handler: (arg?: unknown) => void) => {
+          updaterHandlers[event] = handler;
+        }),
+      },
+      CancellationToken: MockCancellationToken,
     },
-  },
-}));
+  };
+});
 
 let testUserDataPath: string;
 
@@ -88,7 +105,17 @@ async function setup({ initialize = true }: { initialize?: boolean } = {}) {
 
   const checkMock = electronUpdater.autoUpdater.checkForUpdates as unknown as Mock;
   const feedMock = electronUpdater.autoUpdater.setFeedURL as unknown as Mock;
-  return { setChannelHandler, checkMock, feedMock, mockWindow };
+  const downloadMock = electronUpdater.autoUpdater.downloadUpdate as unknown as Mock;
+  const updater = electronUpdater.autoUpdater;
+  return {
+    setChannelHandler,
+    checkMock,
+    feedMock,
+    downloadMock,
+    updater,
+    service: autoUpdateService,
+    mockWindow,
+  };
 }
 
 beforeEach(async () => {
@@ -141,8 +168,8 @@ describe('channel-switch immediate update check', () => {
     expect(checkMock).not.toHaveBeenCalled();
   });
 
-  it('SET_CHANNEL during an active download does not start a check', async () => {
-    const { setChannelHandler, checkMock } = await setup();
+  it('SET_CHANNEL during a download with no held token still resets and rechecks the new feed', async () => {
+    const { setChannelHandler, checkMock, service, updater } = await setup();
 
     updaterHandlers['download-progress']({
       percent: 42,
@@ -150,12 +177,140 @@ describe('channel-switch immediate update check', () => {
       transferred: 42,
       total: 100,
     });
+    expect(service.getState().status).toBe('downloading');
 
+    checkMock.mockReturnValue(new Promise(() => {}));
     const result = await setChannelHandler({}, { channel: 'alpha' });
     expect(result.success).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(checkMock).not.toHaveBeenCalled();
+    // No token to cancel, but the stale-feed download state is still reset
+    // and the new feed is checked; quit-install stays neutralized until a
+    // download for the new channel completes.
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('SET_CHANNEL with an update downloaded neutralizes quit-install, resets, and rechecks the new feed', async () => {
+    const { setChannelHandler, checkMock, feedMock, service, updater } = await setup();
+    expect(updater.autoInstallOnAppQuit).toBe(true); // initialize() enables it
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('downloaded');
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    const result = await setChannelHandler({}, { channel: 'beta' });
+    expect(result.success).toBe(true);
+
+    // The stale artifact cannot install on quit while the revalidation runs...
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    // ...state was reset so the fresh check actually ran against the new feed.
+    expect(service.getState().updateInfo).toBeNull();
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+    expect(feedMock).toHaveBeenLastCalledWith({
+      provider: 'generic',
+      url: expect.stringMatching(/\/beta$/),
+    });
+
+    // The new feed resolves to the same version (electron-updater re-resolves
+    // from its downloaded-file cache): quit-install is re-enabled.
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(service.getState().status).toBe('downloaded');
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+  });
+
+  it('SET_CHANNEL during a manual download cancels the token, suppresses the cancellation error, and rechecks', async () => {
+    const { setChannelHandler, checkMock, downloadMock, service, updater, mockWindow } =
+      await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    let rejectDownload!: (e: Error) => void;
+    downloadMock.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDownload = reject;
+        }),
+    );
+    const downloadPromise = service.downloadUpdate();
+    expect(service.getState().status).toBe('downloading');
+    const token = downloadMock.mock.calls[0][0] as MockToken;
+    expect(token).toBeDefined();
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    const result = await setChannelHandler({}, { channel: 'beta' });
+    expect(result.success).toBe(true);
+
+    // In-flight download cancelled and quit-install neutralized; the fresh
+    // check runs against the new feed.
+    expect(token.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+
+    // The cancellation rejects the download promise and fires 'error' — both
+    // are suppressed: the DOWNLOAD caller resolves, no error status/toast.
+    const cancellation = new Error('cancelled');
+    rejectDownload(cancellation);
+    await expect(downloadPromise).resolves.toBeUndefined();
+    updaterHandlers['error'](cancellation);
+    expect(service.getState().status).not.toBe('error');
+    expect(service.getState().error).toBeNull();
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith(
+      'auto-update:status-changed',
+      expect.objectContaining({ status: 'error' }),
+    );
+  });
+
+  it('SET_CHANNEL during an autoDownload cancels the token captured from the check result', async () => {
+    const { setChannelHandler, checkMock, service } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    // autoDownload path: the check result carries the token for the download
+    // electron-updater started on its own.
+    const token = new TokenCtor();
+    checkMock.mockResolvedValue({
+      updateInfo: { version: '2.1.0' },
+      cancellationToken: token,
+    });
+    await service.checkForUpdatesManual();
+    updaterHandlers['download-progress']({
+      percent: 10,
+      bytesPerSecond: 1000,
+      transferred: 10,
+      total: 100,
+    });
+    expect(service.getState().status).toBe('downloading');
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'alpha' });
+
+    expect(token.cancel).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('a terminal event clears the stored token so a stale token is never cancelled later', async () => {
+    const { setChannelHandler, checkMock, downloadMock, service } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    downloadMock.mockReturnValue(new Promise(() => {}));
+    void service.downloadUpdate();
+    const token = downloadMock.mock.calls[0][0] as MockToken;
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+
+    // A later download (no fresh token held) must not cancel the consumed one.
+    updaterHandlers['download-progress']({
+      percent: 1,
+      bytesPerSecond: 1,
+      transferred: 1,
+      total: 100,
+    });
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+
+    expect(token.cancel).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
   });
 
   it('SET_CHANNEL during an in-flight check queues one fresh check against the new feed', async () => {
