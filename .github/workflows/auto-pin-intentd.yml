@@ -1,0 +1,236 @@
+# Scheduled intentd sidecar pin bump.
+#
+# Every 30 minutes (at :15 and :45, offset from intentd's on-the-hour
+# auto-cut cadence so a freshly published intentd beta is picked up within
+# the half-hour) this
+# workflow compares the latest intentd beta — beta.json on the fixed
+# `channel-beta` release of the public intent-hq/intentd-releases mirror, the
+# same manifest the sitter consumes — against the `intentd.version` pin. When
+# the beta is newer it lands a pin bump via ONE rolling PR on the
+# `auto/intentd-pin` branch with auto-merge (squash) armed; repeat runs update
+# that PR instead of opening new ones (same pattern as the monorepo's
+# auto-bump-submodules workflow).
+#
+# The bump commit is typed `fix:` deliberately, NOT `chore:`. Two reasons:
+# - An intentd-only change must still produce a cloudlands-fe beta: `fix`
+#   makes release-please open/refresh the Release PR (patch bump) even when
+#   zero fe commits landed since the last release, so a new sidecar always
+#   rides an fe beta.
+# - Per the AGENTS.md release-process gotcha, release-please hides `chore`
+#   changelog sections, so a chore-typed pin bump never appears in the Release
+#   PR diff/changelog — a fix-typed bump is visible and auditable there.
+#
+# Guardrails:
+# - `node scripts/fetch-sidecar.cjs` runs as a preflight after editing the pin;
+#   if the sidecar cannot be fetched and verified, the run warns and stops —
+#   a pin that cannot resolve artifacts is never pushed.
+# - A `hold-release` label on the rolling PR pauses the workflow (run skips).
+# - Fail-soft without RELEASE_PAT: warn and exit green. RELEASE_PAT (not
+#   GITHUB_TOKEN) must author the branch/PR/merge so the squash-merge push to
+#   main triggers release-please (GitHub suppresses workflow triggers for
+#   events created with the default GITHUB_TOKEN).
+
+name: Auto-pin intentd sidecar
+
+permissions: {}
+
+on:
+  schedule:
+    - cron: "15,45 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would happen; never push or touch PRs"
+        type: boolean
+        default: false
+
+concurrency:
+  group: auto-pin-intentd
+  cancel-in-progress: false
+
+env:
+  BRANCH: auto/intentd-pin
+  MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-beta/beta.json
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ github.repository_owner == 'intent-hq' }}
+    steps:
+      # Fail-soft: without the token, warn and end the run successfully
+      # (mirrors the monorepo's SUBMODULE_BUMP_TOKEN handling).
+      - name: Check for RELEASE_PAT
+        id: token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -n "$RELEASE_PAT" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::RELEASE_PAT is not set; skipping intentd pin bump."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The PAT is persisted as the credential for github.com, so the branch
+      # push uses it (pushes made with it can trigger workflows on the PR).
+      - name: Checkout
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+
+      # Decide whether a bump is needed: read the latest beta version from the
+      # mirror manifest (coded fallback to the intentd repo copy, like the
+      # sitter), compare against the pin, and honor the hold-release label.
+      - name: Decide
+        id: decide
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          set -euo pipefail
+          echo "bump=false" >> "$GITHUB_OUTPUT"
+
+          manifest=$(curl -fsSL "$MANIFEST_MIRROR_URL" || true)
+          if [ -z "$manifest" ]; then
+            echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
+            tmp=$(mktemp -d)
+            if GH_TOKEN="${INTENTD_READ_PAT:-$GH_TOKEN}" gh release download channel-beta \
+                --repo intent-hq/intentd --pattern beta.json --dir "$tmp"; then
+              manifest=$(cat "$tmp/beta.json")
+            fi
+            rm -rf "$tmp"
+          fi
+          if [ -z "$manifest" ]; then
+            echo "::warning::Could not fetch the intentd beta channel manifest; skipping this run."
+            exit 0
+          fi
+
+          latest=$(jq -er '.version' <<<"$manifest" || true)
+          # Same shape parseVersionPin (scripts/fetch-sidecar-lib.mjs) accepts:
+          # bare semver, optional prerelease suffix, no leading v.
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$latest"; then
+            echo "::warning::Manifest version '$latest' does not look like a semver; skipping this run."
+            exit 0
+          fi
+
+          current=$(grep -Ev '^[[:space:]]*(#|$)' intentd.version | tr -d '[:space:]')
+          if [ "$latest" = "$current" ]; then
+            echo "Pin is up to date at $current; nothing to do."
+            exit 0
+          fi
+          if [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)" = "$current" ]; then
+            echo "Pin $current is ahead of the beta channel ($latest); nothing to do."
+            exit 0
+          fi
+
+          # hold-release on the rolling PR pauses the pipeline for this repo.
+          held=$(gh pr list --head "$BRANCH" --state open \
+            --json labels --jq '[.[0].labels[]?.name] | contains(["hold-release"])' || echo false)
+          if [ "$held" = "true" ]; then
+            echo "::notice::Rolling PR on $BRANCH carries the hold-release label; skipping."
+            exit 0
+          fi
+
+          echo "Bump needed: $current -> $latest"
+          {
+            echo "bump=true"
+            echo "current=$current"
+            echo "latest=$latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Dry-run report
+        if: steps.decide.outputs.bump == 'true' && inputs.dry_run
+        env:
+          CURRENT: ${{ steps.decide.outputs.current }}
+          LATEST: ${{ steps.decide.outputs.latest }}
+        run: |
+          echo "dry-run: would bump intentd.version $CURRENT -> $LATEST via branch $BRANCH (preflight, push, PR + auto-merge skipped)."
+
+      # Never land a pin that cannot resolve artifacts: edit the pin, then
+      # fetch + sha256-verify the sidecar for that version exactly as the
+      # release build will. Any failure warns and stops the run (no push).
+      # fetch-sidecar.cjs uses only node built-ins — no pnpm install needed.
+      - name: Update pin and preflight sidecar fetch
+        id: preflight
+        if: steps.decide.outputs.bump == 'true' && !inputs.dry_run
+        env:
+          CURRENT: ${{ steps.decide.outputs.current }}
+          LATEST: ${{ steps.decide.outputs.latest }}
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          # Replace only the single version line; comments stay untouched.
+          awk -v cur="$CURRENT" -v new="$LATEST" '$0 == cur { print new; next } { print }' \
+            intentd.version > intentd.version.tmp && mv intentd.version.tmp intentd.version
+          if ! node scripts/fetch-sidecar.cjs; then
+            echo "::warning::fetch-sidecar preflight failed for intentd $LATEST; not landing the pin this run."
+            exit 0
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push branch and open/update rolling PR
+        if: steps.preflight.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          CURRENT: ${{ steps.decide.outputs.current }}
+          LATEST: ${{ steps.decide.outputs.latest }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          title="fix: bump intentd sidecar to v$LATEST"
+          git checkout -B "$BRANCH"
+          git add intentd.version
+          git commit -m "$title" -m "intentd.version: $CURRENT -> $LATEST (beta channel)."
+
+          # Skip the push when the remote branch already carries this exact
+          # tree, so repeated runs don't churn the PR (and its CI) with
+          # identical commits.
+          if git fetch --quiet origin "refs/heads/$BRANCH" 2>/dev/null \
+            && [ "$(git rev-parse --verify --quiet 'FETCH_HEAD^{tree}' || true)" = "$(git rev-parse 'HEAD^{tree}')" ]; then
+            echo "Branch $BRANCH already has the desired pin; skipping push."
+          else
+            git push --force origin "HEAD:refs/heads/$BRANCH"
+            echo "Pushed pin bump to $BRANCH."
+          fi
+
+          body_file=$(mktemp)
+          {
+            echo "Automated intentd sidecar pin bump: \`intentd.version\` $CURRENT -> $LATEST,"
+            echo "following the beta channel manifest on [intent-hq/intentd-releases](https://github.com/intent-hq/intentd-releases)."
+            echo
+            echo "- Typed \`fix:\` so release-please opens/refreshes the fe Release PR even with no fe commits"
+            echo "  (an intentd-only change must still produce an fe beta), and because \`chore\` pins are"
+            echo "  hidden from the Release PR changelog (AGENTS.md release-process gotcha)."
+            echo "- Preflight passed: \`node scripts/fetch-sidecar.cjs\` fetched and sha256-verified the"
+            echo "  v$LATEST sidecar before this PR was pushed."
+            echo "- Add the \`hold-release\` label to pause future automated updates of this PR."
+          } > "$body_file"
+
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$body_file"
+            echo "Updated existing PR #$pr."
+          else
+            gh pr create --head "$BRANCH" --title "$title" --body-file "$body_file"
+            pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+            echo "Created PR #$pr."
+          fi
+          rm -f "$body_file"
+
+          # Enabling auto-merge fails when the PR is already in clean status
+          # ("Pull request is in clean status"); fall back to a direct squash
+          # merge so the PR doesn't sit open unmerged (same handling as the
+          # monorepo's auto-bump-submodules script).
+          if ! gh pr merge "$pr" --auto --squash; then
+            echo "::warning::could not enable auto-merge on PR #$pr; attempting direct merge"
+            if ! gh pr merge "$pr" --squash; then
+              echo "::warning::could not merge PR #$pr; leaving it open"
+            fi
+          fi
