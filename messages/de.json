@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "Versuchen Sie den Merge nach Abschluss des Rebase erneut.",
   "workspace_sidebarChanges_rebaseStarted_label": "Rebase im Terminal gestartet",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "Git-Status aktualisieren",
+  "workspace_sidebarChanges_rootAgents_label": "Agenten auf diesem Root:",
   "workspace_sidebarChanges_rootChangedFiles_label": "Geänderte Dateien",
   "workspace_sidebarChanges_rootLoadFailed_error": "Git-Root-Status konnte nicht geladen werden",
   "workspace_sidebarChanges_rootNoChanges_label": "Keine Änderungen",

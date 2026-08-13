@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "變基完成後，重試合併。",
   "workspace_sidebarChanges_rebaseStarted_label": "已在終端中開始變基",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "重新整理 Git 狀態",
+  "workspace_sidebarChanges_rootAgents_label": "此根目錄上的智慧體：",
   "workspace_sidebarChanges_rootChangedFiles_label": "已變更的檔案",
   "workspace_sidebarChanges_rootLoadFailed_error": "無法載入 Git 根目錄狀態",
   "workspace_sidebarChanges_rootNoChanges_label": "無變更",

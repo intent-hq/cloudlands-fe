@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "变基完成后，重试合并。",
   "workspace_sidebarChanges_rebaseStarted_label": "已在终端中开始变基",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "刷新 Git 状态",
+  "workspace_sidebarChanges_rootAgents_label": "此根目录上的智能体：",
   "workspace_sidebarChanges_rootChangedFiles_label": "已更改的文件",
   "workspace_sidebarChanges_rootLoadFailed_error": "无法加载 Git 根目录状态",
   "workspace_sidebarChanges_rootNoChanges_label": "无更改",

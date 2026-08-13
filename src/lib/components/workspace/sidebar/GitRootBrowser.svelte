@@ -16,6 +16,7 @@
     selectHasSecondaryGitRoots,
     selectWorkspaceGitRootEntries,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Select } from '$lib/components/ui/select';
   import SecondaryRootChangesView from './SecondaryRootChangesView.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -29,6 +30,7 @@
 
   let { workspaceId, onBrowsingSecondaryChange }: Props = $props();
 
+  // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -36,6 +38,7 @@
 
   const hasSecondaryGitRoots$ = selectHasSecondaryGitRoots(workspaceIdStore);
   const gitRootEntries$ = selectWorkspaceGitRootEntries(workspaceIdStore);
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   let selectedRootKey = $state('primary');
 
@@ -44,6 +47,16 @@
   );
   const isSecondaryRootSelected = $derived(
     selectedRootKey !== 'primary' && !!selectedRootEntry && !selectedRootEntry.isPrimary,
+  );
+
+  // Agents that registered the selected root (absent for auto-detected roots
+  // and for the primary entry), resolved to display names with the raw id as
+  // graceful fallback.
+  const attributedAgentNames = $derived(
+    (selectedRootEntry?.gitRoot?.registeredByAgentIds ?? []).map((agentId) => {
+      const session = ($workspaceAgents$ ?? []).find((s) => String(s.id) === agentId);
+      return session?.name || agentId;
+    }),
   );
 
   // Reset to the primary root on workspace switch, and fall back to it when
@@ -101,6 +114,14 @@
       </Select.Content>
     </Select.Root>
   </div>
+
+  {#if attributedAgentNames.length > 0}
+    <p class="mb-2 text-ui text-subtle leading-snug" data-testid="git-root-agents">
+      {m.workspace_sidebarChanges_rootAgents_label()}
+      <!-- i18n-ignore (agent display names) -->
+      <span class="text-foreground/90">{attributedAgentNames.join(', ')}</span>
+    </p>
+  {/if}
 
   {#if isSecondaryRootSelected && selectedRootEntry}
     <!-- Read-only per-root browsing; the workspace-scoped PR sections and all

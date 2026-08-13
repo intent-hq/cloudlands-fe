@@ -1496,6 +1496,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "After rebase completes, retry the merge.",
   "workspace_sidebarChanges_rebaseStarted_label": "Rebase started in terminal",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "Refresh git status",
+  "workspace_sidebarChanges_rootAgents_label": "Agents on this root:",
   "workspace_sidebarChanges_rootChangedFiles_label": "Changed files",
   "workspace_sidebarChanges_rootLoadFailed_error": "Failed to load git root state",
   "workspace_sidebarChanges_rootNoChanges_label": "No changes",

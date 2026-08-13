@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "Une fois le rebasage terminé, réessayez la fusion.",
   "workspace_sidebarChanges_rebaseStarted_label": "Rebasage démarré dans le terminal",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "Actualiser le statut git",
+  "workspace_sidebarChanges_rootAgents_label": "Agents sur cette racine :",
   "workspace_sidebarChanges_rootChangedFiles_label": "Fichiers modifiés",
   "workspace_sidebarChanges_rootLoadFailed_error": "Échec du chargement de l'état de la racine git",
   "workspace_sidebarChanges_rootNoChanges_label": "Aucun changement",

@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "リベース完了後、マージを再試行してください。",
   "workspace_sidebarChanges_rebaseStarted_label": "ターミナルでリベースを開始しました",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "Git の状態を更新",
+  "workspace_sidebarChanges_rootAgents_label": "このルートのエージェント:",
   "workspace_sidebarChanges_rootChangedFiles_label": "変更されたファイル",
   "workspace_sidebarChanges_rootLoadFailed_error": "Gitルートの状態を読み込めませんでした",
   "workspace_sidebarChanges_rootNoChanges_label": "変更なし",

@@ -1495,6 +1495,7 @@
   "workspace_sidebarChanges_rebaseStarted_description": "Cuando termine el rebase, reintente la fusión.",
   "workspace_sidebarChanges_rebaseStarted_label": "Rebase iniciado en la terminal",
   "workspace_sidebarChanges_refreshGitStatus_tooltip": "Actualizar estado de git",
+  "workspace_sidebarChanges_rootAgents_label": "Agentes en esta raíz:",
   "workspace_sidebarChanges_rootChangedFiles_label": "Archivos modificados",
   "workspace_sidebarChanges_rootLoadFailed_error": "No se pudo cargar el estado de la raíz git",
   "workspace_sidebarChanges_rootNoChanges_label": "Sin cambios",
