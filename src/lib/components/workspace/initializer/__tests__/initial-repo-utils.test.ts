@@ -7,6 +7,7 @@ import {
   getLastSelectedRepoHydrationAction,
   getInitialRepoKey,
   mapInitialRepoToFormState,
+  mapRecentRepoToSelection,
   type InitialRepoInfo,
 } from '../initial-repo-utils';
 
@@ -197,5 +198,38 @@ describe('getLastSelectedRepoHydrationAction', () => {
         recentRepos,
       }),
     ).toBe('restore-recent');
+  });
+});
+
+describe('mapRecentRepoToSelection', () => {
+  it('preserves githubUrl when restoring a GitHub-type recent repo', () => {
+    expect(
+      mapRecentRepoToSelection({
+        path: 'intent-hq/monorepo',
+        type: 'github',
+        githubUrl: 'https://github.com/intent-hq/monorepo',
+        name: 'monorepo',
+      }),
+    ).toEqual({
+      path: 'intent-hq/monorepo',
+      type: 'github',
+      githubUrl: 'https://github.com/intent-hq/monorepo',
+      isValidPath: true,
+    });
+  });
+
+  it('maps a local recent repo without a githubUrl', () => {
+    expect(
+      mapRecentRepoToSelection({
+        path: '/home/user/recent-repo',
+        type: 'local',
+        name: 'recent-repo',
+      }),
+    ).toEqual({
+      path: '/home/user/recent-repo',
+      type: 'local',
+      githubUrl: undefined,
+      isValidPath: true,
+    });
   });
 });

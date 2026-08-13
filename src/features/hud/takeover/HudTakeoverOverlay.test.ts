@@ -16,6 +16,10 @@ import { get } from 'svelte/store';
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  hydrateHardwareConsoleKeyPins,
+  pinWorkspaceToKey,
+} from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { loadWorkspaceTasksSucceeded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { hydrateTaskAgentAssociations } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -35,6 +39,14 @@ vi.mock('../sound/hud-sound-player', () => ({
   playHudSoundCue: vi.fn(),
   playTakeoverTransitionCues: vi.fn(),
 }));
+
+// Controllable micro-connected gate for the header key square; defaults to
+// disconnected, matching the real jsdom behavior (WebHID unavailable).
+const hw = vi.hoisted(() => ({ connected: false }));
+vi.mock('$features/hardware-console/device/connection-status', async () => {
+  const { readable } = await import('svelte/store');
+  return { microConnectedReadable: () => readable(hw.connected) };
+});
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 const WS = 'ws-1';
@@ -152,6 +164,60 @@ describe('HudTakeoverOverlay COMPLETE-cell report body', () => {
 
     expect(screen.getAllByTestId('hud-takeover-cell')).toHaveLength(2);
     expect(screen.queryByTestId('hud-takeover-cell-report')).toBeNull();
+  });
+});
+
+describe('HudTakeoverOverlay header hardware-key square', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+  });
+  afterEach(() => {
+    hw.connected = false;
+    cleanup();
+    appStore.dispose();
+  });
+
+  function headerSquare(): Element | null {
+    return document.querySelector('.ov-title-row .ov-key-square');
+  }
+
+  it('renders the slot square immediately before the workspace name when connected + slotted', () => {
+    hw.connected = true;
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const square = headerSquare();
+    const name = document.querySelector('.ov-ws-name');
+    expect(square?.textContent?.trim()).toBe('3'); // 1-based slot number.
+    expect(
+      square && name && square.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders no square when the micro is disconnected', () => {
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
+  });
+
+  it('renders no square when the workspace holds no key slot', () => {
+    hw.connected = true;
+    // Exclude WS from auto-fill so it resolves to no slot.
+    appStore.dispatch(hydrateHardwareConsoleKeyPins(new Array(6).fill(null), [WS]));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
   });
 });
 

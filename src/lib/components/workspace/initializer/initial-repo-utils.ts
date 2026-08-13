@@ -31,6 +31,7 @@ export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore' | 'res
 export interface WorkspaceInitializerRecentRepo {
   path: string;
   type: 'local' | 'github' | 'remote';
+  githubUrl?: string;
   name: string;
 }
 
@@ -90,6 +91,25 @@ export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFor
   }
 
   return state;
+}
+
+/**
+ * Map a recent-repo entry to the repo-selection shape used to restore form
+ * state. Preserves `githubUrl` so a GitHub-type recent repo restores as a
+ * GitHub selection instead of degrading to a URL-less one.
+ */
+export function mapRecentRepoToSelection(repo: WorkspaceInitializerRecentRepo): {
+  path: string;
+  type: 'local' | 'github' | 'remote';
+  githubUrl?: string;
+  isValidPath: boolean;
+} {
+  return {
+    path: repo.path,
+    type: repo.type,
+    githubUrl: repo.githubUrl,
+    isValidPath: true,
+  };
 }
 
 export function getLastSelectedRepoHydrationAction({

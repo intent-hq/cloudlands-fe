@@ -22,6 +22,7 @@
   } from '$store/renderer/slices/hud/hud-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { formatHudTimer } from '../utils/hud-format';
   import { watchReducedMotion } from '../right-column/hud-slide.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
@@ -50,6 +51,7 @@
     taskCellMeta,
   } from './hud-takeover-meta';
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
+  import HudTakeoverHeading from './HudTakeoverHeading.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
   import { playTakeoverTransitionCues } from '../sound/hud-sound-player';
   import { createTypewriterCue } from '../sound/hud-typewriter-cue.svelte';
@@ -114,6 +116,9 @@
     activeWorkspaceIdStore.set(queue.active?.workspaceId ?? '');
   });
   const view$ = selectHudTakeoverView(activeWorkspaceIdStore);
+
+  // Hardware-key square gate: same as the grid card (connected + slotted).
+  const microConnected$ = microConnectedReadable();
 
   // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
   $effect(() => {
@@ -262,10 +267,11 @@
       <div class="ov-content">
         <!-- Header: title / spec progress / countdown / DISMISS -->
         <div class="ov-header">
-          <div class="ov-heading">
-            <span class="ov-ws-name">{view.title}</span>
-            <span class="ov-ws-repo">{view.repoRef}</span>
-          </div>
+          <HudTakeoverHeading
+            title={view.title}
+            repoRef={view.repoRef}
+            keySlot={$microConnected$ ? view.keySlot : null}
+          />
           <div class="ov-divider"></div>
           <div class="ov-progress">
             <div class="ov-progress-row">
@@ -724,29 +730,6 @@
     padding: 0 26px;
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     flex: none;
-  }
-  .ov-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .ov-ws-name {
-    font:
-      600 16px Inter,
-      system-ui,
-      sans-serif;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 380px;
-  }
-  .ov-ws-repo {
-    font:
-      500 10px 'JetBrains Mono',
-      monospace;
-    color: hsl(var(--muted-foreground));
   }
   .ov-divider {
     width: 1px;

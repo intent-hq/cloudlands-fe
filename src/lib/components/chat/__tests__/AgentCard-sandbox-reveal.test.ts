@@ -20,11 +20,15 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
 // The global test-setup mocks $lib/electron-bridge, so `invoke` here is the
 // vi.fn stub AgentCard actually calls — assert the channel + payload on it.
 import { invoke } from '$lib/electron-bridge';
-import type { AgentSession } from '$shared/types';
-import { AgentStatus } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
+import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 
 const mockedInvoke = vi.mocked(invoke);
@@ -52,6 +56,24 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     updatedAt: '2026-07-01T00:00:00.000Z',
     ...overrides,
   } as AgentSession;
+}
+
+/** Seed the agent's workspace entity as a remote (SSH) workspace. */
+function seedRemoteWorkspace() {
+  appStore.dispatch(
+    setWorkspaceEntity({
+      id: WorkspaceId('ws-1'),
+      title: 'Remote WS',
+      branch: 'main',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatusEnum.Active,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+      environmentConfig: { type: 'remote', ssh: { host: 'example.com', user: 'dev' } },
+    } as unknown as Workspace),
+  );
 }
 
 /** Dispatch a system.status poll result with the given daemon locality. */
@@ -92,6 +114,7 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     mockedInvoke.mockReset();
     if (defaultInvokeImpl) mockedInvoke.mockImplementation(defaultInvokeImpl);
     appStore.dispatch(removeSession(agentId));
+    appStore.dispatch(removeWorkspaceEntity('ws-1'));
   });
 
   it('shows the reveal item when the agent has a sandboxPath and the daemon is local', async () => {
@@ -118,6 +141,18 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
 
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+
+    expect(await screen.findByText('Open')).toBeTruthy();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+  });
+
+  it('hides the reveal item for a remote (SSH) workspace even when the daemon is local (monorepo#2171)', async () => {
+    seedLocality('local');
+    seedRemoteWorkspace();
     appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]));
 
     render(AgentCard, { props: { agentId } });

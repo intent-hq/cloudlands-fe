@@ -17,6 +17,10 @@
  *    directory copies fail shaped exactly like an unreadable source).
  *  - `file:exists` → `host.directoryStatus.exists` (a host-level probe that
  *    accepts any path and reports plain fs existence).
+ *  - `file:download` → real preload bridge (native-dialog-bridge idiom): the
+ *    main-process handler owns the native save dialog + local fs copy/zip, so
+ *    it cannot be served by a daemon RPC. Electron-only; rejects on web (the
+ *    affordance is already locality-gated via `selectIsDaemonLocal`).
  *
  * Daemon `file.*` methods require a `workspaceId` and enforce within-workspace
  * path containment. Call sites pass absolute paths inside the workspace root
@@ -32,6 +36,7 @@
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { detectPlatform } from '$lib/utils/platform-capabilities';
 
 /** Coerce a possibly-unknown argument into a plain object record. */
 function asRecord(arg: unknown): Record<string, unknown> {
@@ -246,4 +251,23 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.COPY, async (arg) => {
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
+});
+
+// ── file:download ──
+
+registerMockIpcHandler(IPC_CHANNELS.FILE.DOWNLOAD, async (arg) => {
+  // The main-process handler owns the native save dialog and the local fs
+  // copy / folder zip, so this channel forwards to the real preload bridge
+  // (native-dialog-bridge-seeder idiom) instead of a daemon RPC. On web there
+  // is no native dialog to forward to — reject loudly; the download menu item
+  // is already gated on `selectIsDaemonLocal`, and VirtualizedFileTree's
+  // catch folds a rejection into its failure toast.
+  const win = typeof window !== 'undefined' ? window : undefined;
+  const bridge = win?.electronAPI;
+  if (win && detectPlatform(win) === 'electron' && bridge && typeof bridge.invoke === 'function') {
+    return bridge.invoke(IPC_CHANNELS.FILE.DOWNLOAD, arg);
+  }
+  throw new Error(
+    `'${IPC_CHANNELS.FILE.DOWNLOAD}' requires the native Electron bridge (main-process save dialog).`,
+  );
 });
