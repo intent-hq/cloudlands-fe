@@ -65,8 +65,8 @@ export const HUD_SOUND_CUE_VOLUMES: Readonly<Record<HudSoundCue, number>> = {
 
 /**
  * Takeover kind → cue. `manual` (card-click viewer) is deliberately ABSENT:
- * viewers are silent (spec). `question_asked` is the generic-attention
- * fallback — signal-carrying triggers resolve through
+ * viewers play structural transients only, no kind cue. `question_asked` is
+ * the generic-attention fallback — signal-carrying triggers resolve through
  * `HUD_ATTENTION_SIGNAL_CUES` instead (see `cueForTakeoverTrigger`).
  */
 export const HUD_TAKEOVER_KIND_CUES: Readonly<
@@ -110,12 +110,16 @@ export function cueForTakeoverTrigger(
 
 /**
  * Cues for one queue-state transition (prev → next), oldest-first:
- *  - entering 'blinking' on an EVENT entry → the blink-tick garnish (the
- *    card pre-roll flashes; reduced motion skips the phase, so no tick);
- *  - entering 'opening' on an EVENT entry → the open transient plus the
- *    newest trigger's kind cue (the banner the overlay leads with);
- *  - entering 'closing' on an EVENT entry → the close transient;
- *  - VIEWER entries (manual card-click) are silent throughout (spec);
+ *  - entering 'blinking' → the blink-tick garnish (the card pre-roll
+ *    flashes; reduced motion skips the phase, so no tick);
+ *  - entering 'opening' → the open transient plus the newest trigger's kind
+ *    cue (the banner the overlay leads with);
+ *  - entering 'closing' → the close transient;
+ *  - VIEWER entries (manual card-click) play the structural transients but
+ *    no kind cue — the `isViewer` flag silences the kind cue structurally,
+ *    not the trigger kind, so a blinking event entry converted to a viewer
+ *    (`requestImmediateTakeover`) stays kind-silent despite its retained
+ *    event triggers;
  *  - same-phase re-applies (e.g. a coalescing enqueue) never re-fire.
  * The banner-typewriter garnish is NOT a phase-transition cue: the wipe-in
  * starts mid-'opening' after the CSS `--banner-in-delay`, so the overlay
@@ -127,9 +131,10 @@ export function cuesForTakeoverTransition(
 ): HudSoundCue[] {
   if (prev.phase === next.phase) return [];
   const entry = next.active;
-  if (!entry || entry.isViewer) return [];
+  if (!entry) return [];
   if (next.phase === 'blinking') return ['blink-tick'];
   if (next.phase === 'opening') {
+    if (entry.isViewer) return ['takeover-open'];
     const newest = entry.triggers[entry.triggers.length - 1];
     const kindCue = newest ? cueForTakeoverTrigger(newest) : null;
     return kindCue ? ['takeover-open', kindCue] : ['takeover-open'];

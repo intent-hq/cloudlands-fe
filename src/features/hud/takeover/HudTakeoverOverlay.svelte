@@ -58,7 +58,8 @@
   const queue = $derived(controller.queue);
 
   // ── Sound: cue on queue phase transitions (enable gate lives in the
-  // service; viewers/'manual' are silent by the cue map). ──
+  // service; viewers play structural transients only — 'manual' maps to no
+  // kind cue). ──
   let prevQueueForSound = controller.queue;
   $effect(() => {
     const next = controller.queue;
