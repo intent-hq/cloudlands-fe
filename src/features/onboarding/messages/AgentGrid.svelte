@@ -24,11 +24,6 @@
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import {
-    setActiveProvider,
-    setProviderEnabled,
-  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 
   import {
     selectProviderStatusMap,
@@ -250,9 +245,15 @@
   });
 
   async function handleSelectProvider(providerId: string) {
-    appStore.dispatch(setProviderEnabled({ providerId, enabled: true }));
-    appStore.dispatch(setActiveProvider(providerId));
-    appStore.dispatch(reloadModelsForProvider());
+    // Same dispatch path as the advance commit below; `recommitActive`
+    // preserves the click's historical behavior of re-committing (and
+    // reloading models for) an already-active card.
+    commitOnboardingProviderSelection({
+      selectedProviderId: providerId,
+      activeProviderId: selectActiveProviderId.select(appStore.state),
+      recommitActive: true,
+      dispatch: (action) => appStore.dispatch(action),
+    });
     onProviderSelected?.(providerId);
   }
 

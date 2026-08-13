@@ -1,13 +1,12 @@
 /**
- * Commits the onboarding welcome step's visually-selected provider when the
- * user explicitly advances (button or ⌘↵), mirroring AgentGrid's card-click
- * dispatch sequence so step 4 never sees an empty enabled-provider set while
- * a ready provider exists.
+ * The single dispatch path that commits an onboarding provider selection —
+ * used by AgentGrid's card click and by the explicit welcome-step advance
+ * (button or ⌘↵) so step 4 never sees an empty enabled-provider set while a
+ * ready provider exists.
  *
- * Per decision D1(B) this must only run on an explicit user advance action —
- * never on mere render/detection — so the caller (AgentGrid's
- * `commitSelection`, invoked from OnboardingPage's advance handlers) decides
- * when to call it.
+ * Per decision D1(B) this must only run on an explicit user action (click or
+ * advance) — never on mere render/detection — so the caller decides when to
+ * call it.
  */
 import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 import {
@@ -26,6 +25,13 @@ export interface CommitOnboardingProviderSelectionInput {
   selectedProviderId: string | undefined;
   /** The store's current active provider id ('' when unset). */
   activeProviderId: string | undefined;
+  /**
+   * When true (the card-click path), an already-active selection is
+   * re-committed — all three actions dispatch again, preserving the click's
+   * historical behavior (including the model reload). The advance path
+   * leaves this unset so an implicit advance never double-dispatches.
+   */
+  recommitActive?: boolean;
   dispatch: (action: CommitOnboardingProviderSelectionAction) => void;
 }
 
@@ -36,11 +42,11 @@ export interface CommitOnboardingProviderSelectionInput {
 export function commitOnboardingProviderSelection(
   input: CommitOnboardingProviderSelectionInput,
 ): string | undefined {
-  const { selectedProviderId, activeProviderId, dispatch } = input;
+  const { selectedProviderId, activeProviderId, recommitActive, dispatch } = input;
   if (!selectedProviderId) return undefined;
   // The resolver only returns the active provider when it is ready, so a
   // match means the selection is already committed — don't double-dispatch.
-  if (selectedProviderId === activeProviderId) return undefined;
+  if (!recommitActive && selectedProviderId === activeProviderId) return undefined;
   dispatch(setProviderEnabled({ providerId: selectedProviderId, enabled: true }));
   dispatch(setActiveProvider(selectedProviderId));
   dispatch(reloadModelsForProvider());

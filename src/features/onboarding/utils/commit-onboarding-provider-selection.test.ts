@@ -74,6 +74,22 @@ describe('commitOnboardingProviderSelection', () => {
     ).toBeUndefined();
     expect(dispatch).not.toHaveBeenCalled();
   });
+
+  it('re-commits an already-active selection when recommitActive is set (card-click path)', () => {
+    const dispatch = vi.fn();
+    const committed = commitOnboardingProviderSelection({
+      selectedProviderId: 'claude-code',
+      activeProviderId: 'claude-code',
+      recommitActive: true,
+      dispatch,
+    });
+    expect(committed).toBe('claude-code');
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setProviderEnabled({ providerId: 'claude-code', enabled: true }),
+      setActiveProvider('claude-code'),
+      reloadModelsForProvider(),
+    ]);
+  });
 });
 
 describe('no-click welcome-step advance regression (empty enabled set on step 4)', () => {
