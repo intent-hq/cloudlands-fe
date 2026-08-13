@@ -22,8 +22,10 @@
   } from '$store/renderer/slices/hud/hud-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { formatHudTimer } from '../utils/hud-format';
   import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import HudKeySlotSquare from '../components/HudKeySlotSquare.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
   import {
     activeTakeoverTrigger,
@@ -114,6 +116,9 @@
     activeWorkspaceIdStore.set(queue.active?.workspaceId ?? '');
   });
   const view$ = selectHudTakeoverView(activeWorkspaceIdStore);
+
+  // Hardware-key square gate: same as the grid card (connected + slotted).
+  const microConnected$ = microConnectedReadable();
 
   // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
   $effect(() => {
@@ -263,7 +268,12 @@
         <!-- Header: title / spec progress / countdown / DISMISS -->
         <div class="ov-header">
           <div class="ov-heading">
-            <span class="ov-ws-name">{view.title}</span>
+            <div class="ov-title-row">
+              {#if $microConnected$ && view.keySlot !== null}
+                <HudKeySlotSquare slot={view.keySlot} class="ov-key-square" />
+              {/if}
+              <span class="ov-ws-name">{view.title}</span>
+            </div>
             <span class="ov-ws-repo">{view.repoRef}</span>
           </div>
           <div class="ov-divider"></div>
@@ -730,6 +740,18 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+  }
+  .ov-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  /* Hardware-key square scaled up to the 16px header title line. */
+  .ov-title-row :global(.ov-key-square) {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
   }
   .ov-ws-name {
     font:

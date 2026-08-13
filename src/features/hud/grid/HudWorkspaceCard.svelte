@@ -12,6 +12,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { hudTakeoverRequested } from '$store/renderer/slices/hud/hud-slice';
   import type { HudWorkspaceCard } from '$store/renderer/slices/hud/hud-selectors';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
+  import HudKeySlotSquare from '../components/HudKeySlotSquare.svelte';
   import { formatHudTimer } from '../utils/hud-format';
   import { takeoverBlinkTarget } from '../takeover/hud-takeover-bus';
   import {
@@ -23,6 +25,10 @@
   import HudAgentLine from './HudAgentLine.svelte';
 
   let { card, nowMs }: { card: HudWorkspaceCard; nowMs: number } = $props();
+
+  // Hardware-key square: same gate as every key-slot surface (sidebar badge,
+  // header menu) — only while a micro is connected, not mere presence.
+  const microConnected$ = microConnectedReadable();
 
   const color = $derived(cardStateColor(card.stateKey));
   const blinking = $derived($takeoverBlinkTarget === card.workspaceId);
@@ -110,7 +116,12 @@
   </div>
 
   <div class="hud-ws-card-heading">
-    <div class="hud-ws-card-title">{card.title}</div>
+    <div class="hud-ws-card-title-row">
+      <div class="hud-ws-card-title">{card.title}</div>
+      {#if $microConnected$ && card.keySlot !== null}
+        <HudKeySlotSquare slot={card.keySlot} class="h-6 w-6" />
+      {/if}
+    </div>
     <div class="hud-ws-card-repo">{card.repoRef}</div>
   </div>
 
@@ -256,7 +267,15 @@
   .hud-ws-card-heading {
     padding: 0 12px;
   }
+  /* Title + key square sit on one row; the square hugs the title and the
+     nowrap title shrinks (ellipsis) instead of pushing it out. */
+  .hud-ws-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
   .hud-ws-card-title {
+    min-width: 0;
     font:
       600 14.5px Inter,
       system-ui,
