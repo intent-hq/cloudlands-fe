@@ -33,12 +33,16 @@ vi.mock('$store/renderer/store', async () => {
 
 import {
   extractPlacementErrorDetail,
+  isPlacementCancellation,
   isRemoteBackend,
   MAX_REMOTE_ATTACHMENT_BYTES,
   MAX_REMOTE_ATTACHMENT_TOTAL_BYTES,
   UPLOAD_CHUNK_BYTES,
   placeAttachmentViaTransport,
 } from './attachment-placement';
+
+/** 5-minute per-call bound for chunk sends and commit (see context-api.ts). */
+const UPLOAD_TRANSFER_TIMEOUT = { timeoutMs: 5 * 60 * 1000 };
 
 /** Route the size probe (1-byte `file:read-chunk`) to a fixed file size. */
 function mockSizeProbe(size: number) {
@@ -219,24 +223,30 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
       sha256: SHA,
       mimeType: 'application/octet-stream',
     });
-    expect(backendRequestMock).toHaveBeenNthCalledWith(2, 'file.attachmentUpload.chunk', {
-      uploadId: 'upload-1',
-      seq: 0,
-      data: 'b64-chunk-0',
-    });
-    expect(backendRequestMock).toHaveBeenNthCalledWith(3, 'file.attachmentUpload.chunk', {
-      uploadId: 'upload-1',
-      seq: 1,
-      data: 'b64-chunk-1',
-    });
-    expect(backendRequestMock).toHaveBeenNthCalledWith(4, 'file.attachmentUpload.chunk', {
-      uploadId: 'upload-1',
-      seq: 2,
-      data: 'b64-chunk-2',
-    });
-    expect(backendRequestMock).toHaveBeenNthCalledWith(5, 'file.attachmentUpload.commit', {
-      uploadId: 'upload-1',
-    });
+    expect(backendRequestMock).toHaveBeenNthCalledWith(
+      2,
+      'file.attachmentUpload.chunk',
+      { uploadId: 'upload-1', seq: 0, data: 'b64-chunk-0' },
+      UPLOAD_TRANSFER_TIMEOUT,
+    );
+    expect(backendRequestMock).toHaveBeenNthCalledWith(
+      3,
+      'file.attachmentUpload.chunk',
+      { uploadId: 'upload-1', seq: 1, data: 'b64-chunk-1' },
+      UPLOAD_TRANSFER_TIMEOUT,
+    );
+    expect(backendRequestMock).toHaveBeenNthCalledWith(
+      4,
+      'file.attachmentUpload.chunk',
+      { uploadId: 'upload-1', seq: 2, data: 'b64-chunk-2' },
+      UPLOAD_TRANSFER_TIMEOUT,
+    );
+    expect(backendRequestMock).toHaveBeenNthCalledWith(
+      5,
+      'file.attachmentUpload.commit',
+      { uploadId: 'upload-1' },
+      UPLOAD_TRANSFER_TIMEOUT,
+    );
     expect(backendRequestMock).toHaveBeenCalledTimes(5);
     // The single-shot data arm was never used.
     expect(placeAttachmentMock).not.toHaveBeenCalled();
@@ -341,6 +351,60 @@ describe('placeAttachmentViaTransport — chunked upload (>25MB remote)', () => 
     await expect(
       placeAttachmentViaTransport('ws-1', 'big.bin', { sourcePath: '/home/user/big.bin' }),
     ).rejects.toThrow('daemon went away');
+  });
+
+  it('cancels mid-upload on signal abort: no further chunks, no commit, session aborted', async () => {
+    mockChunkedIpc(FILE_SIZE);
+    const aborter = new AbortController();
+    backendRequestMock.mockImplementation(async (method: string, params: { seq?: number }) => {
+      if (method === 'file.attachmentUpload.begin') {
+        return { uploadId: 'upload-1', maxChunkBytes: CHUNK };
+      }
+      if (method === 'file.attachmentUpload.chunk') {
+        // User removes the pill while the first chunk is in flight.
+        if (params.seq === 0) aborter.abort();
+        return { uploadId: 'upload-1', seq: params.seq, receivedBytes: 0 };
+      }
+      if (method === 'file.attachmentUpload.abort') {
+        return { uploadId: 'upload-1', aborted: true };
+      }
+      throw new Error(`unexpected method: ${method}`);
+    });
+
+    const rejection = placeAttachmentViaTransport(
+      'ws-1',
+      'big.bin',
+      { sourcePath: '/home/user/big.bin' },
+      undefined,
+      aborter.signal,
+    ).catch((error: unknown) => error);
+    const error = await rejection;
+
+    expect(isPlacementCancellation(error, aborter.signal)).toBe(true);
+    const methods = backendRequestMock.mock.calls.map(([method]) => method);
+    // Only chunk 0 was sent before the abort; the session was cleaned up.
+    expect(methods.filter((methodName) => methodName === 'file.attachmentUpload.chunk')).toHaveLength(1);
+    expect(methods).not.toContain('file.attachmentUpload.commit');
+    expect(backendRequestMock).toHaveBeenCalledWith('file.attachmentUpload.abort', {
+      uploadId: 'upload-1',
+    });
+  });
+
+  it('cancels before begin when the signal is already aborted (no session opened)', async () => {
+    mockChunkedIpc(FILE_SIZE);
+    const aborter = new AbortController();
+    aborter.abort();
+
+    const error = await placeAttachmentViaTransport(
+      'ws-1',
+      'big.bin',
+      { sourcePath: '/home/user/big.bin' },
+      undefined,
+      aborter.signal,
+    ).catch((caught: unknown) => caught);
+
+    expect(isPlacementCancellation(error, aborter.signal)).toBe(true);
+    expect(backendRequestMock).not.toHaveBeenCalled();
   });
 
   it('honors a smaller daemon maxChunkBytes from begin', async () => {

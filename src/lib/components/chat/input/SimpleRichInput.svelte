@@ -166,7 +166,11 @@
 
   // Import ContextItem from context-api.ts
   import { hasBlockingAttachments, type ContextItem } from './context-api';
-  import { extractPlacementErrorDetail, placeAttachmentViaTransport } from './attachment-placement';
+  import {
+    extractPlacementErrorDetail,
+    isPlacementCancellation,
+    placeAttachmentViaTransport,
+  } from './attachment-placement';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -718,7 +722,17 @@
     }
   }
 
+  /**
+   * In-flight placement cancellers keyed by context-item id. Removing an
+   * attachment mid-upload aborts the transfer (and the daemon-side staged
+   * session) instead of letting it commit after the pill disappeared.
+   * Transient UI-only state — never Redux.
+   */
+  const placementAborters = new Map<string, AbortController>();
+
   function removeContextItem(id: string) {
+    placementAborters.get(id)?.abort();
+    placementAborters.delete(id);
     contextItems = contextItems.filter((item) => item.id !== id);
     oncontextRemove?.(id);
   }
@@ -1052,6 +1066,8 @@
       placementError: undefined,
       placementProgress: undefined,
     });
+    const aborter = new AbortController();
+    placementAborters.set(itemId, aborter);
     try {
       const result = await placeAttachmentViaTransport(
         workspace.id,
@@ -1061,6 +1077,7 @@
           mimeType: item.attachmentMimeType,
         },
         (fraction) => patchItem({ placementProgress: fraction }),
+        aborter.signal,
       );
 
       patchItem({
@@ -1081,6 +1098,12 @@
       });
       toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
+      if (isPlacementCancellation(error, aborter.signal)) {
+        // User removed the attachment mid-upload — the item is already gone
+        // and the daemon session was aborted; no failure UI.
+        logger.debug('Attachment placement cancelled', { fileName: item.label });
+        return;
+      }
       logger.error('Failed to place attachment', { fileName: item.label, error });
       const detail = extractPlacementErrorDetail(error);
       patchItem({
@@ -1093,6 +1116,8 @@
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
           : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
       );
+    } finally {
+      placementAborters.delete(itemId);
     }
   }
 

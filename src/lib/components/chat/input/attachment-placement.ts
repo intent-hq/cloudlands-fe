@@ -50,6 +50,25 @@ export const UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
  */
 export type UploadProgressCallback = (fraction: number) => void;
 
+const UPLOAD_CANCELLED_MESSAGE = 'attachment upload cancelled'; // i18n-ignore (internal sentinel, caller checks signal.aborted — never rendered)
+
+/**
+ * True when a placement failure is the caller's own cancellation (the
+ * `signal` passed to `placeAttachmentViaTransport` was aborted), so callers
+ * can skip failure UI for uploads the user deliberately discarded.
+ */
+export function isPlacementCancellation(error: unknown, signal?: AbortSignal): boolean {
+  return (
+    signal?.aborted === true ||
+    (error instanceof Error && error.message === UPLOAD_CANCELLED_MESSAGE)
+  );
+}
+
+/** Throw the cancellation sentinel when the caller aborted. */
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error(UPLOAD_CANCELLED_MESSAGE);
+}
+
 /**
  * True when the daemon host is NOT the user's machine, i.e. `sourcePath`
  * placement cannot work because the daemon has no access to the FE host's
@@ -155,7 +174,9 @@ const GENERIC_PLACEMENT_MESSAGES = new Set([
  * above that (up to the daemon's 1 GiB cap). Signature matches
  * `placeAttachment` minus the `data` field so call sites and their retry
  * paths swap in without change; `onProgress` (optional) receives the
- * chunk-acknowledged fraction during a chunked upload only. Errors
+ * chunk-acknowledged fraction during a chunked upload only; `signal`
+ * (optional) cancels between chunks — the staged session is aborted on the
+ * daemon and the rejection satisfies `isPlacementCancellation`. Errors
  * propagate — use `extractPlacementErrorDetail` to surface the daemon's
  * reason.
  */
@@ -164,6 +185,7 @@ export async function placeAttachmentViaTransport(
   fileName: string,
   source: { sourcePath: string; mimeType?: string },
   onProgress?: UploadProgressCallback,
+  signal?: AbortSignal,
 ): Promise<PlaceAttachmentResult> {
   if (!isRemoteBackend()) {
     return placeAttachment(workspaceId, fileName, {
@@ -181,9 +203,10 @@ export async function placeAttachmentViaTransport(
     );
   }
   if (size > MAX_REMOTE_ATTACHMENT_BYTES) {
-    return placeAttachmentChunked(workspaceId, fileName, source, size, onProgress);
+    return placeAttachmentChunked(workspaceId, fileName, source, size, onProgress, signal);
   }
   const data = await readFileBase64(source.sourcePath);
+  throwIfAborted(signal);
   return placeAttachment(workspaceId, fileName, { data, mimeType: source.mimeType });
 }
 
@@ -200,8 +223,10 @@ async function placeAttachmentChunked(
   source: { sourcePath: string; mimeType?: string },
   size: number,
   onProgress?: UploadProgressCallback,
+  signal?: AbortSignal,
 ): Promise<PlaceAttachmentResult> {
   const sha256 = await hashFileSha256(source.sourcePath);
+  throwIfAborted(signal);
   const { uploadId, maxChunkBytes } = await beginAttachmentUpload(
     workspaceId,
     fileName,
@@ -213,6 +238,7 @@ async function placeAttachmentChunked(
   const totalChunks = Math.ceil(size / chunkBytes);
   try {
     for (let seq = 0; seq < totalChunks; seq++) {
+      throwIfAborted(signal);
       const { content } = await readFileChunkBase64(
         source.sourcePath,
         seq * chunkBytes,
@@ -221,6 +247,7 @@ async function placeAttachmentChunked(
       await sendAttachmentUploadChunk(uploadId, seq, content);
       onProgress?.((seq + 1) / totalChunks);
     }
+    throwIfAborted(signal);
     return await commitAttachmentUpload(uploadId);
   } catch (error) {
     await abortAttachmentUpload(uploadId).catch(() => {

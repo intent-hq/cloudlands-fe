@@ -194,6 +194,15 @@ export async function beginAttachmentUpload(
 }
 
 /**
+ * Per-call timeout for chunk sends and commit. A 16 MiB chunk is ~21.3 MiB
+ * of base64 on the wire, which blows the transport's flat 30s default on
+ * connections below ~6 Mbit/s; 5 minutes tolerates ~0.6 Mbit/s. Commit gets
+ * the same bound: the daemon assembles and SHA-256-verifies up to 1 GiB
+ * before replying.
+ */
+const UPLOAD_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
  * Stage one seq-numbered base64 slice of a chunked upload
  * (`file.attachmentUpload.chunk`, PROTOCOL §5.9, v6.16). Retrying a seq is
  * idempotent on the daemon side.
@@ -203,7 +212,11 @@ export async function sendAttachmentUploadChunk(
   seq: number,
   data: string,
 ): Promise<{ uploadId: string; seq: number; receivedBytes: number }> {
-  return await backendRequest('file.attachmentUpload.chunk', { uploadId, seq, data });
+  return await backendRequest(
+    'file.attachmentUpload.chunk',
+    { uploadId, seq, data },
+    { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
+  );
 }
 
 /**
@@ -212,7 +225,11 @@ export async function sendAttachmentUploadChunk(
  * byte-shape-identical to a successful `file.placeAttachment`.
  */
 export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAttachmentResult> {
-  return await backendRequest<PlaceAttachmentResult>('file.attachmentUpload.commit', { uploadId });
+  return await backendRequest<PlaceAttachmentResult>(
+    'file.attachmentUpload.commit',
+    { uploadId },
+    { timeoutMs: UPLOAD_TRANSFER_TIMEOUT_MS },
+  );
 }
 
 /**
