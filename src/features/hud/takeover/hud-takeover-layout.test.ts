@@ -134,6 +134,40 @@ describe('hud-takeover-layout', () => {
       expect(coords.get('c')).toEqual({ x: 2, y: 0 });
     });
 
+    it('keeps sparse columns: a lone dependent follows its parent row instead of snapping to 0', () => {
+      // Roots a/b/c pack around the spec row; the d→e chain hangs off c and
+      // stays on c's row 1 even though columns 2 and 3 hold a single card.
+      const { coords } = dependencyGraphLayout([
+        t('a'),
+        t('b'),
+        t('c'),
+        t('d', ['c']),
+        t('e', ['d']),
+      ]);
+      expect(coords.get('a')).toEqual({ x: 1, y: -1 });
+      expect(coords.get('b')).toEqual({ x: 1, y: 0 });
+      expect(coords.get('c')).toEqual({ x: 1, y: 1 });
+      expect(coords.get('d')).toEqual({ x: 2, y: 1 });
+      expect(coords.get('e')).toEqual({ x: 3, y: 1 });
+    });
+
+    it('nudges same-desired-row collisions apart deterministically without inverting the order', () => {
+      const { coords } = dependencyGraphLayout([t('a'), t('b'), t('c', ['b']), t('d', ['b'])]);
+      expect(coords.get('a')).toEqual({ x: 1, y: -1 });
+      expect(coords.get('b')).toEqual({ x: 1, y: 0 });
+      // c and d both want b's row 0: the minimal nudge spreads them around it,
+      // keeping the input-order tie-break top→down.
+      expect(coords.get('c')).toEqual({ x: 2, y: -1 });
+      expect(coords.get('d')).toEqual({ x: 2, y: 0 });
+    });
+
+    it('islands stack below the full spec-component extent, not just row 0', () => {
+      const { coords } = dependencyGraphLayout([t('a'), t('b'), t('c'), t('e', ['ghost'])]);
+      // Spec component spans rows −1…1, so the island top lands at 1 + 2.
+      expect(coords.get('c')).toEqual({ x: 1, y: 1 });
+      expect(coords.get('e')).toEqual({ x: 1, y: 3 });
+    });
+
     it('stacks islands below the spec component with a one-cell gutter', () => {
       const { coords, edges } = dependencyGraphLayout([t('a'), t('e', ['ghost']), t('f', ['e'])]);
       expect(coords.get('a')).toEqual({ x: 1, y: 0 });

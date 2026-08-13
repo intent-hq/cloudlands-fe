@@ -117,13 +117,18 @@ export interface HudTakeoverGraphLayout {
  * Deterministic left→right layered-DAG layout on the lattice (the takeover
  * map's placement). Columns: the spec is a virtual root at x=0; a task with no
  * visible `dependsOn` sits at x=1, otherwise x = 1 + max(x of its deps)
- * (longest path). Rows within a column are ordered by the barycenter of the
- * dependencies' rows, tie-broken by input order. Weakly-connected components
+ * (longest path). Rows within a column anchor each task at the rounded
+ * barycenter of its dependencies' already-assigned rows (spec-rooted tasks
+ * average in the spec row 0; dep-free island tasks default to row 0), so
+ * columns may be sparse — a lone card follows its parent's row instead of
+ * snapping back to 0. Collisions resolve by ordering the column on the raw
+ * barycenter (tie-broken by input order) and nudging rows apart with minimal
+ * total displacement while preserving that order. Weakly-connected components
  * (over dep edges, after dropping dangling references to ids not in the list)
- * are laid out independently: the spec-rooted component is centered on y=0
- * around the spec cell, islands stack below it with a one-cell gutter.
- * Dangling-only deps anchor an island root without a spec edge. Same input ⇒
- * same output on every HUD instance.
+ * are laid out independently: the spec-rooted component surrounds the spec
+ * cell at y=0, islands stack below it with a one-cell gutter. Dangling-only
+ * deps anchor an island root without a spec edge. Same input ⇒ same output on
+ * every HUD instance.
  */
 export function dependencyGraphLayout(
   tasks: readonly HudTakeoverGraphTask[],
@@ -197,9 +202,16 @@ export function dependencyGraphLayout(
     .map(([, members]) => members)
     .sort((a, b) => inputIndex.get(a[0])! - inputIndex.get(b[0])!);
 
-  // Rows per component: columns left→right, each column's tasks sorted by
-  // barycenter of their deps' rows (spec-rooted tasks average in the spec
-  // row 0), tie-broken by input order, then centered on the column.
+  // Rows per component: columns left→right, each task anchored at the rounded
+  // barycenter of its deps' already-assigned rows (spec-rooted tasks average
+  // in the spec row 0; no assigned deps → row 0), leaving columns sparse.
+  // Collisions: sort the column by raw barycenter (tie-broken by input order),
+  // then place rows strictly increasing in that order with minimal total
+  // shove via L1 isotonic regression — pool-adjacent-violators over
+  // (desired − position), each pool valued at the lower median of its
+  // targets — so nudges never invert the barycenter order and stay as close
+  // to the desired rows as possible. A column of all-equal desired rows
+  // degenerates to the previous centered packing.
   const localY = new Map<string, number>();
   const layoutComponent = (members: string[]): { minY: number; maxY: number } => {
     const byColumn = new Map<number, string[]>();
@@ -227,12 +239,31 @@ export function dependencyGraphLayout(
         .sort(
           (a, b) => a.barycenter - b.barycenter || inputIndex.get(a.id)! - inputIndex.get(b.id)!,
         );
-      ordered.forEach(({ id }, i) => {
-        const y = i - Math.floor(ordered.length / 2);
-        localY.set(id, y);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
+      // Rows must be strictly increasing in sorted order; in z = row − position
+      // space that is non-decreasing z, so pool adjacent violators on the
+      // targets z_i = round(barycenter_i) − i and read each row back as
+      // pool value + position. Lower medians keep values integral and
+      // deterministic.
+      const pools: Array<{ targets: number[]; value: number }> = [];
+      ordered.forEach(({ barycenter }, i) => {
+        const targets = [Math.round(barycenter) - i];
+        let value = targets[0];
+        while (pools.length && pools[pools.length - 1].value > value) {
+          targets.push(...pools.pop()!.targets);
+          targets.sort((a, b) => a - b);
+          value = targets[Math.floor((targets.length - 1) / 2)];
+        }
+        pools.push({ targets, value });
       });
+      let i = 0;
+      for (const pool of pools) {
+        for (let k = 0; k < pool.targets.length; k++, i++) {
+          const y = pool.value + i;
+          localY.set(ordered[i].id, y);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
     }
     return { minY, maxY };
   };
