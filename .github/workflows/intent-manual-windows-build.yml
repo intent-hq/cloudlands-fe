@@ -143,12 +143,16 @@ jobs:
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}\resources\sidecar\intentd.exe
+          # Signing env is emptied when integrated_signing=false — the gate
+          # step is skipped, and scripts/windows-sign.cjs skips silently — so
+          # the secrets never reach an unsigned build's process env (same
+          # gating as manual-signed-build.yml's Windows leg).
           INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ steps.integrated_signing.outputs.enabled == 'true' && 'true' || '' }}
-          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
-          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
-          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
-          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS || '' }}
+          SM_HOST: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST || '' }}
+          SM_API_KEY: ${{ inputs.integrated_signing && secrets.INTENT_WINDOWS_SM_API_KEY || '' }}
+          SM_CLIENT_CERT_FILE: ${{ inputs.integrated_signing && format('{0}\Certificate_pkcs12.p12', runner.temp) || '' }}
+          SM_CLIENT_CERT_PASSWORD: ${{ inputs.integrated_signing && secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD || '' }}
         run: |
           pnpm run dist:win
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
