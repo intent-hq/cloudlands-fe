@@ -383,6 +383,7 @@
   let setupBranchStatus = $state<SetupStepStatus>('pending');
   let setupAgentStatus = $state<SetupStepStatus>('pending');
   let setupWorktreePath = $state<string | undefined>(undefined);
+  let setupWorkspaceId = $state<string | undefined>(undefined);
   let setupScriptStatus = $state<SetupStepStatus | undefined>(undefined);
 
   // Setup script state — session-local: the default is restored per repo
@@ -1158,6 +1159,7 @@
       if (setupScriptStatus) setupScriptStatus = 'active';
       setupAgentStatus = setupScriptStatus ? 'pending' : 'active';
       setupWorktreePath = workspace.worktreePath || workspace.repositoryPath;
+      setupWorkspaceId = workspace.id;
       logger.info('Workspace paths for setup card', {
         worktreePath: workspace.worktreePath,
         repositoryPath: workspace.repositoryPath,
@@ -1221,6 +1223,7 @@
               repoUrl={projectSelection?.githubUrl}
               repoPath={projectSelection?.repoPath}
               worktreePath={setupWorktreePath}
+              workspaceId={setupWorkspaceId}
               branch={projectSelection?.branch}
               baseRef={projectSelection?.branch
                 ? `origin/${projectSelection.branch}`
