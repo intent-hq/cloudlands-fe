@@ -24,8 +24,6 @@ export interface FileSearchResult {
 import type { Note } from '$shared/types';
 export type { Note };
 
-
-
 /**
  * Context item used in rich input for attaching files, notes, selections, etc.
  */
@@ -58,6 +56,12 @@ export interface ContextItem {
   // means the item is ready to send. Send/create is blocked while any item
   // is placing or failed.
   placementStatus?: 'placing' | 'failed' | 'placed';
+  // Chunk-acknowledged upload fraction (0..1) while a chunked remote
+  // placement (>25MB, file.attachmentUpload.*) is in flight — drives the
+  // uploading pill's percent label. Absent for single-shot placements
+  // (indeterminate spinner) and outside the 'placing' state. Transient
+  // UI-only state, never persisted.
+  placementProgress?: number;
   // Human-readable reason for a failed placement (daemon error detail, e.g.
   // "sourcePath is a directory"), shown in the failed pill tooltip. Absent
   // when no informative detail was available.
@@ -160,6 +164,67 @@ export async function placeAttachment(
   });
 }
 
+/** Result of `file.attachmentUpload.begin` (PROTOCOL §5.9, v6.16). */
+export interface BeginAttachmentUploadResult {
+  uploadId: string;
+  /** Daemon's decoded-bytes-per-chunk cap (16 MiB). */
+  maxChunkBytes: number;
+}
+
+/**
+ * Open a staged chunked attachment upload session on the daemon
+ * (`file.attachmentUpload.begin`, PROTOCOL §5.9, v6.16). The daemon verifies
+ * the assembled payload against `sha256` (lowercase hex) at commit. Errors
+ * propagate to the caller.
+ */
+export async function beginAttachmentUpload(
+  workspaceId: string,
+  fileName: string,
+  sizeBytes: number,
+  sha256: string,
+  mimeType?: string,
+): Promise<BeginAttachmentUploadResult> {
+  return await backendRequest<BeginAttachmentUploadResult>('file.attachmentUpload.begin', {
+    workspaceId,
+    fileName,
+    sizeBytes,
+    sha256,
+    ...(mimeType !== undefined && mimeType !== '' ? { mimeType } : {}),
+  });
+}
+
+/**
+ * Stage one seq-numbered base64 slice of a chunked upload
+ * (`file.attachmentUpload.chunk`, PROTOCOL §5.9, v6.16). Retrying a seq is
+ * idempotent on the daemon side.
+ */
+export async function sendAttachmentUploadChunk(
+  uploadId: string,
+  seq: number,
+  data: string,
+): Promise<{ uploadId: string; seq: number; receivedBytes: number }> {
+  return await backendRequest('file.attachmentUpload.chunk', { uploadId, seq, data });
+}
+
+/**
+ * Verify and place a completed chunked upload
+ * (`file.attachmentUpload.commit`, PROTOCOL §5.9, v6.16). The result is
+ * byte-shape-identical to a successful `file.placeAttachment`.
+ */
+export async function commitAttachmentUpload(uploadId: string): Promise<PlaceAttachmentResult> {
+  return await backendRequest<PlaceAttachmentResult>('file.attachmentUpload.commit', { uploadId });
+}
+
+/**
+ * Drop a staged chunked upload session and its staging directory
+ * (`file.attachmentUpload.abort`, PROTOCOL §5.9, v6.16). Idempotent.
+ */
+export async function abortAttachmentUpload(
+  uploadId: string,
+): Promise<{ uploadId: string; aborted: boolean }> {
+  return await backendRequest('file.attachmentUpload.abort', { uploadId });
+}
+
 /** Result of `file.getAttachmentInfo` (PROTOCOL §5.9, v6.12). */
 export interface AttachmentInfo {
   attachmentId: string;
@@ -249,8 +314,6 @@ export async function readFile(path: string, options?: ReadFileOptions): Promise
   }
 }
 
-
-
 /**
  * Search for symbols in the workspace via the daemon (`search.codebase`, PROTOCOL §5.15).
  * Errors surface as empty results — never fabricated data.
@@ -319,5 +382,3 @@ export async function createFileContext(path: string): Promise<any> {
     throw error;
   }
 }
-
-

@@ -395,6 +395,26 @@ export const FileReadSchema = z.object({
   workspaceId: z.string().optional(), // For remote workspace file routing
 });
 
+/**
+ * Sequential chunked read for large-file uploads (remote attachment
+ * placement): one bounded slice per call, base64-encoded. The length cap
+ * matches the daemon's 16 MiB `file.attachmentUpload.chunk` decoded cap.
+ */
+export const FileReadChunkSchema = z.object({
+  path: z.string().min(1, 'Path is required'),
+  offset: z.number().int().nonnegative(),
+  length: z
+    .number()
+    .int()
+    .positive()
+    .max(16 * 1024 * 1024),
+});
+
+/** Streaming SHA-256 of a host-local file (never buffers the whole file). */
+export const FileHashSchema = z.object({
+  path: z.string().min(1, 'Path is required'),
+});
+
 export const FileWriteSchema = z.object({
   path: z.string().min(1, 'Path is required'),
   content: z.string(),

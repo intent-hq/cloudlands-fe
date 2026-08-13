@@ -166,10 +166,7 @@
 
   // Import ContextItem from context-api.ts
   import { hasBlockingAttachments, type ContextItem } from './context-api';
-  import {
-    extractPlacementErrorDetail,
-    placeAttachmentViaTransport,
-  } from './attachment-placement';
+  import { extractPlacementErrorDetail, placeAttachmentViaTransport } from './attachment-placement';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -997,8 +994,9 @@
         : file.name;
 
     const sourcePath =
-      (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-        .electronAPI?.getPathForFile?.(file) ?? '';
+      (
+        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+      ).electronAPI?.getPathForFile?.(file) ?? '';
 
     const mimeType = file.type || undefined;
     const itemId = `attachment-pending-${Date.now()}-${fileName}`;
@@ -1049,15 +1047,25 @@
       return;
     }
 
-    patchItem({ placementStatus: 'placing', placementError: undefined });
+    patchItem({
+      placementStatus: 'placing',
+      placementError: undefined,
+      placementProgress: undefined,
+    });
     try {
-      const result = await placeAttachmentViaTransport(workspace.id, item.label, {
-        sourcePath: item.sourcePath,
-        mimeType: item.attachmentMimeType,
-      });
+      const result = await placeAttachmentViaTransport(
+        workspace.id,
+        item.label,
+        {
+          sourcePath: item.sourcePath,
+          mimeType: item.attachmentMimeType,
+        },
+        (fraction) => patchItem({ placementProgress: fraction }),
+      );
 
       patchItem({
         placementStatus: 'placed',
+        placementProgress: undefined,
         label: result.fileName,
         path: result.path,
         attachmentId: result.attachmentId,
@@ -1075,7 +1083,11 @@
     } catch (error) {
       logger.error('Failed to place attachment', { fileName: item.label, error });
       const detail = extractPlacementErrorDetail(error);
-      patchItem({ placementStatus: 'failed', placementError: detail });
+      patchItem({
+        placementStatus: 'failed',
+        placementError: detail,
+        placementProgress: undefined,
+      });
       toast.error(
         detail
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
@@ -1354,6 +1366,7 @@
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
             placementStatus={item.placementStatus}
+            placementProgress={item.placementProgress}
             placementError={item.placementError}
             onRetry={(id) => void runPlacement(id)}
             variant="chip"

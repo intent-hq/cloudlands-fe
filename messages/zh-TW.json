@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_wokenByCount_one": "智慧體被 {count} 個事件喚醒：",
   "chat_agentSubscriptions_wokenByEvents_tooltip": "智慧體被訂閱事件喚醒：",
   "chat_agentSubscriptions_wokenUp_label": "已喚醒",
+  "chat_attachmentPlacement_tooLargeRemote_error": "{name} 太大，無法附加 — 上限為 {maxGb} GB",
   "chat_attachmentPreview_placementFailed_tooltip": "附加 {name} 失敗 — 重試或移除後才能傳送",
   "chat_attachmentPreview_remove_ariaLabel": "移除 {name}",
   "chat_attachmentPreview_removeAttachment_ariaLabel": "移除附件",

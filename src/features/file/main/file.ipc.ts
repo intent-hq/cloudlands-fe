@@ -6,7 +6,8 @@
 
 import { ipcMain, dialog } from 'electron';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream } from 'fs';
+import { createHash } from 'crypto';
 import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
@@ -24,6 +25,8 @@ import { type IpcResponse, FileIpc } from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,
+  FileReadChunkSchema,
+  FileHashSchema,
   FileWriteSchema,
   FileDeleteSchema,
   FileListSchema,
@@ -211,6 +214,98 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.READ,
+    ),
+  );
+
+  // Read one bounded slice of a file (base64). Used by the chunked remote
+  // attachment upload (file.attachmentUpload.*, PROTOCOL §5.9) so gigabyte
+  // files never get buffered whole in either process.
+  ipcMain.handle(
+    FILE_CHANNELS.READ_CHUNK,
+    createSafeValidatedHandler(
+      FileReadChunkSchema,
+      async (_, validated): Promise<IpcResponse<FileIpc.ReadChunkResponse>> => {
+        try {
+          const expandedPath = expandPath(validated.path);
+          const stats = await fs.stat(expandedPath);
+          if (stats.isDirectory()) {
+            return {
+              success: false,
+              error: {
+                code: 'IS_DIRECTORY',
+                message: m.file_ipc_isDirectory_error({ path: validated.path }),
+              },
+            };
+          }
+          const handle = await fs.open(expandedPath, 'r');
+          try {
+            const buffer = Buffer.alloc(validated.length);
+            const { bytesRead } = await handle.read(buffer, 0, validated.length, validated.offset);
+            return {
+              success: true,
+              data: {
+                content: buffer.subarray(0, bytesRead).toString('base64'),
+                bytesRead,
+                size: stats.size,
+              },
+            };
+          } finally {
+            await handle.close();
+          }
+        } catch (error) {
+          logger.error('Failed to read file chunk', error as Error, { path: validated.path });
+          return {
+            success: false,
+            error: {
+              code: 'FILE_READ_FAILED',
+              message: error instanceof Error ? error.message : m.file_ipc_readFailed_error(),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.READ_CHUNK,
+    ),
+  );
+
+  // Streaming SHA-256 of a file (chunked remote attachment upload: the
+  // daemon verifies the assembled payload against this checksum at commit).
+  ipcMain.handle(
+    FILE_CHANNELS.HASH,
+    createSafeValidatedHandler(
+      FileHashSchema,
+      async (_, validated): Promise<IpcResponse<FileIpc.HashResponse>> => {
+        try {
+          const expandedPath = expandPath(validated.path);
+          const stats = await fs.stat(expandedPath);
+          if (stats.isDirectory()) {
+            return {
+              success: false,
+              error: {
+                code: 'IS_DIRECTORY',
+                message: m.file_ipc_isDirectory_error({ path: validated.path }),
+              },
+            };
+          }
+          const sha256 = await new Promise<string>((resolve, reject) => {
+            const hash = createHash('sha256');
+            const stream = createReadStream(expandedPath);
+            stream.on('data', (chunk) => hash.update(chunk));
+            stream.on('end', () => resolve(hash.digest('hex')));
+            stream.on('error', reject);
+          });
+          return { success: true, data: { sha256, size: stats.size } };
+        } catch (error) {
+          logger.error('Failed to hash file', error as Error, { path: validated.path });
+          return {
+            success: false,
+            error: {
+              code: 'FILE_READ_FAILED',
+              message: error instanceof Error ? error.message : m.file_ipc_readFailed_error(),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.HASH,
     ),
   );
 

@@ -1591,10 +1591,15 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     await dropFiles([makeFile('dump.har', 'application/json', 12 * 1024 * 1024)]);
 
     await waitFor(() => {
-      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'dump.har', {
-        sourcePath: '/home/user/Downloads/dump.har',
-        mimeType: 'application/json',
-      });
+      expect(placeAttachmentMock).toHaveBeenCalledWith(
+        'ws-1',
+        'dump.har',
+        {
+          sourcePath: '/home/user/Downloads/dump.har',
+          mimeType: 'application/json',
+        },
+        expect.any(Function),
+      );
     });
     // The placed file becomes a context item carrying the registry UUID +
     // metadata — never a mention chip, never an inline upload. oncontextAdd
@@ -1708,10 +1713,15 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     await waitFor(() => {
       expect(placeAttachmentMock).toHaveBeenCalledTimes(2);
     });
-    expect(placeAttachmentMock).toHaveBeenLastCalledWith('ws-1', 'big.log', {
-      sourcePath: '/home/user/big.log',
-      mimeType: 'text/plain',
-    });
+    expect(placeAttachmentMock).toHaveBeenLastCalledWith(
+      'ws-1',
+      'big.log',
+      {
+        sourcePath: '/home/user/big.log',
+        mimeType: 'text/plain',
+      },
+      expect.any(Function),
+    );
     await waitFor(() => {
       expect(oncontextAdd).toHaveBeenCalledTimes(1);
     });
@@ -1757,6 +1767,53 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     });
   });
 
+  it('uploading pill shows percent progress as chunk acks arrive (chunked upload)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/huge.bin');
+    let reportProgress!: (fraction: number) => void;
+    let resolvePlacement!: (v: unknown) => void;
+    placeAttachmentMock.mockImplementationOnce(
+      (_ws: string, _name: string, _source: unknown, onProgress: (fraction: number) => void) => {
+        reportProgress = onProgress;
+        return new Promise((resolve) => (resolvePlacement = resolve));
+      },
+    );
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('huge.bin', 'application/octet-stream', 100 * 1024 * 1024)]);
+
+    // Single-shot phase: indeterminate spinner, no percent label yet.
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="placing"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-testid="attachment-upload-progress"]')).toBeNull();
+
+    // Chunk acks drive the percent label.
+    reportProgress(0.25);
+    await waitFor(() => {
+      const label = document.querySelector('[data-testid="attachment-upload-progress"]');
+      expect(label?.textContent).toBe('25%');
+    });
+    reportProgress(0.75);
+    await waitFor(() => {
+      const label = document.querySelector('[data-testid="attachment-upload-progress"]');
+      expect(label?.textContent).toBe('75%');
+    });
+
+    resolvePlacement({
+      ok: true,
+      path: '.intent/attachments/huge.bin',
+      fileName: 'huge.bin',
+      size: 100 * 1024 * 1024,
+      attachmentId: 'att-uuid-7',
+      mimeType: 'application/octet-stream',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="placing"]')).toBeNull();
+    });
+    expect(document.querySelector('[data-testid="attachment-upload-progress"]')).toBeNull();
+  });
+
   it('places a non-image file arriving via clipboard paste (backed by a real file path)', async () => {
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/trace.log');
     placeAttachmentMock.mockResolvedValueOnce({
@@ -1797,9 +1854,8 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     // reload does): the restored item must render a failed pill that blocks
     // send, and retry must re-attempt placement from the persisted
     // sourcePath — never a silent drop.
-    const { serializeDraftAttachments, deserializeDraftAttachments } = await import(
-      '../chat-draft-attachments'
-    );
+    const { serializeDraftAttachments, deserializeDraftAttachments } =
+      await import('../chat-draft-attachments');
     const restored = deserializeDraftAttachments(
       serializeDraftAttachments([
         {
@@ -1843,10 +1899,15 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     });
     await fireEvent.click(screen.getByTestId('attachment-retry'));
     await waitFor(() => {
-      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'crash.log', {
-        sourcePath: '/home/user/crash.log',
-        mimeType: 'text/plain',
-      });
+      expect(placeAttachmentMock).toHaveBeenCalledWith(
+        'ws-1',
+        'crash.log',
+        {
+          sourcePath: '/home/user/crash.log',
+          mimeType: 'text/plain',
+        },
+        expect.any(Function),
+      );
     });
     await waitFor(() => {
       expect(oncontextAdd).toHaveBeenCalledTimes(1);
