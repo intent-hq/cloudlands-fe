@@ -46,10 +46,21 @@ export function takeoverEdgeColorIndex(orderIndex: number): number {
   return ((orderIndex % n) + n) % n;
 }
 
-/** Task inputs the edge layer needs: id + wire status, in layout input order. */
+/** Stroke/arrow color for ready-to-start dep edges (the palette's success green). */
+export const HUD_TAKEOVER_EDGE_READY_COLOR = 'hsl(145 58% 55%)';
+
+/**
+ * Task inputs the edge layer needs, in layout input order: id + wire status,
+ * plus the dependency fields (served verbatim off the wire, §5.4) that drive
+ * the ready-state pulse.
+ */
 export interface HudTakeoverEdgeTask {
   id: string;
   status: string;
+  /** Task-note ids this task depends on; omitted when empty. */
+  dependsOn?: readonly string[];
+  /** Daemon-computed `dependsOn` ids not yet complete; omitted when empty. */
+  unmetDependsOn?: readonly string[];
 }
 
 /**
@@ -64,6 +75,36 @@ const CONSUMED_DEST_STATUSES: ReadonlySet<string> = new Set([
   'cancelled',
 ]);
 
+/** Live-attention pulse on an edge: red conflict / green ready / none. */
+export type HudTakeoverEdgePulse = 'conflict' | 'ready' | null;
+
+/**
+ * Pulse state for one edge (pure edge → visual-state mapping):
+ * - `conflict` edges pulse red while the conflict is live — NEITHER endpoint
+ *   task is complete; once either endpoint completes, the pulse stops (the
+ *   edge then renders static and muted via `dimmed`).
+ * - `dep` edges pulse green when their DESTINATION task is ready to start:
+ *   non-empty `dependsOn`, empty/absent `unmetDependsOn`, and status
+ *   `not_started`. Any other status never pulses green; dependency-free
+ *   tasks have no dep edges, so they never pulse.
+ * - `spec` edges never pulse.
+ */
+export function takeoverEdgePulse(
+  kind: HudTakeoverMapEdgeKind,
+  from: HudTakeoverEdgeTask | undefined,
+  to: HudTakeoverEdgeTask | undefined,
+): HudTakeoverEdgePulse {
+  if (kind === 'conflict') {
+    return from?.status === 'complete' || to?.status === 'complete' ? null : 'conflict';
+  }
+  if (kind !== 'dep' || !to) return null;
+  const ready =
+    to.status === 'not_started' &&
+    (to.dependsOn?.length ?? 0) > 0 &&
+    (to.unmetDependsOn?.length ?? 0) === 0;
+  return ready ? 'ready' : null;
+}
+
 /** One drawable edge: stable id, rendered kind, orthogonal px polyline (≥2 points). */
 export interface HudTakeoverMapEdge {
   id: string;
@@ -71,8 +112,14 @@ export interface HudTakeoverMapEdge {
   points: Array<{ x: number; y: number }>;
   /** Source task's palette slot (dep edges only; null for spec/conflict). */
   colorIndex: number | null;
-  /** Dep edge whose destination is underway/finished → renders at reduced opacity. */
+  /**
+   * Renders at reduced opacity: a dep edge whose destination is
+   * underway/finished, or a conflict edge whose conflict is resolved
+   * (either endpoint complete).
+   */
   dimmed: boolean;
+  /** Pulse treatment (see `takeoverEdgePulse`). */
+  pulse: HudTakeoverEdgePulse;
 }
 
 /** Extra trim (px) past the target cell's border so the arrowhead sits clear of it. */
@@ -130,11 +177,11 @@ export function takeoverMapEdges(
   pitchPx: number = HUD_TAKEOVER_PITCH_PX,
 ): HudTakeoverMapEdge[] {
   const orderIndex = new Map<string, number>();
-  const statusById = new Map<string, string>();
+  const taskById = new Map<string, HudTakeoverEdgeTask>();
   tasks.forEach((task, i) => {
     if (!orderIndex.has(task.id)) {
       orderIndex.set(task.id, i);
-      statusById.set(task.id, task.status);
+      taskById.set(task.id, task);
     }
   });
   // Lane counts per channel so offsets center the used lanes on the gutter.
@@ -185,14 +232,19 @@ export function takeoverMapEdges(
       points.push({ x: prev.x, y: y - Math.sign(y - prev.y) * HUD_TAKEOVER_EDGE_TARGET_GAP_PX });
     }
     const sourceIndex = route.kind === 'dep' ? orderIndex.get(route.from) : undefined;
-    const destStatus = statusById.get(route.to);
+    const fromTask = taskById.get(route.from);
+    const toTask = taskById.get(route.to);
+    const pulse = takeoverEdgePulse(route.kind, fromTask, toTask);
     edges.push({
       id: route.id,
       kind: route.kind,
       points: points.map((p) => ({ x: round(p.x), y: round(p.y) })),
       colorIndex: sourceIndex !== undefined ? takeoverEdgeColorIndex(sourceIndex) : null,
       dimmed:
-        route.kind === 'dep' && destStatus !== undefined && CONSUMED_DEST_STATUSES.has(destStatus),
+        route.kind === 'dep'
+          ? toTask !== undefined && CONSUMED_DEST_STATUSES.has(toTask.status)
+          : route.kind === 'conflict' && pulse === null,
+      pulse,
     });
   }
   return edges;

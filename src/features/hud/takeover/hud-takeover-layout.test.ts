@@ -32,7 +32,9 @@ import {
   takeoverEdgeBoxPx,
   takeoverEdgeColorIndex,
   takeoverEdgePathD,
+  takeoverEdgePulse,
   takeoverMapEdges,
+  type HudTakeoverEdgeTask,
 } from './hud-takeover-edges';
 import { takeoverEdgeRoutes } from './hud-takeover-routing';
 import {
@@ -331,7 +333,8 @@ describe('hud-takeover-layout', () => {
         expect(dimmedTo.get(id)?.dimmed, `${id} (${status})`).toBe(consumed.includes(status));
       }
 
-      // Conflict edges never dim or take a palette color, whatever the states.
+      // Conflict edges never take a palette color; a resolved conflict
+      // (either endpoint complete) dims to static muted.
       const conflicted = [t('a'), t('b', undefined, ['a'])];
       const { routing: cRouting, pitch: cPitch } = route(conflicted);
       const conflict = takeoverMapEdges(
@@ -339,12 +342,52 @@ describe('hud-takeover-layout', () => {
         infos(conflicted, { a: 'complete', b: 'in_progress' }),
         cPitch,
       ).find((edge) => edge.kind === 'conflict');
-      expect(conflict).toMatchObject({ colorIndex: null, dimmed: false });
-      // Spec edges likewise, even into an in-progress task.
+      expect(conflict).toMatchObject({ colorIndex: null, dimmed: true, pulse: null });
+      // A live conflict (neither complete) never dims — it pulses instead.
+      const live = takeoverMapEdges(
+        cRouting,
+        infos(conflicted, { a: 'in_progress', b: 'not_started' }),
+        cPitch,
+      ).find((edge) => edge.kind === 'conflict');
+      expect(live).toMatchObject({ colorIndex: null, dimmed: false, pulse: 'conflict' });
+      // Spec edges never dim, even into an in-progress task.
       const spec = takeoverMapEdges(cRouting, infos(conflicted, { a: 'in_progress' }), cPitch).find(
         (edge) => edge.kind === 'spec',
       );
-      expect(spec).toMatchObject({ colorIndex: null, dimmed: false });
+      expect(spec).toMatchObject({ colorIndex: null, dimmed: false, pulse: null });
+    });
+
+    it('pulses green only the incoming dep edges of a ready task (deps met, not started)', () => {
+      // c is ready: non-empty dependsOn, no unmetDependsOn, not_started.
+      const tasks = [t('a'), t('b'), t('c', ['a', 'b'])];
+      const { routing, pitch } = route(tasks);
+      const edgeTasks: HudTakeoverEdgeTask[] = [
+        { id: 'a', status: 'complete' },
+        { id: 'b', status: 'complete' },
+        { id: 'c', status: 'not_started', dependsOn: ['a', 'b'] },
+      ];
+      const edges = takeoverMapEdges(routing, edgeTasks, pitch);
+      const pulseTo = new Map(routing.routes.map((r, i) => [`${r.kind}:${r.to}`, edges[i].pulse]));
+      // Both incoming dep edges pulse; the spec edges into the dependency-free
+      // roots a/b never pulse.
+      expect(pulseTo.get('dep:c')).toBe('ready');
+      expect(pulseTo.get('spec:a')).toBeNull();
+      expect(pulseTo.get('spec:b')).toBeNull();
+      expect(edges.filter((edge) => edge.pulse === 'ready')).toHaveLength(2);
+      // Ready edges are full-strength (not_started is not a consumed status).
+      for (const edge of edges) {
+        if (edge.pulse === 'ready') expect(edge.dimmed).toBe(false);
+      }
+
+      // Unmet dependencies suppress the ready pulse even when not started.
+      const unmet = takeoverMapEdges(
+        routing,
+        edgeTasks.map((task) =>
+          task.id === 'c' ? { ...task, unmetDependsOn: ['a'] } : { ...task, status: 'in_progress' },
+        ),
+        pitch,
+      );
+      expect(unmet.every((edge) => edge.pulse !== 'ready')).toBe(true);
     });
 
     it('busy fixture: px segments stay orthogonal and never cross a cell interior', () => {
@@ -400,6 +443,70 @@ describe('hud-takeover-layout', () => {
             expect(cut).toBe(false);
           }
         }
+      }
+    });
+  });
+
+  describe('takeoverEdgePulse (pure edge → visual-state mapping)', () => {
+    const task = (status: string, extra: Partial<HudTakeoverEdgeTask> = {}): HudTakeoverEdgeTask => ({
+      id: 'x',
+      status,
+      ...extra,
+    });
+    const STATUSES = [
+      'not_started',
+      'waiting',
+      'discussion_needed',
+      'blocked',
+      'in_progress',
+      'review_required',
+      'complete',
+      'cancelled',
+    ];
+
+    it('conflict edges pulse red while NEITHER endpoint is complete', () => {
+      for (const a of STATUSES) {
+        for (const b of STATUSES) {
+          const expected = a === 'complete' || b === 'complete' ? null : 'conflict';
+          expect(takeoverEdgePulse('conflict', task(a), task(b)), `${a} × ${b}`).toBe(expected);
+        }
+      }
+      // Unknown endpoints are not complete → still live.
+      expect(takeoverEdgePulse('conflict', undefined, undefined)).toBe('conflict');
+      expect(takeoverEdgePulse('conflict', task('complete'), undefined)).toBeNull();
+    });
+
+    it('dep edges pulse green ONLY into a ready task (deps met, not started)', () => {
+      const ready = { dependsOn: ['d1'] };
+      for (const status of STATUSES) {
+        const expected = status === 'not_started' ? 'ready' : null;
+        expect(takeoverEdgePulse('dep', task('complete'), task(status, ready)), status).toBe(
+          expected,
+        );
+      }
+      // Empty unmetDependsOn counts as met; non-empty suppresses the pulse.
+      expect(
+        takeoverEdgePulse('dep', undefined, task('not_started', { ...ready, unmetDependsOn: [] })),
+      ).toBe('ready');
+      expect(
+        takeoverEdgePulse(
+          'dep',
+          undefined,
+          task('not_started', { ...ready, unmetDependsOn: ['d1'] }),
+        ),
+      ).toBeNull();
+      // Dependency-free destinations never pulse, nor do unknown ones.
+      expect(takeoverEdgePulse('dep', undefined, task('not_started'))).toBeNull();
+      expect(takeoverEdgePulse('dep', undefined, task('not_started', { dependsOn: [] }))).toBeNull();
+      expect(takeoverEdgePulse('dep', task('complete'), undefined)).toBeNull();
+    });
+
+    it('spec edges never pulse', () => {
+      for (const status of STATUSES) {
+        expect(
+          takeoverEdgePulse('spec', undefined, task(status, { dependsOn: ['d1'] })),
+          status,
+        ).toBeNull();
       }
     });
   });

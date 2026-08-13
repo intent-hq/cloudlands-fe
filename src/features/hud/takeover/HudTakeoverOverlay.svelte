@@ -323,7 +323,7 @@
                   class:ov-map-pan-animate={motion && drag.animate}
                 >
                   <!-- Dependency edges under the cells (arrowheads point at the dependent). -->
-                  <HudTakeoverEdges edges={map.edges} box={map.edgeBox} />
+                  <HudTakeoverEdges edges={map.edges} box={map.edgeBox} {motion} />
 
                   <!-- Spec cell anchored at (0,0) -->
                   <div

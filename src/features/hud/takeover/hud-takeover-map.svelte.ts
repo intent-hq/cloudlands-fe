@@ -71,7 +71,8 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
   const routing = $derived(takeoverEdgeRoutes(graph));
   const pitch = $derived(takeoverPitchPx(routing.maxLanes));
   // Task input order drives the per-source palette rotation; statuses drive
-  // the consumed-edge dimming (destination underway/finished).
+  // the consumed-edge dimming (destination underway/finished) and the pulse
+  // treatments (live conflicts, ready-to-start dependents).
   const edges = $derived(takeoverMapEdges(routing, getTasks(), pitch));
 
   const edgeBox = $derived(takeoverEdgeBoxPx(occupied, pitch));

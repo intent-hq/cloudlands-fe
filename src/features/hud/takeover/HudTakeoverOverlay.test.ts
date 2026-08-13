@@ -726,6 +726,7 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
   afterEach(() => {
     cleanup();
     appStore.dispose();
+    vi.unstubAllGlobals();
   });
 
   function seedGraphTasks(
@@ -804,11 +805,77 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     expect(conflict?.getAttribute('marker-end')).toBeNull();
 
     // Consumption dimming: a→b enters in-progress b (dim); b→c enters
-    // not-started c (full-strength); spec/conflict never dim.
+    // not-started c (full-strength); spec never dims; the b↔c conflict is
+    // live (neither endpoint complete) so it stays full-strength and pulses.
     expect(aToB?.classList.contains('ov-edge-dim')).toBe(true);
     expect(bToC?.classList.contains('ov-edge-dim')).toBe(false);
     expect(spec?.classList.contains('ov-edge-dim')).toBe(false);
     expect(conflict?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict?.getAttribute('data-pulse')).toBe('conflict');
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(true);
+    expect(conflict?.classList.contains('ov-edge-pulse')).toBe(true);
+    // c has an unmet dependency → its incoming dep edge never pulses green.
+    for (const edge of [aToB, bToC, spec]) {
+      expect(edge?.getAttribute('data-pulse')).toBeNull();
+      expect(edge?.classList.contains('ov-edge-pulse')).toBe(false);
+    }
+  });
+
+  it('pulses ready dep edges green and mutes resolved conflicts', () => {
+    // b is ready: deps met (no unmetDependsOn), not started. The a↔b
+    // conflict is resolved (a complete) → static muted.
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'], conflictsWith: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const dep = edges.find((edge) => edge.getAttribute('data-kind') === 'dep');
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict');
+
+    expect(dep?.getAttribute('data-pulse')).toBe('ready');
+    expect(dep?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-ready)');
+    expect(dep?.classList.contains('ov-edge-ready')).toBe(true);
+    expect(dep?.classList.contains('ov-edge-pulse')).toBe(true);
+    expect(dep?.classList.contains('ov-edge-dim')).toBe(false);
+
+    expect(conflict?.getAttribute('data-pulse')).toBeNull();
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-pulse')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-dim')).toBe(true);
+  });
+
+  it('reduced motion: pulse colors stay, the animation class does not apply', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'in_progress' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'], conflictsWith: ['a'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['a'], unmetDependsOn: [] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict');
+    const ready = edges.find((edge) => edge.getAttribute('data-pulse') === 'ready');
+
+    // Same static treatment (colors/markers), no pulse animation class.
+    expect(conflict?.getAttribute('data-pulse')).toBe('conflict');
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(true);
+    expect(ready?.classList.contains('ov-edge-ready')).toBe(true);
+    expect(ready?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-ready)');
+    for (const edge of edges) {
+      expect(edge.classList.contains('ov-edge-pulse')).toBe(false);
+    }
   });
 
   it('dims the dep edge into a complete dependent (no unmet override anymore)', () => {
