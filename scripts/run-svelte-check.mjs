@@ -13,12 +13,14 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /** Repo has 800+ .svelte files alone; a plausible run checks far more. */
 export const MIN_FILES = 500;
 
 const MACHINE_LINE = /^\d+ (.*)$/;
-const COMPLETED_LINE = /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS (\d+) FILES_WITH_PROBLEMS$/;
+const COMPLETED_LINE =
+  /^COMPLETED (\d+) FILES (\d+) ERRORS (\d+) WARNINGS (\d+) FILES_WITH_PROBLEMS$/;
 
 /**
  * Parse one machine-verbose output line into a structured event.
@@ -39,7 +41,8 @@ export function parseMachineLine(line) {
     };
   }
   if (body.startsWith('START ')) return { kind: 'start' };
-  if (body.startsWith('FAILURE ')) return { kind: 'failure', message: body.slice('FAILURE '.length) };
+  if (body.startsWith('FAILURE '))
+    return { kind: 'failure', message: body.slice('FAILURE '.length) };
   if (body.startsWith('{')) {
     try {
       const diagnostic = JSON.parse(body);
@@ -70,7 +73,9 @@ export function formatDiagnostic(diagnostic, workspaceDir = process.cwd()) {
 export function evaluateRun({ exitCode, completed, minFiles = MIN_FILES }) {
   if (exitCode !== 0) return [];
   if (!completed) {
-    return ['svelte-check exited 0 without reporting a COMPLETED summary — output format changed or the run was cut short.'];
+    return [
+      'svelte-check exited 0 without reporting a COMPLETED summary — output format changed or the run was cut short.',
+    ];
   }
   const failures = [];
   if (completed.files < minFiles) {
@@ -144,7 +149,7 @@ async function main() {
   process.exit(exitCode !== 0 ? exitCode : guardFailures.length > 0 ? 1 : 0);
 }
 
-const isDirectRun = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
   await main();
 }

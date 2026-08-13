@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MIN_FILES,
-  evaluateRun,
-  formatDiagnostic,
-  parseMachineLine,
-} from './run-svelte-check.mjs';
+import { MIN_FILES, evaluateRun, formatDiagnostic, parseMachineLine } from './run-svelte-check.mjs';
 
 describe('parseMachineLine', () => {
   it('parses a COMPLETED summary line', () => {
-    const event = parseMachineLine('1590680326283 COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS 1 FILES_WITH_PROBLEMS');
+    const event = parseMachineLine(
+      '1590680326283 COMPLETED 4400 FILES 0 ERRORS 2 WARNINGS 1 FILES_WITH_PROBLEMS',
+    );
     expect(event).toEqual({
       kind: 'completed',
       files: 4400,
@@ -66,7 +63,13 @@ describe('formatDiagnostic', () => {
 });
 
 describe('evaluateRun', () => {
-  const completed = { kind: 'completed', files: 4400, errors: 0, warnings: 0, filesWithProblems: 0 };
+  const completed = {
+    kind: 'completed',
+    files: 4400,
+    errors: 0,
+    warnings: 0,
+    filesWithProblems: 0,
+  };
 
   it('accepts a plausible clean run', () => {
     expect(evaluateRun({ exitCode: 0, completed })).toEqual([]);
