@@ -1229,6 +1229,36 @@ describe('sectionPRs', () => {
     expect(result.otherRoots).toHaveLength(1);
   });
 
+  it('attributes monitors case-insensitively (GitHub repo identities)', () => {
+    // A monitor registered as Acme/IntentD against a root detected as
+    // acme/intentd must not misclassify into otherTracked; likewise a
+    // differently-cased workspace-repo monitor stays in own.
+    const rootMonitor = makeMonitor({
+      monitorId: 'mon-root',
+      repo: 'Acme/IntentD',
+      prNumber: 99,
+      url: 'https://github.com/acme/intentd/pull/99',
+    });
+    const ownMonitor = makeMonitor({ monitorId: 'mon-own', repo: 'ACME/Widgets' });
+    const result = sectionPRs([], [ownMonitor, rootMonitor], workspaceRepo, [makeRoot()], getTitle);
+    expect(result.otherTracked).toEqual([]);
+    expect(result.own).toHaveLength(1);
+    expect(result.own[0].monitorAgentId).toBe('agent-1');
+    expect(result.otherRoots.map((pr) => pr.number)).toEqual([7, 99]);
+  });
+
+  it('drops the crossRepo context for a root PR on a differently-cased workspace repo', () => {
+    const root = makeRoot({
+      repoOwner: 'Acme',
+      repoName: 'Widgets',
+      pullRequests: [makeRootPR({ number: 8, url: 'https://github.com/Acme/Widgets/pull/8' })],
+    });
+    const result = sectionPRs([], [], workspaceRepo, [root], getTitle);
+    expect(result.otherRoots).toHaveLength(1);
+    expect(result.otherRoots[0].crossRepo).toBeUndefined();
+    expect(result.otherRoots[0].crossRepoDisplay).toBeUndefined();
+  });
+
   it('keeps repo-qualified row keys unique across all three sections', () => {
     const rootMonitor = makeMonitor({
       monitorId: 'mon-root',

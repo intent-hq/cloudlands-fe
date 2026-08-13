@@ -31,10 +31,14 @@
   let commits = $state<CommitInfo[]>([]);
   let loading = $state(false);
   let loadError = $state<string | null>(null);
+  // Monotonic request epoch: only the most recent load may apply its results,
+  // so an older in-flight response can't overwrite a newer refresh.
+  let requestEpoch = 0;
 
   const COMMIT_LIMIT = 30;
 
   async function load(wsId: string, rootId: string) {
+    const epoch = ++requestEpoch;
     loading = true;
     loadError = null;
     const [statusResult, historyResult] = await Promise.all([
@@ -43,7 +47,9 @@
       // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as above
       gitClient.getHistory(wsId as WorkspaceId, COMMIT_LIMIT, { gitRootId: rootId }),
     ]);
-    // Ignore stale responses after a root/workspace switch
+    // Ignore stale responses: superseded by a newer load, or the selected
+    // root/workspace changed while this one was in flight.
+    if (epoch !== requestEpoch) return;
     if (rootId !== gitRootId || wsId !== workspaceId) return;
     if (statusResult.ok) {
       status = statusResult.data;
@@ -51,7 +57,14 @@
       status = null;
       loadError = statusResult.error;
     }
-    commits = historyResult.ok ? historyResult.data : [];
+    if (historyResult.ok) {
+      commits = historyResult.data;
+    } else {
+      // A commits failure must surface as the error state, not a
+      // plausible-but-wrong "No commits" empty state.
+      commits = [];
+      loadError = loadError ?? historyResult.error;
+    }
     loading = false;
   }
 

@@ -519,13 +519,18 @@
   $effect(() => {
     const ac = $acceptChangesState$;
     const pending = $pendingAutoAction$;
+    // While a secondary root is selected the primary body is unmounted, so
+    // prSectionRef/mergePanelRef are undefined — leave the pending action
+    // queued (unconsumed) until the selection returns to primary; reading
+    // the flag here re-runs the effect on that switch (monorepo#2053).
+    const browsingSecondaryRoot = isBrowsingSecondaryRoot;
     untrack(() => {
       if (ac.commitMessage && ac.commitMessage !== commitMessage) {
         commitMessage = ac.commitMessage;
       }
 
       // Handle pending auto-actions
-      if (pending) {
+      if (pending && !browsingSecondaryRoot) {
         appStore.dispatch(setPendingAutoAction(workspaceId, null));
         if (pending.action === 'commit') {
           isCommitting = true;

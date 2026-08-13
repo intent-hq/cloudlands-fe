@@ -86,10 +86,9 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
       select: () => mockAcceptChangesState,
     },
   ),
-  selectPendingAutoAction: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => null),
-    { select: () => null },
-  ),
+  // Reads mutable state + registers with flushFtSelectors so tests can inject
+  // a pending auto-action after mount (secondary-root browsing tests).
+  selectPendingAutoAction: createMockFtSelector(() => mockSidebarChangesState.pendingAutoAction),
   selectSidebarCommitWhenReady: Object.assign(
     (workspaceId: string) => createSelectorReadable(workspaceId, () => false),
     { select: () => false },
@@ -2309,6 +2308,85 @@ describe('SidebarChangesPanel', () => {
       expect(listText.indexOf('Other PRs')).toBeLessThan(listText.indexOf('Workspace PR'));
       expect(listText).not.toContain('Create PR');
       expect(listText).not.toContain('Merge');
+    });
+
+    it('leaves a pending auto-action queued while browsing a secondary root', async () => {
+      // While a secondary root is selected the primary body (PRSection /
+      // MergePanel refs) is unmounted — consuming the action there would
+      // silently drop an agent-triggered auto create-PR or merge.
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot()]);
+      mockRootGetStatus.mockResolvedValue({
+        ok: true,
+        data: {
+          branch: 'feature/sub',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [],
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+        },
+      });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+
+      // Select the secondary root
+      const trigger = container.querySelector(
+        '[data-testid="git-root-selector"] button',
+      ) as HTMLButtonElement;
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeTruthy();
+      });
+
+      // A pending auto-action arrives while browsing the secondary root
+      mockDispatch.mockClear();
+      mockSidebarChangesState.pendingAutoAction = {
+        action: 'create-pr',
+        workspaceId: 'ws-1',
+      };
+      flushFtSelectors();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Not consumed: no setPendingAutoAction(null) dispatch while the
+      // primary view (and its refs) is unmounted
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+      );
+
+      // Back to primary: the still-queued action is now consumed
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeFalsy();
+      });
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+        );
+      });
     });
   });
 });

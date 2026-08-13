@@ -451,17 +451,23 @@ export function sectionPRs(
   secondaryRoots: GitRootPRSource[],
   getDisplayTitle: (pr: PullRequestInfo) => string,
 ): SectionedPRs {
+  // GitHub repo identities are case-insensitive (see shortRepoDisplay), so
+  // all attribution comparisons here normalize to lowercase.
+  const workspaceRepoLower = workspaceRepo?.toLowerCase();
   const rootRepos = new Set<string>();
   for (const root of secondaryRoots) {
-    if (root.repoOwner && root.repoName) rootRepos.add(`${root.repoOwner}/${root.repoName}`);
+    if (root.repoOwner && root.repoName)
+      rootRepos.add(`${root.repoOwner}/${root.repoName}`.toLowerCase());
   }
 
   const primaryMonitors: PrMonitorRow[] = [];
   const rootMonitors: PrMonitorRow[] = [];
   const trackedMonitors: PrMonitorRow[] = [];
   for (const monitor of monitors) {
-    if (!workspaceRepo || monitor.repo === workspaceRepo) primaryMonitors.push(monitor);
-    else if (rootRepos.has(monitor.repo)) rootMonitors.push(monitor);
+    const monitorRepoLower = monitor.repo.toLowerCase();
+    if (!workspaceRepoLower || monitorRepoLower === workspaceRepoLower)
+      primaryMonitors.push(monitor);
+    else if (rootRepos.has(monitorRepoLower)) rootMonitors.push(monitor);
     else trackedMonitors.push(monitor);
   }
 
@@ -481,7 +487,7 @@ export function sectionPRs(
       // A root on the workspace repo (e.g. a subtree checkout) needs no repo
       // context; otherwise keep the full identity for row keys, as
       // mergeMonitoredPRs does for cross-repo monitors.
-      const sameRepo = workspaceRepo !== undefined && repo === workspaceRepo;
+      const sameRepo = workspaceRepoLower !== undefined && repo.toLowerCase() === workspaceRepoLower;
       rootRows.push({
         number: pr.number,
         title: getDisplayTitle(pr),
