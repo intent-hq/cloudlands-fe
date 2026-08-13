@@ -139,6 +139,7 @@
 
   // Shared layout so every row's icon and label line up in the same columns.
   const menuItemClass =
+    // i18n-ignore (CSS class list, not user-facing text)
     'w-full min-w-0 justify-start gap-2 pl-2! pr-2.5! focus-visible:border-transparent! focus-visible:bg-secondary focus-visible:ring-0!';
   const iconSlotClass = 'flex size-4 shrink-0 items-center justify-center';
   // "Choose app" shows a LOCAL app picker against a workspace file path, so

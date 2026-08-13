@@ -380,12 +380,19 @@
     "fr",
     "es"
   ],
+  "events_activity_script_fallback": [
+    "fr",
+    "es"
+  ],
   "events_activity_verbFile_label": [
     "zh-CN",
     "zh-TW",
     "de",
     "fr",
     "es"
+  ],
+  "events_activity_workspaceStatus_label": [
+    "de"
   ],
   "externalEditors_ipc_applications_filterName": [
     "fr"
