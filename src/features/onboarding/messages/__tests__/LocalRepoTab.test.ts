@@ -149,4 +149,24 @@ describe('LocalRepoTab — recent repos filtering', () => {
     });
     expect(props.onSelect).toHaveBeenCalledWith('/home/dev/manual', undefined);
   });
+
+  it('exempts manually picked folders from the exclusion filter', async () => {
+    // Picking a path that the filter would otherwise exclude (a workspace-owned
+    // standalone checkout) must still surface it — the user chose it explicitly.
+    mocks.state.workspaces = [standaloneWorkspace];
+    mocks.state.pickedPath = '/ws/standalone';
+    const props = baseProps();
+    const { container } = render(LocalRepoTab, { props });
+
+    expect(rowPaths(container)).toHaveLength(0);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.onboarding_localRepoTab_browse_ariaLabel() }),
+    );
+
+    await waitFor(() => {
+      const paths = rowPaths(container);
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toContain('/ws/standalone');
+    });
+  });
 });
