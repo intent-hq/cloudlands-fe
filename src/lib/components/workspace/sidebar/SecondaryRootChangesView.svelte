@@ -93,7 +93,7 @@
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     <span class="text-ui truncate min-w-0">{branchLabel}</span>
     <span
-      class="shrink-0 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px] uppercase tracking-wide"
+      class="shrink-0 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-xs uppercase tracking-wide"
       title={m.workspace_sidebarChanges_rootReadOnly_tooltip()}
       >{m.workspace_sidebarChanges_rootReadOnly_label()}</span
     >
@@ -131,12 +131,12 @@
               <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
                 >{file.status}</span
               >
-              <span class="truncate min-w-0 text-foreground/90" title={file.path}
+              <span class="truncate min-w-0 text-foreground" title={file.path}
                 >{file.path}</span
               >
               {#if file.staged}
                 <span
-                  class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-[10px]"
+                  class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
                   >{m.workspace_fileChanges_staged_label()}</span
                 >
               {/if}
@@ -156,7 +156,7 @@
           {#each commits as commit (commit.hash)}
             <li class="flex items-center gap-1.5 py-0.5 min-w-0 text-xs">
               <span class="shrink-0 font-mono text-ghost">{commit.sha || commit.hash.slice(0, 7)}</span>
-              <span class="truncate min-w-0 text-foreground/90" title={commit.message}
+              <span class="truncate min-w-0 text-foreground" title={commit.message}
                 >{commit.message.split('\n')[0]}</span
               >
               <span class="shrink-0 ml-auto text-ghost">

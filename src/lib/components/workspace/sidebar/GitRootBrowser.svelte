@@ -107,7 +107,7 @@
             : m.workspace_sidebarChanges_rootPrimary_label()}
         </span>
       </Select.Trigger>
-      <Select.Content portal class="max-h-[300px]">
+      <Select.Content portal class="max-h-72">
         {#each $gitRootEntries$ ?? [] as entry (entry.key)}
           <Select.Item value={entry.key} label={rootDisplayLabel(entry)}>
             <span class="truncate">{rootDisplayLabel(entry)}</span>
@@ -121,7 +121,7 @@
     <p class="mb-2 text-ui text-subtle leading-snug" data-testid="git-root-agents">
       {m.workspace_sidebarChanges_rootAgents_label()}
       <!-- i18n-ignore (agent display names) -->
-      <span class="text-foreground/90">{attributedAgentNames.join(', ')}</span>
+      <span class="text-foreground">{attributedAgentNames.join(', ')}</span>
     </p>
   {/if}
 
