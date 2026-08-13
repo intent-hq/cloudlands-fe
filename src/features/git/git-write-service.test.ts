@@ -21,6 +21,10 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { setGitStatus } from "$store/renderer/slices/git/git-slice";
 import { selectGitStatus } from "$store/renderer/slices/git/git-selectors";
+import { setChanges } from "$store/renderer/slices/changes/changes-slice";
+import { selectFileTrackingChanges } from "$store/renderer/slices/changes/changes-selectors";
+import { ChangeStage } from "$features/file-tracking/types";
+import type { TrackedChange } from "$features/file-tracking/types";
 import { commit, discardFiles, stageFiles, unstageFiles } from "./git-write-service";
 
 const gitApi = appClient.git as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -36,6 +40,17 @@ function makeStatus(overrides: Partial<GitStatus> = {}): GitStatus {
     hasUncommittedChanges: true,
     hasUntrackedFiles: false,
     ...overrides,
+  };
+}
+
+function makeTracked(path: string, stage: ChangeStage): TrackedChange {
+  return {
+    id: `tracked:${stage}:${path}`,
+    file: path,
+    relativePath: path,
+    stage,
+    stats: { additions: 3, deletions: 1 },
+    attribution: { manual: true, timestamp: 42 },
   };
 }
 
@@ -114,6 +129,83 @@ describe("gitWriteService (fake seam, real store)", () => {
     expect(result.success).toBe(false);
     const file = selectGitStatus.select(appStore.state, WS)?.files.find((f) => f.path === "a.ts");
     expect(file?.staged).toBe(true);
+  });
+
+  it("converges the changes slice to the fresh status before stageFiles resolves", async () => {
+    appStore.dispatch(setGitStatus(WS, makeStatus()));
+    appStore.dispatch(setChanges(WS, [makeTracked("a.ts", ChangeStage.Unstaged)]));
+    gitApi.status.mockResolvedValueOnce(
+      makeStatus({ files: [{ path: "a.ts", status: GitFileStatus.Modified, staged: true }] }) as never,
+    );
+
+    await stageFiles(WS, ["a.ts"]);
+
+    const rows = selectFileTrackingChanges.select(appStore.state, WS);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      relativePath: "a.ts",
+      stage: ChangeStage.Staged,
+      // Enriched from the pre-existing tracked row, not rebuilt from scratch.
+      stats: { additions: 3, deletions: 1 },
+    });
+  });
+
+  it("converges the changes slice to the fresh status before unstageFiles resolves", async () => {
+    appStore.dispatch(
+      setGitStatus(WS, makeStatus({ files: [{ path: "a.ts", status: GitFileStatus.Modified, staged: true }] })),
+    );
+    appStore.dispatch(setChanges(WS, [makeTracked("a.ts", ChangeStage.Staged)]));
+    gitApi.status.mockResolvedValueOnce(
+      makeStatus({ files: [{ path: "a.ts", status: GitFileStatus.Modified, staged: false }] }) as never,
+    );
+
+    await unstageFiles(WS, ["a.ts"]);
+
+    const rows = selectFileTrackingChanges.select(appStore.state, WS);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      relativePath: "a.ts",
+      stage: ChangeStage.Unstaged,
+      stats: { additions: 3, deletions: 1 },
+    });
+  });
+
+  it("leaves the changes slice untouched when staging fails", async () => {
+    appStore.dispatch(setGitStatus(WS, makeStatus()));
+    const seeded = [makeTracked("a.ts", ChangeStage.Unstaged)];
+    appStore.dispatch(setChanges(WS, seeded));
+    gitApi.stage.mockResolvedValueOnce({ success: false, error: "no" } as never);
+
+    const result = await stageFiles(WS, ["a.ts"]);
+
+    expect(result.success).toBe(false);
+    expect(gitApi.status).not.toHaveBeenCalled();
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toBe(seeded);
+  });
+
+  it("leaves the changes slice untouched when unstaging fails", async () => {
+    appStore.dispatch(
+      setGitStatus(WS, makeStatus({ files: [{ path: "a.ts", status: GitFileStatus.Modified, staged: true }] })),
+    );
+    const seeded = [makeTracked("a.ts", ChangeStage.Staged)];
+    appStore.dispatch(setChanges(WS, seeded));
+    gitApi.unstage.mockResolvedValueOnce({ success: false, error: "no" } as never);
+
+    const result = await unstageFiles(WS, ["a.ts"]);
+
+    expect(result.success).toBe(false);
+    expect(gitApi.status).not.toHaveBeenCalled();
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toBe(seeded);
+  });
+
+  it("leaves the changes slice untouched when the status refetch returns null", async () => {
+    appStore.dispatch(setGitStatus(WS, makeStatus()));
+    const seeded = [makeTracked("a.ts", ChangeStage.Unstaged)];
+    appStore.dispatch(setChanges(WS, seeded));
+
+    await stageFiles(WS, ["a.ts"]);
+
+    expect(selectFileTrackingChanges.select(appStore.state, WS)).toBe(seeded);
   });
 
   it("discard forwards paths and reconciles the store on success", async () => {

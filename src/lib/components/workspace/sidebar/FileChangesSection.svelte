@@ -331,9 +331,9 @@
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        // Staging routes through the AppClient seam (git.stage). TODO: the
-        // file-tracking-rendered list converges only once file-tracking moves
-        // off legacy IPC (out of scope for this wave).
+        // Staging routes through the AppClient seam (git.stage); the seam
+        // resolves only after the changes slice has converged with the fresh
+        // git status, so isStaging holds until the lists have moved.
         const result = await stageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
           toast.error(m.workspace_fileChanges_stageFailed_error(), {

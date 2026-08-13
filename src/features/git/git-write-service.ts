@@ -5,17 +5,21 @@
  * saga-trigger actions. Each operation: (1) applies an optional optimistic store
  * update for instant UI feedback, (2) awaits the matching `appClient.git.*`
  * mutation (which forwards to intentd and never throws — it returns a
- * `MutationResult`), and (3) reconciles: it refetches `git.status` so the store
- * converges to the daemon's source of truth (the same loop the live git
- * subscribe→refetch path drives on `git:*` events); on failure the optimistic
- * change is rolled back to the pre-mutation snapshot.
+ * `MutationResult`), and (3) reconciles: it refetches `git.status` and, before
+ * resolving, converges BOTH the git-status slice and the file-tracking changes
+ * slice (via `reconcileGitStatusChanges`, the same rebuild the lifecycle read
+ * saga applies) to the daemon's source of truth — so a caller awaiting e.g.
+ * Stage All holds its in-progress UI until the rendered file lists have
+ * actually moved sections; on failure the optimistic change is rolled back to
+ * the pre-mutation snapshot and the changes slice is left untouched.
  *
  * Exposed operations: `stageFiles`, `unstageFiles` (optimistic + rollback),
  * `discardFiles` and `commit` (DESTRUCTIVE — no optimistic mutation; the
  * post-mutation status is reconciled from the daemon regardless of outcome).
  *
  * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, git slice actions, and selectors (per src/store AGENTS.md).
+ * configured store, slice actions, selectors (per src/store AGENTS.md), and the
+ * pure `reconcileGitStatusChanges` helper.
  */
 import { appClient } from "$lib/client";
 import type { GitCommitParams, MutationResult } from "$lib/client";
@@ -23,15 +27,27 @@ import type { GitStatus } from "$shared/types";
 import { store as appStore } from "$store/renderer/store";
 import { setGitStatus } from "$store/renderer/slices/git/git-slice";
 import { selectGitStatus } from "$store/renderer/slices/git/git-selectors";
+import { setChanges } from "$store/renderer/slices/changes/changes-slice";
+import { selectFileTrackingChanges } from "$store/renderer/slices/changes/changes-selectors";
+import { reconcileGitStatusChanges } from "$features/file-tracking/git-status-reconciliation";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("GitWriteService");
 
-/** Refetch git status from the seam and converge the store to it. */
+/**
+ * Refetch git status from the seam and converge the store to it: the git-status
+ * slice first, then the file-tracking changes slice (rows rebuilt from the
+ * fresh status, enriched from the current tracked rows). Both dispatches happen
+ * before this resolves, so seam callers only settle once the rendered change
+ * lists reflect the post-mutation state.
+ */
 async function reconcileGitStatus(workspaceId: string): Promise<void> {
   try {
     const status = await appClient.git.status(workspaceId);
-    if (status) appStore.dispatch(setGitStatus(workspaceId, status));
+    if (!status) return;
+    appStore.dispatch(setGitStatus(workspaceId, status));
+    const tracked = selectFileTrackingChanges.select(appStore.state, workspaceId);
+    appStore.dispatch(setChanges(workspaceId, reconcileGitStatusChanges(status.files, tracked)));
   } catch (error) {
     logger.error("Failed to refetch git status after a mutation", error);
   }
