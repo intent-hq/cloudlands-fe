@@ -300,6 +300,19 @@ class AutoUpdateService {
   }
 
   async setChannel(channel: UpdateChannel): Promise<void> {
+    // Disarm quit-install synchronously, before the first await below
+    // (dynamic import + prefs write): a quit landing in that window must not
+    // install an artifact downloaded from the feed the user just switched
+    // away from (PR #1162 review). 'update-downloaded' re-arms it once a
+    // download validated against the current feed completes. No-op during
+    // initialize()'s internal call (status is still 'idle' there).
+    if (
+      this.state.status === 'available' ||
+      this.state.status === 'downloading' ||
+      this.state.status === 'downloaded'
+    ) {
+      autoUpdater.autoInstallOnAppQuit = false;
+    }
     this.state.channel = channel;
 
     // Persist the channel choice BEFORE the baseUrl guard so the preference
@@ -376,6 +389,20 @@ class AutoUpdateService {
       // download. Keep it so a channel switch can cancel the in-flight
       // download (the manual downloadUpdate() path constructs its own token).
       if (result?.cancellationToken) {
+        const token = result.cancellationToken;
+        // Cancelling this token rejects the result's downloadPromise with
+        // CancellationError, and nothing else ever observes that promise —
+        // without a handler, every switch-mid-autodownload leaves an
+        // unhandled rejection in the main process. Genuine download failures
+        // still surface via the 'error' event, so a non-cancellation
+        // rejection is only logged here.
+        result.downloadPromise?.catch((error: Error) => {
+          if (token.cancelled) {
+            logger.debug('autoDownload promise settled after cancellation');
+          } else {
+            logger.warn('autoDownload promise rejected', { error: error.message });
+          }
+        });
         if (this.channelSwitchEpoch !== epochAtStart) {
           // The channel switched while this check was in flight: it ran
           // against the PREVIOUS feed, so the download its autoDownload
@@ -384,9 +411,16 @@ class AutoUpdateService {
           // check against the new feed.
           logger.info('Cancelling stale-feed autoDownload started before channel switch');
           this.expectingDownloadCancel = true;
-          result.cancellationToken.cancel();
-        } else {
-          this.downloadCancellationToken = result.cancellationToken;
+          token.cancel();
+        } else if ((this.state.status as UpdateStatus) !== 'downloaded') {
+          // The narrow-defeating cast is needed because the event handlers
+          // mutate status out of band during the await above. If the
+          // download already completed before this line ran (fast cache
+          // re-resolve: 'update-downloaded' fires before the check promise
+          // settles), the token was consumed by that terminal event —
+          // re-storing it would break the "cleared on every terminal
+          // updater event" invariant documented on the field.
+          this.downloadCancellationToken = token;
         }
       }
       // checkForUpdates() resolving null/undefined means the updater is not

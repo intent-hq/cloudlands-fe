@@ -340,6 +340,90 @@ describe('channel-switch immediate update check', () => {
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
   });
 
+  it("SET_CHANNEL in the 'available' window (autoDownload started, no progress yet) cancels the old-feed download", async () => {
+    const { setChannelHandler, checkMock, service, updater } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    // autoDownload starts inside checkForUpdates() the moment
+    // 'update-available' fires, but the service only enters 'downloading' on
+    // the first 'download-progress' event — the switch lands in between.
+    const token = new TokenCtor();
+    let rejectDownloadPromise!: (e: Error) => void;
+    const downloadPromise = new Promise((_resolve, reject) => {
+      rejectDownloadPromise = reject;
+    });
+    checkMock.mockImplementation(async () => {
+      updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+      return { updateInfo: { version: '2.1.0' }, cancellationToken: token, downloadPromise };
+    });
+    await service.checkForUpdatesManual();
+    expect(service.getState().status).toBe('available');
+
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+
+    // Regression (PR #1162 review): the old-feed download used to survive
+    // this window — nothing was cancelled, quit-install stayed armed, and
+    // electron-updater's downloadPromise dedup would hand the fresh check
+    // the OLD download.
+    expect(token.cancel).toHaveBeenCalledTimes(1);
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+
+    // The cancel rejects the result's downloadPromise; the service attached
+    // a handler, so no unhandled rejection reaches the process (vitest
+    // fails the test on one).
+    rejectDownloadPromise(new Error('cancelled'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("a token from a check that settled as 'downloaded' before its result landed is not re-stored", async () => {
+    const { setChannelHandler, checkMock, service } = await setup();
+    const { default: electronUpdater } = await import('electron-updater');
+    const TokenCtor = (electronUpdater as unknown as { CancellationToken: new () => MockToken })
+      .CancellationToken;
+
+    // Fast cache re-resolve: 'update-downloaded' fires before the
+    // checkForUpdates() promise settles, so the terminal event has already
+    // consumed (cleared) the token by the time the result carries it back.
+    const token = new TokenCtor();
+    let resolveCheck!: (result: unknown) => void;
+    checkMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCheck = resolve;
+        }),
+    );
+    const check = service.checkForUpdatesManual();
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    resolveCheck({ updateInfo: { version: '2.1.0' }, cancellationToken: token });
+    await check;
+    expect(service.getState().status).toBe('downloaded');
+
+    // A later channel switch must not cancel the consumed token.
+    checkMock.mockReturnValue(new Promise(() => {}));
+    await setChannelHandler({}, { channel: 'beta' });
+    expect(token.cancel).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('setChannel() disarms quit-install synchronously before its first await', async () => {
+    const { service, updater } = await setup();
+
+    updaterHandlers['update-available']({ version: '2.1.0', releaseDate: '2026-01-01' });
+    updaterHandlers['update-downloaded']({ version: '2.1.0' });
+    expect(updater.autoInstallOnAppQuit).toBe(true);
+
+    // A quit landing while SET_CHANNEL awaits the prefs write must not
+    // install the stale artifact: the disarm happens before the first await.
+    const pending = service.setChannel('beta');
+    expect(updater.autoInstallOnAppQuit).toBe(false);
+    await pending;
+  });
+
   it('a terminal event clears the stored token so a stale token is never cancelled later', async () => {
     const { setChannelHandler, checkMock, downloadMock, service } = await setup();
 
