@@ -16,6 +16,7 @@ import { store as appStore } from '$store/renderer/store';
 import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
+import { reconcileReasoningEffort } from './utils/reconcile-reasoning-effort';
 
 const logger = createLogger('ReasoningEffort');
 
@@ -73,4 +74,18 @@ export async function applyReasoningEffort(
   const { toast } = await import('svelte-sonner');
   toast.error(result.error ?? m.chat_effortPicker_updateFailed_error());
   return false;
+}
+
+/** Reconcile and persist a session effort after its model changes. */
+export async function reconcileAgentReasoningEffort(
+  agentId: string,
+  workspaceId: string,
+  currentEffort: string | null | undefined,
+  supportedEfforts: readonly string[] | null | undefined,
+): Promise<boolean> {
+  const previousEffort = currentEffort ?? null;
+  const nextEffort = reconcileReasoningEffort(previousEffort, supportedEfforts);
+
+  if (nextEffort === previousEffort) return true;
+  return applyReasoningEffort(agentId, workspaceId, nextEffort, previousEffort);
 }

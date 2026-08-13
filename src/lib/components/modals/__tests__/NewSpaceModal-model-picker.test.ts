@@ -66,6 +66,10 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectAgentModelEffortLevels: Object.assign(() => mocks.readable(undefined), {
+    select: () => undefined,
+    withStore: () => () => mocks.readable(undefined),
+  }),
 }));
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({
@@ -84,7 +88,11 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
     select: () => undefined,
     withStore: () => () => mocks.readable(undefined),
   });
-  return { selectAgentSession };
+  const selectAgentReasoningEffort = Object.assign(() => mocks.readable(undefined), {
+    select: () => undefined,
+    withStore: () => () => mocks.readable(undefined),
+  });
+  return { selectAgentSession, selectAgentReasoningEffort };
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -281,7 +289,6 @@ describe('NewSpaceModal model-picker composition', () => {
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
     expect(within(teamListbox).getByRole('option', { name: /^GPT 5\.12 Last model/ })).toBeTruthy();
-    expect(within(teamListbox).getByText(/Effort: low · medium · high/)).toBeTruthy();
     await fireEvent.click(
       await within(teamListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
     );

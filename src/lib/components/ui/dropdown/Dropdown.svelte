@@ -49,6 +49,10 @@
     triggerClass?: string;
     /** Custom class for the content/popover */
     contentClass?: string;
+    /** Estimated content height used to position portal popovers */
+    contentMaxHeight?: number;
+    /** Let the options region fill the content height before scrolling */
+    fillContentHeight?: boolean;
     /** Custom class for the header */
     headerClass?: string;
     /** Called when value changes */
@@ -88,6 +92,8 @@
     class: className = '',
     triggerClass = '',
     contentClass = '',
+    contentMaxHeight,
+    fillContentHeight = false,
     headerClass = '',
     onchange,
     onopenchange,
@@ -235,8 +241,12 @@
     return allOptions.find((o) => o.value === value)?.label;
   });
 
-  async function handleOpen() {
-    if (disabled || open) return;
+  async function handleTriggerClick() {
+    if (disabled) return;
+    if (open) {
+      handleClose();
+      return;
+    }
 
     // Pre-compute highlight so the first render is correct
     highlightedIndex = findHighlightIndex();
@@ -288,7 +298,7 @@
     );
     const spaceBelow = Math.max(0, bottomBoundary - rect.bottom - 4);
     const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
-    const preferredDropdownHeight = portal ? 300 : 360;
+    const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
     const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
     const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
@@ -552,7 +562,7 @@
   <button
     bind:this={triggerRef}
     type="button"
-    onclick={handleOpen}
+    onclick={handleTriggerClick}
     onkeydown={handleKeyDown}
     {disabled}
     class={cn(
@@ -660,7 +670,10 @@
   <!-- Options -->
   <div
     data-scroll-container
-    class={cn(isPortal ? 'flex-1 min-h-0' : 'max-h-[300px]', 'overflow-y-auto pb-1')}
+    class={cn(
+      isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
+      'overflow-y-auto pb-1',
+    )}
   >
     {#if groups.length > 0}
       <!-- Grouped options -->
