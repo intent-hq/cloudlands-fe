@@ -5,7 +5,7 @@
  * Manages update lifecycle: check → download → install
  */
 
-import { app, BrowserWindow, powerMonitor } from 'electron';
+import { app, powerMonitor } from 'electron';
 import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-updater';
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
@@ -14,6 +14,7 @@ import { m } from '../../../shared/paraglide/messages.js';
 import { confirmQuitWithRunningAgents } from '../../../main/quit-confirmation';
 import { saveWindowSessions } from '../../../main/window';
 import { getActiveId } from '../../backend/main/connections-store';
+import { broadcastToRenderers } from './auto-update-broadcast';
 import { isUpdateChannel, type UpdateChannel, type UpdateState, type UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -53,7 +54,6 @@ class AutoUpdateService {
     channel: 'stable',
   };
 
-  private mainWindow: BrowserWindow | null = null;
   private initialized = false;
   private isManualCheck = false;
   private isConfirmingInstall = false;
@@ -70,18 +70,17 @@ class AutoUpdateService {
   private onResume: (() => void) | null = null;
 
   /**
-   * Initialize the updater. The window is optional (intent-hq/monorepo#1848):
-   * the secondary-startup task can run before any window exists, and the only
-   * window consumer (`sendToRenderer`) null-guards. The window ref attaches
-   * later via `updateMainWindow()` when window.ts creates a window.
+   * Initialize the updater. Initialization does not depend on any window
+   * existing (intent-hq/monorepo#1848): the secondary-startup task can run
+   * before window creation, and renderer notifications are broadcast to
+   * whatever windows are live at send time (`sendToRenderer`).
    */
-  async initialize(mainWindow: BrowserWindow | null = null) {
+  async initialize() {
     if (this.initialized) {
       logger.warn('AutoUpdateService already initialized');
       return;
     }
 
-    this.mainWindow = mainWindow;
     this.state.currentVersion = app.getVersion();
 
     // Configure auto-updater
@@ -121,14 +120,6 @@ class AutoUpdateService {
         logger.debug('Periodic update check failed', { error: err.message });
       });
     }, UPDATE_CHECK_INTERVAL_MS);
-  }
-
-  /**
-   * Update the main window reference.
-   * Call this when a new window is created to ensure events are sent to the correct window.
-   */
-  updateMainWindow(mainWindow: BrowserWindow) {
-    this.mainWindow = mainWindow;
   }
 
   /**
@@ -509,9 +500,7 @@ class AutoUpdateService {
   }
 
   private sendToRenderer(channel: string, data: unknown) {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(channel, data);
-    }
+    broadcastToRenderers(channel, data);
   }
 }
 

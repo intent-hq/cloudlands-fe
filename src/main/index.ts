@@ -998,29 +998,21 @@ app.whenReady().then(async () => {
       helpMenuItems.push({
         label: m.menu_check_for_updates(),
         click: async () => {
-          const mainWindow = getMainWindow();
-          logger.info('[Menu] Check for Updates clicked', {
-            isDevMode,
-            hasMainWindow: !!mainWindow,
-          });
+          logger.info('[Menu] Check for Updates clicked', { isDevMode });
 
-          // Signal renderer to show toast immediately for responsive feedback
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('auto-update:show-toast');
-          }
+          const { broadcastToRenderers } =
+            await import('../features/auto-update/main/auto-update-broadcast');
+          // Signal renderers to show toast immediately for responsive feedback
+          broadcastToRenderers('auto-update:show-toast');
 
           if (isDevMode) {
             // In dev mode, auto-updater is not initialized
             // Send "up to date" notification directly
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              logger.info('[Menu] Sending auto-update:up-to-date to renderer');
-              mainWindow.webContents.send('auto-update:up-to-date', {
-                version: app.getVersion(),
-                isDev: true,
-              });
-            } else {
-              logger.warn('[Menu] mainWindow not available for sending up-to-date notification');
-            }
+            logger.info('[Menu] Broadcasting auto-update:up-to-date to renderers');
+            broadcastToRenderers('auto-update:up-to-date', {
+              version: app.getVersion(),
+              isDev: true,
+            });
           } else {
             // In production, use the auto-update service
             try {
@@ -1199,32 +1191,21 @@ app.whenReady().then(async () => {
           {
             label: m.menu_check_for_updates(),
             click: async () => {
-              const mainWindow = getMainWindow();
-              logger.info('[Menu] Check for Updates clicked', {
-                isDevMode,
-                hasMainWindow: !!mainWindow,
-              });
+              logger.info('[Menu] Check for Updates clicked', { isDevMode });
 
-              // Signal renderer to show toast immediately for responsive feedback
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('auto-update:show-toast');
-              }
+              const { broadcastToRenderers } =
+                await import('../features/auto-update/main/auto-update-broadcast');
+              // Signal renderers to show toast immediately for responsive feedback
+              broadcastToRenderers('auto-update:show-toast');
 
               if (isDevMode) {
                 // In dev mode, auto-updater is not initialized
                 // Send "up to date" notification directly
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  logger.info('[Menu] Sending auto-update:up-to-date to renderer');
-                  mainWindow.webContents.send('auto-update:up-to-date', {
-                    version: app.getVersion(),
-                    isDev: true,
-                  });
-                } else {
-                  logger.warn(
-                    // i18n-ignore (developer log message)
-                    '[Menu] mainWindow not available for sending up-to-date notification',
-                  );
-                }
+                logger.info('[Menu] Broadcasting auto-update:up-to-date to renderers');
+                broadcastToRenderers('auto-update:up-to-date', {
+                  version: app.getVersion(),
+                  isDev: true,
+                });
               } else {
                 // In production, use the auto-update service
                 try {
@@ -1589,9 +1570,9 @@ app.whenReady().then(async () => {
       // window creation — the outer flow awaits getActiveId() first, which
       // yields the event loop — and gating on the window used to skip
       // initialization for the whole session, leaving manual checks to die in
-      // the watchdog timeout. When mainWindow is still null here, the ref
-      // attaches later via the updateAutoUpdaterWindow() calls in window.ts.
-      initializeAutoUpdater(mainWindow);
+      // the watchdog timeout. Renderer notifications broadcast to whatever
+      // windows are live at send time.
+      initializeAutoUpdater();
     } else {
       // Dev mode: the updater never initializes — unblock boot-time
       // GET_STATE waiters so they answer the default state.

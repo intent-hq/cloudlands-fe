@@ -5,10 +5,7 @@
  * Bridges the auto-update service with the renderer process.
  */
 
-import {
-  BrowserWindow,
-  ipcMain,
-} from 'electron';
+import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
@@ -114,6 +111,20 @@ export function setupAutoUpdateIPC(): void {
       SetChannelRequestSchema,
       async (_event, validated) => {
         await autoUpdateService.setChannel(validated.channel);
+        // User-initiated channel switch: check the new channel's feed right
+        // away with manual-check feedback (checking → up-to-date /
+        // update-available toast) instead of waiting for the hourly timer.
+        // Only user actions reach this handler — initialize()'s internal
+        // setChannel call never does, so startup keeps its single delayed
+        // check. checkForUpdatesManual() itself skips the check while a
+        // download is in progress or already complete. Fire-and-forget: a
+        // slow or failed check must not delay or fail the SET_CHANNEL ack,
+        // which the renderer awaits to confirm the switch.
+        void autoUpdateService.checkForUpdatesManual().catch((error) => {
+          logger.debug('Post-channel-switch update check failed', {
+            error: (error as Error).message,
+          });
+        });
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.SET_CHANNEL,
@@ -124,15 +135,14 @@ export function setupAutoUpdateIPC(): void {
 }
 
 /**
- * Initialize the auto-updater. The window is optional
- * (intent-hq/monorepo#1848): the deferred secondary-startup task can run
- * before any window exists, and initialization must not depend on
- * window-creation timing. When no window exists yet, the ref attaches later
- * via the updateAutoUpdaterWindow() calls in window.ts.
+ * Initialize the auto-updater. Initialization does not depend on
+ * window-creation timing (intent-hq/monorepo#1848): the deferred
+ * secondary-startup task can run before any window exists, and renderer
+ * notifications are broadcast to whatever windows are live at send time.
  */
-export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): void {
+export function initializeAutoUpdater(): void {
   void autoUpdateService
-    .initialize(mainWindow)
+    .initialize()
     .catch((error) => {
       logger.error('AutoUpdateService initialization failed', error as Error);
     })
@@ -148,15 +158,6 @@ export function initializeAutoUpdater(mainWindow: BrowserWindow | null = null): 
  */
 export function markAutoUpdaterNotInitialized(): void {
   settleChannelLoaded();
-}
-
-/**
- * Update the auto-updater's main window reference.
- * Call this when a new window is created to ensure status events
- * are sent to the correct (current) window.
- */
-export function updateAutoUpdaterWindow(mainWindow: BrowserWindow): void {
-  autoUpdateService.updateMainWindow(mainWindow);
 }
 
 /**

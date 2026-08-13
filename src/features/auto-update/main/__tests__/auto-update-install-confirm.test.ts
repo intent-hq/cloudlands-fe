@@ -14,6 +14,10 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { Mock } from 'vitest';
 
+// Live windows returned by the mocked BrowserWindow.getAllWindows() — the
+// service broadcasts renderer notifications to every live window.
+const liveWindows: unknown[] = [];
+
 // Mock Electron before importing the service
 vi.mock('electron', () => ({
   app: {
@@ -21,7 +25,7 @@ vi.mock('electron', () => ({
     getVersion: () => '2.0.0',
     on: vi.fn(),
   },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: { getAllWindows: () => liveWindows },
   powerMonitor: {
     on: vi.fn(),
   },
@@ -66,9 +70,14 @@ async function setupDownloadedService() {
 
   const mockWindow = {
     isDestroyed: () => false,
-    webContents: { send: vi.fn() },
-  } as never;
-  await svc.autoUpdateService.initialize(mockWindow);
+    webContents: {
+      isDestroyed: () => false,
+      getURL: () => 'app://workspaces/workspace/x',
+      send: vi.fn(),
+    },
+  };
+  liveWindows.push(mockWindow);
+  await svc.autoUpdateService.initialize();
   updaterHandlers['update-downloaded']({ version: '2.1.0', releaseDate: '2026-01-01' });
   expect(svc.autoUpdateService.getState().status).toBe('downloaded');
 
@@ -83,6 +92,7 @@ async function setupDownloadedService() {
 describe('AutoUpdateService.installUpdate confirmation gating', () => {
   beforeEach(async () => {
     testUserDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-update-install-test-'));
+    liveWindows.length = 0;
     vi.clearAllMocks();
     vi.resetModules();
   });
