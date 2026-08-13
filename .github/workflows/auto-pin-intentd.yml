@@ -1,8 +1,7 @@
 # Scheduled intentd sidecar pin bump.
 #
-# Every 30 minutes (at :15 and :45, offset from intentd's on-the-hour
-# auto-cut cadence so a freshly published intentd beta is picked up within
-# the half-hour) this
+# Every hour (at :15, offset from intentd's on-the-hour auto-cut cadence so
+# a freshly published intentd beta is picked up shortly after it lands) this
 # workflow compares the latest intentd beta — beta.json on the fixed
 # `channel-beta` release of the public intent-hq/intentd-releases mirror, the
 # same manifest the sitter consumes — against the `intentd.version` pin. When
@@ -36,7 +35,7 @@ permissions: {}
 
 on:
   schedule:
-    - cron: "15,45 * * * *"
+    - cron: "15 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
