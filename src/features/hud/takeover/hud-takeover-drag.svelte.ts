@@ -27,8 +27,10 @@ export interface HudTakeoverMapDrag {
   /**
    * Sync the auto-pan with the active takeover: recenters on a new
    * workspace/changed-cell pair, then schedules the glide onto a far cell
-   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same pair
-   * are no-ops so reactive re-runs never clobber a manual drag.
+   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same
+   * pair at the same pitch are no-ops so reactive re-runs never clobber a
+   * manual drag; a pitch change re-keys (the target cell's px position
+   * moved) so the pan re-centers on the shifted cell.
    */
   syncAutoPan(workspaceId: string, coord: HudTakeoverCellCoord | null, delayMs: number): void;
   /** Recenter and cancel any pending auto-pan or in-flight drag. */
@@ -108,7 +110,10 @@ export function createTakeoverMapDrag(
       return animate;
     },
     syncAutoPan(workspaceId, coord, delayMs) {
-      const key = `${workspaceId}|${coord ? `${coord.x},${coord.y}` : ''}`;
+      // Pitch keys the dedupe only while a target cell exists: the cell's px
+      // position is coord × pitch, so a lane-count change must re-pan; with
+      // no target, a pitch change must not reset a manual drag.
+      const key = coord ? `${workspaceId}|${coord.x},${coord.y}|${getPitch()}` : `${workspaceId}|`;
       if (key === autoPanKey) return;
       autoPanKey = key;
       this.reset();

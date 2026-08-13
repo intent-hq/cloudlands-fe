@@ -139,9 +139,11 @@
   .ov-edge-conflict-live {
     stroke: hsl(var(--destructive-foreground) / 0.9);
   }
-  /* Ready-to-start pathway: stroke comes inline (success green). */
+  /* Ready-to-start pathway: stroke comes inline (success green). The wide
+     stroke is the static differentiator from a plain slot-1 (same green)
+     dep edge under reduced motion — dashes stay reserved for conflicts. */
   .ov-edge-ready {
-    stroke-width: 1.75;
+    stroke-width: 2.5;
   }
   /* Consumed dep edge (destination underway/finished) or resolved conflict
      (either endpoint complete): dim line + arrowhead, static. */

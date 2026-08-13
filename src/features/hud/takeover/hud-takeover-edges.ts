@@ -47,7 +47,7 @@ export function takeoverEdgeColorIndex(orderIndex: number): number {
 }
 
 /** Stroke/arrow color for ready-to-start dep edges (the palette's success green). */
-export const HUD_TAKEOVER_EDGE_READY_COLOR = 'hsl(145 58% 55%)';
+export const HUD_TAKEOVER_EDGE_READY_COLOR = HUD_TAKEOVER_EDGE_PALETTE[1];
 
 /**
  * Task inputs the edge layer needs, in layout input order: id + wire status,
