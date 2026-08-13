@@ -18,6 +18,7 @@
     faBell,
     faBolt,
     faCircleQuestion,
+    faCodePullRequest,
     faFile,
   } from '@fortawesome/free-solid-svg-icons';
   import { fly } from 'svelte/transition';
@@ -35,6 +36,11 @@
     stripHookWakePrefix,
     stripHookWakeStateNote,
   } from '$lib/utils/hook-wake-attribution';
+  import {
+    getPrMonitorWakeAttribution,
+    getPrMonitorWakeChipLabel,
+    stripPrMonitorWakePrefix,
+  } from '$lib/utils/pr-monitor-wake-attribution';
   import { summarizeEventWake } from './event-wake-summary';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -49,6 +55,12 @@
      * dismisses the questions.
      */
     heldForQuestions?: boolean;
+    /**
+     * `owner/repo` of the workspace repository, when known. Only shapes the
+     * PR-monitor wake chip label (cross-repo prefix, same convention as
+     * MonitoredPrsRow).
+     */
+    workspaceRepo?: string;
     onedit?: (
       messageId: string,
       content: string,
@@ -63,6 +75,7 @@
     messages = [],
     disabled = false,
     heldForQuestions = false,
+    workspaceRepo = undefined,
     onedit,
     onremove,
     onsendnow,
@@ -98,9 +111,7 @@
   // PROTOCOL §5.9) and opens the stored path in a file tab; missing file →
   // toast. The workspace id is read lazily at click time (not at component
   // init) so the component renders fine without a live store (e.g. in tests).
-  function openQueuedFileAttachment(
-    block: NonNullable<QueuedMessage['fileBlocks']>[number],
-  ) {
+  function openQueuedFileAttachment(block: NonNullable<QueuedMessage['fileBlocks']>[number]) {
     const wsId = selectActiveWorkspaceId.select(appStore.state);
     if (!wsId) return;
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName));
@@ -287,10 +298,29 @@
   }
 
   /**
+   * PR-monitor wake attribution for a queued entry
+   * (`messageMetadata.type === 'pr_monitor_wake'`, PROTOCOL §5.42). Returns
+   * null when absent/malformed so the entry renders as a normal queued
+   * message.
+   */
+  function queuedPrMonitorWakeAttribution(message: QueuedMessage) {
+    return getPrMonitorWakeAttribution(message.messageMetadata);
+  }
+
+  /**
+   * Display text for a queued PR-monitor wake: the `[PR monitor …]` prefix is
+   * stripped because the row already identifies the PR via the attribution
+   * chip (same display-only treatment as ChatMessage).
+   */
+  function queuedPrMonitorWakeDisplayText(message: QueuedMessage): string {
+    return stripPrMonitorWakePrefix(message.content);
+  }
+
+  /**
    * Exposed function for parent components to programmatically start editing
    * the last queued message (e.g., when user presses Up arrow in chat input).
-   * Skips system event-notification wakes, agent-to-agent messages, and
-   * hook wakes (not user-editable).
+   * Skips system event-notification wakes, agent-to-agent messages, hook
+   * wakes, and PR-monitor wakes (not user-editable).
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
@@ -298,7 +328,8 @@
       if (
         isEventNotification(messages[i]) ||
         queuedAgentAttribution(messages[i]) ||
-        queuedHookWakeAttribution(messages[i])
+        queuedHookWakeAttribution(messages[i]) ||
+        queuedPrMonitorWakeAttribution(messages[i])
       )
         continue;
       startEdit(messages[i]);
@@ -393,6 +424,7 @@
       {#each messages as message (message.id)}
         {@const agentAttr = queuedAgentAttribution(message)}
         {@const hookWakeAttr = queuedHookWakeAttribution(message)}
+        {@const prWakeAttr = queuedPrMonitorWakeAttribution(message)}
         <div
           class="group type-body grid flex items-start gap-2 px-2.5 py-1 text-subtle {message.editing
             ? 'opacity-60'
@@ -564,8 +596,60 @@
                 title={queuedHookWakeDisplayText(message)}
               >
                 <span class="text-foreground font-medium">{hookWakeAttr.displayName}</span>
+                <span class="type-caption opacity-70"> — {queuedHookWakeDisplayText(message)}</span>
+              </div>
+              {#if !disabled}
+                <div
+                  class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                >
+                  <Button
+                    variant="ghost-light"
+                    size="icon-xs"
+                    class="-my-1"
+                    onclick={() => onsendnow?.(message.id)}
+                    tooltip={m.chat_queuedMessages_sendNow_tooltip()}
+                  >
+                    <Fa icon={faPaperPlane} class="w-3 h-3" />
+                  </Button>
+                  <Button
+                    variant="ghost-light"
+                    size="icon-xs"
+                    class="-my-1"
+                    onclick={() => handleRemove(message.id)}
+                    tooltip={m.chat_queuedMessages_remove_tooltip()}
+                  >
+                    <Fa icon={faTrash} class="w-3 h-3" />
+                  </Button>
+                </div>
+              {/if}
+            </div>
+          {:else if prWakeAttr}
+            <!-- PR-monitor wake: compact attribution row, no edit -->
+            <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+              {#if message.requeuedAfterFailure}
+                <div
+                  class="type-caption flex shrink-0 items-center gap-1 text-warning"
+                  title={m.chat_queuedMessages_failedWillRetry_label()}
+                >
+                  <div aria-hidden="true">
+                    <Fa icon={faRotateRight} class="w-3 h-3" />
+                  </div>
+                  <span class="sr-only">{m.chat_queuedMessages_failedWillRetry_label()}</span>
+                </div>
+              {/if}
+              <div aria-hidden="true" class="shrink-0" data-testid="queued-pr-monitor-wake-icon">
+                <Fa icon={faCodePullRequest} class="w-3 h-3" />
+              </div>
+              <div
+                class="flex-1 min-w-0 truncate"
+                transition:safeSlide={{ axis: 'y', duration: 200 }}
+                title={queuedPrMonitorWakeDisplayText(message)}
+              >
+                <span class="text-foreground font-medium"
+                  >{getPrMonitorWakeChipLabel(prWakeAttr, workspaceRepo)}</span
+                >
                 <span class="type-caption opacity-70">
-                  — {queuedHookWakeDisplayText(message)}</span
+                  — {queuedPrMonitorWakeDisplayText(message)}</span
                 >
               </div>
               {#if !disabled}

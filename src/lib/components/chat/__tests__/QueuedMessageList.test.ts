@@ -529,6 +529,128 @@ describe('QueuedMessageList', () => {
     });
   });
 
+  describe('PR-monitor wake messages (messageMetadata.type === "pr_monitor_wake")', () => {
+    const PR_WAKE_METADATA = {
+      type: 'pr_monitor_wake',
+      monitorId: 'mon-1',
+      repo: 'acme/widgets',
+      prNumber: 7,
+      reason: 'changed',
+    };
+    const PR_WAKE_CONTENT = '[PR monitor acme/widgets#7] 2 new comments; checks passed';
+
+    it('renders PR icon + chip label with the prefix stripped, no Edit', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [queued({ content: PR_WAKE_CONTENT, messageMetadata: PR_WAKE_METADATA })],
+        },
+      });
+
+      expect(screen.getByText('#7')).toBeTruthy();
+      expect(screen.getByTestId('queued-pr-monitor-wake-icon')).toBeTruthy();
+      expect(screen.getByText(/2 new comments; checks passed/)).toBeTruthy();
+      expect(screen.queryByText(/\[PR monitor/)).toBeNull();
+
+      const tooltips = buttonTooltips(container);
+      expect(tooltips).not.toContain('Edit');
+      expect(tooltips).toContain('Remove');
+      expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
+    });
+
+    it('prefixes the chip with the repo when it differs from workspaceRepo', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [queued({ content: PR_WAKE_CONTENT, messageMetadata: PR_WAKE_METADATA })],
+          workspaceRepo: 'acme/other',
+        },
+      });
+
+      expect(screen.getByText('acme/widgets: #7')).toBeTruthy();
+    });
+
+    it('keeps the plain #N chip when the PR is in the workspace repo', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [queued({ content: PR_WAKE_CONTENT, messageMetadata: PR_WAKE_METADATA })],
+          workspaceRepo: 'acme/widgets',
+        },
+      });
+
+      expect(screen.getByText('#7')).toBeTruthy();
+    });
+
+    it('renders as a normal editable message when metadata is malformed', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'wake up',
+              // pr_monitor_wake without a usable repo
+              messageMetadata: { type: 'pr_monitor_wake', prNumber: 7 },
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('wake up')).toBeTruthy();
+      expect(screen.queryByTestId('queued-pr-monitor-wake-icon')).toBeNull();
+      expect(buttonTooltips(container)).toContain('Edit');
+    });
+
+    it('keeps the requeued-after-failure indicator on PR wake rows', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: PR_WAKE_CONTENT,
+              messageMetadata: PR_WAKE_METADATA,
+              requeuedAfterFailure: true,
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('#7')).toBeTruthy();
+      expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
+    });
+
+    it('editLastMessage() skips a trailing PR wake and edits the last user message', async () => {
+      const { component, container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ id: 'q-1', content: 'normal message', position: 0 }),
+            queued({
+              id: 'q-2',
+              content: PR_WAKE_CONTENT,
+              position: 1,
+              messageMetadata: PR_WAKE_METADATA,
+            }),
+          ],
+        },
+      });
+
+      expect(component.editLastMessage()).toBe(true);
+      await tick();
+
+      const textarea = container.querySelector('textarea');
+      expect(textarea).toBeTruthy();
+      expect(textarea?.value).toBe('normal message');
+    });
+
+    it('editLastMessage() returns false when the queue only holds PR wakes', async () => {
+      const { component, container } = render(QueuedMessageList, {
+        props: {
+          messages: [queued({ content: PR_WAKE_CONTENT, messageMetadata: PR_WAKE_METADATA })],
+        },
+      });
+
+      expect(component.editLastMessage()).toBe(false);
+      await tick();
+
+      expect(container.querySelector('textarea')).toBeNull();
+    });
+  });
+
   describe('image thumbnails', () => {
     const IMAGE_BLOCKS: NonNullable<QueuedMessage['imageBlocks']> = [
       { type: 'image', data: 'AAAA', mimeType: 'image/png' },
