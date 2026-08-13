@@ -1,11 +1,11 @@
 # Scheduled intentd sidecar pin bump.
 #
 # Every hour (at :15, offset from intentd's on-the-hour auto-cut cadence so
-# a freshly published intentd beta is picked up shortly after it lands) this
-# workflow compares the latest intentd beta — beta.json on the fixed
-# `channel-beta` release of the public intent-hq/intentd-releases mirror, the
-# same manifest the sitter consumes — against the `intentd.version` pin. When
-# the beta is newer it lands a pin bump via ONE rolling PR on the
+# a freshly published intentd alpha is picked up shortly after it lands) this
+# workflow compares the latest intentd alpha — alpha.json on the fixed
+# `channel-alpha` release of the public intent-hq/intentd-releases mirror —
+# against the `intentd.version` pin. When the alpha is newer it lands a pin
+# bump via ONE rolling PR on the
 # `auto/intentd-pin` branch with auto-merge (squash) armed; repeat runs update
 # that PR instead of opening new ones (same pattern as the monorepo's
 # auto-bump-submodules workflow).
@@ -49,7 +49,7 @@ concurrency:
 
 env:
   BRANCH: auto/intentd-pin
-  MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-beta/beta.json
+  MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-alpha/alpha.json
 
 jobs:
   pin:
@@ -79,7 +79,7 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_PAT }}
 
-      # Decide whether a bump is needed: read the latest beta version from the
+      # Decide whether a bump is needed: read the latest alpha version from the
       # mirror manifest (coded fallback to the intentd repo copy, like the
       # sitter), compare against the pin, and honor the hold-release label.
       - name: Decide
@@ -96,14 +96,14 @@ jobs:
           if [ -z "$manifest" ]; then
             echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
             tmp=$(mktemp -d)
-            if GH_TOKEN="${INTENTD_READ_PAT:-$GH_TOKEN}" gh release download channel-beta \
-                --repo intent-hq/intentd --pattern beta.json --dir "$tmp"; then
-              manifest=$(cat "$tmp/beta.json")
+            if GH_TOKEN="${INTENTD_READ_PAT:-$GH_TOKEN}" gh release download channel-alpha \
+                --repo intent-hq/intentd --pattern alpha.json --dir "$tmp"; then
+              manifest=$(cat "$tmp/alpha.json")
             fi
             rm -rf "$tmp"
           fi
           if [ -z "$manifest" ]; then
-            echo "::warning::Could not fetch the intentd beta channel manifest; skipping this run."
+            echo "::notice::Could not fetch the intentd alpha channel manifest (alpha.json may not be published yet); skipping this run."
             exit 0
           fi
 
@@ -125,7 +125,7 @@ jobs:
           # Mapping '-' to '~' gives Debian-style precedence in GNU sort -V:
           # a prerelease sorts BEFORE its release, matching SemVer.
           if [ "$(printf '%s\n%s\n' "${current//-/\~}" "${latest//-/\~}" | sort -V | tail -1)" = "${current//-/\~}" ]; then
-            echo "Pin $current is not older than the beta channel ($latest); nothing to do."
+            echo "Pin $current is not older than the alpha channel ($latest); nothing to do."
             exit 0
           fi
 
@@ -210,7 +210,7 @@ jobs:
           title="fix: bump intentd sidecar to v$LATEST"
           git checkout -B "$BRANCH"
           git add intentd.version
-          git commit -m "$title" -m "intentd.version: $CURRENT -> $LATEST (beta channel)."
+          git commit -m "$title" -m "intentd.version: $CURRENT -> $LATEST (alpha channel)."
 
           # Skip the push when the remote branch already carries this exact
           # tree, so repeated runs don't churn the PR (and its CI) with
@@ -226,7 +226,7 @@ jobs:
           body_file=$(mktemp)
           {
             echo "Automated intentd sidecar pin bump: \`intentd.version\` $CURRENT -> $LATEST,"
-            echo "following the beta channel manifest on [intent-hq/intentd-releases](https://github.com/intent-hq/intentd-releases)."
+            echo "following the alpha channel manifest on [intent-hq/intentd-releases](https://github.com/intent-hq/intentd-releases)."
             echo
             echo "- Typed \`fix:\` so release-please opens/refreshes the fe Release PR even with no fe commits"
             echo "  (an intentd-only change must still produce an fe beta), and because \`chore\` pins are"
