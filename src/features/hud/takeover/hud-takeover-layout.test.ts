@@ -6,6 +6,7 @@ import {
   canvasBounds,
   cellNeedsPan,
   clampTakeoverPan,
+  clampZoom,
   dependencyGraphLayout,
   edgeLinePx,
   emptyCellCoords,
@@ -14,9 +15,10 @@ import {
   HUD_TAKEOVER_BANNER_SCROLL_HOLD_S,
   HUD_TAKEOVER_BANNER_SCROLL_PX_PER_S,
   HUD_TAKEOVER_CELL_PX,
-  HUD_TAKEOVER_MIN_FIT_SCALE,
   HUD_TAKEOVER_PITCH_PX,
   HUD_TAKEOVER_SPEC_NODE_ID,
+  HUD_TAKEOVER_ZOOM_MAX,
+  HUD_TAKEOVER_ZOOM_MIN,
   takeoverFrameFrom,
   takeoverGraphFits,
   takeoverPanBounds,
@@ -218,7 +220,7 @@ describe('hud-takeover-layout', () => {
     });
   });
 
-  describe('fitScale (zoom-to-fit for large graphs)', () => {
+  describe('fitScale (manual zoom-to-fit target)', () => {
     const viewport = { width: 1000, height: 600 };
 
     it('keeps 1:1 when the occupied cells already fit the viewport', () => {
@@ -232,10 +234,15 @@ describe('hud-takeover-layout', () => {
       expect(scale).toBeCloseTo(500 / 858, 3);
     });
 
-    it('the tighter axis wins and the scale never drops below the floor', () => {
-      // y=3: half-extent 666 vs 300 → 0.45 (already at floor for y=30 too).
+    it('the tighter axis wins and the scale never drops below the zoom minimum', () => {
+      // y=3: half-extent 666 vs 300 → ≈0.450.
       expect(fitScale([{ x: 1, y: 3 }], viewport)).toBeCloseTo(300 / 666, 3);
-      expect(fitScale([{ x: 30, y: 30 }], viewport)).toBe(HUD_TAKEOVER_MIN_FIT_SCALE);
+      expect(fitScale([{ x: 30, y: 30 }], viewport)).toBe(HUD_TAKEOVER_ZOOM_MIN);
+    });
+
+    it('fits below the old 0.45 floor so large graphs actually fit', () => {
+      // x=8: half-extent 8·192+90 = 1626 vs 500 → ≈0.308 (< 0.45, > minimum).
+      expect(fitScale([{ x: 8, y: 0 }], viewport)).toBeCloseTo(500 / 1626, 3);
     });
 
     it('an unmeasured viewport (jsdom, pre-layout) keeps the 1:1 scale', () => {
@@ -244,6 +251,16 @@ describe('hud-takeover-layout', () => {
 
     it('never scales up past 1 for tiny graphs in huge viewports', () => {
       expect(fitScale([{ x: 1, y: 0 }], { width: 10_000, height: 10_000 })).toBe(1);
+    });
+  });
+
+  describe('clampZoom (manual zoom range)', () => {
+    it('clamps into the zoom range and rounds to 3 decimals', () => {
+      expect(clampZoom(3)).toBe(HUD_TAKEOVER_ZOOM_MAX);
+      expect(clampZoom(0.01)).toBe(HUD_TAKEOVER_ZOOM_MIN);
+      expect(clampZoom(1)).toBe(1);
+      // 1.25³ = 1.953125 → rounded for stable CSS output.
+      expect(clampZoom(1.953125)).toBe(1.953);
     });
   });
 

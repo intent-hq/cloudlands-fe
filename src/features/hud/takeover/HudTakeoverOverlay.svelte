@@ -45,6 +45,7 @@
   } from './hud-takeover-meta';
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
   import HudTakeoverHeading from './HudTakeoverHeading.svelte';
+  import HudTakeoverZoomControls from './HudTakeoverZoomControls.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
   import { playTakeoverTransitionCues } from '../sound/hud-sound-player';
   import { createTypewriterCue } from '../sound/hud-typewriter-cue.svelte';
@@ -392,6 +393,11 @@
                   {/each}
                 </div>
               </div>
+
+              <!-- Zoom controls: bottom-right cluster OUTSIDE the drag clip,
+                   so button clicks never reach the drag/click-suppression
+                   handlers attached to .ov-map-clip. -->
+              <HudTakeoverZoomControls {map} />
 
               <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
                    Rendering (chip/headline/marquee + styles) lives in

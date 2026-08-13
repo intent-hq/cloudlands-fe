@@ -4,8 +4,8 @@
  * cells on a 192px pitch). Real tasks carry no coordinates, so the FE lays
  * them out as a left→right layered dependency DAG rooted at the spec
  * (`dependencyGraphLayout`), with drawable px edges (`edgeLinePx`) and a
- * zoom-to-fit scale for large graphs (`fitScale`). The same task list
- * always yields the same map on every HUD instance.
+ * fit scale for the manual zoom-to-fit action (`fitScale`). The same task
+ * list always yields the same map on every HUD instance.
  */
 
 /** Mock canvas metrics: cell size and grid pitch (`renderVals` PITCH/CS). */
@@ -340,8 +340,18 @@ export interface HudTakeoverViewportSize {
   height: number;
 }
 
-/** Zoom-to-fit floor — the map scales down toward this, never below (and never above 1). */
-export const HUD_TAKEOVER_MIN_FIT_SCALE = 0.45;
+/** Manual zoom range for the map scale; `fitScale` may shrink down to the minimum. */
+export const HUD_TAKEOVER_ZOOM_MIN = 0.25;
+export const HUD_TAKEOVER_ZOOM_MAX = 2;
+
+/** Multiplicative step for the map's zoom in/out actions. */
+export const HUD_TAKEOVER_ZOOM_STEP = 1.25;
+
+/** Clamp a zoom scale into the manual range, rounded to 3 decimals for stable CSS. */
+export function clampZoom(scale: number): number {
+  const clamped = Math.min(HUD_TAKEOVER_ZOOM_MAX, Math.max(HUD_TAKEOVER_ZOOM_MIN, scale));
+  return Math.round(clamped * 1000) / 1000;
+}
 
 /**
  * Half-extents (px) of the occupied cells (plus the implicit spec at (0,0))
@@ -362,11 +372,12 @@ function occupiedHalfExtents(coords: HudTakeoverCellCoord[]): { halfW: number; h
 }
 
 /**
- * Uniform zoom-to-fit scale for the map canvas: shrinks (never enlarges)
- * the origin-centered canvas until every occupied cell fits the measured
- * viewport, floored at `HUD_TAKEOVER_MIN_FIT_SCALE` — past the floor,
- * panning covers the rest. An unmeasured viewport (jsdom, pre-layout)
- * keeps the 1:1 scale. Rounded to 3 decimals for stable CSS output.
+ * Uniform zoom-to-fit scale for the map canvas (the manual `zoomFit`
+ * target): shrinks (never enlarges) the origin-centered canvas until every
+ * occupied cell fits the measured viewport, floored at
+ * `HUD_TAKEOVER_ZOOM_MIN` — past the floor, panning covers the rest. An
+ * unmeasured viewport (jsdom, pre-layout) keeps the 1:1 scale. Rounded to
+ * 3 decimals for stable CSS output.
  */
 export function fitScale(
   coords: HudTakeoverCellCoord[],
@@ -375,7 +386,7 @@ export function fitScale(
   if (viewport.width <= 0 || viewport.height <= 0) return 1;
   const { halfW, halfH } = occupiedHalfExtents(coords);
   const s = Math.min(1, viewport.width / 2 / halfW, viewport.height / 2 / halfH);
-  return Math.round(Math.max(HUD_TAKEOVER_MIN_FIT_SCALE, s) * 1000) / 1000;
+  return Math.round(Math.max(HUD_TAKEOVER_ZOOM_MIN, s) * 1000) / 1000;
 }
 
 /**
