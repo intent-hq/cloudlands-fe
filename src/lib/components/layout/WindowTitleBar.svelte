@@ -43,6 +43,7 @@
   import WorkspaceViewModeToggle from './WorkspaceViewModeToggle.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import {
+    selectOnboardingActive,
     selectPanelItem,
     selectPanelWidth,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -63,6 +64,7 @@
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
   const workspaceViewMode$ = selectWorkspaceViewMode();
+  const onboardingActive$ = selectOnboardingActive();
 
   // Where the workspace controls naturally start (left edge, titlebar coords).
   // Measured from the fixed controls (SidebarNav) so the margin below can align
@@ -319,14 +321,18 @@
         style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}
         data-titlebar-workspace-controls
       >
-        <WorkspaceViewModeToggle />
+        {#if !$onboardingActive$}
+          <WorkspaceViewModeToggle />
+        {/if}
         {#if $workspaceViewMode$ === 'single'}
           <WorkspaceTabStrip
             onActiveTabBoundsChange={handleActiveTabBoundsChange}
             onActiveTabTrackingChange={handleActiveTabTrackingChange}
             activeWorkspaceId={routedWorkspaceId}
           />
-          <WorkspaceRepoLauncher />
+          {#if !$onboardingActive$}
+            <WorkspaceRepoLauncher />
+          {/if}
         {/if}
         {#if $workspaceViewMode$ === 'columns'}
           {@render titlebarUtilities(false)}
