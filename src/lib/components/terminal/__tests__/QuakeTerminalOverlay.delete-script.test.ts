@@ -24,6 +24,10 @@ vi.mock('$store/renderer/store', async () => {
   let activeWorkspaceId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   const subscribers = new Set<() => void>();
+  const isReadable = (
+    arg: unknown,
+  ): arg is { subscribe: (l: (v: unknown) => void) => () => void } =>
+    typeof arg === 'object' && arg !== null && typeof (arg as any).subscribe === 'function';
   const store: any = {
     get state() {
       return {
@@ -43,10 +47,24 @@ vi.mock('$store/renderer/store', async () => {
       Object.assign(
         (...args: any[]) => ({
           subscribe: (listener: (v: any) => void) => {
-            const notify = () => listener(fn(store.state, ...args));
+            // Like the real createSelector, unwrap readable-store args
+            // (e.g. QuakeTerminalOverlay's workspaceIdStore) reactively.
+            const values = args.map((arg) => (isReadable(arg) ? undefined : arg));
+            const notify = () => listener(fn(store.state, ...values));
+            const argUnsubs = args.map((arg, i) =>
+              isReadable(arg)
+                ? arg.subscribe((v: unknown) => {
+                    values[i] = v;
+                    notify();
+                  })
+                : null,
+            );
             notify();
             subscribers.add(notify);
-            return () => subscribers.delete(notify);
+            return () => {
+              subscribers.delete(notify);
+              for (const unsub of argUnsubs) unsub?.();
+            };
           },
         }),
         { select: fn },
@@ -122,6 +140,7 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 }));
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
+import { fireEvent, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import { scriptsClient } from '$features/scripts/scripts.client';
 import {
@@ -201,6 +220,35 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
     await (component as any).handleScriptAction('delete', 'script-2');
 
     expect(dispatchedTypes()).not.toContain('terminals/clearScriptSelection');
+    expect(rawSelectedScriptId(WS_A)).toBe('script-1');
+  });
+});
+
+describe('QuakeTerminalOverlay script selection (intent-hq/monorepo#2236 regression)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (appStore as any).__reset();
+  });
+
+  it('dispatches terminals/selectScript when a running script tab is clicked', async () => {
+    (appStore as any).__setActiveWorkspace(WS_A);
+    const script: ScriptWithState = {
+      ...makeScript('script-1', WS_A),
+      runtime: { status: 'running', exitCode: null, restartCount: 0 },
+    };
+    appStore.dispatch(setScriptsData(WS_A, [script]));
+    appStore.dispatch(setScriptsInitialized(WS_A, true));
+    expect(rawSelectedScriptId(WS_A)).toBeNull();
+
+    render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+
+    // The running script renders as a tab in the always-visible bottom bar;
+    // clicking it goes through setSelectedScript() -> selectScript(), the
+    // import dropped by PR #1031 (ReferenceError before the fix).
+    const tab = screen.getByRole('tab');
+    await fireEvent.click(tab);
+
+    expect(dispatchedTypes()).toContain('terminals/selectScript');
     expect(rawSelectedScriptId(WS_A)).toBe('script-1');
   });
 });
