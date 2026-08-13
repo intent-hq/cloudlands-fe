@@ -120,14 +120,25 @@ jobs:
             echo "Pin is up to date at $current; nothing to do."
             exit 0
           fi
-          if [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)" = "$current" ]; then
-            echo "Pin $current is ahead of the beta channel ($latest); nothing to do."
+          # sort -V alone mis-orders SemVer prereleases (it puts 0.7.0-beta.1
+          # AFTER 0.7.0, so a stable pin would "bump" to its own prerelease).
+          # Mapping '-' to '~' gives Debian-style precedence in GNU sort -V:
+          # a prerelease sorts BEFORE its release, matching SemVer.
+          if [ "$(printf '%s\n%s\n' "${current//-/\~}" "${latest//-/\~}" | sort -V | tail -1)" = "${current//-/\~}" ]; then
+            echo "Pin $current is not older than the beta channel ($latest); nothing to do."
             exit 0
           fi
 
           # hold-release on the rolling PR pauses the pipeline for this repo.
-          held=$(gh pr list --head "$BRANCH" --state open \
-            --json labels --jq '[.[0].labels[]?.name] | contains(["hold-release"])' || echo false)
+          # gh pr list --head also matches FORK PRs with the same branch name,
+          # so restrict to same-repo heads authored by the PAT identity —
+          # otherwise a fork PR named auto/intentd-pin could be picked up
+          # (same hardening as the auto-cut-beta Release PR lookup).
+          VIEWER=$(gh api user --jq .login)
+          export VIEWER
+          held=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
+            --json labels,isCrossRepository,author \
+            --jq '[[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].labels[]?.name] | contains(["hold-release"])' || echo false)
           if [ "$held" = "true" ]; then
             echo "::notice::Rolling PR on $BRANCH carries the hold-release label; skipping."
             exit 0
@@ -164,8 +175,21 @@ jobs:
           set -euo pipefail
           echo "ok=false" >> "$GITHUB_OUTPUT"
           # Replace only the single version line; comments stay untouched.
-          awk -v cur="$CURRENT" -v new="$LATEST" '$0 == cur { print new; next } { print }' \
-            intentd.version > intentd.version.tmp && mv intentd.version.tmp intentd.version
+          # Compare on a trimmed copy (parseVersionPin tolerates surrounding
+          # whitespace/CRLF that the Decide step's tr strips from $CURRENT),
+          # and stop gracefully if no line was replaced instead of pushing an
+          # unchanged tree into a failing git commit.
+          if ! awk -v cur="$CURRENT" -v new="$LATEST" '
+              { line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line) }
+              line == cur { print new; replaced = 1; next }
+              { print }
+              END { exit replaced ? 0 : 1 }
+            ' intentd.version > intentd.version.tmp; then
+            rm -f intentd.version.tmp
+            echo "::warning::could not find pin line '$CURRENT' in intentd.version; skipping this run."
+            exit 0
+          fi
+          mv intentd.version.tmp intentd.version
           if ! node scripts/fetch-sidecar.cjs; then
             echo "::warning::fetch-sidecar preflight failed for intentd $LATEST; not landing the pin this run."
             exit 0
@@ -212,13 +236,24 @@ jobs:
             echo "- Add the \`hold-release\` label to pause future automated updates of this PR."
           } > "$body_file"
 
-          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # gh pr list --head also matches FORK PRs with the same branch name;
+          # editing/auto-merging .[0] blindly could target attacker code. Only
+          # accept a same-repo PR authored by the PAT identity (same hardening
+          # as the auto-cut-beta Release PR lookup).
+          VIEWER=$(gh api user --jq .login)
+          export VIEWER
+          find_pr() {
+            gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open \
+              --json number,isCrossRepository,author \
+              --jq '[.[] | select(.isCrossRepository == false and .author.login == env.VIEWER)][0].number // empty'
+          }
+          pr=$(find_pr)
           if [ -n "$pr" ]; then
             gh pr edit "$pr" --title "$title" --body-file "$body_file"
             echo "Updated existing PR #$pr."
           else
             gh pr create --head "$BRANCH" --title "$title" --body-file "$body_file"
-            pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+            pr=$(find_pr)
             echo "Created PR #$pr."
           fi
           rm -f "$body_file"
