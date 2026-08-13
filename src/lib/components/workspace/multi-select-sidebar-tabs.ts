@@ -1,5 +1,6 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import { faAsterisk, faFolderTree, faPencil, faRobot } from '@fortawesome/free-solid-svg-icons';
+import { m } from '$shared/paraglide/messages.js';
 import { faNote } from '$lib/icons/faNote';
 
 export interface TabDefinition {
@@ -14,35 +15,55 @@ export interface TabDefinition {
 export const TAB_DEFINITIONS: TabDefinition[] = [
   {
     id: 'overview',
-    label: 'Overview',
+    get label() {
+      return m.workspace_multiSelectSidebar_overviewTab_label();
+    },
     icon: faAsterisk,
-    description: 'Workspace status, progress, and key metrics at a glance.',
+    get description() {
+      return m.workspace_multiSelectSidebar_overviewTab_description();
+    },
     hideLabel: true,
     hideHeader: true,
   },
   {
     id: 'agents',
-    label: 'Agents',
+    get label() {
+      return m.workspace_multiSelectSidebar_agentsTab_label();
+    },
     icon: faRobot,
-    description: 'Agents working on your task in this space.',
+    get description() {
+      return m.workspace_multiSelectSidebar_agentsTab_description();
+    },
   },
   {
     id: 'context',
-    label: 'Context',
+    get label() {
+      return m.workspace_multiSelectSidebar_contextTab_label();
+    },
     icon: faNote,
-    description: 'Notes about the task, shared with all agents in this space.',
+    get description() {
+      return m.workspace_multiSelectSidebar_contextTab_description();
+    },
   },
   {
     id: 'changes',
-    label: 'Changes',
+    get label() {
+      return m.workspace_multiSelectSidebar_changesTab_label();
+    },
     icon: faPencil,
-    description: 'Files changed manually or by agents working in this space.',
+    get description() {
+      return m.workspace_multiSelectSidebar_changesTab_description();
+    },
   },
   {
     id: 'files',
-    label: 'Files',
+    get label() {
+      return m.workspace_multiSelectSidebar_filesTab_label();
+    },
     icon: faFolderTree,
-    description: 'The agents in this space are working off a copy of your files.',
+    get description() {
+      return m.workspace_multiSelectSidebar_filesTab_description();
+    },
   },
 ];
 

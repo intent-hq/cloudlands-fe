@@ -171,7 +171,7 @@
         variant="ghost"
         size="icon-sm"
         onclick={onClose}
-        aria-label="Close pull request creator"
+        aria-label={m.workspace_prCreator_close_ariaLabel()}
       >
         <Fa icon={faXmark} size="sm" />
       </Button>

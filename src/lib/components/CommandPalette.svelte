@@ -31,7 +31,6 @@
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
-  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
@@ -118,10 +117,6 @@
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
   const browserRecentUrls$ = selectBrowserRecentUrls(workspaceIdStore);
-  // The palette lives outside +layout.svelte's {#key $resolvedLocale$} block,
-  // so the terminal-loading effect below must track the locale itself to
-  // refresh localized metadata titles after a runtime language switch.
-  const resolvedLocale$ = selectResolvedLocale();
   let selectedIndex = $state(0);
   let searchResults: any[] = $state([]);
   const paletteMruEntries$ = selectPaletteMruEntries();
@@ -268,11 +263,11 @@
   // FILTER_PREFIXES, and WorkspaceObject types are now imported from
   // '$store/renderer/slices/command-palette/command-palette-utils'
 
-  // Load workspace objects when workspace or locale changes (terminal metadata
-  // titles are localized at read time, so a runtime language switch must re-run
-  // this — the palette is mounted outside the layout's {#key $resolvedLocale$}).
+  // Load workspace objects when the workspace changes. Terminal metadata
+  // titles are localized at read time; a runtime language switch remounts the
+  // palette via the root +layout.svelte {#key $resolvedLocale$} block, which
+  // re-runs this effect, so no explicit locale tracking is needed here.
   $effect(() => {
-    void $resolvedLocale$;
     if (!workspaceId) {
       untrack(() => {
         terminals = [];

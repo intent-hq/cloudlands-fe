@@ -283,14 +283,18 @@
                     type="button"
                     class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                     onclick={handleAllSpacesViewModeCycle}
-                    aria-label={`Sort or group spaces: ${allSpacesViewModeLabel}`}
+                    aria-label={m.layout_sidebarPanel_sortOrGroupSpaces_ariaLabel({
+                      mode: allSpacesViewModeLabel,
+                    })}
                     data-spaces-view-mode-trigger
                   >
                     <Fa icon={faLayerGroup} size="xs" />
                   </button>
                 </Tooltip>
                 <Tooltip
-                  content={searchVisible ? 'Hide search' : 'Search workspaces'}
+                  content={searchVisible
+                    ? m.layout_sidebarPanel_hideSearch_ariaLabel()
+                    : m.layout_sidebarPanel_searchWorkspaces_ariaLabel()}
                   side="bottom"
                   sideOffset={4}
                 >
@@ -299,7 +303,9 @@
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
                     onclick={() => (searchVisible = !searchVisible)}
-                    aria-label={searchVisible ? 'Hide search' : 'Search workspaces'}
+                    aria-label={searchVisible
+                      ? m.layout_sidebarPanel_hideSearch_ariaLabel()
+                      : m.layout_sidebarPanel_searchWorkspaces_ariaLabel()}
                     aria-pressed={searchVisible}
                     data-combined-panel-search-toggle
                   >
@@ -323,7 +329,7 @@
             onmousedown={handleSplitResizeStart}
             role="separator"
             aria-orientation="horizontal"
-            aria-label="Resize workspace list and chat"
+            aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
           >
             <div
               class="pointer-events-none h-px w-full bg-border"

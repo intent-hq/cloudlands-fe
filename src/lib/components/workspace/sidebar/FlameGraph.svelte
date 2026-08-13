@@ -2,6 +2,8 @@
   import type { Note, TaskStatus } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
+  import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
     TASK_STATUS_BAR_CLASSES,
@@ -170,9 +172,18 @@
 
   const progressValueText = $derived(
     statusBars
-      .map((bar) => `${bar.count} ${TASK_STATUS_LABELS[bar.status].toLowerCase()}`)
+      .map((bar) => `${formatInteger(bar.count)} ${TASK_STATUS_LABELS[bar.status].toLowerCase()}`)
       .join(', '),
   );
+
+  function statusBarLabel(status: TaskStatus, count: number): string {
+    return count === 1
+      ? m.workspace_flameGraph_statusTasks_one({ status: TASK_STATUS_LABELS[status] })
+      : m.workspace_flameGraph_statusTasks_many({
+          status: TASK_STATUS_LABELS[status],
+          count: formatInteger(count),
+        });
+  }
 </script>
 
 {#snippet taskListTooltip()}
@@ -184,9 +195,15 @@
       class="type-caption mb-1 w-full cursor-pointer text-left font-normal text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 disabled:cursor-default"
       onclick={() => specNoteId && onTaskClick?.(specNoteId)}
       disabled={!specNoteId || !onTaskClick}
-      aria-label={`Open spec, ${completedCount} of ${taskCount} tasks complete`}
+      aria-label={m.workspace_flameGraph_openSpecProgress_ariaLabel({
+        completed: formatInteger(completedCount),
+        total: formatInteger(taskCount),
+      })}
     >
-      {completedCount}/{taskCount} tasks complete
+      {m.workspace_flameGraph_tasksComplete_label({
+        completed: formatInteger(completedCount),
+        total: formatInteger(taskCount),
+      })}
     </button>
     {#each taskList as task (task.note.id)}
       {@const status = task.note.metadata?.task?.status ?? 'not_started'}
@@ -194,7 +211,10 @@
         type="button"
         class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded px-1 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
         onclick={() => onTaskClick?.(task.note.id as string)}
-        aria-label={`Open ${task.note.title}, ${TASK_STATUS_LABELS[status]}`}
+        aria-label={m.workspace_flameGraph_openTask_ariaLabel({
+          title: task.note.title,
+          status: TASK_STATUS_LABELS[status],
+        })}
       >
         <span
           class="size-2 shrink-0 rounded-full {TASK_STATUS_INDICATOR_CLASSES[status]}"
@@ -213,7 +233,7 @@
   <div
     class="flame-progress-enter flex h-5 w-full overflow-hidden rounded-xs bg-background"
     role="progressbar"
-    aria-label="Task progress"
+    aria-label={m.workspace_flameGraph_taskProgress_ariaLabel()}
     aria-valuemin="0"
     aria-valuemax="100"
     aria-valuenow={Math.round(progressPercent)}
@@ -224,7 +244,7 @@
       <div
         class="flame-status-segment h-full min-w-0 {TASK_STATUS_BAR_CLASSES[bar.status]}"
         data-flame-status-bar={bar.status}
-        aria-label={`${TASK_STATUS_LABELS[bar.status]}: ${bar.count} task${bar.count === 1 ? '' : 's'}`}
+        aria-label={statusBarLabel(bar.status, bar.count)}
         style:flex-basis="0%"
         style:flex-grow={bar.count}
         style:mask-image={bar.status === 'in_progress'

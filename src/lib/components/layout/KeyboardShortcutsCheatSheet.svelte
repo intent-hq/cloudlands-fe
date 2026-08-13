@@ -82,7 +82,7 @@
           variant="ghost-light"
           size="icon-xs"
           onclick={handleClose}
-          aria-label="Close keyboard shortcuts"
+          aria-label={m.layout_cheatSheet_close_ariaLabel()}
         >
           <Fa icon={faTimes} size={12} />
         </Button>

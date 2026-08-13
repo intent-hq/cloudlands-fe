@@ -3,10 +3,11 @@
  *
  * Importing this module routes every `m.*()` call through a module-level
  * active locale (via `overwriteGetLocale`), so switching the language never
- * needs a page reload. The user-preferences persistence middleware calls
+ * needs a page reload. The user-preferences persistence saga calls
  * `applyLanguagePreference()` on boot hydration and whenever
- * `userPreferences/setLanguagePreference` is dispatched; components re-render
- * through the `{#key}` block on the resolved locale in `+layout.svelte`.
+ * `userPreferences/setLanguagePreference` is dispatched; mounted components
+ * re-render through the `{#key $resolvedLocale$}` block in the root
+ * `+layout.svelte`, which remounts the whole rendered tree on locale change.
  *
  * Locale resolution is catalog-driven (`$shared/i18n/locale-matcher`):
  * explicit preference → system locale best-match → base locale.

@@ -50,7 +50,9 @@
     >
       <Button
         size="icon-xs"
-        aria-label={showOnlyChanged ? 'Show all files' : 'Show only changed files'}
+        aria-label={showOnlyChanged
+          ? m.fileExplorer_vscodePanel_showAll_label()
+          : m.fileExplorer_vscodePanel_showChanged_label()}
         variant={showOnlyChanged ? 'default' : 'ghost'}
         onclick={() => (showOnlyChanged = !showOnlyChanged)}
         class="opacity-60 hover:opacity-100 {showOnlyChanged ? 'bg-primary/20 text-primary' : ''}"

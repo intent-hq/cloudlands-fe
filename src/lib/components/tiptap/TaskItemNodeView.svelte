@@ -575,7 +575,7 @@
             <Button
               variant="ghost-light"
               size="icon-xs"
-              aria-label="Convert to task note"
+              aria-label={m.tiptap_taskItem_convertToTaskNote_tooltip()}
               class="opacity-20 hover:opacity-100 transition-opacity"
               onclick={(e) => {
                 e.stopPropagation();

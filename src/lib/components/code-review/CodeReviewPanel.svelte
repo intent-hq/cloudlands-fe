@@ -350,7 +350,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Previous review version"
+            aria-label={m.codeReview_panel_prevVersion_ariaLabel()}
             onclick={() => onSelectReview?.(currentReviewIndex + 1)}
             disabled={!canGoPrev}
             class="h-6 w-6"
@@ -363,7 +363,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Next review version"
+            aria-label={m.codeReview_panel_nextVersion_ariaLabel()}
             onclick={() => onSelectReview?.(currentReviewIndex - 1)}
             disabled={!canGoNext}
             class="h-6 w-6"

@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { AgentSession } from '$shared/types';
+  import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import { ListEmpty } from '$lib/components/ui/list';
+  import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -13,7 +15,12 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
-  import { getFlatWorkspaceAgentRows } from './workspace-agents-list-utils';
+  import {
+    getFlatWorkspaceAgentRows,
+    isBackgroundAgentSession as isBackgroundAgent,
+    isCoordinatorAgentSession as isCoordinator,
+    shouldVirtualizeWorkspaceAgentRows,
+  } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -35,10 +42,6 @@
     runningAgentIds = [],
     loading = false,
   }: Props = $props();
-
-  function isBackgroundAgent(agent: AgentSession): boolean {
-    return !!(agent.isBackground || agent.metadata?.isBackground);
-  }
 
   const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
   const runningAgentIdSet = $derived(new Set(runningAgentIds));
@@ -71,15 +74,18 @@
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // Fall back to the regular list when delegations exist (tree heights are variable)
+  // or a coordinator is present (its section headers need the regular rendering).
+  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(flatAgentRows));
+  // Matches the slim card's base height (LazyAgentCard's estimatedHeight default);
+  // virtualized rows hide the preview line so every row stays uniform.
+  const itemHeight = 48;
+  const containerHeight = 600;
   let expandedAgentIds = $state(new Set<string>());
   let showBackgroundAgents = $state(false);
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
-
-  function isCoordinator(agent: AgentSession): boolean {
-    return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
-  }
 
   function isAgentRunning(agentId: string): boolean {
     return runningAgentIdSet.has(agentId);
@@ -217,6 +223,29 @@
   </div>
 {:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
   <ListEmpty message={m.workspace_agentsList_empty_label()} />
+{:else if shouldUseVirtual}
+  <!-- Virtual scrolling fallback (flat, no delegations, no coordinator) -->
+  <div class="h-full max-h-150 overflow-hidden">
+    <VirtualList
+      items={topLevelForegroundAgents}
+      {itemHeight}
+      {containerHeight}
+      getKey={(agent: AgentSession) => agent.id}
+    >
+      {#snippet children({ item: agent }: { item: AgentSession })}
+        <div class="w-full">
+          <AgentCard
+            agentId={agent.id}
+            agentName={agent.name}
+            isBackground={false}
+            selected={agent.id === selectedAgentId}
+            hidePreview
+            onclick={() => handleAgentClick(agent.id)}
+          />
+        </div>
+      {/snippet}
+    </VirtualList>
+  </div>
 {:else}
   <div class="flex flex-col gap-0.5">
     {#if topLevelForegroundAgents.length > 0}

@@ -5,6 +5,7 @@
    */
   import type { Snippet } from 'svelte';
   import * as Dialog from '$lib/components/ui/dialog';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
@@ -46,7 +47,7 @@
     <div class="flex items-center justify-between px-1 pb-4">
       <Dialog.Title class="text-lg font-medium tracking-[-0.02em]">{title}</Dialog.Title>
       <Dialog.Close
-        aria-label="Close modal"
+        aria-label={m.modals_modal_close_ariaLabel()}
         class="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <svg aria-hidden="true" viewBox="0 0 16 16" class="size-4" fill="none">

@@ -115,7 +115,7 @@ describe('ChatMessage image lightbox', () => {
     const image = screen.getByRole('img', { name: 'Image from agent' });
     expect(image.getAttribute('src')).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'View image from agent full size' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'View Image from agent full size' }));
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
     });

@@ -220,10 +220,10 @@
     const { toast } = await import('svelte-sonner');
     try {
       await navigator.clipboard.writeText(workspace.branch);
-      toast.success('Branch name copied to clipboard');
+      toast.success(m.workspace_sidebarHeader_branchCopied_toast());
     } catch (error) {
       logger.error('Failed to copy branch name:', error);
-      toast.error('Failed to copy branch name');
+      toast.error(m.workspace_sidebarHeader_branchCopyFailed_error());
     }
   }
 
@@ -576,7 +576,7 @@
                   </p>
                   {#if workspace.baseRef}
                     <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
-                      Base {workspace.baseRef}
+                      {m.workspace_sidebarHeader_base_label({ ref: workspace.baseRef })}
                     </p>
                   {/if}
                 </div>
@@ -593,7 +593,7 @@
       <Button
         variant="ghost-light"
         size="icon-sm"
-        aria-label="Workspace actions"
+        aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
         class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
         onclick={toggle}
         disabled={isDeleting}

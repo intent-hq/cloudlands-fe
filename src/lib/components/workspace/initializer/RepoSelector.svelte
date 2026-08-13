@@ -1463,9 +1463,8 @@
             <Fa icon={faGithub} class="ml-3" />
             <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
-            <!-- i18n-ignore (GitHub path format example placeholder) -->
             <Input
-              placeholder="owner/repo"
+              placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
               bind:this={inputElement}
               bind:ref={githubInputElement}
               type="text"
@@ -1581,9 +1580,8 @@
             <span class="text-sm text-subtle shrink-0 w-24 pl-1"
               >{m.workspace_repoSelector_folderName_label()}</span
             >
-            <!-- i18n-ignore (example folder name placeholder) -->
             <Input
-              placeholder="new-project"
+              placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
               type="text"
               bind:value={newRepoProjectName}
               onkeydown={(e) => {

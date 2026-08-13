@@ -110,7 +110,7 @@
 {#snippet canonicalOptionDescription(option: ComboboxOption)}
   {#if renamingOptionValue === option.value}
     <input
-      aria-label={`Rename ${option.label}`}
+      aria-label={m.ui_searchableCombobox_renameOption_ariaLabel({ name: option.label })}
       bind:value={renameValue}
       onclick={(event) => event.stopPropagation()}
       onkeydown={(event) => {

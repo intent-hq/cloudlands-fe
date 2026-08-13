@@ -337,17 +337,17 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // toolKind is one of file|search|terminal|git|note|other (§6.6).
     switch (data?.toolKind) {
       case 'file':
-        return 'Worked on a file';
+        return m.events_activity_toolKindFile_label();
       case 'search':
-        return 'Searched the codebase';
+        return m.events_activity_toolKindSearch_label();
       case 'terminal':
-        return 'Ran a terminal command';
+        return m.events_activity_toolKindTerminal_label();
       case 'git':
-        return 'Ran a git operation';
+        return m.events_activity_toolKindGit_label();
       case 'note':
-        return 'Worked on a note';
+        return m.events_activity_toolKindNote_label();
       default:
-        return 'Used a tool';
+        return m.events_activity_usedATool_label();
     }
   },
 
@@ -375,32 +375,38 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // Payload is `{ agentId, name }` — the new name.
     const name = truncate(data?.name || '', 30);
     if (name) {
-      return `Renamed agent to ${name}`;
+      return m.events_activity_renamedAgentTo_label({ name });
     }
-    return 'Renamed an agent';
+    return m.events_activity_renamedAgent_label();
   },
 
   'agent:updated': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.agentName || '', 25);
-    const who = name || 'Agent';
     // Payload carries the specific mutation (§5.5): modelId for setModel, etc.
     if (typeof data?.modelId === 'string' && data.modelId) {
-      return `${who} model set to ${truncate(data.modelId, 25)}`;
+      const model = truncate(data.modelId, 25);
+      return name
+        ? m.events_activity_nameModelSet_label({ name, model })
+        : m.events_activity_agentModelSet_label({ model });
     }
     if (data?.completionReportCleared) {
-      return `Cleared ${who.toLowerCase() === 'agent' ? "an agent's" : `${who}'s`} report`;
+      return name
+        ? m.events_activity_clearedNameReport_label({ name })
+        : m.events_activity_clearedAgentReport_label();
     }
-    return `${who} settings updated`;
+    return name
+      ? m.events_activity_nameSettingsUpdated_label({ name })
+      : m.events_activity_agentSettingsUpdated_label();
   },
 
   'agent:restored': (event) => {
     const data = event.data as any;
     const name = truncate(event.actor?.name || data?.name || data?.agentName || '', 30);
     if (name) {
-      return `Restored ${name}`;
+      return m.events_activity_restoredName_label({ name });
     }
-    return 'Restored an agent';
+    return m.events_activity_agentRestored_label();
   },
 
   'agent:permission:request': (event) => {
@@ -410,12 +416,12 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const agentName = truncate(data?.agentName || event.actor?.name || '', 20);
     const title = truncate(data?.title || '', 35);
     if (agentName && title) {
-      return `${agentName} asked to ${lowercaseFirst(title)}`;
+      return m.events_activity_agentAskedTo_label({ agentName, title: lowercaseFirst(title) });
     }
     if (title) {
-      return `Permission requested: ${title}`;
+      return m.events_activity_permissionRequested_label({ title });
     }
-    return 'Agent asked for permission';
+    return m.events_activity_agentAskedPermission_label();
   },
 
   'agent:permission:resolved': (event) => {
@@ -423,18 +429,18 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // Payload is `{ requestId, outcome: { outcome: "selected"|"cancelled" } }`.
     const outcome = data?.outcome?.outcome;
     if (outcome === 'cancelled') {
-      return 'Permission request dismissed';
+      return m.events_activity_permissionDismissed_label();
     }
-    return 'Permission request answered';
+    return m.events_activity_permissionAnswered_label();
   },
 
   'agent:user-message:sent': (event) => {
     const data = event.data as any;
     const agentName = truncate(data?.agentName || data?.toAgentName || '', 25);
     if (agentName) {
-      return `You messaged ${agentName}`;
+      return m.events_activity_youMessagedName_label({ agentName });
     }
-    return 'You sent a message';
+    return m.events_activity_youSentMessage_label();
   },
 
   // Task events - show task name and status clearly. The status verb LEADS
@@ -446,31 +452,37 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const newStatus = data?.newStatus || data?.status;
     const actor = truncate(getActorName(event, ''), 25);
 
-    // Convert status to friendly format
+    // Convert status to a code first, so display strings stay locale-independent.
+    let statusCode: 'complete' | 'in-progress' | 'cancelled' | 'other' | 'none' = 'none';
     let friendlyStatus = m.events_activity_statusUpdated_label();
     if (newStatus) {
       const statusLower = newStatus.toLowerCase().replace(/_/g, ' ');
       if (statusLower === 'complete' || statusLower === 'completed' || statusLower === 'done') {
+        statusCode = 'complete';
         friendlyStatus = m.events_activity_statusComplete_label();
       } else if (statusLower === 'in progress' || statusLower === 'in_progress') {
+        statusCode = 'in-progress';
         friendlyStatus = m.events_activity_statusInProgress_label();
       } else if (statusLower === 'cancelled' || statusLower === 'canceled') {
+        statusCode = 'cancelled';
         friendlyStatus = m.events_activity_statusCancelled_label();
       } else {
+        statusCode = 'other';
         friendlyStatus = statusLower;
       }
     }
 
     if (taskName && taskName !== 'task') {
-      const verb =
-        friendlyStatus === 'complete'
-          ? 'Completed'
-          : friendlyStatus === 'in progress'
-            ? 'Started'
-            : friendlyStatus === 'cancelled'
-              ? 'Cancelled'
-              : `Marked ${friendlyStatus}:`;
-      return `${verb} ${taskName}`;
+      switch (statusCode) {
+        case 'complete':
+          return m.events_activity_completedTask_label({ taskName });
+        case 'in-progress':
+          return m.events_activity_startedTask_label({ taskName });
+        case 'cancelled':
+          return m.events_activity_cancelledTask_label({ taskName });
+        default:
+          return m.events_activity_markedTaskStatus_label({ status: friendlyStatus, taskName });
+      }
     }
     if (actor) {
       return m.events_activity_actorUpdatedTaskStatus_label({ actor });
@@ -485,8 +497,10 @@ const labelGenerators: Record<string, LabelGenerator> = {
       ? data.readyTaskIds.length
       : data?.count || data?.taskCount;
     if (typeof count === 'number') {
-      if (count === 0) return 'No tasks ready to start';
-      return count === 1 ? '1 task ready to start' : `${count} tasks ready to start`;
+      if (count === 0) return m.events_activity_noTasksReady_label();
+      return count === 1
+        ? m.events_activity_oneTaskReadyToStart_label()
+        : m.events_activity_tasksReadyToStart_label({ count });
     }
     return m.events_activity_readyTasksUpdated_label();
   },
@@ -497,18 +511,18 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // Tail position — leave untruncated for CSS to clip.
     const taskText = data?.link?.taskText || data?.taskKey || '';
     if (taskText) {
-      return `Agent assigned to ${taskText}`;
+      return m.events_activity_agentAssignedToTask_label({ taskText });
     }
-    return 'Agent assigned to a task';
+    return m.events_activity_agentAssignedToATask_label();
   },
 
   'task:agent-unlinked': (event) => {
     const data = event.data as any;
     const taskText = data?.taskKey || '';
     if (taskText) {
-      return `Agent unassigned from ${taskText}`;
+      return m.events_activity_agentUnassignedFromTask_label({ taskText });
     }
-    return 'Agent unassigned from a task';
+    return m.events_activity_agentUnassignedFromATask_label();
   },
 
   // Pull request events (§7.6)
@@ -516,9 +530,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     const prNumber = data?.prNumber;
     if (prNumber) {
-      return `Linked PR #${prNumber}`;
+      return m.events_activity_linkedPrNumber_label({ prNumber });
     }
-    return 'Linked a pull request';
+    return m.events_activity_linkedPr_label();
   },
 
   'pr:updated': (event) => {
@@ -526,15 +540,17 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const prNumber = data?.prNumber;
     const status = typeof data?.prStatus === 'string' ? data.prStatus.toLowerCase() : '';
     if (prNumber && status) {
-      return `PR #${prNumber} is ${status === 'draft' ? 'a draft' : status}`;
+      return status === 'draft'
+        ? m.events_activity_prIsDraft_label({ prNumber })
+        : m.events_activity_prIsStatus_label({ prNumber, status });
     }
     if (prNumber) {
-      return `PR #${prNumber} updated`;
+      return m.events_activity_prNumberUpdated_label({ prNumber });
     }
-    return 'Pull request updated';
+    return m.events_activity_prUpdated_label();
   },
 
-  'pr:unlinked': () => 'Unlinked pull request',
+  'pr:unlinked': () => m.events_activity_prUnlinked_label(),
 
   // Terminal events
   'terminal:command': (event) => {
@@ -559,18 +575,18 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // Payload is `{ terminalId, exitCode, signal }`.
     const exitCode = data?.exitCode;
     if (typeof exitCode === 'number' && exitCode !== 0) {
-      return `Terminal exited with code ${exitCode}`;
+      return m.events_activity_terminalExitedCode_label({ exitCode });
     }
-    return 'Terminal session ended';
+    return m.events_activity_terminalSessionEnded_label();
   },
 
   'terminal:title': (event) => {
     const data = event.data as any;
     const title = truncate(data?.title || '', 35);
     if (title) {
-      return `Terminal running ${title}`;
+      return m.events_activity_terminalRunningTitle_label({ title });
     }
-    return 'Terminal title changed';
+    return m.events_activity_terminalTitleChanged_label();
   },
 
   // Script events
@@ -579,21 +595,25 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // Payload is ScriptRuntimeState + scriptId: `{ scriptId, status, exitCode, error }`.
     const scriptId = truncate(data?.scriptId || '', 25);
     const status = data?.status;
-    const name = scriptId || 'Script';
+    const name = scriptId || m.events_activity_script_fallback();
     switch (status) {
       case 'running':
-        return `${name} started`;
+        return m.events_activity_scriptStarted_label({ name });
       case 'stopped': {
         const exitCode = data?.exitCode;
         if (typeof exitCode === 'number' && exitCode !== 0) {
-          return `${name} failed (exit ${exitCode})`;
+          return m.events_activity_scriptFailedExit_label({ name, exitCode });
         }
-        return `${name} stopped`;
+        return m.events_activity_scriptStopped_label({ name });
       }
       case 'error':
-        return `${name} errored${data?.error ? `: ${truncate(data.error, 30)}` : ''}`;
+        return data?.error
+          ? m.events_activity_scriptErroredDetail_label({ name, error: truncate(data.error, 30) })
+          : m.events_activity_scriptErrored_label({ name });
       default:
-        return status ? `${name} is ${status}` : `${name} state changed`;
+        return status
+          ? m.events_activity_scriptIsStatus_label({ name, status })
+          : m.events_activity_scriptStateChanged_label({ name });
     }
   },
 
@@ -685,37 +705,44 @@ const labelGenerators: Record<string, LabelGenerator> = {
     // WorkspaceUpdate delta (PROTOCOL §6.5) — describe what actually changed.
     const changes = (data?.changes ?? {}) as Record<string, unknown>;
     if (typeof changes.title === 'string' && changes.title) {
-      return `Renamed workspace to ${truncate(changes.title, 30)}`;
+      return m.events_activity_renamedWorkspaceTo_label({ title: truncate(changes.title, 30) });
     }
     if (typeof changes.statusMessage === 'string') {
       return changes.statusMessage
-        ? `Status: ${truncate(changes.statusMessage, 40)}`
-        : 'Cleared workspace status';
+        ? m.events_activity_workspaceStatus_label({
+            statusMessage: truncate(changes.statusMessage, 40),
+          })
+        : m.events_activity_clearedWorkspaceStatus_label();
     }
     if (typeof changes.status === 'string' && changes.status) {
-      return `Workspace marked ${changes.status.toLowerCase()}`;
+      return m.events_activity_workspaceMarkedStatus_label({
+        status: changes.status.toLowerCase(),
+      });
     }
     if (typeof changes.branch === 'string' && changes.branch) {
-      return `Branch set to ${truncate(changes.branch, 30)}`;
+      return m.events_activity_branchSetTo_label({ branch: truncate(changes.branch, 30) });
     }
     if (typeof changes.baseRef === 'string' && changes.baseRef) {
-      return `Base branch set to ${truncate(changes.baseRef, 30)}`;
+      return m.events_activity_baseBranchSetTo_label({ baseRef: truncate(changes.baseRef, 30) });
     }
+    // Constructed per call, so plain values re-evaluate on locale change.
     const FIELD_LABELS: Record<string, string> = {
-      baseCommitSha: 'base commit',
-      statusMessage: 'status message',
-      lastActivity: 'activity time',
-      repositoryPath: 'repository path',
-      repositoryOwner: 'repository owner',
-      repositoryName: 'repository name',
-      worktreePath: 'worktree path',
-      setupScript: 'setup script',
-      skipWorktree: 'worktree setting',
+      baseCommitSha: m.events_activity_fieldBaseCommit_label(),
+      statusMessage: m.events_activity_fieldStatusMessage_label(),
+      lastActivity: m.events_activity_fieldActivityTime_label(),
+      repositoryPath: m.events_activity_fieldRepositoryPath_label(),
+      repositoryOwner: m.events_activity_fieldRepositoryOwner_label(),
+      repositoryName: m.events_activity_fieldRepositoryName_label(),
+      worktreePath: m.events_activity_fieldWorktreePath_label(),
+      setupScript: m.events_activity_fieldSetupScript_label(),
+      skipWorktree: m.events_activity_fieldWorktreeSetting_label(),
     };
     const changedFields = Object.keys(changes).filter((key) => key !== 'workspaceId');
     if (changedFields.length > 0) {
       const friendly = changedFields.map((field) => FIELD_LABELS[field] ?? field);
-      return `Changed workspace ${truncate(friendly.join(', '), 35)}`;
+      return m.events_activity_changedWorkspaceFields_label({
+        fields: truncate(friendly.join(', '), 35),
+      });
     }
     const name = truncate(data?.name || '', 35);
     if (name) {
@@ -829,9 +856,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     const toName = truncate(data?.toAgentName || data?.agentName || '', 25);
     if (toName) {
-      return `Message to ${toName} failed to deliver`;
+      return m.events_activity_messageToNameFailed_label({ toName });
     }
-    return 'Agent message failed to deliver';
+    return m.events_activity_messageDeliveryFailed_label();
   },
 
   // Agent subscription events
@@ -890,9 +917,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     // Payload is `{ noteId, threadId, resolved }` — resolved:false means reopened.
     if (data?.resolved === false) {
-      return 'Reopened a comment thread';
+      return m.events_activity_reopenedCommentThread_label();
     }
-    return 'Resolved a comment thread';
+    return m.events_activity_resolvedCommentThread_label();
   },
 
   // Git clone events
@@ -900,9 +927,9 @@ const labelGenerators: Record<string, LabelGenerator> = {
     const data = event.data as any;
     const repo = truncate(data?.repository || data?.repo || data?.url || '', 35);
     if (repo) {
-      return `Cloned ${repo}`;
+      return m.events_activity_clonedRepo_label({ repo });
     }
-    return 'Repository cloned';
+    return m.events_activity_repositoryCloned_label();
   },
 
   // Settings & config events
@@ -913,40 +940,40 @@ const labelGenerators: Record<string, LabelGenerator> = {
       ? data.changes.map((c: { path?: string }) => c?.path).filter(Boolean)
       : [];
     if (paths.length === 1) {
-      return `Changed setting ${truncate(paths[0], 35)}`;
+      return m.events_activity_changedSetting_label({ path: truncate(paths[0], 35) });
     }
     if (paths.length > 1) {
-      return `Changed ${paths.length} settings`;
+      return m.events_activity_changedSettingsCount_label({ count: paths.length });
     }
-    return 'Settings changed';
+    return m.events_activity_settingsChanged_label();
   },
 
-  'skills:changed': () => 'Available skills changed',
+  'skills:changed': () => m.events_activity_skillsChanged_label(),
 
   'mcp:notification': (event) => {
     const data = event.data as any;
     const server = truncate(data?.serverName || data?.server || '', 25);
     if (server) {
-      return `Update from ${server}`;
+      return m.events_activity_updateFromServer_label({ server });
     }
-    return 'MCP server notification';
+    return m.events_activity_mcpNotification_label();
   },
 
-  'mcp.servers:status-changed': () => 'MCP server status changed',
+  'mcp.servers:status-changed': () => m.events_activity_mcpStatusChanged_label(),
 
   'github:auth-changed': (event) => {
     const data = event.data as any;
     const status = data?.status;
     if (status === 'authenticated' || status === 'success') {
-      return 'Signed in to GitHub';
+      return m.events_activity_githubSignedIn_label();
     }
     if (status === 'signed-out' || status === 'expired') {
-      return 'GitHub sign-in expired';
+      return m.events_activity_githubSignInExpired_label();
     }
-    return 'GitHub authentication changed';
+    return m.events_activity_githubAuthChanged_label();
   },
 
-  'workspace:context-changed': () => 'Workspace context updated',
+  'workspace:context-changed': () => m.events_activity_workspaceContextUpdated_label(),
 };
 
 /**

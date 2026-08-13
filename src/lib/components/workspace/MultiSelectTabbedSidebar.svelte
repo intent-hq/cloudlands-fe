@@ -95,6 +95,7 @@
   import { normalizeActivityFilePath } from './utils/activity-file-path';
   import { getFixedContainingBlockOffset } from './utils/fixed-containing-block';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     workspaceId: string;
@@ -650,11 +651,19 @@
                       variant="plain"
                       class="h-auto w-full justify-between rounded-md border-0! pl-0! pr-2! py-1.5! text-left text-muted-foreground transition-colors hover:text-foreground"
                       onclick={() => handleTabClick('changes')}
-                      aria-label={`Show ${localChangesCount} local change${localChangesCount === 1 ? '' : 's'}`}
+                      aria-label={localChangesCount === 1
+                        ? m.workspace_multiSelectSidebar_showLocalChanges_one()
+                        : m.workspace_multiSelectSidebar_showLocalChanges_many({
+                            count: formatInteger(localChangesCount),
+                          })}
                       data-sidebar-local-changes-summary
                     >
                       <span class="type-body font-normal">
-                        {localChangesCount} local change{localChangesCount === 1 ? '' : 's'}
+                        {localChangesCount === 1
+                          ? m.workspace_multiSelectSidebar_localChanges_one()
+                          : m.workspace_multiSelectSidebar_localChanges_many({
+                              count: formatInteger(localChangesCount),
+                            })}
                       </span>
                       <Fa icon={faPencil} class="size-3 text-ghost" />
                     </Button>
@@ -758,7 +767,7 @@
                                   class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
                                   ><!-- i18n-ignore (file path) -->/{$workspace.path
                                     .split(/[/\\]/)
-                                    .slice(-1)[0]}/.workspace</span
+                                    .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
                                 >
                               </OpenComboButton></span
                             >.
@@ -1042,7 +1051,7 @@
                     <span class="truncate text-sm font-medium">{tab.label}</span>
                     {#if tab.id === 'changes' && localChangesCount > 0}
                       <span class="type-caption text-muted-foreground" data-sidebar-changes-sync
-                        >Sync</span
+                        >{m.workspace_multiSelectSidebar_sync_label()}</span
                       >
                     {:else if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <OpenComboButton

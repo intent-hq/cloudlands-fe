@@ -2,11 +2,12 @@
   import { onMount } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     id,
-    label = 'Choose file',
-    emptyText = 'No file selected',
+    label = m.ui_fileInput_chooseFile_label(),
+    emptyText = m.ui_fileInput_noFileSelected_label(),
     accept,
     multiple = false,
     required = false,
