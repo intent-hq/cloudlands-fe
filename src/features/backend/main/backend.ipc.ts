@@ -859,9 +859,10 @@ function extractHostname(result: unknown): string | null {
  */
 async function captureRemoteHostname(id: string): Promise<void> {
   try {
-    // Snapshot the live client BEFORE the first await: a concurrent switch
-    // replaces the mutable global client, and probing the NEW backend here
-    // would persist another backend's hostname under this record.
+    // Snapshot the live client for symmetry with `refreshRemoteHosts` (where
+    // awaits precede the request, so the snapshot matters). Here the request
+    // is issued synchronously anyway; the real protection against a stale
+    // capture is switch serialization plus the id guard below.
     const client = getBackendClient();
     const result = await client.request('host.status');
     const hostname = extractHostname(result);
