@@ -662,6 +662,12 @@
             ariaLabel={m.settings_agentBackend_idleReap_toggleLabel()}
           />
         </span>
+        <!--
+          The stepper follows the toggle, not the last daemon acknowledgement:
+          while a disable is in flight the daemon still reports the old
+          interval, and a stepper left live in that window would let an edit
+          queue a positive write behind the 0 and quietly undo the switch-off.
+        -->
         <div class="w-24">
           <Input
             id="idleReapMinutes"
@@ -670,7 +676,7 @@
             oninput={handleIdleReapInput}
             onblur={commitIdleReapInput}
             onkeydown={handleIdleReapKeydown}
-            disabled={!idleReapEnabled}
+            disabled={!idleReapToggleOn}
             aria-label={m.settings_agentBackend_idleReap_stepperLabel()}
             min={String(IDLE_REAP_MIN_MINUTES)}
             max={String(idleReapMaxMinutes)}

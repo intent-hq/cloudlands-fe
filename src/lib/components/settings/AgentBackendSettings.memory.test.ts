@@ -563,6 +563,51 @@ describe('AgentBackendSettings — idle reap minutes', () => {
     expect(screen.queryByRole('switch', { name: REAP_TOGGLE_LABEL })).toBeNull();
   });
 
+  it('disables the stepper as soon as reaping is switched off, before the write lands', async () => {
+    // The daemon still reports the old interval while the 0 is in flight. A
+    // stepper left live in that window lets an edit queue a positive write
+    // behind the disable and quietly undo the switch-off.
+    mockSettings({ reap: { value: 10 } });
+    const pending: Array<(value: unknown) => void> = [];
+    mocks.mockSettingsUpdate.mockImplementation(
+      (changes: Array<{ path: string; value: number }>) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve([{ path: changes[0].path, value: changes[0].value }])),
+        ),
+    );
+
+    render(AgentBackendSettings);
+
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(pending).toHaveLength(1));
+
+    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(true);
+
+    pending[0]();
+    await waitFor(() =>
+      expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(true),
+    );
+    // The disable is the only write: nothing resurrected the interval.
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.mockSettingsUpdate).toHaveBeenNthCalledWith(1, [
+      { path: IDLE_REAP_PATH, value: 0 },
+    ]);
+  });
+
+  it('re-enables the stepper when a failed disable puts the toggle back', async () => {
+    mockSettings({ reap: { value: 10 } });
+    mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
+
+    render(AgentBackendSettings);
+
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(screen.getByText('Failed to save agent settings.')).toBeTruthy());
+    expect((screen.getByLabelText(REAP_STEPPER_LABEL) as HTMLInputElement).disabled).toBe(false);
+  });
+
   it('sends every toggle click even when the previous write is still in flight', async () => {
     // on → off → on with the first write outstanding. Comparing against the
     // last acknowledgement would read the third click as a no-op and leave
