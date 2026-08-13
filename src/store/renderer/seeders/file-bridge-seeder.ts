@@ -21,6 +21,12 @@
  *    main-process handler owns the native save dialog + local fs copy/zip, so
  *    it cannot be served by a daemon RPC. Electron-only; rejects on web (the
  *    affordance is already locality-gated via `selectIsDaemonLocal`).
+ *  - `file:read-chunk` / `file:hash` → real preload bridge (same idiom): the
+ *    main-process handlers read/hash a file on the FE host for the chunked
+ *    remote-attachment upload (PROTOCOL §5.9 staged sessions), so there is no
+ *    daemon arm — the daemon is the remote peer receiving the bytes.
+ *    Electron-only; on web attachments arrive as in-memory `File` bytes and
+ *    never take the host-path read path.
  *
  * Daemon `file.*` methods require a `workspaceId` and enforce within-workspace
  * path containment. Call sites pass absolute paths inside the workspace root
@@ -262,12 +268,36 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.DOWNLOAD, async (arg) => {
   // is no native dialog to forward to — reject loudly; the download menu item
   // is already gated on `selectIsDaemonLocal`, and VirtualizedFileTree's
   // catch folds a rejection into its failure toast.
+  return forwardToPreloadBridge(IPC_CHANNELS.FILE.DOWNLOAD, arg, 'main-process save dialog');
+});
+
+// ── file:read-chunk / file:hash ──
+
+registerMockIpcHandler(IPC_CHANNELS.FILE.READ_CHUNK, async (arg) => {
+  // Bounded base64 slice of a file on the FE host, read by the main process
+  // for the chunked remote-attachment upload (PROTOCOL §5.9 staged sessions).
+  // No daemon arm exists — the daemon is the remote peer the bytes are being
+  // uploaded TO. Electron-only; on web attachments are in-memory `File` bytes
+  // and never take the host-path read path.
+  return forwardToPreloadBridge(IPC_CHANNELS.FILE.READ_CHUNK, arg, 'main-process host-file read');
+});
+
+registerMockIpcHandler(IPC_CHANNELS.FILE.HASH, async (arg) => {
+  // Streaming SHA-256 of a file on the FE host (main-process crypto), used to
+  // seal the chunked upload commit. Same locality as file:read-chunk.
+  return forwardToPreloadBridge(IPC_CHANNELS.FILE.HASH, arg, 'main-process host-file hash');
+});
+
+/** Forward a channel verbatim to the real Electron preload bridge, or reject on web. */
+async function forwardToPreloadBridge(
+  channel: string,
+  arg: unknown,
+  capability: string,
+): Promise<unknown> {
   const win = typeof window !== 'undefined' ? window : undefined;
   const bridge = win?.electronAPI;
   if (win && detectPlatform(win) === 'electron' && bridge && typeof bridge.invoke === 'function') {
-    return bridge.invoke(IPC_CHANNELS.FILE.DOWNLOAD, arg);
+    return bridge.invoke(channel, arg);
   }
-  throw new Error(
-    `'${IPC_CHANNELS.FILE.DOWNLOAD}' requires the native Electron bridge (main-process save dialog).`,
-  );
-});
+  throw new Error(`'${channel}' requires the native Electron bridge (${capability}).`);
+}
