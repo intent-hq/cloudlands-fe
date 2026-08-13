@@ -1800,10 +1800,21 @@
             }}
             onkeydown={handleReasoningToggleKeydown}
           >
-            <span>
-              {m.chat_effortPicker_title_label()}{reasoningExpanded
-                ? ''
-                : ` · ${currentReasoningLabel}`}
+            <span class="flex min-w-0 items-center gap-1.5">
+              {#if reasoningLevels.length > 0}
+                <EffortGauge
+                  value={currentReasoningGaugeValue}
+                  max={Math.max(0, reasoningLevels.length - 1)}
+                  centered={!currentReasoningEffort}
+                  size="compact"
+                  class="shrink-0"
+                />
+              {/if}
+              <span class="truncate">
+                {m.chat_effortPicker_title_label()}{reasoningExpanded
+                  ? ''
+                  : ` · ${currentReasoningLabel}`}
+              </span>
             </span>
             <Fa
               icon={reasoningExpanded ? faChevronDown : faChevronRight}

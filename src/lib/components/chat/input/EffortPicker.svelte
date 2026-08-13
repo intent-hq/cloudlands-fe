@@ -185,8 +185,12 @@
 </script>
 
 {#snippet sliderContent()}
-  <div class={cn('flex items-center gap-3', embedded ? 'justify-end' : 'justify-between')}>
-    {#if !embedded}
+  <div class="flex items-center justify-between gap-2">
+    {#if embedded}
+      <span class="type-caption min-w-0 flex-1 truncate text-subtle">
+        {m.chat_effortPicker_nextSend_description()}
+      </span>
+    {:else}
       <div class="type-body font-medium">{m.chat_effortPicker_title_label()}</div>
     {/if}
     <span
@@ -200,11 +204,13 @@
       {/key}
     </span>
   </div>
-  <div class="type-caption mt-0.5 text-subtle">
-    {m.chat_effortPicker_nextSend_description()}
-  </div>
+  {#if !embedded}
+    <div class="type-caption mt-0.5 text-subtle">
+      {m.chat_effortPicker_nextSend_description()}
+    </div>
+  {/if}
 
-  <div class="relative mt-2.5">
+  <div class={cn('relative', embedded ? 'mt-2' : 'mt-2.5')}>
     <Slider
       min="0"
       max={steps.length - 1}
