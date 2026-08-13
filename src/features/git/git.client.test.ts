@@ -48,6 +48,19 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     expect(result).toEqual({ ok: false, error: 'daemon unavailable' });
   });
 
+  it('getStatus forwards gitRootId when supplied and omits it when empty (v6.15)', async () => {
+    mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
+    await gitClient.getStatus(wsId, { gitRootId: 'root-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('git.status', {
+      workspaceId: wsId,
+      gitRootId: 'root-1',
+    });
+
+    mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
+    await gitClient.getStatus(wsId, { gitRootId: '' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.status', { workspaceId: wsId });
+  });
+
   it('stageFiles forwards git.stage with explicit paths', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true, paths: ['a.ts', 'b.ts'] });
 
@@ -114,6 +127,18 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const failed = await gitClient.getHistory(wsId);
     expect(failed).toEqual({ ok: false, error: 'boom' });
+  });
+
+  it('getHistory forwards gitRootId alongside limit (v6.15)', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: [], nextToken: null });
+
+    await gitClient.getHistory(wsId, 30, { gitRootId: 'root-1' });
+
+    expect(mockedRequest).toHaveBeenCalledWith('git.commits', {
+      workspaceId: wsId,
+      limit: 30,
+      gitRootId: 'root-1',
+    });
   });
 
   it('showFile forwards git.showFile and unwraps { content }', async () => {

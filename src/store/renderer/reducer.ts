@@ -56,6 +56,7 @@ import { backgroundHooksReducer } from './slices/background-hooks/background-hoo
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
+import { gitRootsReducer } from './slices/git-roots/git-roots-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
 import { agentLockReducer } from './slices/agent-lock/agent-lock-slice';
 import { hardwareConsoleReducer } from './slices/hardware-console/hardware-console-slice';
@@ -151,6 +152,7 @@ export const reducers = {
   prMonitor: prMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
+  gitRoots: gitRootsReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
   hardwareConsole: hardwareConsoleReducer,

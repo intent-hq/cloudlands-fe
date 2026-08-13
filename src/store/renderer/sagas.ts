@@ -39,6 +39,7 @@ import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
@@ -166,6 +167,7 @@ export const sagas = [
   legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
+  gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
   sidebarNavSaga,

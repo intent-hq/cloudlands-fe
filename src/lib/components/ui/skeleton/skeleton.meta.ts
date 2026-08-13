@@ -41,6 +41,7 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
     'src/lib/components/workspace/sidebar/CodeChangesPanel.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
+    'src/lib/components/workspace/sidebar/SecondaryRootChangesView.svelte',
     'src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte',
     'src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte',
   ],

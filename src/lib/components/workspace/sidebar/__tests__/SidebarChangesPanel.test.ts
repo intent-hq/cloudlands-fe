@@ -86,10 +86,9 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
       select: () => mockAcceptChangesState,
     },
   ),
-  selectPendingAutoAction: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => null),
-    { select: () => null },
-  ),
+  // Reads mutable state + registers with flushFtSelectors so tests can inject
+  // a pending auto-action after mount (secondary-root browsing tests).
+  selectPendingAutoAction: createMockFtSelector(() => mockSidebarChangesState.pendingAutoAction),
   selectSidebarCommitWhenReady: Object.assign(
     (workspaceId: string) => createSelectorReadable(workspaceId, () => false),
     { select: () => false },
@@ -176,10 +175,16 @@ vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
 
+const { mockRootGetStatus, mockRootGetHistory } = vi.hoisted(() => ({
+  mockRootGetStatus: vi.fn(),
+  mockRootGetHistory: vi.fn(),
+}));
+
 vi.mock('$features/git/git.client', () => ({
   gitClient: {
     fetch: vi.fn().mockResolvedValue({ ok: true }),
-    getStatus: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+    getStatus: mockRootGetStatus,
+    getHistory: mockRootGetHistory,
     push: vi.fn().mockResolvedValue({ ok: true }),
     pull: vi.fn().mockResolvedValue({ ok: true }),
     stageHunk: vi.fn().mockResolvedValue({ ok: true }),
@@ -274,12 +279,17 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 }));
 
 const mockDispatch = vi.fn();
+// Mutable mock store state — the real git-roots selectors read the gitRoots
+// slice off this (they tolerate a partial state via optional chaining).
+const { mockStoreState } = vi.hoisted(() => ({
+  mockStoreState: { value: {} as Record<string, any> },
+}));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mockStoreState.value,
     dispatch: mockDispatch,
   });
 });
@@ -632,6 +642,9 @@ function makeWorkspace(overrides: Record<string, any> = {}) {
 
 async function resetMocks() {
   vi.clearAllMocks();
+  mockStoreState.value = {};
+  mockRootGetStatus.mockResolvedValue({ ok: true, data: {} });
+  mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
   mockFileTrackingStore.loading = false;
   mockFileTrackingStore.currentWorkspaceId = 'ws-1';
   mockFileTrackingStore.stagedChanges = [];
@@ -2067,6 +2080,312 @@ describe('SidebarChangesPanel', () => {
         const hasResetOrArchive = text.includes('Reset and continue') || text.includes('Archive');
         expect(hasResetOrArchive).toBe(true);
         expect(text).not.toContain('Create PR');
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MULTI GIT ROOT BROWSING (monorepo#2053)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Git root dropdown', () => {
+    async function seedGitRoots(roots: Array<Record<string, any>>) {
+      const { createCollection } =
+        await import('@augmentcode/themis/utils/collections/collection-utils');
+      mockStoreState.value = {
+        gitRoots: {
+          byWorkspaceId: {
+            'ws-1': { gitRoots: createCollection('id', roots as any[]) },
+          },
+        },
+      };
+    }
+
+    function makeGitRoot(overrides: Record<string, any> = {}) {
+      return {
+        id: 'root-1',
+        workspaceId: 'ws-1',
+        path: '/repo/.worktrees/ws-1/packages/subrepo',
+        source: 'agent',
+        branch: 'feature/sub',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...overrides,
+      };
+    }
+
+    it('renders no dropdown when the workspace has no secondary roots', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('.sidebar-changes-container')).toBeTruthy();
+      });
+      expect(container.querySelector('[data-testid="git-root-selector"]')).toBeFalsy();
+      expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
+    });
+
+    it('renders the dropdown when secondary roots exist, primary selected by default', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot()]);
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+      // Primary selection keeps today's behavior: normal panel body, no read-only view
+      expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
+      expect(container.textContent).toContain('Space root');
+    });
+
+    it('selecting a secondary root swaps in the read-only view driven by gitRootId reads', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot()]);
+      mockRootGetStatus.mockResolvedValue({
+        ok: true,
+        data: {
+          branch: 'feature/sub',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [{ path: 'src/a.ts', status: 'M', staged: false }],
+          hasUncommittedChanges: true,
+          hasUntrackedFiles: false,
+        },
+      });
+      mockRootGetHistory.mockResolvedValue({
+        ok: true,
+        data: [
+          {
+            hash: 'aaaa1111bbbb',
+            sha: 'aaaa111',
+            author: 'Dev',
+            email: 'dev@example.com',
+            date: new Date().toISOString(),
+            message: 'feat: sub work',
+          },
+        ],
+      });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+
+      // Open the dropdown and pick the secondary root via keyboard (bits-ui
+      // select semantics — mirrors select.test.ts)
+      const trigger = container.querySelector(
+        '[data-testid="git-root-selector"] button',
+      ) as HTMLButtonElement;
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeTruthy();
+      });
+
+      // Reads are scoped to the registered root
+      await waitFor(() => {
+        expect(mockRootGetStatus).toHaveBeenCalledWith('ws-1', { gitRootId: 'root-1' });
+        expect(mockRootGetHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
+          gitRootId: 'root-1',
+        });
+      });
+
+      // Read-only content rendered; no mutation affordances
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('src/a.ts');
+        expect(text).toContain('feat: sub work');
+        expect(text).toContain('Read-only');
+      });
+      const viewText = container.textContent || '';
+      expect(viewText).not.toContain('Stage all');
+      expect(viewText).not.toContain('Create PR');
+    });
+
+    it('PR sections follow the dropdown: selected root PRs on top, own PRs under "Other PRs"', async () => {
+      // Workspace with its own PR + a secondary root on another repo with
+      // its own PR (from the root's wire row pullRequests).
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({
+          pullRequests: [
+            {
+              number: 42,
+              title: 'Workspace PR',
+              url: 'https://github.com/testorg/testrepo/pull/42',
+              status: 'Open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+      await seedGitRoots([
+        makeGitRoot({
+          repoOwner: 'testorg',
+          repoName: 'subrepo',
+          pullRequests: [
+            {
+              id: 'pr-sub',
+              number: 7,
+              title: 'Subrepo PR',
+              url: 'https://github.com/testorg/subrepo/pull/7',
+              status: 'Open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      ]);
+      mockRootGetStatus.mockResolvedValue({
+        ok: true,
+        data: {
+          branch: 'feature/sub',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [],
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+        },
+      });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+
+      // Primary selected: workspace PR renders, root PR under "Other PRs"
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Workspace PR');
+        expect(text).toContain('Other PRs');
+        expect(text).toContain('Subrepo PR');
+      });
+
+      // Select the secondary root
+      const trigger = container.querySelector(
+        '[data-testid="git-root-selector"] button',
+      ) as HTMLButtonElement;
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeTruthy();
+      });
+
+      // PR sections stay visible while browsing the secondary root, and
+      // follow the selection: the root's PR on top, the workspace's own PR
+      // relegated under "Other PRs". No mutation affordances (read-only).
+      await waitFor(() => {
+        const text = container.textContent || '';
+        expect(text).toContain('Subrepo PR');
+        expect(text).toContain('Other PRs');
+        expect(text).toContain('Workspace PR');
+      });
+      const listText = container.textContent || '';
+      expect(listText.indexOf('Subrepo PR')).toBeLessThan(listText.indexOf('Other PRs'));
+      expect(listText.indexOf('Other PRs')).toBeLessThan(listText.indexOf('Workspace PR'));
+      expect(listText).not.toContain('Create PR');
+      expect(listText).not.toContain('Merge');
+    });
+
+    it('leaves a pending auto-action queued while browsing a secondary root', async () => {
+      // While a secondary root is selected the primary body (PRSection /
+      // MergePanel refs) is unmounted — consuming the action there would
+      // silently drop an agent-triggered auto create-PR or merge.
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot()]);
+      mockRootGetStatus.mockResolvedValue({
+        ok: true,
+        data: {
+          branch: 'feature/sub',
+          ahead: 0,
+          behind: 0,
+          diverged: false,
+          files: [],
+          hasUncommittedChanges: false,
+          hasUntrackedFiles: false,
+        },
+      });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="git-root-selector"]')).toBeTruthy();
+      });
+
+      // Select the secondary root
+      const trigger = container.querySelector(
+        '[data-testid="git-root-selector"] button',
+      ) as HTMLButtonElement;
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeTruthy();
+      });
+
+      // A pending auto-action arrives while browsing the secondary root
+      mockDispatch.mockClear();
+      mockSidebarChangesState.pendingAutoAction = {
+        action: 'create-pr',
+        workspaceId: 'ws-1',
+      };
+      flushFtSelectors();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Not consumed: no setPendingAutoAction(null) dispatch while the
+      // primary view (and its refs) is unmounted
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+      );
+
+      // Back to primary: the still-queued action is now consumed
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(document.querySelector('[role="listbox"]')).toBeTruthy();
+      });
+      await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-testid="secondary-root-changes-view"]'),
+        ).toBeFalsy();
+      });
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+        );
       });
     });
   });
