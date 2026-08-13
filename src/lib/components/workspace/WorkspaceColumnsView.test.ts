@@ -18,7 +18,19 @@ const focusedPanelTargets = writable<
 >({});
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
-vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch, state: {} } }));
+vi.mock('$store/renderer/store', () => ({
+  store: {
+    dispatch: mocks.dispatch,
+    state: {},
+    // Selector modules (e.g. agent-queue-selectors, reached via the
+    // workspace-selectors import chain) call this at module load.
+    createSelector: (selector: (state: object, ...args: never[]) => unknown) => {
+      const readable = (...args: never[]) => selector({}, ...args);
+      readable.select = (state: object, ...args: never[]) => selector(state, ...args);
+      return readable;
+    },
+  },
+}));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectCurrentWorkspaceTabId: Object.assign(() => currentWorkspaceId, {
     select: mocks.selectCurrentWorkspaceTabId,
