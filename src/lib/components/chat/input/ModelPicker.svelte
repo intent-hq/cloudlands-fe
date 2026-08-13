@@ -251,7 +251,6 @@
   const agentSession$ = useAgentSession(() => agentId);
 
   let pendingModelUpdate = $state<string | null>(null);
-  let dropdownOpen = $state(false);
 
   // Provider from the prop or agent session, or null when neither determines
   // one (fetching then uses the active provider; the trigger icon prefers the
@@ -1201,8 +1200,9 @@
     event.preventDefault();
     event.stopPropagation();
     activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs =
-      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    const tabs = (event.currentTarget as HTMLButtonElement).parentElement?.querySelectorAll<
+      HTMLButtonElement
+    >('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
