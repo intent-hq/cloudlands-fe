@@ -48,6 +48,7 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/lib/types/**/*.js",
+    "src/shared/paraglide/**/*",
     "src/features/agent/testing/**/*",
     "**/*.test.ts",
     "**/*.spec.ts"
