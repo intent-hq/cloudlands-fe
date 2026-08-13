@@ -74,6 +74,15 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
   if (haystack === needle) return 1000;
   if (haystack.startsWith(needle)) return 200 + Math.max(0, 20 - needle.length);
 
+  let best = -Infinity;
+  for (let subIdx = haystack.indexOf(needle); subIdx !== -1; subIdx = haystack.indexOf(needle, subIdx + 1)) {
+    const prev = haystack[subIdx - 1];
+    const atBoundary = prev === " " || prev === "/" || prev === "-" || prev === "_" || prev === ".";
+    const occScore = (atBoundary ? 100 : 50) + Math.max(0, 20 - needle.length) + Math.max(0, 10 - subIdx);
+    if (occScore > best) best = occScore;
+  }
+  if (best !== -Infinity) return best;
+
   let i = 0;
   let score = 0;
   let streak = 0;
@@ -87,7 +96,9 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
     score += Math.max(0, 3 - idx);
     i = idx + 1;
   }
-  return score;
+  // Compress the walk into [0, 49) so a contiguous substring (>= 50) always outranks
+  // any pure subsequence match; the transform is monotonic, preserving walk-internal order.
+  return (49 * score) / (score + 49);
 }
 
 /**

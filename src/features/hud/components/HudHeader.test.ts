@@ -63,9 +63,9 @@ describe('HudHeader after the counter strip moved to the footer', () => {
   });
 
   it('marks the header as an app-drag-region so interactive children stay no-drag (#1907)', () => {
-    // The layout no-drag rule is scoped to .app-drag-region descendants; the
-    // header carries the class so its theme button/filters remain clickable
-    // inside the frameless window's drag region.
+    // The global app.css no-drag rule is scoped to .app-drag-region
+    // descendants; the header carries the class so its theme button/filters
+    // remain clickable inside the frameless window's drag region.
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const header = screen.getByTestId('hud-header');
@@ -414,7 +414,7 @@ describe('HudHeader master-volume slider', () => {
     flushSync();
     const slider = screen.getByTestId('hud-header-volume-slider') as HTMLInputElement;
     expect(Number(slider.value)).toBe(0.3);
-    // Inside the header drag region: the layout no-drag rule covers inputs.
+    // Inside the header drag region: the global app.css no-drag rule covers inputs.
     expect(slider.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
   });
 

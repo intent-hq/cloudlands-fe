@@ -37,9 +37,8 @@ export const toggleCompatibilityModes = {
       { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
       { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
-      { path: 'src/routes/(app)/settings/+page.svelte', count: 1 },
     ],
-    staticUsageCount: 13,
+    staticUsageCount: 12,
     dynamicUsageCount: 0,
     removalGate:
       'Remove only when source-derived static and dynamic variant="indicator" usage counts both reach zero.',

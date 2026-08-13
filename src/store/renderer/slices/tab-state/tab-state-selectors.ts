@@ -1,4 +1,5 @@
 import { store } from '../../store';
+import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 import { serializeWorkspaceTabsState } from './tab-state-slice';
 
 export const selectIsDragging = store.createSelector((state) => {
@@ -21,6 +22,15 @@ export const selectAllScrollPositions = store.createSelector((state) => {
 
 export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
   return state.tabState.currentTabId;
+});
+
+/**
+ * True once the tab saga has (re)hydrated the persisted tab strip for the
+ * ACTIVE backend. Until then `currentTabId` may still be the previous
+ * backend's (or empty), so boot-time consumers must not treat it as final.
+ */
+export const selectWorkspaceTabsHydrated = store.createSelector((state) => {
+  return state.tabState.hydratedBackendId === getActiveBackendId(state);
 });
 
 export const selectWorkspaceTabOrder = store.createSelector((state) => {

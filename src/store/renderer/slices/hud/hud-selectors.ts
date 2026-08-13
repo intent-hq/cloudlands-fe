@@ -41,6 +41,7 @@ import {
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { deriveAgentPreviewLine } from '$lib/utils/text-utils';
+import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
 export const selectHudActive = store.createSelector((state) => state.hud.active);
 
@@ -511,6 +512,8 @@ export interface HudWorkspaceCard {
   /** Attention-reason strip content; null outside `wait`/`blocked`/`failed` or when no reason is known. */
   attentionSnippet: HudCardAttentionSnippet | null;
   prNumber: number | null;
+  /** Resolved 0-based hardware-console key slot, null when not slotted. */
+  keySlot: number | null;
   /** BE-owned task rollup (`task.list` stats; zeros until loaded). */
   tasks: { total: number; completed: number; inProgress: number };
   /** Sum of the four token counters from the workspace usage rollup. */
@@ -904,8 +907,12 @@ function keepLiveWithAncestors(agents: HudCardAgent[]): HudCardAgent[] {
  */
 export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspaceCard[] => {
   const flags = state.hud.attentionByWorkspaceId;
+  // Resolved hardware-console key assignment, served verbatim from its
+  // owning slice (same resolution the sidebar badge uses — no re-derivation).
+  const keySlots = selectHardwareConsoleKeySlots.select(state);
   return selectHudWorkspaces.select(state).map((workspace) => {
     const workspaceId = String(workspace.id);
+    const keySlotIndex = keySlots.indexOf(workspaceId);
     const attention =
       flags[workspaceId]?.attention ??
       (typeof workspace.attention === 'string' && isHudTrackedAttentionValue(workspace.attention)
@@ -930,6 +937,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       statusMessage,
       attentionSnippet: cardAttentionSnippet(state, stateKey, agents),
       prNumber: typeof workspace.prNumber === 'number' ? workspace.prNumber : null,
+      keySlot: keySlotIndex === -1 ? null : keySlotIndex,
       tasks: stats
         ? { total: stats.total, completed: stats.completed, inProgress: stats.inProgress }
         : ZERO_TASKS,
@@ -1012,6 +1020,15 @@ export interface HudTakeoverTask {
    * non-complete tasks and when neither source has text.
    */
   report: string | null;
+  /** Task-note ids this task depends on (hard ordering edges §5.4); omitted when empty. */
+  dependsOn?: string[];
+  /** Task-note ids this task may conflict with (advisory §5.4); omitted when empty. */
+  conflictsWith?: string[];
+  /**
+   * Daemon-computed `dependsOn` ids whose task is not yet `complete` (§5.4);
+   * served verbatim — never re-derived client-side. Omitted when empty.
+   */
+  unmetDependsOn?: string[];
 }
 
 /** View-model for the takeover overlay (one workspace, joined rollups). */
@@ -1021,6 +1038,8 @@ export interface HudTakeoverView {
   repoRef: string;
   /** Status message (agent content; i18n-exempt), null when empty. */
   statusMessage: string | null;
+  /** Resolved 0-based hardware-console key slot (carried from the card). */
+  keySlot: number | null;
   /** BE-owned task rollup (`task.list` stats §5.4). */
   stats: { total: number; completed: number; inProgress: number };
   /** Display-ordered non-cancelled tasks for the map (wire order §5.4). */
@@ -1090,6 +1109,9 @@ export const selectHudTakeoverView = store.createSelector(
                 task.status === 'complete'
                   ? completeTaskReport(state, workspaceId, task.id, links)
                   : null,
+              ...(task.dependsOn ? { dependsOn: task.dependsOn } : {}),
+              ...(task.conflictsWith ? { conflictsWith: task.conflictsWith } : {}),
+              ...(task.unmetDependsOn ? { unmetDependsOn: task.unmetDependsOn } : {}),
             };
           })
       : [];
@@ -1098,6 +1120,7 @@ export const selectHudTakeoverView = store.createSelector(
       title: card.title,
       repoRef: card.repoRef,
       statusMessage: card.statusMessage,
+      keySlot: card.keySlot,
       stats: card.tasks,
       tasks,
       // Both lists partition the SAME per-agent buckets (`agentBucketOf` via

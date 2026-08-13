@@ -192,8 +192,16 @@
     }
   }
 
+  // Overrides Button's fixed control height (h-8), the plain variant's important
+  // zero padding (!px-0/!py-0), and the base whitespace-nowrap/justify-center so
+  // two-line options render fully and long locale subtitles wrap (monorepo bug:
+  // the download option's second line was clipped at the button's bottom edge).
+  // The ! on !px-3/!py-2 is load-bearing twice: it wins tailwind-merge's important
+  // conflict group against !px-0/!py-0, and in CSS it out-ranks the default size
+  // variant's surviving has-[>svg]:pl-2.5/pr-3 (these rows have a direct <svg>
+  // child) — a plain px-3 would regress on both counts.
   const optionClass =
-    'w-full flex items-center gap-3 px-3 py-2 border rounded text-left text-sm transition-colors';
+    'w-full h-auto flex items-center justify-start gap-3 !px-3 !py-2 border rounded text-left text-sm whitespace-normal transition-colors';
 </script>
 
 {#if open}

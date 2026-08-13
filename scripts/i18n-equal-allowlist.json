@@ -973,6 +973,21 @@
   "settings_theme_system": [
     "de"
   ],
+  "settings_updateChannel_alpha_label": [
+    "de",
+    "fr",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_beta_label": [
+    "de",
+    "es",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_stable_label": [
+    "fr"
+  ],
   "settings_voice_inputDevice_label": [
     "fr"
   ],
@@ -1302,15 +1317,6 @@
     "de"
   ],
   "workspace_noteVersionHistory_error_label": [
-    "es"
-  ],
-  "workspace_overviewTimeline_prNumber_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
     "es"
   ],
   "workspace_page_createFile_placeholder": [

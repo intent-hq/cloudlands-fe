@@ -34,7 +34,6 @@ export const skeletonMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/CheckoutModePill.svelte',
     'src/lib/components/workspace/ContentSkeleton.svelte',
     'src/lib/components/workspace/NoteWithComments.svelte',
-    'src/lib/components/workspace/OverviewTimelinePanel.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/SidebarSkeleton.svelte',
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',

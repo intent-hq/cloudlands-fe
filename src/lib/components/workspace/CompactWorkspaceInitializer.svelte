@@ -6,6 +6,7 @@
     getLastSelectedRepoHydrationAction,
     getInitialRepoKey,
     mapInitialRepoToFormState,
+    mapRecentRepoToSelection,
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
@@ -645,12 +646,7 @@
       applyLastSelectedRepo(lastSelectedRepo);
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
-      const mostRecentRepo = recentRepos[0];
-      applyLastSelectedRepo({
-        path: mostRecentRepo.path,
-        type: mostRecentRepo.type,
-        isValidPath: true,
-      });
+      applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
     }
   });
 
@@ -2185,13 +2181,24 @@
   }
 
   function clearForm() {
-    repoPath = '';
-    repoType = 'local';
-    githubUrl = '';
-    branch = '';
-    isNewRepo = false;
-    isValidPath = false;
-    scope = '';
+    // Note: NOT resetting the repo selection (repoPath, repoType, githubUrl,
+    // branch, isNewRepo, isValidPath, scope) — it is preserved so the next
+    // new-workspace form re-opens on the same repo (intent-hq/monorepo#2148).
+    // remoteSetup IS cleared: it is per-create connection state and stale
+    // values must not leak into the next create. Because a 'remote' selection
+    // is unusable without its remoteSetup (submission reads
+    // remoteSetup.workspacePath/environmentConfig, and isValid waives the
+    // branch requirement for remote), a remote selection cannot be preserved —
+    // reset it to defaults instead of leaving a valid-looking broken form.
+    if (repoType === 'remote') {
+      repoPath = '';
+      repoType = 'local';
+      githubUrl = '';
+      branch = '';
+      isNewRepo = false;
+      isValidPath = false;
+      scope = '';
+    }
     remoteSetup = null;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
@@ -2206,6 +2213,12 @@
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
 
+    // Restore the last used setup script for the preserved repo so the next
+    // workspace creation defaults to the same script
+    if (repoPath) {
+      restoreLastUsedSetupScript(repoPath);
+    }
+
     hasFiredClick = false;
     hasFiredType = false;
     error = null;
@@ -2217,7 +2230,8 @@
 
     // Immediately write the cleaned form state to Redux so that even if the
     // $effect doesn't fire before the component unmounts (e.g. navigation
-    // happens right after oncreate?.()), stale repo fields won't be restored.
+    // happens right after oncreate?.()), stale remoteSetup state won't be
+    // restored and the preserved repo selection is persisted.
     const cleanedState: CompactWorkspaceInitializerFormState = {
       // Agent prefs — always preserved
       selectedSpecialist,
@@ -2227,6 +2241,15 @@
       selectedProvider,
       skipIsolation,
       remoteSetup, // null at this point, but keeps parity with $effect's formState
+      // Repo selection — preserved so the next form re-opens on the same repo
+      repoPath,
+      repoType,
+      githubUrl,
+      branch,
+      isNewRepo,
+      isValidPath,
+      scope,
+      scopeRepoPath: scope ? repoPath : undefined,
     };
     // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
     appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));

@@ -93,14 +93,16 @@ export function formatSettingValue(definition: AppSettingDefinition, value: unkn
 
 export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
   {
-    path: 'preferences.betaUpdatesEnabled',
-    label: 'Beta updates',
-    description: 'Whether beta update notifications are enabled.',
+    path: 'preferences.updateChannel',
+    label: 'Update channel',
+    description: 'Release channel for app updates: stable, beta, or alpha.',
     category: 'preferences',
-    type: 'boolean',
+    type: 'enum',
+    enumValues: ['stable', 'beta', 'alpha'],
+    enumLabels: { stable: 'Stable', beta: 'Beta', alpha: 'Alpha' },
     source: 'redux',
-    defaultValue: false,
-    apply: { kind: 'redux-action', action: 'userPreferences/setBetaUpdatesEnabled' },
+    defaultValue: 'stable',
+    apply: { kind: 'redux-action', action: 'userPreferences/setUpdateChannel' },
   },
   {
     path: 'preferences.spellcheckEnabled',

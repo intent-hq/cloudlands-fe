@@ -97,6 +97,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     skipWorktree: false,
   }),
   selectWorkspaceActivePullRequest: mocks.selector(null),
+  selectIsWorkspaceHostLocal: mocks.selector(true),
 }));
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: mocks.selector([]),
@@ -144,9 +145,6 @@ vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
 }));
 
 vi.mock('../CreateAgentSection.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
-vi.mock('../OverviewTimelinePanel.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 vi.mock('../WorkspaceAgentsList.svelte', async () => ({

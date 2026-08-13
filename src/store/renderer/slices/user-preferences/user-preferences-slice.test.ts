@@ -5,7 +5,6 @@ import {
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
   initialState,
-  loadBetaUpdatesSettings,
   resetNotificationSettings,
   saveActivityLogPreset,
   setAgentFontStyle,
@@ -17,7 +16,6 @@ import {
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
-  setBetaUpdatesEnabled,
   setSpellcheckEnabled,
   setShowReasoningBlocks,
   setSoundEnabled,
@@ -30,7 +28,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleShowArchived,
   toggleShowReasoningBlocks,
-  toggleBetaUpdates,
+  setUpdateChannel,
   toggleSpellcheck,
   type UserPreferencesState,
   userPreferencesReducer,
@@ -65,44 +63,27 @@ describe('userPreferencesReducer', () => {
     expect(state).toEqual(initialState);
   });
 
-  describe('beta updates actions', () => {
-    it('should set beta updates enabled to true', () => {
-      const state = userPreferencesReducer(initialState, setBetaUpdatesEnabled(true));
-      expect(state.betaUpdatesEnabled).toBe(true);
+  describe('update channel actions', () => {
+    it('defaults to the stable channel', () => {
+      expect(initialState.updateChannel).toBe('stable');
     });
 
-    it('should set beta updates enabled to false', () => {
+    it('should set the update channel to beta', () => {
+      const state = userPreferencesReducer(initialState, setUpdateChannel('beta'));
+      expect(state.updateChannel).toBe('beta');
+    });
+
+    it('should set the update channel to alpha', () => {
+      const state = userPreferencesReducer(initialState, setUpdateChannel('alpha'));
+      expect(state.updateChannel).toBe('alpha');
+    });
+
+    it('should set the update channel back to stable', () => {
       const state = userPreferencesReducer(
-        { ...initialState, betaUpdatesEnabled: true },
-        setBetaUpdatesEnabled(false),
+        { ...initialState, updateChannel: 'beta' },
+        setUpdateChannel('stable'),
       );
-      expect(state.betaUpdatesEnabled).toBe(false);
-    });
-
-    it('should load beta updates settings to true', () => {
-      const state = userPreferencesReducer(initialState, loadBetaUpdatesSettings(true));
-      expect(state.betaUpdatesEnabled).toBe(true);
-    });
-
-    it('should load beta updates settings to false', () => {
-      const state = userPreferencesReducer(
-        { ...initialState, betaUpdatesEnabled: true },
-        loadBetaUpdatesSettings(false),
-      );
-      expect(state.betaUpdatesEnabled).toBe(false);
-    });
-
-    it('should toggle beta updates from false to true', () => {
-      const state = userPreferencesReducer(initialState, toggleBetaUpdates());
-      expect(state.betaUpdatesEnabled).toBe(true);
-    });
-
-    it('should toggle beta updates from true to false', () => {
-      const state = userPreferencesReducer(
-        { ...initialState, betaUpdatesEnabled: true },
-        toggleBetaUpdates(),
-      );
-      expect(state.betaUpdatesEnabled).toBe(false);
+      expect(state.updateChannel).toBe('stable');
     });
   });
 

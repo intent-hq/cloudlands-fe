@@ -1,0 +1,581 @@
+# Promotes an existing versioned release into the rolling *beta* channel —
+# the beta counterpart of release-stable.yml. Channel model: every tag build
+# publishes to the rolling 'alpha' release (release-beta.yml); beta and
+# stable are manual promotions of an existing versioned release (no new
+# build), via this workflow and release-stable.yml respectively.
+name: Promote Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to promote to beta (e.g., 2.0.7)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
+  pull-requests: read
+
+# Never cancel a release in progress
+concurrency:
+  group: cloudlands-beta-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote-to-beta:
+    # Non-ephemeral self-hosted runner: all scratch files live under
+    # RUNNER_TEMP (wiped by the runner between jobs) instead of /tmp, so a
+    # previous run's assets can never leak into this promotion (#553).
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+
+    steps:
+      # Fail fast if the self-hosted runner is missing a CLI tool the
+      # promotion needs (all preinstalled on ubuntu-latest, not guaranteed
+      # here) — a mid-promotion failure after assets were already uploaded
+      # to the beta channel is much worse than an early abort.
+      - name: Preflight required tools
+        run: |
+          MISSING=""
+          for tool in gh jq curl awk sed sort; do
+            command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Self-hosted runner is missing required tools:$MISSING"
+            exit 1
+          fi
+          # Version-range computation needs GNU sort's -V
+          if ! printf '1.0.0\n' | sort -V >/dev/null 2>&1; then
+            echo "::error::sort on this runner does not support -V (GNU coreutils sort required)"
+            exit 1
+          fi
+          echo "All required tools present"
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected version X.Y.Z (e.g., 2.0.7). Prerelease/build suffixes not allowed for beta promotions."
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Verify versioned release exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::RELEASE_PAT secret is required for this workflow"
+            exit 1
+          fi
+          if ! gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "::error::Versioned release v${VERSION} does not exist on intent-hq/cloudlands-releases"
+            exit 1
+          fi
+          echo "Versioned release v${VERSION} exists"
+
+      - name: Read current beta version
+        id: beta_version
+        run: |
+          # Attempt to fetch latest-mac.yml from beta; tolerate 404 (first promotion)
+          BETA_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml"
+          PREV_BETA=""
+
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$RUNNER_TEMP/beta-latest-mac.yml" "$BETA_YML_URL")
+          if [ "$HTTP_CODE" = "200" ]; then
+            PREV_BETA=$(awk '/^version:/{print $2; exit}' "$RUNNER_TEMP/beta-latest-mac.yml" | tr -d '\r')
+            if [ -z "$PREV_BETA" ]; then
+              echo "::error::Fetched beta latest-mac.yml but could not parse version"
+              exit 1
+            fi
+            echo "Previous beta version: $PREV_BETA"
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "No prior beta release found (first promotion)"
+          else
+            echo "::error::Unexpected HTTP code $HTTP_CODE fetching beta latest-mac.yml"
+            exit 1
+          fi
+
+          echo "prev_beta=$PREV_BETA" >> "$GITHUB_OUTPUT"
+          if [ -z "$PREV_BETA" ]; then
+            echo "is_first_promotion=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_first_promotion=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Validates the promotion range BEFORE any asset is uploaded or feed is
+      # switched: a bad dispatch (older version, unknown previous beta) must
+      # abort while the live beta channel is still untouched. Also computes
+      # the effective previous-beta/first-promotion values and the version
+      # range consumed by the notes, notifier, and summary steps: a previous
+      # beta with no matching versioned release (e.g. the pre-channel-model
+      # beta feed written by prerelease tag builds) falls back to the
+      # first-promotion path here instead of failing mid-promotion.
+      - name: Validate promotion range
+        id: range
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+          PREV_BETA: ${{ steps.beta_version.outputs.prev_beta }}
+          IS_FIRST: ${{ steps.beta_version.outputs.is_first_promotion }}
+        run: |
+          set -o pipefail
+          # List all versioned releases (vX.Y.Z only, filtered by tag pattern)
+          gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName \
+            --jq '.[] | select(.tagName | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")) | .tagName' \
+            | sed 's/^v//' \
+            | sort -V -r > "$RUNNER_TEMP/all-versions.txt"
+
+          if ! grep -qFx "$VERSION" "$RUNNER_TEMP/all-versions.txt"; then
+            echo "::error::Target version $VERSION not found in release list - ensure v$VERSION release exists"
+            exit 1
+          fi
+
+          EFFECTIVE_PREV="$PREV_BETA"
+          EFFECTIVE_FIRST="$IS_FIRST"
+
+          if [ "$EFFECTIVE_FIRST" != "true" ] && [ "$PREV_BETA" != "$VERSION" ]; then
+            if ! grep -qFx "$PREV_BETA" "$RUNNER_TEMP/all-versions.txt"; then
+              # The beta feed predates the channel model (written directly by
+              # a prerelease tag build) or its versioned release is gone -
+              # treat this promotion as the first one instead of failing
+              echo "::warning::Previous beta version $PREV_BETA has no matching versioned release (pre-channel-model beta feed?) - treating this as a first promotion"
+              EFFECTIVE_FIRST=true
+              EFFECTIVE_PREV=""
+            else
+              # Guard: never move the beta channel backwards
+              SORTED_PAIR=$(printf "%s\n%s" "$PREV_BETA" "$VERSION" | sort -V)
+              OLDER=$(echo "$SORTED_PAIR" | head -n1)
+              if [ "$OLDER" != "$PREV_BETA" ]; then
+                echo "::error::Target version $VERSION is not greater than previous beta $PREV_BETA - cannot promote an older version to beta"
+                exit 1
+              fi
+            fi
+          fi
+
+          # Determine range: (prevBeta, version]
+          if [ "$EFFECTIVE_FIRST" = "true" ]; then
+            # First promotion: only include the target version
+            echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
+          elif [ "$EFFECTIVE_PREV" = "$VERSION" ]; then
+            # Idempotent re-run: same version promoted again, use just this version
+            echo "Re-promoting same version $VERSION (idempotent)"
+            echo "$VERSION" > "$RUNNER_TEMP/range-versions.txt"
+          else
+            # Steady-state: include all versions > prevBeta and <= version
+            awk -v prev="$EFFECTIVE_PREV" -v target="$VERSION" '
+              BEGIN { found_target=0; found_prev=0; }
+              {
+                if ($1 == target) found_target=1;
+                if ($1 == prev) found_prev=1;
+                if (found_target && !found_prev) print $1;
+              }
+            ' "$RUNNER_TEMP/all-versions.txt" > "$RUNNER_TEMP/range-versions.txt"
+          fi
+
+          # Validate we have at least one version in the range
+          if [ ! -s "$RUNNER_TEMP/range-versions.txt" ]; then
+            echo "::error::No versions found in range (prevBeta, version] - check that both versions exist in releases"
+            exit 1
+          fi
+
+          echo "Versions in promotion range (prevBeta, version]:"
+          cat "$RUNNER_TEMP/range-versions.txt"
+
+          echo "prev_beta=$EFFECTIVE_PREV" >> "$GITHUB_OUTPUT"
+          echo "is_first_promotion=$EFFECTIVE_FIRST" >> "$GITHUB_OUTPUT"
+
+      - name: Download versioned release assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          rm -rf "$RUNNER_TEMP/release-assets"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          cd "$RUNNER_TEMP/release-assets"
+          gh release download "v${VERSION}" --repo intent-hq/cloudlands-releases
+          echo "Downloaded assets:"
+          ls -lh
+
+      - name: Ensure beta release exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          # Check if 'beta' release already exists
+          if gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "Rolling 'beta' release already exists"
+          else
+            echo "Creating rolling 'beta' release"
+            gh release create beta \
+              --repo intent-hq/cloudlands-releases \
+              --title "Intent Beta Channel (Rolling)" \
+              --notes "Rolling beta channel - points to the latest beta release. Auto-updater uses this." \
+              --draft=false \
+              --prerelease
+          fi
+
+      - name: Upload new assets to beta
+        id: upload_assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd "$RUNNER_TEMP/release-assets"
+
+          # Auto-updater feed files, one per platform. latest-mac.yml is
+          # required; the others are promoted when present so older mac-only
+          # releases can still be promoted.
+          FEED_FILES=(latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml)
+
+          if [ ! -f "latest-mac.yml" ]; then
+            echo "::error::Missing required latest-mac.yml"
+            exit 1
+          fi
+
+          PROMOTED_FEEDS=()
+          for feed in "${FEED_FILES[@]}"; do
+            if [ -f "$feed" ]; then
+              PROMOTED_FEEDS+=("$feed")
+            else
+              echo "::warning::Feed file $feed not present in v${VERSION} - skipping (release predates Windows/Linux builds?)"
+            fi
+          done
+
+          # Build list of all downloaded assets except the feed files
+          UPLOAD_FILES=()
+          for file in *; do
+            IS_FEED=false
+            for feed in "${FEED_FILES[@]}"; do
+              if [ "$file" = "$feed" ]; then
+                IS_FEED=true
+                break
+              fi
+            done
+            if [ -f "$file" ] && [ "$IS_FEED" = "false" ]; then
+              UPLOAD_FILES+=("$file")
+            fi
+          done
+
+          # Upload all versioned assets first (no collision with existing beta assets)
+          # Use --clobber for idempotency (re-running same version is safe)
+          if [ ${#UPLOAD_FILES[@]} -gt 0 ]; then
+            echo "Uploading versioned assets: ${UPLOAD_FILES[*]}"
+            gh release upload beta --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
+          fi
+
+          # Replace the feed files last with --clobber (atomic switch of all
+          # auto-updater feeds, after every referenced asset is in place)
+          echo "Replacing auto-updater feeds: ${PROMOTED_FEEDS[*]}"
+          gh release upload beta --repo intent-hq/cloudlands-releases --clobber -- "${PROMOTED_FEEDS[@]}"
+
+          echo "promoted_feeds=${PROMOTED_FEEDS[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete previous version assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -o pipefail
+          cd "$RUNNER_TEMP/release-assets"
+
+          # Build allowlist of assets we just uploaded (don't delete these)
+          PROMOTED_ASSETS=()
+          for file in *; do
+            if [ -f "$file" ]; then
+              PROMOTED_ASSETS+=("$file")
+            fi
+          done
+
+          # Clean up old versioned assets from beta release
+          echo "Cleaning up old versioned assets (keeping newly promoted files)"
+          gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            if [ -z "$asset" ]; then
+              continue
+            fi
+
+            # Check if this asset is in our promoted list
+            KEEP=false
+            for promoted in "${PROMOTED_ASSETS[@]}"; do
+              if [ "$asset" = "$promoted" ]; then
+                KEEP=true
+                break
+              fi
+            done
+
+            if [ "$KEEP" = "false" ]; then
+              echo "Deleting old asset: $asset"
+              gh release delete-asset beta "$asset" --repo intent-hq/cloudlands-releases --yes
+            else
+              echo "Keeping promoted asset: $asset"
+            fi
+          done
+
+      - name: Verify beta feeds match versioned release
+        env:
+          VERSION: ${{ inputs.version }}
+          PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
+        run: |
+          read -ra FEEDS <<< "$PROMOTED_FEEDS"
+          if [ ${#FEEDS[@]} -eq 0 ]; then
+            echo "::error::No promoted feeds recorded by the upload step"
+            exit 1
+          fi
+
+          for feed in "${FEEDS[@]}"; do
+            echo "Verifying $feed"
+
+            # Fetch versioned release sha512
+            VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+            if [ -z "$VERSIONED_SHA" ]; then
+              echo "::error::Failed to fetch or parse sha512 for $feed from versioned release v${VERSION}"
+              exit 1
+            fi
+
+            # Retry beta feed fetch with exponential backoff (CDN propagation can take a few seconds)
+            MAX_RETRIES=5
+            RETRY_DELAY=2
+            for i in $(seq 1 "$MAX_RETRIES"); do
+              BETA_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/beta/${feed}?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+
+              if [ -z "$BETA_SHA" ]; then
+                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 for $feed from beta release"
+                if [ "$i" -lt "$MAX_RETRIES" ]; then
+                  sleep "$RETRY_DELAY"
+                  RETRY_DELAY=$((RETRY_DELAY * 2))
+                  continue
+                else
+                  echo "::error::Failed to fetch beta sha512 for $feed after $MAX_RETRIES retries"
+                  exit 1
+                fi
+              fi
+
+              if [ "$VERSIONED_SHA" = "$BETA_SHA" ]; then
+                echo "✓ Beta $feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                break
+              else
+                echo "::warning::Retry $i/$MAX_RETRIES: $feed sha512 mismatch - versioned: $VERSIONED_SHA, beta: $BETA_SHA (likely CDN propagation delay)"
+                if [ "$i" -lt "$MAX_RETRIES" ]; then
+                  sleep "$RETRY_DELAY"
+                  RETRY_DELAY=$((RETRY_DELAY * 2))
+                else
+                  echo "::error::$feed sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, beta: $BETA_SHA"
+                  exit 1
+                fi
+              fi
+            done
+          done
+
+      # The notifier script and the git range come from the tag checkout.
+      # Non-fatal: a failed checkout only skips the issue notifications
+      # (promotion never fails because of notes).
+      - name: Checkout repo at promoted tag
+        id: checkout_tag
+        uses: actions/checkout@v7
+        continue-on-error: true
+        with:
+          ref: refs/tags/v${{ inputs.version }}
+
+      # Recover the bundled intentd version for the notifier comment from the
+      # promoted version's manifest (downloaded with the release assets).
+      # Fail-soft — a missing manifest just omits the mention.
+      - name: Resolve bundled intentd version
+        id: intentd_pin
+        continue-on-error: true
+        run: |
+          HEAD_PIN=""
+          if [ -f "$RUNNER_TEMP/release-assets/release-manifest.json" ]; then
+            HEAD_PIN=$(jq -r '.intentdVersion // empty' "$RUNNER_TEMP/release-assets/release-manifest.json" 2>/dev/null || true)
+          fi
+          if [ -z "$HEAD_PIN" ]; then
+            echo "::warning::No intentdVersion in the promoted release's manifest - the notifier comment will omit the bundled intentd mention"
+          fi
+          echo "head=$HEAD_PIN" >> "$GITHUB_OUTPUT"
+          echo "bundled intentd: '${HEAD_PIN:-<none>}'"
+
+      # The version range (prevBeta, version] was computed and validated by
+      # the preflight "Validate promotion range" step, before any asset was
+      # uploaded — this step only renders the notes from it.
+      - name: Build aggregated release notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -o pipefail
+          if [ ! -s "$RUNNER_TEMP/range-versions.txt" ]; then
+            echo "::error::range-versions.txt missing or empty - the preflight range validation step should have produced it"
+            exit 1
+          fi
+
+          echo "Versions to include in aggregated notes:"
+          cat "$RUNNER_TEMP/range-versions.txt"
+
+          # Concatenate the per-version bodies
+          {
+            while IFS= read -r ver; do
+              echo "## v${ver}"
+              echo ""
+              gh release view "v${ver}" --repo intent-hq/cloudlands-releases --json body --jq '.body // ""'
+              echo ""
+            done < "$RUNNER_TEMP/range-versions.txt"
+          } > "$RUNNER_TEMP/aggregated-notes.md"
+
+          echo "Aggregated notes preview (first 20 lines):"
+          head -n 20 "$RUNNER_TEMP/aggregated-notes.md"
+
+      - name: Update beta release notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh release edit beta --repo intent-hq/cloudlands-releases --notes-file "$RUNNER_TEMP/aggregated-notes.md"
+          echo "✓ Beta release notes updated"
+
+      # Re-stamps published_at on the rolling beta release (GitHub renders
+      # its "released N ago" from that field, which otherwise sticks at first
+      # publication) by toggling draft on→off via the REST API. Reading state
+      # and entering draft are fail-soft — the refresh is cosmetic and must
+      # never block a promotion — but once the release is drafted its download
+      # URLs (auto-updater feeds) 404, so the un-draft retries with backoff
+      # and fails the job loudly if the release is left drafted.
+      - name: Refresh published date on rolling beta release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          REPO=intent-hq/cloudlands-releases
+          TAG=beta
+
+          # Read current state so the un-draft re-applies it (re-publishing
+          # defaults make_latest to true; prereleases can never be latest)
+          if ! STATE=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '[.id, .prerelease] | @tsv'); then
+            echo "::warning::Could not read rolling '${TAG}' release state; skipping published date refresh"
+            exit 0
+          fi
+          IFS=$'\t' read -r RELEASE_ID PRERELEASE <<< "$STATE"
+
+          MAKE_LATEST=false
+          if [ "$PRERELEASE" = "false" ]; then
+            LATEST_ID=$(gh api "repos/${REPO}/releases/latest" --jq '.id' 2>/dev/null || echo "")
+            if [ -z "$LATEST_ID" ]; then
+              echo "::warning::Could not determine the repo's latest release; skipping published date refresh"
+              exit 0
+            fi
+            if [ "$LATEST_ID" = "$RELEASE_ID" ]; then
+              MAKE_LATEST=true
+            fi
+          fi
+
+          # Enter draft (fail-soft: the release is still published if this fails)
+          if ! gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" -F draft=true >/dev/null; then
+            echo "::warning::Could not draft rolling '${TAG}' release; skipping published date refresh"
+            exit 0
+          fi
+
+          # Re-publish (mandatory from here: a drafted rolling release 404s
+          # the auto-updater feed URLs)
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+          for i in $(seq 1 "$MAX_RETRIES"); do
+            if gh api -X PATCH "repos/${REPO}/releases/${RELEASE_ID}" \
+                -F draft=false -F prerelease="$PRERELEASE" -f make_latest="$MAKE_LATEST" >/dev/null; then
+              echo "✓ Rolling '${TAG}' release re-published (published_at refreshed; prerelease=${PRERELEASE}, make_latest=${MAKE_LATEST})"
+              exit 0
+            fi
+            echo "::warning::Attempt $i/$MAX_RETRIES: failed to re-publish rolling '${TAG}' release"
+            if [ "$i" -lt "$MAX_RETRIES" ]; then
+              sleep "$RETRY_DELAY"
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+          echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
+          exit 1
+
+      # Comments on the intent-hq/monorepo issues fixed in the promoted range
+      # (previous beta, promoted tag]. Fail-soft: skips with a warning when
+      # MONOREPO_ISSUES_TOKEN is absent, on a first promotion (no previous
+      # beta to anchor the range), or when the tag checkout failed — and
+      # never blocks the promotion (continue-on-error). The marker check inside
+      # the script makes re-promotions no-ops (no duplicate comments).
+      - name: Notify fixed monorepo issues
+        continue-on-error: true
+        env:
+          ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PREV_BETA: ${{ steps.range.outputs.prev_beta }}
+          IS_FIRST: ${{ steps.range.outputs.is_first_promotion }}
+          BUNDLED_INTENTD: ${{ steps.intentd_pin.outputs.head }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
+        run: |
+          if [ -z "$ISSUES_GH_TOKEN" ]; then
+            echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
+            exit 0
+          fi
+          if [ "$IS_FIRST" = "true" ]; then
+            echo "::warning::First beta promotion (no previous beta); skipping issue notifications"
+            exit 0
+          fi
+          # The notifier script and the git range both come from the tag checkout
+          if [ "$CHECKOUT_OUTCOME" != "success" ]; then
+            echo "::warning::Checkout of promoted tag failed (outcome: $CHECKOUT_OUTCOME); skipping issue notifications"
+            exit 0
+          fi
+          # The checkout is shallow (fetch-depth 1); the notifier needs the
+          # commit range and both tags to walk it. --force lets the fetch
+          # update tags left stale by earlier runs on this non-ephemeral
+          # runner — without it a rejected tag update ("would clobber
+          # existing tag") makes the fetch exit 1, and --quiet would
+          # suppress the rejection message entirely, so don't pass it
+          # (intent-hq/monorepo#1921).
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            UNSHALLOW=(--unshallow)
+          else
+            UNSHALLOW=()
+          fi
+          git fetch --force --tags "${UNSHALLOW[@]}" origin || {
+            echo "::error::git fetch --tags failed (exit $?); cannot resolve range v${PREV_BETA}..v${VERSION} - issue notifications skipped"
+            exit 1
+          }
+          # Bundled intentd version from the promoted release's manifest
+          # (resolved fail-soft earlier); empty just omits the mention
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
+            "v${PREV_BETA}" "v${VERSION}" "${BUNDLED_INTENTD}"
+
+      - name: Post summary
+        env:
+          VERSION: ${{ inputs.version }}
+          PREV_BETA: ${{ steps.range.outputs.prev_beta }}
+          IS_FIRST: ${{ steps.range.outputs.is_first_promotion }}
+          PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
+        run: |
+          feed_platform() {
+            case "$1" in
+              latest-mac.yml) echo "macOS" ;;
+              latest.yml) echo "Windows" ;;
+              latest-linux.yml) echo "Linux x64" ;;
+              latest-linux-arm64.yml) echo "Linux arm64" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          read -ra FEEDS <<< "$PROMOTED_FEEDS"
+          {
+            echo "## Beta Promotion"
+            echo ""
+            echo "**Promoted version:** v$VERSION"
+            if [ "$IS_FIRST" = "true" ]; then
+              echo "**Previous beta:** (none - first promotion)"
+            else
+              echo "**Previous beta:** v$PREV_BETA"
+            fi
+            echo ""
+            echo "### Download URLs"
+            echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
+            for feed in "${FEEDS[@]}"; do
+              echo "- [Auto-updater feed ($(feed_platform "$feed"))](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/${feed})"
+            done
+            echo ""
+            echo "### Verification"
+            echo "- ✓ Assets copied from versioned release v$VERSION"
+            echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
+            echo "- ✓ Aggregated release notes updated"
+          } >> "$GITHUB_STEP_SUMMARY"

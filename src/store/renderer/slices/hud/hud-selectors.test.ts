@@ -34,6 +34,7 @@ import {
   initialState as agentSessionInitialState,
 } from '../agent-session/agent-session-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import { initialState as hardwareConsoleInitialState } from '../hardware-console/hardware-console-slice';
 import { mapEventToFeedEntry } from '$features/hud/hud-feed-mapper';
 import { toHudAgentStateBucket } from './hud-types';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -79,7 +80,11 @@ function mockState(
   for (const question of questions) {
     hudState = hudReducer(hudState, hudQuestionCaptured(question));
   }
-  return { workspace: workspaceState, hud: hudState } as StoreState;
+  return {
+    workspace: workspaceState,
+    hud: hudState,
+    hardwareConsole: hardwareConsoleInitialState,
+  } as StoreState;
 }
 
 function withStatus(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
@@ -835,6 +840,9 @@ describe('selectHudWorkspaceCards', () => {
         statusMessage: 'Wiring the release-channel fetch',
         attentionSnippet: null,
         prNumber: 482,
+        // Auto-filled into the first open slot by the seeded hardware-console
+        // slice (production behavior for a lone assignable workspace).
+        keySlot: 0,
         tasks: { total: 0, completed: 0, inProgress: 0 },
         tokens: 0,
         agents: [],
@@ -849,6 +857,42 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.stateKey).toBe('not_started');
     expect(card.statusMessage).toBeNull();
     expect(card.prNumber).toBeNull();
+  });
+
+  it('resolves keySlot from the hardware-console assignment (pinned slot index)', () => {
+    const state = cardState(
+      [makeWorkspace('ws-1'), makeWorkspace('ws-2')],
+      [],
+      {
+        hardwareConsole: {
+          ...hardwareConsoleInitialState,
+          keyPins: [null, null, null, 'ws-1', null, null],
+        },
+      },
+    );
+    const cards = selectHudWorkspaceCards.select(state);
+    const byId = new Map(cards.map((card) => [card.workspaceId, card]));
+    // ws-1 pinned to slot 3; ws-2 auto-fills the first open slot (0).
+    expect(byId.get('ws-1')?.keySlot).toBe(3);
+    expect(byId.get('ws-2')?.keySlot).toBe(0);
+  });
+
+  it('keySlot is null for a workspace holding no slot (excluded from auto-fill)', () => {
+    const state = cardState([makeWorkspace('ws-1')], [], {
+      hardwareConsole: { ...hardwareConsoleInitialState, excludedWorkspaceIds: ['ws-1'] },
+    });
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.keySlot).toBeNull();
+  });
+
+  it('the takeover view carries the card keySlot through', () => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })], [], {
+      hardwareConsole: {
+        ...hardwareConsoleInitialState,
+        keyPins: [null, 'ws-1', null, null, null, null],
+      },
+    });
+    expect(selectHudTakeoverView.select(state, 'ws-1')?.keySlot).toBe(1);
   });
 
   it('keeps only live agents (running/needs-attention/failed) and joins last-response lines', () => {
@@ -2725,5 +2769,51 @@ describe('selectHudTakeoverView complete-cell reports', () => {
     });
     const view = selectHudTakeoverView.select(state, 'ws-1');
     expect(view?.tasks[0].report).toBeNull();
+  });
+});
+
+describe('selectHudTakeoverView task relation projection', () => {
+  function relationsState(tasks: Array<Partial<WorkspaceTask>>): StoreState {
+    const base = mockState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })]);
+    return {
+      ...base,
+      workspaceTasks: {
+        byWorkspaceId: {
+          'ws-1': {
+            tasks: createCollection<WorkspaceTask, 'id'>('id', tasks as WorkspaceTask[]),
+            stats: { total: tasks.length, completed: 0, inProgress: 0 },
+          },
+        },
+      },
+    } as StoreState;
+  }
+
+  it('copies dependsOn/conflictsWith/unmetDependsOn verbatim from the wire task', () => {
+    const state = relationsState([
+      { id: 'task-a', title: 'Upstream', status: 'in_progress' },
+      {
+        id: 'task-b',
+        title: 'Downstream',
+        status: 'not_started',
+        dependsOn: ['task-a'],
+        conflictsWith: ['task-c'],
+        unmetDependsOn: ['task-a'],
+      } as WorkspaceTask,
+    ]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const downstream = view?.tasks.find((task) => task.id === 'task-b');
+    expect(downstream?.dependsOn).toEqual(['task-a']);
+    expect(downstream?.conflictsWith).toEqual(['task-c']);
+    expect(downstream?.unmetDependsOn).toEqual(['task-a']);
+  });
+
+  it('omits the relation fields when absent on the source task', () => {
+    const state = relationsState([{ id: 'task-a', title: 'Standalone', status: 'not_started' }]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const task = view?.tasks[0];
+    expect(task).toBeDefined();
+    expect(task && 'dependsOn' in task).toBe(false);
+    expect(task && 'conflictsWith' in task).toBe(false);
+    expect(task && 'unmetDependsOn' in task).toBe(false);
   });
 });

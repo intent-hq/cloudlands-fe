@@ -176,7 +176,6 @@ describe('B2 caller metadata regression', () => {
         { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 1 },
         { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
-        { path: 'src/routes/(app)/settings/+page.svelte', count: 1 },
       ],
     };
     const replacements = {

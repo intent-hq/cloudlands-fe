@@ -302,6 +302,7 @@
   {#if diffAbsolutePath}
     <OpenComboButton
       filePath={diffAbsolutePath}
+      {workspaceId}
       isDirectory={false}
       embedded
       workspaceFolderPath={repoPath}

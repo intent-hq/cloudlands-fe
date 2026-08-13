@@ -21,7 +21,6 @@
  *   pipe name:   \\.\pipe\intentd-4f8c75c28cfa6e92
  */
 import crypto from 'node:crypto';
-import os from 'node:os';
 import path from 'node:path';
 
 /** Matches the Windows pipe namespace (`\\.\pipe\…` or `\\?\pipe\…`). */
@@ -56,12 +55,3 @@ export function toLocalEndpoint(
   return windowsPipeName(socketPath);
 }
 
-/**
- * Default Windows socket path when `INTENTD_DATA_DIR` is unset. Mirrors the
- * daemon's `directories::ProjectDirs::from("", "", "intentd").data_dir()`
- * (crates/intent-core/src/config.rs): `%APPDATA%\intentd\data`.
- */
-export function defaultWindowsSocketPath(env: NodeJS.ProcessEnv): string {
-  const appData = env.APPDATA?.trim() || path.win32.join(os.homedir(), 'AppData', 'Roaming');
-  return path.win32.join(appData, 'intentd', 'data', 'intentd.sock');
-}

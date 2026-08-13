@@ -3,6 +3,8 @@
  * Extracted from CompactWorkspaceInitializer.svelte $effect logic.
  */
 
+import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+
 export interface InitialRepoInfo {
   repoPath?: string;
   isGithub?: boolean;
@@ -27,12 +29,6 @@ export interface InitialRepoFormState {
 }
 
 export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore' | 'restore-recent';
-
-export interface WorkspaceInitializerRecentRepo {
-  path: string;
-  type: 'local' | 'github' | 'remote';
-  name: string;
-}
 
 export interface LastSelectedRepoHydrationInput {
   isHydrated: boolean;
@@ -90,6 +86,25 @@ export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFor
   }
 
   return state;
+}
+
+/**
+ * Map a recent-repo entry to the repo-selection shape used to restore form
+ * state. Preserves `githubUrl` so a GitHub-type recent repo restores as a
+ * GitHub selection instead of degrading to a URL-less one.
+ */
+export function mapRecentRepoToSelection(repo: WorkspaceInitializerRecentRepo): {
+  path: string;
+  type: 'local' | 'github';
+  githubUrl?: string;
+  isValidPath: boolean;
+} {
+  return {
+    path: repo.path,
+    type: repo.type,
+    githubUrl: repo.githubUrl,
+    isValidPath: true,
+  };
 }
 
 export function getLastSelectedRepoHydrationAction({

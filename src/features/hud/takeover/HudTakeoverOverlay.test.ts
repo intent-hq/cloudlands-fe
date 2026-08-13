@@ -16,6 +16,10 @@ import { get } from 'svelte/store';
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  hydrateHardwareConsoleKeyPins,
+  pinWorkspaceToKey,
+} from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { loadWorkspaceTasksSucceeded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { hydrateTaskAgentAssociations } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -35,6 +39,14 @@ vi.mock('../sound/hud-sound-player', () => ({
   playHudSoundCue: vi.fn(),
   playTakeoverTransitionCues: vi.fn(),
 }));
+
+// Controllable micro-connected gate for the header key square; defaults to
+// disconnected, matching the real jsdom behavior (WebHID unavailable).
+const hw = vi.hoisted(() => ({ connected: false }));
+vi.mock('$features/hardware-console/device/connection-status', async () => {
+  const { readable } = await import('svelte/store');
+  return { microConnectedReadable: () => readable(hw.connected) };
+});
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 const WS = 'ws-1';
@@ -152,6 +164,60 @@ describe('HudTakeoverOverlay COMPLETE-cell report body', () => {
 
     expect(screen.getAllByTestId('hud-takeover-cell')).toHaveLength(2);
     expect(screen.queryByTestId('hud-takeover-cell-report')).toBeNull();
+  });
+});
+
+describe('HudTakeoverOverlay header hardware-key square', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+  });
+  afterEach(() => {
+    hw.connected = false;
+    cleanup();
+    appStore.dispose();
+  });
+
+  function headerSquare(): Element | null {
+    return document.querySelector('.ov-title-row .ov-key-square');
+  }
+
+  it('renders the slot square immediately before the workspace name when connected + slotted', () => {
+    hw.connected = true;
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const square = headerSquare();
+    const name = document.querySelector('.ov-ws-name');
+    expect(square?.textContent?.trim()).toBe('3'); // 1-based slot number.
+    expect(
+      square && name && square.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders no square when the micro is disconnected', () => {
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
+  });
+
+  it('renders no square when the workspace holds no key slot', () => {
+    hw.connected = true;
+    // Exclude WS from auto-fill so it resolves to no slot.
+    appStore.dispatch(hydrateHardwareConsoleKeyPins(new Array(6).fill(null), [WS]));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
   });
 });
 
@@ -555,11 +621,11 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
     openTakeover();
 
-    // One task at (0,−1): bounds x −2…2, y −2…1 cells (± ring), in px ×192.
+    // One rootless task at (1,0): bounds x −2…2, y −1…1 cells (base viewport), in px ×192.
     const map = screen.getByTestId('hud-takeover-map');
     dragMap(map, [500, 300], [-10_000, 10_000]);
     expect(panTransform()).toBe(
-      `translate(${-2 * HUD_TAKEOVER_PITCH_PX}px, ${2 * HUD_TAKEOVER_PITCH_PX}px)`,
+      `translate(${-2 * HUD_TAKEOVER_PITCH_PX}px, ${1 * HUD_TAKEOVER_PITCH_PX}px)`,
     );
   });
 
@@ -591,7 +657,8 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
   });
 
   it('a manual drag cancels the pending auto-pan to a far changed cell', () => {
-    // 12 tasks: task-12 sits at seed coord (0,−2) — |y| ≥ 2 needs pan.
+    // 12 rootless tasks share column x=1, rows −6…5: task-12 lands at
+    // (1,5) — |y| ≥ 2 needs pan.
     seedTasks(
       Array.from({ length: 12 }, (_, i) => ({
         id: `task-${i + 1}`,
@@ -639,8 +706,221 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     expect(panTransform()).toBe('translate(0px, 0px)');
     vi.advanceTimersByTime(2100);
     flushSync();
-    // Cell (0,−2) → camera offset (0, −2·192); canvas translates the negation.
-    expect(panTransform()).toBe(`translate(0px, ${2 * HUD_TAKEOVER_PITCH_PX}px)`);
+    // Cell (1,5) → camera offset (192, 5·192); canvas translates the negation.
+    expect(panTransform()).toBe(
+      `translate(${-1 * HUD_TAKEOVER_PITCH_PX}px, ${-5 * HUD_TAKEOVER_PITCH_PX}px)`,
+    );
+  });
+});
+
+describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+  });
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+  });
+
+  function seedGraphTasks(
+    tasks: Array<{
+      id: string;
+      title: string;
+      status: string;
+      dependsOn?: string[];
+      conflictsWith?: string[];
+      unmetDependsOn?: string[];
+    }>,
+  ): void {
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.status === 'complete').length;
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total,
+        completed,
+        inProgress: 0,
+      }),
+    );
+  }
+
+  it('places cells by the dependency layout: a chain runs left→right from the spec', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cells = screen.getAllByTestId('hud-takeover-cell');
+    const byTitle = new Map(
+      cells.map((cell) => [cell.querySelector('.ov-cell-title')?.textContent?.trim(), cell]),
+    );
+    // Columns 1..3 on row 0 → left = x·192 − 90.
+    expect(byTitle.get('A')?.style.left).toBe(`${1 * HUD_TAKEOVER_PITCH_PX - 90}px`);
+    expect(byTitle.get('B')?.style.left).toBe(`${2 * HUD_TAKEOVER_PITCH_PX - 90}px`);
+    expect(byTitle.get('C')?.style.left).toBe(`${3 * HUD_TAKEOVER_PITCH_PX - 90}px`);
+    for (const title of ['A', 'B', 'C']) {
+      expect(byTitle.get(title)?.style.top).toBe(`${-90}px`);
+    }
+  });
+
+  it('renders spec/met/unmet/conflict edges with their kinds (arrowless conflicts)', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'], conflictsWith: ['c'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(screen.getByTestId('hud-takeover-edges')).toBeTruthy();
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const kinds = edges.map((edge) => edge.getAttribute('data-kind')).sort();
+    expect(kinds).toEqual(['conflict', 'dep', 'spec', 'unmet']);
+
+    const byKind = new Map(edges.map((edge) => [edge.getAttribute('data-kind'), edge]));
+    // Met dep a→b and the spec edge carry arrowheads; conflicts render none.
+    expect(byKind.get('dep')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-dep)');
+    expect(byKind.get('unmet')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-unmet)');
+    expect(byKind.get('spec')?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-spec)');
+    expect(byKind.get('conflict')?.getAttribute('marker-end')).toBeNull();
+    // The unmet edge runs b→c: from the border of (2,0) toward (3,0).
+    expect(byKind.get('unmet')?.getAttribute('x1')).toBe(`${2 * HUD_TAKEOVER_PITCH_PX + 90}`);
+    expect(byKind.get('unmet')?.getAttribute('x2')).toBe(`${3 * HUD_TAKEOVER_PITCH_PX - 92}`);
+  });
+
+  it('renders a met dep edge into a complete dependent despite a stale unmetDependsOn', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'in_progress' },
+      { id: 'b', title: 'B', status: 'complete', dependsOn: ['a'], unmetDependsOn: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const kinds = screen
+      .getAllByTestId('hud-takeover-edge')
+      .map((edge) => edge.getAttribute('data-kind'))
+      .sort();
+    expect(kinds).toEqual(['dep', 'spec']);
+  });
+
+  it('renders no edge layer when the workspace has no tasks', () => {
+    seedGraphTasks([]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(screen.queryByTestId('hud-takeover-edges')).toBeNull();
+  });
+});
+
+describe('HudTakeoverOverlay zoom-to-fit (scaled map)', () => {
+  // jsdom has no layout: mock the map clip's client size so the per-display
+  // viewport measurement sees a real box and computes a fit scale < 1.
+  const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+  const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!;
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 1000 : 0;
+      },
+    });
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 600 : 0;
+      },
+    });
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
+    Object.defineProperty(Element.prototype, 'clientHeight', originalClientHeight);
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function pointer(el: Element, type: string, x: number, y: number): void {
+    el.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
+    flushSync();
+  }
+
+  function panTransform(): string {
+    return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
+  }
+
+  /** Chain a→…→e spans columns 1..5; half-extent 5·192+90=1050 vs 500 → 0.476. */
+  function seedWideChain(): void {
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+  }
+
+  it('applies the fit scale to the pan transform for a graph wider than the viewport', () => {
+    seedWideChain();
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // 500/1050 = 0.476 (3 decimals); pan 0 → scaled translate stays 0.
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
+  });
+
+  it('a small graph keeps the 1:1 transform (never scales up)', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(panTransform()).toBe('translate(0px, 0px)');
+  });
+
+  it('drags stay 1:1 on screen: pointer deltas divide by the scale, translate scales back', () => {
+    seedWideChain();
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const map = screen.getByTestId('hud-takeover-map');
+    pointer(map, 'pointerdown', 500, 300);
+    pointer(map, 'pointermove', 450, 280);
+    pointer(map, 'pointerup', 450, 280);
+    // Content pan = 50/0.476 ≈ 105.04…, rendered = pan·0.476 = 50px again.
+    const match = panTransform().match(/^translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(0.476\)$/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeCloseTo(-50, 6);
+    expect(Number(match![2])).toBeCloseTo(-20, 6);
+  });
+
+  it('suppresses the far-cell auto-pan when the fitted graph is fully visible', () => {
+    seedWideChain();
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    // t5 sits at (5,0) — cellNeedsPan true, but the 0.476 fit shows it all.
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'T5',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 't5',
+    });
+    flushSync();
+
+    vi.advanceTimersByTime(2500);
+    flushSync();
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
   });
 });
 

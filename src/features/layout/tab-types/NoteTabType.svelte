@@ -228,7 +228,7 @@
     <Fa icon={faClockRotateLeft} size="xs" />
   </Button> -->
   {#if noteFilePath}
-    <OpenComboButton filePath={noteFilePath} isDirectory={false} embedded />
+    <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}
   {#if tab.noteId && !isSpecNote(tab.noteId)}
     <Menu.CommandItem

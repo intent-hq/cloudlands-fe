@@ -67,6 +67,7 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: () => null },
+  selectIsWorkspaceHostLocal: () => readable(true),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => readable([]),

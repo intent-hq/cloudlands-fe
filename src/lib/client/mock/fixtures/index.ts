@@ -237,7 +237,7 @@ export const mockWorkspaceSettings: SingleWorkspaceSettings = {
 
 /** User-facing preferences surfaced by the settings panel. */
 export const mockUserPreferences: UserPreferencesState = {
-  betaUpdatesEnabled: false,
+  updateChannel: "stable",
   spellcheckEnabled: true,
   zoomFactor: 1.0,
   showArchived: false,

@@ -44,8 +44,10 @@
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
+  import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
+  import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
@@ -69,6 +71,7 @@
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
+    selectWorkspaceTabsHydrated,
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
@@ -84,7 +87,12 @@
     selectWorkspaceLoading,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectActiveSetupEvaluation } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
+  import {
+    selectBootRouteGateResolved,
+    selectLocalSetupGate,
+  } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
+  import { bootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-slice';
+  import { decideBootRoute, getBootRoutePathname } from '$lib/utils/boot-route-gate';
   import {
     clearActiveWorkspace,
     loadWorkspacesRequested,
@@ -124,9 +132,11 @@
   const workspaceItems = selectWorkspaceItems();
   const activeWorkspaceId = selectActiveWorkspaceId();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
-  const activeSetupEvaluation = selectActiveSetupEvaluation();
+  const localSetupGate = selectLocalSetupGate();
+  const bootGateResolved = selectBootRouteGateResolved();
   const zoomFactor = selectZoomFactor();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
+  const workspaceTabsHydrated = selectWorkspaceTabsHydrated();
   const workspaceTabOrder = selectWorkspaceTabOrder();
   const workspaceViewMode = selectWorkspaceViewMode();
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
@@ -198,23 +208,36 @@
     }
   });
 
-  // The root route has no page. Once workspace state is ready, route startup
-  // and legacy `/` links directly to an existing workspace or creation.
+  // The root route has no page and fresh windows boot at /workspace/new,
+  // which renders onboarding. Gate boot (and legacy `/`) loads on the
+  // backend-derived setup evaluation: land on an existing workspace when the
+  // backend has one, and only fall through to onboarding when the local
+  // backend genuinely needs first-run setup (no workspaces and no ready
+  // providers). The decision logic lives in decideBootRoute (boot-route-gate);
+  // it fires at most once per full page load, so deliberate in-app navigation
+  // to /workspace/new is unaffected. While it holds, WorkspaceSurface
+  // suppresses onboarding so the wizard never flashes before a redirect.
   $effect(() => {
-    if (!$workspaceHasLoaded || !$activeSetupEvaluation || window.location.pathname !== '/') return;
-    const availableWorkspaces = $workspaceItems.filter(
-      (workspace) => workspace.status !== 'Archived' && workspace.status !== 'Deleted',
-    );
-    const currentTabId = $currentWorkspaceTabId;
-    const targetWorkspace =
-      availableWorkspaces.find((workspace) => workspace.id === currentTabId) ??
-      availableWorkspaces[0];
-    if (targetWorkspace) {
-      untrack(() => appStore.dispatch(openWorkspaceTab(targetWorkspace.id)));
+    const decision = decideBootRoute({
+      bootPathname: getBootRoutePathname(),
+      currentPathname: window.location.pathname,
+      gateResolved: $bootGateResolved,
+      localSetupGate: $localSetupGate,
+      workspaceHasLoaded: $workspaceHasLoaded,
+      workspaces: $workspaceItems,
+      tabsHydrated: $workspaceTabsHydrated,
+      currentTabId: $currentWorkspaceTabId,
+    });
+    if (decision.kind !== 'resolve') return;
+    untrack(() => {
+      if (decision.openTabWorkspaceId) {
+        appStore.dispatch(openWorkspaceTab(decision.openTabWorkspaceId));
+      }
+      appStore.dispatch(bootRouteGateResolved());
+    });
+    if (decision.target) {
+      void goto(decision.target, { replaceState: true });
     }
-    if (!$activeSetupEvaluation.isLocal && $activeSetupEvaluation.setupNeeded) return;
-    const target = targetWorkspace ? `/workspace/${targetWorkspace.id}` : '/workspace/new';
-    void goto(target, { replaceState: true });
   });
 
   // Send open workspace tabs to main process for Window menu
@@ -1015,8 +1038,14 @@
 
   <Toast />
 
+  <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
+  <NodeVersionToast />
+
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />
+
+  <!-- Link Action Menu (singleton — anchored menu for GitHub issue/PR links) -->
+  <LinkActionMenu />
 
   <!-- Auto-Update Notification -->
   {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}

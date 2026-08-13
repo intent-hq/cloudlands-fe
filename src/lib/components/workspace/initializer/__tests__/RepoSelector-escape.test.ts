@@ -251,7 +251,7 @@ describe('RepoSelector Recent list owner rendering', () => {
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    // Local repos live under the "Copy local repo" tab (no longer the default)
+    // Local repos live under the "Copy local repo" tab ("Pick a repo" is the default)
     await fireEvent.click(screen.getByText('Copy local repo'));
 
     await waitFor(() => {
@@ -269,6 +269,7 @@ describe('RepoSelector Recent list owner rendering', () => {
     // The ownerless row must render the folder name only — no stray suffix.
     expect(rowTexts).toContain('solo');
 
+    // Local entries no longer use the GitHub "owner /" prefix.
     expect(screen.queryByText('acme /')).toBeNull();
   });
 });
@@ -282,13 +283,26 @@ describe('RepoSelector mode tabs', () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    for (const label of ['Copy local repo', 'Pick a repo', 'New repo']) {
+    for (const label of ['Pick a repo', 'Copy local repo', 'New repo']) {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: label }).className).toContain(
           'whitespace-nowrap',
         );
       });
     }
+  });
+
+  // Regression: PR #1031's merge reverted the tab order from PR #771
+  // (intent-hq/monorepo#2148) — "Pick a repo" must stay the first tab.
+  it('renders "Pick a repo" as the first tab', async () => {
+    const { container } = render(RepoSelector, { props: {} });
+    await openDropdown(container);
+
+    const pickARepo = await screen.findByRole('button', { name: 'Pick a repo' });
+    const tabLabels = Array.from(pickARepo.parentElement!.children).map((tab) =>
+      tab.textContent?.trim(),
+    );
+    expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);
   });
 });
 
@@ -328,7 +342,7 @@ describe('RepoSelector Recent list daemon-owned exclusions', () => {
   });
 });
 
-describe('RepoSelector Recent list search filtering (GitHub tab)', () => {
+describe('RepoSelector Recent list search filtering ("Pick a repo" tab)', () => {
   afterEach(() => {
     mockRepos.recentRepos = [];
     cleanup();
@@ -357,8 +371,7 @@ describe('RepoSelector Recent list search filtering (GitHub tab)', () => {
       expect(screen.getByText(DROPDOWN_HEADING)).toBeTruthy();
     });
 
-    await fireEvent.click(screen.getByText('Pick a repo'));
-
+    // "Pick a repo" is the first and default tab — GitHub repos show right away
     await waitFor(() => {
       expect(screen.getByText('monorepo')).toBeTruthy();
       expect(screen.getByText('react')).toBeTruthy();

@@ -435,18 +435,6 @@
       "count": 1
     },
     {
-      "path": "src/lib/components/layout/WorkspaceViewModeToggle.svelte",
-      "kind": "attribute title",
-      "snippet": "Show open spaces as columns",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/WorkspaceViewModeToggle.svelte",
-      "kind": "attribute title",
-      "snippet": "Use tab view",
-      "count": 1
-    },
-    {
       "path": "src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte",
       "kind": "attribute aria-label",
       "snippet": "Go back",
@@ -474,12 +462,6 @@
       "path": "src/lib/components/layout/panel-system/PanelEmptyState.svelte",
       "kind": "template text",
       "snippet": "Recently closed",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/layout/panel-system/PanelTabBar.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Close panel",
       "count": 1
     },
     {
@@ -1313,12 +1295,6 @@
     {
       "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
       "kind": "template text",
-      "snippet": "Actions",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/menu/MenuTestHarness.svelte",
-      "kind": "template text",
       "snippet": "Apple",
       "count": 1
     },
@@ -1380,12 +1356,6 @@
       "path": "src/lib/components/ui/menu/menu.fixtures.ts",
       "kind": "string literal",
       "snippet": "Command menu states",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/ui/menu/menu.meta.ts",
-      "kind": "string literal",
-      "snippet": "Retain the compatibility wrapper until all 15 callers migrat",
       "count": 1
     },
     {
@@ -2016,12 +1986,6 @@
       "path": "src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte",
       "kind": "attribute placeholder",
       "snippet": "wss://dev.example.com/ws",
-      "count": 1
-    },
-    {
-      "path": "src/lib/components/workspace/initializer/BranchSelector.svelte",
-      "kind": "attribute aria-label",
-      "snippet": "Refresh branches",
       "count": 1
     },
     {

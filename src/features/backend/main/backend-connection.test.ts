@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import https from 'node:https';
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { Duplex } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -197,6 +198,40 @@ describe('win32 named-pipe derivation (pipe-name contract)', () => {
     expect(defaultSocketPath({ INTENTD_DATA_DIR: '/custom/data' }, 'linux')).toBe(
       '/custom/data/intentd.sock',
     );
+  });
+});
+
+describe('defaultSocketPath platform defaults (no INTENTD_DATA_DIR)', () => {
+  // Mirrors the daemon's `Config::resolve` data-dir defaults — see
+  // `intentd-data-dir.ts` (the single FE-side resolver).
+  it('darwin resolves ~/Library/Application Support/intentd/intentd.sock', () => {
+    expect(defaultSocketPath({}, 'darwin')).toBe(
+      path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock'),
+    );
+  });
+
+  it('linux falls back to ~/.local/share/intentd/intentd.sock', () => {
+    expect(defaultSocketPath({}, 'linux')).toBe(
+      path.join(os.homedir(), '.local', 'share', 'intentd', 'intentd.sock'),
+    );
+  });
+
+  it('linux honors XDG_DATA_HOME', () => {
+    expect(defaultSocketPath({ XDG_DATA_HOME: '/xdg/data' }, 'linux')).toBe(
+      path.join('/xdg/data', 'intentd', 'intentd.sock'),
+    );
+  });
+
+  it('linux INTENTD_DATA_DIR takes precedence over XDG_DATA_HOME', () => {
+    expect(
+      defaultSocketPath({ INTENTD_DATA_DIR: '/custom/data', XDG_DATA_HOME: '/xdg/data' }, 'linux'),
+    ).toBe('/custom/data/intentd.sock');
+  });
+
+  it('stays in lockstep with the sidecar resolver on every platform', () => {
+    for (const platform of ['darwin', 'linux', 'win32'] as const) {
+      expect(defaultSocketPath({}, platform)).toBe(resolveSocketPath({}, platform));
+    }
   });
 });
 

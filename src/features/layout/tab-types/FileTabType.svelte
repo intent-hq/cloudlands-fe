@@ -397,6 +397,7 @@
     />
     <OpenComboButton
       filePath={tab.filePath}
+      {workspaceId}
       isDirectory={false}
       embedded
       workspaceFolderPath={repoPath ?? undefined}

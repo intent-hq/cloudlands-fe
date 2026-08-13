@@ -748,6 +748,7 @@
                             <span class="inline-flex items-baseline gap-1">
                               <OpenComboButton
                                 filePath={$workspace.path + '/.workspace'}
+                                {workspaceId}
                                 isDirectory={true}
                                 variant="sidebar"
                                 compact
@@ -768,6 +769,7 @@
                             <span class="inline-flex items-baseline gap-1">
                               <OpenComboButton
                                 filePath={$fileExplorerWorkspacePath}
+                                {workspaceId}
                                 isDirectory={true}
                                 variant="sidebar"
                                 compact
@@ -1045,6 +1047,7 @@
                     {:else if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <OpenComboButton
                         filePath={$fileExplorerWorkspacePath}
+                        {workspaceId}
                         isDirectory={true}
                         side="top"
                         variant="sidebar"
