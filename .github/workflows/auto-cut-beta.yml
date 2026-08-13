@@ -146,8 +146,12 @@ jobs:
           # intentd sidecar is in flight. Let it land first — its fix-typed
           # commit refreshes the Release PR — so the fe beta carries the new
           # sidecar; the next hourly run cuts a beta that includes it.
+          # `--head` also matches fork PRs whose branch merely shares the
+          # name, so restrict to same-repo heads — otherwise a fork PR named
+          # auto/intentd-pin could defer beta cuts indefinitely.
           pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --head auto/intentd-pin --json number --jq '.[0].number // empty')
+            --head auto/intentd-pin --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
           if [[ -n "$pin_pr" ]]; then
             echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the beta cut until the new sidecar pin lands"
             exit 0
