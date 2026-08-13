@@ -18,10 +18,13 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: electronMocks.getAllWindows },
 }));
 
+import type { BrowserWindow } from 'electron';
 import { broadcastToRenderers } from '../main/auto-update-broadcast';
+import { registerHudWindow, _resetHudWindowRefForTests } from '../../../main/hud-window';
 
 interface MockWindow {
   isDestroyed: () => boolean;
+  on: ReturnType<typeof vi.fn>;
   webContents: {
     isDestroyed: () => boolean;
     getURL: () => string;
@@ -34,6 +37,7 @@ function makeWindow(
 ): MockWindow {
   return {
     isDestroyed: () => opts.destroyed ?? false,
+    on: vi.fn(),
     webContents: {
       isDestroyed: () => opts.webContentsDestroyed ?? false,
       getURL: () => opts.url ?? 'app://workspaces/workspace/x',
@@ -44,6 +48,7 @@ function makeWindow(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetHudWindowRefForTests();
   electronMocks.getAllWindows.mockReturnValue([]);
 });
 
@@ -95,6 +100,20 @@ describe('broadcastToRenderers', () => {
 
     expect(hudDev.webContents.send).not.toHaveBeenCalled();
     expect(hudProd.webContents.send).not.toHaveBeenCalled();
+    expect(workspace.webContents.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('never delivers to a registered HUD window still on about:blank', () => {
+    // Race: the HUD creation path registers the window BEFORE its URL loads,
+    // so the URL-based isHudWindow() check alone would miss it.
+    const hud = makeWindow({ url: 'about:blank' });
+    const workspace = makeWindow();
+    registerHudWindow(hud as unknown as BrowserWindow);
+    electronMocks.getAllWindows.mockReturnValue([hud, workspace]);
+
+    broadcastToRenderers('auto-update:show-toast');
+
+    expect(hud.webContents.send).not.toHaveBeenCalled();
     expect(workspace.webContents.send).toHaveBeenCalledTimes(1);
   });
 
