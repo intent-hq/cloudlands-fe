@@ -49,7 +49,7 @@ permissions:
 
 # Distinct from release-beta.yml's `cloudlands-release` group so manual builds
 # never queue behind (or block) a real release. Per-ref so repeat dispatches
-# on the same branch queue instead of racing on the self-hosted Linux runners.
+# on the same branch queue instead of racing on the self-hosted Linux runner.
 concurrency:
   group: cloudlands-manual-build-${{ github.ref }}
   cancel-in-progress: false
@@ -147,7 +147,7 @@ jobs:
 
       # Drop build output left by a previous run so the artifact upload can't
       # pick up stale files (no-op on this ephemeral hosted runner; kept for
-      # parity with the Windows job and the still self-hosted Linux legs).
+      # parity with the Windows job and the still self-hosted Linux x64 leg).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -401,7 +401,7 @@ jobs:
       # Drop build output left by a previous run so the artifact upload
       # can't pick up stale files (no-op on this ephemeral hosted runner;
       # kept for parity with the macOS job and the still self-hosted Linux
-      # legs).
+      # x64 leg).
       - name: Clean previous build output
         shell: bash
         run: rm -rf dist-electron
@@ -525,24 +525,26 @@ jobs:
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
-          # arm64 builds natively on the self-hosted arm64 Linux runner. If it
-          # is unavailable, fall back to cross-building by switching `runner`
-          # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
-          # staged intentd matches the package arch regardless of the host.
+          # arm64 builds natively on the gh-linux-arm64-8x org larger runner
+          # (GH-hosted, 8-core/32 GB ARM64). The 32 GB class is deliberate:
+          # 16 GB machines OS-OOM-killed this bundle (monorepo#1340), so a
+          # standard hosted runner is not a viable fallback. INTENTD_TARGET
+          # is set explicitly below, so the staged intentd matches the
+          # package arch regardless of the host.
           #
-          # TEMPORARY: arm64 ships AppImage-only. electron-builder's bundled
-          # fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) fails to spawn on the
-          # self-hosted runner (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code
-          # null), killing the deb target. Restore deb:arm64 once the runner
-          # is fixed. Refs intent-hq/monorepo#1286.
+          # deb:arm64 is restored on the hosted runner: electron-builder's
+          # bundled fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) failed to spawn
+          # only on the previous self-hosted arm64 runner
+          # (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code null). Refs
+          # intent-hq/monorepo#1286.
           # node_heap: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0
           # run even with sourcemaps disabled — committed heap hit ~8.2 GB
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
-          # the self-hosted runner has the RAM for 12288.
+          # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: [self-hosted, Linux, ARM64, comfy]
+            runner: gh-linux-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
-            targets: AppImage:arm64
+            targets: AppImage:arm64 deb:arm64
             node_heap: 12288
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -585,20 +587,19 @@ jobs:
           INTENTD_TARGET: ${{ matrix.intentd_target }}
         run: node scripts/fetch-sidecar.cjs
 
-      # The self-hosted runners are non-ephemeral; drop build output left by
-      # a previous run so the artifact upload can't pick up stale files
-      # (no-op on ephemeral hosted runners).
+      # The self-hosted x64 runner is non-ephemeral; drop build output left
+      # by a previous run so the artifact upload can't pick up stale files
+      # (no-op on the ephemeral hosted arm64 runner).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
       # electron-builder's bundled fpm builds the deb by shelling out to host
       # tools — `ar` (binutils), tar, and xz (electron-builder defaults deb
       # compression to xz, so fpm produces data.tar.xz via tar/xz) —
-      # preinstalled on ubuntu-latest but not guaranteed on a bare
+      # preinstalled on GH-hosted images but not guaranteed on a bare
       # self-hosted box. Fail fast with a clear message instead of a cryptic
       # fpm error mid-package. AppImage needs no system packages
-      # (app-builder is self-contained — the arm64 leg already builds
-      # AppImages on self-hosted with no extra setup).
+      # (app-builder is self-contained).
       - name: Verify deb packaging prerequisites
         if: contains(matrix.targets, 'deb')
         run: |
@@ -607,7 +608,7 @@ jobs:
             command -v "$TOOL" >/dev/null 2>&1 || MISSING="${MISSING:+$MISSING, }$TOOL"
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner (labels: self-hosted, Linux, X64, tinybox)."
+            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner."
             exit 1
           fi
           echo "deb packaging prerequisites present (ar, tar, xz)"
@@ -633,8 +634,7 @@ jobs:
       # electron-builder.yml's per-target arch lists, so each matrix job built
       # BOTH arches — and the cross-arch package embedded this job's (wrong
       # -arch) staged sidecar. CLI targets fully override the config's target
-      # list; the per-arch list lives in matrix.targets (arm64 is temporarily
-      # AppImage-only, see the matrix comment). The maintainer override
+      # list; the per-arch list lives in matrix.targets. The maintainer override
       # backfills the deb Maintainer field for dispatch rebuilds of tags whose
       # checked-out package.json author still lacks an email (fixed on main;
       # both were first exercised by the v2.12.0 rebuild, run 30714120208,
@@ -647,8 +647,9 @@ jobs:
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
           # Per-arch heap cap — see the matrix node_heap comments: 12288 on
-          # both self-hosted legs now that x64 is off the 16 GB hosted
-          # runner (monorepo#1340).
+          # both legs — self-hosted tinybox (x64) and the 32 GB
+          # gh-linux-arm64-8x hosted runner (arm64); 16 GB machines can't
+          # hold this bundle (monorepo#1340).
           NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
