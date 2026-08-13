@@ -44,6 +44,7 @@
     selectLoadError,
     selectAllProviderWarnings,
     selectAllProviderStaleFlags,
+    selectAgentModelEffortLevels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
@@ -863,11 +864,6 @@
     );
   });
 
-  const selectedModelEffortLevels = $derived.by<string[]>(() => {
-    const levels = selectedCatalogOption?.data?.effortLevels;
-    return Array.isArray(levels) ? (levels as string[]) : [];
-  });
-
   const hasLoadedModelOptions = $derived(
     flatModelOptions.some((option) => option.value !== USE_DEFAULT_VALUE && !option.disabled),
   );
@@ -1011,7 +1007,10 @@
   );
 
   const providerTabIds = $derived.by(() => [
-    ...new Set($availableEnabledProviderIds$.map((id) => normalizeProviderId(id))),
+    ...new Set([
+      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...groupedModelOptions.map((group) => group.key).filter((key) => key !== 'default'),
+    ]),
   ]);
   const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
   const preferredBrowseProviderId = $derived(
@@ -1095,6 +1094,19 @@
       ? selectAgentReasoningEffort.withStore(appStore)
       : selectAgentReasoningEffort
   )(agentIdStore);
+  const agentModelEffortLevels$ = (
+    'withStore' in selectAgentModelEffortLevels
+      ? selectAgentModelEffortLevels.withStore(appStore)
+      : selectAgentModelEffortLevels
+  )(agentIdStore);
+
+  const selectedModelEffortLevels = $derived.by<string[]>(() => {
+    if (Array.isArray($agentModelEffortLevels$) && $agentModelEffortLevels$.length > 0) {
+      return $agentModelEffortLevels$;
+    }
+    const levels = selectedCatalogOption?.data?.effortLevels;
+    return Array.isArray(levels) ? (levels as string[]) : [];
+  });
 
   const LEVEL_LABELS: Record<string, () => string> = {
     minimal: () => m.chat_effortPicker_level_minimal(),

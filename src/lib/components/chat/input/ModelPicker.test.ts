@@ -360,7 +360,7 @@ describe('ModelPicker combined reasoning mode', () => {
     enabledProviderIds$.set(['codex']);
     activeProviderId$.set('codex');
     reasoningEffort$.set('medium');
-    agentModelEffortLevels$.set(['minimal', 'xhigh']);
+    agentModelEffortLevels$.set(undefined);
   });
 
   afterEach(() => {
@@ -620,7 +620,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
-  it('disables Reasoning when the selected catalog model has no levels', async () => {
+  it('uses session effort levels when the selected catalog model has no levels', async () => {
     agentModelEffortLevels$.set(['low', 'medium', 'high']);
     mockModelState.availableModels = [
       { value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Codex model' },
@@ -646,12 +646,13 @@ describe('ModelPicker combined reasoning mode', () => {
     await fireEvent.click(trigger);
     expect(screen.getByTestId('model-reasoning-section')).toBeTruthy();
     const toggle = screen.getByTestId('model-reasoning-toggle');
-    expect(toggle.hasAttribute('disabled')).toBe(true);
-    expect(toggle.getAttribute('aria-disabled')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    expect(toggle.getAttribute('aria-disabled')).toBe('false');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(toggle);
-    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.getByRole('slider').getAttribute('max')).toBe('3');
+    expect(screen.getAllByTestId('effort-slider-tick')).toHaveLength(4);
   });
 
   it('omits the Default reasoning suffix from the trigger', async () => {
@@ -1815,6 +1816,31 @@ describe('ModelPicker unlocked agent provider handling', () => {
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
     // …and the agent's (now disabled) provider group stays visible so the
     // currently selected model isn't orphaned.
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+  });
+
+  it('includes the disabled effective provider in reasoning provider tabs', async () => {
+    enabledProviderIds$.set(['auggie']);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        showReasoning: true,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.getByRole('tab', { name: /Auggie/ })).toBeTruthy();
+    const codexTab = await screen.findByRole('tab', { name: /Codex/ });
+    expect(codexTab.getAttribute('aria-selected')).toBe('true');
     expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
   });
 
