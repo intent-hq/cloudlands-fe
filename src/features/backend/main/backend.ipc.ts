@@ -995,10 +995,10 @@ export async function buildConfigForConnection(id: string): Promise<{
 }
 
 /**
- * Tail of the switch-serialization queue: every {@link switchBackend}
- * invocation chains onto it, so switches run strictly one at a time.
- * {@link performSwitchBackend} has several await points (store reads/writes,
- * window hooks) with module state mutated across them (`client`,
+ * Tail of the switch-serialization queue: every switch-affecting operation
+ * chains onto it via {@link enqueueSwitchOperation}, so switches run strictly
+ * one at a time. {@link performSwitchBackend} has several await points (store
+ * reads/writes, window hooks) with module state mutated across them (`client`,
  * `currentConfig`, `activeConnectionMeta`); two interleaved switches could
  * leave the live client pinned to one backend while `activeId` names another,
  * and mislabel records via `captureRemoteHostname` (monorepo#2221). Always a
@@ -1006,6 +1006,33 @@ export async function buildConfigForConnection(id: string): Promise<{
  * poison subsequent switches.
  */
 let switchQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Run `fn` serialized with every backend switch (monorepo#2228). Beyond plain
+ * switches, the `connections:forget` / `connections:add` handlers and
+ * {@link switchToLocalAndSpawn} make read-decide-switch decisions on
+ * `getActiveId()`; reading the active id OUTSIDE the queue and then
+ * conditionally switching was a TOCTOU — a concurrent switch could land
+ * between the read and the enqueued switch, making the decision stale (e.g.
+ * forget's fall-back-to-local disconnecting a backend the user just selected).
+ * Enqueuing the whole read-decide-switch sequence makes the decision atomic
+ * with respect to switches.
+ *
+ * Inside `fn`, perform switches by calling `performSwitchBackend` DIRECTLY —
+ * anything that enqueues (calling {@link switchBackend},
+ * {@link switchToLocalAndSpawn}, or a nested `enqueueSwitchOperation`) would
+ * chain onto the queue tail behind the currently-running `fn` and
+ * self-deadlock. The returned promise settles with `fn`'s outcome; a rejection
+ * propagates to the caller but never poisons the queue (the tail swallows it).
+ */
+function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
+  const result = switchQueue.then(fn);
+  switchQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 /**
  * Switch the live backend to `id` with a clean full teardown + reload:
@@ -1022,24 +1049,25 @@ let switchQueue: Promise<void> = Promise.resolve();
  *      swap, so restored windows reconnect to the new daemon (or open fresh).
  *   5. Broadcast the changed list/active selection.
  *
- * Invocations are serialized through {@link switchQueue}: each switch runs to
- * completion before the next begins, so overlapping switches (e.g. the user
- * clicks a slow backend, then quickly clicks another) can never interleave
- * across the await points above. Serialization covers every entry point —
- * the `connections:switch` handler, the `connections:forget` fall-back-to-local,
- * the `connections:add` switch-to-itself, and {@link switchToLocalAndSpawn} —
- * because they all go through this wrapper.
+ * Invocations are serialized through {@link enqueueSwitchOperation}: each
+ * switch runs to completion before the next begins, so overlapping switches
+ * (e.g. the user clicks a slow backend, then quickly clicks another) can never
+ * interleave across the await points above. Serialization covers every entry
+ * point — the `connections:switch` handler, the `connections:forget`
+ * fall-back-to-local, the `connections:add` switch-to-itself, and
+ * {@link switchToLocalAndSpawn} — the latter three enqueue their whole
+ * read-decide-switch sequence so the `getActiveId()` decision cannot go stale
+ * behind an in-flight switch (monorepo#2228).
  */
 export function switchBackend(id: string): Promise<SwitchConnectionResult> {
-  const result = switchQueue.then(() => performSwitchBackend(id));
-  switchQueue = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
+  return enqueueSwitchOperation(() => performSwitchBackend(id));
 }
 
-/** The actual switch orchestration; only ever entered via {@link switchBackend}. */
+/**
+ * The actual switch orchestration; only ever entered from within a serialized
+ * {@link enqueueSwitchOperation} critical section (via {@link switchBackend}
+ * or an enqueued read-decide-switch sequence).
+ */
 async function performSwitchBackend(id: string): Promise<SwitchConnectionResult> {
   const fromId = await connectionsStore.getActiveId();
   // (1) Validate + resolve BEFORE any teardown.
@@ -1160,7 +1188,10 @@ async function performSpawnSidecar(): Promise<{
  * Order matters: switch to local FIRST so the live transport becomes the local
  * UDS socket, THEN spawn — {@link performSpawnSidecar}'s uds guard only passes
  * once the switch has re-targeted the client. Already-local is a no-op switch
- * (just spawn), mirroring the renderer's prior guard.
+ * (just spawn), mirroring the renderer's prior guard. The active-id read and
+ * the conditional switch are enqueued as ONE critical section so the no-op
+ * decision cannot go stale behind a concurrent switch (monorepo#2228); the
+ * spawn itself stays outside the queue.
  */
 export async function switchToLocalAndSpawn(): Promise<{
   ok: boolean;
@@ -1169,10 +1200,12 @@ export async function switchToLocalAndSpawn(): Promise<{
   error?: unknown;
 }> {
   try {
-    const activeId = await connectionsStore.getActiveId();
-    if (activeId !== LOCAL_CONNECTION_ID) {
-      await switchBackend(LOCAL_CONNECTION_ID);
-    }
+    await enqueueSwitchOperation(async () => {
+      const activeId = await connectionsStore.getActiveId();
+      if (activeId !== LOCAL_CONNECTION_ID) {
+        await performSwitchBackend(LOCAL_CONNECTION_ID);
+      }
+    });
   } catch (error) {
     // A switch failure still lets us attempt the spawn (main may already be
     // targeting local); surface nothing here — performSpawnSidecar reports its
@@ -1346,23 +1379,27 @@ function registerConnectionsHandlers(): void {
   // upserts by host:port, so re-adding an existing target refreshes its
   // token/fingerprint/label in place. If the upserted record is the ACTIVE
   // backend, rebuild the live client via a switch to itself so the refreshed
-  // token takes effect immediately (switchBackend broadcasts the changed
-  // list) and report `switched: true` so the caller skips its own follow-up
-  // switch; otherwise just broadcast so every window reflects the entry.
+  // token takes effect immediately (the switch broadcasts the changed list)
+  // and report `switched: true` so the caller skips its own follow-up switch;
+  // otherwise just broadcast so every window reflects the entry. The whole
+  // add + active-id read + conditional switch is ONE enqueued critical
+  // section (monorepo#2228): a stale pre-queue read could re-switch back to
+  // this record after the user had already selected another backend.
   ipcMain.handle(
     CONNECTIONS.ADD,
     createValidatedHandler(
       ConnectionsAddSchema,
-      async (_event, params) => {
-        const connection = await connectionsStore.add(params);
-        const activeId = await connectionsStore.getActiveId();
-        if (connection.id === activeId) {
-          await switchBackend(connection.id);
-          return { connection, switched: true } satisfies AddConnectionResult;
-        }
-        await broadcastConnectionsChanged();
-        return { connection, switched: false } satisfies AddConnectionResult;
-      },
+      async (_event, params) =>
+        enqueueSwitchOperation(async () => {
+          const connection = await connectionsStore.add(params);
+          const activeId = await connectionsStore.getActiveId();
+          if (connection.id === activeId) {
+            await performSwitchBackend(connection.id);
+            return { connection, switched: true } satisfies AddConnectionResult;
+          }
+          await broadcastConnectionsChanged();
+          return { connection, switched: false } satisfies AddConnectionResult;
+        }),
       CONNECTIONS.ADD,
     ),
   );
@@ -1370,20 +1407,25 @@ function registerConnectionsHandlers(): void {
   // Forget a remote connection. If it was the live backend, fall back to a full
   // switch to local (teardown + reload) rather than stranding the FE on a
   // connection that no longer exists; otherwise just broadcast the new list.
+  // The active-id read + forget + conditional fallback is ONE enqueued
+  // critical section (monorepo#2228): a stale pre-queue read could take the
+  // fall-back-to-local after a concurrent switch had already landed on another
+  // backend, disconnecting the backend the user just selected.
   ipcMain.handle(
     CONNECTIONS.FORGET,
     createValidatedHandler(
       ConnectionsForgetSchema,
-      async (_event, { id }) => {
-        const wasActive = (await connectionsStore.getActiveId()) === id;
-        await connectionsStore.forget(id); // rejects the reserved local id
-        if (wasActive) {
-          await switchBackend(LOCAL_CONNECTION_ID);
-        } else {
-          await broadcastConnectionsChanged();
-        }
-        return { id } satisfies ForgetConnectionResult;
-      },
+      async (_event, { id }) =>
+        enqueueSwitchOperation(async () => {
+          const wasActive = (await connectionsStore.getActiveId()) === id;
+          await connectionsStore.forget(id); // rejects the reserved local id
+          if (wasActive) {
+            await performSwitchBackend(LOCAL_CONNECTION_ID);
+          } else {
+            await broadcastConnectionsChanged();
+          }
+          return { id } satisfies ForgetConnectionResult;
+        }),
       CONNECTIONS.FORGET,
     ),
   );
