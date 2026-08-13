@@ -5920,5 +5920,9 @@
   "workspace_shortcuts_previousSpaceTab_description": "Vorheriger Space-Tab",
   "workspace_shortcuts_reopenClosedTabOrSpace_description": "Geschlossenen Tab oder Space wieder öffnen",
   "workspace_shortcuts_selectLastSpaceTab_description": "Letzten Space-Tab auswählen",
-  "workspace_shortcuts_selectSpaceTab_description": "Space-Tab {digit} auswählen"
+  "workspace_shortcuts_selectSpaceTab_description": "Space-Tab {digit} auswählen",
+  "home_page_title": "Startseite",
+  "home_emptyState_noSpaceSelected_label": "Kein Space ausgewählt",
+  "home_emptyState_selectOrCreate_description": "Wählen Sie einen Space in der Seitenleiste aus oder erstellen Sie einen neuen.",
+  "home_emptyState_newSpace_label": "Neuer Space"
 }

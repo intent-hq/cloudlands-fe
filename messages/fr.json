@@ -5920,5 +5920,9 @@
   "workspace_shortcuts_previousSpaceTab_description": "Onglet d'espace précédent",
   "workspace_shortcuts_reopenClosedTabOrSpace_description": "Rouvrir l'onglet ou l'espace fermé",
   "workspace_shortcuts_selectLastSpaceTab_description": "Sélectionner le dernier onglet d'espace",
-  "workspace_shortcuts_selectSpaceTab_description": "Sélectionner l'onglet d'espace {digit}"
+  "workspace_shortcuts_selectSpaceTab_description": "Sélectionner l'onglet d'espace {digit}",
+  "home_page_title": "Accueil",
+  "home_emptyState_noSpaceSelected_label": "Aucun espace sélectionné",
+  "home_emptyState_selectOrCreate_description": "Sélectionnez un espace dans la barre latérale ou créez-en un nouveau.",
+  "home_emptyState_newSpace_label": "Nouvel espace"
 }
