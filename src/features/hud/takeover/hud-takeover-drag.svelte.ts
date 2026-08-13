@@ -5,8 +5,10 @@
  * fires the click under the pointer — capture-phase suppression), live
  * clamping to the rendered canvas bounds, and grab→grabbing cursor state.
  * Also owns the auto-pan to a far changed cell (mock `_panT`); starting a
- * manual drag cancels/overrides any pending or applied auto-pan.
- * Must be created during component init.
+ * manual drag cancels/overrides any pending or applied auto-pan. The pan
+ * offset is in CONTENT px — when the canvas renders zoom-to-fit scaled,
+ * pointer deltas divide by the scale (`getScale`) so dragging stays 1:1
+ * with the pointer on screen. Must be created during component init.
  */
 import {
   clampTakeoverPan,
@@ -38,6 +40,7 @@ export interface HudTakeoverMapDrag {
 
 export function createTakeoverMapDrag(
   getBounds: () => HudTakeoverPanBounds,
+  getScale: () => number = () => 1,
 ): HudTakeoverMapDrag {
   let pan = $state({ x: 0, y: 0 });
   let dragging = $state(false);
@@ -65,7 +68,12 @@ export function createTakeoverMapDrag(
       dragging = true;
       animate = false;
     }
-    if (moved) pan = clampTakeoverPan({ x: down.panX - dx, y: down.panY - dy }, getBounds());
+    // Pan lives in content px; the canvas renders it scaled, so pointer
+    // deltas divide by the zoom-to-fit scale to keep 1:1 visual tracking.
+    const scale = getScale();
+    if (moved) {
+      pan = clampTakeoverPan({ x: down.panX - dx / scale, y: down.panY - dy / scale }, getBounds());
+    }
   }
 
   function endDrag(e: PointerEvent, node: HTMLElement) {
