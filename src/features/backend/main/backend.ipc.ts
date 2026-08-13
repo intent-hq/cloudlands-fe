@@ -280,6 +280,14 @@ export function __setActiveConnectionMetaForTesting(
 ): void {
   activeConnectionMeta = meta;
 }
+/** @internal Test seam: read the connection identity the live client is pinned to. */
+export function __getActiveConnectionMetaForTesting(): {
+  id: string;
+  host: string;
+  port: number;
+} | null {
+  return activeConnectionMeta;
+}
 export function __setLocalProtocolVersionForTesting(version: string | null): void {
   localProtocolVersion = version;
 }
@@ -846,13 +854,20 @@ function extractHostname(result: unknown): string | null {
  * inline would stall the switch on a slow/unreachable remote — instead the
  * label upgrades asynchronously once the hostname arrives. Any failure
  * (unreachable, malformed result, store write error) is swallowed with a warn;
- * the connection keeps its `host:port` label.
+ * the connection keeps its `host:port` label. Results that arrive after the
+ * active connection has switched away are discarded (monorepo#2221).
  */
 async function captureRemoteHostname(id: string): Promise<void> {
   try {
-    const result = await getBackendClient().request('host.status');
+    // Snapshot the live client BEFORE the first await: a concurrent switch
+    // replaces the mutable global client, and probing the NEW backend here
+    // would persist another backend's hostname under this record.
+    const client = getBackendClient();
+    const result = await client.request('host.status');
     const hostname = extractHostname(result);
-    if (hostname) {
+    // Drop the result when the active connection changed mid-flight — the
+    // snapshot client may have answered just before its disposal.
+    if (hostname && activeConnectionMeta?.id === id) {
       await connectionsStore.setHostname(id, hostname);
       await broadcastConnectionsChanged();
     }
@@ -979,6 +994,19 @@ export async function buildConfigForConnection(id: string): Promise<{
 }
 
 /**
+ * Tail of the switch-serialization queue: every {@link switchBackend}
+ * invocation chains onto it, so switches run strictly one at a time.
+ * {@link performSwitchBackend} has several await points (store reads/writes,
+ * window hooks) with module state mutated across them (`client`,
+ * `currentConfig`, `activeConnectionMeta`); two interleaved switches could
+ * leave the live client pinned to one backend while `activeId` names another,
+ * and mislabel records via `captureRemoteHostname` (monorepo#2221). Always a
+ * settled-or-pending promise that never rejects — a failed switch must not
+ * poison subsequent switches.
+ */
+let switchQueue: Promise<void> = Promise.resolve();
+
+/**
  * Switch the live backend to `id` with a clean full teardown + reload:
  *   1. Resolve+validate the target config first (throws early on a bad id/token,
  *      leaving the current backend untouched).
@@ -992,8 +1020,26 @@ export async function buildConfigForConnection(id: string): Promise<{
  *   4. Restore the incoming backend's windows (T4 `restore`) — after the client
  *      swap, so restored windows reconnect to the new daemon (or open fresh).
  *   5. Broadcast the changed list/active selection.
+ *
+ * Invocations are serialized through {@link switchQueue}: each switch runs to
+ * completion before the next begins, so overlapping switches (e.g. the user
+ * clicks a slow backend, then quickly clicks another) can never interleave
+ * across the await points above. Serialization covers every entry point —
+ * the `connections:switch` handler, the `connections:forget` fall-back-to-local,
+ * the `connections:add` switch-to-itself, and {@link switchToLocalAndSpawn} —
+ * because they all go through this wrapper.
  */
-export async function switchBackend(id: string): Promise<SwitchConnectionResult> {
+export function switchBackend(id: string): Promise<SwitchConnectionResult> {
+  const result = switchQueue.then(() => performSwitchBackend(id));
+  switchQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/** The actual switch orchestration; only ever entered via {@link switchBackend}. */
+async function performSwitchBackend(id: string): Promise<SwitchConnectionResult> {
   const fromId = await connectionsStore.getActiveId();
   // (1) Validate + resolve BEFORE any teardown.
   const { config, meta } = await buildConfigForConnection(id);
