@@ -60,7 +60,7 @@ vi.mock('electron-updater', () => ({
 let testUserDataPath: string;
 
 /** Register IPC handlers, initialize the service, and return test seams. */
-async function setup() {
+async function setup({ initialize = true }: { initialize?: boolean } = {}) {
   const { ipcMain } = await import('electron');
   const { default: electronUpdater } = await import('electron-updater');
   const ipc = await import('../auto-update.ipc');
@@ -82,7 +82,9 @@ async function setup() {
     },
   };
   mockWindows = [mockWindow];
-  await autoUpdateService.initialize();
+  if (initialize) {
+    await autoUpdateService.initialize();
+  }
 
   const checkMock = electronUpdater.autoUpdater.checkForUpdates as unknown as Mock;
   const feedMock = electronUpdater.autoUpdater.setFeedURL as unknown as Mock;
@@ -113,6 +115,12 @@ describe('channel-switch immediate update check', () => {
     const result = await setChannelHandler({}, { channel: 'beta' });
     expect(result.success).toBe(true);
 
+    // The toast surface is made visible up front (mirrors the menu sites) so
+    // the "Checking…" feedback appears immediately and a failed check has a
+    // visible surface — a 'checking' status broadcast alone never shows it.
+    await vi.waitFor(() =>
+      expect(mockWindow.webContents.send).toHaveBeenCalledWith('auto-update:show-toast'),
+    );
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
 
     // Manual-check semantics: a terminal "no update" answer surfaces the
@@ -202,5 +210,20 @@ describe('channel-switch immediate update check', () => {
     updaterHandlers['error'](new Error('network down'));
 
     await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('SET_CHANNEL on an uninitialized service (dev mode) skips both the check and the toast', async () => {
+    const { setChannelHandler, checkMock, mockWindow } = await setup({ initialize: false });
+    const { autoUpdateService } = await import('../auto-update.service');
+
+    const result = await setChannelHandler({}, { channel: 'beta' });
+    expect(result.success).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // No check → no not-initialized fail-fast error polluting GET_STATE...
+    expect(checkMock).not.toHaveBeenCalled();
+    expect(autoUpdateService.getState().error).toBeNull();
+    // ...and no "Checking…" toast that nothing would ever resolve.
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('auto-update:show-toast');
   });
 });

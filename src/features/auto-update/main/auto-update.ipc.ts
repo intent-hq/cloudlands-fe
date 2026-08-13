@@ -112,16 +112,21 @@ export function setupAutoUpdateIPC(): void {
       async (_event, validated) => {
         await autoUpdateService.setChannel(validated.channel);
         // User-initiated channel switch: check the new channel's feed right
-        // away with manual-check feedback (checking → up-to-date /
-        // update-available toast) instead of waiting for the hourly timer.
-        // Only user actions reach this handler — initialize()'s internal
-        // setChannel call never does, so startup keeps its single delayed
-        // check. If a startup/periodic/focus check is already in flight
-        // against the previous feed, the service queues one fresh check for
-        // when it settles, so the new channel is always actually queried;
-        // downloading/downloaded states skip the check. Fire-and-forget: a
-        // slow or failed check must not delay or fail the SET_CHANNEL ack,
-        // which the renderer awaits to confirm the switch.
+        // away with manual-check feedback instead of waiting for the hourly
+        // timer. The service broadcasts 'auto-update:show-toast' first so
+        // the "Checking…" toast appears immediately and a failed check has
+        // a visible surface (mirroring the menu sites). Only user actions
+        // reach this handler — initialize()'s internal setChannel call never
+        // does, so startup keeps its single delayed check. If a
+        // startup/periodic/focus check is already in flight against the
+        // previous feed, the service queues one fresh check for when it
+        // settles, so the new channel is always actually queried;
+        // downloading/downloaded states skip the check, and an uninitialized
+        // service (dev mode) skips both check and toast. Fire-and-forget: a
+        // slow check must not delay or fail the SET_CHANNEL ack, which the
+        // renderer awaits to confirm the switch (check errors are reported
+        // via the broadcast error status, not a rejection — the catch is
+        // defense-in-depth only).
         void autoUpdateService.checkForUpdatesOnChannelSwitch().catch((error) => {
           logger.debug('Post-channel-switch update check failed', {
             error: (error as Error).message,

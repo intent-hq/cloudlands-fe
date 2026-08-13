@@ -386,8 +386,28 @@ class AutoUpdateService {
    * non-manual so its result produces no user-facing toast; the queued
    * recheck carries the manual feedback for the new feed. Downloading /
    * downloaded states keep the manual-check treatment (notify, no new check).
+   * Broadcasts 'auto-update:show-toast' first so the "Checking…" toast is
+   * visible immediately and error outcomes have a surface; skips everything
+   * (check + toast) when the service was never initialized (dev mode).
    */
   async checkForUpdatesOnChannelSwitch(): Promise<UpdateState> {
+    // Dev mode / pre-init: the updater never initializes, so a check would
+    // only hit checkForUpdates()'s not-initialized fail-fast path and pollute
+    // the state GET_STATE consumers read with an error on every dev channel
+    // switch. Skip the check — and the toast below, so no "Checking…"
+    // surface appears that nothing will ever resolve.
+    if (!this.initialized) {
+      logger.info('Skipping channel-switch update check: service not initialized');
+      return this.state;
+    }
+
+    // Make the toast surface visible before any status lands (mirrors the
+    // menu "Check for Updates" sites): a 'checking' status broadcast alone
+    // never sets toastVisible in the renderer, and an error outcome has no
+    // other visible surface — without this, the switch shows no "Checking…"
+    // feedback and a failed check is completely silent.
+    broadcastToRenderers('auto-update:show-toast');
+
     if (this.state.status === 'checking') {
       logger.info('Channel switched during in-flight check; queueing recheck against new feed');
       this.channelSwitchRecheckQueued = true;
