@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.30.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.29.0...v2.30.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* **hud:** render takeover map as a dependency graph with edges and zoom-to-fit ([#1110](https://github.com/intent-hq/cloudlands-fe/issues/1110)) ([b7ce4ec](https://github.com/intent-hq/cloudlands-fe/commit/b7ce4eccc6d1ac96f9baf921f6fad35f68001f88))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.12 ([#1119](https://github.com/intent-hq/cloudlands-fe/issues/1119)) ([500092e](https://github.com/intent-hq/cloudlands-fe/commit/500092e7d374dec3c08de93cee81f0d8e91bdd88))
+
 ## [2.29.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.28.0...v2.29.0) (2026-08-13)
 
 
