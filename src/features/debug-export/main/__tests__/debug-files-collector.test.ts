@@ -314,18 +314,26 @@ describe('memory metrics collection', () => {
 
   it('keeps the retained window when the capture-time sample fails, and records the omission', async () => {
     const { recordMemorySample } = await import('../../../../main/memory-monitor');
-    recordMemorySample(snapshotWith([processSample(90, 'agent', 5_000, 'claude')]), '2026-08-12T00:00:00.000Z');
-    memoryMock.snapshot = null;
+    // Pin the clock to the fixture date so the retained sample cannot age out
+    // of the prune-on-read window (intent-hq/monorepo#2173).
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-12T00:00:00.000Z'));
+      recordMemorySample(snapshotWith([processSample(90, 'agent', 5_000, 'claude')]), '2026-08-12T00:00:00.000Z');
+      memoryMock.snapshot = null;
 
-    const { metrics, memorySnapshot, omissions } = await collectMemoryMetrics();
+      const { metrics, memorySnapshot, omissions } = await collectMemoryMetrics();
 
-    expect(metrics.capturedAt).toBeNull();
-    expect(metrics.samples).toHaveLength(1);
-    expect(metrics.peaks.total.rssBytes).toBe((330 + 719 + 200 + 5_000) * MB);
-    expect(memorySnapshot).toBeNull();
-    expect(
-      omissions.some((o) => o.startsWith('memory-metrics.json: capture-time snapshot unavailable')),
-    ).toBe(true);
+      expect(metrics.capturedAt).toBeNull();
+      expect(metrics.samples).toHaveLength(1);
+      expect(metrics.peaks.total.rssBytes).toBe((330 + 719 + 200 + 5_000) * MB);
+      expect(memorySnapshot).toBeNull();
+      expect(
+        omissions.some((o) => o.startsWith('memory-metrics.json: capture-time snapshot unavailable')),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('still reports peaks when every retained sample has aged out', async () => {
