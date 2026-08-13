@@ -1615,9 +1615,10 @@
       (variant === 'outline' || variant === 'default') && 'w-full justify-between',
       triggerClass,
     )}
-    contentClass={showReasoning
-      ? 'w-85 max-w-[calc(100vw-32px)] min-h-90 max-h-90 flex flex-col'
-      : 'w-[332px] max-w-[calc(100vw-32px)]'}
+    contentClass={cn(
+      'max-w-[calc(100vw-32px)]',
+      showReasoning ? 'w-85 min-h-90 max-h-90 flex flex-col' : 'w-[332px]',
+    )}
     contentMaxHeight={showReasoning ? 360 : undefined}
     fillContentHeight={showReasoning}
     {portal}
