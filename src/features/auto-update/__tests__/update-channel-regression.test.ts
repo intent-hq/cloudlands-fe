@@ -4,12 +4,12 @@
  * Runs the REAL configured store (full middleware chain) against the mock IPC
  * router and asserts, in order:
  *   1. Boot with main-process channel "beta" hydrates Redux
- *      `betaUpdatesEnabled` to true without any user action.
+ *      `updateChannel` to 'beta' without any user action.
  *   2. Saga-owned hydration through the registered auto-update bridge produces
  *      ZERO `auto-update:set-channel` IPC calls — the original bug echoed
  *      hydration back into a channel write.
- *   3. A user toggle produces EXACTLY ONE `auto-update:set-channel` call with
- *      the requested channel.
+ *   3. A user channel change produces EXACTLY ONE `auto-update:set-channel`
+ *      call with the requested channel.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
@@ -30,11 +30,8 @@ import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 import type { UpdateState } from '$features/auto-update/types';
 import { store as appStore } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-import { betaUpdatesSaga } from '$store/renderer/slices/user-preferences/sagas/beta-updates-saga';
-import {
-  setBetaUpdatesEnabled,
-  toggleBetaUpdates,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { updateChannelSaga } from '$store/renderer/slices/user-preferences/sagas/update-channel-saga';
+import { setUpdateChannel } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import '$store/renderer/seeders';
 
 const flush = async () => {
@@ -70,21 +67,21 @@ beforeAll(() => {
   };
 });
 
-describe('beta-updates channel regression (intent-hq/monorepo#1672)', () => {
+describe('update-channel regression (intent-hq/monorepo#1672)', () => {
   let disposeStore: (() => void) | undefined;
 
   beforeAll(async () => {
     disposeStore = startRootStoreLifecycle(appStore, {
-      startSagas: (store) => [store.runSaga(betaUpdatesSaga)],
+      startSagas: (store) => [store.runSaga(updateChannelSaga)],
     });
     await flush();
   });
 
   afterAll(() => disposeStore?.());
 
-  it('boot with main-process channel beta hydrates Redux betaUpdatesEnabled=true without user action', async () => {
+  it('boot with main-process channel beta hydrates Redux updateChannel=beta without user action', async () => {
     await vi.waitFor(() => {
-      expect(appStore.state.userPreferences?.betaUpdatesEnabled).toBe(true);
+      expect(appStore.state.userPreferences?.updateChannel).toBe('beta');
     });
   });
 
@@ -99,10 +96,10 @@ describe('beta-updates channel regression (intent-hq/monorepo#1672)', () => {
     ).toEqual([[AUTO_UPDATE_CHANNELS.GET_STATE, undefined]]);
   });
 
-  it('a user toggle off produces exactly one set-channel call with channel=stable', async () => {
+  it('a user switch to stable produces exactly one set-channel call with channel=stable', async () => {
     setChannelSpy.mockClear();
 
-    appStore.dispatch(setBetaUpdatesEnabled(false));
+    appStore.dispatch(setUpdateChannel('stable'));
     await vi.waitFor(() => {
       expect(setChannelSpy).toHaveBeenCalledTimes(1);
     });
@@ -113,14 +110,14 @@ describe('beta-updates channel regression (intent-hq/monorepo#1672)', () => {
     expect(setChannelSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('toggleBetaUpdates produces exactly one set-channel call with channel=beta', async () => {
+  it('a user switch to alpha produces exactly one set-channel call with channel=alpha', async () => {
     setChannelSpy.mockClear();
 
-    appStore.dispatch(toggleBetaUpdates());
+    appStore.dispatch(setUpdateChannel('alpha'));
     await vi.waitFor(() => {
       expect(setChannelSpy).toHaveBeenCalledTimes(1);
     });
-    expect(setChannelSpy).toHaveBeenCalledWith({ channel: 'beta' });
+    expect(setChannelSpy).toHaveBeenCalledWith({ channel: 'alpha' });
 
     await flush();
     expect(setChannelSpy).toHaveBeenCalledTimes(1);
@@ -132,10 +129,10 @@ describe('beta-updates channel regression (intent-hq/monorepo#1672)', () => {
     // Replays the pre-fix Settings-page handler sequence (await a direct
     // client setChannel, then dispatch) against the real Store lifecycle and
     // saga: it has no value-dedup and persists every observed
-    // setBetaUpdatesEnabled — so the direct call adds a second SET_CHANNEL
+    // setUpdateChannel — so the direct call adds a second SET_CHANNEL
     // write. Dispatch-only call sites are therefore mandatory.
     await autoUpdateClient.setChannel('beta');
-    appStore.dispatch(setBetaUpdatesEnabled(true));
+    appStore.dispatch(setUpdateChannel('beta'));
 
     await vi.waitFor(() => {
       expect(setChannelSpy).toHaveBeenCalledTimes(2);
@@ -144,16 +141,16 @@ describe('beta-updates channel regression (intent-hq/monorepo#1672)', () => {
 });
 
 /**
- * Single-writer guard: the beta-updates persistence saga must be the
+ * Single-writer guard: the update-channel persistence saga must be the
  * ONLY renderer call site of autoUpdateClient.setChannel. UI surfaces
- * (Settings toggle, settings proposals) dispatch setBetaUpdatesEnabled /
- * toggleBetaUpdates only — a direct setChannel there would duplicate the
- * saga's write on every user toggle. Combined with the exactly-once
- * dispatch tests above, this proves the real UI path issues one write.
+ * (Settings channel selector, settings proposals) dispatch setUpdateChannel
+ * only — a direct setChannel there would duplicate the saga's write on
+ * every user change. Combined with the exactly-once dispatch tests above,
+ * this proves the real UI path issues one write.
  */
 describe('setChannel single-writer source guard', () => {
   const SRC_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../../..');
-  const ALLOWED = 'store/renderer/slices/user-preferences/sagas/beta-updates-saga.ts';
+  const ALLOWED = 'store/renderer/slices/user-preferences/sagas/update-channel-saga.ts';
 
   async function findSetChannelCallSites(dir: string, hits: string[]): Promise<void> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -177,7 +174,7 @@ describe('setChannel single-writer source guard', () => {
     expect(hits).toEqual([ALLOWED]);
   });
 
-  it('Settings toggle and settings proposals dispatch the Redux action instead', async () => {
+  it('Settings selector and settings proposals dispatch the Redux action instead', async () => {
     const [settingsPage, proposalActions] = await Promise.all([
       fs.readFile(path.join(SRC_ROOT, 'routes/(app)/settings/+page.svelte'), 'utf8'),
       fs.readFile(
@@ -185,9 +182,9 @@ describe('setChannel single-writer source guard', () => {
         'utf8',
       ),
     ]);
-    expect(settingsPage).toContain('setBetaUpdatesEnabled(');
+    expect(settingsPage).toContain('setUpdateChannel(');
     expect(settingsPage).not.toContain('autoUpdateClient.setChannel');
-    expect(proposalActions).toContain('setBetaUpdatesEnabled(');
+    expect(proposalActions).toContain('setUpdateChannel(');
     expect(proposalActions).not.toContain('autoUpdateClient.setChannel');
   });
 });
