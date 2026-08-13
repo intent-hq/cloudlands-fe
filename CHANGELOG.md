@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.35.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.34.0...v2.35.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* chunked upload path for large remote attachments (&gt;25MB) ([#1153](https://github.com/intent-hq/cloudlands-fe/issues/1153)) ([37b54b2](https://github.com/intent-hq/cloudlands-fe/commit/37b54b2848b4128533f8b110b249b4f1729ffc79))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.15 ([#1156](https://github.com/intent-hq/cloudlands-fe/issues/1156)) ([2963602](https://github.com/intent-hq/cloudlands-fe/commit/2963602652c85a226fae7c3975a78eb3b6c45b48))
+
 ## [2.34.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.33.0...v2.34.0) (2026-08-13)
 
 
