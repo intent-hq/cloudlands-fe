@@ -1019,10 +1019,11 @@ let switchQueue: Promise<void> = Promise.resolve();
  * with respect to switches.
  *
  * Inside `fn`, perform switches by calling `performSwitchBackend` DIRECTLY —
- * calling {@link switchBackend} from within would chain onto the queue tail
- * behind the currently-running `fn` and self-deadlock. The returned promise
- * settles with `fn`'s outcome; a rejection propagates to the caller but never
- * poisons the queue (the tail swallows it).
+ * anything that enqueues (calling {@link switchBackend},
+ * {@link switchToLocalAndSpawn}, or a nested `enqueueSwitchOperation`) would
+ * chain onto the queue tail behind the currently-running `fn` and
+ * self-deadlock. The returned promise settles with `fn`'s outcome; a rejection
+ * propagates to the caller but never poisons the queue (the tail swallows it).
  */
 function enqueueSwitchOperation<T>(fn: () => Promise<T>): Promise<T> {
   const result = switchQueue.then(fn);
