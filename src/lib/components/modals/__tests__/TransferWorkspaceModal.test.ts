@@ -73,6 +73,33 @@ describe('TransferWorkspaceModal — destination step', () => {
     expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'download' });
   });
 
+  it('option rows are not height-constrained so two-line labels render fully', async () => {
+    // Regression: Button's default size pins h-8 (32px) and the plain variant's
+    // !px-0/!py-0 win over the intended padding, clipping the download option's
+    // second line at the bottom edge; whitespace-nowrap kept long locale
+    // subtitles from wrapping. optionClass must resolve all three away.
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'destination',
+        connections: [remote('conn-1', '10.0.0.2')],
+      },
+    });
+
+    for (const testId of ['transfer-download-option', 'transfer-server-conn-1']) {
+      const className = screen.getByTestId(testId).className;
+      expect(className).toContain('h-auto');
+      expect(className).not.toMatch(/\bh-\d/);
+      expect(className).toContain('whitespace-normal');
+      expect(className).not.toContain('whitespace-nowrap');
+      expect(className).not.toContain('!px-0');
+      expect(className).not.toContain('!py-0');
+    }
+  });
+
   it('shows the empty-server explainer while download stays available', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
