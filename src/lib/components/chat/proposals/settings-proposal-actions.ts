@@ -470,6 +470,12 @@ async function applyPersistedSetting(
 ): Promise<void> {
   if (!apply || apply.kind === 'read-only') return;
   if (dispatchReduxAction(path, value)) return;
+  if (apply.kind === 'redux-action') {
+    // A redux-action plan has no fallback below: reaching here means the
+    // value failed validation (or the path has no dispatch case), so fail the
+    // transaction instead of recording the proposal as applied.
+    throw new Error(`Invalid value for setting "${path}": ${JSON.stringify(value)}`);
+  }
   if (apply.kind === 'daemon-settings-update') {
     await writeDaemonSetting(apply.path, apply.valuePath, value);
     if (path === 'mcp.enableUserServers') appStore.dispatch(setEnabled(Boolean(value)));

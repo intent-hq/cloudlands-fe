@@ -168,6 +168,18 @@ describe('settings-proposal-actions', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(setVolume(NaN));
   });
 
+  it('rejects an invalid update-channel value instead of reporting success', async () => {
+    const proposal = makeProposal('preferences.updateChannel', 'nightly');
+
+    await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
+      'Invalid value for setting "preferences.updateChannel": "nightly"',
+    );
+
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'userPreferences/setUpdateChannel' }),
+    );
+  });
+
   it('rolls back applied settings when a later apply write fails', async () => {
     const proposal: Proposal = {
       kind: 'settings-change',
