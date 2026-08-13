@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.30.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.30.0...v2.30.1) (2026-08-13)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** restore queue visibility filter and render pr_monitor_wake rows ([#1120](https://github.com/intent-hq/cloudlands-fe/issues/1120)) ([a0dbebc](https://github.com/intent-hq/cloudlands-fe/commit/a0dbebc3b4add24147e6b63ef1d99b737d3ae365))
+
 ## [2.30.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.29.0...v2.30.0) (2026-08-13)
 
 
