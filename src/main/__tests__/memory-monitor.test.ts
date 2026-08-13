@@ -503,8 +503,18 @@ describe('start/stop lifecycle', () => {
 });
 
 describe('retained history', () => {
+  // Fixture timestamps are absolute and getMemoryHistory() prunes on read
+  // against the real clock, so pin the clock to the fixture date — otherwise
+  // the fixtures age out of the retention window once the wall clock passes
+  // them (intent-hq/monorepo#2173).
   beforeEach(() => {
     __resetMemoryHistoryForTesting();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-12T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   function processSample(pid: number, kind: ProcessMemorySample['kind'], rssMB: number, name?: string): ProcessMemorySample {
