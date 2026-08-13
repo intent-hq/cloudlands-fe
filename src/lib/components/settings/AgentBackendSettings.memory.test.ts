@@ -237,6 +237,26 @@ describe('AgentBackendSettings — agent memory budget', () => {
     expect(screen.queryByLabelText(BUDGET_LABEL)).toBeNull();
     expect(screen.queryByRole('slider')).toBeNull();
   });
+
+  it('shows a configured budget above the catalog ceiling instead of clamping it down', async () => {
+    // The config file's own validation is looser than the catalog bound, so a
+    // budget larger than total memory is a value the daemon really holds.
+    const configuredMb = 100000;
+    mockSettings({ budget: { value: configuredMb, max: TOTAL_RAM_MB } });
+
+    render(AgentBackendSettings);
+
+    const input = (await waitFor(() => screen.getByLabelText(BUDGET_LABEL))) as HTMLInputElement;
+    expect(input.value).toBe(String(configuredMb));
+    expect(screen.getByText(/Current: 100,000 MB\./)).toBeTruthy();
+    // The ceiling widens to admit it rather than hiding it.
+    expect((screen.getByRole('slider') as HTMLInputElement).max).toBe(String(configuredMb));
+    // …and the note claiming the maximum is this machine's total memory is
+    // withheld, because with a widened ceiling it would not be true.
+    expect(screen.queryByText(/is this machine's total memory/)).toBeNull();
+    // Nothing was written back: hydration must not rewrite the daemon's value.
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('AgentBackendSettings — idle reap minutes', () => {
@@ -390,6 +410,43 @@ describe('AgentBackendSettings — idle reap minutes', () => {
       screen.getByLabelText(REAP_STEPPER_LABEL),
     )) as HTMLInputElement;
     expect(stepper.max).toBe('60');
+  });
+
+  it('shows a configured interval above the 120-minute convention instead of clamping it', async () => {
+    // The catalog declares no maximum for this setting, so 240 is a perfectly
+    // valid daemon-owned interval; 1–120 is only a convention for picking one.
+    mockSettings({ reap: { value: 240, defaultValue: 10 } });
+
+    render(AgentBackendSettings);
+
+    const stepper = (await waitFor(() =>
+      screen.getByLabelText(REAP_STEPPER_LABEL),
+    )) as HTMLInputElement;
+    expect(stepper.value).toBe('240');
+    expect(stepper.max).toBe('240');
+    expect(screen.getByText(/Current: 240 min\./)).toBeTruthy();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not write the convention ceiling back over a larger configured interval', async () => {
+    mockSettings({ reap: { value: 240, defaultValue: 10 } });
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 0 }]);
+
+    render(AgentBackendSettings);
+
+    // Toggling off and back on must restore 240, not the 120 convention.
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 0 }]),
+    );
+
+    mocks.mockSettingsUpdate.mockResolvedValue([{ path: IDLE_REAP_PATH, value: 240 }]);
+    await fireEvent.click(screen.getByRole('switch', { name: REAP_TOGGLE_LABEL }));
+
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: IDLE_REAP_PATH, value: 240 }]),
+    );
   });
 
   it('hides the row entirely when the daemon does not report the setting', async () => {

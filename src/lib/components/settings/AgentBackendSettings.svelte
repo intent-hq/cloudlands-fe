@@ -64,6 +64,10 @@
   let memoryBudgetDraftMb = $state(0);
   let memoryBudgetInput = $state('0');
   let memoryBudgetMaxMb = $state<number | null>(null);
+  // Whether the slider's ceiling is still the catalog's own bound. It is not
+  // when a configured budget above that bound widened it, and the note naming
+  // the maximum as this machine's total memory would then be false.
+  let memoryBudgetMaxIsCatalogBound = $state(false);
 
   // Idle reap (minutes). `resumeMinutes` is what the toggle restores when it is
   // switched back on — the last non-zero value, or the daemon's own catalog
@@ -163,8 +167,16 @@
       return;
     }
     memoryBudgetSupported = true;
-    memoryBudgetMaxMb = typeof entry.max === 'number' && entry.max > 0 ? entry.max : null;
-    memoryBudgetMb = clampMemoryBudget(typeof entry.value === 'number' ? entry.value : 0);
+    const catalogMax = typeof entry.max === 'number' && entry.max > 0 ? entry.max : null;
+    const value = typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0;
+    // The ceiling widens to admit what the daemon already holds, and never
+    // narrows to hide it: the config file's own validation is looser than the
+    // catalog bound, so a budget configured above it is a value the daemon
+    // really has. Clamping on hydration would show a budget that is not set and
+    // write that smaller number back on the next edit.
+    memoryBudgetMaxMb = catalogMax === null ? null : Math.max(catalogMax, value);
+    memoryBudgetMaxIsCatalogBound = catalogMax !== null && memoryBudgetMaxMb === catalogMax;
+    memoryBudgetMb = value;
     syncMemoryBudgetFromCommitted();
   }
 
@@ -175,22 +187,27 @@
       return;
     }
     idleReapSupported = true;
-    idleReapMaxMinutes =
+    const value = typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0;
+    const fallback =
+      typeof entry.defaultValue === 'number' && entry.defaultValue > 0
+        ? Math.round(entry.defaultValue)
+        : 0;
+    // Same rule as the budget, and it matters more here: the catalog declares
+    // *no* maximum for this setting, so 1–120 is only a UI convention for
+    // picking a value. A daemon configured at 240 minutes must read as 240 —
+    // the convention widens to admit it rather than clamping a valid
+    // daemon-owned interval down and writing the smaller value back.
+    const catalogMax =
       typeof entry.max === 'number' && entry.max >= IDLE_REAP_MIN_MINUTES
         ? entry.max
         : IDLE_REAP_FALLBACK_MAX_MINUTES;
-    const value = typeof entry.value === 'number' ? entry.value : 0;
-    idleReapMinutes = value > 0 ? clampIdleReap(value) : 0;
+    idleReapMaxMinutes = Math.max(catalogMax, value, fallback);
+    idleReapMinutes = value;
     // What the toggle restores: the configured interval when there is one,
-    // otherwise the daemon's own catalog default clamped into the stepper
-    // range. Never a literal — the shipped default is the daemon's to choose.
-    const fallback = typeof entry.defaultValue === 'number' ? entry.defaultValue : 0;
+    // otherwise the daemon's own catalog default. Never a literal — the shipped
+    // default is the daemon's to choose.
     idleReapResumeMinutes =
-      idleReapMinutes > 0
-        ? idleReapMinutes
-        : fallback > 0
-          ? clampIdleReap(fallback)
-          : IDLE_REAP_MIN_MINUTES;
+      idleReapMinutes > 0 ? idleReapMinutes : fallback > 0 ? fallback : IDLE_REAP_MIN_MINUTES;
     syncIdleReapFromCommitted();
   }
 
@@ -409,8 +426,10 @@
   /** The daemon-acknowledged value, which is what "Current:" may claim. */
   const memoryBudgetDisplay = $derived(formatMemoryBudget(memoryBudgetMb));
 
+  // Shown only while the ceiling is the catalog's own bound; once a configured
+  // budget has widened it past total memory the sentence would not be true.
   const memoryBudgetMaxDisplay = $derived(
-    memoryBudgetMaxMb === null
+    memoryBudgetMaxMb === null || !memoryBudgetMaxIsCatalogBound
       ? ''
       : m.settings_agentBackend_memoryBudget_megabytesValue({
           value: formatInteger(memoryBudgetMaxMb),
