@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "Une fois approuvé, le coordinateur déléguera le travail et le vérifiera.",
   "workspace_phase_building_label": "Construction",
   "workspace_phase_coordinatorResearching_label": "Le coordinateur fait des recherches...",
-  "workspace_phase_describeWhatToBuild_label": "Décrivez ce que vous voulez construire",
   "workspace_phase_planning_description": "Le coordinateur fera des recherches et créera une spécification. Vous pourrez la modifier et l'itérer.",
   "workspace_phase_planning_label": "Planification",
   "workspace_phase_planningPlaceholder_subtitle": "Décrivez ce que vous voulez construire",

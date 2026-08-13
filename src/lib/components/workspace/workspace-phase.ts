@@ -90,8 +90,7 @@ export interface WorkspaceTaskProgressLike {
   inProgress: number;
 }
 
-/** Generic call-to-action subtitle shown for brand-new planning workspaces.
- *  Exported so list surfaces can detect it and substitute richer copy. */
+/** Generic call-to-action subtitle shown for brand-new planning workspaces. */
 export function planningPlaceholderSubtitle(): string {
   return m.workspace_phase_planningPlaceholder_subtitle();
 }

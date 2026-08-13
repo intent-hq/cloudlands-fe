@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "Una vez aprobado, el coordinador delegará el trabajo y lo verificará.",
   "workspace_phase_building_label": "Construyendo",
   "workspace_phase_coordinatorResearching_label": "El coordinador está investigando...",
-  "workspace_phase_describeWhatToBuild_label": "Describa lo que quiere construir",
   "workspace_phase_planning_description": "El coordinador investigará y creará una especificación. Puede editarla e iterar sobre ella.",
   "workspace_phase_planning_label": "Planificando",
   "workspace_phase_planningPlaceholder_subtitle": "Describa lo que quiere construir",

@@ -1240,7 +1240,6 @@
   "workspace_phase_building_description": "Once approved, the Coordinator will delegate the work and verify it.",
   "workspace_phase_building_label": "Building",
   "workspace_phase_coordinatorResearching_label": "Coordinator is researching...",
-  "workspace_phase_describeWhatToBuild_label": "Describe what you want to build",
   "workspace_phase_planning_description": "The Coordinator will research and create a Spec. You can edit and iterate on it.",
   "workspace_phase_planning_label": "Planning",
   "workspace_phase_planningPlaceholder_subtitle": "Describe what you want to build",

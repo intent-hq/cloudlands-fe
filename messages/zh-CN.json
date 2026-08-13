@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "批准后，协调者将委派工作并进行验证。",
   "workspace_phase_building_label": "构建中",
   "workspace_phase_coordinatorResearching_label": "协调者正在调研…",
-  "workspace_phase_describeWhatToBuild_label": "描述你想构建的内容",
   "workspace_phase_planning_description": "协调者将进行调研并创建规范。你可以对其进行编辑和迭代。",
   "workspace_phase_planning_label": "规划中",
   "workspace_phase_planningPlaceholder_subtitle": "描述你想构建的内容",

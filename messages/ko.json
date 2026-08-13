@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "승인되면 코디네이터가 작업을 위임하고 검증합니다.",
   "workspace_phase_building_label": "구축 중",
   "workspace_phase_coordinatorResearching_label": "코디네이터가 조사 중...",
-  "workspace_phase_describeWhatToBuild_label": "만들고 싶은 것을 설명하세요",
   "workspace_phase_planning_description": "코디네이터가 조사하고 사양을 작성합니다. 사양은 편집하고 반복 개선할 수 있습니다.",
   "workspace_phase_planning_label": "계획 중",
   "workspace_phase_planningPlaceholder_subtitle": "만들고 싶은 것을 설명하세요",

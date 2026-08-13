@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "承認されると、コーディネーターが作業を委任して検証します。",
   "workspace_phase_building_label": "ビルド中",
   "workspace_phase_coordinatorResearching_label": "コーディネーターがリサーチ中...",
-  "workspace_phase_describeWhatToBuild_label": "作りたいものを記述してください",
   "workspace_phase_planning_description": "コーディネーターがリサーチして仕様を作成します。仕様は編集して改善できます。",
   "workspace_phase_planning_label": "計画中",
   "workspace_phase_planningPlaceholder_subtitle": "作りたいものを説明してください",

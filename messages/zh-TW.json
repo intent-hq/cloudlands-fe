@@ -1239,7 +1239,6 @@
   "workspace_phase_building_description": "批准後，協調者將委派工作並進行驗證。",
   "workspace_phase_building_label": "建置中",
   "workspace_phase_coordinatorResearching_label": "協調者正在調研…",
-  "workspace_phase_describeWhatToBuild_label": "描述你想建置的內容",
   "workspace_phase_planning_description": "協調者將進行調研並建立規範。你可以對其進行編輯和迭代。",
   "workspace_phase_planning_label": "規劃中",
   "workspace_phase_planningPlaceholder_subtitle": "描述你想建構的內容",
