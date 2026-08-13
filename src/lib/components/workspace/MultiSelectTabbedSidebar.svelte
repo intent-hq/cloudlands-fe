@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import './multi-select-sidebar-transitions.css';
   import {
     selectStagedWorkingChanges,
@@ -492,7 +491,6 @@
           },
         },
       });
-      await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }

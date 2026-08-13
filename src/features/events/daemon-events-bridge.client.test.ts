@@ -92,7 +92,11 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 const { navigateAwayIfViewingSpy } = vi.hoisted(() => ({
   navigateAwayIfViewingSpy: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
+// `closeWorkspaceTabAndNavigateAway` stays REAL so the archive-transition
+// suite can assert actual tab-state changes (jsdom is never viewing the
+// workspace route, so its goto leg is inert here).
+vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/workspace/navigate-away-if-viewing')>()),
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
@@ -6108,6 +6112,166 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
+  });
+});
+
+describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () => {
+  const WS_TAB = 'ws-updated-tab-1';
+  const OTHER_TAB = 'ws-updated-tab-other';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    resetMockIpcRouter();
+    capturedHandlers.length = 0;
+    // Tab state persists across tests via appStore — clear the whole strip
+    // (openTabs, currentTabId, stacks, recently-closed) before each test.
+    const { cleanupInvalidWorkspaceTabs } = await import(
+      '$store/renderer/slices/tab-state/tab-state-slice'
+    );
+    appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_TAB,
+        title: 'Tab ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function openTab(workspaceId: string): Promise<void> {
+    const { openWorkspaceTab } = await import(
+      '$store/renderer/slices/tab-state/tab-state-slice'
+    );
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+  }
+
+  function readTabState(): {
+    openTabs: Record<string, boolean>;
+    currentTabId: string | null;
+    workspaceStacks: string[][];
+  } {
+    const state = appStore.state as {
+      tabState: {
+        openTabs: Record<string, boolean>;
+        currentTabId: string | null;
+        workspaceStacks: string[][];
+      };
+    };
+    return state.tabState;
+  }
+
+  function updatedNotification(changes: Record<string, unknown>): {
+    method: string;
+    params?: unknown;
+  } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-ws-updated-tab-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_TAB,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_TAB, changes },
+        },
+      },
+    };
+  }
+
+  it('closes the open tab on an archived delta', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+    // `closeWorkspaceTabAndNavigateAway` dispatches after dynamic imports.
+    await flush();
+
+    const tabs = readTabState();
+    expect(tabs.openTabs[WS_TAB]).toBeUndefined();
+    expect(tabs.workspaceStacks.flat()).not.toContain(WS_TAB);
+    // The delete-path helper is a different route and must not fire here.
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
+  });
+
+  it('is a tab-state no-op when the archived workspace has no open tab', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(updatedNotification({ archived: true, status: 'Archived' }));
+    await flush();
+
+    expect(readTabState()).toBe(before);
+  });
+
+  it('restores the tab in the background on an unarchive delta (no focus steal)', async () => {
+    await seedWorkspace();
+    await openTab(OTHER_TAB);
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    const tabs = readTabState();
+    expect(tabs.openTabs[WS_TAB]).toBe(true);
+    expect(tabs.workspaceStacks.flat()).toContain(WS_TAB);
+    expect(tabs.currentTabId).toBe(OTHER_TAB);
+  });
+
+  it('is a tab-state no-op when the unarchived workspace tab is already open', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    expect(readTabState()).toBe(before);
+  });
+
+  it('leaves tab state untouched for deltas without archive fields', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(updatedNotification({ title: 'Renamed' }));
+    await flush();
+
+    expect(readTabState()).toBe(before);
   });
 });
 

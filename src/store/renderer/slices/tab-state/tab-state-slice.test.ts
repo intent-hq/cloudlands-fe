@@ -14,6 +14,7 @@ import {
   openWorkspaceTab,
   reopenLastClosedWorkspaceTab,
   removeScrollPosition,
+  restoreWorkspaceTab,
   reorderWorkspaceTabs,
   saveScrollPosition,
   serializeWorkspaceTabsState,
@@ -223,6 +224,39 @@ describe('tabStateReducer', () => {
       version: 5,
     });
     expect(tabStateReducer(initialState, reopenLastClosedWorkspaceTab())).toBe(initialState);
+  });
+
+  it('restores a workspace tab in the background without changing the current tab', () => {
+    const stateWithTabs = makeState({
+      openTabs: { 'ws-1': true },
+      currentTabId: 'ws-1',
+      workspaceStacks: [['ws-1']],
+      recentlyClosedTabIds: ['ws-2'],
+      recentlyClosedTabAt: { 'ws-2': 100 },
+      version: 3,
+    });
+
+    expect(tabStateReducer(stateWithTabs, restoreWorkspaceTab('ws-2'))).toEqual({
+      ...stateWithTabs,
+      openTabs: { 'ws-1': true, 'ws-2': true },
+      currentTabId: 'ws-1',
+      workspaceStacks: [['ws-1'], ['ws-2']],
+      recentlyClosedTabIds: [],
+      recentlyClosedTabAt: {},
+      version: 4,
+    });
+  });
+
+  it('restoreWorkspaceTab is a no-op for already-open tabs and the onboarding sentinel', () => {
+    const stateWithTabs = makeState({
+      openTabs: { 'ws-1': true, 'ws-2': true },
+      currentTabId: 'ws-1',
+      workspaceStacks: [['ws-1'], ['ws-2']],
+      version: 3,
+    });
+
+    expect(tabStateReducer(stateWithTabs, restoreWorkspaceTab('ws-2'))).toBe(stateWithTabs);
+    expect(tabStateReducer(stateWithTabs, restoreWorkspaceTab('new'))).toBe(stateWithTabs);
   });
 
   it('clears the current workspace tab only when one is selected', () => {
