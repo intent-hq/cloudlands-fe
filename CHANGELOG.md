@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.29.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.28.0...v2.29.0) (2026-08-13)
+
+
+### 🚀 Features
+
+* add file download and folder zip download to the sidebar file browser ([#1101](https://github.com/intent-hq/cloudlands-fe/issues/1101)) ([07aef9a](https://github.com/intent-hq/cloudlands-fe/commit/07aef9a0fda993b83e3056bcc613bca5966d0d6d))
+* gate daemon-host desktop actions on workspace host locality ([#1114](https://github.com/intent-hq/cloudlands-fe/issues/1114)) ([4719955](https://github.com/intent-hq/cloudlands-fe/commit/471995584835ec4b02ab805c682b4ef2f164325a))
+* **hud:** show hardware key slot as large square on HUD card and takeover header ([#1100](https://github.com/intent-hq/cloudlands-fe/issues/1100)) ([17af04e](https://github.com/intent-hq/cloudlands-fe/commit/17af04ee4215dfa3dbd46b501f62361b5e2ae2e9))
+* **hud:** wire banner-typewriter and blink-tick sound cues into the takeover ([#1086](https://github.com/intent-hq/cloudlands-fe/issues/1086)) ([a7f5a2d](https://github.com/intent-hq/cloudlands-fe/commit/a7f5a2d1485163955f151655947dfe1920de9154))
+* three-way update channel selector (stable/beta/alpha) ([#1113](https://github.com/intent-hq/cloudlands-fe/issues/1113)) ([e7bc8ec](https://github.com/intent-hq/cloudlands-fe/commit/e7bc8ec3bb3ce69ef37660026f75f2ddd62d68da))
+
+
+### 🐛 Bug Fixes
+
+* commit resolved onboarding provider selection when advancing from the welcome step ([#1109](https://github.com/intent-hq/cloudlands-fe/issues/1109)) ([6adb1fe](https://github.com/intent-hq/cloudlands-fe/commit/6adb1fe3356dfdf19b0f6b6813253e54b35b7073))
+* load the drag-region no-drag rule globally so HUD header controls stay clickable ([#1098](https://github.com/intent-hq/cloudlands-fe/issues/1098)) ([a4d9e40](https://github.com/intent-hq/cloudlands-fe/commit/a4d9e40097c7dfeb6bde670088dae2f733ba4557))
+* make daemon status menu fill viewport and use real submenus for connections ([#1088](https://github.com/intent-hq/cloudlands-fe/issues/1088)) ([8f46668](https://github.com/intent-hq/cloudlands-fe/commit/8f46668ae4057f4320f85746de64a3b169612831))
+* pin the clock in memory-history tests so fixtures cannot age out ([#1107](https://github.com/intent-hq/cloudlands-fe/issues/1107)) ([604fd11](https://github.com/intent-hq/cloudlands-fe/commit/604fd11dfefba0d5c620b84798eb557206d5c680))
+* place attachments via the data arm on remote backends and surface placement failure reasons ([#1089](https://github.com/intent-hq/cloudlands-fe/issues/1089)) ([fe93153](https://github.com/intent-hq/cloudlands-fe/commit/fe931534b6ae0531f48860e851c59f4b3d5f9cb4))
+* preserve repo selection in the post-create form state ([#1102](https://github.com/intent-hq/cloudlands-fe/issues/1102)) ([847b30b](https://github.com/intent-hq/cloudlands-fe/commit/847b30b5f597adcd5d7e57c4774f6d116ee1dfb9))
+* prevent clipping of two-line option buttons in transfer wizard ([#1103](https://github.com/intent-hq/cloudlands-fe/issues/1103)) ([3a98479](https://github.com/intent-hq/cloudlands-fe/commit/3a98479ded6f298e65dcfd9f9c582fad16c444f6))
+* rank contiguous substring matches above scattered subsequence in palette fuzzyScore ([#1096](https://github.com/intent-hq/cloudlands-fe/issues/1096)) ([17b90b2](https://github.com/intent-hq/cloudlands-fe/commit/17b90b251c7ce6229677f6d31a80ec5d81fdd4e5))
+* re-wire ChatPanel to createChatDraftManager (restore [#742](https://github.com/intent-hq/cloudlands-fe/issues/742)) ([29c17bd](https://github.com/intent-hq/cloudlands-fe/commit/29c17bdbcc411275a0b226807bb4c33a7f0ee057))
+* resolve the Linux intentd socket path via the XDG data dir ([#1099](https://github.com/intent-hq/cloudlands-fe/issues/1099)) ([1c1e49c](https://github.com/intent-hq/cloudlands-fe/commit/1c1e49ce2c8ab49cf910d97a3bb76c6e7dff49da))
+* restore backend-derived setup gate on the boot path ([#1091](https://github.com/intent-hq/cloudlands-fe/issues/1091)) ([fbe3310](https://github.com/intent-hq/cloudlands-fe/commit/fbe3310bca6f245635a19b4eaa19ddd69bd82380))
+* restore GitHub link Show choices menu after redesign ([#1106](https://github.com/intent-hq/cloudlands-fe/issues/1106)) ([bec4dcb](https://github.com/intent-hq/cloudlands-fe/commit/bec4dcb488ce29cc21e54bf9cfa9bb2a4e183a9a))
+* restore Pick-a-repo-first tab order and keep githubUrl in restore-recent hydration ([#1108](https://github.com/intent-hq/cloudlands-fe/issues/1108)) ([8142354](https://github.com/intent-hq/cloudlands-fe/commit/8142354bbc91bb513dfc7d5ac7dc7265e0397072))
+* surface unmet Node.js requirement as a once-per-session toast in the app shell ([#1095](https://github.com/intent-hq/cloudlands-fe/issues/1095)) ([cd9c2c9](https://github.com/intent-hq/cloudlands-fe/commit/cd9c2c90a3b3f8262b315d40b89ecc0be65c318b))
+
 ## [2.28.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.27.0...v2.28.0) (2026-08-12)
 
 
