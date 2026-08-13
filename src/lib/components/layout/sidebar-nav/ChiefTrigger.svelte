@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
@@ -19,7 +20,7 @@
       type="button"
       class="flex size-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:bg-transparent hover:text-foreground"
       onclick={() => appStore.dispatch(togglePanel('chief'))}
-      aria-label="Toggle Chief of Staff"
+      aria-label={m.layout_chiefTrigger_toggle_ariaLabel()}
       aria-expanded={isActive}
       data-chief-trigger
     >

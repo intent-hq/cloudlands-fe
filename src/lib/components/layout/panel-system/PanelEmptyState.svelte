@@ -207,7 +207,10 @@
 </script>
 
 <div class="empty-state flex h-full items-center justify-center overflow-y-auto px-6 py-10">
-  <section class="empty-state-content w-full max-w-[36rem]" aria-label="Create in empty panel">
+  <section
+    class="empty-state-content w-full max-w-[36rem]"
+    aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
+  >
     <div class="creation-grid grid gap-1.5">
       {#each creationActions as action (action.id)}
         <button
@@ -232,7 +235,7 @@
       <div class="mt-4 pt-3">
         <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
           <Fa icon={faArrowRotateLeft} class="size-3" />
-          <span>Recently closed</span>
+          <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
         </div>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
           <button

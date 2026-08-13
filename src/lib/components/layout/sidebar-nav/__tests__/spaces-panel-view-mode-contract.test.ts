@@ -19,7 +19,8 @@ describe('Spaces panel view-mode control', () => {
     expect(panel).toContain('onclick={handleAllSpacesViewModeCycle}');
     expect(panel).not.toContain('data-spaces-view-mode-options');
     expect(panel).not.toContain('<DropdownMenu');
-    expect(panel).toContain('aria-label={`Sort or group spaces: ${allSpacesViewModeLabel}`}');
+    expect(panel).toContain('aria-label={m.layout_sidebarPanel_sortOrGroupSpaces_ariaLabel({');
+    expect(panel).toContain('mode: allSpacesViewModeLabel,');
     expect(panel).toContain("{ value: 'recent', label: m.layout_allCard_recent_label() }");
     expect(panel).toContain("{ value: 'repo', label: m.layout_allCard_repo_label() }");
     expect(panel).toContain("{ value: 'status', label: m.layout_allCard_status_label() }");

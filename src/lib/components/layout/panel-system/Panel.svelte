@@ -391,7 +391,7 @@
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
     {#if !activeTab && onClosePanel}
       <div class="absolute right-2 top-2 z-20" data-empty-panel-close>
-        <Tooltip content="Close panel" side="bottom" delayDuration={300}>
+        <Tooltip content={m.layout_panel_closePanel_ariaLabel()} side="bottom" delayDuration={300}>
           <Button
             variant="ghost-light"
             size="icon-xs"
@@ -400,7 +400,7 @@
               event.stopPropagation();
               onClosePanel?.();
             }}
-            aria-label="Close panel"
+            aria-label={m.layout_panel_closePanel_ariaLabel()}
           >
             <Fa icon={faXmark} size="xs" />
           </Button>
