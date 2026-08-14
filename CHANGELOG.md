@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.44.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.43.1...v2.44.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* split secondary-root history at the registration boundary ([#1231](https://github.com/intent-hq/cloudlands-fe/issues/1231)) ([ddd20b6](https://github.com/intent-hq/cloudlands-fe/commit/ddd20b6d1b2defa7c7a24d4a8be39ed634b03057))
+
+
+### 🐛 Bug Fixes
+
+* emit unread-cycle stops for unhydrated unread workspaces ([#1233](https://github.com/intent-hq/cloudlands-fe/issues/1233)) ([acf5e2a](https://github.com/intent-hq/cloudlands-fe/commit/acf5e2a6639e5e07efb0d596c2ecaa029c52ad11))
+* keep takeover edge arrowheads fixed-size when hover thickens the stroke ([#1230](https://github.com/intent-hq/cloudlands-fe/issues/1230)) ([82c55ba](https://github.com/intent-hq/cloudlands-fe/commit/82c55bab1747993a7adcf21619e8be86998da849))
+* sidebar expanded-card artifacts — clipped tab strip and confusing actions menu ([#1229](https://github.com/intent-hq/cloudlands-fe/issues/1229)) ([bd53044](https://github.com/intent-hq/cloudlands-fe/commit/bd530440f0c3a4e5bf8251271a37e2802f6faae6))
+
 ## [2.43.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.43.0...v2.43.1) (2026-08-14)
 
 
