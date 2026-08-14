@@ -1932,6 +1932,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "Stopped — daemon restarted",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "Interrupted by {name}",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "Interrupted by a new message",
+  "chat_chatMessage_stoppedSystemSuspend_label": "Stopped — system suspended; resumes on wake",
   "chat_chatMessage_stopped_label": "Stopped",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "View attached image {number} of {total} full size",
   "chat_chatPanel_agentFailedToStart_error": "Agent failed to start",

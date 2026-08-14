@@ -1931,6 +1931,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "Gestoppt — Daemon neu gestartet",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "Durch {name} unterbrochen",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "Durch eine neue Nachricht unterbrochen",
+  "chat_chatMessage_stoppedSystemSuspend_label": "Gestoppt — System im Ruhezustand; wird beim Aufwachen fortgesetzt",
   "chat_chatMessage_stopped_label": "Gestoppt",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "Angehängtes Bild {number} von {total} in voller Größe anzeigen",
   "chat_chatPanel_agentFailedToStart_error": "Agent konnte nicht gestartet werden",

@@ -1931,6 +1931,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "Detenido — el daemon se reinició",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "Interrumpido por {name}",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "Interrumpido por un mensaje nuevo",
+  "chat_chatMessage_stoppedSystemSuspend_label": "Detenido — sistema suspendido; se reanuda al despertar",
   "chat_chatMessage_stopped_label": "Detenido",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "Ver imagen adjunta {number} de {total} a tamaño completo",
   "chat_chatPanel_agentFailedToStart_error": "El agente no pudo iniciarse",

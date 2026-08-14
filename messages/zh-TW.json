@@ -1931,6 +1931,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "已停止 — 守護程序已重新啟動",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "被 {name} 中斷",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "被新訊息中斷",
+  "chat_chatMessage_stoppedSystemSuspend_label": "已停止 — 系統已休眠；喚醒後將恢復",
   "chat_chatMessage_stopped_label": "已停止",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "檢視附加圖片原圖（第 {number} 張，共 {total} 張）",
   "chat_chatPanel_agentFailedToStart_error": "智慧體啟動失敗",

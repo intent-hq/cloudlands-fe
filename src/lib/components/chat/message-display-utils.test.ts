@@ -166,6 +166,12 @@ describe('resolveStoppedIndicatorLabel', () => {
     );
   });
 
+  it('resolves system-suspend', () => {
+    expect(resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'system_suspend' }))).toEqual(
+      { kind: 'system-suspend' },
+    );
+  });
+
   it('resolves generic stopped for an unknown future reason', () => {
     expect(
       resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'some_future_reason' })),

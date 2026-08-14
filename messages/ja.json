@@ -1931,6 +1931,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "停止しました — デーモンが再起動しました",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "{name} により中断されました",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "新しいメッセージにより中断されました",
+  "chat_chatMessage_stoppedSystemSuspend_label": "停止しました — システムがスリープしました。復帰時に再開します",
   "chat_chatMessage_stopped_label": "停止しました",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "添付画像 {number} / {total} をフルサイズで表示",
   "chat_chatPanel_agentFailedToStart_error": "エージェントを起動できませんでした",

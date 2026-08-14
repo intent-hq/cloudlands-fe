@@ -1931,6 +1931,7 @@
   "chat_chatMessage_stoppedDaemonRestarted_label": "중지됨 — 데몬이 다시 시작됨",
   "chat_chatMessage_stoppedPreemptedByAgent_label": "{name}에 의해 중단됨",
   "chat_chatMessage_stoppedPreemptedByMessage_label": "새 메시지로 인해 중단됨",
+  "chat_chatMessage_stoppedSystemSuspend_label": "중지됨 — 시스템 절전 모드; 절전 해제 시 재개됨",
   "chat_chatMessage_stopped_label": "중지됨",
   "chat_chatMessage_viewAttachedImage_ariaLabel": "첨부 이미지 {number}/{total} 전체 크기로 보기",
   "chat_chatPanel_agentFailedToStart_error": "에이전트를 시작하지 못했습니다",
