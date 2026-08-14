@@ -15,6 +15,11 @@ import { Logger } from '../../../shared/logger';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
+import {
+  rewriteLoopbackUrl,
+  type LoopbackRewriteContext,
+  type LoopbackRewriteResult,
+} from './loopback-rewrite';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -189,6 +194,148 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
   return workspaceId;
 }
 
+/**
+ * Echo fields merged into an action's result when its URL was rewritten by
+ * the loopback-hostname table (intent-hq/monorepo#2323). Empty for
+ * non-rewritten URLs so their result shape is unchanged. `tunneled` adds a
+ * `tunneled: true` marker when the URL was further redirected through a
+ * daemon tunnel forward after a failed reachability probe.
+ */
+function rewriteEcho(rewrite: LoopbackRewriteResult, tunneled = false): Record<string, unknown> {
+  if (!rewrite.rewritten) return {};
+  return {
+    ...(tunneled ? { tunneled: true } : {}),
+    requestedUrl: rewrite.requestedUrl,
+    finalUrl: rewrite.url,
+    rewritten: true,
+    reason: rewrite.reason,
+    ...(rewrite.warning ? { warning: rewrite.warning } : {}),
+  };
+}
+
+/** Timeout for the remote-rewrite reachability probe. */
+export const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
+
+/**
+ * Minimal tunnel surface the executor needs for the probe-failure fallback:
+ * `TunnelManager` (`features/backend/main/tunnel-manager.ts`) satisfies it,
+ * and tests inject a mock so the executor stays testable without a real
+ * `/tunnel` WebSocket.
+ */
+export interface TunnelProvider {
+  /** Forward daemon-loopback `remotePort`; resolves with the local port. */
+  forwardPort(remotePort: number): Promise<number>;
+}
+
+/** Outcome of {@link resolveRewrittenRemoteTarget}. */
+interface RemoteTargetResolution {
+  /** Rewrite whose `url`/`reason` reflect the tunnel forward when tunneled. */
+  rewrite: LoopbackRewriteResult;
+  /** True when the URL was redirected through a daemon tunnel forward. */
+  tunneled: boolean;
+  /** Explanatory agent-facing error when unreachable and not tunnelable. */
+  error?: string;
+}
+
+/**
+ * Probe the origin of a URL that was rewritten to the REMOTE daemon host
+ * before navigating to it. Any HTTP response (including error statuses)
+ * proves the host:port is reachable from this machine; only a network-level
+ * failure (connection refused, unroutable, timeout) fails the probe. URLs
+ * that were not rewritten to a remote host are never probed.
+ *
+ * On probe failure, falls back to forwarding the port over the daemon's
+ * `/tunnel` WebSocket when a tunnel provider is available (Electron main):
+ * the returned rewrite then targets `http(s)://127.0.0.1:<localPort>` and is
+ * flagged `tunneled`. Without a provider (non-Electron/web contexts, where no
+ * local listener is possible) or when the tunnel itself fails, `error`
+ * carries the explanatory agent-facing message instead.
+ */
+async function resolveRewrittenRemoteTarget(
+  rewrite: LoopbackRewriteResult,
+  getTunnelProvider?: () => TunnelProvider | null,
+): Promise<RemoteTargetResolution> {
+  if (!rewrite.rewritten || !rewrite.remoteHost) return { rewrite, tunneled: false };
+  const target = new URL(rewrite.url);
+  try {
+    const response = await fetch(target.origin, {
+      signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS),
+    });
+    // Only reachability matters — cancel the body so undici releases the
+    // connection instead of holding it until GC.
+    void response.body?.cancel().catch(() => {});
+    return { rewrite, tunneled: false };
+  } catch (error) {
+    const detail =
+      error instanceof Error
+        ? error.cause instanceof Error
+          ? error.cause.message
+          : error.message
+        : String(error);
+    const port = target.port || (target.protocol === 'https:' ? '443' : '80');
+    logger.warn('Reachability probe failed for rewritten remote URL', {
+      requestedUrl: rewrite.requestedUrl,
+      rewrittenUrl: rewrite.url,
+      origin: target.origin,
+      detail,
+    });
+
+    const tunnel = getTunnelProvider?.() ?? null;
+    if (tunnel) {
+      try {
+        const localPort = await tunnel.forwardPort(Number(port));
+        // Known limitation: an `https` URL keeps its scheme with the host
+        // swapped to 127.0.0.1, so the origin server's cert fails hostname
+        // verification in the embedded browser. Nothing better is possible
+        // without terminating TLS locally; the practical targets are `http`
+        // dev servers.
+        const tunneledUrl = new URL(rewrite.url);
+        tunneledUrl.hostname = '127.0.0.1';
+        tunneledUrl.port = String(localPort);
+        logger.info('Rewritten remote origin unreachable; falling back to the daemon tunnel', {
+          requestedUrl: rewrite.requestedUrl,
+          rewrittenUrl: rewrite.url,
+          remotePort: Number(port),
+          localPort,
+        });
+        return {
+          rewrite: {
+            ...rewrite,
+            url: tunneledUrl.toString(),
+            reason:
+              // i18n-ignore (agent-facing protocol detail, not user-facing)
+              `${rewrite.reason}; ${target.origin} is not directly reachable from this machine, ` +
+              // i18n-ignore (agent-facing protocol detail, not user-facing)
+              `so port ${port} is forwarded over the daemon tunnel to 127.0.0.1:${localPort}`,
+          },
+          tunneled: true,
+        };
+      } catch (tunnelError) {
+        logger.warn('Tunnel fallback failed for rewritten remote URL', {
+          requestedUrl: rewrite.requestedUrl,
+          rewrittenUrl: rewrite.url,
+          remotePort: Number(port),
+          error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
+        });
+      }
+    }
+
+    return {
+      rewrite,
+      tunneled: false,
+      error:
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` +
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        `but ${target.origin} is not reachable from this machine (probe failed within ${REMOTE_REWRITE_PROBE_TIMEOUT_MS}ms: ${detail}). ` +
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        `The server on the daemon machine is likely listening on 127.0.0.1 only — it must bind 0.0.0.0 to accept remote ` +
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        `connections — or a firewall is blocking port ${port}.`,
+    };
+  }
+}
+
 // Schema for the full action sequence
 const ActionSequenceSchema = z.object({
   actions: z.array(BrowserActionSchema),
@@ -231,6 +378,8 @@ async function executeAction(
   ) => { success: boolean; message: string },
   agentId?: string,
   workspaceId?: string,
+  getLoopbackContext?: () => LoopbackRewriteContext,
+  getTunnelProvider?: () => TunnelProvider | null,
 ): Promise<ActionResult> {
   const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
 
@@ -366,25 +515,42 @@ async function executeAction(
           return { action: 'openTab', success: false, error: openTabUrlError };
         }
 
+        // Loopback-hostname rewrite (daemon.localhost / client.localhost /
+        // bare loopback) — a no-op for non-loopback URLs and local daemons.
+        const rewrite = rewriteLoopbackUrl(
+          action.url,
+          getLoopbackContext?.() ?? { daemonIsRemote: false },
+        );
+
+        // Rewritten to a remote host: verify reachability before opening a
+        // tab, falling back to a daemon tunnel forward when unreachable.
+        const openTabTarget = await resolveRewrittenRemoteTarget(rewrite, getTunnelProvider);
+        if (openTabTarget.error) {
+          return { action: 'openTab', success: false, error: openTabTarget.error };
+        }
+        const finalRewrite = openTabTarget.rewrite;
+        const echo = rewriteEcho(finalRewrite, openTabTarget.tunneled);
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
         if (agentId) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
           if (idleTabId) {
             logger.info('Reusing idle browser tab instead of opening new one', {
               tabId: idleTabId,
-              url: action.url,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
               agentId,
             });
             try {
               await embeddedBrowserCdp.evaluate(
                 idleTabId,
-                `window.location.href = ${JSON.stringify(action.url)}`,
+                `window.location.href = ${JSON.stringify(finalRewrite.url)}`,
               );
               embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
                 success: true,
-                result: { reused: true, tabId: idleTabId, url: action.url },
+                result: { reused: true, tabId: idleTabId, url: finalRewrite.url, ...echo },
               };
             } catch (err) {
               logger.warn('Failed to reuse idle tab, falling back to opening new tab', {
@@ -403,8 +569,8 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
-        const result = openTabFn(action.url, action.position);
-        return { action: 'openTab', success: result.success, result };
+        const result = openTabFn(finalRewrite.url, action.position);
+        return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
       }
 
       case 'closeTab': {
@@ -432,14 +598,32 @@ async function executeAction(
           };
         }
 
+        // Loopback-hostname rewrite (daemon.localhost / client.localhost /
+        // bare loopback) — a no-op for non-loopback URLs and local daemons.
+        const rewrite = rewriteLoopbackUrl(
+          action.url,
+          getLoopbackContext?.() ?? { daemonIsRemote: false },
+        );
+
+        // Rewritten to a remote host: verify reachability before navigating,
+        // falling back to a daemon tunnel forward when unreachable.
+        const navigateTarget = await resolveRewrittenRemoteTarget(rewrite, getTunnelProvider);
+        if (navigateTarget.error) {
+          return { action: 'navigate', success: false, error: navigateTarget.error };
+        }
+
         await embeddedBrowserCdp.evaluate(
           resolvedTabId,
-          `window.location.href = ${JSON.stringify(action.url)}`,
+          `window.location.href = ${JSON.stringify(navigateTarget.rewrite.url)}`,
         );
         return {
           action: 'navigate',
           success: true,
-          result: { tabId: resolvedTabId, url: action.url },
+          result: {
+            tabId: resolvedTabId,
+            url: navigateTarget.rewrite.url,
+            ...rewriteEcho(navigateTarget.rewrite, navigateTarget.tunneled),
+          },
         };
       }
 
@@ -472,6 +656,13 @@ async function executeAction(
  * and the error is returned along with results from successful actions.
  *
  * @param agentId - If provided, enables tab lease tracking and idle tab reuse
+ * @param getLoopbackContext - Injectable resolver for the daemon loopback
+ *   locality (see `loopback-rewrite.ts`); defaults to a local daemon, so
+ *   `daemon.localhost`/`client.localhost` resolve to `127.0.0.1` and bare
+ *   loopback URLs pass through unchanged
+ * @param getTunnelProvider - Injectable tunnel seam for the probe-failure
+ *   fallback; when absent (non-Electron contexts) an unreachable rewritten
+ *   remote origin keeps failing with the explanatory probe error
  */
 export async function executeActions(
   input: unknown,
@@ -481,6 +672,8 @@ export async function executeActions(
   ) => { success: boolean; message: string },
   agentId?: string,
   workspaceId?: string,
+  getLoopbackContext?: () => LoopbackRewriteContext,
+  getTunnelProvider?: () => TunnelProvider | null,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -498,7 +691,15 @@ export async function executeActions(
   const results: ActionResult[] = [];
 
   for (const action of actions) {
-    const result = await executeAction(action, defaultTabId, openTabFn, agentId, workspaceId);
+    const result = await executeAction(
+      action,
+      defaultTabId,
+      openTabFn,
+      agentId,
+      workspaceId,
+      getLoopbackContext,
+      getTunnelProvider,
+    );
     results.push(result);
 
     if (!result.success) {
