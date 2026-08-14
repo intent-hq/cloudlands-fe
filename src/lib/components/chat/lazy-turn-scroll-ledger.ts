@@ -34,23 +34,41 @@
  * the visual anchor). Off the clamp the bottom-anchored target is identical
  * to the classic viewport-preserving shift, so behavior is unchanged there.
  * The ResizeObserver path has no pre-flush snapshot; there, a shrink that
- * left scrollTop pinned at the new max was already bottom-anchored by the
- * native clamp and is skipped (any residual error is < the delta and only
- * occurs when the reader was inside the phantom range).
+ * left scrollTop pinned at the new max is ambiguous: the reader was either
+ * inside the phantom range (the clamp already bottom-anchored them — the
+ * delta must NOT be re-applied) or within |delta| of a REAL bottom (the
+ * clamp ate their remaining distance). The two are indistinguishable without
+ * the pre-change scrollTop, so the ledger skips: the reader near a real
+ * bottom ends pinned at the bottom, an error of at most their lost distance
+ * (< |delta|, and RO-path settles are small), whereas re-applying the delta
+ * would yank phantom-range readers up by the FULL delta — the very snap-back
+ * this exists to prevent. The pinned check carries a 1px tolerance because
+ * scrollHeight/clientHeight are integer-rounded while scrollTop is a
+ * fractional double: at non-integer zoom a natively clamped scroller reads
+ * e.g. scrollTop 1699.33 against a computed max of 1700.
  *
  * Caveat — concurrent same-frame changes: the pre-change bottom is
- * reconstructed as `rect.bottom - delta`, which assumes the only geometry
- * change since the last account() is this turn's own height change. When
- * several turns above the viewport change height in the same flush (bulk swap
- * after a scroll jump, container-width re-wrap), a turn accounted while other
- * turns' deltas are still uncompensated has its rect polluted by those pending
- * deltas, so the above/below classification is not exact near the boundary.
- * The compensation magnitude is always this turn's own delta (the ledger never
- * drifts), and each earlier account()'s scrollTop write progressively restores
- * the rects for later ones, so any error is boundary-local and self-limiting.
- * The bottom-anchored path composes even better: its target is derived from
- * the post-flush scrollHeight and the shared pre-flush distance, so same-flush
- * shrinks converge on one target idempotently instead of accumulating.
+ * reconstructed as `rect.bottom - delta`, corrected by any scrollTop
+ * movement since the snapshot was taken (the native clamp — without that
+ * correction a partial clamp shifts the rect down and can misclassify an
+ * above-viewport turn as visible). The reconstruction still assumes no OTHER
+ * turn's geometry changed since the last account(). When several turns above
+ * the viewport change height in the same flush (bulk swap after a scroll
+ * jump, container-width re-wrap), a turn accounted while other turns' deltas
+ * are still uncompensated has its rect polluted by those pending deltas, so
+ * the above/below classification is not exact near the boundary. The
+ * compensation magnitude is always this turn's own delta (the ledger never
+ * drifts), and each earlier account()'s scrollTop write progressively
+ * restores the rects for later ones, so any error is boundary-local and
+ * self-limiting. Same-flush bulk SHRINKS compose idempotently on the
+ * bottom-anchored path — every ledger sharing the pre-flush snapshot derives
+ * the same absolute target from the post-flush scrollHeight — but a GROWTH
+ * landing in the same flush composes additively on top of that absolute
+ * target (the target's post-flush scrollHeight already includes the growth,
+ * then the growth's own account() applies += delta again), double-counting
+ * it by up to that delta. Like the rect pollution above this is bounded and
+ * boundary-local, and it requires a simultaneous under- and overestimated
+ * placeholder pair near the bottom.
  */
 export interface ScrollerSnapshot {
   scrollTop: number;
@@ -106,7 +124,15 @@ export function createHeightLedger(
       lastHeight = newHeight;
       if (delta === 0) return;
       const scrollerTop = scroller.getBoundingClientRect().top;
-      const bottomBeforeChange = el.getBoundingClientRect().bottom - delta;
+      // The element rect reflects the CURRENT scrollTop; any movement since
+      // the snapshot was taken (the native clamp firing on a shrink) has
+      // shifted it. Undo that movement so the pre-change bottom is
+      // reconstructed at the pre-change scroll position — otherwise a
+      // partial clamp shifts the rect down by the clamped amount and an
+      // above-viewport turn can misclassify as visible, skipping the
+      // snapshot correction entirely.
+      const scrollTopShift = preChange ? scroller.scrollTop - preChange.scrollTop : 0;
+      const bottomBeforeChange = el.getBoundingClientRect().bottom - delta + scrollTopShift;
       if (bottomBeforeChange > scrollerTop) return;
 
       if (delta < 0) {
@@ -120,15 +146,28 @@ export function createHeightLedger(
             scroller.scrollTop = Math.max(0, maxScrollTop - preDistanceFromBottom);
             return;
           }
-        } else if (scroller.scrollTop >= maxScrollTop) {
+        } else if (scroller.scrollTop >= maxScrollTop - 1) {
           // No pre-flush snapshot (ResizeObserver path) and the shrink left
           // the scroller pinned at its new max: the native clamp already
           // bottom-anchored this change — re-applying the delta would yank
-          // the viewport up (the snap-back).
+          // the viewport up (the snap-back). See the header for why skipping
+          // is the lesser error when the reader was merely NEAR a real
+          // bottom, and why the pinned check tolerates a 1px shortfall
+          // (fractional scrollTop vs integer-rounded max at non-integer
+          // zoom).
           return;
         }
       }
-      scroller.scrollTop += delta;
+      // Classic viewport-preserving shift. With a snapshot the shift is
+      // applied to the PRE-flush scrollTop (absolute write, re-clamped by
+      // the browser as needed) so a native clamp that fired between the
+      // snapshot and this account() is not double-counted; without one the
+      // relative form is all that is available.
+      if (preChange) {
+        scroller.scrollTop = preChange.scrollTop + delta;
+      } else {
+        scroller.scrollTop += delta;
+      }
     },
   };
 }

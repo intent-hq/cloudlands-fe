@@ -49,10 +49,14 @@ function makeHarness(turn: FakeTurn, opts: HarnessOptions = {}) {
       return scrollTop;
     },
     set scrollTop(v: number) {
-      scrollTop = Math.min(Math.max(0, v), Math.max(0, this.scrollHeight - clientHeight));
+      // The native clamp uses the UNROUNDED layout max; the scrollHeight
+      // getter below integer-rounds like the real property. With a
+      // fractional restHeight the two diverge by <1px — the Electron
+      // zoom / display-scaling case.
+      scrollTop = Math.min(Math.max(0, v), Math.max(0, restHeight + turn.height - clientHeight));
     },
     get scrollHeight() {
-      return restHeight + turn.height;
+      return Math.round(restHeight + turn.height);
     },
     clientHeight,
     getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
@@ -250,6 +254,83 @@ describe('bottom-anchored clamp compensation (phantom space snap-back)', () => {
     expect(h.scroller.scrollTop).toBe(2200);
   });
 
+  it('swap path: partial clamp compensates a turn ending just above the OLD viewport (clamp-shifted rect must not misclassify)', () => {
+    // Turn spans [1150, 1950] with the viewport at [2000, 2600] — fully
+    // above, by 50px. The -500 shrink clamps scrollTop 2000 -> 1700, which
+    // shifts the post-flush rect DOWN by 300; reconstructing the pre-change
+    // bottom from that rect without undoing the clamp movement reads +250
+    // (visible) and skips — leaving the reader at the new max instead of
+    // their pre-swap 200px from the bottom.
+    const h = makeHarness(
+      { height: 800, contentTop: 1150, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 2000 },
+    );
+    h.ledger.account();
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 300;
+    h.flush(); // native clamp: new max 1700, scrollTop 2000 -> 1700
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(1500); // new max 1700 - preserved 200
+  });
+
+  it('swap path: same-flush bulk shrinks converge idempotently on one bottom-anchored target', () => {
+    // Two stale overestimated placeholders swap in the same flush while the
+    // reader sits at the (phantom) bottom. Both ledgers share the pre-flush
+    // snapshot, so both derive the same absolute target from the post-flush
+    // scrollHeight — the second account() must not move the scroller again.
+    const turnA = { height: 800, contentTop: 0, connected: true };
+    const turnB = { height: 600, connected: true };
+    const restHeight = 2000;
+    const clientHeight = 600;
+    let scrollTop = 2800; // max: 2000 + 800 + 600 - 600
+    const scroller = {
+      get scrollTop() {
+        return scrollTop;
+      },
+      set scrollTop(v: number) {
+        scrollTop = Math.min(
+          Math.max(0, v),
+          Math.max(0, restHeight + turnA.height + turnB.height - clientHeight),
+        );
+      },
+      get scrollHeight() {
+        return restHeight + turnA.height + turnB.height;
+      },
+      clientHeight,
+      getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
+    } as unknown as HTMLElement;
+    const elFor = (turn: { height: number }, getContentTop: () => number) =>
+      ({
+        get offsetHeight() {
+          return turn.height;
+        },
+        isConnected: true,
+        getBoundingClientRect: () =>
+          ({ bottom: getContentTop() + turn.height - scroller.scrollTop }) as DOMRect,
+      }) as unknown as HTMLElement;
+    const elA = elFor(turnA, () => 0);
+    const elB = elFor(turnB, () => turnA.height); // B sits directly below A
+    const ledgerA = createHeightLedger(
+      () => scroller,
+      () => elA,
+    );
+    const ledgerB = createHeightLedger(
+      () => scroller,
+      () => elB,
+    );
+    ledgerA.account();
+    ledgerB.account();
+
+    const pre = snapshotScroller(scroller);
+    turnA.height = 300; // -500
+    turnB.height = 400; // -200, same flush
+    scroller.scrollTop = scroller.scrollTop; // native clamp: max 2100
+    ledgerA.account(pre);
+    expect(scroller.scrollTop).toBe(2100); // pinned at the new bottom
+    ledgerB.account(pre);
+    expect(scroller.scrollTop).toBe(2100); // idempotent — no second move
+  });
+
   it('ResizeObserver path (no snapshot): a shrink already clamped to the new max is not re-applied', () => {
     const h = makeHarness(
       { height: 800, contentTop: 0, connected: true },
@@ -269,6 +350,23 @@ describe('bottom-anchored clamp compensation (phantom space snap-back)', () => {
     h.flush();
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(700);
+  });
+
+  it('ResizeObserver path: the pinned check tolerates fractional scrollTop vs integer-rounded max (non-integer zoom)', () => {
+    // Display scaling leaves layout at fractional pixels: the native clamp
+    // pins scrollTop at the unrounded max (1899.5) while scrollHeight
+    // integer-rounds up, so the computed max reads 1900. The strict >= check
+    // would miss the pinned state and re-apply the -300 delta — the exact
+    // snap-back this branch exists to prevent.
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 1999.5, clientHeight: 600, initialScrollTop: 2199.5 },
+    );
+    h.ledger.account();
+    h.turn.height = 500; // late settle: -300
+    h.flush(); // native clamp: unrounded max 1899.5; rounded scrollHeight → computed max 1900
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1899.5);
   });
 
   it('snapshotScroller returns null for a missing scroller and captures live geometry otherwise', () => {
