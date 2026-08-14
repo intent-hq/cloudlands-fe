@@ -7,7 +7,8 @@
  * `isFileDragEvent` — text/content drags and tab drags pass through untouched.
  *
  * Used by ChatPanel to make the whole conversation panel a drop target that
- * forwards files into SimpleRichInput's attach pipeline.
+ * forwards files into SimpleRichInput's attach pipeline, and by the
+ * panel-system Panel for the header seam of that target.
  */
 import { isFileDragEvent } from './drop-guard';
 
@@ -16,6 +17,12 @@ export interface FileDropTargetOptions {
   onDragChange: (dragging: boolean) => void;
   /** Called with the dropped files (never empty). */
   onDrop: (files: File[]) => void;
+  /**
+   * When provided and returning false, all drag/drop events are ignored —
+   * the target is inactive because a drop would have no consumer (e.g. the
+   * chat input is unmounted while the question wizard is expanded).
+   */
+  isEnabled?: () => boolean;
 }
 
 export interface FileDropTarget {
@@ -42,26 +49,31 @@ export function createFileDropTarget(options: FileDropTargetOptions): FileDropTa
     setDragging(false);
   }
 
+  function isActive(event: DragEvent): boolean {
+    if (options.isEnabled && !options.isEnabled()) return false;
+    return isFileDragEvent(event);
+  }
+
   return {
     handleDragEnter(event) {
-      if (!isFileDragEvent(event)) return;
+      if (!isActive(event)) return;
       event.preventDefault();
       counter++;
       setDragging(true);
     },
     handleDragLeave(event) {
-      if (!isFileDragEvent(event)) return;
+      if (!isActive(event)) return;
       event.preventDefault();
       counter = Math.max(0, counter - 1);
       if (counter === 0) setDragging(false);
     },
     handleDragOver(event) {
       // preventDefault marks the target as a valid drop zone.
-      if (!isFileDragEvent(event)) return;
+      if (!isActive(event)) return;
       event.preventDefault();
     },
     handleDrop(event) {
-      if (!isFileDragEvent(event)) return;
+      if (!isActive(event)) return;
       event.preventDefault();
       reset();
       const files = event.dataTransfer?.files;

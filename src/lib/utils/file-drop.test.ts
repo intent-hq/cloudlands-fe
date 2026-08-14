@@ -97,6 +97,30 @@ describe('createFileDropTarget (ChatPanel full-panel drop zone)', () => {
     expect(onDragChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('ignores all events while isEnabled() returns false (drop consumer unavailable)', () => {
+    let enabled = false;
+    const onDragChange = vi.fn();
+    const onDrop = vi.fn();
+    const target = createFileDropTarget({ onDragChange, onDrop, isEnabled: () => enabled });
+    const file = new File(['x'], 'cat.png', { type: 'image/png' });
+
+    const enter = makeDragEvent(fileTypes);
+    target.handleDragEnter(enter);
+    target.handleDragOver(enter);
+    target.handleDrop(makeDragEvent(fileTypes, [file]));
+
+    expect(onDragChange).not.toHaveBeenCalled();
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(enter.preventDefault).not.toHaveBeenCalled();
+
+    // Re-enabling restores normal behavior from a clean state.
+    enabled = true;
+    target.handleDragEnter(makeDragEvent(fileTypes));
+    expect(onDragChange).toHaveBeenLastCalledWith(true);
+    target.handleDrop(makeDragEvent(fileTypes, [file]));
+    expect(onDrop).toHaveBeenCalledWith([file]);
+  });
+
   it('leave without a matching enter never underflows the counter', () => {
     const onDragChange = vi.fn();
     const target = createFileDropTarget({ onDragChange, onDrop: vi.fn() });

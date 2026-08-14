@@ -23,8 +23,9 @@
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { createPanelFileDropContext } from './panel-file-drop-context.svelte';
+  import type { PanelFileDropHandler } from './panel-file-drop-context.svelte';
   import { setPanelContext } from './panel-context';
-  import { createFileDropTarget } from '$lib/components/chat/input/file-drop';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
@@ -136,9 +137,16 @@
     onDrop: (files) => fileDropHandler.current?.onDrop(files),
   });
 
-  // Clear stale drag state if the handler unregisters mid-drag (tab switch/close).
+  // Clear stale drag state on any handler identity change: unregister mid-drag
+  // (tab switch/close) and direct A→B replacement (agent→agent tab switch where
+  // the new tab registers before the old tab's cleanup runs), so a mid-drag
+  // counter never leaks into the next handler's session.
+  let lastRegisteredHandler: PanelFileDropHandler | null = null;
   $effect(() => {
-    if (!fileDropHandler.current) headerFileDrop.reset();
+    if (fileDropHandler.current !== lastRegisteredHandler) {
+      lastRegisteredHandler = fileDropHandler.current;
+      headerFileDrop.reset();
+    }
   });
 
   function handleHeaderFileDragEnter(e: DragEvent) {

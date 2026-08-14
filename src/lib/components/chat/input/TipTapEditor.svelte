@@ -16,7 +16,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import type { ContextItem } from './context-api';
-  import { isFileDragEvent } from './drop-guard';
+  import { isFileDragEvent } from '$lib/utils/drop-guard';
   import MentionHoverPreview from './MentionHoverPreview.svelte';
   import { createMentionSuggestionRenderer } from './mention-suggestion-renderer';
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';

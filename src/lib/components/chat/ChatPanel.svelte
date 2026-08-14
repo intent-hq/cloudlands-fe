@@ -112,7 +112,7 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
-  import { createFileDropTarget } from './input/file-drop';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
@@ -684,23 +684,30 @@
   // attaches them via SimpleRichInput's pipeline (which renders with
   // externalDropTarget so its own drag handlers/overlay stay off in this
   // context). Gated on isFileDragEvent inside the helper, so text/content and
-  // tab drags are unaffected. If the input is unavailable (e.g. the question
-  // wizard is expanded), the drop is ignored gracefully.
+  // tab drags are unaffected, and on input availability, so the overlay never
+  // invites a drop that would be discarded (e.g. while the question wizard is
+  // expanded and SimpleRichInput is unmounted).
   let isFileDragOverPanel = $state(false);
   const panelFileDrop = createFileDropTarget({
     onDragChange: (dragging) => (isFileDragOverPanel = dragging),
     onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    isEnabled: () => !!inputComponent,
+  });
+
+  // Clear stale drag state if the input unmounts mid-drag (wizard expands).
+  $effect(() => {
+    if (!inputComponent) panelFileDrop.reset();
   });
 
   // The panel header (agent name row) is part of the drop target too: while
-  // this chat is the active tab, register the same pipeline with the
-  // surrounding panel-system Panel (context is null outside a panel, e.g. the
-  // Chief of Staff sidebar). Header drags drive the same overlay via
-  // isFileDragOverHeader.
+  // this chat is the active tab and the input can accept files, register the
+  // same pipeline with the surrounding panel-system Panel (context is null
+  // outside a panel, e.g. the Chief of Staff sidebar). Header drags drive the
+  // same overlay via isFileDragOverHeader.
   const panelFileDropContext = getPanelFileDropContext();
   let isFileDragOverHeader = $state(false);
   $effect(() => {
-    if (!panelFileDropContext || !isActive) return;
+    if (!panelFileDropContext || !isActive || !inputComponent) return;
     const handler = {
       onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
       onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),

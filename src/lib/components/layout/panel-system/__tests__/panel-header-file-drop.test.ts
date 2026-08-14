@@ -79,10 +79,12 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 
+import { flushSync } from 'svelte';
 import Panel from '../Panel.svelte';
 import {
   droppedFiles,
   dragChanges,
+  contextRef,
   resetFileDropSpies,
 } from './mocks/FileDropRegisteringContent.svelte';
 
@@ -187,6 +189,38 @@ describe('panel header file drop', () => {
 
     expect(enter.defaultPrevented).toBe(false);
     expect(dragChanges).toEqual([]);
+    expect(droppedFiles).toHaveLength(0);
+  });
+
+  it('resets stale drag state when the handler is replaced mid-drag (agent→agent tab switch)', async () => {
+    const header = renderHeader('agent');
+    const dataTransfer = fileDragData();
+
+    await fireEvent(header, dragEvent('dragenter', dataTransfer));
+    expect(dragChanges).toEqual([true]);
+
+    // Simulate an agent→agent tab switch where the new tab's handler registers
+    // before the old tab's cleanup runs: handler goes A→B without passing
+    // through null (the ordering the identity-checked unregister tolerates).
+    const replacementDragChanges: boolean[] = [];
+    const replacementDrops: File[][] = [];
+    flushSync(() => {
+      contextRef.current!.register({
+        onDragChange: (dragging) => replacementDragChanges.push(dragging),
+        onDrop: (files) => replacementDrops.push(files),
+      });
+    });
+
+    // The mid-drag counter must not leak: a fresh enter starts a clean session
+    // and reaches the replacement handler with the initial dragging=true.
+    await fireEvent(header, dragEvent('dragenter', dataTransfer));
+    expect(replacementDragChanges.at(-1)).toBe(true);
+
+    await fireEvent(header, dragEvent('drop', dataTransfer));
+    expect(replacementDrops).toHaveLength(1);
+    expect(replacementDragChanges.at(-1)).toBe(false);
+    // The old handler saw nothing after the replacement.
+    expect(dragChanges).toEqual([true]);
     expect(droppedFiles).toHaveLength(0);
   });
 

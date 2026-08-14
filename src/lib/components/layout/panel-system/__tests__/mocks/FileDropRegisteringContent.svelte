@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import type { PanelFileDropContext } from '../../panel-file-drop-context.svelte';
+
   /**
    * PanelContentRenderer stand-in that mirrors ChatPanel's file-drop
    * registration: agent tabs register a handler with the surrounding Panel
@@ -6,9 +8,12 @@
    */
   export const droppedFiles: File[][] = [];
   export const dragChanges: boolean[] = [];
+  /** The surrounding Panel's context, so tests can register replacement handlers. */
+  export const contextRef: { current: PanelFileDropContext | null } = { current: null };
   export function resetFileDropSpies() {
     droppedFiles.length = 0;
     dragChanges.length = 0;
+    contextRef.current = null;
   }
 </script>
 
@@ -19,6 +24,7 @@
   let { tab, isActive = true }: { tab: PanelTab; isActive?: boolean } = $props();
 
   const context = getPanelFileDropContext();
+  contextRef.current = context;
 
   $effect(() => {
     if (!context || !isActive || tab.type !== 'agent') return;
