@@ -1836,9 +1836,15 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
  * waiting on hooks / PR monitors / watched agents), so the FE mirrors the new
  * boolean directly into the workspace entity without a follow-up
  * `workspace.get`. Like the attention/displayStatus handlers, the payload's
- * own `data.workspaceId` wins over the envelope id when present.
+ * own `data.workspaceId` wins over the envelope id when present — and because
+ * the payload is self-sufficient, an envelope whose `workspaceId` was
+ * stripped by a relay still applies (routed before the envelope gate with
+ * `envelopeWorkspaceId: null`).
  */
-function handleWaitingChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+function handleWaitingChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string | null,
+): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const dataWorkspaceId = data.workspaceId;
@@ -1847,7 +1853,7 @@ function handleWaitingChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: s
       ? dataWorkspaceId
       : envelopeWorkspaceId;
   const waiting = data.waiting;
-  if (typeof waiting !== 'boolean') return;
+  if (!workspaceId || typeof waiting !== 'boolean') return;
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
 }
 
@@ -2797,6 +2803,16 @@ export function routeDaemonEventsNotification(
   // also runs before the envelope workspace-id gate below.
   if (type === 'workspace:context-changed') {
     handleContextChangedEvent(event);
+    return;
+  }
+
+  // `workspace:waiting-changed` (§5.1 / §6.5) also carries a self-sufficient
+  // `data.workspaceId`, so an envelope with a stripped workspaceId must not
+  // be gated out. Envelope-carrying events fall through to the gated
+  // side-effect route below (keeping the timeline fan-out); only the
+  // envelope-less shape is handled here.
+  if (type === 'workspace:waiting-changed' && !workspaceIdOf(event)) {
+    handleWaitingChangedEvent(event, null);
     return;
   }
 

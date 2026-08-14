@@ -6973,6 +6973,33 @@ describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', (
     const ws = await readWorkspace();
     expect(ws.waiting).toBe(true);
   });
+
+  it('applies a self-sufficient payload even when the envelope workspaceId is absent', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A relay that strips the envelope workspaceId must not gate out the
+    // event — the payload carries its own workspaceId (§6.7).
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-envelope-id',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
 });
 
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
