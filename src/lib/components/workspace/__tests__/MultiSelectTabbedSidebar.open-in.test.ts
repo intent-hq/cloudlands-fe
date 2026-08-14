@@ -13,6 +13,10 @@ import {
   initialState as daemonHealthInitialState,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { warmImport } from '../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -279,6 +283,27 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('affirms the Files Open in chooser in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+      const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+      const target = view.getByRole('button', { name: /Open in/ });
+      return {
+        ...view,
+        target,
+        assertCapability: async () => {
+          await fireEvent.click(target);
+          await waitFor(() =>
+            expect(view.container.querySelector('.dropdown-content')).toBeTruthy(),
+          );
+          expect(view.container.querySelector('[data-sidebar-launcher="files"]')).toBeTruthy();
+          expect(view.getByText('Copy path')).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('opens the isolated compact Files chooser and routes the installed editor action', async () => {
@@ -580,22 +605,31 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(overflow.className).toContain('justify-start');
   });
 
-  it('pins the coordinator/initial agent and Spec to the first launcher positions', async () => {
-    mocks.agents = [makeAgent('worker'), makeAgent('coordinator', { isInitialAgent: true })];
-    mocks.runningAgentIds.add('worker');
-    mocks.notes = [
-      { id: 'note-1', title: 'Reference', content: '' },
-      { id: 'spec', title: 'Spec', content: '' },
-    ];
-    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
-
-    expect(
-      container.querySelector('[data-sidebar-agent]')?.getAttribute('data-sidebar-agent'),
-    ).toBe('coordinator');
-    expect(
-      container.querySelector('[data-sidebar-context]')?.getAttribute('data-sidebar-context'),
-    ).toBe('spec');
+  it('affirms coordinator and Spec ordering in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      mocks.agents = [makeAgent('worker'), makeAgent('coordinator', { isInitialAgent: true })];
+      mocks.runningAgentIds.add('worker');
+      mocks.notes = [
+        { id: 'note-1', title: 'Reference', content: '' },
+        { id: 'spec', title: 'Spec', content: '' },
+      ];
+      const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+      const view = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+      const target = view.container.querySelector<HTMLElement>('[data-sidebar-agent]')!;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.getAttribute('data-sidebar-agent')).toBe('coordinator');
+          expect(
+            view.container
+              .querySelector('[data-sidebar-context]')
+              ?.getAttribute('data-sidebar-context'),
+          ).toBe('spec');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('orders every member for the launcher and expands overflow to the complete agents list', async () => {

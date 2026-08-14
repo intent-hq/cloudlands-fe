@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
@@ -405,6 +409,25 @@ describe('SimpleRichInput action bar layout', () => {
 
     expect(screen.getByTestId('model-picker').getAttribute('data-show-reasoning')).toBe('true');
     expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+  });
+
+  it('affirms nested composer menus in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+      const target = view.getByTestId('prompt-actions-trigger');
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          const primaryActions = view.container.querySelector('[data-chat-input-primary-actions]');
+          const submitActions = view.container.querySelector('[data-chat-input-submit-actions]');
+          expect(primaryActions?.contains(target)).toBe(false);
+          expect(submitActions?.contains(target)).toBe(true);
+          expect(view.getByTestId('message-input').className).toContain('focus-within:border-ring');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('keeps the model left and places the prompt menu before dictation on the right', async () => {

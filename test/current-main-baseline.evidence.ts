@@ -32,6 +32,7 @@ export type SemanticEvidence = {
   observedStates: string[];
   testFiles: string[];
   stateAssertions: Record<string, string>;
+  configuredStates: Record<string, string[]>;
   status: 'passed';
 };
 
@@ -42,11 +43,6 @@ export type EvidenceRow = BaselineRow & {
   stateEvidence: Record<string, string[]>;
 };
 
-type SemanticSelector = { states: string[]; assertionIncludes: string };
-const selector = (states: string[], assertionIncludes: string): SemanticSelector => ({
-  states,
-  assertionIncludes,
-});
 const visualStates = [
   'light',
   'dark',
@@ -59,29 +55,31 @@ const visualStates = [
   'keyboard',
   'reduced-motion',
 ] as const;
+const visualStateSet = new Set<string>(visualStates);
+type SemanticSelector = {
+  states: string[];
+  assertionIncludes: string;
+  configuredStates: string[];
+};
+const selector = (
+  states: string[],
+  assertionIncludes: string,
+  configuredStates = states.filter((state) => !visualStateSet.has(state)),
+): SemanticSelector => ({ states, assertionIncludes, configuredStates });
 
 export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'CHAT-01': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'zoom-200',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'renders the attribution header for an agent_message user row',
+      [...visualStates],
+      'affirms attributed message hierarchy and density in every required visual state',
+      [...visualStates],
     ),
   ],
   'CHAT-03': [
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
       'renders the compact legacy spinner and Thinking row',
+      ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
     selector(['cleanup'], 'clears failed presentation when a new stream starts'),
@@ -92,6 +90,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(
       ['mounted', 'runtime-success', 'keyboard'],
       'renders the compact legacy spinner and Thinking row',
+      ['mounted', 'runtime-success', 'keyboard'],
     ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
     selector(
@@ -108,7 +107,9 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['mounted', 'development'], 'registers chat.subscribe, emits the seq-0 snapshot'),
     selector(['runtime-success'], 'hydrates the transcript from the seq-0 snapshot emit'),
     selector(['runtime-error'], 'recovers from a rejected chat.subscribe via a delayed retry'),
-    selector(['keyboard'], 'folds added/updated block deltas into the owning message'),
+    selector(['keyboard'], 'folds added/updated block deltas into the owning message', [
+      'keyboard',
+    ]),
     selector(['cleanup'], 'stops emitting and unsubscribes after dispose'),
     selector(['packaged'], 'ignores stale duplicate deltas without resnapshotting'),
     selector(['reconnect'], 're-registers on transport reconnect'),
@@ -119,12 +120,9 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'CHAT-06': [
     selector(
-      ['light', 'dark', 'wide', 'narrow', 'zoom-100', 'zoom-200', 'hover', 'focus', 'keyboard'],
-      'uses the emphasized 280ms composer-to-bubble animation',
-    ),
-    selector(
-      ['reduced-motion'],
-      'skips the overlay under reduced motion and contains long content',
+      [...visualStates],
+      'affirms the composer-to-bubble transition in every required visual state',
+      [...visualStates],
     ),
     selector(['success'], 'uses the emphasized 280ms composer-to-bubble animation'),
     selector(['failure'], 'settles rejected animations without leaking styles'),
@@ -136,7 +134,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       'uses the emphasized 280ms composer-to-bubble animation',
     ),
     selector(['runtime-error', 'failure'], 'settles rejected animations without leaking styles'),
-    selector(['keyboard'], 'settles immediately when the page becomes hidden'),
+    selector(['keyboard'], 'settles immediately when the page becomes hidden', ['keyboard']),
     selector(['cleanup', 'cancel'], 'aborts immediately and restores exact styles'),
     selector(
       ['teardown'],
@@ -145,36 +143,16 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'CHAT-08': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'zoom-200',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'wires the canonical user timestamp into the shared top-right overlay',
+      [...visualStates],
+      'affirms message actions and timestamps in every required visual state',
+      [...visualStates],
     ),
   ],
   'CHAT-09': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'zoom-200',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'contains long wake details for narrow and zoomed transcript layouts',
+      [...visualStates],
+      'affirms wake disclosure containment in every required visual state',
+      [...visualStates],
     ),
     selector(
       ['collapsed', 'expanded'],
@@ -184,36 +162,16 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'CHAT-10': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'zoom-200',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'matches compact event geometry at 220 px and 2× zoom',
+      [...visualStates],
+      'affirms attributed message hierarchy and density in every required visual state',
+      [...visualStates],
     ),
   ],
   'CHAT-11': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'zoom-200',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'renders a collapsed hook wake card and strips the prefix when expanded',
+      [...visualStates],
+      'affirms wake disclosure containment in every required visual state',
+      [...visualStates],
     ),
     selector(
       ['collapsed', 'expanded'],
@@ -225,19 +183,22 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['expanded', 'error', 'output'], 'preserves completed and error disclosure semantics'),
   ],
   'CHAT-40': [
+    selector([...visualStates], 'affirms nested composer menus in every required visual state', [
+      ...visualStates,
+    ]),
+    selector(['escape'], 'cancels enhancement with Escape'),
     selector(
-      ['light', 'dark', 'wide', 'narrow', 'zoom-100', 'zoom-200', 'hover', 'focus'],
-      'keeps the model left and places the prompt menu',
-    ),
-    selector(['keyboard', 'escape'], 'cancels enhancement with Escape'),
-    selector(
-      ['reduced-motion', 'focus-restore'],
+      ['focus-restore'],
       'shows Undo enhance after success and restores the original prompt',
     ),
     selector(['pointer'], 'runs enhancement from the menu'),
   ],
   'WORKSPACE-01': [
-    selector([...visualStates], 'renders completed agent activity with the agent name'),
+    selector(
+      [...visualStates],
+      'affirms the latest activity preview in every required visual state',
+      [...visualStates],
+    ),
     selector(['empty'], 'strictly caps a non-expandable preview'),
   ],
   'WORKSPACE-02': [
@@ -256,19 +217,37 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(
       ['keyboard'],
       'renders the agent avatar action as a keyboard-accessible sibling control',
+      ['keyboard'],
     ),
   ],
-  'WORKSPACE-08': [selector([...visualStates], 'renders the workspace branch and trunk branch')],
-  'WORKSPACE-09': [selector([...visualStates], 'renders the workspace branch and trunk branch')],
+  'WORKSPACE-08': [
+    selector(
+      [...visualStates],
+      'affirms repository branch metadata and alignment in every required visual state',
+      [...visualStates],
+    ),
+  ],
+  'WORKSPACE-09': [
+    selector(
+      [...visualStates],
+      'affirms repository branch metadata and alignment in every required visual state',
+      [...visualStates],
+    ),
+  ],
   'WORKSPACE-10': [
     selector(
       [...visualStates],
-      'preserves pinned presentation in repository, status, and searched rows',
+      'affirms the pinned workspace indicator in every required visual state',
+      [...visualStates],
     ),
     selector(['activity-precedence'], 'sorts hydrated pinned workspaces to the top'),
   ],
   'WORKSPACE-11': [
-    selector([...visualStates], 'does not close when the pointerdown lands on the nav rail'),
+    selector(
+      [...visualStates],
+      'affirms hover-card placement and dismissal in every required visual state',
+      [...visualStates],
+    ),
   ],
   'WORKSPACE-14': [
     selector(['mixed-statuses'], 'orders every member for the launcher'),
@@ -277,14 +256,16 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-17': [
     selector(
       [...visualStates],
-      'keeps the marked initial coordinator first even when another agent is running',
+      'affirms coordinator and Spec ordering in every required visual state',
+      [...visualStates],
     ),
     selector(['mixed-agents'], 'keeps the marked initial coordinator first'),
   ],
   'WORKSPACE-18': [
     selector(
       [...visualStates],
-      'pins the coordinator/initial agent and Spec to the first launcher positions',
+      'affirms coordinator and Spec ordering in every required visual state',
+      [...visualStates],
     ),
     selector(['open'], 'opens each compact agent, note, and change exactly once'),
   ],
@@ -305,7 +286,8 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-28': [
     selector(
       [...visualStates],
-      'right-aligns intrinsic statuses before a stable close reservation',
+      'affirms tab status and full-surface activation in every required visual state',
+      [...visualStates],
     ),
     selector(
       ['healthy', 'active', 'failed', 'waiting', 'attention', 'overflow'],
@@ -320,7 +302,8 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-29': [
     selector(
       [...visualStates],
-      'uses one full-rectangle tab target for hydrated and loading workspaces',
+      'affirms tab status and full-surface activation in every required visual state',
+      [...visualStates],
     ),
     selector(
       ['close'],
@@ -330,20 +313,10 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'WORKSPACE-30': [
     selector(
-      [
-        'light',
-        'dark',
-        'wide',
-        'narrow',
-        'zoom-100',
-        'hover',
-        'focus',
-        'keyboard',
-        'reduced-motion',
-      ],
-      'counter-scales the 1x zoom band to 35px',
+      [...visualStates],
+      'affirms titlebar border-box geometry in every required visual state',
+      [...visualStates],
     ),
-    selector(['zoom-200'], 'counter-scales the 2x zoom band to 17.5px'),
   ],
   'WORKSPACE-31': [
     selector(['route'], 'toggles between single and column workspace views'),
@@ -359,7 +332,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       'uses the edge panel when the layout has no valid focus',
     ),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
-    selector(['keyboard'], 'cycles through tabs backward'),
+    selector(['keyboard'], 'cycles through tabs backward', ['keyboard']),
     selector(['next'], 'returns the next local panel and hands off at the layout boundary'),
     selector(['previous'], 'cycles through tabs backward'),
     selector(['nested'], 'expands horizontal ancestors in a nested layout'),
@@ -371,7 +344,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
     selector(['runtime-success'], 'uses the edge panel when the layout has no valid focus'),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
-    selector(['keyboard'], 'cycles through tabs forward'),
+    selector(['keyboard'], 'cycles through tabs forward', ['keyboard']),
     selector(['indexed'], 'initializeLayout > sets root, panels, and focusedPanelId'),
     selector(['identified'], 'retargets only the identified tab'),
     selector(
@@ -380,19 +353,18 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
   ],
   'WORKSPACE-39': [
-    selector([...visualStates], 'renders compact workspace columns at their 360px content width'),
     selector(
-      ['single-to-columns', 'columns-to-single'],
-      'renders compact workspace columns at their 360px content width',
+      [...visualStates, 'single-to-columns', 'columns-to-single'],
+      'affirms heading-band geometry and bidirectional column choreography in every required visual state',
+      [...visualStates, 'single-to-columns', 'columns-to-single'],
     ),
   ],
   'WORKSPACE-40': [
-    selector([...visualStates], 'supports keyboard and pointer drag reordering'),
     selector(
-      ['single-to-columns'],
-      'renders compact workspace columns at their 360px content width',
+      [...visualStates, 'single-to-columns', 'columns-to-single'],
+      'affirms heading-band geometry and bidirectional column choreography in every required visual state',
+      [...visualStates, 'single-to-columns', 'columns-to-single'],
     ),
-    selector(['columns-to-single'], 'supports keyboard and pointer drag reordering'),
   ],
   'WORKSPACE-43': [
     selector(
@@ -403,7 +375,9 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['runtime-success', 'medium-type'],
       'resolves adjacent browser and note panels to responsive defaults',
     ),
-    selector(['keyboard'], 'uses the usable viewport when resolving a responsive note column'),
+    selector(['keyboard'], 'uses the usable viewport when resolving a responsive note column', [
+      'keyboard',
+    ]),
   ],
   'WORKSPACE-44': [
     selector(['mounted', 'resize'], "settles panels 1/2/3 without replay in 'tab' mode at 1× zoom"),
@@ -412,7 +386,9 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['cleanup'], "settles panels 1/2/3 without replay in 'columns' mode at 2× zoom"),
     selector(['settlement'], "settles panels 1/2/3 without replay in 'stacked' mode at 2× zoom"),
     selector(['reload'], 'persists explicit pixels and restores them through production storage'),
-    selector(['keyboard'], "settles panels 1/2/3 without replay in 'tab' mode at 1× zoom"),
+    selector(['keyboard'], "settles panels 1/2/3 without replay in 'tab' mode at 1× zoom", [
+      'keyboard',
+    ]),
   ],
   'WORKSPACE-45': [
     selector(
@@ -425,13 +401,15 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   'WORKSPACE-46': [
     selector(
       [...visualStates],
-      'keeps a vertical 16px resize target while reporting horizontal drag deltas',
+      'affirms conditional resize-handle visibility in every required visual state',
+      [...visualStates],
     ),
   ],
   'WORKSPACE-47': [
     selector(
       [...visualStates],
-      'grows a narrow five-panel canvas into overflow and restores its explicit width',
+      'affirms dominant-panel expand and restore in every required visual state',
+      [...visualStates],
     ),
     selector(['root'], 'keeps 2–5 siblings mounted and interactive for target +0'),
     selector(['nested'], 'keeps 2–5 siblings mounted and interactive for target 1'),
@@ -439,12 +417,9 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'WORKSPACE-48': [
     selector(
-      [...visualStates],
-      'moves between differently sized slots without scaling panel contents',
-    ),
-    selector(
-      ['first-frame'],
-      'moves between differently sized slots without scaling panel contents',
+      [...visualStates, 'first-frame'],
+      'affirms adjacent-panel first-frame translation in every required visual state',
+      [...visualStates, 'first-frame'],
     ),
     selector(['reorder'], 'captures positions by stable panel id'),
   ],
@@ -452,7 +427,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['mounted', 'cleanup'], 'workspaceUnmounted > does NOT clear panel layout state'),
     selector(['runtime-success'], 'initializeLayout > sets root, panels, and focusedPanelId'),
     selector(['runtime-error'], 'rejects a tab owned by another workspace'),
-    selector(['keyboard'], 'cycles through tabs forward'),
+    selector(['keyboard'], 'cycles through tabs forward', ['keyboard']),
     selector(['reuse'], 'reuses existing singleton tab'),
     selector(
       ['reserved-placeholder'],
@@ -467,24 +442,24 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['recovery'], 'passes the edge delta through nested rightmost horizontal branches'),
   ],
   'REMAINING-03': [
-    selector(
-      [...visualStates],
-      'renders the short crossRepoDisplay prefix and a hover status tooltip on the PR row',
-    ),
+    selector([...visualStates], 'affirms the linked PR action in every required visual state', [
+      ...visualStates,
+    ]),
     selector(['route'], 'triggerCreatePR calls backgroundGitActionsService.createPR'),
   ],
   'REMAINING-04': [
     selector(
-      ['light', 'dark', 'wide', 'editor'],
+      [...visualStates],
+      'affirms the Files Open in chooser in every required visual state',
+      [...visualStates],
+    ),
+    selector(
+      ['editor'],
       'opens the isolated compact Files chooser and routes the installed editor action',
     ),
+    selector(['other'], 'keeps plain +N text immediately after the contained icon stack'),
     selector(
-      ['narrow', 'zoom-100', 'zoom-200', 'reduced-motion'],
-      'uses one contained horizontal row with plain overflow text at narrow zoomed sizes',
-    ),
-    selector(['hover', 'other'], 'keeps plain +N text immediately after the contained icon stack'),
-    selector(
-      ['focus', 'keyboard', 'focus-restore'],
+      ['focus-restore'],
       'uses contained outline-free keyboard focus states for every preview target',
     ),
     selector(
@@ -509,38 +484,30 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(
       ['keyboard', 'stopped'],
       'dismissing a previously-running tab calls script.stop and refetches the list',
+      ['keyboard', 'stopped'],
     ),
     selector(['cleanup'], 'releases active resize listeners and global body styles when destroyed'),
   ],
   'REMAINING-12': [
-    selector(
-      ['light', 'wide', 'zoom-100', 'hover'],
-      'renders cow mode inside the repository hover card',
-    ),
-    selector(['dark', 'zoom-200'], 'renders worktree mode inside the repository hover card'),
-    selector(['narrow', 'keyboard'], 'omits checkout details when checkoutMode is missing'),
-    selector(['focus'], 'renders direct mode inside the repository hover card'),
-    selector(['reduced-motion'], 'keeps size out of the second line and mode details'),
+    selector([...visualStates], 'affirms repository pill contrast in every required visual state', [
+      ...visualStates,
+    ]),
   ],
   'REMAINING-13': [
     selector(
-      ['light', 'wide', 'narrow', 'zoom-100', 'zoom-200', 'hover'],
-      'narrow zoom-like viewport (light theme)',
-    ),
-    selector(['dark', 'focus'], 'narrow zoom-like viewport (dark theme)'),
-    selector(
-      ['keyboard', 'reduced-motion'],
-      'keeps keyboard and dismissal behavior inside the open dialog',
+      [...visualStates],
+      'affirms model picker bounds and options in every required visual state',
+      [...visualStates],
     ),
   ],
   'REMAINING-14': [
     selector(
-      ['light', 'wide', 'narrow', 'zoom-100', 'zoom-200', 'hover', 'pointer'],
-      'narrow zoom-like viewport (light theme)',
+      [...visualStates],
+      'affirms model picker bounds and options in every required visual state',
+      [...visualStates],
     ),
-    selector(['dark', 'focus'], 'narrow zoom-like viewport (dark theme)'),
     selector(
-      ['keyboard', 'reduced-motion', 'dismiss'],
+      ['pointer', 'dismiss'],
       'keeps keyboard and dismissal behavior inside the open dialog',
     ),
     selector(['selection'], 'selects models in both modes without bubbling'),
@@ -641,6 +608,16 @@ export function createSemanticEvidence(
       throw new Error(`${row.row} has semantic states without a passing semantic assertion`);
     }
     const selectors = semanticSelectors[row.row] ?? [];
+    for (const evidenceSelector of selectors) {
+      const unsupported = evidenceSelector.states.filter(
+        (state) => !evidenceSelector.configuredStates.includes(state),
+      );
+      if (unsupported.length > 0) {
+        throw new Error(
+          `${row.row} selector "${evidenceSelector.assertionIncludes}" does not configure: ${unsupported.join(', ')}`,
+        );
+      }
+    }
     const selectorStates = selectors.flatMap(({ states }) => states);
     if (new Set(selectorStates).size !== selectorStates.length) {
       throw new Error(`${row.row} has duplicate semantic selector states`);
@@ -666,8 +643,16 @@ export function createSemanticEvidence(
         return states.map((state) => [state, matches[0]]);
       }),
     );
+    const configuredByState = new Map(
+      selectors.flatMap(({ states, configuredStates }) =>
+        states.map((state) => [state, [...configuredStates]] as const),
+      ),
+    );
     const stateAssertions = Object.fromEntries(
       observedStates.map((state) => [state, assertionByState.get(state)]),
+    );
+    const configuredStates = Object.fromEntries(
+      observedStates.map((state) => [state, configuredByState.get(state) ?? []]),
     );
     return [
       {
@@ -677,6 +662,7 @@ export function createSemanticEvidence(
         observedStates: [...observedStates],
         testFiles,
         stateAssertions,
+        configuredStates,
         status: 'passed' as const,
       },
     ];

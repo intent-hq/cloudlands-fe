@@ -17,6 +17,10 @@ import {
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,
@@ -76,6 +80,31 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
   afterEach(() => {
     appStore.dispatch(setPinnedWorkspaceIds([]));
     appStore.dispatch(setAllSpacesViewMode('recent'));
+  });
+
+  it('affirms the pinned workspace indicator in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = render(AllWorkspacesCardHarness, {
+        props: {
+          setup: () => {
+            seedWorkspaces();
+            appStore.dispatch(setWorkspaceHasLoaded(true));
+            appStore.dispatch(setPinnedWorkspaceIds(['ws-oldest']));
+          },
+        },
+      });
+      await waitFor(() =>
+        expect(renderedCard('ws-oldest').getAttribute('data-pinned')).toBe('true'),
+      );
+      const target = renderedCard('ws-oldest');
+      target.tabIndex = 0;
+      return {
+        ...view,
+        target,
+        assertCapability: () => expect(target.getAttribute('data-pinned')).toBe('true'),
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('sorts hydrated pinned workspaces to the top on initial render', async () => {
