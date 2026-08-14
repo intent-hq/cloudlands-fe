@@ -1296,7 +1296,7 @@
     use:measurePanelViewportWidth
     class={cn(
       'flex-1 min-h-0 overflow-y-hidden scrollbar-none',
-      contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+      contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
     )}
     data-testid="panel-workspace-inset"
     use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}

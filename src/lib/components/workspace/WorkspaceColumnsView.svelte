@@ -42,6 +42,7 @@
     scrollWorkspacePanelIntoView,
   } from './utils/workspace-column-scroll';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
+  import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { m } from '$shared/paraglide/messages.js';
 
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
@@ -409,7 +410,10 @@
             480;
           return (
             (sidebarWidths[workspaceId] ?? 360) +
-            (panelCount > 0 ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) : 0)
+            (panelCount > 0
+              ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
+                CONTAINED_PANEL_INLINE_CHROME
+              : 0)
           );
         }),
       )}
