@@ -18,6 +18,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
+  import OpenPanelIndicator from './OpenPanelIndicator.svelte';
 
   interface Props {
     item: ContextItem;
@@ -27,6 +28,7 @@
     onClick?: (item: ContextItem) => void;
     onExternalOpen?: (item: ContextItem) => void;
     onDelete?: (item: ContextItem) => void;
+    openPanelCount?: number;
   }
 
   let {
@@ -37,6 +39,7 @@
     onClick,
     onExternalOpen,
     onDelete,
+    openPanelCount = 0,
   }: Props = $props();
 
   // Display text based on item type
@@ -153,6 +156,7 @@
   oncontextmenu={handleContextMenu}
   role="button"
   tabindex="0"
+  aria-current={isActive ? 'page' : undefined}
 >
   <!-- Provider Icon -->
   <div class="w-5 h-5 rounded flex items-center justify-center shrink-0">
@@ -177,6 +181,8 @@
       <div class="text-xs text-subtle truncate">{subtitle()}</div>
     {/if}
   </div>
+
+  <OpenPanelIndicator count={openPanelCount} active={isActive} />
 
   <!-- Action buttons -->
   <div

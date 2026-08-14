@@ -10,7 +10,9 @@
   import { loadChatTranscript } from '$features/agent/chat-read-service';
   import {
     selectActiveTab,
+    selectAllTabs,
     selectFocusedPanelId,
+    getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import AuggieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -124,6 +126,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
+  import OpenPanelIndicator from './sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -400,6 +403,7 @@
   const panelLayoutIdStore = writable(panelLayoutId);
   $effect(() => panelLayoutIdStore.set(panelLayoutId));
   const activeTab$ = selectActiveTab(panelLayoutIdStore);
+  const allPanelTabs$ = selectAllTabs(panelLayoutIdStore);
   const focusedContentType = $derived($activeTab$?.type ?? null);
   const focusedContentNoteId = $derived($activeTab$?.noteId ?? null);
   const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
@@ -465,6 +469,30 @@
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
+
+  function getAgentPanelState(agentId: string) {
+    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
+      type: 'agent',
+      agentId,
+      workspaceId,
+    });
+  }
+
+  function getNotePanelState(noteId: string) {
+    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
+      type: 'note',
+      noteId,
+      workspaceId,
+    });
+  }
+
+  function getChangePanelState(diffPath: string) {
+    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
+      type: 'diff',
+      diffPath,
+      workspaceId,
+    });
+  }
 
   function handleOpenAgentInPanel(
     agentId: string,
@@ -1021,6 +1049,9 @@
                             loading={$agentsLoading}
                             runningAgentIds={runningLauncherAgents.map((agent) => agent.id)}
                             selectedAgentId={effectiveSelectedAgentId}
+                            {workspaceId}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
                             onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
                           />
                         </div>
@@ -1034,6 +1065,8 @@
                             onOpenAgent={handleOpenAgentInPanel}
                             {onCreateNote}
                             loading={$notesLoading$}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
                             showAddSection={false}
                           />
                         </div>
@@ -1056,6 +1089,8 @@
                               onOpenFullPanel={onAcceptChanges}
                               onOpenNote={handleOpenNoteInPanel}
                               onOpenCodeReview={handleOpenCodeReviewInPanel}
+                              openPanelTabs={$allPanelTabs$}
+                              activePanelTab={$activeTab$}
                             />
                           </div>
                         </div>
@@ -1121,6 +1156,8 @@
                             onSelectAgent={handleOpenAgentInPanel}
                             showOnlyChanged={showOnlyChangedFiles}
                             searchQuery={fileSearchQuery}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
                           />
                         </div>
                       {:else if tabId === 'browser'}
@@ -1184,6 +1221,7 @@
                   >
                     {#if tab.id === 'agents'}
                       {#each launcherAgents as { agent, isRunning, preview }, index (agent.id)}
+                        {@const panelState = getAgentPanelState(agent.id)}
                         <SidebarLauncherHoverCard
                           title={agent.name ||
                             `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}
@@ -1231,6 +1269,11 @@
                                 size={22}
                                 state={isRunning ? 'running' : 'idle'}
                               />
+                              <OpenPanelIndicator
+                                count={panelState.count}
+                                active={panelState.isActive}
+                                overlay
+                              />
                             </span>
                           </Button>
                         </SidebarLauncherHoverCard>
@@ -1254,6 +1297,7 @@
                       {/if}
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
+                        {@const panelState = getNotePanelState(note.id as string)}
                         <SidebarLauncherHoverCard
                           title={note.title || m.chat_mentions_untitledNote_label()}
                           rows={[{ text: getNoteLauncherPreview(note) }]}
@@ -1274,6 +1318,11 @@
                           >
                             <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
                               <Fa icon={faNote} class="size-4.5!" />
+                              <OpenPanelIndicator
+                                count={panelState.count}
+                                active={panelState.isActive}
+                                overlay
+                              />
                             </span>
                           </Button>
                         </SidebarLauncherHoverCard>
@@ -1294,6 +1343,7 @@
                     {:else if tab.id === 'changes'}
                       {#each launcherChanges as change, index (change.id)}
                         {@const changePath = change.relativePath || change.file}
+                        {@const panelState = getChangePanelState(changePath)}
                         <Tooltip content={changePath} side="top" delayDuration={200}>
                           <Button
                             variant="plain"
@@ -1312,6 +1362,11 @@
                           >
                             <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
                               <Fa icon={faNote} class="size-4.5!" />
+                              <OpenPanelIndicator
+                                count={panelState.count}
+                                active={panelState.isActive}
+                                overlay
+                              />
                             </span>
                           </Button>
                         </Tooltip>

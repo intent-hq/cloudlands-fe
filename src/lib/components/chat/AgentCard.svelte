@@ -60,6 +60,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
+  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     agentId: string;
@@ -101,6 +102,8 @@
     provider?: string;
     /** Optional actions rendered in the header row, before the relative timestamp */
     headerActions?: Snippet;
+    openPanelCount?: number;
+    activeInPanel?: boolean;
   }
 
   let {
@@ -122,6 +125,8 @@
     isCompleted = false,
     provider = undefined,
     headerActions,
+    openPanelCount = 0,
+    activeInPanel = false,
   }: Props = $props();
 
   const logger = createLogger('AgentCard');
@@ -699,6 +704,7 @@
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
+            <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
             {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
               <LineChangeStats
                 additions={$lineChanges$.additions}

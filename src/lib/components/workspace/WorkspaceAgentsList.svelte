@@ -22,6 +22,8 @@
     shouldVirtualizeWorkspaceAgentRows,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   interface Props {
     agents?: AgentSession[];
@@ -31,6 +33,9 @@
     onCreateWithSpecialist?: (specialistId: string | null) => void;
     runningAgentIds?: string[];
     loading?: boolean;
+    workspaceId?: string;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -41,6 +46,9 @@
     onCreateWithSpecialist,
     runningAgentIds = [],
     loading = false,
+    workspaceId = '',
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
@@ -113,16 +121,27 @@
   function handleAgentClick(agentId: string) {
     onSelect?.({ agentId });
   }
+
+  function getAgentPanelState(agentId: string) {
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'agent',
+      agentId,
+      workspaceId,
+    });
+  }
 </script>
 
 {#snippet agentTree(agentList: AgentSession[])}
   {#each agentList as agent (agent.id)}
+    {@const panelState = getAgentPanelState(agent.id)}
     <LazyAgentCard
       cacheKey={agent.id}
       agentId={agent.id}
       agentName={agent.name}
       isBackground={isBackgroundAgent(agent)}
       selected={agent.id === selectedAgentId}
+      openPanelCount={panelState.count}
+      activeInPanel={panelState.isActive}
       onclick={() => handleAgentClick(agent.id)}
     />
 
@@ -185,6 +204,7 @@
         {:else if runningChildren.length > 0}
           <div class="flex flex-col gap-0.5">
             {#each runningChildren as child (child.id)}
+              {@const panelState = getAgentPanelState(child.id)}
               <div transition:slide={{ axis: 'y', duration: 150 }}>
                 <LazyAgentCard
                   cacheKey={child.id}
@@ -192,6 +212,8 @@
                   agentName={child.name}
                   isBackground={isBackgroundAgent(child)}
                   selected={child.id === selectedAgentId}
+                  openPanelCount={panelState.count}
+                  activeInPanel={panelState.isActive}
                   onclick={() => handleAgentClick(child.id)}
                 />
               </div>
@@ -233,12 +255,15 @@
       getKey={(agent: AgentSession) => agent.id}
     >
       {#snippet children({ item: agent }: { item: AgentSession })}
+        {@const panelState = getAgentPanelState(agent.id)}
         <div class="w-full">
           <AgentCard
             agentId={agent.id}
             agentName={agent.name}
             isBackground={false}
             selected={agent.id === selectedAgentId}
+            openPanelCount={panelState.count}
+            activeInPanel={panelState.isActive}
             hidePreview
             onclick={() => handleAgentClick(agent.id)}
           />
@@ -327,6 +352,7 @@
 
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
+      {@const panelState = getAgentPanelState(agent.id)}
       {#if showBackgroundAgents || isAgentRunning(agent.id)}
         <div transition:slide={{ axis: 'y', duration: 150 }}>
           <LazyAgentCard
@@ -335,6 +361,8 @@
             agentName={agent.name}
             isBackground
             selected={agent.id === selectedAgentId}
+            openPanelCount={panelState.count}
+            activeInPanel={panelState.isActive}
             onclick={() => handleAgentClick(agent.id)}
           />
         </div>

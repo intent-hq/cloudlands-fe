@@ -95,6 +95,12 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectActiveTab: mocks.selector(null),
   selectAllTabs: mocks.selector([]),
   selectFocusedPanelId: mocks.selector(null),
+  getPanelTabOpenState: () => ({
+    count: 0,
+    isOpen: false,
+    isActive: false,
+    isOpenElsewhere: false,
+  }),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectWorkspaceScriptEntries: mocks.selector([]),

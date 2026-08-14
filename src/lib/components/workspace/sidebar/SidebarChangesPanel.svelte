@@ -85,6 +85,9 @@
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import OpenPanelIndicator from './OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -98,6 +101,8 @@
     onOpenNote?: (noteId: string) => void;
     /** Callback to open the code review panel */
     onOpenCodeReview?: () => void;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -110,6 +115,8 @@
     onOpenNote,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCodeReview,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -630,6 +637,13 @@
     appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
   }
 
+  const localChangesPanelState = $derived(
+    getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'local-changes',
+      workspaceId,
+    }),
+  );
+
   // Multi-select state for bulk staging/unstaging
   // Keys are "{staged}:{path}" to distinguish between same file in staged vs unstaged
   let selectedFiles = $state(new Set<string>());
@@ -1107,6 +1121,10 @@
                           count: formatInteger(totalFilesChanged),
                         })}
                   </span>
+                  <OpenPanelIndicator
+                    count={localChangesPanelState.count}
+                    active={localChangesPanelState.isActive}
+                  />
                   <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
                 </div>
               </button>
@@ -1156,6 +1174,8 @@
               {isWorkspaceSwitching}
               {onOpenChange}
               {onOpenNote}
+              {openPanelTabs}
+              {activePanelTab}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {

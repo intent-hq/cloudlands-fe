@@ -5,18 +5,19 @@
    */
   import Fa from 'svelte-fa';
   import {
-  faPlus,
-  faMinus,
-  faRotateLeft,
-  faFileAlt,
-  faArrowUpRightFromSquare,
-} from '@fortawesome/free-solid-svg-icons';
+    faPlus,
+    faMinus,
+    faRotateLeft,
+    faFileAlt,
+    faArrowUpRightFromSquare,
+  } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import type { UIFileChange } from './types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
+  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     file: UIFileChange;
@@ -40,6 +41,8 @@
     onRevert?: (path: string) => void;
     /** Callback to open the file in the external editor (e.g., VS Code) */
     onOpenFile?: (path: string) => void;
+    openPanelCount?: number;
+    activeInPanel?: boolean;
   }
 
   let {
@@ -58,6 +61,8 @@
     onUnstage,
     onRevert,
     onOpenFile,
+    openPanelCount = 0,
+    activeInPanel = false,
   }: Props = $props();
 
   // Context menu state
@@ -192,6 +197,7 @@
 >
   <button
     type="button"
+    aria-current={activeInPanel ? 'page' : undefined}
     class="flex-1 min-w-0 pr-2 py-0.5 flex items-center gap-1.5 rounded transition-colors cursor-pointer focus:ring-0 focus:outline-0"
     onclick={(e: MouseEvent) => {
       // If shift is pressed, handle as selection
@@ -218,12 +224,15 @@
         <span class="text-ui text-subtle truncate">{dirPath}</span>
       {/if}
     </div>
+    <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
   </button>
 
   <!-- Action buttons container - shown on hover -->
   {#if hasActions}
     <div
-      class="absolute flex items-center right-0 top-1/2 transform -translate-y-1/2 {active || selected || focused
+      class="absolute flex items-center right-0 top-1/2 transform -translate-y-1/2 {active ||
+      selected ||
+      focused
         ? 'bg-background'
         : 'bg-sidebar'} opacity-0 group-hover/row:opacity-100 transition-transform translate-x-1 group-hover/row:translate-x-0 pointer-events-none group-hover/row:pointer-events-auto"
     >

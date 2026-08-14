@@ -16,7 +16,11 @@
   import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectActiveTab,
+    getPanelTabOpenState,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { handleLink } from '$features/navigation/link-handler';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -43,6 +47,8 @@
     loading?: boolean;
     showAddSection?: boolean;
     class?: string;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -56,6 +62,8 @@
     loading = false,
     showAddSection = true,
     class: className,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   // Picker modal state (legacy - for ContextPickerModal)
@@ -108,6 +116,22 @@
   function isItemActive(item: ContextItem): boolean {
     if (!focusedContextItemId) return false;
     return focusedContextItemId === item.id;
+  }
+
+  function getItemPanelState(item: ContextItem) {
+    if (item.type === 'note' && 'noteId' in item) {
+      return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+        type: 'note',
+        noteId: item.noteId,
+        workspaceId,
+      });
+    }
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'browser',
+      contextItemId: item.id,
+      browserUrl: item.url,
+      workspaceId,
+    });
   }
 
   // Handle opening URLs in external browser (explicit "Open in Browser" action)
@@ -296,15 +320,19 @@
       {onReorderNotes}
       onCreateNote={undefined}
       {loading}
+      {openPanelTabs}
+      {activePanelTab}
       flush
     />
 
     <!-- Standalone context items (rendered in same list flow) -->
     {#if $topLevelItems$.length > 0}
       {#each $topLevelItems$ as item (item.id)}
+        {@const panelState = getItemPanelState(item)}
         <ContextItemRow
           {item}
-          isActive={isItemActive(item)}
+          isActive={panelState.isActive || isItemActive(item)}
+          openPanelCount={panelState.count}
           onClick={handleContextItemClick}
           onExternalOpen={handleExternalOpen}
           onDelete={(item) => appStore.dispatch(removeContextItem(workspaceId, item.id))}
