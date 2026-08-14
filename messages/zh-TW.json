@@ -5764,6 +5764,8 @@
   "settings_agentFeatures_prMonitorDebounce_save": "儲存",
   "settings_agentFeatures_prMonitorDebounce_saving": "儲存中…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "請輸入 10 到 86400 秒之間的整數。",
+  "settings_agentFeatures_taskGraph_label": "任務圖協調",
+  "settings_agentFeatures_taskGraph_description": "向新的代理工作階段教授任務圖協調工作流程(批次委派、任務關聯、解除封鎖喚醒);預設關閉",
   "chat_monitoredPrs_row_ariaLabel": "監控中的提取請求",
   "chat_monitoredPrs_monitoring_label": "正在監控 PR #{number}：{title}",
   "chat_monitoredPrs_monitoringCrossRepo_label": "正在監控 PR {repo} #{number}：{title}",

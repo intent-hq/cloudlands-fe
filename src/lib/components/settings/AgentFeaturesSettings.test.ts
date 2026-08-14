@@ -42,26 +42,33 @@ const FEATURE_PATHS = [
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
+  'agentFeatures.taskGraph',
 ];
 
 describe('AgentFeaturesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default daemon state (PROTOCOL §5.12 settings.list entries): all ten on
-    mocks.mockSettingsList.mockResolvedValue(FEATURE_PATHS.map((path) => ({ path, value: true })));
+    // Default daemon state (PROTOCOL §5.12 settings.list entries): all on
+    // except taskGraph, the one default-off opt-in (intent-hq/monorepo#2445)
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({ path, value: path !== 'agentFeatures.taskGraph' })),
+    );
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('renders ten toggles, all on by default', async () => {
+  it('renders eleven toggles; all on by default except task graph, which is off', async () => {
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(10);
+      expect(screen.getAllByRole('switch')).toHaveLength(11);
     });
+    const taskGraph = screen.getByRole('switch', { name: 'Task graph coordination' });
+    expect(taskGraph.getAttribute('aria-checked')).toBe('false');
     for (const toggle of screen.getAllByRole('switch')) {
+      if (toggle === taskGraph) continue;
       expect(toggle.getAttribute('aria-checked')).toBe('true');
     }
   });
@@ -74,18 +81,71 @@ describe('AgentFeaturesSettings', () => {
     expect(note.textContent).toMatch(/unless noted otherwise/i);
   });
 
-  it('defaults a feature to on when the daemon has no entry for its path', async () => {
+  it('defaults each feature to its daemon default when the daemon has no entry for its path', async () => {
     // Daemon predates agentFeatures.* — settings.list returns unrelated entries only
     mocks.mockSettingsList.mockResolvedValue([{ path: 'rtk.enabled', value: true }]);
 
     render(AgentFeaturesSettings);
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(10);
+      expect(screen.getAllByRole('switch')).toHaveLength(11);
     });
+    const taskGraph = screen.getByRole('switch', { name: 'Task graph coordination' });
+    expect(taskGraph.getAttribute('aria-checked')).toBe('false');
     for (const toggle of screen.getAllByRole('switch')) {
+      if (toggle === taskGraph) continue;
       expect(toggle.getAttribute('aria-checked')).toBe('true');
     }
+  });
+
+  it('renders task graph off when an older daemon does not report the key', async () => {
+    // Daemon predates agentFeatures.taskGraph — the other ten entries are present
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.filter((path) => path !== 'agentFeatures.taskGraph').map((path) => ({
+        path,
+        value: true,
+      })),
+    );
+
+    render(AgentFeaturesSettings);
+
+    const taskGraph = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    await waitFor(() => {
+      expect(taskGraph.getAttribute('aria-checked')).toBe('false');
+    });
+  });
+
+  it('renders task graph on when the daemon reports value true', async () => {
+    mocks.mockSettingsList.mockResolvedValue(FEATURE_PATHS.map((path) => ({ path, value: true })));
+
+    render(AgentFeaturesSettings);
+
+    const taskGraph = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    await waitFor(() => {
+      expect(taskGraph.getAttribute('aria-checked')).toBe('true');
+    });
+  });
+
+  it('toggling task graph on sends the exact settings.update request', async () => {
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agentFeatures.taskGraph', value: true },
+    ]);
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', { name: 'Task graph coordination' });
+    await waitFor(() => {
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+    });
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agentFeatures.taskGraph', value: true },
+      ]);
+    });
+    expect(mockToast.error).not.toHaveBeenCalled();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
   it('renders a feature off when the daemon reports value false', async () => {

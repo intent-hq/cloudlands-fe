@@ -5764,6 +5764,8 @@
   "settings_agentFeatures_prMonitorDebounce_save": "Enregistrer",
   "settings_agentFeatures_prMonitorDebounce_saving": "Enregistrement…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "Saisissez un nombre entier entre 10 et 86 400 secondes.",
+  "settings_agentFeatures_taskGraph_label": "Coordination du graphe de tâches",
+  "settings_agentFeatures_taskGraph_description": "Enseigne aux nouvelles sessions d'agent le flux de coordination du graphe de tâches (délégation par lots, relations entre tâches, réveils de déblocage) ; désactivé par défaut",
   "chat_monitoredPrs_row_ariaLabel": "Pull requests surveillées",
   "chat_monitoredPrs_monitoring_label": "Surveillance de la PR #{number} : {title}",
   "chat_monitoredPrs_monitoringCrossRepo_label": "Surveillance de la PR {repo} #{number} : {title}",

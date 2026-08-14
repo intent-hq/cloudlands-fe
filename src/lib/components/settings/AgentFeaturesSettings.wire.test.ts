@@ -38,9 +38,10 @@ const FEATURE_PATHS = [
   'agentFeatures.attentionRequests',
   'agentFeatures.stateSnapshot',
   'agentFeatures.prMonitor',
+  'agentFeatures.taskGraph',
 ];
 
-// PROTOCOL §5.12 settings.list response with all ten agentFeatures.* entries
+// PROTOCOL §5.12 settings.list response with all eleven agentFeatures.* entries
 // plus the prMonitor.debounceSeconds number (§6.9)
 function listResponse() {
   return {
