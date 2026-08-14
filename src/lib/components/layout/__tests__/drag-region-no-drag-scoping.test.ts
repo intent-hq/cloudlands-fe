@@ -30,13 +30,13 @@ const appLayoutCss = read('routes/(app)/app-layout.css');
 const rootLayoutSource = read('routes/+layout.svelte');
 const globalCss = read('app.css');
 
-/** Selectors of the no-drag rule in the given CSS, unwrapped from :global(). */
-function extractNoDragSelectors(source: string): string[] {
+/** Selectors of app-region rules with the given value, unwrapped from :global(). */
+function extractAppRegionSelectors(source: string, value: string): string[] {
   const style = source.match(/<style>([\s\S]*)<\/style>/)?.[1] ?? '';
   const css = style.replace(/\/\*[\s\S]*?\*\//g, '');
   const selectors: string[] = [];
   for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (!/-webkit-app-region:\s*no-drag/.test(match[2])) continue;
+    if (!new RegExp(`-webkit-app-region:\\s*${value}`).test(match[2])) continue;
     for (const raw of match[1].split(',')) {
       const trimmed = raw.trim();
       if (!trimmed) continue;
@@ -47,9 +47,13 @@ function extractNoDragSelectors(source: string): string[] {
   return selectors;
 }
 
+const extractNoDragSelectors = (source: string) => extractAppRegionSelectors(source, 'no-drag');
+
+const CLIP_CONTAINER = '.app-drag-region [data-app-region-clip]';
 const noDragSelectors = extractNoDragSelectors(`<style>${globalCss}</style>`).filter(
-  (selector) => selector !== '.app-no-drag',
+  (selector) => selector !== '.app-no-drag' && selector !== CLIP_CONTAINER,
 );
+const resetSelectors = extractAppRegionSelectors(`<style>${globalCss}</style>`, 'initial');
 const matchesNoDragRule = (el: Element) => noDragSelectors.some((sel) => el.matches(sel));
 
 describe('no-drag rule scoping (app.css)', () => {
@@ -121,6 +125,63 @@ describe('drag surfaces carry the .app-drag-region scope class', () => {
     const wrapper = appLayoutSource.match(/<div[^>]*>\s*<UpdateDownloadIndicator \/>/)?.[0] ?? '';
     expect(wrapper).toContain('app-no-drag');
     expect(globalCss).toMatch(/\.app-no-drag\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
+  });
+});
+
+describe('scroll-container app-region clipping (#2400)', () => {
+  // Chromium computes draggable regions from UNCLIPPED geometry, so tabs
+  // scrolled out of the WorkspaceTabStrip scroll container carved no-drag
+  // holes over the titlebar gap left of the tabs. The fix: the container
+  // itself is no-drag (its border box is exactly its visible area) and its
+  // interactive descendants reset to `initial` so their unclipped rects
+  // contribute nothing.
+
+  it('marks the clip container itself as no-drag', () => {
+    const allNoDrag = extractNoDragSelectors(`<style>${globalCss}</style>`);
+    expect(allNoDrag).toContain(CLIP_CONTAINER);
+  });
+
+  it('resets every interactive-element no-drag selector inside the clip container', () => {
+    // The reset list must mirror the scoped no-drag list one-to-one, so a
+    // selector added to the no-drag rule cannot silently reintroduce carving.
+    const expected = noDragSelectors.map((sel) =>
+      sel.replace(/^\.app-drag-region\s/, `${CLIP_CONTAINER} `),
+    );
+    expect(resetSelectors.sort()).toEqual(expected.sort());
+  });
+
+  it('interactive elements inside the clip container match a reset selector', () => {
+    document.body.innerHTML = `
+      <div class="app-drag-region">
+        <div data-app-region-clip>
+          <button id="btn">b</button>
+          <div role="tab" id="tab">t</div>
+          <div tabindex="0" id="focusable">f</div>
+        </div>
+      </div>`;
+    for (const id of ['btn', 'tab', 'focusable']) {
+      const el = document.getElementById(id)!;
+      // Still matched by the scoped no-drag rule (lower in cascade order)…
+      expect(matchesNoDragRule(el)).toBe(true);
+      // …but also matched by the later reset rule, which wins.
+      expect(
+        resetSelectors.some((sel) => el.matches(sel)),
+        `#${id} inside clip container must match a reset selector`,
+      ).toBe(true);
+    }
+  });
+
+  it('the reset rule is declared after the no-drag rule so it wins the cascade', () => {
+    const noDragIndex = globalCss.indexOf('.app-no-drag {');
+    const resetIndex = globalCss.indexOf('-webkit-app-region: initial');
+    expect(noDragIndex).toBeGreaterThan(-1);
+    expect(resetIndex).toBeGreaterThan(noDragIndex);
+  });
+
+  it('WorkspaceTabStrip scroll container carries data-app-region-clip', () => {
+    const source = read('lib/components/layout/WorkspaceTabStrip.svelte');
+    const container = source.match(/<div[^>]*data-workspace-tab-strip[^>]*>/s)?.[0] ?? '';
+    expect(container).toContain('data-app-region-clip');
   });
 });
 
