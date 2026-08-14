@@ -5765,7 +5765,7 @@
   "settings_agentFeatures_prMonitorDebounce_saving": "保存中…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "请输入 10 到 86400 秒之间的整数。",
   "settings_agentFeatures_taskGraph_label": "任务图协调",
-  "settings_agentFeatures_taskGraph_description": "向新的代理会话教授任务图协调工作流(批量委派、任务关系、解除阻塞唤醒);默认关闭",
+  "settings_agentFeatures_taskGraph_description": "向新的代理会话教授任务图协调工作流（批量委派、任务关系、解除阻塞唤醒）；默认关闭",
   "chat_monitoredPrs_row_ariaLabel": "监控中的拉取请求",
   "chat_monitoredPrs_monitoring_label": "正在监控 PR #{number}：{title}",
   "chat_monitoredPrs_monitoringCrossRepo_label": "正在监控 PR {repo} #{number}：{title}",

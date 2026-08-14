@@ -5765,7 +5765,7 @@
   "settings_agentFeatures_prMonitorDebounce_saving": "保存中…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "10〜86,400秒の整数を入力してください。",
   "settings_agentFeatures_taskGraph_label": "タスクグラフ連携",
-  "settings_agentFeatures_taskGraph_description": "新しいエージェントセッションにタスクグラフ連携ワークフロー(バッチ委任、タスク関係、ブロック解除ウェイク)を教えます。デフォルトはオフです",
+  "settings_agentFeatures_taskGraph_description": "新しいエージェントセッションにタスクグラフ連携ワークフロー（バッチ委任、タスク関係、ブロック解除ウェイク）を教えます（デフォルトはオフ）",
   "chat_monitoredPrs_row_ariaLabel": "監視中のプルリクエスト",
   "chat_monitoredPrs_monitoring_label": "PR #{number} を監視中: {title}",
   "chat_monitoredPrs_monitoringCrossRepo_label": "PR {repo} #{number} を監視中: {title}",
