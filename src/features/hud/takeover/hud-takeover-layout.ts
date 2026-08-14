@@ -211,7 +211,8 @@ export function dependencyGraphLayout(
   // (desired − position), each pool valued at the lower median of its
   // targets — so nudges never invert the barycenter order and stay as close
   // to the desired rows as possible. A column of all-equal desired rows
-  // degenerates to the previous centered packing.
+  // degenerates to the previous centered packing around the shared desired
+  // row (matching the old coordinates exactly when that row is 0).
   const localY = new Map<string, number>();
   const layoutComponent = (members: string[]): { minY: number; maxY: number } => {
     const byColumn = new Map<number, string[]>();
