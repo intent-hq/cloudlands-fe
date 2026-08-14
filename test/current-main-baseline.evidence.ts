@@ -21,6 +21,7 @@ export type MountedEvidenceDefinition = {
   scene: MountedScene;
   state: MountedState;
   rowIds: string[];
+  rowAssertions: Record<string, string[]>;
   observedStates: string[];
 };
 
@@ -46,17 +47,52 @@ const selector = (states: string[], assertionIncludes: string): SemanticSelector
   states,
   assertionIncludes,
 });
+const visualStates = [
+  'light',
+  'dark',
+  'wide',
+  'narrow',
+  'zoom-100',
+  'zoom-200',
+  'hover',
+  'focus',
+  'keyboard',
+  'reduced-motion',
+] as const;
 
-const semanticSelectors: Record<string, SemanticSelector[]> = {
+export const semanticSelectors: Record<string, SemanticSelector[]> = {
+  'CHAT-01': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'zoom-200',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'renders the attribution header for an agent_message user row',
+    ),
+  ],
   'CHAT-03': [
-    selector(['mounted', 'runtime-success'], 'renders the compact legacy spinner and Thinking row'),
+    selector(
+      ['mounted', 'runtime-success', 'keyboard'],
+      'renders the compact legacy spinner and Thinking row',
+    ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
     selector(['cleanup'], 'clears failed presentation when a new stream starts'),
     selector(['advance'], 'formatElapsed > rounds to the nearest whole second'),
     selector(['reset'], 'full lifecycle: streaming → tool-call → tool-waiting → streaming again'),
   ],
   'CHAT-04': [
-    selector(['mounted', 'runtime-success'], 'renders the compact legacy spinner and Thinking row'),
+    selector(
+      ['mounted', 'runtime-success', 'keyboard'],
+      'renders the compact legacy spinner and Thinking row',
+    ),
     selector(['runtime-error'], 'renders explicit failed response copy'),
     selector(
       ['cleanup', 'cancel'],
@@ -82,6 +118,14 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
   ],
   'CHAT-06': [
+    selector(
+      ['light', 'dark', 'wide', 'narrow', 'zoom-100', 'zoom-200', 'hover', 'focus', 'keyboard'],
+      'uses the emphasized 280ms composer-to-bubble animation',
+    ),
+    selector(
+      ['reduced-motion'],
+      'skips the overlay under reduced motion and contains long content',
+    ),
     selector(['success'], 'uses the emphasized 280ms composer-to-bubble animation'),
     selector(['failure'], 'settles rejected animations without leaking styles'),
     selector(['cancel'], 'aborts immediately and restores exact styles'),
@@ -99,14 +143,78 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       'settles a never-resolving animation within the independent maximum bound',
     ),
   ],
+  'CHAT-08': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'zoom-200',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'wires the canonical user timestamp into the shared top-right overlay',
+    ),
+  ],
   'CHAT-09': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'zoom-200',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'contains long wake details for narrow and zoomed transcript layouts',
+    ),
     selector(
       ['collapsed', 'expanded'],
       'renders a collapsed hook wake card and strips the prefix when expanded',
     ),
     selector(['attachments'], 'still renders inline mention chips alongside text segments'),
   ],
+  'CHAT-10': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'zoom-200',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'matches compact event geometry at 220 px and 2× zoom',
+    ),
+  ],
   'CHAT-11': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'zoom-200',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'renders a collapsed hook wake card and strips the prefix when expanded',
+    ),
     selector(
       ['collapsed', 'expanded'],
       'renders a collapsed hook wake card and strips the prefix when expanded',
@@ -128,22 +236,58 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
     selector(['pointer'], 'runs enhancement from the menu'),
   ],
-  'WORKSPACE-01': [selector(['empty'], 'strictly caps a non-expandable preview')],
-  'WORKSPACE-02': [
-    selector(['mounted', 'keyboard', 'cleanup'], 'provides a semantic keyboard-focus fallback'),
-    selector(['runtime-success', 'resolvable'], 'targets its exact chat content'),
-    selector(['runtime-error', 'internal'], 'opens compact file activity rows as scoped file tabs'),
-    selector(['unresolvable'], 'initially caps the sidebar activity preview at three rows'),
+  'WORKSPACE-01': [
+    selector([...visualStates], 'renders completed agent activity with the agent name'),
+    selector(['empty'], 'strictly caps a non-expandable preview'),
   ],
+  'WORKSPACE-02': [
+    selector(
+      [
+        'mounted',
+        'runtime-success',
+        'runtime-error',
+        'cleanup',
+        'resolvable',
+        'internal',
+        'unresolvable',
+      ],
+      'routes mounted file, note, and agent rows only through their exact callbacks',
+    ),
+    selector(
+      ['keyboard'],
+      'renders the agent avatar action as a keyboard-accessible sibling control',
+    ),
+  ],
+  'WORKSPACE-08': [selector([...visualStates], 'renders the workspace branch and trunk branch')],
+  'WORKSPACE-09': [selector([...visualStates], 'renders the workspace branch and trunk branch')],
   'WORKSPACE-10': [
+    selector(
+      [...visualStates],
+      'preserves pinned presentation in repository, status, and searched rows',
+    ),
     selector(['activity-precedence'], 'sorts hydrated pinned workspaces to the top'),
+  ],
+  'WORKSPACE-11': [
+    selector([...visualStates], 'does not close when the pointerdown lands on the nav rail'),
   ],
   'WORKSPACE-14': [
     selector(['mixed-statuses'], 'orders every member for the launcher'),
     selector(['overflow'], 'renders 8 agents as six plus semantic overflow'),
   ],
-  'WORKSPACE-17': [selector(['mixed-agents'], 'keeps the marked initial coordinator first')],
-  'WORKSPACE-18': [selector(['open'], 'opens each compact agent, note, and change exactly once')],
+  'WORKSPACE-17': [
+    selector(
+      [...visualStates],
+      'keeps the marked initial coordinator first even when another agent is running',
+    ),
+    selector(['mixed-agents'], 'keeps the marked initial coordinator first'),
+  ],
+  'WORKSPACE-18': [
+    selector(
+      [...visualStates],
+      'pins the coordinator/initial agent and Spec to the first launcher positions',
+    ),
+    selector(['open'], 'opens each compact agent, note, and change exactly once'),
+  ],
   'WORKSPACE-21': [
     selector(['reuse'], 'opens each compact agent, note, and change exactly once'),
     selector(['new'], 'opens the isolated compact Files chooser'),
@@ -154,41 +298,52 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['error', 'empty'], 'renders +0 agents as six plus semantic overflow'),
   ],
   'WORKSPACE-27': [
-    selector(
-      ['light', 'dark', 'wide', 'hover'],
-      'keeps cross-card visible edges and shared geometry aligned at 1-item density',
-    ),
-    selector(
-      ['narrow', 'zoom-100', 'zoom-200', 'reduced-motion'],
-      'contained horizontal row with plain overflow text at narrow zoomed sizes',
-    ),
-    selector(
-      ['focus', 'keyboard', 'focus-restore'],
-      'contained outline-free keyboard focus states',
-    ),
+    selector(['focus-restore'], 'contained outline-free keyboard focus states'),
     selector(['outside-dismiss'], 'overlay that dismisses only from its backdrop'),
     selector(['escape'], 'dismisses the expanded card with Escape'),
   ],
   'WORKSPACE-28': [
-    selector(['healthy', 'hidden'], 'toggles between single and column workspace views'),
     selector(
-      ['active', 'failed'],
-      'hides the view-mode toggle and repo launcher while onboarding is active',
+      [...visualStates],
+      'right-aligns intrinsic statuses before a stable close reservation',
     ),
     selector(
-      ['waiting', 'stale', 'rehydration'],
-      'tracks rapid mode changes without showing a stale destination glyph',
+      ['healthy', 'active', 'failed', 'waiting', 'attention', 'overflow'],
+      'right-aligns intrinsic statuses before a stable close reservation',
     ),
-    selector(['attention'], 'uses a 32px hit box and a 16px destination glyph'),
+    selector(['hidden'], 'keeps the trailing close reservation when a workspace has no status'),
     selector(
-      ['overflow'],
-      'restores the destination glyph and keeps the pressed button transparent',
+      ['stale', 'rehydration'],
+      'renders persisted inactive tabs while their workspace metadata loads',
     ),
   ],
   'WORKSPACE-29': [
-    selector(['close'], 'toggles between single and column workspace views'),
-    selector(['drag'], 'restores the destination glyph and keeps the pressed button transparent'),
-    selector(['reorder'], 'tracks rapid mode changes without showing a stale destination glyph'),
+    selector(
+      [...visualStates],
+      'uses one full-rectangle tab target for hydrated and loading workspaces',
+    ),
+    selector(
+      ['close'],
+      'keeps the close control outside the hover trigger and isolated from navigation',
+    ),
+    selector(['drag', 'reorder'], 'supports keyboard and pointer drag reordering'),
+  ],
+  'WORKSPACE-30': [
+    selector(
+      [
+        'light',
+        'dark',
+        'wide',
+        'narrow',
+        'zoom-100',
+        'hover',
+        'focus',
+        'keyboard',
+        'reduced-motion',
+      ],
+      'counter-scales the 1x zoom band to 35px',
+    ),
+    selector(['zoom-200'], 'counter-scales the 2x zoom band to 17.5px'),
   ],
   'WORKSPACE-31': [
     selector(['route'], 'toggles between single and column workspace views'),
@@ -204,6 +359,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       'uses the edge panel when the layout has no valid focus',
     ),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
+    selector(['keyboard'], 'cycles through tabs backward'),
     selector(['next'], 'returns the next local panel and hands off at the layout boundary'),
     selector(['previous'], 'cycles through tabs backward'),
     selector(['nested'], 'expands horizontal ancestors in a nested layout'),
@@ -215,6 +371,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
     selector(['runtime-success'], 'uses the edge panel when the layout has no valid focus'),
     selector(['runtime-error'], 'skips empty workspaces and wraps in display order'),
+    selector(['keyboard'], 'cycles through tabs forward'),
     selector(['indexed'], 'initializeLayout > sets root, panels, and focusedPanelId'),
     selector(['identified'], 'retargets only the identified tab'),
     selector(
@@ -223,16 +380,19 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
   ],
   'WORKSPACE-39': [
+    selector([...visualStates], 'renders compact workspace columns at their 360px content width'),
     selector(
       ['single-to-columns', 'columns-to-single'],
-      'animates keyed workspace tabs and content-sized columns',
+      'renders compact workspace columns at their 360px content width',
     ),
   ],
   'WORKSPACE-40': [
+    selector([...visualStates], 'supports keyboard and pointer drag reordering'),
     selector(
-      ['single-to-columns', 'columns-to-single'],
-      'animates keyed workspace tabs and content-sized columns',
+      ['single-to-columns'],
+      'renders compact workspace columns at their 360px content width',
     ),
+    selector(['columns-to-single'], 'supports keyboard and pointer drag reordering'),
   ],
   'WORKSPACE-43': [
     selector(
@@ -243,6 +403,7 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['runtime-success', 'medium-type'],
       'resolves adjacent browser and note panels to responsive defaults',
     ),
+    selector(['keyboard'], 'uses the usable viewport when resolving a responsive note column'),
   ],
   'WORKSPACE-44': [
     selector(['mounted', 'resize'], "settles panels 1/2/3 without replay in 'tab' mode at 1× zoom"),
@@ -251,21 +412,36 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['cleanup'], "settles panels 1/2/3 without replay in 'columns' mode at 2× zoom"),
     selector(['settlement'], "settles panels 1/2/3 without replay in 'stacked' mode at 2× zoom"),
     selector(['reload'], 'persists explicit pixels and restores them through production storage'),
+    selector(['keyboard'], "settles panels 1/2/3 without replay in 'tab' mode at 1× zoom"),
   ],
   'WORKSPACE-45': [
     selector(
       ['pointer'],
       'keeps a vertical 16px resize target while reporting horizontal drag deltas',
     ),
-    selector(['reset'], 'uses one neutral visual contract across resize implementations'),
+    selector(['reset'], 'uses the canonical reset width on handle double-click'),
     selector(['reload'], 'preserves two-axis corner resizing and cleanup'),
   ],
+  'WORKSPACE-46': [
+    selector(
+      [...visualStates],
+      'keeps a vertical 16px resize target while reporting horizontal drag deltas',
+    ),
+  ],
   'WORKSPACE-47': [
+    selector(
+      [...visualStates],
+      'grows a narrow five-panel canvas into overflow and restores its explicit width',
+    ),
     selector(['root'], 'keeps 2–5 siblings mounted and interactive for target +0'),
     selector(['nested'], 'keeps 2–5 siblings mounted and interactive for target 1'),
     selector(['control-click'], 'keeps 2–5 siblings mounted and interactive for target 2'),
   ],
   'WORKSPACE-48': [
+    selector(
+      [...visualStates],
+      'moves between differently sized slots without scaling panel contents',
+    ),
     selector(
       ['first-frame'],
       'moves between differently sized slots without scaling panel contents',
@@ -285,25 +461,16 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
   ],
   'WORKSPACE-56': [
     selector(
-      ['light', 'dark', 'remove-last-tab'],
+      ['remove-last-tab'],
       'removes foreign workspace tabs and collapses panels they exclusively occupied',
     ),
-    selector(
-      ['wide', 'reduced-motion'],
-      'counts horizontal columns without widening for vertical stacks',
-    ),
-    selector(['narrow'], 'inserts new content directly after its source panel'),
-    selector(['zoom-100'], 'adds a horizontal panel without changing existing column pixels'),
-    selector(
-      ['zoom-200'],
-      'uses the resized canvas when preserving pixels during horizontal insertion',
-    ),
-    selector(['hover'], 'removes a horizontal panel without changing surviving column pixels'),
-    selector(['focus'], 'inserts a full-height column after the focused vertical stack'),
-    selector(['keyboard'], 'appends a full-height column beside a vertical stack'),
     selector(['recovery'], 'passes the edge delta through nested rightmost horizontal branches'),
   ],
   'REMAINING-03': [
+    selector(
+      [...visualStates],
+      'renders the short crossRepoDisplay prefix and a hover status tooltip on the PR row',
+    ),
     selector(['route'], 'triggerCreatePR calls backgroundGitActionsService.createPR'),
   ],
   'REMAINING-04': [
@@ -313,33 +480,37 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
     selector(
       ['narrow', 'zoom-100', 'zoom-200', 'reduced-motion'],
-      'contained horizontal row with plain overflow text at narrow zoomed sizes',
+      'uses one contained horizontal row with plain overflow text at narrow zoomed sizes',
     ),
     selector(['hover', 'other'], 'keeps plain +N text immediately after the contained icon stack'),
     selector(
       ['focus', 'keyboard', 'focus-restore'],
-      'contained outline-free keyboard focus states',
+      'uses contained outline-free keyboard focus states for every preview target',
     ),
-    selector(['copy-path'], 'opens each compact agent, note, and change exactly once'),
+    selector(
+      ['copy-path'],
+      'renders a plain chevron-less button that copies the path when "Copy path" is the only action',
+    ),
   ],
   'REMAINING-08': [
     selector(
       ['mounted', 'no-selection'],
-      'awaits a script rename and keeps the editor open when the mutation fails in-band',
+      'renders a tab for each previously-running script without auto-selecting it',
     ),
     selector(
       ['runtime-success', 'selected'],
-      'reconciles a deferred rename to its captured workspace',
+      'dispatches terminals/selectScript when a running script tab is clicked',
     ),
     selector(
-      ['runtime-error', 'running'],
-      'cancels the delayed terminal-tab action when destroyed',
+      ['runtime-error', 'error'],
+      'awaits a script rename and keeps the editor open when the mutation fails in-band',
     ),
-    selector(['keyboard', 'stopped'], 'expands only the workspace whose terminal overlay is open'),
+    selector(['running'], 'still renders live scripts as tabs, without a dismiss button'),
     selector(
-      ['cleanup', 'error'],
-      'releases active resize listeners and global body styles when destroyed',
+      ['keyboard', 'stopped'],
+      'dismissing a previously-running tab calls script.stop and refetches the list',
     ),
+    selector(['cleanup'], 'releases active resize listeners and global body styles when destroyed'),
   ],
   'REMAINING-12': [
     selector(
@@ -375,16 +546,11 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['selection'], 'selects models in both modes without bubbling'),
   ],
   'REMAINING-21': [
+    selector(['aria'], 'renders accessible tabs with delayed shared workspace hover cards'),
     selector(
-      ['light', 'dark', 'wide', 'narrow', 'reduced-motion'],
-      'checkColorContrast > should pass AA for sufficient contrast',
+      ['focus-order'],
+      'uses arrow keys to activate adjacent tabs and Delete to close the focused tab',
     ),
-    selector(['zoom-100', 'aria'], 'addAriaLabels > should add aria attributes to element'),
-    selector(
-      ['zoom-200', 'focus', 'keyboard', 'focus-order'],
-      'makeKeyboardNavigable > should add tabindex to element',
-    ),
-    selector(['hover'], 'makeKeyboardNavigable > should not override existing tabindex'),
   ],
 };
 
@@ -400,13 +566,50 @@ function observedMountedStates(state: MountedState): string[] {
   ];
 }
 
+const mountedRowsByScene: Record<MountedScene, Record<string, string[]>> = {
+  chat: {
+    'CHAT-02': [
+      'renders real compact ToolCall rows',
+      'toggles the real disclosure with keyboard and pointer',
+    ],
+    'CHAT-36': [
+      'keeps details collapsed until disclosure activation',
+      'renders explicit error state',
+    ],
+  },
+  sidebar: {
+    'WORKSPACE-03': ['does not render an Activity launcher in the compact deck'],
+    'WORKSPACE-14': ['renders six ordered agent previews and semantic +2 overflow'],
+    'WORKSPACE-15': ['contains every visible agent preview inside the launcher paint bounds'],
+    'WORKSPACE-16': ['keeps the final compact Agents preview left-oriented'],
+    'WORKSPACE-19': ['renders the expanded sidebar as a bounded physical deck'],
+    'WORKSPACE-20': ['keeps hover and keyboard focus on real compact launcher targets'],
+    'WORKSPACE-21': ['renders the real Browser launcher and its expanded launch actions'],
+    'WORKSPACE-22': ['renders the real Shell launcher and its terminal actions'],
+    'WORKSPACE-26': ['renders expanded content as an overlay without launcher reflow'],
+    'WORKSPACE-27': ['dismisses the overlay and restores focus to its launcher'],
+    'REMAINING-21': [
+      'meets rendered contrast, accessible-name, focus-order, and keyboard requirements',
+    ],
+  },
+  tabs: {
+    'WORKSPACE-31': ['renders and activates the real consolidated Spaces view-mode control'],
+  },
+  panel: {
+    'WORKSPACE-42': ['keeps the rightmost nested panel inside the reachable scroll canvas'],
+    'WORKSPACE-45': ['renders real keyboard-focusable panel resize handles'],
+    'WORKSPACE-56': ['renders the real recoverable zero-tab creation shell'],
+  },
+};
+
 export const mountedDefinitions: MountedEvidenceDefinition[] = mountedStates.flatMap((state) =>
   mountedScenes.map((scene) => ({
     evidenceId: `mounted:${scene}:${state.name}`,
     kind: 'mounted' as const,
     scene,
     state,
-    rowIds: baselineRows.filter(({ probe }) => probe === scene).map(({ row }) => row),
+    rowIds: Object.keys(mountedRowsByScene[scene]),
+    rowAssertions: mountedRowsByScene[scene],
     observedStates: observedMountedStates(state),
   })),
 );

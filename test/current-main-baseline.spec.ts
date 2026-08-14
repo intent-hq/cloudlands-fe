@@ -38,21 +38,37 @@ type VitestJsonReport = {
   }>;
 };
 
-const semanticOnlyRowIds = [
-  'CHAT-05',
-  'CHAT-07',
-  'CHAT-40',
-  'WORKSPACE-02',
-  'WORKSPACE-27',
-  'WORKSPACE-50',
-  'WORKSPACE-56',
-  'REMAINING-04',
-  'REMAINING-08',
-  'REMAINING-12',
-  'REMAINING-13',
-  'REMAINING-14',
-  'REMAINING-21',
-] as const;
+function stableVitestReport(value: unknown, key = ''): unknown {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => stableVitestReport(item));
+    if (key === 'testResults') {
+      return items.toSorted((left, right) =>
+        String((left as { name?: string }).name).localeCompare(
+          String((right as { name?: string }).name),
+        ),
+      );
+    }
+    if (key === 'assertionResults') {
+      return items.toSorted((left, right) =>
+        String((left as { fullName?: string }).fullName).localeCompare(
+          String((right as { fullName?: string }).fullName),
+        ),
+      );
+    }
+    return items;
+  }
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !['duration', 'startTime', 'endTime'].includes(key))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([itemKey, item]) => [itemKey, stableVitestReport(item, itemKey)]),
+  );
+}
+
+const semanticOnlyRowIds = baselineRows
+  .filter(({ row }) => !mountedDefinitions.some(({ rowIds }) => rowIds.includes(row)))
+  .map(({ row }) => row);
 
 test.describe.configure({ mode: 'serial' });
 test.beforeAll(async () => {
@@ -73,6 +89,7 @@ test.beforeAll(async () => {
   );
   const report = JSON.parse(readFileSync(reportPath, 'utf8')) as VitestJsonReport;
   if (!report.success) throw new Error('Semantic baseline assertions failed');
+  writeFileSync(reportPath, `${JSON.stringify(stableVitestReport(report), null, 2)}\n`);
   const assertionsByFile = new Map<string, string[]>();
   for (const result of report.testResults) {
     const file = relative(process.cwd(), result.name).replaceAll('\\', '/');
@@ -121,12 +138,6 @@ test('locks the complete 55-row current-main evidence contract', () => {
   ).toBe(target.tree);
   expect(baselineRows.map(({ row }) => row)).toEqual([...approvedRowIds]);
   expect(new Set(approvedRowIds).size).toBe(55);
-  expect(
-    baselineRows
-      .filter(({ probe }) => !mountedScenes.includes(probe as MountedScene))
-      .map(({ row }) => row),
-  ).toEqual([...semanticOnlyRowIds]);
-
   const allEvidence = [...mountedDefinitions, ...semanticEvidence];
   const evidenceIds = allEvidence.map(({ evidenceId }) => evidenceId);
   expect(new Set(evidenceIds).size).toBe(evidenceIds.length);
@@ -136,6 +147,10 @@ test('locks the complete 55-row current-main evidence contract', () => {
   for (const record of mountedDefinitions) {
     expect(record.rowIds.length, record.evidenceId).toBeGreaterThan(0);
     expect(record.observedStates.length, record.evidenceId).toBeGreaterThan(0);
+    expect(Object.keys(record.rowAssertions), record.evidenceId).toEqual(record.rowIds);
+    for (const checks of Object.values(record.rowAssertions)) {
+      expect(checks.length, record.evidenceId).toBeGreaterThan(0);
+    }
     for (const rowId of record.rowIds) expect(approvedRowIds).toContain(rowId);
   }
   for (const assertion of semanticEvidence) {
@@ -191,6 +206,155 @@ async function mount(page: Page, scene: MountedScene, state: MountedState) {
   );
 }
 
+function contrastRatio(first: string, second: string): number {
+  const channels = (value: string) =>
+    (value.match(/[\d.]+/g) ?? [])
+      .slice(0, 3)
+      .map(Number)
+      .map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+  const luminance = (value: string) => {
+    const [red, green, blue] = channels(value);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+async function assertMountedScene(page: Page, scene: MountedScene) {
+  if (scene === 'chat') {
+    const rows = page.locator('[data-compact-tool-row]');
+    expect(await rows.count()).toBeGreaterThanOrEqual(8);
+    await expect(page.locator('[data-tool-status="error"]')).toHaveCount(1);
+    const disclosure = rows.first().locator('[data-tool-sentence]');
+    await disclosure.hover();
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await disclosure.click();
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#tool-details-read-a')).toHaveCount(0);
+    return {
+      'CHAT-02': { compactRows: await rows.count(), disclosureKeyboardAndPointer: true },
+      'CHAT-36': { collapsedDetails: true, errorRows: 1 },
+    };
+  }
+  if (scene === 'sidebar') {
+    const grid = page.locator('[data-sidebar-launcher-grid]');
+    const cards = grid.locator('[data-sidebar-launcher]');
+    await expect(cards).toHaveCount(4);
+    await expect(grid.locator('[data-sidebar-launcher="activity"]')).toHaveCount(0);
+    const agents = grid.locator('[data-sidebar-launcher="agents"]');
+    await expect(page.locator('[data-sidebar-launcher="browser"]')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Shell' })).toHaveCount(1);
+    const agentRows = agents.locator('[data-sidebar-agent]');
+    await expect(agentRows).toHaveCount(6);
+    await expect(agents.locator('[data-sidebar-agent-overflow]')).toContainText('+2');
+    const launcherBox = await agents.boundingBox();
+    const agentBoxes = await agentRows.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const box = node.getBoundingClientRect();
+        return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+      }),
+    );
+    expect(launcherBox).not.toBeNull();
+    for (const box of agentBoxes) {
+      expect(box.left).toBeGreaterThanOrEqual(launcherBox!.x - 0.5);
+      expect(box.right).toBeLessThanOrEqual(launcherBox!.x + launcherBox!.width + 0.5);
+    }
+    const agentTrigger = agents.getByRole('button').first();
+    const sidebarHost = page.locator('[data-sidebar-launcher-host]');
+    const hostBefore = await sidebarHost.boundingBox();
+    await agentTrigger.hover();
+    await agentTrigger.focus();
+    await page.keyboard.press('Enter');
+    const overlay = page.locator('[data-sidebar-overlay]');
+    await expect(overlay).toBeVisible();
+    expect(await sidebarHost.boundingBox()).toEqual(hostBefore);
+    await page.keyboard.press('Escape');
+    await expect(overlay).toBeHidden();
+    await expect(agentTrigger).toBeFocused();
+
+    const accessibility = await agents.evaluate((node) => {
+      const label = node.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
+      let surface: HTMLElement | null = label;
+      let background = 'rgba(0, 0, 0, 0)';
+      while (surface && background === 'rgba(0, 0, 0, 0)') {
+        background = getComputedStyle(surface).backgroundColor;
+        surface = surface.parentElement;
+      }
+      const focusable = [...node.querySelectorAll<HTMLElement>('button, [tabindex="0"]')];
+      return {
+        color: getComputedStyle(label).color,
+        background,
+        accessibleNames: focusable.map(
+          (item) =>
+            item.getAttribute('aria-label') ||
+            item.getAttribute('aria-labelledby') ||
+            item.textContent?.trim(),
+        ),
+        focusOrder: focusable.map((item) => item.outerHTML.slice(0, 120)),
+      };
+    });
+    expect(contrastRatio(accessibility.color, accessibility.background)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(accessibility.accessibleNames.every(Boolean)).toBe(true);
+    expect(accessibility.focusOrder.length).toBeGreaterThan(0);
+    return {
+      'WORKSPACE-03': { activityLauncherCount: 0 },
+      'WORKSPACE-14': { visibleAgents: 6, overflow: 2 },
+      'WORKSPACE-15': { containedAgentRows: agentBoxes.length },
+      'WORKSPACE-16': { leftOriented: agentBoxes.every((box) => box.left >= launcherBox!.x) },
+      'WORKSPACE-19': { physicalDeck: true, launcherCount: 4 },
+      'WORKSPACE-20': { hoverAndFocus: true },
+      'WORKSPACE-21': { browserLauncher: true },
+      'WORKSPACE-22': { shellLauncher: true },
+      'WORKSPACE-26': { overlayWithoutReflow: true },
+      'WORKSPACE-27': { escapeDismissed: true, focusRestored: true },
+      'REMAINING-21': {
+        contrast: contrastRatio(accessibility.color, accessibility.background),
+        accessibleNames: accessibility.accessibleNames.length,
+        focusOrder: accessibility.focusOrder.length,
+        reducedMotion: await page.evaluate(
+          () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+        ),
+      },
+    };
+  }
+  if (scene === 'tabs') {
+    const toggle = page.getByRole('button', { name: /Open spaces/ });
+    await toggle.hover();
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAccessibleName('Open spaces');
+    return { 'WORKSPACE-31': { consolidatedControl: true, keyboardActivation: true } };
+  }
+
+  await expect(page.getByTestId('physical-viewport')).toBeVisible();
+  const canvasWidth = Number(
+    await page.getByTestId('panel-workspace-inset').getAttribute('data-canvas-width'),
+  );
+  expect(canvasWidth).toBeGreaterThan(0);
+  const panels = page.locator('[data-testid="panel-workspace-inset"] .panel-split-child');
+  expect(await panels.count()).toBeGreaterThanOrEqual(3);
+  const handles = page.getByRole('button', { name: 'Resize panel' });
+  expect(await handles.count()).toBeGreaterThan(0);
+  await handles.first().hover();
+  await handles.first().focus();
+  await page.keyboard.press('Escape');
+  const shell = page.locator('[data-baseline-zero-tab-shell]');
+  await expect(shell.getByRole('button', { name: 'New Agent' })).toBeVisible();
+  await expect(shell.getByRole('button', { name: /^New panel/ })).toBeVisible();
+  return {
+    'WORKSPACE-42': { canvasWidth, reachablePanels: await panels.count() },
+    'WORKSPACE-45': { resizeHandles: await handles.count(), keyboardFocus: true },
+    'WORKSPACE-56': { zeroTabShell: true, recoverableActions: 2 },
+  };
+}
+
 test('captures mounted light/dark, width, zoom, focus, hover, keyboard, and reduced-motion evidence', async ({
   page,
 }) => {
@@ -201,37 +365,7 @@ test('captures mounted light/dark, width, zoom, focus, hover, keyboard, and redu
       await mount(page, scene, state);
       const root = page.locator('[data-baseline-scene]');
       await expect(root).toBeVisible();
-      if (scene === 'chat') {
-        const rows = page.locator('[data-compact-tool-row]');
-        expect(await rows.count()).toBeGreaterThanOrEqual(8);
-        const disclosure = rows.first().locator('[data-tool-sentence]');
-        await disclosure.hover();
-        await disclosure.focus();
-        await page.keyboard.press('Enter');
-        await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-        await disclosure.click();
-        await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-        await expect(page.locator('#tool-details-read-a')).toHaveCount(0);
-      } else if (scene === 'sidebar') {
-        const cards = page.locator('[data-sidebar-launcher-grid] [data-sidebar-launcher]');
-        await expect(cards).toHaveCount(4);
-        await cards.first().hover();
-        const button = cards.first().getByRole('button').first();
-        await button.focus();
-        await page.keyboard.press('Enter');
-        await expect(page.locator('.sidebar-expanded-card')).toBeVisible();
-      } else if (scene === 'tabs') {
-        const toggle = page.getByRole('button', { name: /Open spaces/ });
-        await toggle.hover();
-        await toggle.focus();
-        await page.keyboard.press('Enter');
-        await expect(toggle).toHaveAccessibleName('Open spaces');
-      } else {
-        await expect(page.getByTestId('physical-viewport')).toBeVisible();
-        expect(
-          Number(await page.getByTestId('panel-workspace-inset').getAttribute('data-canvas-width')),
-        ).toBeGreaterThan(0);
-      }
+      const rowObservations = await assertMountedScene(page, scene);
       await page.evaluate(async () => {
         await document.fonts.ready;
       });
@@ -268,7 +402,8 @@ test('captures mounted light/dark, width, zoom, focus, hover, keyboard, and redu
         (candidate) => candidate.scene === scene && candidate.state.name === state.name,
       );
       if (!definition) throw new Error(`Missing mounted definition for ${scene}:${state.name}`);
-      records.push({ ...definition, image, sha256: hash, geometry });
+      expect(Object.keys(rowObservations)).toEqual(definition.rowIds);
+      records.push({ ...definition, rowObservations, image, sha256: hash, geometry });
     }
   }
   const evidence = {

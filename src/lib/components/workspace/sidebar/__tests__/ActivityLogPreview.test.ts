@@ -104,4 +104,38 @@ describe('ActivityLogPreview', () => {
     await fireEvent.click(avatarAction);
     expect(onShowAgent).toHaveBeenCalledWith('agent-1', event);
   });
+
+  it('routes mounted file, note, and agent rows only through their exact callbacks', async () => {
+    const file = { ...makeEvent(1), type: 'file:changed', data: { path: 'src/file.ts' } };
+    const note = { ...makeEvent(2), type: 'note:updated', data: { noteId: 'note-1' } };
+    const agent = {
+      ...makeEvent(3),
+      type: 'agent:idle',
+      data: { agentId: 'agent-1', agentName: 'Review agent' },
+    };
+    const inert = makeEvent(4);
+    const onOpenFileEvent = vi.fn();
+    const onOpenNote = vi.fn();
+    const onShowAgent = vi.fn();
+    const { container } = render(ActivityLogPreview, {
+      props: {
+        events: [file, note, agent, inert] as WorkspaceEvent[],
+        maxItems: 4,
+        onOpenFileEvent,
+        onOpenNote,
+        onShowAgent,
+      },
+    });
+    const actions = container.querySelectorAll<HTMLButtonElement>(
+      '[data-activity-preview-item] > button',
+    );
+
+    await fireEvent.click(actions[0]);
+    await fireEvent.click(actions[1]);
+    await fireEvent.click(actions[2]);
+    expect(actions[3].disabled).toBe(true);
+    expect(onOpenFileEvent).toHaveBeenCalledWith(file);
+    expect(onOpenNote).toHaveBeenCalledWith('note-1');
+    expect(onShowAgent).toHaveBeenCalledWith('agent-1', agent);
+  });
 });
