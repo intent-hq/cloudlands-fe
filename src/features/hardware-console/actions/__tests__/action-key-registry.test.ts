@@ -483,7 +483,10 @@ describe('cycle-unread-agents HUD remaining count', () => {
     ]);
   });
 
-  it('counts an attention agent in the visited unread workspace as its own stop', () => {
+  it('counts 0 remaining when the visited attention agent shares the unread workspace', () => {
+    // The attention agent is visited first (attention precedes unread) and
+    // visiting it clears its own workspace's unread flag, so the unread
+    // stop of that same workspace is not a further stop.
     const state = makeState({
       agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-1'],
@@ -491,8 +494,9 @@ describe('cycle-unread-agents HUD remaining count', () => {
     });
     const { context, dispatch } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-1', 'a-2']]);
     expect(hudDispatches(dispatch)).toEqual([
-      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
     ]);
   });
 
@@ -583,7 +587,8 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
 
   it('unions unread-workspace agents with attention agents without duplicates', () => {
     // a-1 sits in an unread workspace AND requests attention — it must
-    // appear once; the walk alternates between it and the attention-only b-1.
+    // appear once, at its attention position; the walk alternates between
+    // the blocker b-1 (highest bucket) and the discussion a-1.
     const state = makeState({
       workspaces: ['ws-1', 'ws-2'],
       agentsByWorkspace: {
@@ -602,9 +607,70 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
     definition.execute(context);
     definition.execute(context);
     expect(activeAgentDispatches(dispatch)).toEqual([
-      ['ws-1', 'a-1'],
       ['ws-2', 'b-1'],
       ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+    ]);
+  });
+
+  it('walks blocker → question → discussion → unread regardless of workspace order', () => {
+    // Workspace order is deliberately the reverse of the priority order.
+    const state = makeState({
+      workspaces: ['ws-u', 'ws-d', 'ws-q', 'ws-b'],
+      agentsByWorkspace: {
+        'ws-u': { ids: ['u-1'], activeAgentId: null },
+        'ws-d': { ids: ['d-1'], activeAgentId: null },
+        'ws-q': { ids: ['q-1'], activeAgentId: null },
+        'ws-b': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-u'],
+      sessionOverrides: {
+        'd-1': { attentionRequestKind: 'discussion' },
+        'q-1': { messages: [questionMessage('msg-1')] },
+        'b-1': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-b', 'b-1'],
+      ['ws-q', 'q-1'],
+      ['ws-d', 'd-1'],
+      ['ws-u', 'u-1'],
+      ['ws-b', 'b-1'],
+    ]);
+  });
+
+  it('an agent with several attention signals classifies at its highest bucket', () => {
+    // dq-1 (discussion + question) walks in the question bucket — after the
+    // blocker+question bq-1 (blocker wins) and before the discussion-only d-1.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['d-1'], activeAgentId: null },
+        'ws-2': { ids: ['dq-1'], activeAgentId: null },
+        'ws-3': { ids: ['bq-1'], activeAgentId: null },
+      },
+      sessionOverrides: {
+        'd-1': { attentionRequestKind: 'discussion' },
+        'dq-1': { attentionRequestKind: 'discussion', messages: [questionMessage('msg-1')] },
+        'bq-1': { attentionRequestKind: 'blocker', messages: [questionMessage('msg-2')] },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-3', 'bq-1'],
+      ['ws-2', 'dq-1'],
+      ['ws-1', 'd-1'],
     ]);
   });
 
