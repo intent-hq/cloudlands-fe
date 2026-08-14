@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.42.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.41.0...v2.42.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* expand attachment drop target to the whole conversation card ([#1221](https://github.com/intent-hq/cloudlands-fe/issues/1221)) ([9869519](https://github.com/intent-hq/cloudlands-fe/commit/986951903d078a059e067dc91e1f4e2e990e6e70))
+
+
+### 🐛 Bug Fixes
+
+* add spacing before new-workspace button when tabs overflow ([#1219](https://github.com/intent-hq/cloudlands-fe/issues/1219)) ([f822b4c](https://github.com/intent-hq/cloudlands-fe/commit/f822b4cefda53b5aed0f37006ecf0709a860b8f4))
+* align sidebar Shell/Browser launcher labels with grid tiles ([#1222](https://github.com/intent-hq/cloudlands-fe/issues/1222)) ([3323535](https://github.com/intent-hq/cloudlands-fe/commit/3323535a3505490a64f8e0ec215ba21c3a4445a5))
+* bump intentd sidecar to v0.6.19 ([#1224](https://github.com/intent-hq/cloudlands-fe/issues/1224)) ([43c94d5](https://github.com/intent-hq/cloudlands-fe/commit/43c94d5c62d3e9b84879c3c74d26b0d809673dfd))
+* move URL resolution out of EmbeddedBrowser to the entry points ([#1220](https://github.com/intent-hq/cloudlands-fe/issues/1220)) ([1bffb3a](https://github.com/intent-hq/cloudlands-fe/commit/1bffb3a989fedbcce51f3006a693f8f8b80b951b))
+
 ## [2.41.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.40.0...v2.41.0) (2026-08-14)
 
 
