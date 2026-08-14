@@ -24,7 +24,10 @@
  * | 0x06   | `CLOSE`    | (empty)       | both            |
  *
  * Lifecycle: `ensureTunnel()` lazily opens the single `/tunnel` socket,
- * reusing the active transport's URL/token (and cert pin for `wss`);
+ * reusing the active transport's URL/token (and cert pin for `wss`). A `wss`
+ * config with multiple candidate hosts (#1746) races one socket per candidate
+ * — first pin-verified `open` wins, losers are terminated — mirroring the
+ * JSON-RPC transport's multi-host connect.
  * `forwardPort(remotePort)` resolves with the ephemeral local port of a
  * `net.createServer` on `127.0.0.1`. Each accepted connection allocates a
  * streamId, sends `OPEN`, and relays bytes both ways once `OPEN_OK` arrives
@@ -40,6 +43,7 @@ import tls from 'node:tls';
 import { Logger } from '$shared/logger';
 import {
   AuthRejectedError,
+  candidateWssHosts,
   normalizeFingerprint,
   PinMismatchError,
   type BackendConnectionConfig,
@@ -304,6 +308,8 @@ export class TunnelManager {
 
   private ws: TunnelSocketLike | null = null;
   private connectPromise: Promise<void> | null = null;
+  /** Sockets still connecting, so a `dispose()` mid-connect can terminate them. */
+  private readonly connectingSockets = new Set<TunnelSocketLike>();
   private readonly forwards = new Map<number, ForwardState>();
   private readonly pendingForwards = new Map<number, Promise<number>>();
   private readonly streams = new Map<number, StreamState>();
@@ -328,6 +334,9 @@ export class TunnelManager {
   /**
    * Lazily open (or reuse) the single `/tunnel` WebSocket. Concurrent callers
    * share one connect attempt; after a tunnel drop the next call reconnects.
+   * A `wss` config with multiple candidate hosts (#1746) races one socket per
+   * candidate — first `open` wins, losers are terminated — mirroring
+   * `raceDuplexSockets` on the JSON-RPC transport.
    */
   ensureTunnel(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
@@ -337,50 +346,94 @@ export class TunnelManager {
     if (!config) {
       return Promise.reject(new Error('no active backend config for the tunnel'));
     }
+    const hosts = config.transport === 'wss' ? candidateWssHosts(config) : [];
+    const candidates: BackendConnectionConfig[] =
+      hosts.length > 1 ? hosts.map((host) => ({ ...config, host })) : [config];
     const attempt = new Promise<void>((resolve, reject) => {
-      let ws: TunnelSocketLike;
-      try {
-        ws = this.socketFactory(config);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-        return;
-      }
       let settled = false;
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
+      let pendingCount = candidates.length;
+      let lastError: Error | null = null;
+      const sockets: TunnelSocketLike[] = [];
+      const terminateQuietly = (socket: TunnelSocketLike): void => {
+        this.connectingSockets.delete(socket);
         try {
-          ws.terminate();
+          socket.terminate();
         } catch {
           // ignore teardown errors
         }
+      };
+      // One candidate failing (error/close/factory throw) only rejects the
+      // attempt once EVERY candidate has failed; the last failure wins.
+      const failCandidate = (error: Error): void => {
+        lastError = error;
+        pendingCount -= 1;
+        if (!settled && pendingCount === 0) {
+          settled = true;
+          clearTimeout(timer);
+          reject(lastError);
+        }
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        for (const socket of sockets) terminateQuietly(socket);
         reject(new Error(`tunnel connect timed out after ${this.connectTimeoutMs}ms`));
       }, this.connectTimeoutMs);
       timer.unref?.();
-      ws.on('open', () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.ws = ws;
-        resolve();
-      });
-      ws.on('error', (error: Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(error);
-      });
-      ws.on('close', () => {
-        if (!settled) {
+      for (const candidate of candidates) {
+        let ws: TunnelSocketLike;
+        try {
+          ws = this.socketFactory(candidate);
+        } catch (error) {
+          failCandidate(error instanceof Error ? error : new Error(String(error)));
+          continue;
+        }
+        sockets.push(ws);
+        this.connectingSockets.add(ws);
+        // Guards against double-counting a candidate whose 'error' is
+        // followed by 'close'.
+        let done = false;
+        ws.on('open', () => {
+          this.connectingSockets.delete(ws);
+          if (done) return;
+          done = true;
+          if (settled || this.disposed) {
+            // A raced sibling already won, the timeout fired, or dispose()
+            // ran mid-connect — never adopt this socket.
+            terminateQuietly(ws);
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              reject(new Error('TunnelManager disposed'));
+            }
+            return;
+          }
           settled = true;
           clearTimeout(timer);
-          reject(new Error('tunnel closed before opening'));
-        }
-        if (this.ws === ws) this.handleTunnelDrop();
-      });
-      ws.on('message', (data: unknown, isBinary: boolean) => {
-        if (this.ws === ws) this.handleMessage(data, isBinary);
-      });
+          for (const other of sockets) {
+            if (other !== ws) terminateQuietly(other);
+          }
+          this.ws = ws;
+          resolve();
+        });
+        ws.on('error', (error: Error) => {
+          if (done || settled) return;
+          done = true;
+          this.connectingSockets.delete(ws);
+          failCandidate(error);
+        });
+        ws.on('close', () => {
+          this.connectingSockets.delete(ws);
+          if (!done && !settled) {
+            done = true;
+            failCandidate(new Error('tunnel closed before opening'));
+          }
+          if (this.ws === ws) this.handleTunnelDrop();
+        });
+        ws.on('message', (data: unknown, isBinary: boolean) => {
+          if (this.ws === ws) this.handleMessage(data, isBinary);
+        });
+      }
     });
     this.connectPromise = attempt;
     const clear = (): void => {
@@ -431,6 +484,16 @@ export class TunnelManager {
     const ws = this.ws;
     this.teardownForwards();
     this.ws = null;
+    // Sockets still connecting are not yet `this.ws` — terminate them too so
+    // an in-flight `ensureTunnel()` cannot open against the old backend.
+    for (const pending of this.connectingSockets) {
+      try {
+        pending.terminate();
+      } catch {
+        // ignore teardown errors
+      }
+    }
+    this.connectingSockets.clear();
     if (ws) {
       try {
         ws.terminate();

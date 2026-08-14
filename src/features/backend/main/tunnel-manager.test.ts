@@ -494,6 +494,78 @@ describe('TunnelManager', () => {
     await expect(manager.forwardPort(port)).rejects.toThrow(/disposed/);
   });
 
+  it('dispose during an in-flight connect terminates the pending socket', async () => {
+    const created: FakeTunnelSocket[] = [];
+    const manager = new TunnelManager({
+      getConfig: () => WSS_CONFIG,
+      socketFactory: () => {
+        const ws = new FakeTunnelSocket();
+        created.push(ws);
+        return ws; // never opens — the connect stays in flight
+      },
+    });
+    const pending = manager.forwardPort(80);
+    pending.catch(() => {});
+    await waitFor(() => created.length === 1);
+    manager.dispose();
+    // The pending socket was terminated, not left to open against the old backend.
+    expect(created[0].readyState).toBe(3);
+    await expect(pending).rejects.toThrow();
+  });
+
+  it('races wss candidate hosts and adopts the first socket to open (#1746)', async () => {
+    const created: Array<{ host: string | undefined; ws: FakeTunnelSocket }> = [];
+    const manager = new TunnelManager({
+      getConfig: () => ({ ...WSS_CONFIG, host: '10.0.0.1', hosts: ['10.0.0.1', '127.0.0.1'] }),
+      socketFactory: (config) => {
+        const ws = new FakeTunnelSocket();
+        created.push({ host: config.host, ws });
+        if (config.host === '127.0.0.1') {
+          attachFakeDaemon(ws);
+          queueMicrotask(() => ws.open());
+        }
+        // The 10.0.0.1 candidate never opens (unreachable primary).
+        return ws;
+      },
+    });
+    onCleanup(() => manager.dispose());
+
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const localPort = await manager.forwardPort(port);
+    // One socket per candidate, the reachable secondary won, the loser was terminated.
+    expect(created.map((c) => c.host)).toEqual(['10.0.0.1', '127.0.0.1']);
+    expect(created[0].ws.readyState).toBe(3);
+
+    const client = await connectClient(localPort);
+    onCleanup(() => client.destroy());
+    const payload = Buffer.from('via secondary candidate');
+    const received = collectUntil(client, payload.length);
+    client.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('rejects the connect only after every candidate host has failed', async () => {
+    const created: FakeTunnelSocket[] = [];
+    const manager = new TunnelManager({
+      getConfig: () => ({ ...WSS_CONFIG, host: 'a', hosts: ['a', 'b'] }),
+      socketFactory: () => {
+        const ws = new FakeTunnelSocket();
+        created.push(ws);
+        return ws;
+      },
+    });
+    onCleanup(() => manager.dispose());
+    const pending = manager.forwardPort(80);
+    pending.catch(() => {});
+    await waitFor(() => created.length === 2);
+    created[0].emit('error', new Error('candidate a refused'));
+    // One failure alone must not settle the attempt.
+    await delay(20);
+    created[1].emit('error', new Error('candidate b refused'));
+    await expect(pending).rejects.toThrow(/candidate b refused/);
+  });
+
   it('sends the mux frames the daemon contract expects (OPEN with port, DATA, CLOSE)', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
