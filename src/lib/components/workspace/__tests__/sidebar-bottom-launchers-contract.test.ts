@@ -41,6 +41,19 @@ describe('workspace sidebar bottom launchers', () => {
     expect(terminalDock).not.toContain('shrink-0 flex-1');
   });
 
+  it('keeps expanded tab-strip tabs flex containers so the clipped deck never overflows', () => {
+    // Regression: block-flow tabs add the line-box strut's descent below the
+    // empty-baseline edge-tab buttons, overflowing the h-10 overflow-hidden deck
+    // and clipping the strip's bottom edge on platforms with taller font metrics.
+    const transitions = source('../multi-select-sidebar-transitions.css');
+    const tabRule = transitions.slice(
+      transitions.indexOf('.sidebar-expanded-tab {'),
+      transitions.indexOf('}', transitions.indexOf('.sidebar-expanded-tab {')),
+    );
+
+    expect(tabRule).toContain('display: flex;');
+  });
+
   it('scopes terminal and script launcher state to the dock workspace', () => {
     const terminalDock = source('../WorkspaceTerminalDock.svelte');
     const terminalOverlay = source('../../terminal/QuakeTerminalOverlay.svelte');

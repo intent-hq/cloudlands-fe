@@ -804,9 +804,13 @@
     class="shrink-0 px-6 pb-2 pt-5"
     data-workspace-title-region
     draggable={draggableTitleRegion}
-    inert={!isLauncherOverview}
   >
-    <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} {onCloseWorkspace} />
+    <WorkspaceProgressCard
+      {workspaceId}
+      onOpenNote={handleOpenNoteInPanel}
+      {onCloseWorkspace}
+      hideActionsMenu={!isLauncherOverview}
+    />
   </div>
 
   {#if !isNewWorkspaceSession}

@@ -85,9 +85,17 @@
     onAcceptChanges?: () => void;
     /** Column-mode action rendered to the right of the workspace kebab. */
     onCloseWorkspace?: (event: MouseEvent) => void;
+    /** Hides the kebab actions menu (e.g. while a sidebar card is expanded). */
+    hideActionsMenu?: boolean;
   }
 
-  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges, onCloseWorkspace }: Props = $props();
+  let {
+    workspaceId,
+    onOpenNote: _onOpenNote,
+    onAcceptChanges,
+    onCloseWorkspace,
+    hideActionsMenu = false,
+  }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -264,6 +272,11 @@
   let isSavingStatusMessage = $state(false);
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
+
+  // Reset the menu when it hides (e.g. a sidebar card expands) so it never remounts open.
+  $effect(() => {
+    if (hideActionsMenu) dropdownOpen = false;
+  });
 
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
@@ -912,50 +925,53 @@
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
-        <DropdownMenu bind:open={dropdownOpen}>
-          {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Button
-              variant="ghost-light"
-              size="icon-sm"
-              aria-label={m.workspace_progressCard_actions_ariaLabel()}
-              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-              onclick={toggle}
-              disabled={isDeleting}
-            >
-              {#if isDeleting}
-                <div
-                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                ></div>
-              {:else}
-                <KebabIcon class="size-4" />
-              {/if}
-            </Button>
-          {/snippet}
+        {#if !hideActionsMenu}
+          <DropdownMenu bind:open={dropdownOpen}>
+            {#snippet trigger({ toggle }: { toggle: () => void })}
+              <Button
+                variant="ghost-light"
+                size="icon-sm"
+                data-workspace-actions-kebab
+                aria-label={m.workspace_progressCard_actions_ariaLabel()}
+                class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+                onclick={toggle}
+                disabled={isDeleting}
+              >
+                {#if isDeleting}
+                  <div
+                    class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+                  ></div>
+                {:else}
+                  <KebabIcon class="size-4" />
+                {/if}
+              </Button>
+            {/snippet}
 
-          {#snippet content()}
-            <div class="w-48">
-              <WorkspaceActionsMenu
-                filePath={$workspace?.worktreePath ||
-                  $workspace?.repositoryPath ||
-                  $workspace?.path ||
-                  ''}
-                workspaceId={$workspace?.id || workspaceId || ''}
-                isDirectory={true}
-                isWorkspaceRoot={true}
-                onDelete={handleDelete}
-                onArchive={handleArchive}
-                onUnarchive={handleUnarchive}
-                {isArchived}
-                onClose={handleDropdownClose}
-                showDeleteOption={true}
-                showArchiveOption={true}
-                showFileNameCopy={false}
-                showFileActions={true}
-                additionalActions={[sidebarToggleAction, sidebarSideAction]}
-              />
-            </div>
-          {/snippet}
-        </DropdownMenu>
+            {#snippet content()}
+              <div class="w-48">
+                <WorkspaceActionsMenu
+                  filePath={$workspace?.worktreePath ||
+                    $workspace?.repositoryPath ||
+                    $workspace?.path ||
+                    ''}
+                  workspaceId={$workspace?.id || workspaceId || ''}
+                  isDirectory={true}
+                  isWorkspaceRoot={true}
+                  onDelete={handleDelete}
+                  onArchive={handleArchive}
+                  onUnarchive={handleUnarchive}
+                  {isArchived}
+                  onClose={handleDropdownClose}
+                  showDeleteOption={true}
+                  showArchiveOption={true}
+                  showFileNameCopy={false}
+                  showFileActions={true}
+                  additionalActions={[sidebarToggleAction, sidebarSideAction]}
+                />
+              </div>
+            {/snippet}
+          </DropdownMenu>
+        {/if}
         {#if onCloseWorkspace}
           <Button
             variant="ghost-light"

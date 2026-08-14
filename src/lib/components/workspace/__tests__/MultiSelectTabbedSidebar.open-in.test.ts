@@ -191,7 +191,7 @@ vi.mock('../sidebar/ContextPanel.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 vi.mock('../sidebar/WorkspaceProgressCard.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
+  default: (await import('./mocks/WorkspaceProgressCard.svelte')).default,
 }));
 vi.mock('../WorkspaceTerminalDock.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
@@ -659,18 +659,26 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
   });
 
   it('renders the expanded card as an overlay that dismisses only from its backdrop', async () => {
-    mocks.selectedTabs = ['agents'];
     mocks.agents = [makeAgent('agent-1')];
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+
+    // Overview state: the workspace actions kebab is available.
+    const overview = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    expect(overview.container.querySelector('[data-workspace-actions-kebab]')).toBeTruthy();
+    cleanup();
+
+    mocks.selectedTabs = ['agents'];
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const overlay = container.querySelector<HTMLElement>('[data-sidebar-overlay]');
     const agent = container.querySelector<HTMLElement>('[data-expanded-agent="agent-1"]');
 
     expect(overlay).toBeTruthy();
+    // The title region stays interactive while a card is expanded; only the kebab menu hides.
     expect(
       (container.querySelector('[data-workspace-title-region]') as HTMLElement & { inert: boolean })
         .inert,
-    ).toBe(true);
+    ).toBeFalsy();
+    expect(container.querySelector('[data-workspace-actions-kebab]')).toBeNull();
     mocks.dispatch.mockClear();
 
     await fireEvent.click(agent!);
