@@ -5969,5 +5969,13 @@
   "chat_agentSubscriptions_finished_many": "{count} agents terminés",
   "chat_backgroundHooks_details_runCount_one": "1 exécution terminée",
   "chat_backgroundHooks_details_runCount_many": "{count} exécutions terminées",
-  "chat_agentSubscriptions_finished_one": "{count} agent terminé"
+  "chat_agentSubscriptions_finished_one": "{count} agent terminé",
+  "layout_sidebarPanel_workspaceListOptions_tooltip": "Options de la liste des espaces",
+  "layout_sidebarPanel_groupBy_label": "Regrouper par",
+  "workspace_multiSelectSidebar_searchAgents_placeholder": "Rechercher des agents...",
+  "workspace_multiSelectSidebar_searchContext_placeholder": "Rechercher dans le contexte...",
+  "workspace_agentsList_noSearchResults_label": "Aucun agent ne correspond à votre recherche.",
+  "workspace_contextPanel_noSearchResults_label": "Aucun contexte ne correspond à votre recherche.",
+  "workspace_sidebarSearch_clear_ariaLabel": "Effacer la recherche",
+  "layout_allCard_archived_label": "Archivés"
 }

@@ -5969,5 +5969,13 @@
   "chat_agentSubscriptions_finished_many": "{count} 個智慧體已完成",
   "chat_backgroundHooks_details_runCount_one": "已完成 1 次執行",
   "chat_backgroundHooks_details_runCount_many": "已完成 {count} 次執行",
-  "chat_agentSubscriptions_finished_one": "{count} 個智慧體已完成"
+  "chat_agentSubscriptions_finished_one": "{count} 個智慧體已完成",
+  "layout_sidebarPanel_workspaceListOptions_tooltip": "工作區清單選項",
+  "layout_sidebarPanel_groupBy_label": "分組方式",
+  "workspace_multiSelectSidebar_searchAgents_placeholder": "搜尋智慧體…",
+  "workspace_multiSelectSidebar_searchContext_placeholder": "搜尋內容…",
+  "workspace_agentsList_noSearchResults_label": "沒有符合搜尋條件的智慧體。",
+  "workspace_contextPanel_noSearchResults_label": "沒有符合搜尋條件的內容。",
+  "workspace_sidebarSearch_clear_ariaLabel": "清除搜尋",
+  "layout_allCard_archived_label": "已歸檔"
 }

@@ -5969,5 +5969,13 @@
   "chat_agentSubscriptions_finished_many": "{count} 个智能体已完成",
   "chat_backgroundHooks_details_runCount_one": "已完成 1 次运行",
   "chat_backgroundHooks_details_runCount_many": "已完成 {count} 次运行",
-  "chat_agentSubscriptions_finished_one": "{count} 个智能体已完成"
+  "chat_agentSubscriptions_finished_one": "{count} 个智能体已完成",
+  "layout_sidebarPanel_workspaceListOptions_tooltip": "工作区列表选项",
+  "layout_sidebarPanel_groupBy_label": "分组方式",
+  "workspace_multiSelectSidebar_searchAgents_placeholder": "搜索智能体…",
+  "workspace_multiSelectSidebar_searchContext_placeholder": "搜索上下文…",
+  "workspace_agentsList_noSearchResults_label": "没有与搜索匹配的智能体。",
+  "workspace_contextPanel_noSearchResults_label": "没有与搜索匹配的上下文。",
+  "workspace_sidebarSearch_clear_ariaLabel": "清除搜索",
+  "layout_allCard_archived_label": "已归档"
 }

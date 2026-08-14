@@ -5,6 +5,7 @@ import {
   initialState,
   openPanel,
   setCombinedPanelSplit,
+  setShowArchivedWorkspaces,
   setMultiSelectSidebarSelectedTabs,
   setMultiSelectSidebarTabOrder,
   setStatsOverlayOpen,
@@ -12,6 +13,7 @@ import {
   setWorkspaceNoteOrder,
   sidebarNavReducer,
   togglePanel,
+  toggleShowArchivedWorkspaces,
   toggleStatsOverlay,
   toggleWorkspaceCollapsedNote,
 } from './sidebar-nav-slice';
@@ -99,6 +101,21 @@ describe('sidebarNavReducer Chief navigation', () => {
 });
 
 describe('sidebarNavReducer workspace sidebar UI persistence', () => {
+  it('stores and hydrates archived workspace visibility with a false default', () => {
+    expect(initialState.showArchivedWorkspaces).toBe(false);
+
+    const shown = sidebarNavReducer(initialState, setShowArchivedWorkspaces(true));
+    const hidden = sidebarNavReducer(shown, toggleShowArchivedWorkspaces());
+    const hydrated = sidebarNavReducer(
+      initialState,
+      hydrateSidebarNav({ showArchivedWorkspaces: true }),
+    );
+
+    expect(shown.showArchivedWorkspaces).toBe(true);
+    expect(hidden.showArchivedWorkspaces).toBe(false);
+    expect(hydrated.showArchivedWorkspaces).toBe(true);
+  });
+
   it('hydrates the persisted global multi-select tab order', () => {
     const next = sidebarNavReducer(
       initialState,

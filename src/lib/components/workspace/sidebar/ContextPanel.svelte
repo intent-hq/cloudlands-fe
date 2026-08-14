@@ -33,6 +33,9 @@
   import SkillsSection from './SkillsSection.svelte';
   import NotesPanel from './NotesPanel.svelte';
   import { ContextPickerModal } from './context-picker';
+  import { ListEmpty } from '$lib/components/ui/list';
+  import { filterContextItems, filterContextNotes } from './sidebar-search';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('ContextPanel');
 
@@ -49,6 +52,7 @@
     class?: string;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    searchQuery?: string;
   }
 
   let {
@@ -64,6 +68,7 @@
     class: className,
     openPanelTabs = [],
     activePanelTab,
+    searchQuery = '',
   }: Props = $props();
 
   // Picker modal state (legacy - for ContextPickerModal)
@@ -88,6 +93,10 @@
 
   // Get context items that aren't linked to any note
   const topLevelItems$ = selectTopLevelContextItems(workspaceIdStore);
+  const filteredNotes = $derived(filterContextNotes(notes, searchQuery));
+  const filteredTopLevelItems = $derived(filterContextItems($topLevelItems$, searchQuery));
+  const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
+  const hasSearchResults = $derived(filteredNotes.length > 0 || filteredTopLevelItems.length > 0);
 
   /**
    * Helper to create a fully-formed ContextItem with id + timestamps,
@@ -312,7 +321,7 @@
   <!-- Notes Panel with context items integrated -->
   <div class="flex-1 min-h-0 overflow-auto">
     <NotesPanel
-      {notes}
+      notes={filteredNotes}
       {workspaceId}
       {selectedNoteId}
       {onOpenNote}
@@ -326,8 +335,8 @@
     />
 
     <!-- Standalone context items (rendered in same list flow) -->
-    {#if $topLevelItems$.length > 0}
-      {#each $topLevelItems$ as item (item.id)}
+    {#if filteredTopLevelItems.length > 0}
+      {#each filteredTopLevelItems as item (item.id)}
         {@const panelState = getItemPanelState(item)}
         <ContextItemRow
           {item}
@@ -340,10 +349,19 @@
       {/each}
     {/if}
 
-    <!-- MCP Servers Section -->
-    <McpServersSection {workspaceId} />
+    {#if hasActiveSearch && !loading && !hasSearchResults}
+      <ListEmpty
+        message={m.workspace_contextPanel_noSearchResults_label()}
+        class="min-h-14 py-3"
+        role="status"
+        aria-live="polite"
+      />
+    {:else if !hasActiveSearch}
+      <!-- MCP Servers Section -->
+      <McpServersSection {workspaceId} />
 
-    <!-- Skills Section -->
-    <SkillsSection {workspaceId} />
+      <!-- Skills Section -->
+      <SkillsSection {workspaceId} />
+    {/if}
   </div>
 </div>

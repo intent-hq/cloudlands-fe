@@ -5969,5 +5969,13 @@
   "chat_agentSubscriptions_finished_many": "에이전트 {count}개 완료",
   "chat_backgroundHooks_details_runCount_one": "실행 1회 완료",
   "chat_backgroundHooks_details_runCount_many": "실행 {count}회 완료",
-  "chat_agentSubscriptions_finished_one": "에이전트 {count}개 완료"
+  "chat_agentSubscriptions_finished_one": "에이전트 {count}개 완료",
+  "layout_sidebarPanel_workspaceListOptions_tooltip": "작업 공간 목록 옵션",
+  "layout_sidebarPanel_groupBy_label": "그룹 기준",
+  "workspace_multiSelectSidebar_searchAgents_placeholder": "에이전트 검색...",
+  "workspace_multiSelectSidebar_searchContext_placeholder": "컨텍스트 검색...",
+  "workspace_agentsList_noSearchResults_label": "검색과 일치하는 에이전트가 없습니다.",
+  "workspace_contextPanel_noSearchResults_label": "검색과 일치하는 컨텍스트가 없습니다.",
+  "workspace_sidebarSearch_clear_ariaLabel": "검색 지우기",
+  "layout_allCard_archived_label": "보관됨"
 }

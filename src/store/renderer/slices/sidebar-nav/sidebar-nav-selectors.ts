@@ -118,6 +118,10 @@ export const selectAllSpacesViewMode = store.createSelector(
   (state) => state.sidebarNav.allSpacesViewMode,
 );
 
+export const selectShowArchivedWorkspaces = store.createSelector(
+  (state) => state.sidebarNav.showArchivedWorkspaces,
+);
+
 export const selectPinnedWorkspaceIds = store.createSelector(
   (state) => state.sidebarNav.pinnedWorkspaceIds,
 );

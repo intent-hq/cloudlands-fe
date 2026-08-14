@@ -13,6 +13,7 @@ import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
 // ── localStorage keys ──
 export const PINNED_WORKSPACES_KEY = 'intent:pinned-workspaces';
 export const VIEW_MODE_KEY = 'intent:all-spaces-view-mode';
+export const SHOW_ARCHIVED_KEY = 'intent:all-spaces-show-archived';
 export const PANEL_WIDTH_KEY = 'intent:sidebar-panel-width';
 export const COMBINED_PANEL_SPLIT_KEY = 'intent:sidebar-combined-panel-split';
 export const LEGACY_HOME_PANEL_SPLIT_KEY = 'intent:sidebar-home-panel-split';
@@ -38,6 +39,7 @@ export const initialState: SidebarNavState = {
   showCreateModal: false,
   draftPrompt: '',
   allSpacesViewMode: 'recent',
+  showArchivedWorkspaces: false,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
   multiSelectSelectedTabIdsByWorkspaceId: {},
@@ -89,6 +91,15 @@ export const setShowCreateModal = createAction<[show: boolean]>('sidebarNav/setS
 export const setAllSpacesViewMode = createAction<[mode: AllSpacesViewMode]>(
   'sidebarNav/setAllSpacesViewMode',
 );
+
+const showArchivedWorkspacesPreference = createBooleanPreference<SidebarNavState>({
+  sliceName: 'sidebarNav',
+  field: 'showArchivedWorkspaces',
+  setActionName: 'setShowArchivedWorkspaces',
+  toggleActionName: 'toggleShowArchivedWorkspaces',
+});
+export const setShowArchivedWorkspaces = showArchivedWorkspacesPreference.setAction;
+export const toggleShowArchivedWorkspaces = showArchivedWorkspacesPreference.toggleAction;
 
 // Pinned workspaces
 export const setPinnedWorkspaceIds = createAction<[ids: string[]]>(
@@ -157,6 +168,7 @@ type SidebarNavHydrationState = Partial<
       | 'panelWidth'
       | 'combinedPanelSplit'
       | 'allSpacesViewMode'
+      | 'showArchivedWorkspaces'
       | 'pinnedWorkspaceIds'
       | 'multiSelectTabOrder'
       | 'chiefActiveAgentId'
@@ -177,6 +189,7 @@ function migrateLegacyPanelItem(item: SidebarNavItem | 'home' | null): SidebarNa
 // ── Reducer ──
 export const sidebarNavReducer = createReducer<SidebarNavState>(initialState);
 cardPinnedPreference.register(sidebarNavReducer);
+showArchivedWorkspacesPreference.register(sidebarNavReducer);
 sidebarNavReducer.with(bumpActiveStreamsVersion, (state) => ({
   ...state,
   activeStreamsVersion: state.activeStreamsVersion + 1,
