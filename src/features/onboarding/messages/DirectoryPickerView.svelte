@@ -386,7 +386,7 @@
               type="text"
               class={cn(
                 'min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs font-mono text-foreground outline-none',
-                pathError ? 'border-destructive/60' : 'border-border/60 focus:border-border',
+                pathError ? 'border-destructive/60' : 'border-border/60 focus-visible:border-ring',
               )}
               aria-label={m.onboarding_dirPicker_path_ariaLabel()}
               aria-invalid={pathError ? true : undefined}
@@ -434,7 +434,7 @@
               bind:this={searchInputRef}
               bind:value={searchDraft}
               type="search"
-              class="w-full rounded-md border border-border/50 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus:border-border"
+              class="w-full rounded-md border border-border/50 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring"
               placeholder={m.onboarding_dirPicker_search_placeholder()}
               aria-label={m.onboarding_dirPicker_search_ariaLabel()}
               autocomplete="off"
@@ -549,7 +549,7 @@
               type="text"
               class={cn(
                 'min-w-0 flex-1 rounded border bg-background px-2 py-1 text-sm text-foreground outline-none',
-                createError ? 'border-destructive/60' : 'border-border focus:border-foreground/40',
+                createError ? 'border-destructive/60' : 'border-border focus-visible:border-ring',
               )}
               placeholder={m.onboarding_dirPicker_newFolderName_placeholder()}
               aria-label={m.onboarding_dirPicker_newFolderName_ariaLabel()}
