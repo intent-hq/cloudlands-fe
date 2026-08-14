@@ -84,6 +84,61 @@ function makeHarness(turn: FakeTurn, opts: HarnessOptions = {}) {
   return { scroller, ledger, turn, flush };
 }
 
+/**
+ * Two turns sharing one scroller, each with its own ledger — the same-flush
+ * bulk swap shape (a scroll jump swaps several LazyTurns in one Svelte
+ * flush; every IntersectionObserver callback snapshots the same pre-flush
+ * scrollTop). Turn B sits directly below turn A at the top of the content.
+ */
+function makeBulkHarness(
+  turnA: { height: number },
+  turnB: { height: number },
+  opts: { restHeight?: number; clientHeight?: number; initialScrollTop?: number } = {},
+) {
+  const { restHeight = 2000, clientHeight = 600, initialScrollTop = 2800 } = opts;
+  let scrollTop = initialScrollTop;
+  const scroller = {
+    get scrollTop() {
+      return scrollTop;
+    },
+    set scrollTop(v: number) {
+      scrollTop = Math.min(
+        Math.max(0, v),
+        Math.max(0, restHeight + turnA.height + turnB.height - clientHeight),
+      );
+    },
+    get scrollHeight() {
+      return restHeight + turnA.height + turnB.height;
+    },
+    clientHeight,
+    getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
+  } as unknown as HTMLElement;
+  const elFor = (turn: { height: number }, getContentTop: () => number) =>
+    ({
+      get offsetHeight() {
+        return turn.height;
+      },
+      isConnected: true,
+      getBoundingClientRect: () =>
+        ({ bottom: getContentTop() + turn.height - scroller.scrollTop }) as DOMRect,
+    }) as unknown as HTMLElement;
+  const elA = elFor(turnA, () => 0);
+  const elB = elFor(turnB, () => turnA.height); // B sits directly below A
+  const ledgerA = createHeightLedger(
+    () => scroller,
+    () => elA,
+  );
+  const ledgerB = createHeightLedger(
+    () => scroller,
+    () => elB,
+  );
+  /** Simulate the browser's native scrollTop clamp at layout-flush time. */
+  const flush = () => {
+    scroller.scrollTop = scroller.scrollTop;
+  };
+  return { scroller, ledgerA, ledgerB, flush };
+}
+
 describe('LazyTurn height ledger', () => {
   it('first account() seeds the ledger without shifting the scroller', () => {
     // Turn spans content [200, 700]; viewport starts at 1000 → bottom at -300.
@@ -278,57 +333,76 @@ describe('bottom-anchored clamp compensation (phantom space snap-back)', () => {
     // reader sits at the (phantom) bottom. Both ledgers share the pre-flush
     // snapshot, so both derive the same absolute target from the post-flush
     // scrollHeight — the second account() must not move the scroller again.
-    const turnA = { height: 800, contentTop: 0, connected: true };
-    const turnB = { height: 600, connected: true };
-    const restHeight = 2000;
-    const clientHeight = 600;
-    let scrollTop = 2800; // max: 2000 + 800 + 600 - 600
-    const scroller = {
-      get scrollTop() {
-        return scrollTop;
-      },
-      set scrollTop(v: number) {
-        scrollTop = Math.min(
-          Math.max(0, v),
-          Math.max(0, restHeight + turnA.height + turnB.height - clientHeight),
-        );
-      },
-      get scrollHeight() {
-        return restHeight + turnA.height + turnB.height;
-      },
-      clientHeight,
-      getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
-    } as unknown as HTMLElement;
-    const elFor = (turn: { height: number }, getContentTop: () => number) =>
-      ({
-        get offsetHeight() {
-          return turn.height;
-        },
-        isConnected: true,
-        getBoundingClientRect: () =>
-          ({ bottom: getContentTop() + turn.height - scroller.scrollTop }) as DOMRect,
-      }) as unknown as HTMLElement;
-    const elA = elFor(turnA, () => 0);
-    const elB = elFor(turnB, () => turnA.height); // B sits directly below A
-    const ledgerA = createHeightLedger(
-      () => scroller,
-      () => elA,
-    );
-    const ledgerB = createHeightLedger(
-      () => scroller,
-      () => elB,
-    );
-    ledgerA.account();
-    ledgerB.account();
+    const turnA = { height: 800 };
+    const turnB = { height: 600 };
+    const h = makeBulkHarness(turnA, turnB, { initialScrollTop: 2800 }); // max: 2000+800+600-600
+    h.ledgerA.account();
+    h.ledgerB.account();
 
-    const pre = snapshotScroller(scroller);
+    const pre = snapshotScroller(h.scroller);
     turnA.height = 300; // -500
     turnB.height = 400; // -200, same flush
-    scroller.scrollTop = scroller.scrollTop; // native clamp: max 2100
-    ledgerA.account(pre);
-    expect(scroller.scrollTop).toBe(2100); // pinned at the new bottom
-    ledgerB.account(pre);
-    expect(scroller.scrollTop).toBe(2100); // idempotent — no second move
+    h.flush(); // native clamp: max 2100
+    h.ledgerA.account(pre);
+    expect(h.scroller.scrollTop).toBe(2100); // pinned at the new bottom
+    h.ledgerB.account(pre);
+    expect(h.scroller.scrollTop).toBe(2100); // idempotent — no second move
+  });
+
+  it('classic path: same-flush bulk growths mid-history sum exactly (relative writes compose)', () => {
+    // Reader mid-history, both underestimated placeholders swap in the same
+    // flush. Each ledger snapshots the same pre-flush scrollTop; an absolute
+    // write from that snapshot would discard the sibling's compensation
+    // (final 1000 + dB instead of 1000 + dA + dB) — the multi-turn variant
+    // of the #1194 jump.
+    const turnA = { height: 200 };
+    const turnB = { height: 200 };
+    const h = makeBulkHarness(turnA, turnB, { restHeight: 100000, initialScrollTop: 1000 });
+    h.ledgerA.account();
+    h.ledgerB.account();
+
+    const pre = snapshotScroller(h.scroller);
+    turnA.height = 572; // +372
+    turnB.height = 500; // +300, same flush
+    h.flush(); // growth never clamps
+    h.ledgerA.account(pre);
+    h.ledgerB.account(pre);
+    expect(h.scroller.scrollTop).toBe(1672); // 1000 + 372 + 300
+  });
+
+  it('classic path: same-flush bulk no-clamp shrinks mid-history sum exactly', () => {
+    // Far from the bottom (restHeight huge), no clamp fires; the two shrink
+    // deltas must both land: 1000 - 100 - 50 = 850. An absolute write from
+    // the shared snapshot lands at 950 instead.
+    const turnA = { height: 500 };
+    const turnB = { height: 400 };
+    const h = makeBulkHarness(turnA, turnB, { restHeight: 100000, initialScrollTop: 1000 });
+    h.ledgerA.account();
+    h.ledgerB.account();
+
+    const pre = snapshotScroller(h.scroller);
+    turnA.height = 400; // -100
+    turnB.height = 350; // -50, same flush
+    h.flush(); // no clamp: max is far above scrollTop
+    h.ledgerA.account(pre);
+    h.ledgerB.account(pre);
+    expect(h.scroller.scrollTop).toBe(850);
+  });
+
+  it('classic path: mixed same-flush growth and shrink mid-history net out', () => {
+    const turnA = { height: 200 };
+    const turnB = { height: 500 };
+    const h = makeBulkHarness(turnA, turnB, { restHeight: 100000, initialScrollTop: 1000 });
+    h.ledgerA.account();
+    h.ledgerB.account();
+
+    const pre = snapshotScroller(h.scroller);
+    turnA.height = 572; // +372
+    turnB.height = 400; // -100, same flush
+    h.flush();
+    h.ledgerA.account(pre);
+    h.ledgerB.account(pre);
+    expect(h.scroller.scrollTop).toBe(1272); // 1000 + 372 - 100
   });
 
   it('ResizeObserver path (no snapshot): a shrink already clamped to the new max is not re-applied', () => {

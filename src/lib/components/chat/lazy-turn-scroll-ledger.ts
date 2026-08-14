@@ -48,27 +48,38 @@
  * e.g. scrollTop 1699.33 against a computed max of 1700.
  *
  * Caveat — concurrent same-frame changes: the pre-change bottom is
- * reconstructed as `rect.bottom - delta`, corrected by any scrollTop
- * movement since the snapshot was taken (the native clamp — without that
- * correction a partial clamp shifts the rect down and can misclassify an
- * above-viewport turn as visible). The reconstruction still assumes no OTHER
- * turn's geometry changed since the last account(). When several turns above
- * the viewport change height in the same flush (bulk swap after a scroll
- * jump, container-width re-wrap), a turn accounted while other turns' deltas
- * are still uncompensated has its rect polluted by those pending deltas, so
- * the above/below classification is not exact near the boundary. The
+ * reconstructed as `rect.bottom - delta`, corrected by the native clamp's
+ * scrollTop movement (without that correction a partial clamp shifts the
+ * rect down and can misclassify an above-viewport turn as visible). The
+ * clamp shift is derived from geometry — min(0, postMax - preScrollTop) —
+ * NOT from the observed scrollTop, because in a same-flush bulk swap the
+ * current scrollTop already includes sibling ledgers' compensation writes
+ * (those shift rect and scrollTop together and cancel out of the
+ * reconstruction). The reconstruction still assumes no OTHER turn's
+ * geometry changed since the last account(). When several turns above the
+ * viewport change height in the same flush (bulk swap after a scroll jump,
+ * container-width re-wrap), a turn accounted while other turns' deltas are
+ * still uncompensated has its rect polluted by those pending deltas, so the
+ * above/below classification is not exact near the boundary. The
  * compensation magnitude is always this turn's own delta (the ledger never
- * drifts), and each earlier account()'s scrollTop write progressively
- * restores the rects for later ones, so any error is boundary-local and
- * self-limiting. Same-flush bulk SHRINKS compose idempotently on the
- * bottom-anchored path — every ledger sharing the pre-flush snapshot derives
- * the same absolute target from the post-flush scrollHeight — but a GROWTH
- * landing in the same flush composes additively on top of that absolute
- * target (the target's post-flush scrollHeight already includes the growth,
- * then the growth's own account() applies += delta again), double-counting
- * it by up to that delta. Like the rect pollution above this is bounded and
- * boundary-local, and it requires a simultaneous under- and overestimated
- * placeholder pair near the bottom.
+ * drifts), and each earlier account()'s relative scrollTop write
+ * progressively restores the rects for later ones, so any error is
+ * boundary-local and self-limiting. Composition properties: the classic
+ * path uses RELATIVE writes, so same-flush bulk growths and no-clamp
+ * shrinks sum exactly; when a clamp DID fire on the classic path (total
+ * shrink exceeding a more-than-a-viewport distance from the bottom), each
+ * participating ledger subtracts the flush's clamp shift once, so a bulk
+ * clamped classic shrink over-corrects by up to (n-1)·clampShift — bounded,
+ * and far rarer than the bulk swaps the relative form protects. Same-flush
+ * bulk SHRINKS compose idempotently on the bottom-anchored path — every
+ * ledger sharing the pre-flush snapshot derives the same absolute target
+ * from the post-flush scrollHeight — but a GROWTH landing in the same flush
+ * composes additively on top of that absolute target (the target's
+ * post-flush scrollHeight already includes the growth, then the growth's
+ * own account() applies += delta again), double-counting it by up to that
+ * delta. Like the rect pollution above this is bounded and boundary-local,
+ * and it requires a simultaneous under- and overestimated placeholder pair
+ * near the bottom.
  */
 export interface ScrollerSnapshot {
   scrollTop: number;
@@ -124,19 +135,24 @@ export function createHeightLedger(
       lastHeight = newHeight;
       if (delta === 0) return;
       const scrollerTop = scroller.getBoundingClientRect().top;
-      // The element rect reflects the CURRENT scrollTop; any movement since
-      // the snapshot was taken (the native clamp firing on a shrink) has
-      // shifted it. Undo that movement so the pre-change bottom is
-      // reconstructed at the pre-change scroll position — otherwise a
-      // partial clamp shifts the rect down by the clamped amount and an
-      // above-viewport turn can misclassify as visible, skipping the
-      // snapshot correction entirely.
-      const scrollTopShift = preChange ? scroller.scrollTop - preChange.scrollTop : 0;
-      const bottomBeforeChange = el.getBoundingClientRect().bottom - delta + scrollTopShift;
+      const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      // How far the native clamp moved scrollTop at flush time: it fires
+      // exactly when the post-flush max fell below the pre-flush scrollTop.
+      // Derived from geometry — NOT from the current scrollTop, which in a
+      // same-flush bulk swap already includes sibling ledgers' compensation
+      // writes (sibling deltas shift the rect and scrollTop together, so
+      // they cancel out of the reconstruction below; the clamp's movement
+      // is the only part that must be corrected explicitly).
+      const clampShift = preChange ? Math.min(0, maxScrollTop - preChange.scrollTop) : 0;
+      // The element rect reflects the current scrollTop; the clamp's
+      // movement shifted it down by |clampShift|. Undo that so the
+      // pre-change bottom is reconstructed at the pre-change scroll
+      // position — otherwise a partial clamp can misclassify an
+      // above-viewport turn as visible, skipping compensation entirely.
+      const bottomBeforeChange = el.getBoundingClientRect().bottom - delta + clampShift;
       if (bottomBeforeChange > scrollerTop) return;
 
       if (delta < 0) {
-        const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         if (preChange) {
           const preMaxScrollTop = Math.max(0, preChange.scrollHeight - preChange.clientHeight);
           const preDistanceFromBottom = Math.max(0, preMaxScrollTop - preChange.scrollTop);
@@ -158,16 +174,16 @@ export function createHeightLedger(
           return;
         }
       }
-      // Classic viewport-preserving shift. With a snapshot the shift is
-      // applied to the PRE-flush scrollTop (absolute write, re-clamped by
-      // the browser as needed) so a native clamp that fired between the
-      // snapshot and this account() is not double-counted; without one the
-      // relative form is all that is available.
-      if (preChange) {
-        scroller.scrollTop = preChange.scrollTop + delta;
-      } else {
-        scroller.scrollTop += delta;
-      }
+      // Classic viewport-preserving shift. RELATIVE on purpose: same-flush
+      // bulk swaps each snapshot the same pre-flush scrollTop, so an
+      // absolute write from the snapshot would overwrite sibling ledgers'
+      // compensation instead of composing with it (the multi-turn variant
+      // of the jump this ledger exists to fix). The clamp's own movement is
+      // excluded from the shift (delta - clampShift) so a clamp that fired
+      // between the snapshot and this account() is not double-counted —
+      // only reachable here when the flush's total shrink exceeds the
+      // reader's more-than-a-viewport distance from the bottom.
+      scroller.scrollTop += delta - clampShift;
     },
   };
 }
