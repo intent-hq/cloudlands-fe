@@ -91,15 +91,25 @@
       gitRootId: rootId,
       nextToken: token,
     });
+    // The request is settled either way; clear the flag before the stale
+    // guards so a discarded response can't wedge the affordance.
+    loadingMore = false;
     if (epoch !== requestEpoch) return;
     if (rootId !== gitRootId || wsId !== workspaceId) return;
+    // A concurrent refresh may have replaced the page this token came from
+    // (it bumps the epoch before loadMore captures it, so the epoch guard
+    // alone can't catch that interleave).
+    if (token !== nextToken) return;
     if (result.ok) {
-      commits = [...commits, ...result.data.items];
+      // De-dup on append: the daemon token is an offset skip token, so a
+      // commit landing between pages shifts offsets and repeats the tail —
+      // duplicate hashes would crash the keyed {#each}.
+      const seen = new Set(commits.map((c) => c.hash));
+      commits = [...commits, ...result.data.items.filter((c) => !seen.has(c.hash))];
       nextToken = result.data.nextToken;
     } else {
       loadError = result.error;
     }
-    loadingMore = false;
   }
 
   // Refetch whenever the selected root (or workspace) changes
@@ -110,6 +120,7 @@
     commits = [];
     nextToken = undefined;
     olderExpanded = false;
+    loadingMore = false;
     if (wsId && rootId) load(wsId, rootId);
   });
 

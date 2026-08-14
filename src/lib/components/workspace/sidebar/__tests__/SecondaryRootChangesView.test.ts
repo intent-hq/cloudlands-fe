@@ -303,4 +303,71 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).toContain('feat: page one');
     expect(container.textContent).not.toContain('chore: at registration');
   });
+
+  it('does not wedge "Show more" when a refresh supersedes an in-flight page load', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    const page1 = {
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: page one')], nextToken: 'tok-2' },
+    };
+    mocks.getHistory.mockResolvedValueOnce(page1);
+    const { getByTestId, getByTitle } = await renderView(makeEntry('main', 'root-1', 'bound111'));
+    await waitFor(() => expect(getByTestId('secondary-root-show-more')).toBeTruthy());
+
+    // Click "Show more" (page 2 hangs), then refresh while it is in flight.
+    let resolvePage2!: (v: unknown) => void;
+    mocks.getHistory.mockReturnValueOnce(new Promise((resolve) => (resolvePage2 = resolve)));
+    await fireEvent.click(getByTestId('secondary-root-show-more'));
+    mocks.getHistory.mockResolvedValueOnce(page1);
+    await fireEvent.click(getByTitle('Refresh git status'));
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(3));
+
+    // The superseded page-2 response resolves and must be discarded —
+    // without re-wedging loadingMore (the stuck-spinner regression).
+    resolvePage2({
+      ok: true,
+      data: { items: [makeCommit('zzzz999', 'feat: stale page two')] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const showMore = getByTestId('secondary-root-show-more');
+    expect((showMore as HTMLButtonElement).disabled).toBe(false);
+
+    // The affordance still works after the discarded response.
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [makeCommit('bound111', 'chore: at registration')] },
+    });
+    await fireEvent.click(showMore);
+    await waitFor(() => expect(getByTestId('secondary-root-boundary-toggle')).toBeTruthy());
+  });
+
+  it('de-dups appended commits so an offset-shifted page cannot repeat hashes', async () => {
+    // The daemon token is an offset skip token: a commit landing between
+    // pages shifts offsets, so page 2 can repeat page 1's tail.
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        items: [makeCommit('aaaa111', 'feat: one'), makeCommit('bbbb222', 'fix: two')],
+        nextToken: 'tok-2',
+      },
+    });
+    const { container, getByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
+    await waitFor(() => expect(getByTestId('secondary-root-show-more')).toBeTruthy());
+
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
+      },
+    });
+    await fireEvent.click(getByTestId('secondary-root-show-more'));
+
+    // Duplicate hash filtered on append (a duplicate key would crash the
+    // keyed {#each}); the boundary from the appended page still applies.
+    await waitFor(() => expect(getByTestId('secondary-root-boundary-toggle')).toBeTruthy());
+    expect(container.textContent).toContain('feat: one');
+    const matches = container.textContent?.match(/fix: two/g) ?? [];
+    expect(matches).toHaveLength(1);
+  });
 });
