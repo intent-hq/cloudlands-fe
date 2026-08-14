@@ -793,9 +793,18 @@ export interface AgentQueueStaleMessageEvent extends WorkspaceEventBase {
 }
 
 /**
- * Emitted when an agent spawn is queued waiting for a free process slot
- * (all slots active). Self-sufficient payload carries `{ agentId, used, cap }`
- * so clients can render the cap-saturation state without polling.
+ * Machine-readable admission constraint stamped on `agent:process:*` events
+ * (intent-hq/intentd#1196): `"slots"` — the concurrency slot cap;
+ * `"memory-budget"` — the aggregate memory budget (`agents.memoryBudgetMb`).
+ * Absent on older daemons (treated as `"slots"`).
+ */
+export type AgentProcessEventReason = 'slots' | 'memory-budget';
+
+/**
+ * Emitted when an agent spawn is queued waiting for admission — a free
+ * process slot (all slots active) or memory headroom, named by `reason`.
+ * Self-sufficient payload carries `{ agentId, used, cap, reason }` so
+ * clients can render the cap-saturation state without polling.
  */
 export interface AgentProcessQueuedEvent extends WorkspaceEventBase {
   type: 'agent:process:queued';
@@ -803,12 +812,14 @@ export interface AgentProcessQueuedEvent extends WorkspaceEventBase {
     agentId: string;
     used: number;
     cap: number;
+    reason?: AgentProcessEventReason;
   };
 }
 
 /**
- * Emitted when a queued agent spawn resumes (a slot freed).
- * Self-sufficient payload carries `{ agentId, used, cap }`.
+ * Emitted when a queued agent spawn resumes (a slot freed / memory freed).
+ * Self-sufficient payload carries `{ agentId, used, cap, reason }`; `reason`
+ * echoes the constraint the spawn originally queued under.
  */
 export interface AgentProcessResumedEvent extends WorkspaceEventBase {
   type: 'agent:process:resumed';
@@ -816,12 +827,13 @@ export interface AgentProcessResumedEvent extends WorkspaceEventBase {
     agentId: string;
     used: number;
     cap: number;
+    reason?: AgentProcessEventReason;
   };
 }
 
 /**
  * Emitted when the process registry evicts the LRU idle process.
- * Self-sufficient payload carries `{ agentId, used, cap }`.
+ * Self-sufficient payload carries `{ agentId, used, cap, reason }`.
  * No UI rendering required per task scope.
  */
 export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
@@ -830,6 +842,7 @@ export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
     agentId: string;
     used: number;
     cap: number;
+    reason?: AgentProcessEventReason;
   };
 }
 

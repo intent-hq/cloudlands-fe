@@ -3056,6 +3056,8 @@
   "tiptap_suggestionTooltip_accept_tooltip": "接受建议",
   "tiptap_suggestionTooltip_reject_tooltip": "拒绝建议",
   "tiptap_taskAgentStatus_waitingSlot_label": "正在等待空闲的智能体槽位（{used}/{cap} 忙碌）",
+  "tiptap_taskAgentStatus_waitingMemory_label": "正在等待内存余量（{used}/{cap} 个智能体运行中）",
+  "tiptap_taskAgentStatus_waitingMemory_tooltip": "智能体进程已用满内存预算。内存释放后此智能体将启动；预算由 agents.memoryBudgetMb 配置。",
   "tiptap_taskAgentStatus_working_label": "工作中…",
   "tiptap_taskAgentStatus_spinningUp_label": "启动中…",
   "tiptap_taskAgentStatus_loadingAgent_label": "正在加载智能体…",

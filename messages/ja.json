@@ -3056,6 +3056,8 @@
   "tiptap_suggestionTooltip_accept_tooltip": "提案を承認",
   "tiptap_suggestionTooltip_reject_tooltip": "提案を却下",
   "tiptap_taskAgentStatus_waitingSlot_label": "空きエージェントスロットを待機中（{used}/{cap} 使用中）",
+  "tiptap_taskAgentStatus_waitingMemory_label": "メモリの空きを待機中（{used}/{cap} エージェント実行中）",
+  "tiptap_taskAgentStatus_waitingMemory_tooltip": "エージェントプロセスがメモリ予算を使い切っています。メモリが解放されるとこのエージェントは起動します。予算は agents.memoryBudgetMb で設定できます。",
   "tiptap_taskAgentStatus_working_label": "作業中...",
   "tiptap_taskAgentStatus_spinningUp_label": "起動中...",
   "tiptap_taskAgentStatus_loadingAgent_label": "エージェントを読み込み中...",

@@ -1,8 +1,15 @@
-# Scheduled intentd sidecar pin bump.
+# intentd sidecar pin bump — event-driven, with an hourly cron backstop.
 #
-# Every hour (at :15, offset from intentd's on-the-hour auto-cut cadence so
-# a freshly published intentd alpha is picked up shortly after it lands) this
-# workflow compares the latest intentd alpha — alpha.json on the fixed
+# Two triggers run the same job:
+# - repository_dispatch (type `intentd-alpha-published`), sent by intentd's
+#   publish-channel-manifest workflow right after a new alpha.json lands, so
+#   the pin bumps minutes after an intentd alpha publishes instead of waiting
+#   for the next cron tick.
+# - Hourly cron at :15 (offset from intentd's on-the-hour auto-cut cadence)
+#   as the backstop when the dispatch is missed (it is fail-soft on the
+#   intentd side when its FE_DISPATCH_TOKEN secret is absent).
+#
+# Each run compares the latest intentd alpha — alpha.json on the fixed
 # `channel-alpha` release of the public intent-hq/intentd-releases mirror —
 # against the `intentd.version` pin. When the alpha is newer it lands a pin
 # bump via ONE rolling PR on the
@@ -36,6 +43,8 @@ permissions: {}
 on:
   schedule:
     - cron: "15 * * * *"
+  repository_dispatch:
+    types: [intentd-alpha-published]
   workflow_dispatch:
     inputs:
       dry_run:

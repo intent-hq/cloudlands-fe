@@ -964,11 +964,12 @@ export const updateAgentDigest = createAction<
 
 /**
  * Set process queue hint (agent:process:queued event).
- * Payload: [agentId, used, cap]
+ * Payload: [agentId, used, cap, reason] — `reason` names the admission
+ * constraint the spawn queued under ('slots' | 'memory-budget').
  */
-export const setProcessQueueHint = createAction<[agentId: string, used: number, cap: number]>(
-  'agentSessions/setProcessQueueHint',
-);
+export const setProcessQueueHint = createAction<
+  [agentId: string, used: number, cap: number, reason: 'slots' | 'memory-budget']
+>('agentSessions/setProcessQueueHint');
 
 /**
  * Clear process queue hint (agent:process:resumed or normal state transition).
@@ -1253,9 +1254,9 @@ agentSessionReducer.with(streamTimedOut, (state, { payload: [agentId] }) =>
     isResponding: false,
   }),
 );
-agentSessionReducer.with(setProcessQueueHint, (state, { payload: [agentId, used, cap] }) =>
+agentSessionReducer.with(setProcessQueueHint, (state, { payload: [agentId, used, cap, reason] }) =>
   updateSessionFields(state, agentId, {
-    processQueueHint: { waiting: true, used, cap },
+    processQueueHint: { waiting: true, used, cap, reason },
   }),
 );
 agentSessionReducer.with(clearProcessQueueHint, (state, { payload: [agentId] }) =>

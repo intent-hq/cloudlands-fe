@@ -698,8 +698,13 @@
                     </Tooltip>
                   {/if}
                   {#if isActive}
+                    <!--
+                      role="img" so the span's aria-label reliably maps to an
+                      accessible name (same treatment as the warning icons).
+                    -->
                     <span
                       class="text-green-500"
+                      role="img"
                       aria-label={m.layout_daemonStatus_connectionActive_label()}
                     >
                       <Fa icon={faCheck} />
