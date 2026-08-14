@@ -126,16 +126,35 @@ describe('browser:resolve-url IPC handler', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('degrades to a non-rewritten passthrough when resolution throws unexpectedly', async () => {
+  it('keeps the rewritten URL plus an error when the tunnel provider cannot be constructed', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     mocks.TunnelManager.mockImplementation(function () {
       throw new Error('tunnel manager exploded');
     });
     const handler = await registerAndGetHandler();
     const result = await handler({}, { url: 'http://daemon.localhost:3000/' });
-    expect(result.url).toBe('http://daemon.localhost:3000/');
-    expect(result.rewritten).toBe(false);
-    expect(result.error).toContain('URL resolution failed');
+    expect(result.url).toBe('http://10.0.0.5:3000/');
+    expect(result.rewritten).toBe(true);
+    expect(result.tunneled).toBeUndefined();
+    expect(result.error).toContain('not reachable');
+  });
+
+  it('degrades to a non-rewritten passthrough when resolution throws, even a non-Error', async () => {
+    vi.doMock('../main/loopback-url-resolver', () => ({
+      resolveBrowserUrl: vi.fn().mockImplementation(() => {
+        // eslint-disable-next-line no-throw-literal
+        throw 'resolver blew up';
+      }),
+    }));
+    try {
+      const handler = await registerAndGetHandler();
+      const result = await handler({}, { url: 'http://daemon.localhost:3000/' });
+      expect(result.url).toBe('http://daemon.localhost:3000/');
+      expect(result.rewritten).toBe(false);
+      expect(result.error).toBe('URL resolution failed: resolver blew up');
+    } finally {
+      vi.doUnmock('../main/loopback-url-resolver');
+    }
   });
 
   it('returns a VALIDATION_ERROR envelope for invalid payloads', async () => {

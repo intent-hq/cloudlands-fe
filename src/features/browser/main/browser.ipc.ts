@@ -234,15 +234,16 @@ export function registerBrowserHandlers(): void {
             getBrowserTunnelProvider,
           );
         } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
           logger.warn('browser:resolve-url failed; passing the URL through unresolved', {
             url: validated.url,
-            error: (err as Error).message,
+            error: detail,
           });
           return {
             url: validated.url,
             rewritten: false,
             // i18n-ignore (agent/renderer-facing protocol error, not user-facing)
-            error: `URL resolution failed: ${(err as Error).message}`,
+            error: `URL resolution failed: ${detail}`,
           };
         }
       },

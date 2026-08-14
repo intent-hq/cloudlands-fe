@@ -175,6 +175,17 @@ describe('resolveBrowserUrl', () => {
     expect(result.error).toContain('not reachable');
   });
 
+  it('degrades to the error result when the tunnel provider getter throws', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const result = await resolveBrowserUrl('http://daemon.localhost:3000/x', remoteContext, () => {
+      throw new Error('provider construction failed');
+    });
+    expect(result.url).toBe('http://10.0.0.5:3000/x');
+    expect(result.rewritten).toBe(true);
+    expect(result.tunneled).toBeUndefined();
+    expect(result.error).toContain('not reachable');
+  });
+
   it('surfaces the probe error cause detail in the error message', async () => {
     fetchMock.mockRejectedValue(
       Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNREFUSED') }),

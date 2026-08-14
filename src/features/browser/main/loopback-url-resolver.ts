@@ -85,7 +85,18 @@ export async function resolveRewrittenRemoteTarget(
       detail,
     });
 
-    const tunnel = getTunnelProvider?.() ?? null;
+    // The getter may lazily construct the provider; a construction failure
+    // must degrade to the best-effort error result below, not reject.
+    let tunnel: TunnelProvider | null = null;
+    try {
+      tunnel = getTunnelProvider?.() ?? null;
+    } catch (providerError) {
+      logger.warn('Tunnel provider unavailable for rewritten remote URL', {
+        requestedUrl: rewrite.requestedUrl,
+        rewrittenUrl: rewrite.url,
+        error: providerError instanceof Error ? providerError.message : String(providerError),
+      });
+    }
     if (tunnel) {
       try {
         const localPort = await tunnel.forwardPort(Number(port));
