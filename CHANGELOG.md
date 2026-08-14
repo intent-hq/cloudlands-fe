@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.45.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.44.0...v2.45.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* add opt-in agentFeatures.taskGraph toggle to Agent Features settings ([#1234](https://github.com/intent-hq/cloudlands-fe/issues/1234)) ([5de1318](https://github.com/intent-hq/cloudlands-fe/commit/5de131827552bce0f840d15b4d3af7a87a29b4d8))
+
 ## [2.44.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.43.1...v2.44.0) (2026-08-14)
 
 
