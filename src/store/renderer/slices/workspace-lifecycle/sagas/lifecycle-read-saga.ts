@@ -454,11 +454,20 @@ function* skillsWorker(
   yield* runWorkspaceRead(scheduler, 'skills', action.payload[0], refreshSkills);
 }
 
-function* scriptsWorker(
-  scheduler: WorkspaceReadScheduler,
-  action: ReturnType<typeof refreshScripts>,
-) {
-  yield* runWorkspaceRead(scheduler, 'scripts', action.payload[0], refreshWorkspaceScripts);
+type ScriptsReadAction = ReturnType<
+  typeof refreshScripts | typeof workspaceDeleted | typeof workspaceUnmounted
+>;
+
+function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAction) {
+  if (!isWorkspaceCleanupAction(action)) {
+    yield* runWorkspaceRead(
+      scheduler,
+      'scripts',
+      action.payload[0],
+      refreshWorkspaceScripts,
+      false,
+    );
+  }
 }
 
 type ChangesReadAction = ReturnType<
@@ -584,7 +593,12 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         scheduler,
       ),
       takeLeadingByWorkspace(loadSkillsRequested, skillsWorker, scheduler),
-      takeLeadingByWorkspace(refreshScripts, scriptsWorker, scheduler),
+      takeSingleFlightInContext(
+        [refreshScripts, workspaceDeleted, workspaceUnmounted],
+        workspaceReadContext,
+        scriptsWorker,
+        scheduler,
+      ),
       takeLeadingByWorkspace(refreshPRStatusRequested, prStatusWorker),
       takeSingleFlightInContext(
         [refreshRequested, loadWorkspaceDataRequested, workspaceDeleted, workspaceUnmounted],

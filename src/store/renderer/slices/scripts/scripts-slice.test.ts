@@ -1,18 +1,20 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   MAX_OUTPUT_CHARS,
   MAX_OUTPUT_CHUNKS,
   appendScriptOutput,
+  clearScriptOperations,
   disposeScripts,
   emptyWorkspaceState,
   removeScript,
+  restartScriptRequested,
+  scriptOperationFailed,
+  scriptOperationSucceeded,
   scriptsReducer,
   setScriptOutput,
   setScriptsData,
+  startScriptRequested,
+  stopScriptRequested,
   updateRuntimeState,
   upsertScript,
 } from './scripts-slice';
@@ -28,6 +30,7 @@ import {
   selectScriptRuntime,
   selectScriptsInitialized,
   selectWorkspaceScriptEntries,
+  selectWorkspaceScriptOperations,
   selectWorkspaceScriptRuntime,
   selectWorkspaceScriptsInitialized,
 } from './scripts-selectors';
@@ -89,6 +92,7 @@ describe('scriptsReducer', () => {
     expect(emptyWorkspaceState).toEqual({
       scripts: {},
       outputBuffers: {},
+      operations: {},
       initialized: false,
       loading: false,
     });
@@ -159,6 +163,46 @@ describe('scriptsReducer', () => {
 
     expect(state.byWorkspaceId[WS].scripts['script-1']).toBeUndefined();
     expect(state.byWorkspaceId[WS].outputBuffers['script-1']).toBeUndefined();
+  });
+
+  it('tracks Shell operations per workspace and suppresses a second pending request', () => {
+    let state = scriptsReducer(undefined, startScriptRequested(WS, 'script-1'));
+    state = scriptsReducer(state, stopScriptRequested(WS, 'script-1'));
+    state = scriptsReducer(state, restartScriptRequested('ws-2', 'script-1'));
+
+    expect(state.byWorkspaceId[WS].operations['script-1']).toEqual({
+      action: 'start',
+      pending: true,
+    });
+    expect(state.byWorkspaceId['ws-2'].operations['script-1']).toEqual({
+      action: 'restart',
+      pending: true,
+    });
+
+    state = scriptsReducer(state, scriptOperationFailed(WS, 'script-1', 'start', 'offline'));
+    expect(state.byWorkspaceId[WS].operations['script-1']).toEqual({
+      action: 'start',
+      pending: false,
+      error: 'offline',
+    });
+    expect(
+      selectWorkspaceScriptOperations.select({ scripts: state } as never, 'ws-2')['script-1'],
+    ).toEqual({ action: 'restart', pending: true });
+  });
+
+  it('settles only the matching operation and clears one workspace independently', () => {
+    let state = scriptsReducer(undefined, stopScriptRequested(WS, 'script-1'));
+    state = scriptsReducer(state, scriptOperationSucceeded(WS, 'script-1', 'start'));
+    expect(state.byWorkspaceId[WS].operations['script-1']?.pending).toBe(true);
+
+    state = scriptsReducer(state, scriptOperationSucceeded(WS, 'script-1', 'stop'));
+    expect(state.byWorkspaceId[WS].operations).toEqual({});
+
+    state = scriptsReducer(state, startScriptRequested(WS, 'script-2'));
+    state = scriptsReducer(state, startScriptRequested('ws-2', 'script-2'));
+    state = scriptsReducer(state, clearScriptOperations(WS));
+    expect(state.byWorkspaceId[WS].operations).toEqual({});
+    expect(state.byWorkspaceId['ws-2'].operations['script-2']?.pending).toBe(true);
   });
 
   it('appends raw chunks verbatim — no line splitting, no injected newlines', () => {
