@@ -372,11 +372,13 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
 });
 
 // The modal must keep a constant height across loading transitions: the
-// setup-script pill renders in both loading and loaded states (spinner inside
-// the pill), and the Create button's shortcut hint is always mounted with only
-// its visibility toggled by form validity.
+// setup-script pill and its trailing "script" suffix render in both loading
+// and loaded states (spinner inside the pill), and the Create button's
+// shortcut hint is always mounted with only its visibility toggled by form
+// validity.
 describe('CompactWorkspaceInitializer modal height stability', () => {
   const PILL_CLASSES = ['rounded-md', 'border', 'border-border', 'bg-background', 'px-2', 'py-0.5'];
+  const SUFFIX_LABEL = 'script';
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -392,7 +394,7 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     sessionStorage.clear();
   });
 
-  it('keeps the setup-script pill rendered with the spinner inside it while the probe is in flight', async () => {
+  it('keeps the setup-script pill and suffix rendered with the spinner inside the pill while the probe is in flight', async () => {
     const probe = deferred<string | null>();
     mocks.fetchRepoConfig.mockReturnValue(probe.promise);
     mocks.savedFormState = { repoPath: '/repo/a', repoType: 'local', isValidPath: true };
@@ -402,12 +404,14 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
       expect(result.getByText(SPINNER_LABEL)).toBeTruthy();
     });
     // The sr-only loading label (next to the spinner) sits inside the same
-    // bordered pill that later shows the script name.
+    // bordered pill that later shows the script name, and the trailing
+    // "script" suffix stays mounted so the row structure never changes.
     const loadingPill = result.getByText(SPINNER_LABEL).parentElement;
     expect(loadingPill).toBeTruthy();
     for (const cls of PILL_CLASSES) {
       expect(loadingPill!.classList.contains(cls)).toBe(true);
     }
+    const loadingSuffix = result.getByText(SUFFIX_LABEL);
 
     probe.resolve('echo repo-config');
     await waitFor(() => {
@@ -417,29 +421,32 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     for (const cls of PILL_CLASSES) {
       expect(loadedPill.classList.contains(cls)).toBe(true);
     }
+    // Same suffix node across the transition — it is never unmounted.
+    expect(result.getByText(SUFFIX_LABEL)).toBe(loadingSuffix);
   });
 
-  it('always mounts the shortcut hint span, toggling only its visibility with validity', async () => {
-    // Invalid form (no repo selected): the hint is rendered but invisible,
-    // reserving its space so the button never resizes.
-    const invalid = renderInitializer();
-    const hiddenHint = invalid.getByText(/↵/);
-    expect(hiddenHint.classList.contains('invisible')).toBe(true);
-    expect(hiddenHint.getAttribute('aria-hidden')).toBe('true');
-    cleanup();
+  it('never remounts the shortcut hint span on a validity flip — visibility only', async () => {
+    // Single render: start invalid (no repo selected) with the hint mounted
+    // but invisible, reserving its space so the button never resizes.
+    const result = renderInitializer();
+    const hint = result.getByText(/↵/);
+    expect(hint.classList.contains('invisible')).toBe(true);
+    expect(hint.getAttribute('aria-hidden')).toBe('true');
 
-    // Valid form: the same span becomes visible (no remount/transition).
-    mocks.savedFormState = {
-      repoPath: '/repo/a',
-      repoType: 'local',
-      branch: 'main',
-      isValidPath: true,
-    };
-    const valid = renderInitializer();
-    await waitFor(() => {
-      expect(valid.getByText(/↵/).classList.contains('invisible')).toBe(false);
+    // Flip the form to valid by driving the picker callbacks.
+    await waitFor(() => expect(pickerCallbacks()).toBeTruthy());
+    pickerCallbacks().onRepoChange({
+      detail: { path: '/repo/a', type: 'local', isValidPath: true },
     });
-    expect(valid.getByText(/↵/).getAttribute('aria-hidden')).toBeNull();
+    pickerCallbacks().onBranchChange({ detail: { branch: 'main' } });
+
+    await waitFor(() => {
+      expect(result.getByText(/↵/).classList.contains('invisible')).toBe(false);
+    });
+    // Element identity preserved: the span was toggled, not remounted.
+    const visibleHint = result.getByText(/↵/);
+    expect(visibleHint).toBe(hint);
+    expect(visibleHint.getAttribute('aria-hidden')).toBeNull();
   });
 });
 

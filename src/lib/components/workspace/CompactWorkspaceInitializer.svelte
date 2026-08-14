@@ -3245,8 +3245,9 @@
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              <!-- The pill renders in both states (spinner inside while loading)
-                   so the row keeps the same height when the probe resolves. -->
+              <!-- The pill and trailing suffix render in both states (spinner
+                   inside the pill while loading) so the row keeps the same
+                   structure and height when the probe resolves. -->
               <span
                 class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
               >
@@ -3259,11 +3260,9 @@
                   {setupScriptName}
                 {/if}
               </span>
-              {#if !isRepoConfigLoading}
-                <p class="text-sm text-subtle">
-                  {m.workspace_compactInitializer_setupDevEnvWith_after()}
-                </p>
-              {/if}
+              <p class="text-sm text-subtle">
+                {m.workspace_compactInitializer_setupDevEnvWith_after()}
+              </p>
             </button>
           </div>
           <SetupScriptModal
