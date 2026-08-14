@@ -40,6 +40,11 @@ export interface GitRootRow {
   repoName?: string;
   /** Agents that registered this root, in registration order (deduped). */
   registeredByAgentIds?: string[];
+  /** The root's HEAD SHA when first captured — at registration going
+   * forward, or at the sweep's best-effort backfill for rows predating the
+   * field (backfill-time HEAD, not registration-time provenance). Immutable
+   * once set; omitted while still unknown. */
+  registeredCommitSha?: string;
   prNumber?: number;
   prUrl?: string;
   prStatus?: PullRequestStatus;

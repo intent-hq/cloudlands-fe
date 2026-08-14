@@ -8,7 +8,7 @@ import {
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
-import type { GitStatus } from '$shared/types';
+import type { CommitInfo, GitStatus } from '$shared/types';
 
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -45,14 +45,29 @@ function makeStatus(branch: string): GitStatus {
   };
 }
 
-function makeEntry(branch: string | undefined, rootId = 'root-1'): WorkspaceGitRootEntry {
+function makeEntry(
+  branch: string | undefined,
+  rootId = 'root-1',
+  registeredCommitSha?: string,
+): WorkspaceGitRootEntry {
   return {
     key: rootId,
     isPrimary: false,
     path: 'packages/sub',
     branch,
-    gitRoot: { id: rootId },
+    gitRoot: { id: rootId, ...(registeredCommitSha ? { registeredCommitSha } : {}) },
   } as WorkspaceGitRootEntry;
+}
+
+function makeCommit(hash: string, message: string): CommitInfo {
+  return {
+    hash,
+    sha: hash.slice(0, 7),
+    author: 'Dev',
+    email: 'dev@example.com',
+    date: '2026-07-01T00:00:00Z',
+    message,
+  } as CommitInfo;
 }
 
 async function renderView(entry: WorkspaceGitRootEntry) {
@@ -70,7 +85,7 @@ describe('SecondaryRootChangesView', () => {
     mocks.writeTextToClipboard.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
-    mocks.getHistory.mockResolvedValue({ ok: true, data: [] });
+    mocks.getHistory.mockResolvedValue({ ok: true, data: { items: [] } });
     mocks.writeTextToClipboard.mockResolvedValue(undefined);
   });
 
@@ -175,5 +190,117 @@ describe('SecondaryRootChangesView', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(container.textContent).toContain('fresh-branch');
     expect(container.textContent).not.toContain('stale-branch');
+  });
+
+  it('splits the list at registeredCommitSha: divider + dimmed older commits behind the expander', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          makeCommit('newer222', 'feat: after registration'),
+          makeCommit('bound111', 'chore: at registration'),
+          makeCommit('older000', 'feat: before registration'),
+        ],
+      },
+    });
+    const { container, getByTestId, queryByTestId } = await renderView(
+      makeEntry('main', 'root-1', 'bound111'),
+    );
+
+    // Commits newer than the boundary render normally; the boundary commit
+    // and older ones are hidden behind the collapsed expander.
+    await waitFor(() => expect(container.textContent).toContain('feat: after registration'));
+    expect(container.textContent).not.toContain('chore: at registration');
+    expect(container.textContent).not.toContain('feat: before registration');
+    expect(queryByTestId('secondary-root-older-commits')).toBeNull();
+
+    const toggle = getByTestId('secondary-root-boundary-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('Show older commits');
+    expect(toggle.textContent).toContain('Root registered');
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
+    const older = getByTestId('secondary-root-older-commits');
+    // Boundary commit renders inside the dimmed older section (inclusive).
+    expect(older.textContent).toContain('chore: at registration');
+    expect(older.textContent).toContain('feat: before registration');
+    expect(older.className).toContain('opacity-60');
+
+    // Collapse again
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(queryByTestId('secondary-root-older-commits')).toBeNull());
+  });
+
+  it('falls open to the flat list when there is no registeredCommitSha', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: one'), makeCommit('bbbb222', 'fix: two')] },
+    });
+    const { container, queryByTestId } = await renderView(makeEntry('main'));
+
+    await waitFor(() => expect(container.textContent).toContain('feat: one'));
+    expect(container.textContent).toContain('fix: two');
+    expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
+    expect(queryByTestId('secondary-root-show-more')).toBeNull();
+  });
+
+  it('falls open to the flat list when the boundary SHA is not in history and no next page exists', async () => {
+    // Rebased-away boundary: SHA never found, nextToken exhausted ⇒ flat list.
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: one')] },
+    });
+    const { container, queryByTestId } = await renderView(
+      makeEntry('main', 'root-1', 'gone9999'),
+    );
+
+    await waitFor(() => expect(container.textContent).toContain('feat: one'));
+    expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
+    expect(queryByTestId('secondary-root-show-more')).toBeNull();
+  });
+
+  it('pages via nextToken when the boundary is beyond the loaded page', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: page one')], nextToken: 'tok-2' },
+    });
+    const { container, getByTestId, queryByTestId } = await renderView(
+      makeEntry('main', 'root-1', 'bound111'),
+    );
+
+    // First page: boundary not found yet — all loaded commits render
+    // normally with a "Show more" affordance instead of the divider.
+    await waitFor(() => expect(container.textContent).toContain('feat: page one'));
+    expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
+    expect(mocks.getHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
+      gitRootId: 'root-1',
+    });
+
+    mocks.getHistory.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        items: [makeCommit('bound111', 'chore: at registration')],
+      },
+    });
+    await fireEvent.click(getByTestId('secondary-root-show-more'));
+
+    // The next page request threads the nextToken, still gitRootId-scoped.
+    await waitFor(() =>
+      expect(mocks.getHistory).toHaveBeenCalledWith('ws-1', expect.any(Number), {
+        gitRootId: 'root-1',
+        nextToken: 'tok-2',
+      }),
+    );
+
+    // Boundary found in the appended page: divider appears, "Show more" goes.
+    await waitFor(() => expect(queryByTestId('secondary-root-boundary-toggle')).toBeTruthy());
+    expect(queryByTestId('secondary-root-show-more')).toBeNull();
+    expect(container.textContent).toContain('feat: page one');
+    expect(container.textContent).not.toContain('chore: at registration');
   });
 });
