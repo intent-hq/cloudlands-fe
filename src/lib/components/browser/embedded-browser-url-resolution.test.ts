@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BROWSER_RESOLVE_URL_CHANNEL,
   createEmbeddedBrowserResolvedLoadState,
+  getEmbeddedBrowserExternalUrl,
   mapEmbeddedBrowserNavigationUrl,
   planEmbeddedBrowserLoad,
   recordEmbeddedBrowserResolvedLoad,
@@ -142,6 +143,51 @@ describe('resolved-load display mapping', () => {
     expect(state.requestedUrl).toBeNull();
     expect(mapEmbeddedBrowserNavigationUrl(state, 'https://example.com/')).toBe(
       'https://example.com/',
+    );
+  });
+});
+
+describe('getEmbeddedBrowserExternalUrl', () => {
+  it('returns the resolved URL when the display URL is the requested URL of a rewritten load', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/app', {
+      url: 'http://10.0.0.5:3000/app',
+      rewritten: true,
+    });
+
+    expect(getEmbeddedBrowserExternalUrl(state, 'http://localhost:3000/app')).toBe(
+      'http://10.0.0.5:3000/app',
+    );
+  });
+
+  it('normalizes URL variants when matching the requested URL', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000', {
+      url: 'http://10.0.0.5:3000',
+      rewritten: true,
+    });
+
+    expect(getEmbeddedBrowserExternalUrl(state, 'http://localhost:3000/')).toBe(
+      'http://10.0.0.5:3000',
+    );
+  });
+
+  it('returns the display URL unchanged when no mapping is active', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    expect(getEmbeddedBrowserExternalUrl(state, 'https://example.com/')).toBe(
+      'https://example.com/',
+    );
+  });
+
+  it('returns the display URL unchanged when it differs from the requested URL', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/app', {
+      url: 'http://10.0.0.5:3000/app',
+      rewritten: true,
+    });
+
+    expect(getEmbeddedBrowserExternalUrl(state, 'http://localhost:3000/other')).toBe(
+      'http://localhost:3000/other',
     );
   });
 });

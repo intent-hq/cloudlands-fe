@@ -122,6 +122,26 @@ function urlsEquivalent(a: string, b: string): boolean {
 }
 
 /**
+ * URL to hand to the OS (`shell:openExternal`) for the current display URL.
+ * While a rewritten load is active the display URL is the requested
+ * `localhost`-style URL, which is not reachable from the user's machine in
+ * remote mode — external opens must target the resolved daemon/tunnel URL.
+ */
+export function getEmbeddedBrowserExternalUrl(
+  state: EmbeddedBrowserResolvedLoadState,
+  displayUrl: string,
+): string {
+  if (
+    state.requestedUrl !== null &&
+    state.resolvedUrl !== null &&
+    urlsEquivalent(displayUrl, state.requestedUrl)
+  ) {
+    return state.resolvedUrl;
+  }
+  return displayUrl;
+}
+
+/**
  * Map a webview navigation URL to its display URL. While the navigation
  * matches the resolved URL of the current load, the requested URL is
  * displayed instead; any other navigation (link click, redirect, in-page

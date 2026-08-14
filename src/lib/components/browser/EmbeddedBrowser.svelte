@@ -32,6 +32,7 @@
   } from './embedded-browser-navigation-sync';
   import {
     createEmbeddedBrowserResolvedLoadState,
+    getEmbeddedBrowserExternalUrl,
     mapEmbeddedBrowserNavigationUrl,
     planEmbeddedBrowserLoad,
     recordEmbeddedBrowserResolvedLoad,
@@ -214,6 +215,9 @@
   // target is unreachable (probe + tunnel both failed). Agent-facing English
   // from the main process, shown alongside the localized errorMessage.
   let resolveErrorDetail = $state('');
+  // The URL whose resolution failed (can differ from the url prop when the
+  // failed load came from the address bar).
+  let resolveErrorUrl = $state('');
   let webviewReady = $state(false);
 
   // Flag to hide webview during URL switch to force recreation
@@ -570,6 +574,7 @@
       isSecure = shownUrl?.startsWith('https://');
       errorMessage = '';
       resolveErrorDetail = '';
+      resolveErrorUrl = '';
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
       recordEmbeddedBrowserNavigation(navigationSync, shownUrl);
@@ -745,13 +750,16 @@
       const plan = planEmbeddedBrowserLoad(resolved);
       if (plan.kind === 'error') {
         // The rewritten target is unreachable (probe + tunnel both failed):
-        // surface the explanation instead of navigating to a dead host.
+        // surface the explanation instead of navigating to a dead host. The
+        // error pane replaces any previously loaded page (see template).
         resolveErrorDetail = plan.detail;
+        resolveErrorUrl = targetUrl;
         errorMessage = m.browser_embedded_resolveFailed_error();
         logger.warn('URL resolution failed', { url: targetUrl, detail: plan.detail });
         return;
       }
       resolveErrorDetail = '';
+      resolveErrorUrl = '';
       recordEmbeddedBrowserResolvedLoad(resolvedLoadState, targetUrl, resolved);
       if (resolved.rewritten) {
         logger.info('loadUrl: resolved to rewritten URL', {
@@ -833,7 +841,11 @@
 
   function openExternal() {
     if (displayUrl && hasCapability('shellIntegration')) {
-      void invoke('shell:openExternal', { url: displayUrl });
+      // A rewritten load displays the requested localhost-style URL, which is
+      // not reachable from the user's machine in remote mode - open the
+      // resolved daemon/tunnel URL instead.
+      const externalUrl = getEmbeddedBrowserExternalUrl(resolvedLoadState, displayUrl);
+      void invoke('shell:openExternal', { url: externalUrl });
     }
   }
 
@@ -1017,7 +1029,22 @@
 
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
-    {#if isUrlValid && !isRecreatingWebview}
+    {#if resolveErrorDetail && !isRecreatingWebview}
+      <!--
+        The resolved remote target is unreachable - show the explanation.
+        Checked before the webview branch so a resolver failure on a later
+        navigation (address bar / prop change) replaces the previously loaded
+        page instead of leaving it visible with only the generic banner.
+      -->
+      <div class="flex items-center justify-center h-full text-subtle">
+        <div class="text-center">
+          <div class="text-4xl mb-3 opacity-50">⚠️</div>
+          <p class="text-lg font-medium mb-1">{m.browser_embedded_resolveFailed_error()}</p>
+          <p class="text-sm max-w-md mx-auto">{resolveErrorDetail}</p>
+          <p class="text-xs mt-2 opacity-50 max-w-md break-all">{resolveErrorUrl || url}</p>
+        </div>
+      </div>
+    {:else if isUrlValid && !isRecreatingWebview}
       <!--
         Workaround for Electron bug #43314: Hide webview during URL switch.
         When isRecreatingWebview is true, the webview is removed from DOM.
@@ -1033,16 +1060,6 @@
     {:else if resolvingInitialUrl}
       <!-- Initial URL is resolving through browser:resolve-url - blank pane, no error flash -->
       <div class="h-full" data-testid="embedded-browser-resolving"></div>
-    {:else if resolveErrorDetail && !isRecreatingWebview}
-      <!-- The resolved remote target is unreachable - show the explanation -->
-      <div class="flex items-center justify-center h-full text-subtle">
-        <div class="text-center">
-          <div class="text-4xl mb-3 opacity-50">⚠️</div>
-          <p class="text-lg font-medium mb-1">{m.browser_embedded_resolveFailed_error()}</p>
-          <p class="text-sm max-w-md mx-auto">{resolveErrorDetail}</p>
-          <p class="text-xs mt-2 opacity-50 max-w-md break-all">{url}</p>
-        </div>
-      </div>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
       <div class="flex items-center justify-center h-full text-subtle">
