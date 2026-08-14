@@ -57,6 +57,25 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
+  it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+
+    // Native scroll anchoring must stay off: it compensates for the pinned row's
+    // sticky compaction by shifting scrollTop, re-firing detection and un-pinning
+    // the row in a per-frame loop (top-of-chat flicker).
+    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
+
+    // Hysteresis: the currently-pinned row's stay condition is keyed on the turn's
+    // geometry only — never the sticky element's own rect — so its own height
+    // change (line-clamp compaction) can never un-stick it.
+    expect(panel).toContain(
+      'const turnSpansTop = turnRect.top < scrollRect.top && turnRect.bottom > scrollRect.top;',
+    );
+    expect(panel).toMatch(
+      /getAttribute\('data-message-id'\) === stickyMessageId[\s\S]{0,200}if \(turnSpansTop\) \{\s*foundSticky = stickyMessageId;/,
+    );
+  });
+
   it('does not restore the removed date separators', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
@@ -251,7 +270,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-4'");
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
-    expect(panel).toContain('style="scrollbar-gutter: stable;"');
+    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
     expect(message).toContain('pointer-events-none absolute bottom-0 right-0 z-10');
     expect(message).toContain('rounded-md bg-background/95 p-0.5');
     expect(message).toContain('group-hover:pointer-events-auto group-hover:opacity-100');
