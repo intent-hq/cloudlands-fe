@@ -551,6 +551,37 @@ describe('DaemonStatusIndicator', () => {
       expect(icon.getAttribute('role')).toBe('img');
     });
 
+    it('exposes the ahead message as the version warning icon accessible name', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            version: '2.0.0',
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+          transport: { mode: 'sidecar-uds' as const, pinnedVersion: '1.0.0' },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
+      );
+
+      const icon = screen.getByLabelText(
+        'Connected intentd v2.0.0 is ahead of the bundled sidecar (v1.0.0)',
+      );
+      expect(icon.getAttribute('role')).toBe('img');
+    });
+
     it('exposes the protocol-mismatch explanation on the connection-row icon and its menuitem name', async () => {
       mockStoreState = {
         daemonHealth: {
