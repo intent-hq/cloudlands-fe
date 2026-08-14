@@ -69,6 +69,7 @@ function makeCard(
     stateKey: 'in_progress',
     attention: null,
     isUnread: false,
+    isWaiting: false,
     statusMessage: null,
     attentionSnippet: null,
     prNumber: null,
@@ -212,6 +213,51 @@ describe('HudWorkspaceCard failed attention strip', () => {
     const strip = container.querySelector('.hud-ws-card-question');
     expect(strip?.textContent?.trim()).toBe('ERR: agent failed');
     expect(container.textContent).not.toContain('Wiring the release-channel fetch');
+  });
+});
+
+describe('HudWorkspaceCard waiting status suffix', () => {
+  const stateSpans = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.hud-ws-card-state'));
+
+  it('renders the dimmed / WAITING suffix after IN PROGRESS while waiting', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([], { stateKey: 'in_progress', isWaiting: true }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const spans = stateSpans(container);
+    expect(spans).toHaveLength(2);
+    expect(spans[0].textContent).toBe('IN PROGRESS');
+    // Base label keeps its state color; only the suffix carries the dimmed
+    // muted-foreground class.
+    expect(spans[0].classList.contains('hud-ws-card-state-waiting')).toBe(false);
+    expect(spans[1].textContent).toBe('/ WAITING');
+    expect(spans[1].classList.contains('hud-ws-card-state-waiting')).toBe(true);
+  });
+
+  it('renders the suffix on non-running states too (COMPLETE / WAITING)', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([], { stateKey: 'complete', isWaiting: true }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const spans = stateSpans(container);
+    expect(spans[0].textContent).toBe('COMPLETE');
+    expect(spans[1].textContent).toBe('/ WAITING');
+  });
+
+  it('renders no suffix when the flag is off', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { stateKey: 'in_progress' }), nowMs: NOW_MS },
+    });
+
+    expect(stateSpans(container)).toHaveLength(1);
+    expect(container.textContent).not.toContain('/ WAITING');
   });
 });
 

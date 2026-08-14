@@ -114,6 +114,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 2,
       attention: 0,
+      waiting: 0,
       prOpen: 2,
       prMerged: 1,
       failed: 0,
@@ -132,6 +133,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 1,
       prMerged: 0,
       failed: 0,
@@ -170,6 +172,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 7,
       progress: 1,
       attention: 1,
+      waiting: 0,
       prOpen: 0,
       prMerged: 1,
       failed: 1,
@@ -188,6 +191,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 0,
@@ -214,6 +218,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 0,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 1,
@@ -240,11 +245,38 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 0,
       completed: 0,
       total: 1,
+    });
+  });
+
+  it('counts the waiting flag ORTHOGONALLY — a waiting card stays in its state bucket too', () => {
+    const state = mockState([
+      // Complete+waiting double-counts: COMPLETED and WAITING.
+      makeWorkspace('ws-1', { displayStatus: 'complete', waiting: true }),
+      // In-progress+waiting double-counts: PROGRESS and WAITING.
+      makeWorkspace('ws-2', { displayStatus: 'in_progress', waiting: true }),
+      // Waiting never feeds ATTENTION: a wait-state card counts there, and
+      // its waiting flag adds only the WAITING row.
+      makeWorkspace('ws-3', { displayStatus: 'needs_attention', waiting: true }),
+      // Absent flag ⇒ no WAITING count.
+      makeWorkspace('ws-4', { displayStatus: 'complete' }),
+    ]);
+    expect(selectHudWorkspaceStateBars.select(state)).toEqual({
+      idle: 0,
+      unread: 0,
+      progress: 1,
+      attention: 1,
+      waiting: 3,
+      prOpen: 0,
+      prMerged: 0,
+      failed: 0,
+      completed: 2,
+      total: 4,
     });
   });
 });
@@ -843,6 +875,7 @@ describe('selectHudWorkspaceCards', () => {
         stateKey: 'in_progress',
         attention: null,
         isUnread: false,
+        isWaiting: false,
         statusMessage: 'Wiring the release-channel fetch',
         attentionSnippet: null,
         prNumber: 482,
@@ -2013,6 +2046,25 @@ describe('selectHudWorkspaceCards', () => {
     );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.isUnread).toBe(false);
+  });
+
+  it('the waiting flag sets isWaiting orthogonally — the card keeps its real state', () => {
+    // `workspace.waiting` (§5.1) overlays the displayStatus like isUnread:
+    // in_progress+waiting stays in_progress, complete+waiting stays complete.
+    const state = cardState([
+      makeWorkspace('ws-1', { displayStatus: 'in_progress', waiting: true }),
+      makeWorkspace('ws-2', { displayStatus: 'complete', waiting: true }),
+    ]);
+    const cards = selectHudWorkspaceCards.select(state);
+    expect(cards[0].stateKey).toBe('in_progress');
+    expect(cards[0].isWaiting).toBe(true);
+    expect(cards[1].stateKey).toBe('complete');
+    expect(cards[1].isWaiting).toBe(true);
+  });
+
+  it('an absent waiting flag reads as not waiting (presence-detected on the wire)', () => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })]);
+    expect(selectHudWorkspaceCards.select(state)[0].isWaiting).toBe(false);
   });
 
   it("the entity's daemon-served attention is exposed with no live event (app start)", () => {

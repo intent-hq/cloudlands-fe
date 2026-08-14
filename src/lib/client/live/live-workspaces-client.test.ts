@@ -504,6 +504,52 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     expect(workspaces[0]?.attention).toBeUndefined();
   });
+
+  it('passes the BE-derived waiting flag through normalization (PROTOCOL §5.1)', async () => {
+    // The daemon serves the orthogonal `waiting` flag on `workspace.*`
+    // Workspace payloads when the workspace's agents are purely waiting on
+    // external conditions; the normalizer must retain it verbatim.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          title: 'Waiting ws',
+          branch: 'intent/waiting',
+          status: 'Active',
+          waiting: true,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
+    expect(workspaces[0]).toMatchObject({
+      id: '77777777-7777-4777-8777-777777777777',
+      waiting: true,
+    });
+  });
+
+  it('leaves waiting undefined when an older daemon omits the field (reads as not waiting)', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '88888888-8888-4888-8888-888888888888',
+          title: 'Legacy waiting ws',
+          branch: 'intent/legacy-waiting',
+          status: 'Active',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]?.waiting).toBeUndefined();
+  });
 });
 
 describe('LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)', () => {

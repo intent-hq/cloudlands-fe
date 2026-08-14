@@ -465,6 +465,36 @@ describe('workspaceReducer', () => {
       expect(getItem(next.workspaces, 'ws-2')?.title).toBe('Second');
     });
 
+    it('merges the waiting flag onto an existing workspace (workspace:waiting-changed path)', () => {
+      const ws = makeWorkspace({ id: 'ws-1' });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      const raised = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-1', { waiting: true })]),
+      );
+      expect(getItem(raised.workspaces, 'ws-1')?.waiting).toBe(true);
+
+      const cleared = workspaceReducer(
+        raised,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-1', { waiting: false })]),
+      );
+      expect(getItem(cleared.workspaces, 'ws-1')?.waiting).toBe(false);
+    });
+
+    it('preserves the waiting flag across unrelated partial updates', () => {
+      const ws = makeWorkspace({ id: 'ws-1', waiting: true });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity('ws-1', { title: 'Renamed' })]),
+      );
+
+      expect(getItem(next.workspaces, 'ws-1')?.title).toBe('Renamed');
+      expect(getItem(next.workspaces, 'ws-1')?.waiting).toBe(true);
+    });
+
     it('preserves pending archive semantics across same-workspace updates', () => {
       const ws = makeWorkspace({ id: 'ws-1', status: WorkspaceStatusEnum.Active, archived: false });
       const state = {

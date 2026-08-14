@@ -116,6 +116,15 @@ export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], b
   },
 );
 
+/**
+ * True when the daemon marked the workspace as waiting on external conditions
+ * (`workspace.waiting`, PROTOCOL §5.1 — active hooks / PR monitors / watched
+ * agents). Absent reads as false: older daemons never send the field.
+ */
+export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
+);
+
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces).filter(
     (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,

@@ -20,6 +20,7 @@
     agentBucketColor,
     cardStateColor,
     cardStateLabel,
+    cardWaitingSuffixLabel,
     formatCardTokens,
   } from './hud-card-meta';
   import HudAgentLine from './HudAgentLine.svelte';
@@ -114,6 +115,11 @@
       style:background={color}
     ></span>
     <span class="hud-ws-card-state" style:color>{cardStateLabel(card.stateKey)}</span>
+    {#if card.isWaiting}
+      <!-- Orthogonal waiting overlay: dimmed suffix, base label keeps its
+           state color. Never feeds the attention banner/blink. -->
+      <span class="hud-ws-card-state hud-ws-card-state-waiting">{cardWaitingSuffixLabel()}</span>
+    {/if}
   </div>
 
   <div class="hud-ws-card-heading">
@@ -264,6 +270,9 @@
       600 10px 'JetBrains Mono',
       monospace;
     letter-spacing: 0.12em;
+  }
+  .hud-ws-card-state-waiting {
+    color: hsl(var(--muted-foreground));
   }
   .hud-ws-card-heading {
     padding: 0 12px;

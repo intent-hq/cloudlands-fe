@@ -1830,6 +1830,28 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
 }
 
 /**
+ * `workspace:waiting-changed` (PROTOCOL §5.1 / §6.5) carries the
+ * self-sufficient payload `{ workspaceId, waiting }` — the daemon emits it
+ * only on an actual transition of the orthogonal waiting flag (agents purely
+ * waiting on hooks / PR monitors / watched agents), so the FE mirrors the new
+ * boolean directly into the workspace entity without a follow-up
+ * `workspace.get`. Like the attention/displayStatus handlers, the payload's
+ * own `data.workspaceId` wins over the envelope id when present.
+ */
+function handleWaitingChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const waiting = data.waiting;
+  if (typeof waiting !== 'boolean') return;
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -2865,6 +2887,12 @@ export function routeDaemonEventsNotification(
   if (type === 'workspace:attention-changed') {
     handleAttentionChangedEvent(event, workspaceId);
   }
+  // `workspace:waiting-changed` (§5.1 / §6.5) — merge the BE-derived orthogonal
+  // waiting flag onto the workspace entity so waiting indicators update live
+  // without a refetch. Side effect, never an early return.
+  if (type === 'workspace:waiting-changed') {
+    handleWaitingChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -3244,6 +3272,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
   // attention flag changes so unread indicators update without a refetch.
   'workspace:attention-changed',
+  // `workspace:waiting-changed` (§5.1 / §6.5) — self-sufficient orthogonal
+  // waiting flag transitions so waiting indicators update without a refetch.
+  'workspace:waiting-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
