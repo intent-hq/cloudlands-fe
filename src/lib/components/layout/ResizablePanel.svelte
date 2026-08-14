@@ -29,6 +29,7 @@
     minWidth = 280,
     maxWidth = 800,
     defaultWidth = 320,
+    resetWidth = undefined,
     restoreStoredWidth = true,
     defaultExpandedWidth = 600,
     side = 'right',
@@ -50,6 +51,7 @@
     onResizeStart,
     onResize,
     onResizeEnd,
+    onResizeCancel,
     resizeScrollContainer = null,
 
     // For skipping resize (used by parent to control when we're in full-width mode)
@@ -91,6 +93,8 @@
     minWidth?: number;
     maxWidth?: number;
     defaultWidth?: number;
+    /** Canonical handle-reset width when it differs from the rendered default. */
+    resetWidth?: number;
     /** Restore the persisted normal width when mounting. */
     restoreStoredWidth?: boolean;
     defaultExpandedWidth?: number;
@@ -113,6 +117,7 @@
     onResizeStart?: () => void;
     onResize?: (previousWidth: number, nextWidth: number) => void;
     onResizeEnd?: (startSize: number, finalSize: number) => void;
+    onResizeCancel?: () => void;
     /** Scroll viewport that should advance when a right-edge resize reaches its boundary. */
     resizeScrollContainer?: HTMLElement | null;
 
@@ -638,6 +643,39 @@
 
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
+    document.removeEventListener('keydown', handleResizeKeydown);
+  }
+
+  function cancelResize() {
+    if (!isResizing) return;
+    isResizing = false;
+    if (resizeAutoScrollFrame !== null) cancelAnimationFrame(resizeAutoScrollFrame);
+    resizeAutoScrollFrame = null;
+    if (orientation === 'horizontal') {
+      if (isExpanded) {
+        expandedWidth = startWidth;
+        expandedWidthPercent = pixelsToPercent(startWidth, true);
+      } else {
+        panelWidth = startWidth;
+        widthPercent = pixelsToPercent(startWidth, true);
+      }
+    } else {
+      panelHeight = startHeight;
+      heightPercent = pixelsToPercent(startHeight, false);
+    }
+    document.body.classList.remove('panel-resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', handleResize);
+    document.removeEventListener('mouseup', stopResize);
+    document.removeEventListener('keydown', handleResizeKeydown);
+    onResizeCancel?.();
+  }
+
+  function handleResizeKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    cancelResize();
   }
 
   function startResize(e: MouseEvent) {
@@ -662,34 +700,42 @@
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', handleResize);
     document.addEventListener('mouseup', stopResize);
+    document.addEventListener('keydown', handleResizeKeydown);
   }
 
   function handleDoubleClick() {
     if (orientation === 'horizontal') {
       if (isExpanded) {
+        const previousWidth = expandedWidth;
         expandedWidth = defaultExpandedWidth;
         // Always update percentage for tracking
         expandedWidthPercent = pixelsToPercent(defaultExpandedWidth, true);
         if (expandedStorageKey) {
           persistPanelSize(expandedStorageKey, expandedWidth, true);
         }
+        onResizeEnd?.(previousWidth, expandedWidth);
       } else {
-        panelWidth = defaultWidth;
+        const previousWidth = panelWidth;
+        const targetWidth = resetWidth ?? defaultWidth;
+        panelWidth = Math.max(minWidth, Math.min(maxWidth, targetWidth));
         isCollapsed = false;
         // Always update percentage for tracking
-        widthPercent = pixelsToPercent(defaultWidth, true);
+        widthPercent = pixelsToPercent(panelWidth, true);
         if (storageKey) {
           persistPanelSize(storageKey, panelWidth, true);
         }
+        onResizeEnd?.(previousWidth, panelWidth);
       }
     } else {
       // Vertical orientation
+      const previousHeight = panelHeight;
       panelHeight = defaultHeight;
       // Always update percentage for tracking
       heightPercent = pixelsToPercent(defaultHeight, false);
       if (storageKey) {
         persistPanelSize(storageKey, panelHeight, false);
       }
+      onResizeEnd?.(previousHeight, panelHeight);
     }
   }
 
@@ -744,6 +790,7 @@
   onDestroy(() => {
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
+    document.removeEventListener('keydown', handleResizeKeydown);
     document.body.classList.remove('panel-resizing');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';

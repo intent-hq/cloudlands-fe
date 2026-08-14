@@ -11,6 +11,7 @@ import {
   navigateToSpec,
   closeDrawer,
   clearMainContent,
+  navigateAfterWorkspaceRemoval,
   navigateToFirstWorkspace,
 } from './workspace-navigation';
 
@@ -353,6 +354,27 @@ describe('workspace-navigation', () => {
       mockWorkspaceItems.value = [{ id: 'archived-workspace', status: 'Archived' }];
 
       await navigateToFirstWorkspace();
+
+      expect(goto).toHaveBeenCalledWith('/workspace/new');
+    });
+  });
+
+  describe('navigateAfterWorkspaceRemoval', () => {
+    it('excludes the removed workspace when choosing the next destination', async () => {
+      mockWorkspaceItems.value = [
+        { id: 'removed-workspace', status: 'Active' },
+        { id: 'remaining-workspace', status: 'Active' },
+      ];
+
+      await navigateAfterWorkspaceRemoval('removed-workspace');
+
+      expect(goto).toHaveBeenCalledWith('/workspace/remaining-workspace');
+    });
+
+    it('uses the empty-window destination when no workspace remains', async () => {
+      mockWorkspaceItems.value = [{ id: 'removed-workspace', status: 'Active' }];
+
+      await navigateAfterWorkspaceRemoval('removed-workspace');
 
       expect(goto).toHaveBeenCalledWith('/workspace/new');
     });

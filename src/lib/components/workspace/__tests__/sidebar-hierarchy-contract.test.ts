@@ -131,7 +131,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain('rounded-lg bg-card border border-border p-3');
+    expect(sidebar).toContain(
+      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
+    );
+    expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('TAB_DEFINITIONS.filter');
@@ -152,13 +155,16 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-context={note.id}');
     expect(sidebar).toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain('grid-cols-[repeat(3,1.75rem)]');
+    expect(sidebar).toContain(
+      'flex h-7 min-w-0 max-w-full flex-nowrap items-start overflow-hidden',
+    );
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
-    expect(sidebar).toContain('$notes.filter((note) => !isChildNote(note, $notes))');
-    expect(sidebar).toContain('{#each launcherNotes as note (note.id)}');
+    expect(sidebar).toContain('deriveNoteLauncherItems(');
+    expect(sidebar).toContain('(note, allNotes) => !isChildNote(note, allNotes)');
+    expect(sidebar).toContain('{#each launcherNotes as note, index (note.id)}');
     expect(sidebar).not.toContain('$notes.slice(0, LAUNCHER_ICON_LIMIT)');
-    expect(sidebar.match(/pointer-events-auto flex size-5 cursor-pointer/g)).toHaveLength(2);
+    expect(sidebar).toContain('const LAUNCHER_ICON_BUTTON_CLASS =');
     expect(sidebar).toContain('data-files-open-in');
     expect(sidebar).toContain('filePath={$fileExplorerWorkspacePath}');
     expect(sidebar).toContain('side="top"');
@@ -168,8 +174,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('faChevronDown');
     expect(sidebar).toContain('onclick={() => handleOpenAgentInPanel(agent.id)}');
     expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
-    expect(sidebar).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
-    expect(sidebar).toContain('rounded-lg bg-card border border-border');
+    expect(sidebar).toContain('rounded-sm outline-none transition-colors');
+    expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('focus-visible:ring-0');
   });
 
@@ -218,7 +224,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const browserLauncher = source('../SidebarBrowserLauncher.svelte');
 
-    expect(sidebar).toContain('<SidebarBrowserLauncher {workspaceId} {panelLayoutId} />');
+    expect(sidebar).toContain('<SidebarBrowserLauncher');
+    expect(sidebar).toContain("onExpand={() => handleTabClick('browser')}");
     expect(browserLauncher).toContain('data-sidebar-launcher="browser"');
     expect(browserLauncher).toContain('onclick={openBrowser}');
     expect(browserLauncher).toContain('getPanelLayoutManager(panelLayoutId).openBrowserPanel()');

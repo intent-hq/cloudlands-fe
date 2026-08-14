@@ -43,12 +43,12 @@
  * §5.5 `userAppMessageId` lift), so an optimistic send produces exactly one
  * user row with the canonical identity, no flicker.
  *
- * Streaming flags are edge-triggered from `transcript.isStreaming` (the §7.1
+ * Streaming flags are reconciled from `transcript.isStreaming` (the §7.1
  * snapshot activity-flag overlay / synthetic in-flight message, and the delta
  * stream's terminal `streamingComplete` frame): a rising edge sets
  * isStreaming/isProcessing, a falling edge clears all three responding flags.
- * First-emit `false` deliberately writes nothing so a subscription racing a
- * just-started optimistic turn (`chatSendStarted`) cannot clobber "Thinking".
+ * An authoritative idle snapshot also clears retained flags after reconnect or
+ * HMR, except for one snapshot that races a locally observed `chatSendStarted`.
  *
  * SOLE-WRITER INVARIANT: the standing subscription is the sole writer of an
  * agent's transcript MESSAGE state — the firehose events carry no content
@@ -66,6 +66,7 @@ import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
 import {
   chatLiveStreamPhaseChanged,
+  chatSendStarted,
   chatTranscriptSnapshotApplied,
   initializeChatRequested,
   refreshChatTranscriptRequested,
@@ -152,6 +153,8 @@ interface SubscriptionCoordinator {
   subscriptions: Map<string, SubscriptionEntry>;
   slots: Map<string, AgentTransitionSlot>;
   events: Channel<ChatSubscriptionEvent>;
+  /** Agents whose next idle snapshot may predate a locally-started turn. */
+  locallyStartedTurns: Set<string>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -318,7 +321,15 @@ function* applyTranscript(
   // pre-hydration emit must not swallow the transition, so the next emit
   // against the hydrated session still sees the edge and dispatches it.
   const streamingChanged = transcript.isStreaming !== entry.wasStreaming;
-  if (session && streamingChanged && isCurrentSubscription(coordinator, agentId, entry)) {
+  const authoritativeIdleSnapshot =
+    transcript.fromSnapshot === true && transcript.isStreaming === false;
+  const protectsLocalStart = session
+    ? authoritativeIdleSnapshot && coordinator.locallyStartedTurns.delete(agentId)
+    : false;
+  if (session && transcript.isStreaming) coordinator.locallyStartedTurns.delete(agentId);
+  const shouldReconcileStreaming =
+    streamingChanged || (authoritativeIdleSnapshot && !protectsLocalStart);
+  if (session && shouldReconcileStreaming && isCurrentSubscription(coordinator, agentId, entry)) {
     entry.wasStreaming = transcript.isStreaming;
     yield* put(
       updateSession(
@@ -536,6 +547,12 @@ function* closeSubscription(
   agentId: string,
   clearResumeAnchor = false,
 ): SagaGenerator<void> {
+  // A renderer-level detach retires the ordering window that could make the
+  // next idle snapshot predate a locally-started turn. If the terminal edge is
+  // missed while detached, the next registration's seq-0 snapshot must be
+  // authoritative. Transport reconnects do not call this function and keep
+  // their in-registration exemption intact.
+  coordinator.locallyStartedTurns.delete(agentId);
   if (clearResumeAnchor) resumeAnchors.delete(agentId);
   const entry = coordinator.subscriptions.get(agentId);
   if (!entry) return;
@@ -745,6 +762,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
+  | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
   | ReturnType<typeof clearCurrentlyViewedAgent>
@@ -762,6 +780,9 @@ function* routeLifecycleAction(
       typeof initializeChatRequested
     >['payload'];
     if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (action.type === chatSendStarted.type) {
+    const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
+    if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
     yield* handleViewed(coordinator, agentId);
@@ -823,10 +844,12 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     subscriptions: new Map(),
     slots: new Map(),
     events: createChannel(buffers.expanding<ChatSubscriptionEvent>()),
+    locallyStartedTurns: new Set(),
   };
   const lifecycleActions = yield* actionChannel(
     [
       initializeChatRequested,
+      chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
       clearCurrentlyViewedAgent,
@@ -855,5 +878,6 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       yield* clearStaleStreamingMessageFlags(agentId);
     }
     resumeAnchors.clear();
+    coordinator.locallyStartedTurns.clear();
   }
 }

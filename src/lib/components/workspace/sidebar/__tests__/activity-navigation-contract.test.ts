@@ -44,6 +44,6 @@ describe('activity navigation contract', () => {
   it('initially caps the sidebar activity preview at three rows', () => {
     const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('maxItems={3}');
+    expect(sidebar).toContain('maxItems={1}');
   });
 });

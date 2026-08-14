@@ -7,22 +7,26 @@
 <script lang="ts">
   import { safeSlide } from '$lib/utils/animations';
   import Button from '$lib/components/ui/button/button.svelte';
-  import {
-  Tooltip,
-  TooltipShortcut,
-} from '$lib/components/ui/tooltip';
+  import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
+  import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import Fa from 'svelte-fa';
   import {
-  faCopy,
-  faCheck,
-  faPencil,
-  faRotateRight,
-  faThumbsUp,
-  faThumbsDown,
-  faCodeBranch,
-  faArrowUp,
-} from '@fortawesome/free-solid-svg-icons';
+    faCopy,
+    faCheck,
+    faPencil,
+    faRotateRight,
+    faThumbsUp,
+    faThumbsDown,
+    faCodeBranch,
+    faArrowUp,
+  } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    MESSAGE_ACTION_REVEAL_CLASS,
+    MESSAGE_ACTION_SURFACE_CLASS,
+    MESSAGE_ACTION_TIME_CLASS,
+    resolveMessageActionDate,
+  } from './message-action-surface';
 
   type MessageRole = 'user' | 'assistant';
 
@@ -41,6 +45,10 @@
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    /** Canonical message time. */
+    timestamp?: DateInput | null;
+    /** Legacy fallback when the canonical timestamp is absent or invalid. */
+    createdAt?: DateInput | null;
   }
 
   let {
@@ -55,11 +63,15 @@
     class: className = '',
     requestId,
     onScrollToPrevious,
+    timestamp,
+    createdAt,
   }: Props = $props();
 
   let copied = $state(false);
   let copiedSessionId = $state(false);
-
+  let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
+  let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
+  let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
 
   async function handleCopy(event: MouseEvent) {
     if (event.shiftKey && requestId) {
@@ -81,15 +93,36 @@
 </script>
 
 <div
-  class="message-actions flex items-center gap-0.5 {showOnHover
-    ? 'opacity-0 group-hover:opacity-100'
-    : ''} transition-opacity {className}"
+  data-testid="message-actions"
+  data-message-actions-role={role}
+  class="{MESSAGE_ACTION_SURFACE_CLASS} {showOnHover
+    ? MESSAGE_ACTION_REVEAL_CLASS
+    : ''} {className}"
 >
+  {#if actionDate && compactTime && fullTime}
+    <time
+      class={MESSAGE_ACTION_TIME_CLASS}
+      datetime={actionDate.toISOString()}
+      title={fullTime}
+      aria-label={fullTime}>{compactTime}</time
+    >
+  {/if}
+
   {#if role === 'user'}
     <!-- User message actions: Edit, Copy -->
     {#if onEdit}
-      <TooltipShortcut label={m.chat_messageActions_edit_label()} shortcut="e" side="top" delayDuration={300}>
-        <Button variant="ghost-light" size="icon-xs" onclick={onEdit} aria-label={m.chat_messageActions_editMessage_ariaLabel()}>
+      <TooltipShortcut
+        label={m.chat_messageActions_edit_label()}
+        shortcut="e"
+        side="top"
+        delayDuration={300}
+      >
+        <Button
+          variant="ghost-light"
+          size="icon-xs"
+          onclick={onEdit}
+          aria-label={m.chat_messageActions_editMessage_ariaLabel()}
+        >
           <Fa icon={faPencil} class="w-2.5! h-2.5!" />
         </Button>
       </TooltipShortcut>
@@ -97,7 +130,11 @@
   {:else}
     <!-- Assistant message actions: Regenerate, Fork, Vote, Copy -->
     {#if onRegenerate}
-      <TooltipShortcut label={m.chat_messageActions_regenerate_label()} side="top" delayDuration={300}>
+      <TooltipShortcut
+        label={m.chat_messageActions_regenerate_label()}
+        side="top"
+        delayDuration={300}
+      >
         <Button
           variant="ghost-light"
           size="icon-xs"
@@ -123,7 +160,11 @@
     {/if}
 
     {#if onVote}
-      <TooltipShortcut label={m.chat_messageActions_goodResponse_label()} side="top" delayDuration={300}>
+      <TooltipShortcut
+        label={m.chat_messageActions_goodResponse_label()}
+        side="top"
+        delayDuration={300}
+      >
         <Button
           variant="ghost-light"
           size="icon-xs"
@@ -135,7 +176,11 @@
         </Button>
       </TooltipShortcut>
 
-      <TooltipShortcut label={m.chat_messageActions_badResponse_label()} side="top" delayDuration={300}>
+      <TooltipShortcut
+        label={m.chat_messageActions_badResponse_label()}
+        side="top"
+        delayDuration={300}
+      >
         <Button
           variant="ghost-light"
           size="icon-xs"
@@ -171,15 +216,15 @@
         </Button>
       {/snippet}
       {#snippet content()}
-      <div class="w-full flex flex-col">
-        <div class="flex items-center gap-3">
-          <span class="text-sm">{m.chat_messageActions_copyMessage_label()}</span>
-        </div>
-        {#if requestId}
-          <div class="text-subtle text-sm">
-            {m.chat_messageActions_copySessionIdHint_label()}
+        <div class="w-full flex flex-col">
+          <div class="flex items-center gap-3">
+            <span class="text-sm">{m.chat_messageActions_copyMessage_label()}</span>
           </div>
-        {/if}
+          {#if requestId}
+            <div class="text-subtle text-sm">
+              {m.chat_messageActions_copySessionIdHint_label()}
+            </div>
+          {/if}
         </div>
       {/snippet}
     </Tooltip>
@@ -187,7 +232,11 @@
 
   <!-- Scroll to previous button for user messages -->
   {#if role === 'user' && onScrollToPrevious}
-    <TooltipShortcut label={m.chat_messageActions_scrollToPrevious_label()} side="top" delayDuration={300}>
+    <TooltipShortcut
+      label={m.chat_messageActions_scrollToPrevious_label()}
+      side="top"
+      delayDuration={300}
+    >
       <Button
         variant="ghost-light"
         size="icon-xs"

@@ -3,12 +3,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goto: vi.fn(() => Promise.resolve()),
   nextCurrentId: 'ws-2',
   loadedWorkspaceIds: new Set<string>(),
+  tabStatuses: {} as Record<string, WorkspaceTabStatus>,
 }));
 
 const readable = <T>(value: T) => ({
@@ -50,6 +52,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
         { id: 'ws-3', title: 'Gamma', branch: 'release', repositoryName: 'intent' },
       ].filter((workspace) => mocks.loadedWorkspaceIds.has(workspace.id)),
     ),
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectWorkspaceTabStatuses: () => readable(mocks.tabStatuses),
 }));
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTasksByWorkspaceId: () =>
@@ -98,6 +103,14 @@ describe('WorkspaceTabStrip', () => {
     mocks.loadedWorkspaceIds.add('ws-1');
     mocks.loadedWorkspaceIds.add('ws-2');
     mocks.loadedWorkspaceIds.add('ws-3');
+    mocks.tabStatuses = {
+      'ws-1': {
+        agentCount: 1,
+        categories: [{ category: 'running', count: 1, agentNames: ['Coordinator'] }],
+        visibleCategories: [{ category: 'running', count: 1, agentNames: ['Coordinator'] }],
+        hiddenCategoryCount: 0,
+      },
+    };
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 0;
@@ -140,21 +153,21 @@ describe('WorkspaceTabStrip', () => {
     expect(hydrated.closest('[data-testid="workspace-tab-tooltip-root"]')?.className).toContain(
       'absolute -inset-px',
     );
-    expect(hydrated.querySelector('[data-workspace-tab-status-dot]')).toBeTruthy();
+    expect(hydrated.querySelector('[data-workspace-tab-status="running"]')).toBeTruthy();
     expect(hydrated.querySelector('[data-workspace-tab-title]')?.textContent).toBe('Alpha');
   });
 
-  it('activates exactly once from the title, status dot, padding, trailing background, and loading surface', async () => {
+  it('activates exactly once from the title, status icon, padding, trailing background, and loading surface', async () => {
     mocks.loadedWorkspaceIds.delete('ws-3');
     render(WorkspaceTabStrip);
 
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
-    const statusDot = alpha.querySelector('[data-workspace-tab-status-dot]')!;
+    const statusIcon = alpha.querySelector('[data-workspace-tab-status="running"]')!;
     const title = alpha.querySelector('[data-workspace-tab-title]')!;
     const loading = screen.getByRole('tab', { name: 'Loading workspace ws-3' });
     const targets: Array<[Element, string, number]> = [
       [title, 'ws-1', 60],
-      [statusDot, 'ws-1', 14],
+      [statusIcon, 'ws-1', 14],
       [alpha, 'ws-1', 2],
       [alpha, 'ws-1', 150],
       [loading, 'ws-3', 2],
@@ -171,6 +184,40 @@ describe('WorkspaceTabStrip', () => {
       });
       expect(mocks.goto).toHaveBeenCalledTimes(1);
       expect(mocks.goto).toHaveBeenCalledWith(`/workspace/${workspaceId}`);
+    }
+  });
+
+  it('right-aligns intrinsic statuses before a stable close reservation', () => {
+    render(WorkspaceTabStrip);
+    const tab = screen.getByRole('tab', { name: /Alpha/ });
+    const cluster = tab.querySelector('[data-workspace-tab-status-cluster]')!;
+    const controls = tab.querySelector('[data-workspace-tab-controls]')!;
+    const closeSpace = tab.querySelector('[data-workspace-tab-close-space]')!;
+    const title = tab.querySelector('[data-workspace-tab-title]')!;
+
+    expect(tab.className).toContain('pl-3 pr-1');
+    expect(tab.className).not.toContain('pr-8');
+    expect(cluster.className).toContain('max-w-14');
+    expect(cluster.className).toContain('justify-end');
+    expect(cluster.className).not.toMatch(/(?:^|\s)w-14(?:\s|$)/);
+    expect(controls.className).toContain('ml-auto');
+    expect(controls.lastElementChild).toBe(closeSpace);
+    expect(closeSpace.className).toContain('size-5');
+    expect(title.className).toContain('min-w-0');
+    expect(title.className).toContain('flex-1');
+    expect(title.nextElementSibling).toBe(controls);
+    expect(cluster.parentElement).toBe(controls);
+  });
+
+  it('keeps the trailing close reservation when a workspace has no status', () => {
+    mocks.tabStatuses = {};
+    render(WorkspaceTabStrip);
+    for (const tab of screen.getAllByRole('tab')) {
+      const controls = tab.querySelector('[data-workspace-tab-controls]');
+      if (!controls) continue;
+      expect(controls.querySelector('[data-workspace-tab-status-cluster]')).toBeNull();
+      expect(controls.children).toHaveLength(1);
+      expect(controls.firstElementChild?.hasAttribute('data-workspace-tab-close-space')).toBe(true);
     }
   });
 

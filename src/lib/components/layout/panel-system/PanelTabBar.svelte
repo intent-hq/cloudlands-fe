@@ -11,7 +11,7 @@
    * - Close button
    */
 
-  import type { PanelTab, PanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import type { PanelTab } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
@@ -39,11 +39,14 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Portal from '$lib/components/ui/Portal.svelte';
-  import { getContext, tick } from 'svelte';
+  import { tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { startDrag, endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import { restorePanelDragLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    restorePanelDragLayout,
+    toggleExpandPanel,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { selectPanelLayoutWorkspace } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     PANEL_DRAG_MIME,
@@ -112,6 +115,8 @@
   const CONTEXT_MENU_OFFSET = 4;
   const CONTEXT_MENU_FALLBACK_WIDTH = 224;
   const CONTEXT_MENU_FALLBACK_HEIGHT = 360;
+  const PANEL_HEADER_INTERACTIVE_SELECTOR =
+    'button, a, input, textarea, select, [role="button"], [role="tab"], [contenteditable="true"]';
 
   interface Props {
     tabs: PanelTab[];
@@ -187,9 +192,6 @@
   const isDragging = selectIsDragging();
   const allPermissionRequests = selectPermissionRequests();
 
-  // Access layout manager from context for expand-on-double-click
-  const getLayoutManager = getContext<(() => PanelLayoutManager) | undefined>('panelLayoutManager');
-
   // Context menu state
   let contextMenuTab = $state<{
     source: 'tab' | 'panel';
@@ -198,12 +200,6 @@
     y: number;
   } | null>(null);
   let contextMenuElement = $state<HTMLDivElement | null>(null);
-
-  // Track whether a tab was already active before a mousedown,
-  // so we can distinguish "double-click on already-active tab" (→ expand toggle)
-  // from "double-click on inactive tab" (→ rename).
-  let tabActiveBeforeMouseDown: { tabId: string; wasActive: boolean; timestamp: number } | null =
-    null;
 
   // Tab rename state - tracks which tab is being renamed inline
   let renamingTabId = $state<string | null>(null);
@@ -1115,26 +1111,27 @@
   }
 
   /**
-   * Handle double-click on a tab.
-   * If the tab was already the active tab before the click sequence, toggle panel
-   * expand (VS Code-like "more room" — 85/15 split). Otherwise, start inline rename.
+   * Tabs remain interactive on double-click: renameable tabs enter rename mode
+   * instead of bubbling the panel-header expand gesture.
    */
   function handleTabDoubleClick(e: MouseEvent, tab: PanelTab) {
     e.preventDefault();
     e.stopPropagation();
+    startInlineRename(tab);
+  }
 
-    const wasAlreadyActive =
-      tabActiveBeforeMouseDown?.tabId === tab.id && tabActiveBeforeMouseDown.wasActive;
-    tabActiveBeforeMouseDown = null;
-
-    if (wasAlreadyActive) {
-      const layoutManager = getLayoutManager?.();
-      if (layoutManager) {
-        layoutManager.toggleExpandPanel(panelId);
-      }
-    } else {
-      startInlineRename(tab);
+  function handlePanelHeaderDoubleClick(e: MouseEvent) {
+    const target = e.target;
+    if (
+      !(target instanceof Element) ||
+      target.closest(PANEL_HEADER_INTERACTIVE_SELECTOR) ||
+      getDraggedPanelId() !== null
+    ) {
+      return;
     }
+    e.preventDefault();
+    e.stopPropagation();
+    appStore.dispatch(toggleExpandPanel(layoutId ?? workspaceId, panelId));
   }
 
   // Check if a tab type can be located in the sidebar
@@ -1256,6 +1253,7 @@
 <!-- Tab bar + Header wrapper -->
 <div class="panel-tab-wrapper flex flex-col">
   <!-- Tab bar (traditional tabs) -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={tabBarRef}
     class={cn(
@@ -1263,6 +1261,7 @@
       !showTabStrip && 'hidden',
     )}
     data-panel-tab-bar
+    ondblclick={handlePanelHeaderDoubleClick}
   >
     <div class="absolute inset-x-0 bottom-0 z-0"></div>
 
@@ -1297,19 +1296,7 @@
               draggedTabId === tab.id && 'opacity-50',
             )}
             onclick={() => handleTabClick(tab.id)}
-            onmousedown={() => {
-              // Capture whether this tab was already active *before* the click activates it.
-              // Only record on the first mousedown of a potential double-click (within 500ms window).
-              const now = Date.now();
-              if (!tabActiveBeforeMouseDown || now - tabActiveBeforeMouseDown.timestamp > 500) {
-                tabActiveBeforeMouseDown = {
-                  tabId: tab.id,
-                  wasActive: tab.id === activeTabId,
-                  timestamp: now,
-                };
-              }
-              handleTabClick(tab.id);
-            }}
+            onmousedown={() => handleTabClick(tab.id)}
             ondblclick={(e) => handleTabDoubleClick(e, tab)}
             onkeydown={(e) => e.key === 'Enter' && handleTabClick(tab.id)}
             oncontextmenu={(e) => handleTabContextMenu(e, tab.id)}
@@ -1573,6 +1560,7 @@
         isFocused && 'focused',
       )}
       oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
+      ondblclick={handlePanelHeaderDoubleClick}
       draggable="true"
       ondragstart={handlePanelDragStart}
       ondragend={handlePanelDragEnd}

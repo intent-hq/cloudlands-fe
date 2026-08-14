@@ -197,9 +197,9 @@ describe('tabless panel layout', () => {
     );
 
     if (result?.type !== 'split') throw new Error('Expected horizontal split');
-    expect(result.sizes[0]).toBeCloseTo((600 / 1480) * 100);
-    expect(result.sizes[1]).toBeCloseTo((480 / 1480) * 100);
-    expect(result.sizes[2]).toBeCloseTo((400 / 1480) * 100);
+    expect(result.sizes[0]).toBeCloseTo((600 / 1500) * 100);
+    expect(result.sizes[1]).toBeCloseTo((500 / 1500) * 100);
+    expect(result.sizes[2]).toBeCloseTo((400 / 1500) * 100);
   });
 
   it('removes a horizontal panel without changing surviving column pixels', () => {

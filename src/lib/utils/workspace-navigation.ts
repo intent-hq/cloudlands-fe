@@ -422,3 +422,16 @@ export async function navigateToFirstWorkspace(): Promise<void> {
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
   await goto(target);
 }
+
+/** Navigate away from a workspace after it has been archived or deleted. */
+export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
+  const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
+  const target = workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(
+        selectWorkspaceItems.select(appStore.state),
+        removedWorkspaceId,
+      );
+  logger.info('[navigateAfterWorkspaceRemoval] Navigating to:', target);
+  await goto(target);
+}

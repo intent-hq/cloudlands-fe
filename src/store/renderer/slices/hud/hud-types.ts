@@ -21,6 +21,33 @@ export const HUD_AGENT_STATE_BUCKETS = [
 
 export type HudAgentStateBucket = (typeof HUD_AGENT_STATE_BUCKETS)[number];
 
+/** Priority order for compact workspace-tab status glyphs. */
+export const WORKSPACE_TAB_STATUS_CATEGORY_ORDER = [
+  'failed',
+  'blocker',
+  'question',
+  'discussion',
+  'needs_input',
+  'review',
+  'unread',
+  'running',
+] as const;
+
+export type WorkspaceTabStatusCategory = (typeof WORKSPACE_TAB_STATUS_CATEGORY_ORDER)[number];
+
+export interface WorkspaceTabStatusItem {
+  category: WorkspaceTabStatusCategory;
+  count: number;
+  agentNames: string[];
+}
+
+export interface WorkspaceTabStatus {
+  agentCount: number;
+  categories: WorkspaceTabStatusItem[];
+  visibleCategories: WorkspaceTabStatusItem[];
+  hiddenCategoryCount: number;
+}
+
 /**
  * Bucket a wire agent status (`agentSummary.agents[].status`, PROTOCOL §5.1 —
  * same strings as `agent.list`) into a HUD state bar. The wire carries both
