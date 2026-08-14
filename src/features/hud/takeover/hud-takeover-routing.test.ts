@@ -201,13 +201,12 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
     const gutter = allSpans(takeoverEdgeRoutes(graph).routes).filter(
       (s) => s.axis === 'v' && s.channel === 1.5,
     );
-    const laneOf = (id: string) => gutter.find((s) => s.id.startsWith(`${id}\u0000`))?.lane;
-    expect(laneOf('u')).toBe(0);
-    const conflictRun = gutter.find((s) => s.kind === 'conflict');
-    expect(conflictRun?.lane).toBe(1);
-    expect(gutter.find((s) => s.id === 's\u0000c\u0000dep')?.lane).toBe(1);
-    expect(gutter.find((s) => s.id === 's\u0000e\u0000dep')?.lane).toBe(2);
-    expect(gutter.find((s) => s.id === 's\u0000b\u0000dep')?.lane).toBe(1);
+    const laneOf = (id: string) => gutter.find((s) => s.id === id)?.lane;
+    expect(laneOf('u\u0000v\u0000dep')).toBe(0);
+    expect(laneOf('u\u0000q\u0000conflict')).toBe(1);
+    expect(laneOf('s\u0000c\u0000dep')).toBe(1);
+    expect(laneOf('s\u0000e\u0000dep')).toBe(2);
+    expect(laneOf('s\u0000b\u0000dep')).toBe(1);
   });
 
   it('bundling: same source but different kinds are separate bundles with distinct lanes', () => {
