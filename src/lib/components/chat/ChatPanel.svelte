@@ -205,7 +205,7 @@
     shouldShowPendingAssistantStatus,
     shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
-  import { isVisibleQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -506,13 +506,12 @@
     }
   });
 
-  // Queue entries the user should see: user-authored ones plus daemon-origin
-  // entries with a renderable attribution row (agent sends, event wakes, hook
-  // wakes, PR-monitor wakes). System entries (`questions_dismissed`,
-  // `source: 'system'`, unknown types) stay hidden — the list, its count, and
-  // the up-arrow edit path all use this filtered view (display-only; the
-  // daemon queue and drain order are untouched).
-  const visibleQueuedMessages = $derived($queuedMessages$.filter(isVisibleQueuedMessage));
+  // Queue entries the user should see: user-authored ones only. Daemon-origin
+  // entries (agent sends, event wakes, hook wakes, PR-monitor wakes,
+  // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
+  // the list, its count, and the up-arrow edit path all use this filtered
+  // view (display-only; the daemon queue and drain order are untouched).
+  const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown with a held-for-questions hint while Ignore-collapsed (the daemon
@@ -3915,9 +3914,6 @@
       bind:this={queuedMessageListRef}
       messages={visibleQueuedMessages}
       heldForQuestions={queuedMessagesVisibility.heldForQuestions}
-      workspaceRepo={workspace?.repositoryOwner && workspace?.repositoryName
-        ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
-        : undefined}
       onedit={handleEditQueuedMessage}
       onremove={handleRemoveQueuedMessage}
       onsendnow={handleSendQueuedMessageNow}

@@ -1,7 +1,7 @@
 /**
  * Shared, dependency-light helpers for summarizing workspace event wakes
- * (`[WORKSPACE EVENTS]` notifications) in the chat UI. Used by both
- * EventWakeupBanner (divider banner) and QueuedMessageList (queued rows).
+ * (`[WORKSPACE EVENTS]` notifications) in the chat UI. Used by
+ * EventWakeupBanner (divider banner).
  */
 
 import { m } from '$shared/paraglide/messages.js';
