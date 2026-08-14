@@ -1246,7 +1246,7 @@
               transition:safeSubscriptionSlide
             >
               <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo && !automatedWakePresentation}
+              {#if queueInfo}
                 <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
               {/if}
 

@@ -78,7 +78,7 @@
 
   /** Chip label: "#42", prefixed "org/repo: " only for cross-repo PRs. */
   function chipLabel(monitor: PrMonitorRow): string {
-    const number = `#${formatInteger(monitor.prNumber)}`;
+    const number = `#${monitor.prNumber}`;
     if (workspaceRepo && monitor.repo !== workspaceRepo) {
       return m.chat_monitoredPrs_crossRepoChip_label({ repo: monitor.repo, number });
     }
@@ -205,7 +205,7 @@
                     >{monitor.title ??
                       m.chat_monitoredPrs_hover_untitled_label({
                         repo: monitor.repo,
-                        number: formatInteger(monitor.prNumber),
+                        number: String(monitor.prNumber),
                       })}</span
                   >
                   {#if monitor.lastSnapshot}

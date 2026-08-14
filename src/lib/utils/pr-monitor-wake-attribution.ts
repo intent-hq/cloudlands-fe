@@ -10,7 +10,6 @@
  */
 
 import { m } from '$shared/paraglide/messages.js';
-import { formatInteger } from '$lib/i18n/format';
 
 export interface PrMonitorWakeAttribution {
   /** Monitor id (may be empty when the daemon omitted it). */
@@ -80,7 +79,7 @@ export function getPrMonitorWakeChipLabel(
   attribution: PrMonitorWakeAttribution,
   workspaceRepo?: string,
 ): string {
-  const number = `#${formatInteger(attribution.prNumber)}`;
+  const number = `#${attribution.prNumber}`;
   if (workspaceRepo && attribution.repo !== workspaceRepo) {
     return m.chat_prMonitorWakeAttribution_crossRepoChip_label({
       repo: attribution.repo,
