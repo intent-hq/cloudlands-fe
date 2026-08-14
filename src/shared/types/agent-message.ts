@@ -94,6 +94,7 @@ export interface MessageMetadata {
     | 'preempted_by_message'
     | 'daemon_shutdown'
     | 'agent_stopped'
+    | 'system_suspend'
     | (string & {});
   interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
 

@@ -53,7 +53,8 @@ export type StoppedIndicatorLabel =
   | { kind: 'preempted-by-message' }
   | { kind: 'preempted-by-agent'; name: string }
   | { kind: 'daemon-shutdown' }
-  | { kind: 'agent-stopped' };
+  | { kind: 'agent-stopped' }
+  | { kind: 'system-suspend' };
 
 export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedIndicatorLabel {
   const reason = message?.metadata?.interruptReason;
@@ -73,6 +74,8 @@ export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedInd
       return { kind: 'daemon-shutdown' };
     case 'agent_stopped':
       return { kind: 'agent-stopped' };
+    case 'system_suspend':
+      return { kind: 'system-suspend' };
     case 'user_stop':
     default:
       return { kind: 'stopped' };
