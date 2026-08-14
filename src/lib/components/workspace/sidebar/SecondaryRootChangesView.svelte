@@ -14,9 +14,11 @@
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { toast } from 'svelte-sonner';
 
   interface Props {
     workspaceId: string;
@@ -79,9 +81,18 @@
 
   // Prefer the freshly loaded status over the cached git-root list entry so
   // a refresh after a branch checkout shows the new branch immediately.
-  const branchLabel = $derived(
-    status?.branch || entry.branch || m.workspace_branchDisplay_noBranch_label(),
-  );
+  const branchName = $derived(status?.branch || entry.branch || '');
+  const branchLabel = $derived(branchName || m.workspace_branchDisplay_noBranch_label());
+
+  async function copyBranch() {
+    if (!branchName) return;
+    try {
+      await writeTextToClipboard(branchName);
+      toast.success(m.workspace_sidebarChanges_branchCopied_label());
+    } catch {
+      toast.error(m.workspace_sidebarChanges_copyBranchFailed_error());
+    }
+  }
 
   // Porcelain status char → display color (GitFileStatus wire values)
   function statusColor(statusChar: string): string {
@@ -104,7 +115,18 @@
   <!-- Root branch line + read-only badge + refresh -->
   <div class="flex items-center gap-1.5 text-subtle text-xs -ml-0.5">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
-    <span class="text-ui truncate min-w-0">{branchLabel}</span>
+    {#if branchName}
+      <button
+        type="button"
+        class="text-ui truncate min-w-0 text-left cursor-pointer hover:text-foreground transition-colors"
+        onclick={copyBranch}
+        title={m.workspace_sidebarChanges_copyBranch_tooltip()}
+        aria-label={m.workspace_sidebarChanges_copyBranch_tooltip()}
+        data-testid="secondary-root-branch-copy">{branchLabel}</button
+      >
+    {:else}
+      <span class="text-ui truncate min-w-0">{branchLabel}</span>
+    {/if}
     <span
       class="shrink-0 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-xs uppercase tracking-wide"
       title={m.workspace_sidebarChanges_rootReadOnly_tooltip()}
