@@ -4331,6 +4331,7 @@
   "browser_embedded_localhostRefusedPort_error": "Impossible de se connecter à localhost:{port}. Le serveur n'est peut-être pas en cours d'exécution.",
   "browser_embedded_localhostRefused_error": "Impossible de se connecter à localhost. Le serveur n'est peut-être pas en cours d'exécution.",
   "browser_embedded_loadFailed_error": "Impossible de charger la page",
+  "browser_embedded_resolveFailed_error": "Impossible d'atteindre cette URL depuis le daemon distant",
   "browser_embedded_protocolNotAllowed_error": "Le protocole \"{protocol}\" n'est pas autorisé. Pris en charge : {protocols}",
   "browser_embedded_selfLoad_error": "Impossible de charger l'application dans elle-même",
   "browser_embedded_invalidUrlFormat_error": "Format d'URL non valide",

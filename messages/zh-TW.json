@@ -4331,6 +4331,7 @@
   "browser_embedded_localhostRefusedPort_error": "無法連線到 localhost:{port}。伺服器可能沒有在執行。",
   "browser_embedded_localhostRefused_error": "無法連線到 localhost。伺服器可能沒有在執行。",
   "browser_embedded_loadFailed_error": "載入頁面失敗",
+  "browser_embedded_resolveFailed_error": "無法從遠端守護程序連線到此 URL",
   "browser_embedded_protocolNotAllowed_error": "不允許使用協議「{protocol}」。支援的協議：{protocols}",
   "browser_embedded_selfLoad_error": "無法在應用程式內部載入應用程式自身",
   "browser_embedded_invalidUrlFormat_error": "URL 格式無效",
