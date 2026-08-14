@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.37.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.36.1...v2.37.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* resolve loopback URLs against the daemon host in remote mode (rewrite, probe, tunnel fallback) ([e683ae6](https://github.com/intent-hq/cloudlands-fe/commit/e683ae6495f3e3b8dc872dde3d2700febe0e8cce))
+* surface daemon workspace waiting flag in sidebar and HUD ([#1178](https://github.com/intent-hq/cloudlands-fe/issues/1178)) ([7498f5c](https://github.com/intent-hq/cloudlands-fe/commit/7498f5cf7c348ab64109678cac3549c59f636792))
+
 ## [2.36.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.36.0...v2.36.1) (2026-08-14)
 
 
