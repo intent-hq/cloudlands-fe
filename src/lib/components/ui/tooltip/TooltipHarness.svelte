@@ -31,3 +31,15 @@
     <span>Passive status</span>
   </Tooltip.Tooltip>
 </div>
+
+<!-- Static stand-in for bits-ui menu content: the wrapper must not become a
+     nested interactive element inside role="menu"/role="menuitem". -->
+<!-- i18n-ignore (test harness fixture, not user-facing) -->
+<div data-testid="menu-tooltip" role="menu" aria-label="Menu tooltip case" tabindex="-1">
+  <div role="menuitem" tabindex="-1">
+    <Tooltip.Tooltip content="Menu status help" delayDuration={0}>
+      <!-- i18n-ignore (test harness fixture, not user-facing) -->
+      <span>Menu status</span>
+    </Tooltip.Tooltip>
+  </div>
+</div>
