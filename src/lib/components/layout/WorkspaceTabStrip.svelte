@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faEllipsis, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -9,6 +9,11 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import {
+    formatWorkspaceTabStatusItems,
+    formatWorkspaceTabStatusSummary,
+    getWorkspaceTabStatusPresentation,
+  } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
@@ -28,6 +33,8 @@
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
+  import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -44,6 +51,7 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceViewMode$ = selectWorkspaceViewMode();
   const workspaceItems$ = selectWorkspaceItems();
+  const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -101,6 +109,14 @@
   function getRunningAgentIds(workspaceId: string) {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
+  }
+
+  function tabAccessibleLabel(title: string, status?: WorkspaceTabStatus): string {
+    if (!status) return title;
+    return m.layout_workspaceTabStrip_status_ariaLabel({
+      name: title,
+      statuses: formatWorkspaceTabStatusSummary(status),
+    });
   }
 
   function reportActiveTabBounds(node: HTMLElement, isActive: boolean) {
@@ -311,6 +327,9 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
+          {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
+          {@const workspaceTitle =
+            workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           <div
             class={cn(
               'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
@@ -404,25 +423,70 @@
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] px-3 pr-8 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
+                aria-label={tabAccessibleLabel(workspaceTitle, tabStatus)}
                 tabindex={isCurrent ? 0 : -1}
                 data-workspace-tab-hover-trigger
               >
-                {#if workspace.activity === 'agent_running'}
-                  <span
-                    class="size-1.5 shrink-0 rounded-full bg-success"
-                    data-workspace-tab-status-dot
-                    aria-label={m.layout_workspaceTabStrip_agentWorking_ariaLabel()}
-                  ></span>
-                {/if}
-                <span class="truncate" data-workspace-tab-title
-                  >{workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}</span
+                <span class="min-w-0 flex-1 truncate" data-workspace-tab-title
+                  >{workspaceTitle}</span
                 >
+                <span
+                  class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
+                  data-workspace-tab-controls
+                >
+                  {#if tabStatus}
+                    <span
+                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end gap-px overflow-hidden"
+                      data-workspace-tab-status-cluster
+                    >
+                      {#each tabStatus.visibleCategories as item, index (item.category)}
+                        {@const presentation = getWorkspaceTabStatusPresentation(item.category)}
+                        <span
+                          class={cn(
+                            'flex size-3 shrink-0 items-center justify-center',
+                            index === 0 && 'size-4',
+                            presentation.className,
+                          )}
+                          data-workspace-tab-status={item.category}
+                          data-workspace-status-icon={presentation.icon.iconName}
+                          data-status-count={item.count}
+                          data-status-leading={index === 0}
+                          role="img"
+                          aria-label={presentation.label}
+                          title={presentation.label}
+                        >
+                          <Fa
+                            icon={presentation.icon}
+                            class={index === 0 ? 'size-3.5' : 'size-2.5'}
+                          />
+                        </span>
+                      {/each}
+                      {#if tabStatus.hiddenCategoryCount > 0}
+                        {@const hiddenSummary = formatWorkspaceTabStatusItems(
+                          tabStatus.categories.slice(tabStatus.visibleCategories.length),
+                        )}
+                        <span
+                          class="flex size-3 shrink-0 items-center justify-center text-muted-foreground"
+                          data-workspace-tab-status-overflow
+                          data-status-hidden={tabStatus.hiddenCategoryCount}
+                          role="img"
+                          aria-label={hiddenSummary}
+                          title={hiddenSummary}
+                        >
+                          <Fa icon={faEllipsis} class="size-2.5" />
+                        </span>
+                      {/if}
+                    </span>
+                  {/if}
+                  <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
+                  ></span>
+                </span>
               </button>
             </TooltipRich>
             <button

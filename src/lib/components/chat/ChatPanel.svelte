@@ -127,6 +127,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
+  import { createAppMessageId } from '$shared/utils/app-message-id';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
@@ -167,6 +168,13 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import {
+    animateMessageSend,
+    captureMessageSendOrigin,
+    createMessageSendLaunchBubble,
+    MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+    type MessageSendOrigin,
+  } from './message-send-transition';
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
@@ -365,10 +373,92 @@
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
   let scrollContainer = $state<HTMLDivElement>();
+  let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
   let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+
+  interface PendingSendTransition {
+    origin: MessageSendOrigin;
+    launchBubble: HTMLElement | null;
+    expiry: ReturnType<typeof setTimeout>;
+  }
+
+  const pendingSendTransitions = new Map<string, PendingSendTransition>();
+  const activeSendTransitions = new Map<string, AbortController>();
+
+  function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
+    if (pendingSendTransitions.get(key) !== pending) return;
+    clearTimeout(pending.expiry);
+    pending.launchBubble?.remove();
+    pendingSendTransitions.delete(key);
+  }
+
+  function cancelAllSendTransitions(): void {
+    for (const [key, pending] of pendingSendTransitions) {
+      cancelPendingSendTransition(key, pending);
+    }
+    for (const controller of activeSendTransitions.values()) controller.abort();
+    activeSendTransitions.clear();
+  }
+
+  function prepareMessageSendTransition(
+    text: string,
+    options: { enabled: boolean; allowOverlap?: boolean },
+  ): string {
+    const userAppMessageId = createAppMessageId();
+    if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
+      return userAppMessageId;
+    }
+    if (!composerElement) return userAppMessageId;
+    const origin = captureMessageSendOrigin(composerElement);
+    if (origin.width <= 0) return userAppMessageId;
+    const key = String(userAppMessageId);
+    const launchBubble = createMessageSendLaunchBubble(origin, text);
+    const pending: PendingSendTransition = {
+      origin,
+      launchBubble,
+      expiry: setTimeout(
+        () => cancelPendingSendTransition(key, pending),
+        MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+      ),
+    };
+    pendingSendTransitions.set(key, pending);
+    return userAppMessageId;
+  }
+
+  function startPendingSendTransitions(): boolean {
+    if (!scrollContainer || pendingSendTransitions.size === 0) return false;
+    let started = false;
+    for (const message of $agentMessages$) {
+      const key = message.role === 'user' ? String(message.appMessageId ?? '') : '';
+      const pending = pendingSendTransitions.get(key);
+      if (!pending) continue;
+      const row = Array.from(
+        scrollContainer.querySelectorAll<HTMLElement>('[data-send-app-message-id]'),
+      ).find((candidate) => candidate.dataset.sendAppMessageId === key);
+      if (!row) continue;
+      clearTimeout(pending.expiry);
+      pendingSendTransitions.delete(key);
+      const target = row.querySelector<HTMLElement>('[data-testid="user-message-surface"]') ?? row;
+      activeSendTransitions.get(key)?.abort();
+      const controller = new AbortController();
+      activeSendTransitions.set(key, controller);
+      const settle = () => {
+        if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
+      };
+      void animateMessageSend({
+        origin: pending.origin,
+        target,
+        scrollContainer,
+        launchBubble: pending.launchBubble,
+        signal: controller.signal,
+      }).then(settle, settle);
+      started = true;
+    }
+    return started;
+  }
 
   // Track which message is currently "sticky" (scrolled past its natural position)
   let stickyMessageId = $state<string | null>(null);
@@ -1410,7 +1500,9 @@
         tick().then(() => {
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
-          if (scrollContainer) scrollToBottomUtil(scrollContainer);
+          if (scrollContainer && !startPendingSendTransitions()) {
+            scrollToBottomUtil(scrollContainer);
+          }
         });
       }
     }
@@ -1669,6 +1761,12 @@
     }, 100);
 
     return () => clearTimeout(autoFocusTimer);
+  });
+
+  $effect(() => {
+    const transitionWorkspaceId = workspace?.id;
+    if (!transitionWorkspaceId) return;
+    return cancelAllSendTransitions;
   });
 
   // WORKSPACE REBIND FIX: Reactively re-initialize chat state when the workspace
@@ -2400,6 +2498,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    cancelAllSendTransitions();
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
@@ -2674,12 +2773,16 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: !$agentIsResponding$,
+    });
 
     // Dispatch all orchestration to the send-message saga
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -2836,11 +2939,16 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: true,
+      allowOverlap: true,
+    });
 
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -3605,6 +3713,7 @@
                           <div
                             data-message-id={message.id}
                             data-message-role="user"
+                            data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20 mb-4"
                             class:bg-sidebar={isChiefWorkspace}
@@ -3905,6 +4014,7 @@
 
   <!-- Message Input with Aurora Background -->
   <div
+    bind:this={composerElement}
     class="conversation-composer relative z-20 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}

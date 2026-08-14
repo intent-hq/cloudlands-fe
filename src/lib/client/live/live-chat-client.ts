@@ -258,13 +258,13 @@ export class ChatTranscriptReconciler {
   }
 
   /**
-   * Seed from a snapshot push (a full rebuild). Returns `false` for a stale
-   * re-delivery on an already-seeded transcript that would rewind
-   * `expectedSeq` (deltas past it have been applied) — applying it would roll
-   * the transcript back and make the next live delta read as a gap.
+   * Seed from a snapshot push (a full rebuild). Returns `false` for a stale or
+   * duplicate re-delivery on an already-seeded transcript. A registration has
+   * exactly one snapshot, so reapplying the same seq would either repeat the
+   * hydration edge or rewind deltas already reduced past it.
    */
   applySnapshot(seq: number, raw: unknown): boolean {
-    if (this.seeded && seq + 1 < this.expectedSeq) return false;
+    if (this.seeded && seq + 1 <= this.expectedSeq) return false;
     const snap = extractSnapshot(raw);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
