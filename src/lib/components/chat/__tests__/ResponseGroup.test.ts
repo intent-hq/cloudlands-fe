@@ -24,7 +24,11 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { cubicOut } from 'svelte/easing';
 import ResponseGroup from '../ResponseGroup.svelte';
-import { getResponseGroupBlockKey, getResponseGroupPreviewBlock } from '../response-group-blocks';
+import {
+  getResponseGroupBlockKey,
+  getResponseGroupBlockKeys,
+  getResponseGroupPreviewBlock,
+} from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 
@@ -407,6 +411,56 @@ describe('ResponseGroup - block identity', () => {
 
     expect(getResponseGroupBlockKey(toolUse, 1)).toBe(getResponseGroupBlockKey(toolUse, 99));
     expect(getResponseGroupBlockKey(toolResult, 2)).toBe(getResponseGroupBlockKey(toolResult, 100));
+  });
+
+  it('getResponseGroupBlockKeys dedupes tool_results sharing a tool_use_id', () => {
+    const blocks = [
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[0]).toBe('tool_result:tool-1');
+    expect(keys[1]).toBe('tool_result:tool-1-dup-1');
+  });
+
+  it('getResponseGroupBlockKeys dedupes tool_uses sharing a toolCallId without an id', () => {
+    const blocks = [
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+    ] as unknown as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[0]).toBe('tool_use:call-7');
+    expect(keys[1]).toBe('tool_use:call-7-dup-1');
+    expect(keys[2]).toBe('tool_use:call-7-dup-2');
+  });
+
+  it('getResponseGroupBlockKeys dedupes repeated id-backed blocks', () => {
+    const blocks = [
+      { type: 'code', id: 'block-1', code: 'a' },
+      { type: 'code', id: 'block-1', code: 'a' },
+    ] as unknown as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[1]).toBe(`${keys[0]}-dup-1`);
+  });
+
+  it('getResponseGroupBlockKeys leaves collision-free inputs unchanged', () => {
+    const blocks = [
+      { type: 'tool_use', id: 'tool-1', name: 'search' },
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+      { type: 'text', text: 'hello' },
+      { type: 'thinking', text: 'hmm' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(keys).toEqual(blocks.map((block, index) => getResponseGroupBlockKey(block, index)));
+    expect(new Set(keys).size).toBe(blocks.length);
   });
 
   it('selects the latest presentable payload without cloning or rewriting it', () => {

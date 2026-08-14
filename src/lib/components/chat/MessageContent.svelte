@@ -41,7 +41,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { getResponseGroupBlockKey } from './response-group-blocks';
+  import { getResponseGroupBlockKeys } from './response-group-blocks';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
   import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
@@ -340,8 +340,18 @@
     return `${contentBlock.type}-${index}`;
   }
 
-  // Pre-compute block keys for stable iteration
-  const blockKeys = $derived(groupedBlocks.map((block, index) => getBlockKey(block, index)));
+  // Pre-compute block keys for stable iteration, ensuring uniqueness
+  const blockKeys = $derived.by(() => {
+    const keys = groupedBlocks.map((block, index) => getBlockKey(block, index));
+    // Ensure uniqueness by appending index if duplicates exist
+    const seen = new Map<string, number>();
+    return keys.map((key, index) => {
+      const count = seen.get(key) || 0;
+      seen.set(key, count + 1);
+      // If this key was seen before, make it unique by appending the index
+      return count > 0 ? `${key}-dup-${index}` : key;
+    });
+  });
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent)}
@@ -498,7 +508,7 @@
           <CodeBlock code={resultPayload} />
         {:else if Array.isArray(resultPayload)}
           <!-- Recursively render nested content blocks -->
-          {#each resultPayload as any[] as nestedBlock, nestedIndex (nestedBlock.id || `nested-${blockIndex}-${nestedIndex}-${nestedBlock.type}`)}
+          {#each resultPayload as any[] as nestedBlock, nestedIndex (`nested-${blockIndex}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
@@ -564,7 +574,8 @@
         blocks={group.children}
       >
         {#snippet children()}
-          {#each group.children as childBlock, childIndex (getResponseGroupBlockKey(childBlock, childIndex))}
+          {@const childKeys = getResponseGroupBlockKeys(group.children)}
+          {#each group.children as childBlock, childIndex (childKeys[childIndex])}
             {@render renderContentBlock(childBlock, `${blockIndex}-${childIndex}`, blockIndex)}
           {/each}
         {/snippet}

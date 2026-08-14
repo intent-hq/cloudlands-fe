@@ -55,7 +55,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { getResponseGroupBlockKey } from './response-group-blocks';
+  import { getResponseGroupBlockKeys } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -772,7 +772,8 @@
           blocks={group.children}
         >
           {#snippet children()}
-            {#each group.children as childBlock, childIndex (getResponseGroupBlockKey(childBlock, childIndex))}
+            {@const childKeys = getResponseGroupBlockKeys(group.children)}
+            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
                 <div class="content-block content-block--{childBlock.type} my-1.25">
                   {@render renderContentBlock(
