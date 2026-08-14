@@ -84,9 +84,12 @@ describe('workspace column layout contract', () => {
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
     expect(columns).toContain('livePanelCanvasWidths[workspaceId]');
     expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
-    expect(columns).not.toContain('$resizablePanelSizes$[`workspace-left-panel-width:');
+    expect(columns).toContain('selectResizablePanelSizes');
+    expect(columns).toContain('selectHydratedResizablePanelSizes');
+    expect(columns).toContain('data-sidebar-widths-ready={sidebarWidthsReady}');
     expect(columns).not.toContain('workspace-panel-columns-width:');
     expect(surface).toContain("canvasSizing={columnMode ? 'content' : 'viewport'}");
+    expect(surface).toContain('{columnMode}');
     expect(columns).not.toContain("{#key stack.join(':')}");
     expect(surface).toContain('onDestroy(() => {');
     expect(surface).not.toContain('onDestroy(async () => {');

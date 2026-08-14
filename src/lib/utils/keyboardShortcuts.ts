@@ -50,8 +50,8 @@ export function isFocusInTerminal(target?: HTMLElement | null): boolean {
  * - CodeMirror editors
  * - Elements with textbox role
  */
-export function isFocusInEditableElement(target?: HTMLElement | null): boolean {
-  const activeElement = target ?? (document.activeElement as HTMLElement | null);
+export function isFocusInEditableElement(target?: Element | null): boolean {
+  const activeElement = target ?? document.activeElement;
 
   if (!activeElement) {
     return false;
@@ -60,7 +60,7 @@ export function isFocusInEditableElement(target?: HTMLElement | null): boolean {
   const tagName = activeElement.tagName?.toUpperCase();
 
   // Standard form elements
-  if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+  if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
     return true;
   }
 
@@ -70,7 +70,7 @@ export function isFocusInEditableElement(target?: HTMLElement | null): boolean {
   const hasClosest = typeof activeElement.closest === 'function';
   const hasGetAttribute = typeof activeElement.getAttribute === 'function';
   if (
-    activeElement.isContentEditable ||
+    (activeElement instanceof HTMLElement && activeElement.isContentEditable) ||
     (hasGetAttribute && activeElement.getAttribute('contenteditable') === 'true') ||
     (hasClosest && activeElement.closest('[contenteditable="true"]'))
   ) {
@@ -79,7 +79,7 @@ export function isFocusInEditableElement(target?: HTMLElement | null): boolean {
 
   // ARIA textbox role (custom text inputs)
   const role = hasGetAttribute ? activeElement.getAttribute('role') : null;
-  if (role === 'textbox') {
+  if (role === 'textbox' || (hasClosest && activeElement.closest('[role="textbox"]'))) {
     return true;
   }
 
