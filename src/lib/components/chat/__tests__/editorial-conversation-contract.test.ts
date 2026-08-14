@@ -47,14 +47,12 @@ describe('editorial conversation presentation contract', () => {
     );
 
     const message = source('src/lib/components/chat/ChatMessage.svelte');
-    expect(message).toMatch(/isSticky \|\|[\s\S]{0,100}'line-clamp-2'/);
-    expect(message).toContain(
-      "agentAttribution\n                ? ''\n                : 'line-clamp-6'",
-    );
+    expect(message).toMatch(/agentAttribution[\s\S]{0,80}: isSticky[\s\S]{0,40}line-clamp-2/);
+    expect(message).toContain("? 'max-w-full [overflow-wrap:anywhere]'");
+    expect(message).toContain(": 'line-clamp-6'");
     expect(message).toContain('imageBlocks.length > 0 && !isSticky');
     expect(message).toContain('fileBlocks.length > 0 && !isSticky');
-    expect(message).toContain('transition: height var(--motion-slow) var(--ease-emphasized-out)');
-    expect(message).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(message).toContain('transition:safeSubscriptionSlide');
   });
 
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
@@ -86,7 +84,9 @@ describe('editorial conversation presentation contract', () => {
     // deltas there cannot move the visible transcript.
     const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
     expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
-    expect(lazyTurn).toMatch(/if \(!wasAboveViewport\) return;[\s\S]{0,300}scroller\.scrollTop \+= delta;/);
+    expect(lazyTurn).toMatch(
+      /if \(!wasAboveViewport\) return;[\s\S]{0,300}scroller\.scrollTop \+= delta;/,
+    );
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
   });
@@ -156,7 +156,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
-    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass}');
+    expect(message).toContain('`relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`');
     expect(message).toContain(
       "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
     );
@@ -212,10 +212,12 @@ describe('editorial conversation presentation contract', () => {
 
   it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(message.match(/group-focus-within:opacity-100/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(message).toContain('showOnHover={false}');
+    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
+    expect(actionSurface).toContain('group-focus-within:opacity-100');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
@@ -286,9 +288,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
-    expect(message).toContain('pointer-events-none absolute bottom-0 right-0 z-10');
-    expect(message).toContain('rounded-md bg-background/95 p-0.5');
-    expect(message).toContain('group-hover:pointer-events-auto group-hover:opacity-100');
+    expect(message).toContain('class="absolute right-1 z-10');
+    expect(message).toContain('<MessageActions');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(message).not.toContain('group-hover:grid-rows-[1fr]');
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');

@@ -33,7 +33,7 @@
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
   import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { get, writable } from 'svelte/store';
+  import { derived, get, writable } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -64,14 +64,16 @@
 
   import {
     selectPanelLayoutRoot,
+    selectExpandedPanelId,
     selectPanels,
     selectFocusedPanelId,
     selectFocusedPanel,
     selectActiveTab,
     selectAllTabs,
-    selectPanelColumnCount,
     selectPanelIds,
+    selectPanelColumnDefaultWidthTiers,
     selectPanelCanvasWidth,
+    selectPanelCanvasWidthSource,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -84,7 +86,11 @@
     resizePanelLayoutRightEdge,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
-  import type { PanelCanvasSizing } from '$shared/panel-layout-sizing';
+  import {
+    getAutomaticPanelCanvasWidth,
+    getPanelDefaultWidth,
+    type PanelCanvasSizing,
+  } from '$shared/panel-layout-sizing';
 
   const logger = createLogger('PanelLayout');
 
@@ -138,12 +144,19 @@
 
   // Reactive selector subscriptions for template rendering
   const root$ = selectPanelLayoutRoot(layoutIdStore);
+  const expandedPanelId$ = selectExpandedPanelId(layoutIdStore);
   const panels$ = selectPanels(layoutIdStore);
   const focusedPanelId$ = selectFocusedPanelId(layoutIdStore);
   const activeTab$ = selectActiveTab(layoutIdStore);
   const allTabs$ = selectAllTabs(layoutIdStore);
-  const panelColumnCount$ = selectPanelColumnCount(layoutIdStore);
+  const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(layoutIdStore);
+  const panelDefaultWidthViewport = writable(0);
+  const panelColumnDefaultWidths$ = derived(
+    [panelColumnDefaultWidthTiers$, panelDefaultWidthViewport],
+    ([$tiers, viewportWidth]) => $tiers.map((tier) => getPanelDefaultWidth(tier, viewportWidth)),
+  );
   const panelCanvasWidth$ = selectPanelCanvasWidth(layoutIdStore);
+  const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(layoutIdStore);
   const restoreStatus$ = selectRestoreStatus(layoutIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
@@ -172,18 +185,70 @@
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   let panelViewportWidth = $state(0);
+  $effect(() => {
+    panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
+  });
   let panelRootReferenceSize = $state(0);
   let panelCanvasResizeDelta = $state(0);
+  let panelCanvasResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeDelta = $state(0);
+  let panelOuterResizeCommittedDelta = $state(0);
+  let panelOuterResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeStartReferenceSize: number | null = null;
+  const expandedAutomaticViewportWidth = $derived(
+    $expandedPanelId$ !== null &&
+      canvasSizing === 'viewport' &&
+      $panelCanvasWidthSource$ !== 'explicit'
+      ? Math.max(
+          panelViewportWidth,
+          $panelCanvasWidth$ ?? 0,
+          getPanelCanvasWidths(
+            panelViewportWidth,
+            $panelColumnDefaultWidths$,
+            canvasSizing,
+            $panelCanvasWidth$,
+            $panelCanvasWidthSource$,
+          ).defaultWidth,
+        )
+      : null,
+  );
   const panelGeometryCanvasWidth = $derived(
-    ($panelCanvasWidth$ ??
-      getPanelCanvasWidths(panelViewportWidth, $panelColumnCount$, canvasSizing, null)
-        .defaultWidth) +
+    (panelOuterResizeCommittedWidth ??
+      panelCanvasResizeCommittedWidth ??
+      expandedAutomaticViewportWidth ??
+      getPanelCanvasWidths(
+        panelViewportWidth,
+        $panelColumnDefaultWidths$,
+        canvasSizing,
+        $panelCanvasWidth$,
+        panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
+          ? 'explicit'
+          : $panelCanvasWidthSource$,
+      ).defaultWidth) +
       panelCanvasResizeDelta +
       panelOuterResizeDelta,
   );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
+
+  $effect(() => {
+    const authoritativeWidth = getPanelCanvasWidths(
+      panelViewportWidth,
+      $panelColumnDefaultWidths$,
+      canvasSizing,
+      $panelCanvasWidth$,
+      $panelCanvasWidthSource$,
+    ).defaultWidth;
+    if (panelCanvasResizeCommittedWidth === authoritativeWidth) {
+      panelCanvasResizeCommittedWidth = null;
+    }
+    if (
+      panelOuterResizeCommittedWidth !== null &&
+      authoritativeWidth === panelOuterResizeCommittedWidth
+    ) {
+      panelOuterResizeCommittedWidth = null;
+      panelOuterResizeCommittedDelta = 0;
+    }
+  });
 
   function measurePanelViewportWidth(node: HTMLElement) {
     function update() {
@@ -210,6 +275,8 @@
   });
 
   function handlePanelCanvasResizeStart() {
+    panelOuterResizeCommittedWidth = null;
+    panelOuterResizeCommittedDelta = 0;
     panelOuterResizeStartReferenceSize = panelRootReferenceSize > 0 ? panelRootReferenceSize : null;
   }
 
@@ -219,15 +286,26 @@
     if (previousWidth === nextWidth) return;
     const gutterWidth =
       startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
-    panelOuterResizeDelta = 0;
+    const automaticWidth = getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content');
+    panelOuterResizeCommittedWidth = nextWidth;
+    panelOuterResizeCommittedDelta = nextWidth - previousWidth;
     appStore.dispatch(
       resizePanelLayoutRightEdge(
         effectiveLayoutId,
         Math.max(1, previousWidth - gutterWidth),
         Math.max(1, nextWidth - gutterWidth),
         nextWidth,
+        nextWidth === automaticWidth,
       ),
     );
+    panelOuterResizeDelta = 0;
+  }
+
+  function handlePanelCanvasResizeCancel() {
+    panelOuterResizeCommittedWidth = null;
+    panelOuterResizeCommittedDelta = 0;
+    panelOuterResizeStartReferenceSize = null;
+    panelOuterResizeDelta = 0;
   }
   let panelDragPreviewElement = $state.raw<HTMLDivElement | null>(null);
   let panelPreviewStartPositions = new Map<string, DOMRect>();
@@ -630,9 +708,10 @@
     panelIndex: number,
     nextCanvasWidth: number,
   ) {
-    // Remove the visual delta before committing its equivalent persisted width.
-    // Both writes are synchronous and Svelte batches their render, so the canvas
-    // stays at `nextWidth` without briefly applying the drag delta twice.
+    // Pin the accepted outer pixels before removing the preview delta. Redux then
+    // replaces this handoff value with the same authoritative width after Svelte
+    // reconciles, so pointer-up cannot expose the old canvas for one frame.
+    panelCanvasResizeCommittedWidth = nextCanvasWidth;
     handlePanelCanvasResizePreview(0);
     layoutManager.growCanvasAtHorizontalPanel(
       previousWidth,
@@ -1149,13 +1228,14 @@
           panels={$panels$}
           focusedPanelId={active ? $focusedPanelId$ : null}
           zoomedPanelId={keyboardShortcuts.zoomedPanelId}
+          dominantPanelId={$expandedPanelId$}
           {workspaceId}
           layoutId={effectiveLayoutId}
           {contained}
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
           rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
-          rootCanvasResizeDelta={panelOuterResizeDelta}
+          rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}
@@ -1229,14 +1309,23 @@
         <PanelCanvasFrame
           sizing={canvasSizing}
           viewportWidth={panelViewportWidth}
-          panelColumnCount={$panelColumnCount$}
-          canvasWidth={$panelCanvasWidth$}
+          panelColumnWidths={$panelColumnDefaultWidths$}
+          canvasWidth={panelOuterResizeCommittedWidth ??
+            panelCanvasResizeCommittedWidth ??
+            expandedAutomaticViewportWidth ??
+            $panelCanvasWidth$}
+          canvasWidthSource={panelOuterResizeCommittedWidth !== null ||
+          panelCanvasResizeCommittedWidth !== null ||
+          expandedAutomaticViewportWidth !== null
+            ? 'explicit'
+            : $panelCanvasWidthSource$}
           transientWidthDelta={panelCanvasResizeDelta}
           scrollContainer={panelWorkspaceInset}
           onWidthChange={handlePanelCanvasWidthChange}
           onResizeStart={handlePanelCanvasResizeStart}
           onResizePreview={handlePanelOuterResizePreview}
           onResizeEnd={handlePanelCanvasResizeEnd}
+          onResizeCancel={handlePanelCanvasResizeCancel}
         >
           {@render panelCanvas()}
         </PanelCanvasFrame>

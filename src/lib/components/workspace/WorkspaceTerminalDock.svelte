@@ -17,9 +17,11 @@
 
   interface Props {
     workspaceId: string;
+    onExpand?: () => void;
+    expanded?: boolean;
   }
 
-  let { workspaceId }: Props = $props();
+  let { workspaceId, onExpand, expanded = false }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
@@ -29,6 +31,14 @@
 
   function openTerminal(terminalId?: string) {
     appStore.dispatch(openTerminalOverlay(workspaceId, terminalId));
+  }
+
+  function openShell() {
+    if (onExpand) {
+      onExpand();
+      return;
+    }
+    openTerminal($terminals$[0]?.id);
   }
 
   function openScripts() {
@@ -47,16 +57,22 @@
     'flex min-w-0 w-full items-center gap-1 rounded-lg border border-border bg-card px-4 py-2 text-left',
   )}
   data-workspace-terminal-dock
+  data-sidebar-card-surface
 >
   <Button
     variant="plain"
-    class="min-w-0 flex-1 justify-start truncate text-sm font-medium"
-    onclick={() => openTerminal($terminals$[0]?.id)}
+    class="h-7 min-w-0 flex-1 cursor-pointer justify-start truncate rounded-none p-0! text-sm font-semibold"
+    onclick={openShell}
+    aria-expanded={onExpand ? expanded : undefined}
+    data-sidebar-launcher-row
   >
-    {m.workspace_terminalDock_shell_label()}
+    <span class="cursor-pointer font-semibold" data-sidebar-launcher-label
+      >{m.workspace_terminalDock_shell_label()}</span
+    >
   </Button>
   {#each $terminals$.slice(0, 1) as terminal (terminal.id)}
-    {@const terminalName = terminal.customName || terminal.name || 'Terminal'}
+    {@const terminalName =
+      terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
     <Tooltip content={terminalName} side="top" delayDuration={300}>
       <Button
         variant="plain"
@@ -82,7 +98,7 @@
         variant="plain"
         size="icon-xs"
         iconOnly
-        class="flex gap-1.5 cursor-pointer items-center justify-center border-0 bg-transparent p-0 w-5! text-xs tabular-nums text-muted-foreground transition-colors hover:text-foreground"
+        class="flex w-5! cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-xs tabular-nums text-muted-foreground transition-colors hover:text-foreground"
         onclick={openScripts}
         aria-label={devScriptsLabel}
         data-dev-script-count

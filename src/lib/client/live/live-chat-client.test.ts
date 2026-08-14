@@ -340,6 +340,22 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('ignores a duplicate seq-0 snapshot before the first delta', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ totalMessages: number }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, totalMessages: 99 });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].totalMessages).toBe(1);
+    expect(mockedRequest.mock.calls.filter(([m]) => m === 'chat.subscribe')).toHaveLength(1);
+    off();
+  });
+
   it('buffers pushes that race the subscribe reply and replays them post-ack', async () => {
     // Hold the chat.subscribe reply so the seq-0 push arrives pre-ack.
     let resolveSubscribe: ((r: { subscriptionId: string }) => void) | undefined;

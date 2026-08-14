@@ -12,7 +12,14 @@
   let {
     workspaceId,
     panelLayoutId = workspaceId,
-  }: { workspaceId: string; panelLayoutId?: string } = $props();
+    onExpand,
+    expanded = false,
+  }: {
+    workspaceId: string;
+    panelLayoutId?: string;
+    onExpand?: () => void;
+    expanded?: boolean;
+  } = $props();
 
   const workspaceIdStore = writable(workspaceId);
   const panelLayoutIdStore = writable(panelLayoutId);
@@ -22,6 +29,10 @@
   const hasOpenBrowserTab = $derived($allTabs$.some((tab) => tab.type === 'browser'));
 
   function openBrowser() {
+    if (onExpand) {
+      onExpand();
+      return;
+    }
     getPanelLayoutManager(panelLayoutId).openBrowserPanel();
   }
 
@@ -38,15 +49,20 @@
 <div
   class="group/launcher relative flex min-w-0 w-full cursor-pointer items-center overflow-hidden rounded-lg border border-border bg-card px-4 py-2 text-foreground transition-colors"
   data-sidebar-launcher="browser"
+  data-sidebar-card-surface
 >
   <Button
     variant="plain"
     class="absolute inset-0 z-0 h-auto cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
     onclick={openBrowser}
     aria-label={m.workspace_browserLauncher_openBrowser_ariaLabel()}
+    aria-expanded={onExpand ? expanded : undefined}
   ></Button>
-  <div class="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-2.5">
-    <span class="truncate text-sm font-medium flex-1"
+  <div
+    class="pointer-events-none relative z-10 flex h-7 min-w-0 flex-1 items-center gap-2.5"
+    data-sidebar-launcher-row
+  >
+    <span class="cursor-pointer truncate text-sm font-semibold flex-1" data-sidebar-launcher-label
       >{m.workspace_multiSelectSidebar_browser_label()}</span
     >
     {#if browserTarget && !hasOpenBrowserTab}

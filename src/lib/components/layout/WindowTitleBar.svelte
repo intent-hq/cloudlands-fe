@@ -37,6 +37,7 @@
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
   } from './titlebar-navigation';
+  import { getCounterScaledTitlebarHeight, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
@@ -282,7 +283,7 @@
 <div
   class="window-title-bar-wrapper"
   class:workspace-columns-titlebar={overlayWorkspaceColumns}
-  style:height="{35 / $zoomFactor}px"
+  style:height="{getCounterScaledTitlebarHeight($zoomFactor)}px"
   aria-label={m.layout_titleBar_ariaLabel()}
 >
   <!-- app-drag-region scopes the layout rule in +layout.svelte that marks
@@ -292,6 +293,7 @@
       'window-title-bar app-drag-region',
       isMac ? 'window-title-bar-mac' : 'window-title-bar-windows',
     )}
+    style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
     style:transform="scale({$counterScale})"
     style:transform-origin="top left"
     style:width="{100 * $zoomFactor}%"
@@ -386,7 +388,7 @@
   }
 
   .window-title-bar {
-    height: 35px;
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;

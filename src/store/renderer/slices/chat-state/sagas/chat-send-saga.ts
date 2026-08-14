@@ -85,6 +85,7 @@ type LifecycleSendOptions = {
   fileBlocks?: SendMessagePayload['fileBlocks'];
   noteIds?: string[];
   messageMetadata?: SendMessagePayload['messageMetadata'];
+  userAppMessageId?: string;
   model?: string;
   priority?: 'interrupt';
 };
@@ -279,6 +280,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
       fileBlocks: payload.fileBlocks,
       noteIds: payload.noteIds,
       messageMetadata: payload.messageMetadata,
+      userAppMessageId: payload.userAppMessageId,
       priority: forceSubmit ? 'interrupt' : undefined,
     },
     forceSubmit,
