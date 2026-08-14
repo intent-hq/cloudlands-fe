@@ -86,14 +86,34 @@ describe('editorial conversation presentation contract', () => {
     // the top of the chat while scrolling; behavioral coverage in
     // lazy-turn-scroll-ledger.test.ts).
     const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
-    expect(lazyTurn).toContain("import { createHeightLedger } from './lazy-turn-scroll-ledger';");
+    expect(lazyTurn).toContain(
+      "import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';",
+    );
     expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
-    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(\)\);/);
+    // The swap path must capture the scroller geometry BEFORE the flush and
+    // hand it to account(): a swap that shrinks scrollHeight can natively
+    // clamp scrollTop at flush time, and only the pre-flush snapshot lets the
+    // ledger preserve the reader's distance-from-bottom through that clamp
+    // (the bottom-of-chat snap-back; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
+    expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
+    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(preSwap\)\);/);
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
-    // The ResizeObserver path must reconcile the ledger on EVERY fire (before
-    // the shouldRenderContent early-return) so post-swap settles are caught.
-    expect(lazyTurn).toMatch(/ledger\.account\(\);\s*\n\s*if \(!shouldRenderContent\) return;/);
+    // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
+    // (before the shouldRenderContent early-return) so post-swap settles are
+    // caught in the same frame.
+    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.account\(\);/);
+    expect(lazyTurn).toMatch(/ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/);
+    // Cached heights are wrap-width-dependent: reads and writes must go
+    // through the width-validated cache helpers so stale-width entries
+    // cannot fabricate phantom space at the bottom of the chat (behavioral
+    // coverage in lazy-turn-height-cache.test.ts). No raw Map access.
+    expect(lazyTurn).toContain("} from './lazy-turn-height-cache';");
+    expect(lazyTurn).toContain('const heightCache = getTurnHeightCache();');
+    expect(lazyTurn).not.toMatch(/heightCache\.(get|set|clear)\(/);
+    expect(lazyTurn).toMatch(/writeCachedHeight\(heightCache, turnKey, height, /);
+    expect(lazyTurn).toContain('readCachedHeight(heightCache, turnKey, observedWidth)');
   });
 
   it('does not restore the removed date separators', () => {
