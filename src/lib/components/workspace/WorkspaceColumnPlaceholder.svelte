@@ -11,7 +11,7 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import SidebarSkeleton from './SidebarSkeleton.svelte';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
