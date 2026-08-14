@@ -7,6 +7,11 @@
  * wrapper runs svelte-check with `--output machine-verbose`, re-prints
  * diagnostics in human-readable form, and fails loudly when the run looks
  * like a silent no-op even though svelte-check exited 0.
+ *
+ * It also runs `svelte-kit sync` first (intent-hq/monorepo#2378): svelte-check
+ * reads whatever `.svelte-kit` typegen a previous dev/build run left behind,
+ * so without a sync the generated route unions drift from the current route
+ * tree and local results diverge from CI on the same commit.
  */
 
 import { spawn } from 'node:child_process';
@@ -90,15 +95,42 @@ export function evaluateRun({ exitCode, completed, minFiles = MIN_FILES }) {
   return failures;
 }
 
-function resolveSvelteCheckBin() {
+function resolveBin(packageName, binName) {
   const require = createRequire(import.meta.url);
-  const pkgPath = require.resolve('svelte-check/package.json');
-  const pkg = require('svelte-check/package.json');
-  const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin['svelte-check'];
+  const pkgPath = require.resolve(`${packageName}/package.json`);
+  const pkg = require(`${packageName}/package.json`);
+  const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin[binName];
   return path.join(path.dirname(pkgPath), binRel);
 }
 
+/**
+ * Environment for the typegen sync. svelte.config.js resolves the routes
+ * directory from NODE_ENV (production builds sync against the filtered
+ * `.svelte-kit/production-routes` copy, which excludes sandbox/test routes),
+ * while svelte-check always checks `src/routes`. Force development so the
+ * generated route unions match the tree being checked, regardless of what a
+ * prior build left in NODE_ENV or `.svelte-kit`.
+ */
+export function syncEnv(env = process.env) {
+  return { ...env, NODE_ENV: 'development' };
+}
+
+async function syncSvelteKitTypes() {
+  const child = spawn(process.execPath, [resolveBin('@sveltejs/kit', 'svelte-kit'), 'sync'], {
+    stdio: 'inherit',
+    env: syncEnv(),
+  });
+  const exitCode = await new Promise((resolve) => {
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+  if (exitCode !== 0) {
+    console.error(`svelte-kit sync failed with exit code ${exitCode} — route typegen is stale.`);
+    process.exit(exitCode);
+  }
+}
+
 async function main() {
+  await syncSvelteKitTypes();
   const args = [
     '--tsconfig',
     './tsconfig.json',
@@ -108,7 +140,7 @@ async function main() {
     'error',
     ...process.argv.slice(2),
   ];
-  const child = spawn(process.execPath, [resolveSvelteCheckBin(), ...args], {
+  const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
     stdio: ['inherit', 'pipe', 'inherit'],
   });
 

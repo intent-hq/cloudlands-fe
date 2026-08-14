@@ -82,8 +82,7 @@
   const isSandboxPage = $derived(
     $page.url.pathname === '/sandbox' ||
       $page.url.pathname.startsWith('/sandbox/') ||
-      $page.url.pathname === '/test' ||
-      $page.url.pathname.startsWith('/test/'),
+      $page.url.pathname.startsWith('/test-'),
   );
 
   $effect(() => {
