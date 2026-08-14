@@ -80,6 +80,7 @@
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    markPanelTouched,
     movePanelToRootEdge,
     panelLayoutScopeMounted,
     panelLayoutScopeUnmounted,
@@ -275,6 +276,7 @@
   });
 
   function handlePanelCanvasResizeStart() {
+    markPristinePanelsTouched();
     panelOuterResizeCommittedWidth = null;
     panelOuterResizeCommittedDelta = 0;
     panelOuterResizeStartReferenceSize = panelRootReferenceSize > 0 ? panelRootReferenceSize : null;
@@ -643,6 +645,12 @@
   setContext('panelLayoutManager', () => layoutManager);
 
   // Event handlers
+  function markPristinePanelsTouched() {
+    for (const panel of Object.values($panels$)) {
+      if (panel.pristine) appStore.dispatch(markPanelTouched(effectiveLayoutId, panel.id));
+    }
+  }
+
   function handleFocusPanel(panelId: string) {
     layoutManager.focusPanel(panelId);
   }
@@ -717,6 +725,7 @@
   }
 
   function handleUpdateSizes(nodePath: number[], sizes: number[]) {
+    markPristinePanelsTouched();
     // nodePath represents the path to the split node whose sizes are being updated
     // Empty path means root
     layoutManager.updateSizes(nodePath, sizes);
@@ -728,6 +737,7 @@
     panelIndex: number,
     nextCanvasWidth: number,
   ) {
+    markPristinePanelsTouched();
     // Pin the accepted outer pixels before removing the preview delta. Redux then
     // replaces this handoff value with the same authoritative width after Svelte
     // reconciles, so pointer-up cannot expose the old canvas for one frame.
@@ -947,6 +957,7 @@
     const focusedPanelId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
     const localTargetId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
     if (localTargetId) {
+      appStore.dispatch(markPanelTouched(effectiveLayoutId, localTargetId));
       layoutManager.focusPanel(localTargetId);
       dispatchFocusPanelContent(localTargetId);
       return true;
@@ -958,6 +969,7 @@
       const targetPanelId =
         direction === 'next' ? targetPanelIds[0] : targetPanelIds[targetPanelIds.length - 1];
       if (targetPanelId) {
+        appStore.dispatch(markPanelTouched(boundaryTarget.layoutId, targetPanelId));
         const targetLayoutManager = getPanelLayoutManager(boundaryTarget.layoutId);
         targetLayoutManager.focusPanel(targetPanelId);
         dispatchFocusPanelContent(targetPanelId, targetLayoutManager, boundaryTarget.workspaceId);
@@ -968,6 +980,7 @@
     const wrappedPanelId = direction === 'next' ? panelIds[0] : panelIds[panelIds.length - 1];
     if (!wrappedPanelId || (panelIds.length === 1 && wrappedPanelId === focusedPanelId))
       return false;
+    appStore.dispatch(markPanelTouched(effectiveLayoutId, wrappedPanelId));
     layoutManager.focusPanel(wrappedPanelId);
     dispatchFocusPanelContent(wrappedPanelId);
     return true;
