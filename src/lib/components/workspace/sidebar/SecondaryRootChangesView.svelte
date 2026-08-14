@@ -12,6 +12,7 @@
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import type { GitStatus, CommitInfo, WorkspaceId } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
+  import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -116,13 +117,14 @@
   <div class="flex items-center gap-1.5 text-subtle text-xs -ml-0.5">
     <GitBranchIcon size={12} class="shrink-0 text-ghost" />
     {#if branchName}
-      <button
+      <Button
         type="button"
-        class="text-ui truncate min-w-0 text-left cursor-pointer hover:text-foreground transition-colors"
+        variant="plain"
+        class="text-ui h-auto min-w-0 cursor-pointer justify-start truncate text-left font-inherit hover:text-foreground"
         onclick={copyBranch}
         title={m.workspace_sidebarChanges_copyBranch_tooltip()}
         aria-label={m.workspace_sidebarChanges_copyBranch_ariaLabel({ branch: branchName })}
-        data-testid="secondary-root-branch-copy">{branchLabel}</button
+        data-testid="secondary-root-branch-copy">{branchLabel}</Button
       >
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
