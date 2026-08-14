@@ -535,3 +535,64 @@ describe('DirectoryPickerModal New Folder', () => {
     expect(nameInput().value).toBe('denied');
   });
 });
+
+describe('DirectoryPickerModal keyboard focus indicators', () => {
+  // Since the @layer base change (#1195) the global focus reset no longer wins
+  // over utility classes, so each raw input must carry an explicit
+  // focus-visible border treatment to stay visible on keyboard focus.
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  it('the path input uses the ring border on focus and destructive border on error', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
+    const input = screen.getByRole('textbox', { name: 'Path' });
+    expect(input.className).toContain('focus-visible:border-ring');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('the path input error styling wins over the focus color', async () => {
+    mocks.overrides.pathError = 'Path not found';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Enter a folder path' }));
+    const input = screen.getByRole('textbox', { name: 'Path' });
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.className).toContain('border-destructive/60');
+    expect(input.className).not.toContain('focus-visible:border-ring');
+  });
+
+  it('the search input uses the ring border on focus', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const input = screen.getByRole('searchbox', { name: 'Filter folder contents' });
+    expect(input.className).toContain('focus-visible:border-ring');
+  });
+
+  it('the new-folder input uses the ring border on focus and destructive border on error', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New Folder' }));
+    await flush();
+    const input = screen.getByRole('textbox', { name: 'New folder name' });
+    expect(input.className).toContain('focus-visible:border-ring');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('the new-folder input error styling wins over the focus color', async () => {
+    mocks.overrides.createError = 'Permission denied';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'New Folder' }));
+    await flush();
+    const input = screen.getByRole('textbox', { name: 'New folder name' });
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.className).toContain('border-destructive/60');
+    expect(input.className).not.toContain('focus-visible:border-ring');
+  });
+});
