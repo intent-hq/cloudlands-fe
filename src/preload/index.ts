@@ -351,6 +351,7 @@ const ALLOWED_CHANNELS = [
   "browser:register-tab",
   "browser:unregister-tab",
   "browser:exec",
+  "browser:resolve-url",
   "browser:focus-tab",
   "browser:list-tabs-request",
   "browser:list-tabs-response",
