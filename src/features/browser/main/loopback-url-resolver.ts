@@ -11,6 +11,7 @@
 
 import { Logger } from '../../../shared/logger';
 import {
+  classifyLoopbackHost,
   rewriteLoopbackUrl,
   type LoopbackRewriteContext,
   type LoopbackRewriteResult,
@@ -30,6 +31,13 @@ export const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
 export interface TunnelProvider {
   /** Forward daemon-loopback `remotePort`; resolves with the local port. */
   forwardPort(remotePort: number): Promise<number>;
+  /**
+   * Active forwards (remote → local port pairs), used to recognize URLs that
+   * already point at one of this provider's own tunnel-local listeners.
+   * Optional so minimal mocks/providers without forward introspection still
+   * satisfy the interface; absent means "no active forwards known".
+   */
+  activeForwards?(): Array<{ remotePort: number; localPort: number }>;
 }
 
 /** Outcome of {@link resolveRewrittenRemoteTarget}. */
@@ -43,11 +51,68 @@ export interface RemoteTargetResolution {
 }
 
 /**
+ * Detect a bare-loopback requested URL that already points at one of our own
+ * active tunnel-local forwards, and pass it through untouched. Re-resolving
+ * such a URL would rewrite it to the daemon host — where the ephemeral
+ * forward port does not exist — fail the probe, and mint a dead second-hop
+ * tunnel (intent-hq/monorepo#2404). This covers the executor→renderer
+ * openTab/navigate handoff (the EmbeddedBrowser re-resolves the executor's
+ * already-tunneled URL) and a user pasting a tunnel URL into the address
+ * bar. Explicit `daemon.localhost` URLs are never passed through: they name
+ * the daemon machine, even if the port coincides with a local forward.
+ */
+function findTunnelLocalPassthrough(
+  rewrite: LoopbackRewriteResult,
+  getTunnelProvider?: () => TunnelProvider | null,
+): RemoteTargetResolution | null {
+  if (rewrite.requestedUrl === undefined) return null;
+  let requested: URL;
+  try {
+    requested = new URL(rewrite.requestedUrl);
+  } catch {
+    return null;
+  }
+  if (classifyLoopbackHost(requested.hostname) !== 'bare-loopback' || !requested.port) return null;
+  const port = Number(requested.port);
+  // The getter may lazily construct the provider; failures mean "no known
+  // forwards", never a rejected resolution.
+  let forwards: Array<{ remotePort: number; localPort: number }>;
+  try {
+    forwards = getTunnelProvider?.()?.activeForwards?.() ?? [];
+  } catch {
+    return null;
+  }
+  const forward = forwards.find((f) => f.localPort === port);
+  if (!forward) return null;
+  logger.info('URL points at an active tunnel-local forward; passing it through untouched', {
+    requestedUrl: rewrite.requestedUrl,
+    localPort: forward.localPort,
+    remotePort: forward.remotePort,
+  });
+  return {
+    rewrite: {
+      url: rewrite.requestedUrl,
+      rewritten: false,
+      reason:
+        // i18n-ignore (agent-facing protocol detail, not user-facing)
+        `127.0.0.1:${port} is this machine's active daemon-tunnel forward for remote port ` +
+        // i18n-ignore (agent-facing protocol detail, not user-facing)
+        `${forward.remotePort}; the URL is already resolved and passed through untouched`,
+    },
+    tunneled: false,
+  };
+}
+
+/**
  * Probe the origin of a URL that was rewritten to the REMOTE daemon host
  * before navigating to it. Any HTTP response (including error statuses)
  * proves the host:port is reachable from this machine; only a network-level
  * failure (connection refused, unroutable, timeout) fails the probe. URLs
  * that were not rewritten to a remote host are never probed.
+ *
+ * A requested URL already pointing at one of our own active tunnel-local
+ * forwards is passed through untouched instead of being probed/re-tunneled
+ * (intent-hq/monorepo#2404).
  *
  * On probe failure, falls back to forwarding the port over the daemon's
  * `/tunnel` WebSocket when a tunnel provider is available (Electron main):
@@ -61,6 +126,8 @@ export async function resolveRewrittenRemoteTarget(
   getTunnelProvider?: () => TunnelProvider | null,
 ): Promise<RemoteTargetResolution> {
   if (!rewrite.rewritten || !rewrite.remoteHost) return { rewrite, tunneled: false };
+  const passthrough = findTunnelLocalPassthrough(rewrite, getTunnelProvider);
+  if (passthrough) return passthrough;
   const target = new URL(rewrite.url);
   try {
     const response = await fetch(target.origin, {
