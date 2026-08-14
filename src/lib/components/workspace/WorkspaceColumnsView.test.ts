@@ -17,6 +17,8 @@ const currentWorkspaceId = writable('ws-2');
 const workspaceStacks = writable([['ws-1'], ['ws-2'], ['ws-3']]);
 const panelCounts = writable<Record<string, number>>({});
 const panelCanvasWidths = writable<Record<string, number>>({});
+const resizablePanelSizes = writable<Record<string, number>>({});
+const hydratedResizablePanelSizes = writable<Record<string, true>>({});
 const focusedPanelTargets = writable<
   Record<string, { panelId: string | null; activeTabId: string | null }>
 >({});
@@ -46,6 +48,10 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
 }));
+vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
+  selectResizablePanelSizes: () => resizablePanelSizes,
+  selectHydratedResizablePanelSizes: () => hydratedResizablePanelSizes,
+}));
 vi.mock('../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceSurface.svelte')).default,
 }));
@@ -72,6 +78,15 @@ describe('WorkspaceColumnsView', () => {
     workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
     panelCounts.set({});
     panelCanvasWidths.set({});
+    resizablePanelSizes.set({});
+    hydratedResizablePanelSizes.set(
+      Object.fromEntries(
+        ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
+          [`workspace-left-panel-width:${workspaceId}`, true],
+          [`workspace-left-panel-expanded-width:${workspaceId}`, true],
+        ]),
+      ),
+    );
     focusedPanelTargets.set({});
   });
 
@@ -152,6 +167,64 @@ describe('WorkspaceColumnsView', () => {
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
     ).toBe('1456px');
+  });
+
+  it('waits for per-workspace width hydration and renders stable clamped widths', async () => {
+    resizablePanelSizes.set({
+      'workspace-left-panel-width:ws-1': 390,
+      'workspace-left-panel-width:ws-2': 720,
+      'workspace-left-panel-width:ws-3': 320,
+    });
+    hydratedResizablePanelSizes.set({});
+    render(WorkspaceColumnsView);
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    scroller.scrollLeft = 140;
+
+    expect(screen.queryAllByTestId('mock-workspace-surface')).toHaveLength(0);
+    expect(scroller.dataset.sidebarWidthsReady).toBe('false');
+    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual(
+      ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
+        {
+          type: 'uiLayout/requestResizablePanelSize',
+          payload: [`workspace-left-panel-width:${workspaceId}`],
+        },
+        {
+          type: 'uiLayout/requestResizablePanelSize',
+          payload: [`workspace-left-panel-expanded-width:${workspaceId}`],
+        },
+      ]),
+    );
+
+    mocks.dispatch.mockClear();
+    hydratedResizablePanelSizes.set(
+      Object.fromEntries(
+        ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
+          [`workspace-left-panel-width:${workspaceId}`, true],
+          [`workspace-left-panel-expanded-width:${workspaceId}`, true],
+        ]),
+      ),
+    );
+    await tick();
+
+    expect(scroller.dataset.sidebarWidthsReady).toBe('true');
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-1"]')?.style.width).toBe(
+      '390px',
+    );
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-2"]')?.style.width).toBe(
+      '400px',
+    );
+    expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
+      '320px',
+    );
+    expect(scroller.scrollLeft).toBe(140);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+
+    workspaceStacks.set([['ws-1'], ['ws-2', 'ws-3']]);
+    await tick();
+    expect(
+      document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
+    ).toBe('400px');
+    expect(scroller.scrollLeft).toBe(140);
   });
 
   it('sizes a vertical stack to its widest workspace', () => {
@@ -343,7 +416,7 @@ describe('WorkspaceColumnsView', () => {
     expect(panelColumn.style.width).toBe('1336px');
   });
 
-  it('uses measured sidebar pixels instead of persisted percentage values', async () => {
+  it('uses measured sidebar pixels and clamps them to the column maximum', async () => {
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
@@ -354,7 +427,7 @@ describe('WorkspaceColumnsView', () => {
     await fireEvent.click(document.querySelector('[data-mock-sidebar-width="ws-3"]')!);
     await tick();
 
-    expect(panelColumn.style.width).toBe('1396px');
+    expect(panelColumn.style.width).toBe('1376px');
   });
 
   it('lets the inner panel canvas own resize updates without a competing dispatch', async () => {
@@ -445,7 +518,116 @@ describe('WorkspaceColumnsView', () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it('captures Option+Shift+Arrow navigation from inputs and wraps column edges', async () => {
+  it.each([
+    ['input', () => document.createElement('input')],
+    ['textarea', () => document.createElement('textarea')],
+    ['select', () => document.createElement('select')],
+    [
+      'contenteditable descendant',
+      () => {
+        const host = document.createElement('div');
+        host.setAttribute('contenteditable', 'true');
+        host.tabIndex = 0;
+        const target = document.createElement('span');
+        host.append(target);
+        return target;
+      },
+    ],
+    [
+      'role textbox descendant',
+      () => {
+        const host = document.createElement('div');
+        host.setAttribute('role', 'textbox');
+        host.tabIndex = 0;
+        const target = document.createElement('span');
+        host.append(target);
+        return target;
+      },
+    ],
+    [
+      'ProseMirror descendant',
+      () => {
+        const host = document.createElement('div');
+        host.className = 'ProseMirror';
+        host.tabIndex = 0;
+        const target = document.createElement('span');
+        host.append(target);
+        return target;
+      },
+    ],
+    [
+      'Monaco descendant',
+      () => {
+        const host = document.createElement('div');
+        host.className = 'monaco-editor';
+        host.tabIndex = 0;
+        const target = document.createElement('span');
+        host.append(target);
+        return target;
+      },
+    ],
+    [
+      'CodeMirror descendant',
+      () => {
+        const host = document.createElement('div');
+        host.className = 'cm-editor';
+        host.tabIndex = 0;
+        const target = document.createElement('span');
+        host.append(target);
+        return target;
+      },
+    ],
+  ] as const)('leaves workspace arrows available to a focused %s', async (_name, createTarget) => {
+    render(WorkspaceColumnsView);
+    const target = createTarget();
+    const host = target.parentElement ?? target;
+    document.body.append(host);
+    host.focus();
+
+    for (const code of ['ArrowLeft', 'ArrowRight'] as const) {
+      mocks.dispatch.mockClear();
+      mocks.goto.mockClear();
+      const event = new KeyboardEvent('keydown', {
+        key: code,
+        code,
+        altKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      const stopImmediatePropagation = vi.spyOn(event, 'stopImmediatePropagation');
+
+      await fireEvent(target, event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(stopImmediatePropagation).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.goto).not.toHaveBeenCalled();
+    }
+  });
+
+  it('uses the focused editor when a capture event is retargeted to window', async () => {
+    render(WorkspaceColumnsView);
+    const input = document.createElement('textarea');
+    document.body.append(input);
+    input.focus();
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      altKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await fireEvent(window, event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
+  it('navigates from non-editable controls and wraps column edges', async () => {
     currentWorkspaceId.set('ws-3');
     render(WorkspaceColumnsView);
     const scroller = screen.getByLabelText('Open spaces in columns');
@@ -457,9 +639,9 @@ describe('WorkspaceColumnsView', () => {
       value: 100,
       writable: true,
     });
-    const input = document.createElement('textarea');
-    scroller.append(input);
-    input.focus();
+    const button = document.createElement('button');
+    scroller.append(button);
+    button.focus();
     const moveRight = new KeyboardEvent('keydown', {
       key: 'ArrowRight',
       code: 'ArrowRight',
@@ -469,7 +651,7 @@ describe('WorkspaceColumnsView', () => {
       cancelable: true,
     });
 
-    await fireEvent(input, moveRight);
+    await fireEvent(button, moveRight);
 
     expect(moveRight.defaultPrevented).toBe(true);
     expect(mocks.dispatch).toHaveBeenCalledWith({
@@ -485,7 +667,7 @@ describe('WorkspaceColumnsView', () => {
 
     mocks.dispatch.mockClear();
     mocks.goto.mockClear();
-    await fireEvent.keyDown(input, {
+    await fireEvent.keyDown(button, {
       key: 'ArrowLeft',
       code: 'ArrowLeft',
       altKey: true,

@@ -42,6 +42,7 @@ const defaultPostMergeState = {
   mergeHeadSha: null,
   hasResetToTrunk: false,
 };
+type ObservedAction = { type: string; payload?: unknown[] };
 
 const settle = async () => {
   await Promise.resolve();
@@ -61,11 +62,41 @@ function state() {
   };
 }
 
-function start(current = state()) {
+function workspaceMountFanOut(workspaceId: string): ObservedAction[] {
+  return [
+    { type: 'workspaceTasks/ensureWorkspaceTasksLoaded', payload: [workspaceId] },
+    { type: 'workspaceEvents/loadEventsRequested', payload: [workspaceId] },
+    { type: 'changes/refreshAcceptChangesStatus', payload: [workspaceId] },
+    { type: 'scripts/refreshScripts', payload: [workspaceId] },
+    { type: 'skills/loadSkillsRequested', payload: [workspaceId] },
+    { type: 'prStatus/refreshRequested', payload: [workspaceId, false, false] },
+    { type: 'changes/loadWorkspaceDataRequested', payload: [workspaceId] },
+    { type: 'workspaceAgents/hydrateAgentsRequested', payload: [workspaceId] },
+    { type: 'terminals/hydrateTerminalsRequested', payload: [workspaceId] },
+    { type: 'fileExplorer/hydrateFileExplorerRequested', payload: [workspaceId] },
+    { type: 'context/initContextForWorkspace', payload: [workspaceId] },
+    {
+      type: 'taskAgentAssociations/hydrateTaskAgentAssociationsRequested',
+      payload: [workspaceId],
+    },
+  ];
+}
+
+function start(
+  current = state(),
+  onDispatch?: (action: ObservedAction, channel: ReturnType<typeof stdChannel>) => void,
+) {
   const channel = stdChannel();
-  const actions: unknown[] = [];
+  const actions: ObservedAction[] = [];
   const task = runSaga(
-    { channel, dispatch: (action) => actions.push(action), getState: () => current },
+    {
+      channel,
+      dispatch: (action: ObservedAction) => {
+        actions.push(action);
+        onDispatch?.(action, channel);
+      },
+      getState: () => current,
+    },
     lifecycleIpcReadSaga,
   );
   return { channel, actions, task };
@@ -319,20 +350,33 @@ describe('lifecycleIpcReadSaga', () => {
     run.channel.put({ type: workspaceMounted.type, payload: [] });
     await settle();
 
-    expect(run.actions).toEqual([
-      { type: 'workspaceTasks/ensureWorkspaceTasksLoaded', payload: [WS] },
-      { type: 'workspaceEvents/loadEventsRequested', payload: [WS] },
-      { type: 'changes/refreshAcceptChangesStatus', payload: [WS] },
-      { type: 'scripts/refreshScripts', payload: [WS] },
-      { type: 'skills/loadSkillsRequested', payload: [WS] },
-      { type: 'prStatus/refreshRequested', payload: [WS, false, false] },
-      { type: 'changes/loadWorkspaceDataRequested', payload: [WS] },
-      { type: 'workspaceAgents/hydrateAgentsRequested', payload: [WS] },
-      { type: 'terminals/hydrateTerminalsRequested', payload: [WS] },
-      { type: 'fileExplorer/hydrateFileExplorerRequested', payload: [WS] },
-      { type: 'context/initContextForWorkspace', payload: [WS] },
-      { type: 'taskAgentAssociations/hydrateTaskAgentAssociationsRequested', payload: [WS] },
-    ]);
+    expect(run.actions).toEqual(workspaceMountFanOut(WS));
+    await stop(run.task);
+  });
+
+  it('fans out every workspace ID when another mount arrives during an active fan-out', async () => {
+    const secondWorkspaceId = 'ws-ipc-lifecycle-second';
+    let injectedSecondMount = false;
+    const run = start(state(), (action, channel) => {
+      if (
+        !injectedSecondMount &&
+        action.type === 'workspaceTasks/ensureWorkspaceTasksLoaded' &&
+        action.payload?.[0] === WS
+      ) {
+        injectedSecondMount = true;
+        channel.put(workspaceMounted(secondWorkspaceId));
+      }
+    });
+
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+
+    expect(run.actions.filter((action) => action.payload?.[0] === WS)).toEqual(
+      workspaceMountFanOut(WS),
+    );
+    expect(run.actions.filter((action) => action.payload?.[0] === secondWorkspaceId)).toEqual(
+      workspaceMountFanOut(secondWorkspaceId),
+    );
     await stop(run.task);
   });
 });

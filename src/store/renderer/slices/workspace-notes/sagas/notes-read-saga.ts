@@ -8,6 +8,7 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeLeadingByWorkspace } from '../../../utils/context-saga-effects';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
@@ -99,6 +100,6 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
 }
 
 export function* notesReadSaga() {
-  yield* takeLeading(workspaceMounted, hydrateWorkspaceNotesWorker);
+  yield* takeLeadingByWorkspace(workspaceMounted, hydrateWorkspaceNotesWorker);
   yield* takeLeading(noteEventReceived, applyNoteEventWorker);
 }

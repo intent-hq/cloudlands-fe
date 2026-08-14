@@ -8,6 +8,7 @@ export const DEFAULT_WIDTH = 360;
 export const DEFAULT_EXPANDED_WIDTH = 600;
 export const MIN_WIDTH = 280;
 export const MAX_WIDTH = 800;
+export const COLUMN_SIDEBAR_MAX_WIDTH = 400;
 
 // Bottom dock constants
 export type DockViewMode = 'agents' | 'terminal';
@@ -99,6 +100,7 @@ export type UiLayoutState = {
   sidebarSide: SidebarSide;
   bottomDock: BottomDockState;
   resizablePanelSizes: Record<string, number>;
+  hydratedResizablePanelSizes: Record<string, true>;
   resizablePanelGroupLayouts: Record<string, ResizablePanelGroupLayoutState>;
   collapsiblePanelCollapsed: Record<string, boolean>;
   workspaceSidebarPanelLayout: WorkspaceSidebarPanelLayoutState;
@@ -129,6 +131,7 @@ export const initialState: UiLayoutState = {
   sidebarSide: 'left',
   bottomDock: { ...defaultBottomDockState },
   resizablePanelSizes: {},
+  hydratedResizablePanelSizes: {},
   resizablePanelGroupLayouts: {},
   collapsiblePanelCollapsed: {},
   workspaceSidebarPanelLayout: { ...defaultWorkspaceSidebarPanelLayout },
@@ -254,7 +257,7 @@ export const loadSidebarState = createAction<
 export const requestResizablePanelSize = createAction<[key: string]>(
   'uiLayout/requestResizablePanelSize',
 );
-export const hydrateResizablePanelSize = createAction<[key: string, value: number]>(
+export const hydrateResizablePanelSize = createAction<[key: string, value?: number]>(
   'uiLayout/hydrateResizablePanelSize',
 );
 export const setResizablePanelSize = createAction<[key: string, value: number]>(
@@ -383,11 +386,16 @@ uiLayoutReducer.with(loadSidebarState, (state, { payload: [width, collapsed, exp
 }));
 uiLayoutReducer.with(hydrateResizablePanelSize, (state, { payload: [key, value] }) => ({
   ...state,
-  resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
+  resizablePanelSizes:
+    value === undefined
+      ? state.resizablePanelSizes
+      : { ...state.resizablePanelSizes, [key]: value },
+  hydratedResizablePanelSizes: { ...state.hydratedResizablePanelSizes, [key]: true },
 }));
 uiLayoutReducer.with(setResizablePanelSize, (state, { payload: [key, value] }) => ({
   ...state,
   resizablePanelSizes: { ...state.resizablePanelSizes, [key]: value },
+  hydratedResizablePanelSizes: { ...state.hydratedResizablePanelSizes, [key]: true },
 }));
 uiLayoutReducer.with(hydrateResizablePanelGroupLayout, (state, { payload: [key, layout] }) => ({
   ...state,

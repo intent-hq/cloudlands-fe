@@ -34,14 +34,16 @@ function isPanelGroupLayout(value: unknown): value is ResizablePanelGroupLayoutS
 function* hydratePanelSize(
   action: ReturnType<typeof requestResizablePanelSize>,
 ): SagaGenerator<void> {
+  const key = action.payload[0];
+  if (typeof key !== 'string' || key.length === 0) return;
+
+  let value: number | undefined;
   try {
-    const key = action.payload[0];
-    if (typeof key !== 'string' || key.length === 0) return;
-    const value = parseStoredNumber(yield* call(getLocalStorageItem, key));
-    if (value !== null) yield* put(hydrateResizablePanelSize(key, value));
+    value = parseStoredNumber(yield* call(getLocalStorageItem, key)) ?? undefined;
   } catch {
     // Layout persistence is best-effort and must never terminate its watcher.
   }
+  yield* put(hydrateResizablePanelSize(key, value));
 }
 
 function* persistPanelSize(action: ReturnType<typeof setResizablePanelSize>): SagaGenerator<void> {

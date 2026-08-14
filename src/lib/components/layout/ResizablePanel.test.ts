@@ -18,8 +18,15 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', async () => {
           ? 600
           : storageKey === 'workspace-column-width:hydrated'
             ? 1320
-            : undefined,
+            : storageKey === 'workspace-left-panel-width:valid'
+              ? 390
+              : storageKey === 'workspace-left-panel-width:stale'
+                ? 720
+                : storageKey === 'workspace-left-panel-expanded-width:stale'
+                  ? 880
+                  : undefined,
       ),
+    selectResizablePanelSizeHydrated: () => readable(true),
   };
 });
 
@@ -32,6 +39,90 @@ afterEach(() => {
 });
 
 describe('ResizablePanel reactive defaults', () => {
+  it('applies a hydrated column width without an automatic callback', async () => {
+    const onWidthChange = vi.fn();
+    const { container } = render(ResizablePanel, {
+      props: {
+        storageKey: 'workspace-left-panel-width:valid',
+        maxWidth: 400,
+        clampStoredWidth: true,
+        notifyAutomaticWidthChanges: false,
+        onWidthChange,
+      },
+    });
+
+    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 390px');
+    await tick();
+    expect(onWidthChange).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('clamps stale column widths and persists only the manual resize', async () => {
+    const onWidthChange = vi.fn();
+    const { container } = render(ResizablePanel, {
+      props: {
+        storageKey: 'workspace-left-panel-width:stale',
+        side: 'left',
+        maxWidth: 400,
+        clampStoredWidth: true,
+        notifyAutomaticWidthChanges: false,
+        onWidthChange,
+      },
+    });
+
+    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 400px');
+    expect(onWidthChange).not.toHaveBeenCalled();
+    mocks.dispatch.mockClear();
+    const handle = container.querySelector('button')!;
+    await fireEvent.mouseDown(handle, { clientX: 400 });
+    await fireEvent.mouseMove(document, { clientX: 350 });
+    await fireEvent.mouseUp(document);
+
+    expect(onWidthChange).toHaveBeenLastCalledWith(350);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'uiLayout/setResizablePanelSize',
+      payload: ['workspace-left-panel-width:stale', 350],
+    });
+  });
+
+  it('clamps a stale expanded column width without an automatic callback', async () => {
+    const onWidthChange = vi.fn();
+    const { container } = render(ResizablePanel, {
+      props: {
+        storageKey: 'workspace-left-panel-width:valid',
+        expandedStorageKey: 'workspace-left-panel-expanded-width:stale',
+        isExpanded: true,
+        maxWidth: 400,
+        clampStoredWidth: true,
+        notifyAutomaticWidthChanges: false,
+        onWidthChange,
+      },
+    });
+
+    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 400px');
+    await tick();
+    expect(onWidthChange).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps its fixed width after a temporary parent fill ends', async () => {
+    const props = {
+      defaultWidth: 360,
+      maxWidth: 400,
+      doSkipResize: true,
+      preserveFixedWidthAfterFill: true,
+      notifyAutomaticWidthChanges: false,
+    };
+    const { container, rerender } = render(ResizablePanel, { props });
+    const panel = container.firstElementChild as HTMLElement;
+    panel.getBoundingClientRect = () => ({ width: 856 }) as DOMRect;
+
+    await rerender({ ...props, doSkipResize: false });
+
+    expect(panel.getAttribute('style')).toContain('width: 360px');
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
   it('does not notify again when only the callback identity changes', async () => {
     const firstCallback = vi.fn();
     const secondCallback = vi.fn();
