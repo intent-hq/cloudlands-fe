@@ -83,6 +83,28 @@ export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedInd
 }
 
 /**
+ * Abnormal-finish notice resolution (PROTOCOL §7.3): assistant rows whose turn
+ * ended with a non-`end_turn` ACP stop reason carry `metadata.finishReason`
+ * (`refusal` | `max_tokens` | `max_turn_requests` today — open union). The
+ * resolver returns a descriptor rather than localized text so ChatMessage owns
+ * the Paraglide message calls; unknown future reasons render no notice.
+ * `max_turn_requests` (per-turn request cap) shares the limit-reached wording.
+ */
+export type FinishReasonNotice = { kind: 'refusal' } | { kind: 'max-tokens' };
+
+export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonNotice | undefined {
+  switch (message?.metadata?.finishReason) {
+    case 'refusal':
+      return { kind: 'refusal' };
+    case 'max_tokens':
+    case 'max_turn_requests':
+      return { kind: 'max-tokens' };
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Agent Q&A wizard-only rendering: true when the blocks contain at least one
  * question resource block and NOTHING else that would render in the
  * transcript (text blocks that are empty or suggested-prompts-only count as

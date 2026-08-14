@@ -221,6 +221,41 @@ describe('chatStateReducer', () => {
     expect(agent.receivedFirstChunk).toBe(false);
   });
 
+  it('a complete payload carrying an abnormal finishReason is NOT a stream failure — no error banner', () => {
+    // `finishReason` is the open union of abnormal ACP stop reasons (PROTOCOL
+    // §7.3); the timeout failure banner is scoped to eventType === 'timeout',
+    // so even a hypothetical future reason spelled "timeout" stays a clean end.
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const abnormalComplete = (finishReason: string) =>
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        workspaceId: 'ws-1',
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'complete',
+        finishReason,
+      });
+    for (const finishReason of ['refusal', 'max_tokens', 'max_turn_requests', 'timeout']) {
+      const s2 = chatStateReducer(s1, abnormalComplete(finishReason));
+      expect(s2.byAgentId[AGENT].error).toBeNull();
+    }
+  });
+
+  it('eventType timeout still surfaces the timeout failure banner', () => {
+    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
+    const s2 = chatStateReducer(
+      s1,
+      agentStreamUpdateReceived({
+        agentId: AGENT,
+        workspaceId: 'ws-1',
+        handlerSessionId: AGENT,
+        source: 'sendMessage',
+        eventType: 'timeout',
+      }),
+    );
+    expect(s2.byAgentId[AGENT].error).not.toBeNull();
+  });
+
   it('chatLastAttemptedMessageSet records the retry payload (#941)', () => {
     const attempted = {
       text: 'send this',

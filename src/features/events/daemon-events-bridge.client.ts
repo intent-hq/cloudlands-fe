@@ -595,6 +595,7 @@ function dispatchStreamUpdate(
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
   stopReason?: string,
+  finishReason?: string,
 ): void {
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -606,6 +607,7 @@ function dispatchStreamUpdate(
       assistantMessageId: state.messageId,
       contentBlocks: buildContentBlocks(state),
       ...(stopReason ? { stopReason } : {}),
+      ...(finishReason ? { finishReason } : {}),
     }),
   );
 }
@@ -1083,6 +1085,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
+  // emit carries `finishReason` when the turn completed with a non-`end_turn`
+  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`); absent
+  // on normal completions. The same value is persisted on the assistant row
+  // as `metadata.finishReason`, so stamping it here just makes the notice
+  // render live without waiting for a reconcile.
+  const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
   // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
   // `trailingBlocks` — the standalone resource blocks the daemon appended to
@@ -1135,25 +1144,28 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
       });
     }
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason, finishReason);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    // The stopReason belongs to THIS event's messageId — do not stamp the
-    // Stopped badge onto the unrelated accumulated turn.
+    // The stopReason/finishReason belong to THIS event's messageId — do not
+    // stamp the Stopped badge / finish notice onto the unrelated accumulated
+    // turn.
     dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
   // No local stream state for this turn (pre-first-token): the daemon
   // persisted an assistant row under `messageId` anyway — a synthetic empty
-  // interrupted row on `agent.stop`, or a turn whose ONLY content is the
-  // trailing blocks (e.g. questions with no streamed text). Finalize a
-  // matching placeholder so the Stopped indicator / question wizard appears
-  // live. A later `agents.getConversation` reconcile dedupes by message id.
-  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted')) {
+  // interrupted row on `agent.stop`, a zero-output abnormal turn (refusal /
+  // token-limit marker row carrying `finishReason`), or a turn whose ONLY
+  // content is the trailing blocks (e.g. questions with no streamed text).
+  // Finalize a matching placeholder so the Stopped indicator / finish notice /
+  // question wizard appears live. A later `agents.getConversation` reconcile
+  // dedupes by message id.
+  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
         workspaceId,
@@ -1164,6 +1176,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         assistantMessageId: messageId,
         contentBlocks: dedupeResourceBlocks(trailingBlocks),
         ...(stopReason ? { stopReason } : {}),
+        ...(finishReason ? { finishReason } : {}),
       }),
     );
     return;

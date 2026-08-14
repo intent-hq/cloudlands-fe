@@ -1923,6 +1923,8 @@
   "chat_chatMessage_edit_placeholder": "Bearbeiten Sie Ihre Nachricht...",
   "chat_chatMessage_externalLink_fallback": "Externer Link",
   "chat_chatMessage_failedToSend_label": "Senden fehlgeschlagen",
+  "chat_chatMessage_finishReasonMaxTokens_label": "Antwort gestoppt — maximale Länge erreicht",
+  "chat_chatMessage_finishReasonRefusal_label": "Antwort gestoppt — das Modell hat die Fortsetzung verweigert",
   "chat_chatMessage_githubIssue_fallback": "GitHub-Issue",
   "chat_chatMessage_linearIssue_fallback": "Linear-Issue",
   "chat_chatMessage_loading_label": "Wird geladen...",

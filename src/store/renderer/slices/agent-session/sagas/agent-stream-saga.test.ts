@@ -114,6 +114,51 @@ describe('agentStreamSaga', () => {
     await run.task.toPromise();
   });
 
+  it('stamps metadata.finishReason on a finalized abnormal turn (PROTOCOL §7.3) without interrupted markers', async () => {
+    const run = harness();
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'started', assistantMessageId: 'msg-fr', assistantAppMessageId: 'app-fr',
+      timestamp: 1, contentBlocks: [{ type: 'text', text: '' }],
+    }));
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'complete', assistantMessageId: 'msg-fr', assistantAppMessageId: 'app-fr',
+      finishReason: 'max_tokens', contentBlocks: [{ type: 'text', text: 'partial' }],
+    }));
+    await settle();
+
+    expect(run.messages()[0]).toEqual(expect.objectContaining({
+      id: 'msg-fr', isStreaming: false, streamingComplete: true,
+      metadata: { finishReason: 'max_tokens' },
+    }));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('merges interrupted metadata AND finishReason when the terminal payload carries both', async () => {
+    const run = harness();
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'started', assistantMessageId: 'msg-both', assistantAppMessageId: 'app-both',
+      timestamp: 1, contentBlocks: [{ type: 'text', text: '' }],
+    }));
+    run.channel.put(agentStreamUpdateReceived({
+      agentId: AGENT, workspaceId: WS, handlerSessionId: AGENT, source: 'sendMessage',
+      eventType: 'complete', assistantMessageId: 'msg-both', assistantAppMessageId: 'app-both',
+      stopReason: 'interrupted', finishReason: 'refusal',
+      contentBlocks: [{ type: 'text', text: 'partial' }],
+    }));
+    await settle();
+
+    expect(run.messages()[0]).toEqual(expect.objectContaining({
+      id: 'msg-both', isStreaming: false, streamingComplete: true,
+      metadata: { interrupted: true, stopReason: 'interrupted', finishReason: 'refusal' },
+    }));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('isolates malformed events and still applies the following terminal event', async () => {
     const run = harness();
     run.channel.put(agentStreamUpdateReceived({

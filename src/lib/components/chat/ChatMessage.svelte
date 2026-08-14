@@ -35,7 +35,11 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
-  import { isQuestionOnlyContent, resolveStoppedIndicatorLabel } from './message-display-utils';
+  import {
+    isQuestionOnlyContent,
+    resolveStoppedIndicatorLabel,
+    resolveFinishReasonNotice,
+  } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
@@ -296,6 +300,29 @@
         const _exhaustive: never = label;
         void _exhaustive;
         return m.chat_chatMessage_stopped_label();
+      }
+    }
+  });
+
+  // Abnormal-finish notice (PROTOCOL §7.3 `metadata.finishReason`): rendered
+  // once the turn is over — live via the `agent:stream:end` finishReason
+  // stamp, and after reload from the persisted row metadata. Suppressed while
+  // streaming so it never flashes mid-turn.
+  let finishReasonNoticeLabel = $derived.by(() => {
+    if (isStreaming) return undefined;
+    const notice = resolveFinishReasonNotice(message);
+    if (!notice) return undefined;
+    switch (notice.kind) {
+      case 'refusal':
+        return m.chat_chatMessage_finishReasonRefusal_label();
+      case 'max-tokens':
+        return m.chat_chatMessage_finishReasonMaxTokens_label();
+      default: {
+        // Compile-time exhaustiveness: a new descriptor kind is a type error
+        // here; at runtime an unknown kind renders no notice.
+        const _exhaustive: never = notice;
+        void _exhaustive;
+        return undefined;
       }
     }
   });
@@ -1115,7 +1142,7 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
-{:else if questionOnlyTurn && !shouldShowStoppedIndicator}
+{:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
@@ -1442,6 +1469,14 @@
           <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
             <span>{stoppedIndicatorLabel}</span>
+          </div>
+        {/if}
+
+        <!-- Abnormal-finish notice (refusal / token limit, PROTOCOL §7.3) -->
+        {#if finishReasonNoticeLabel}
+          <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
+            <Fa icon={faCircleExclamation} class="size-2.5 opacity-50 mt-px" />
+            <span>{finishReasonNoticeLabel}</span>
           </div>
         {/if}
 
