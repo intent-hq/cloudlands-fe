@@ -3056,6 +3056,8 @@
   "tiptap_suggestionTooltip_accept_tooltip": "Vorschlag akzeptieren",
   "tiptap_suggestionTooltip_reject_tooltip": "Vorschlag ablehnen",
   "tiptap_taskAgentStatus_waitingSlot_label": "Warten auf einen freien Agenten-Slot ({used}/{cap} belegt)",
+  "tiptap_taskAgentStatus_waitingMemory_label": "Warten auf freien Speicher ({used}/{cap} Agenten aktiv)",
+  "tiptap_taskAgentStatus_waitingMemory_tooltip": "Die Agentenprozesse nutzen das gesamte Speicherbudget. Dieser Agent startet, sobald Speicher frei wird; das Budget wird über agents.memoryBudgetMb konfiguriert.",
   "tiptap_taskAgentStatus_working_label": "Arbeitet...",
   "tiptap_taskAgentStatus_spinningUp_label": "Wird gestartet...",
   "tiptap_taskAgentStatus_loadingAgent_label": "Agent wird geladen...",

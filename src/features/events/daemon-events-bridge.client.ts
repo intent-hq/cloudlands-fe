@@ -1313,10 +1313,13 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
- * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
- * without a follow-up read.
+ * `agent:process:queued` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when an agent spawn is queued waiting for admission: a free process
+ * slot (maxConcurrent limit, reason `"slots"`) or memory headroom under the
+ * aggregate budget (reason `"memory-budget"`, intent-hq/intentd#1196). The
+ * payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read. An absent/unknown `reason` (older daemons) is
+ * normalized to `"slots"`, the pre-#1196 behavior.
  *
  * The Redux reducer's updateSessionFields is a no-op when the session doesn't
  * exist yet, but during normal operation the agent:created or agent:updated
@@ -1334,7 +1337,8 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  const reason = data.reason === 'memory-budget' ? 'memory-budget' : 'slots';
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap, reason));
 }
 
 /**

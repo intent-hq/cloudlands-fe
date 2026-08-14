@@ -427,7 +427,71 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
 
     // Deliver agent:process:queued event — should set processQueueHint.
     // Use saturated values (used === cap) to match the documented semantics
-    // ("all slots active") per PROTOCOL §6.5.
+    // ("all slots active") per PROTOCOL §6.5. The wire payload carries
+    // reason: 'slots' (intent-hq/intentd#1196).
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 3,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
+
+    // Deliver agent:process:resumed event — should clear processQueueHint.
+    // Include used/cap/reason to match PROTOCOL §6.5 (AgentProcessResumedEvent
+    // carries { agentId, used, cap, reason }) even though the handler only uses
+    // agentId.
+    handler(
+      notification('agent:process:resumed', {
+        agentId: AGENT,
+        used: 2,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toBeUndefined();
+  });
+
+  it('routes agent:process:queued with reason memory-budget into processQueueHint.reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Budget-queued spawn (PROTOCOL §6.5): used/cap still count agent slots,
+    // but the admission constraint is the aggregate memory budget.
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 2,
+      cap: 8,
+      reason: 'memory-budget',
+    });
+  });
+
+  it('normalizes an absent agent:process:queued reason (older daemon) to slots', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Pre-#1196 daemons omit `reason`; the bridge treats absence as 'slots'
+    // (the only queueing constraint that existed before the memory budget).
     handler(
       notification('agent:process:queued', {
         agentId: AGENT,
@@ -440,20 +504,8 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       waiting: true,
       used: 3,
       cap: 3,
+      reason: 'slots',
     });
-
-    // Deliver agent:process:resumed event — should clear processQueueHint.
-    // Include used/cap to match PROTOCOL §6.5 (AgentProcessResumedEvent carries
-    // { agentId, used, cap }) even though the handler only uses agentId.
-    handler(
-      notification('agent:process:resumed', {
-        agentId: AGENT,
-        used: 2,
-        cap: 3,
-      }),
-    );
-
-    expect(readSession()?.processQueueHint).toBeUndefined();
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {

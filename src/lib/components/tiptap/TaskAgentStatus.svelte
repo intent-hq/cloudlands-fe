@@ -523,13 +523,22 @@
   >
     <div class="status-content">
       {#if processQueueHint?.waiting}
-        <!-- Process queue hint takes priority -->
-        <span class="status-text"
-          >{m.tiptap_taskAgentStatus_waitingSlot_label({
-            used: formatInteger(processQueueHint.used),
-            cap: formatInteger(processQueueHint.cap),
-          })}</span
-        >
+        <!-- Process queue hint takes priority; reason distinguishes the admission constraint (§6.5) -->
+        {#if processQueueHint.reason === 'memory-budget'}
+          <span class="status-text" title={m.tiptap_taskAgentStatus_waitingMemory_tooltip()}
+            >{m.tiptap_taskAgentStatus_waitingMemory_label({
+              used: formatInteger(processQueueHint.used),
+              cap: formatInteger(processQueueHint.cap),
+            })}</span
+          >
+        {:else}
+          <span class="status-text"
+            >{m.tiptap_taskAgentStatus_waitingSlot_label({
+              used: formatInteger(processQueueHint.used),
+              cap: formatInteger(processQueueHint.cap),
+            })}</span
+          >
+        {/if}
       {:else if agentDigest}
         <!-- Show digest prominently when available -->
         <span class="line-clamp-3 break-all text-subtle">{agentDigest}</span>

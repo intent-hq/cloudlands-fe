@@ -3057,6 +3057,8 @@
   "tiptap_suggestionTooltip_accept_tooltip": "Accept suggestion",
   "tiptap_suggestionTooltip_reject_tooltip": "Reject suggestion",
   "tiptap_taskAgentStatus_waitingSlot_label": "Waiting for a free agent slot ({used}/{cap} busy)",
+  "tiptap_taskAgentStatus_waitingMemory_label": "Waiting for memory headroom ({used}/{cap} agents running)",
+  "tiptap_taskAgentStatus_waitingMemory_tooltip": "Agent processes are using the full memory budget. This agent starts when memory frees up; the budget is configured by agents.memoryBudgetMb.",
   "tiptap_taskAgentStatus_working_label": "Working...",
   "tiptap_taskAgentStatus_spinningUp_label": "Spinning up...",
   "tiptap_taskAgentStatus_loadingAgent_label": "Loading agent...",
