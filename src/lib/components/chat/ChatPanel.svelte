@@ -163,13 +163,11 @@
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
-  import BackgroundHooksRow from './BackgroundHooksRow.svelte';
-  import MonitoredPrsRow from './MonitoredPrsRow.svelte';
+  import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import AgentSubscriptions from './AgentSubscriptions.svelte';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import {
@@ -656,6 +654,10 @@
       questionWizardCollapsed,
     }),
   );
+  let eventSubscriptionsVisible = $state(false);
+  const eventSubscriptionsOwnEndGap = $derived(
+    eventSubscriptionsVisible && !queuedMessagesVisibility.showQueue,
+  );
 
   // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
@@ -1110,6 +1112,14 @@
     }
 
     return false;
+  }
+
+  function isEventWakeMessage(message?: AgentMessage): boolean {
+    if (!message) return false;
+    return (
+      message.metadata?.type === 'event_notification' ||
+      extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
+    );
   }
 
   // Initialize input history from existing chat messages
@@ -3367,8 +3377,10 @@
         class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-2 sm:px-6'}"
-        class:pb-3={!isChiefWorkspace && isCompactMode}
-        class:pb-2={!isChiefWorkspace && !isCompactMode}
+        class:pb-8={eventSubscriptionsOwnEndGap && isCompactMode}
+        class:pb-12={eventSubscriptionsOwnEndGap && !isCompactMode}
+        class:pb-3={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && isCompactMode}
+        class:pb-2={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && !isCompactMode}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -3783,14 +3795,17 @@
                 {@const turns = indexedGroup.turns}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}
+                  {@const isEventNotification = isEventWakeMessage(turn.userMessage ?? undefined)}
+                  {@const nextTurn =
+                    turns[turnIndex + 1] ?? conversationTurnIndex.groups[groupIndex + 1]?.turns[0]}
+                  {@const nextTurnIsEventNotification = isEventWakeMessage(
+                    nextTurn?.userMessage ?? undefined,
+                  )}
                   {@const isLastTurnInConversation =
                     groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
-                  {@const turnMessageText = turn.userMessage
-                    ? extractAllContent(turn.userMessage)
-                    : ''}
                   <div class="conversation-turn">
                     <LazyTurn
                       {turnKey}
@@ -3804,13 +3819,7 @@
                       {#snippet children()}
                         <!-- Event wakeup banner - shown when agent is woken by a subscription -->
                         <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
-                        {@const hasEventMetadata =
-                          turn.userMessage?.metadata?.type === 'event_notification' &&
-                          turn.userMessage?.metadata?.eventTypes}
-                        {@const hasEventContent = turnMessageText
-                          .trim()
-                          .startsWith('[WORKSPACE EVENTS]')}
-                        {#if turn.userMessage && (hasEventMetadata || hasEventContent)}
+                        {#if turn.userMessage && isEventNotification}
                           {@const message = turn.userMessage}
                           {@const globalIndex = getMessageIndex(message.id)}
                           {@const messageText = extractAllContent(message)}
@@ -3839,7 +3848,7 @@
                               }}
                               {messageText}
                               asDivider={true}
-                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              compact={isCompactMode}
                               showAgentCards={!isDelegatedBackgroundTaskAgent}
                               {workspace}
                             />
@@ -3848,12 +3857,6 @@
                         {/if}
                         <!-- User message source row; the independent overlay never moves this node. -->
                         <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
-                        {@const isEventNotification =
-                          turn.userMessage?.metadata?.type === 'event_notification' ||
-                          (turn.userMessage &&
-                            extractAllContent(turn.userMessage)
-                              .trim()
-                              .startsWith('[WORKSPACE EVENTS]'))}
                         {#if turn.userMessage && !isEventNotification}
                           {@const message = turn.userMessage}
                           {@const globalIndex = getMessageIndex(message.id)}
@@ -4007,7 +4010,16 @@
                   </div>
                   <!-- Editorial rhythm between turns (not after the last one) -->
                   {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
-                    <div class="h-8" aria-hidden="true"></div>
+                    <div
+                      class={nextTurnIsEventNotification
+                        ? 'h-0'
+                        : isEventNotification && turn.assistantMessages.length === 0
+                          ? 'h-12'
+                          : 'h-8'}
+                      data-testid="conversation-turn-gap"
+                      data-gap-before-wake={nextTurnIsEventNotification ? '' : undefined}
+                      aria-hidden="true"
+                    ></div>
                   {/if}
                 {/each}
               {/each}
@@ -4075,23 +4087,47 @@
           </div>
         {/if}
 
-        <!-- Agent Subscriptions (shows what events agent is waiting for) -->
-        <!-- {#key} forces a full remount when workspace or agent changes,
-           preventing stale "Waiting for N agents" UI from leaking across switches -->
-        {#if workspace?.id}
-          {#key `${workspace.id}::${agentId}`}
-            <div
-              class="w-full {isCompactMode ? 'pb-1' : 'pb-2'}"
-              transition:safeSlide={{ axis: 'y', duration: 200 }}
-            >
-              <!-- Pending attention request (discussion/blocker) for this agent -->
-              {#if agentId}
-                <AttentionRequestBanner {agentId} />
-              {/if}
-              <AgentSubscriptions workspaceId={workspace.id} {agentId} />
-            </div>
-          {/key}
+        <!-- Pending attention request (discussion/blocker) remains in transcript order. -->
+        {#if workspace?.id && agentId}
+          <AttentionRequestBanner {agentId} />
         {/if}
+
+        <!-- The utility stack owns short-chat surplus through its auto margin.
+             It collapses naturally when transcript or expanded disclosure content overflows. -->
+        <div class="mt-auto" data-testid="transcript-utility-stack">
+          <!-- {#key} forces a full remount when workspace or agent changes,
+             preventing stale subscription UI from leaking across switches. -->
+          {#if workspace?.id}
+            {#key `${workspace.id}::${agentId}`}
+              <EventSubscriptionsCard
+                workspaceId={workspace.id}
+                {agentId}
+                compact={isCompactMode}
+                bind:visible={eventSubscriptionsVisible}
+              />
+            {/key}
+          {/if}
+
+          <!-- Queued messages remain in the same scroll/follow surface. -->
+          {#if queuedMessagesVisibility.showQueue}
+            <div
+              class="mt-6 {isChiefWorkspace
+                ? 'w-full'
+                : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
+              data-testid="queued-message-utility-area"
+            >
+              <QueuedMessageList
+                bind:this={queuedMessageListRef}
+                messages={visibleQueuedMessages}
+                heldForQuestions={queuedMessagesVisibility.heldForQuestions}
+                onedit={handleEditQueuedMessage}
+                onremove={handleRemoveQueuedMessage}
+                onsendnow={handleSendQueuedMessageNow}
+                ondone={() => inputComponent?.focus?.()}
+              />
+            </div>
+          {/if}
+        </div>
 
         <!-- Scroll anchor - ensures proper scroll to absolute bottom -->
         <div class="min-h-px min-w-6 shrink-0"></div>
@@ -4132,33 +4168,6 @@
       </Button>
     {/if}
   </div>
-
-  <!-- Queued Messages: hidden while the question wizard is expanded; shown
-       with a held-for-questions hint while it is Ignore-collapsed (question
-       hold, PROTOCOL §5.5). -->
-  {#if queuedMessagesVisibility.showQueue}
-    <QueuedMessageList
-      bind:this={queuedMessageListRef}
-      messages={visibleQueuedMessages}
-      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
-      onedit={handleEditQueuedMessage}
-      onremove={handleRemoveQueuedMessage}
-      onsendnow={handleSendQueuedMessageNow}
-      ondone={() => inputComponent?.focus?.()}
-    />
-  {/if}
-
-  <!-- Monitored PRs (PROTOCOL §6.9): faint chip row above the hooks row,
-       visible only while the active agent has active PR monitors. -->
-  {#if workspace?.id && agentId}
-    <MonitoredPrsRow workspaceId={workspace.id} {agentId} />
-  {/if}
-
-  <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
-       visible only while the active agent has scheduled/running hooks. -->
-  {#if workspace?.id && agentId}
-    <BackgroundHooksRow workspaceId={workspace.id} {agentId} />
-  {/if}
 
   <!-- Message Input with Aurora Background -->
   <div

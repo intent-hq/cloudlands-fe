@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_stopAgent_tooltip": "このエージェントを停止",
   "chat_agentSubscriptions_stopAll_tooltip": "すべてのエージェントを停止",
   "chat_agentSubscriptions_stopGroup_tooltip": "このグループのすべてのエージェントを停止",
+  "chat_agentSubscriptions_allFinished_label": "すべてのエージェントが完了しました",
   "chat_agentSubscriptions_waitingForAgents_many": "{count} 件のエージェントそれぞれを待機中",
   "chat_agentSubscriptions_waitingForAgents_one": "{count} 件のエージェントを待機中",
   "chat_agentSubscriptions_waitingFor_label": "エージェントを待機中",
@@ -5955,5 +5956,9 @@
   "home_page_title": "ホーム",
   "home_emptyState_noSpaceSelected_label": "スペースが選択されていません",
   "home_emptyState_selectOrCreate_description": "サイドバーからスペースを選択するか、新しく作成してください。",
-  "home_emptyState_newSpace_label": "新しいスペース"
+  "home_emptyState_newSpace_label": "新しいスペース",
+  "chat_agentSubscriptions_finished_many": "{count} 件のエージェントが完了",
+  "chat_backgroundHooks_details_runCount_one": "1 回の実行が完了",
+  "chat_backgroundHooks_details_runCount_many": "{count} 回の実行が完了",
+  "chat_agentSubscriptions_finished_one": "{count} 件のエージェントが完了"
 }

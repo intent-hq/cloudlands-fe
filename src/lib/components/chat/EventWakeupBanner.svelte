@@ -6,17 +6,25 @@
    * Displays the event types in a compact, centered divider format (similar to DateSeparator).
    * Can optionally show full event details in an expandable format.
    */
-  import { faBell, faRotate, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+  import { faBell, faChevronDown, faRotate } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
-  import * as Tooltip from '$lib/components/ui/tooltip';
-  import { Button } from '$lib/components/ui/button';
-  import AgentCard from './AgentCard.svelte';
+  import InlineAgentAvatar from './InlineAgentAvatar.svelte';
   import { categorizeEventTypes, firstNonEmptyString } from './event-wake-summary';
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+    SUBSCRIPTION_CHEVRON_CLASS,
+    SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+    safeSubscriptionSlide,
+  } from './subscription-disclosure';
   import type { Workspace } from '$shared/types';
-  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatInteger } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger } from '$lib/i18n/format';
+  import { store as appStore } from '$store/renderer/store';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
 
   interface EventData {
     type: string;
@@ -35,12 +43,12 @@
     metadata: EventMetadata;
     /** If true, renders as a full-width divider. Otherwise renders inline. */
     asDivider?: boolean;
+    /** Keep the disclosure flat when it is already inside a card surface. */
+    embedded?: boolean;
+    /** Use the compact transcript rhythm for the card's external top gap. */
+    compact?: boolean;
     /** The raw event message text to parse and display */
     messageText?: string;
-    /** Whether this banner is currently in sticky position */
-    isSticky?: boolean;
-    /** Called when user wants to scroll to previous user message */
-    onScrollToPrevious?: () => void;
     /** Whether to show the summary row (default: true) */
     showSummary?: boolean;
     /** Whether to show agent cards (default: true) */
@@ -52,17 +60,17 @@
   let {
     metadata,
     asDivider = false,
+    embedded = false,
+    compact = false,
     messageText = '',
-    isSticky = false,
-    onScrollToPrevious,
     showSummary = true,
     showAgentCards = true,
     workspace = null,
   }: Props = $props();
 
-  const stickySurfaceClass = $derived(
-    workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-sidebar' : 'bg-card',
-  );
+  const componentId = $props.id();
+  const detailsId = `${componentId}-event-wakeup-details`;
+  let detailsOpen = $state(false);
 
   // Get a friendly summary description for the banner
   // Note: This is a function that uses parsedEvents, which is $derived
@@ -153,6 +161,63 @@
     lastResponseSummary?: string;
   }
 
+  interface EventDetail {
+    type: string;
+    agentId?: string;
+    label: string;
+    agentName?: string;
+    datetime?: string;
+    timestamp?: string;
+    summary?: string;
+  }
+
+  function eventTypeLabel(type: string): string {
+    if (type === 'agent:idle') return m.chat_eventWakeup_agentFinished_label();
+    if (type === 'agent:reportToParent') return m.events_activity_partFinished_label().trim();
+    if (type === 'agent:created') return m.chat_eventWakeup_newAgent_label();
+    return categorizeEventTypes([type])[0] ?? type;
+  }
+
+  function isAgentIdentityEvent(type: string): boolean {
+    return type === 'agent:idle' || type === 'agent:reportToParent' || type === 'agent:created';
+  }
+
+  const eventDetails = $derived.by((): EventDetail[] => {
+    if (!Array.isArray(metadata?.events)) return [];
+
+    // Preserve daemon order and duplicates: each entry represents a distinct trigger.
+    return metadata.events.flatMap((event) => {
+      if (!event || typeof event.type !== 'string') return [];
+      const data =
+        event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+          ? event.data
+          : {};
+      const datetime = typeof event.timestamp === 'string' ? event.timestamp : undefined;
+      const timestamp = datetime ? formatDateTime(datetime) : '';
+      return [
+        {
+          type: event.type,
+          agentId: firstNonEmptyString(data.agentId),
+          label: eventTypeLabel(event.type),
+          agentName: firstNonEmptyString(data.agentName),
+          datetime,
+          timestamp: timestamp || undefined,
+          summary: firstNonEmptyString(
+            data.completionReport,
+            data.report,
+            data.lastResponseSummary,
+          ),
+        },
+      ];
+    });
+  });
+
+  const legacyEventTypes = $derived(
+    eventDetails.length === 0 && Array.isArray(metadata?.eventTypes)
+      ? metadata.eventTypes.filter((type): type is string => typeof type === 'string')
+      : [],
+  );
+
   const parsedEvents = $derived.by((): ParsedEvent[] => {
     // First, try to use events from metadata (preferred - has completionReport and lastResponseSummary)
     if (metadata?.events && metadata.events.length > 0) {
@@ -221,10 +286,7 @@
     >();
 
     for (const e of parsedEvents) {
-      if (
-        e.agentId &&
-        (e.type === 'agent:idle' || e.type === 'agent:reportToParent' || e.type === 'agent:created')
-      ) {
+      if (e.agentId && isAgentIdentityEvent(e.type)) {
         // Later events override earlier ones for the same agent
         agentMap.set(e.agentId, {
           type: e.type,
@@ -238,42 +300,157 @@
 
     return Array.from(agentMap.values());
   });
+
+  function usesHeaderAgentIdentity(event: EventDetail): boolean {
+    return (
+      showAgentCards &&
+      !!event.agentId &&
+      isAgentIdentityEvent(event.type) &&
+      agentEvents.some((agentEvent) => agentEvent.agentId === event.agentId)
+    );
+  }
+
+  const displayEventDetails = $derived(
+    eventDetails.filter(
+      (event) => !usesHeaderAgentIdentity(event) || !!event.summary || !!event.timestamp,
+    ),
+  );
+  const displayLegacyEventTypes = $derived(
+    legacyEventTypes.filter(
+      (type) => !(showAgentCards && agentEvents.length > 0 && isAgentIdentityEvent(type)),
+    ),
+  );
+
+  function openAgent(event: MouseEvent, agentId: string) {
+    event.stopPropagation();
+    if (!workspace?.id) return;
+    appStore.dispatch(
+      openAgentTabRequested(String(workspace.id), {
+        agentId,
+        sourcePanelId: findSourcePanelId(event.target),
+        openInAdjacentPanel: event.metaKey || event.ctrlKey,
+      }),
+    );
+  }
 </script>
 
 {#if asDivider}
-  <!-- Divider style - can show summary, agent cards, or both -->
+  <!-- Transcript disclosure - can show summary, agent cards, or both. -->
   <div
-    class="event-wakeup-banner group/banner mb-4 w-full min-w-0"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
+      ? ''
+      : SUBSCRIPTION_CARD_SURFACE_CLASS}"
+    class:mt-3={!embedded && compact}
+    class:mt-4={!embedded && !compact}
+    data-testid="event-wakeup-card"
+    data-embedded={embedded}
+    data-external-spacing-owner={!embedded ? 'event-wakeup-card' : undefined}
+    transition:safeSubscriptionSlide
   >
-    <!-- Summary and completed-agent details share one compact row. -->
+    <!-- Summary header and completed-agent details share one bounded surface. -->
     {#if showSummary || (showAgentCards && agentEvents.length > 0)}
-      <div
-        class="relative flex w-full min-w-0 items-center gap-1.5 py-1.5 pr-3 pl-0 {isSticky
-          ? stickySurfaceClass
-          : 'bg-transparent'}"
-      >
-        <!-- Provider ensures proper context and cleanup during component destruction -->
-        {#if showSummary && !(showAgentCards && agentEvents.length > 0)}
-          <Tooltip.Provider delayDuration={0}>
-            <Tooltip.Root delayDuration={0}>
-              <Tooltip.Trigger
-                class={showAgentCards && agentEvents.length > 0 ? 'shrink-0' : 'min-w-0 flex-1'}
+      <div class="relative w-full min-w-0 max-w-full overflow-hidden">
+        {#if showSummary}
+          <div
+            class="flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden px-1.5 py-1 text-sm font-medium text-muted-foreground"
+            data-testid="event-wakeup-header"
+          >
+            {#if showAgentCards && agentEvents.length > 0}
+              <div
+                class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+                data-testid="event-wakeup-avatar-stack"
               >
-                <div class="type-body flex min-w-0 items-center gap-2 text-primary">
-                  <Fa icon={faBell} size="xs" class="shrink-0 opacity-40" />
-                  {#if showAgentCards && agentEvents.length > 0}
-                    <span class="sr-only">{friendlySummary}</span>
-                  {:else}
-                    <span class="min-w-0 flex-1 truncate text-left font-medium">
-                      {friendlySummary}
-                    </span>
-                  {/if}
-                </div>
-              </Tooltip.Trigger>
-              <Tooltip.Content side="top">
-                <p class="font-medium">{m.chat_eventWakeup_subscriptionWakeup_tooltip()}</p>
-                <p class="text-subtle mt-0.5">
+                {#each agentEvents.slice(0, 5) as event (event.agentId)}
+                  <InlineAgentAvatar
+                    agentId={event.agentId}
+                    agentName={event.agentName}
+                    {workspace}
+                    isCompleted={event.type !== 'agent:created'}
+                    onclick={(pointerEvent) => openAgent(pointerEvent, event.agentId)}
+                  />
+                {/each}
+                {#if agentEvents.length > 5}
+                  <span class="pl-2 text-ui text-subtle" data-testid="event-wakeup-avatar-overflow">
+                    +{formatInteger(agentEvents.length - 5)}
+                  </span>
+                {/if}
+              </div>
+            {:else}
+              <Fa
+                icon={faBell}
+                size={14}
+                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+              />
+            {/if}
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-expanded={detailsOpen}
+              aria-controls={detailsId}
+              onclick={() => (detailsOpen = !detailsOpen)}
+              data-testid="event-wakeup-summary"
+            >
+              <span class="min-w-0 flex-1 truncate">{friendlySummary}</span>
+              <span class="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                <Fa
+                  icon={faChevronDown}
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
+                    ? ''
+                    : 'rotate-90'}"
+                />
+              </span>
+            </button>
+          </div>
+
+          {#if detailsOpen}
+            <div
+              id={detailsId}
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-1.5 py-1.5"
+              role="region"
+              aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
+              data-testid="event-wakeup-details"
+              transition:safeSubscriptionSlide
+            >
+              {#if displayEventDetails.length > 0}
+                <ol class="min-w-0 space-y-1.5">
+                  {#each displayEventDetails as event, index (index)}
+                    <li class="min-w-0" data-testid="event-wakeup-detail">
+                      {#if !usesHeaderAgentIdentity(event) || event.timestamp}
+                        <div
+                          class="type-caption flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-subtle"
+                        >
+                          {#if !usesHeaderAgentIdentity(event)}
+                            <span class="font-medium text-primary">{event.label}</span>
+                            {#if event.agentName}
+                              <span class="min-w-0 break-words [overflow-wrap:anywhere]">
+                                {event.agentName}
+                              </span>
+                            {/if}
+                          {/if}
+                          {#if event.timestamp}
+                            <time class="shrink-0" datetime={event.datetime}>{event.timestamp}</time
+                            >
+                          {/if}
+                        </div>
+                      {/if}
+                      {#if event.summary}
+                        <p
+                          class="type-caption mt-0.5 max-w-full whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]"
+                        >
+                          {event.summary}
+                        </p>
+                      {/if}
+                    </li>
+                  {/each}
+                </ol>
+              {:else if displayLegacyEventTypes.length > 0}
+                <ul class="type-caption min-w-0 space-y-1 text-subtle">
+                  {#each displayLegacyEventTypes as type, index (index)}
+                    <li class="break-words [overflow-wrap:anywhere]">{eventTypeLabel(type)}</li>
+                  {/each}
+                </ul>
+              {:else}
+                <p class="type-caption text-subtle">
                   {(metadata?.eventCount ?? 0) === 1
                     ? m.chat_eventWakeup_triggered_one({
                         count: formatInteger(metadata?.eventCount ?? 0),
@@ -282,52 +459,9 @@
                         count: formatInteger(metadata?.eventCount ?? 0),
                       })}
                 </p>
-              </Tooltip.Content>
-            </Tooltip.Root>
-          </Tooltip.Provider>
-        {/if}
-
-        {#if showAgentCards && agentEvents.length > 0}
-          <div class="min-w-0 flex-1">
-            {#each agentEvents.slice(0, 5) as event (event.agentId)}
-              <AgentCard
-                agentId={event.agentId!}
-                agentName={event.agentName}
-                completionReport={event.completionReport}
-                lastResponseSummary={event.lastResponseSummary}
-                inline
-                hidePreview
-                statusLabel={event.type === 'agent:created'
-                  ? m.chat_eventWakeup_newAgent_label()
-                  : m.events_activity_partFinished_label().trim()}
-                {workspace}
-              />
-            {/each}
-            {#if agentEvents.length > 5}
-              <div class="type-caption px-2 py-1 text-muted-foreground">
-                {m.chat_shared_moreAgents_label({ count: formatInteger(agentEvents.length - 5) })}
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Scroll to previous button (visible when sticky) -->
-        {#if isSticky && onScrollToPrevious}
-          <div
-            class="absolute top-1 right-1 flex items-center gap-0.5 bg-sidebar/95 backdrop-blur-sm rounded-md border border-border opacity-0 group-hover/banner:opacity-100"
-          >
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={(e: MouseEvent) => {
-                e.stopPropagation();
-                onScrollToPrevious();
-              }}
-              title={m.chat_eventWakeup_scrollToPrevious_title()}
-            >
-              <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
-            </Button>
-          </div>
+              {/if}
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}

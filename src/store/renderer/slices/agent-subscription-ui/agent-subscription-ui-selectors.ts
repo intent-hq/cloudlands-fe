@@ -2,15 +2,13 @@
  * Selectors for the agent-subscription-ui slice.
  */
 
-import { store } from "../../store";
-import {
-  makeKey,
-  emptyEntry,
-} from './agent-subscription-ui-slice';
+import { store } from '../../store';
+import { makeKey, emptyEntry } from './agent-subscription-ui-slice';
 import type {
   AgentSubscriptionUIEntry,
   Subscription,
   DelegationGroupStatus,
+  AgentStatus,
   WaitingState,
   WokenUpInfo,
 } from './agent-subscription-ui-types';
@@ -19,23 +17,25 @@ import type {
 // Internal helper
 // ---------------------------------------------------------------------------
 
-const selectEntry = store.createSelector<[workspaceId: string, agentId: string], AgentSubscriptionUIEntry>(
-  (state, workspaceId, agentId) => {
-    const key = makeKey(workspaceId, agentId);
-    return state.agentSubscriptionUI.entries[key] ?? emptyEntry;
-  },
-);
+const selectEntry = store.createSelector<
+  [workspaceId: string, agentId: string],
+  AgentSubscriptionUIEntry
+>((state, workspaceId, agentId) => {
+  const key = makeKey(workspaceId, agentId);
+  return state.agentSubscriptionUI.entries[key] ?? emptyEntry;
+});
 
 // ---------------------------------------------------------------------------
 // Public selectors
 // ---------------------------------------------------------------------------
 
 /** All subscriptions for a given agent */
-export const selectAgentSubscriptions = store.createSelector<[workspaceId: string, agentId: string], Subscription[]>(
-  (state, workspaceId, agentId) => {
-    return selectEntry.select(state, workspaceId, agentId).subscriptions;
-  },
-);
+export const selectAgentSubscriptions = store.createSelector<
+  [workspaceId: string, agentId: string],
+  Subscription[]
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).subscriptions;
+});
 
 /** Delegation groups for a given agent */
 export const selectDelegationGroups = store.createSelector<
@@ -45,19 +45,29 @@ export const selectDelegationGroups = store.createSelector<
   return selectEntry.select(state, workspaceId, agentId).delegationGroups;
 });
 
+/** Latest daemon-reported status for each watched agent. */
+export const selectAgentSubscriptionStatuses = store.createSelector<
+  [workspaceId: string, agentId: string],
+  Record<string, AgentStatus>
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).agentStatuses;
+});
+
 /** Current waiting state ('idle' | 'waiting' | 'woken') */
-export const selectWaitingState = store.createSelector<[workspaceId: string, agentId: string], WaitingState>(
-  (state, workspaceId, agentId) => {
-    return selectEntry.select(state, workspaceId, agentId).waitingState;
-  },
-);
+export const selectWaitingState = store.createSelector<
+  [workspaceId: string, agentId: string],
+  WaitingState
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).waitingState;
+});
 
 /** Woken-up info or null */
-export const selectWokenUpInfo = store.createSelector<[workspaceId: string, agentId: string], WokenUpInfo | null>(
-  (state, workspaceId, agentId) => {
-    return selectEntry.select(state, workspaceId, agentId).wokenUpInfo;
-  },
-);
+export const selectWokenUpInfo = store.createSelector<
+  [workspaceId: string, agentId: string],
+  WokenUpInfo | null
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).wokenUpInfo;
+});
 
 /**
  * All agent IDs that have entries in the subscription UI for a given workspace.
@@ -77,20 +87,21 @@ export const selectTrackedAgentIds = store.createSelector<[workspaceId: string],
 );
 
 /** Whether any renderer-visible agent subscription/delegation is active for a workspace. */
-export const selectWorkspaceHasActiveSubscriptions = store.createSelector<[workspaceId: string], boolean>(
-  (state, workspaceId) => {
-    const prefix = `${workspaceId}:`;
-    const entries = state.agentSubscriptionUI?.entries ?? {};
-    for (const key of Object.keys(entries)) {
-      if (!key.startsWith(prefix)) continue;
-      const entry = entries[key];
-      if (entry.subscriptions.length > 0 || entry.delegationGroups.length > 0) {
-        return true;
-      }
+export const selectWorkspaceHasActiveSubscriptions = store.createSelector<
+  [workspaceId: string],
+  boolean
+>((state, workspaceId) => {
+  const prefix = `${workspaceId}:`;
+  const entries = state.agentSubscriptionUI?.entries ?? {};
+  for (const key of Object.keys(entries)) {
+    if (!key.startsWith(prefix)) continue;
+    const entry = entries[key];
+    if (entry.subscriptions.length > 0 || entry.delegationGroups.length > 0) {
+      return true;
     }
-    return false;
-  },
-);
+  }
+  return false;
+});
 
 /**
  * Completion status across all delegation groups.

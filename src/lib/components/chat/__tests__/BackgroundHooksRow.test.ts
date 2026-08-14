@@ -1,10 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * BackgroundHooksRow rendering: "Running Hooks:" label after the bolt icon,
- * pointer-cursor chips, hover-card timing durations (next-run-in, elapsed,
- * expires-in — monorepo#1756), and the "View script" affordances (hover-card
- * link + dropdown item) that open the HookScriptModal.
+ * BackgroundHooksRow inline disclosure geometry, timing details, and actions.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -16,9 +13,8 @@ const { dispatchMock, hooksState } = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ theme: { name: 'dark' } }),
     dispatch: dispatchMock,
@@ -35,8 +31,14 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
 }));
 
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
-import { backgroundHooksRefetchRequested } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import { formatTime } from '$lib/i18n/format';
+import {
+  cancelBackgroundHookRequested,
+  runBackgroundHookRequested,
+} from '$store/renderer/slices/background-hooks/background-hooks-slice';
+import {
+  openTerminalOverlay,
+  selectScript,
+} from '$store/renderer/slices/terminals/terminals-slice';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -68,17 +70,18 @@ describe('BackgroundHooksRow', () => {
     vi.useRealTimers();
   });
 
-  it('renders the "Running Hooks:" label after the bolt icon', () => {
+  it('renders a normalized inline disclosure row', () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const row = screen.getByTestId('background-hooks-row');
     expect(row).toBeTruthy();
-    expect(screen.getByText('Running Hooks:')).toBeTruthy();
-    // Label precedes the first chip in DOM order
-    const label = screen.getByText('Running Hooks:');
-    const chip = screen.getByTestId('background-hook-chip');
-    expect(label.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const summary = screen.getByTestId('background-hook-summary');
+    const line = summary.closest('[data-hook-state]')?.firstElementChild;
+    expect(summary.textContent).toContain('ci-watch');
+    expect(line?.className).toContain('min-h-9');
+    expect(line?.className).toContain('gap-2');
+    expect(line?.className).toContain('px-3');
   });
 
   it('gives hook chips a pointer cursor', () => {
@@ -96,82 +99,58 @@ describe('BackgroundHooksRow', () => {
     expect(screen.queryByTestId('background-hooks-row')).toBeNull();
   });
 
-  it('hover card shows a "View script" link instead of a raw code preview', async () => {
+  it('inline details show a "View script" link instead of a raw code preview', async () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    expect(trigger).toBeTruthy();
-    // bits-ui opens the tooltip on trigger focus (no hover delay)
-    await fireEvent.focus(trigger);
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
 
-    const link = await waitFor(() =>
-      screen.getByTestId('background-hook-view-script-link'),
-    );
+    const link = await waitFor(() => screen.getByTestId('background-hook-view-script-link'));
     expect(link.textContent).toContain('View script');
     // Raw code preview is gone from the hover card
-    const hoverCard = screen.getByTestId('background-hook-hover-card');
-    expect(hoverCard.querySelector('pre')).toBeNull();
-    expect(hoverCard.textContent).not.toContain('const status');
+    const details = screen.getByTestId('background-hook-details');
+    expect(details.classList.contains('hidden')).toBe(false);
+    expect(details.querySelector('pre')).toBeNull();
+    expect(details.textContent).not.toContain('const status');
   });
 
-  it('hover card shows next-run and elapsed as durations with absolute-time titles', async () => {
+  it('inline details show compact cadence, next-run, and run-count facts', async () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
-    // now 10:03:00Z, nextRunAt 10:06:00Z, createdAt 10:00:00Z
-    expect(hoverCard.textContent).toContain('Next run: in 3m');
-    expect(hoverCard.textContent).toContain('Elapsed: 3m');
-    // Absolute wall-clock times survive as secondary native titles
-    const nextRunSpan = Array.from(hoverCard.querySelectorAll('span[title]')).find((el) =>
-      el.textContent?.includes('Next run'),
-    );
-    expect(nextRunSpan?.getAttribute('title')).toBe(
-      formatTime('2026-07-31T10:06:00Z', { seconds: true }),
-    );
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const details = screen.getByTestId('background-hook-details');
+    expect(details.textContent).toContain('Delay: 60s');
+    expect(details.textContent).toContain('Next run: in 3m');
+    expect(details.textContent).toContain('6 runs completed');
+    expect(details.textContent).not.toContain('Elapsed:');
   });
 
-  it('hover card elapsed counts from lastRunAt when the hook has already run', async () => {
-    hooksState.hooks = [makeHook({ lastRunAt: '2026-07-31T10:02:00Z' })];
+  it('shows the singular run-count copy', async () => {
+    hooksState.hooks = [makeHook({ runCount: 1 })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
-    expect(hoverCard.textContent).toContain('Elapsed: 1m');
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    expect(screen.getByTestId('background-hook-details').textContent).toContain('1 run completed');
   });
 
   it('hover card shows the TTL as an expires-in duration when expiresAt is set', async () => {
     hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T11:00:00Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const hoverCard = screen.getByTestId('background-hook-details');
     // now 10:03:00Z → expiresAt 11:00:00Z = 57m remaining
     expect(hoverCard.textContent).toContain('TTL: expires in 57m');
-    const ttlSpan = Array.from(hoverCard.querySelectorAll('span[title]')).find((el) =>
-      el.textContent?.includes('TTL'),
-    );
-    expect(ttlSpan?.getAttribute('title')).toBe(
-      formatTime('2026-07-31T11:00:00Z', { seconds: true }),
-    );
+    expect(hoverCard.textContent).not.toContain('04:00:00 AM');
   });
 
   it('hover card shows a minutes-and-seconds expires-in duration when not whole minutes', async () => {
     hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const hoverCard = screen.getByTestId('background-hook-details');
     expect(hoverCard.textContent).toContain('TTL: expires in 9m 30s');
   });
 
@@ -179,47 +158,51 @@ describe('BackgroundHooksRow', () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-
-    const hoverCard = await waitFor(() => screen.getByTestId('background-hook-hover-card'));
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const hoverCard = screen.getByTestId('background-hook-details');
     expect(hoverCard.textContent).not.toContain('TTL:');
   });
 
-  it('hover-card link opens the script modal and dispatches the refetch trigger', async () => {
+  it('inline details opens the existing script panel without a modal', async () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-    await fireEvent.focus(trigger);
-    const link = await waitFor(() =>
-      screen.getByTestId('background-hook-view-script-link'),
-    );
+    await fireEvent.click(screen.getByTestId('background-hook-summary'));
+    const link = await waitFor(() => screen.getByTestId('background-hook-view-script-link'));
     await fireEvent.click(link);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('hook-script-modal')).toBeTruthy();
-    });
-    expect(dispatchMock).toHaveBeenCalledWith(backgroundHooksRefetchRequested('ws-1'));
+    expect(screen.queryByTestId('hook-script-modal')).toBeNull();
+    expect(dispatchMock).toHaveBeenCalledWith(selectScript('ws-1', 'hook-1'));
+    expect(dispatchMock).toHaveBeenCalledWith(openTerminalOverlay('ws-1'));
   });
 
-  it('chip dropdown offers "View script" alongside Run now / Cancel and opens the modal', async () => {
+  it('chip dropdown offers "View script" alongside Run now / Cancel and opens the panel', async () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('background-hook-chip'));
 
-    const item = await waitFor(() =>
-      screen.getByTestId('background-hook-view-script-item'),
-    );
+    const item = await waitFor(() => screen.getByTestId('background-hook-view-script-item'));
     expect(item.textContent).toContain('View script');
     expect(screen.getByText('Run now')).toBeTruthy();
     expect(screen.getByText('Cancel')).toBeTruthy();
 
     await fireEvent.click(item);
-    await waitFor(() => {
-      expect(screen.getByTestId('hook-script-modal')).toBeTruthy();
-    });
-    expect(dispatchMock).toHaveBeenCalledWith(backgroundHooksRefetchRequested('ws-1'));
+    expect(screen.queryByTestId('hook-script-modal')).toBeNull();
+    expect(dispatchMock).toHaveBeenCalledWith(selectScript('ws-1', 'hook-1'));
+    expect(dispatchMock).toHaveBeenCalledWith(openTerminalOverlay('ws-1'));
+  });
+
+  it('keeps Run now and Cancel dispatch behavior unchanged', async () => {
+    hooksState.hooks = [makeHook()];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    await fireEvent.click(screen.getByTestId('background-hook-chip'));
+    await fireEvent.click(await waitFor(() => screen.getByText('Run now')));
+    expect(dispatchMock).toHaveBeenCalledWith(runBackgroundHookRequested('ws-1', 'hook-1'));
+
+    await fireEvent.click(screen.getByTestId('background-hook-chip'));
+    await fireEvent.click(await waitFor(() => screen.getByText('Cancel')));
+    expect(dispatchMock).toHaveBeenCalledWith(cancelBackgroundHookRequested('ws-1', 'hook-1'));
   });
 });

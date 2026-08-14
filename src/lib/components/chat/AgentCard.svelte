@@ -67,8 +67,8 @@
     agentName?: string;
     /** Whether to show background agent indicator */
     isBackground?: boolean;
-    /** Optional click handler override */
-    onclick?: () => void;
+    /** Optional activation handler override */
+    onclick?: (event: MouseEvent | KeyboardEvent) => void;
     /** Completion report from the agent (passed from event data) */
     completionReport?: string;
     /** Last response summary from the agent (passed from event data, used as fallback) */
@@ -85,6 +85,8 @@
     hidePreview?: boolean;
     /** Render as a compact single row (used by event wake-up banners). */
     inline?: boolean;
+    /** Optional row typography override supplied by compact parent disclosures. */
+    typographyClass?: string;
     /** Compact status text shown after the agent name. */
     statusLabel?: string;
     /** Optional workspace to load agent session from (for home page usage) */
@@ -114,6 +116,7 @@
     showStateBorder = false,
     hidePreview = false,
     inline = false,
+    typographyClass = '',
     statusLabel,
     workspace = null,
     isCompleted = false,
@@ -235,8 +238,12 @@
 
   // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
-    // Enter key starts editing the agent name
-    if (e.key === 'Enter') {
+    if (onclick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleClick(e);
+    } else if (e.key === 'Enter') {
+      // Enter starts editing when the card owns its default interaction.
       e.preventDefault();
       e.stopPropagation();
       startEditing();
@@ -576,9 +583,9 @@
   );
 
   // Handle click - navigate to agent
-  function handleClick(event: MouseEvent) {
+  function handleClick(event: MouseEvent | KeyboardEvent) {
     if (onclick) {
-      onclick();
+      onclick(event);
     } else {
       const sourcePanelId = findSourcePanelId(event.target);
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
@@ -602,17 +609,17 @@
 {#snippet agentCardContent()}
   <div
     style="padding-left: {depth * 10}px; container-type: inline-size;"
-    class="relative agent-card-container"
+    class="relative w-full min-w-0 max-w-full overflow-hidden agent-card-container"
     data-agent-id={agentId}
     data-testid="agent-list-item"
   >
     <button
       type="button"
-      class="w-full text-left flex gap-2 transition-colors duration-150 cursor-pointer group border {inline
+      class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {inline
         ? 'type-body items-center rounded-md px-1.5 py-1'
         : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
         ? `bg-background border-border ${glowClass} shadow-xs`
-        : 'border-transparent'}"
+        : 'border-transparent'} {typographyClass}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
@@ -628,20 +635,22 @@
       </div>
 
       <div
-        class="agent-card-content flex-1 min-w-0 flex {inline
+        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {inline
           ? 'flex-row items-center gap-2'
           : 'flex-col'}"
       >
         <!-- Header row -->
         <div
-          class="agent-card-header flex min-w-0 items-center gap-1.5 {inline
-            ? 'inline-agent-card-header overflow-hidden'
+          class="agent-card-header flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden {inline
+            ? 'inline-agent-card-header'
             : 'pr-1.5'}"
         >
           <!-- Avatar with streaming indicator -->
 
           <div
-            class="flex-1 min-w-0 font-medium flex items-center {inline ? 'overflow-hidden' : ''}"
+            class="flex-1 min-w-0 flex items-center {typographyClass
+              ? 'font-normal'
+              : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
           >
             {#if isEditing}
               <!-- svelte-ignore a11y_autofocus -->
@@ -716,10 +725,15 @@
              source flips don't height-animate; the section as a whole still
              slides when the preview appears/disappears entirely. -->
         {#if !hidePreview && preview}
-          <div class="mt-0.5" transition:safeSlide={{ axis: 'y', duration: 150 }}>
+          <div
+            class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
+            data-testid="agent-card-preview-row"
+            transition:safeSlide={{ axis: 'y', duration: 150 }}
+          >
             {#if preview.kind === 'attention'}
               <p
-                class="text-sm truncate {preview.attention.kind === 'blocker'
+                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {preview
+                  .attention.kind === 'blocker'
                   ? 'text-red-500'
                   : 'text-amber-500'}"
                 data-testid="agent-card-attention"
@@ -733,15 +747,25 @@
                   >{/if}
               </p>
             {:else if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
-              <div class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+              <div
+                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
+                data-testid="agent-card-preview"
+              >
                 <AgentPreviewToolLabel toolUse={preview.toolUse} animate={isRunning} />
               </div>
             {:else if preview.kind === 'report'}
-              <p class="text-sm text-subtle truncate">
+              <p
+                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
+                title={preview.text}
+              >
                 {preview.text}
               </p>
             {:else}
-              <p class="text-sm text-subtle truncate" data-testid="agent-card-preview">
+              <p
+                class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
+                data-testid="agent-card-preview"
+                title={preview.text}
+              >
                 {preview.text}
               </p>
             {/if}

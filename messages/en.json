@@ -1716,6 +1716,7 @@
   "chat_agentSubscriptions_stopAgent_tooltip": "Stop this agent",
   "chat_agentSubscriptions_stopAll_tooltip": "Stop all agents",
   "chat_agentSubscriptions_stopGroup_tooltip": "Stop all agents in this group",
+  "chat_agentSubscriptions_allFinished_label": "All agents finished",
   "chat_agentSubscriptions_waitingForAgents_many": "Waiting for {count} agents",
   "chat_agentSubscriptions_waitingForAgents_one": "Waiting for {count} agent",
   "chat_agentSubscriptions_waitingFor_label": "Waiting for agent",
@@ -5955,5 +5956,9 @@
   "home_page_title": "Home",
   "home_emptyState_noSpaceSelected_label": "No space selected",
   "home_emptyState_selectOrCreate_description": "Select a space from the sidebar, or create a new one.",
-  "home_emptyState_newSpace_label": "New Space"
+  "home_emptyState_newSpace_label": "New Space",
+  "chat_agentSubscriptions_finished_many": "{count} agents finished",
+  "chat_backgroundHooks_details_runCount_one": "1 run completed",
+  "chat_backgroundHooks_details_runCount_many": "{count} runs completed",
+  "chat_agentSubscriptions_finished_one": "{count} agent finished"
 }
