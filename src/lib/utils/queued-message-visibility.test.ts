@@ -62,6 +62,17 @@ describe('isUserQueuedMessage', () => {
     expect(isUserQueuedMessage(makeMessage({ fromAgentId: 'agent-2' }))).toBe(false);
   });
 
+  it('shows the Q&A wizard answer message (type question_answers)', () => {
+    // User-authored despite the tag: sent through the ordinary send path and
+    // possibly auto-queued during the turn-startup race — must stay
+    // editable/removable/sendable in the queue.
+    expect(
+      isUserQueuedMessage(
+        makeMessage({ type: 'question_answers', answeredQuestionsMessageId: 'msg-q1' }),
+      ),
+    ).toBe(true);
+  });
+
   it('shows entries whose metadata carries only benign fields (userAppMessageId)', () => {
     expect(isUserQueuedMessage(makeMessage({ userAppMessageId: 'app-msg-1' }))).toBe(true);
   });
