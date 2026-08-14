@@ -4339,6 +4339,7 @@
   "browser_embedded_localhostRefused_error": "Cannot connect to localhost. The server may not be running.",
   "browser_embedded_loadFailed_error": "Failed to load page",
   "browser_embedded_resolveFailed_error": "Cannot reach this URL on the remote daemon host",
+  "browser_linkOpen_loopbackAmbiguity_warning": "Loopback URL was rewritten to the daemon host",
   "browser_embedded_protocolNotAllowed_error": "Protocol \"{protocol}\" is not allowed. Supported: {protocols}",
   "browser_embedded_selfLoad_error": "Cannot load the app inside itself",
   "browser_embedded_invalidUrlFormat_error": "Invalid URL format",

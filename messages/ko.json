@@ -4338,6 +4338,7 @@
   "browser_embedded_localhostRefused_error": "localhost에 연결할 수 없습니다. 서버가 실행 중이 아닐 수 있습니다.",
   "browser_embedded_loadFailed_error": "페이지를 로드하지 못했습니다",
   "browser_embedded_resolveFailed_error": "원격 데몬 호스트에서 이 URL에 연결할 수 없습니다",
+  "browser_linkOpen_loopbackAmbiguity_warning": "루프백 URL이 데몬 호스트로 재작성되었습니다",
   "browser_embedded_protocolNotAllowed_error": "프로토콜 \"{protocol}\"은(는) 허용되지 않습니다. 지원: {protocols}",
   "browser_embedded_selfLoad_error": "앱 안에서 앱 자체를 로드할 수 없습니다",
   "browser_embedded_invalidUrlFormat_error": "잘못된 URL 형식",

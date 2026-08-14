@@ -4,9 +4,10 @@
  *
  * Extracted from `browser-action-executor.ts` so the same resolution backs
  * both `browser.exec` navigate/openTab and the renderer-facing
- * `browser:resolve-url` IPC (UI navigations: script URLs, terminal links,
- * address bar). Pure of Electron imports; callers inject the loopback
- * context and the tunnel provider.
+ * `browser:resolve-url` IPC (programmatic UI entry points: script URL and
+ * terminal link clicks — never the address bar, which loads literally per
+ * intent-hq/monorepo#2404). Pure of Electron imports; callers inject the
+ * loopback context and the tunnel provider.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -268,18 +269,32 @@ export interface ResolvedBrowserUrl {
   error?: string;
 }
 
+/** Options for {@link resolveBrowserUrl}. */
+export interface ResolveBrowserUrlOptions {
+  /**
+   * Apply the loopback rewrite only — NO reachability probe and NO tunnel.
+   * For display-only callers (e.g. the script detected-URL chip) that need
+   * to show where a link points without side effects.
+   */
+  rewriteOnly?: boolean;
+}
+
 /**
  * Full rewrite → probe → tunnel resolution for a single URL. Never throws:
  * unparseable URLs pass through non-rewritten, and probe/tunnel failures are
- * reported via `error` while `url` keeps the rewritten target.
+ * reported via `error` while `url` keeps the rewritten target. With
+ * `rewriteOnly` the probe/tunnel stage is skipped entirely (display-only).
  */
 export async function resolveBrowserUrl(
   rawUrl: string,
   context: LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
+  options?: ResolveBrowserUrlOptions,
 ): Promise<ResolvedBrowserUrl> {
   const rewrite = rewriteLoopbackUrl(rawUrl, context);
-  const resolution = await resolveRewrittenRemoteTarget(rewrite, getTunnelProvider);
+  const resolution: RemoteTargetResolution = options?.rewriteOnly
+    ? { rewrite, tunneled: false }
+    : await resolveRewrittenRemoteTarget(rewrite, getTunnelProvider);
   const finalRewrite = resolution.rewrite;
   return {
     url: finalRewrite.url,

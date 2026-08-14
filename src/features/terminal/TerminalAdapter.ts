@@ -1755,7 +1755,10 @@ export class TerminalAdapter {
 
   /**
    * Handle link clicks - open URLs in browser panel instead of popup.
-   * GitHub URLs are always opened in the external browser.
+   * GitHub URLs are always opened in the external browser. Loopback URLs are
+   * resolved through browser:resolve-url (rewrite → probe → tunnel) BEFORE
+   * the browser panel opens, so remote-mode links land on the daemon host or
+   * a tunnel port (the embedded browser never resolves).
    */
   private handleLinkClick(uri: string): void {
     try {
@@ -1769,20 +1772,29 @@ export class TerminalAdapter {
         return;
       }
 
-      // Import and use the panel layout manager to open browser panel
-      import('$features/layout/panel-layout-adapter')
-        .then(({ getPanelLayoutManager }) => {
-          const layoutManager = getPanelLayoutManager(this.workspaceId);
-          layoutManager.openBrowserPanel(uri);
-          logger.debug('Opened URL in browser panel', { uri, workspaceId: this.workspaceId });
-        })
-        .catch((err) => {
-          logger.warn('Failed to open URL in browser panel, falling back to external browser', {
-            uri,
-            error: err,
-          });
-          // Fallback to external browser
-          void invokeIpc('shell:openExternal', { url: uri });
+      // Resolve loopback URLs, then open the browser panel on the result.
+      void import('$lib/utils/browser-link-open')
+        .then(({ resolveBrowserLinkForOpen }) => resolveBrowserLinkForOpen(uri))
+        .catch(() => uri)
+        .then((resolvedUrl) => {
+          import('$features/layout/panel-layout-adapter')
+            .then(({ getPanelLayoutManager }) => {
+              const layoutManager = getPanelLayoutManager(this.workspaceId);
+              layoutManager.openBrowserPanel(resolvedUrl);
+              logger.debug('Opened URL in browser panel', {
+                uri,
+                resolvedUrl,
+                workspaceId: this.workspaceId,
+              });
+            })
+            .catch((err) => {
+              logger.warn('Failed to open URL in browser panel, falling back to external browser', {
+                uri,
+                error: err,
+              });
+              // Fallback to external browser
+              void invokeIpc('shell:openExternal', { url: resolvedUrl });
+            });
         });
     } catch (err) {
       logger.warn('Failed to handle link click', { uri, error: err });

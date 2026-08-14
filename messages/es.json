@@ -4338,6 +4338,7 @@
   "browser_embedded_localhostRefused_error": "No se puede conectar con localhost. Puede que el servidor no esté en ejecución.",
   "browser_embedded_loadFailed_error": "Error al cargar la página",
   "browser_embedded_resolveFailed_error": "No se puede acceder a esta URL en el host del daemon remoto",
+  "browser_linkOpen_loopbackAmbiguity_warning": "La URL de loopback se reescribió al host del daemon",
   "browser_embedded_protocolNotAllowed_error": "El protocolo \"{protocol}\" no está permitido. Compatibles: {protocols}",
   "browser_embedded_selfLoad_error": "No se puede cargar la aplicación dentro de sí misma",
   "browser_embedded_invalidUrlFormat_error": "Formato de URL no válido",
