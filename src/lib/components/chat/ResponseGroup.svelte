@@ -240,7 +240,7 @@
         >{/if}
     </span>
     <div class="ml-auto flex shrink-0 items-center gap-1.5 opacity-30">
-      {#each stats.icons.slice(0, 5) as icon, i (icon)}
+      {#each stats.icons.slice(0, 5) as icon, i (`${icon.iconName}-${i}`)}
         <span class="icon-animate-in" style="animation-delay: {i * 50}ms">
           <Fa {icon} size={10} />
         </span>

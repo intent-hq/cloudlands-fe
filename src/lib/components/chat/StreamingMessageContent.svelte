@@ -55,7 +55,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { getResponseGroupBlockKey } from './response-group-blocks';
+  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
@@ -550,17 +550,7 @@
   }
 
   // Pre-compute block keys for stable iteration, ensuring uniqueness
-  let blockKeys = $derived.by(() => {
-    const keys = groupedBlocks.map((block, index) => getBlockKey(block, index));
-    // Ensure uniqueness by appending index if duplicates exist
-    const seen = new Map<string, number>();
-    return keys.map((key, index) => {
-      const count = seen.get(key) || 0;
-      seen.set(key, count + 1);
-      // If this key was seen before, make it unique by appending the index
-      return count > 0 ? `${key}-dup-${index}` : key;
-    });
-  });
+  let blockKeys = $derived(dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))));
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
@@ -772,7 +762,8 @@
           blocks={group.children}
         >
           {#snippet children()}
-            {#each group.children as childBlock, childIndex (getResponseGroupBlockKey(childBlock, childIndex))}
+            {@const childKeys = getResponseGroupBlockKeys(group.children)}
+            {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
                 <div class="content-block content-block--{childBlock.type} my-1.25">
                   {@render renderContentBlock(
