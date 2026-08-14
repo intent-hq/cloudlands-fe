@@ -54,57 +54,61 @@
 
 <div
   class={cn(
-    'flex min-w-0 w-full items-center gap-1 rounded-lg border border-border bg-card px-4 py-2 text-left',
+    'relative flex min-w-0 w-full items-center cursor-pointer overflow-hidden rounded-lg border border-border bg-card px-3 py-2 text-foreground transition-colors',
   )}
   data-workspace-terminal-dock
   data-sidebar-card-surface
 >
   <Button
     variant="plain"
-    class="h-7 min-w-0 flex-1 cursor-pointer justify-start truncate rounded-none p-0! text-sm font-semibold"
+    class="absolute inset-0 z-0 h-auto cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
     onclick={openShell}
+    aria-label={m.workspace_terminalDock_shell_label()}
     aria-expanded={onExpand ? expanded : undefined}
+  ></Button>
+  <div
+    class="pointer-events-none relative z-10 flex h-7 min-w-0 flex-1 items-center gap-1"
     data-sidebar-launcher-row
   >
-    <span class="cursor-pointer font-semibold" data-sidebar-launcher-label
+    <span class="cursor-pointer truncate text-sm font-semibold flex-1" data-sidebar-launcher-label
       >{m.workspace_terminalDock_shell_label()}</span
     >
-  </Button>
-  {#each $terminals$.slice(0, 1) as terminal (terminal.id)}
-    {@const terminalName =
-      terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
-    <Tooltip content={terminalName} side="top" delayDuration={300}>
-      <Button
-        variant="plain"
-        size="icon-xs"
-        iconOnly
-        class={cn(
-          'flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 w-5! text-muted-foreground transition-colors hover:text-foreground',
-          terminal.id === $activeTerminalId$ && 'text-foreground',
-        )}
-        onclick={() => openTerminal(terminal.id)}
-        aria-label={m.workspace_terminalDock_openTerminal_ariaLabel({ name: terminalName })}
-        aria-pressed={terminal.id === $activeTerminalId$}
-        data-terminal-id={terminal.id}
-      >
-        <Fa icon={faTerminal} size="xs" />
-      </Button>
-    </Tooltip>
-  {/each}
+    {#each $terminals$.slice(0, 1) as terminal (terminal.id)}
+      {@const terminalName =
+        terminal.customName || terminal.name || m.workspace_terminalDock_terminal_fallback()}
+      <Tooltip content={terminalName} side="top" delayDuration={300}>
+        <Button
+          variant="plain"
+          size="icon-xs"
+          iconOnly
+          class={cn(
+            'pointer-events-auto relative z-20 flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 w-5! text-muted-foreground transition-colors hover:text-foreground',
+            terminal.id === $activeTerminalId$ && 'text-foreground',
+          )}
+          onclick={() => openTerminal(terminal.id)}
+          aria-label={m.workspace_terminalDock_openTerminal_ariaLabel({ name: terminalName })}
+          aria-pressed={terminal.id === $activeTerminalId$}
+          data-terminal-id={terminal.id}
+        >
+          <Fa icon={faTerminal} size="xs" />
+        </Button>
+      </Tooltip>
+    {/each}
 
-  {#if $scripts$.length > 0}
-    <Tooltip content={devScriptsLabel} side="top" delayDuration={300}>
-      <Button
-        variant="plain"
-        size="icon-xs"
-        iconOnly
-        class="flex w-5! cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-xs tabular-nums text-muted-foreground transition-colors hover:text-foreground"
-        onclick={openScripts}
-        aria-label={devScriptsLabel}
-        data-dev-script-count
-      >
-        <Fa icon={faPlay} size="xs" />
-      </Button>
-    </Tooltip>
-  {/if}
+    {#if $scripts$.length > 0}
+      <Tooltip content={devScriptsLabel} side="top" delayDuration={300}>
+        <Button
+          variant="plain"
+          size="icon-xs"
+          iconOnly
+          class="pointer-events-auto relative z-20 flex w-5! cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-xs tabular-nums text-muted-foreground transition-colors hover:text-foreground"
+          onclick={openScripts}
+          aria-label={devScriptsLabel}
+          data-dev-script-count
+        >
+          <Fa icon={faPlay} size="xs" />
+        </Button>
+      </Tooltip>
+    {/if}
+  </div>
 </div>
