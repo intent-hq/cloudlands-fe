@@ -452,9 +452,17 @@
                   <div class="flex justify-between text-xs w-full">
                     <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
                     <span class="flex items-center gap-1.5">
+                      <!--
+                        Keyboard focus inside the menu is menu-managed (bits-ui
+                        closes on Tab; arrow keys visit only menu items), so the
+                        tooltip cannot open from keyboard focus here. Expose the
+                        full explanation as the icon's accessible name instead
+                        (role="img" so the span's aria-label is reliably mapped).
+                      -->
                       <span
                         class="text-yellow-600 dark:text-yellow-500"
-                        aria-label={m.layout_daemonStatus_versionMismatch_ariaLabel()}
+                        role="img"
+                        aria-label={versionMismatchTooltip}
                       >
                         <Fa icon={faTriangleExclamation} />
                       </span>
@@ -674,9 +682,16 @@
                       {#snippet content()}
                         <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
                       {/snippet}
+                      <!--
+                        Same aria-only pattern as the Version-row warning icon:
+                        the full explanation is the icon's accessible name, and
+                        it flows into this submenu trigger's name-from-contents
+                        so arrow-key navigation announces it with the row.
+                      -->
                       <span
                         class="text-yellow-600 dark:text-yellow-500"
-                        aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
+                        role="img"
+                        aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
                       >
                         <Fa icon={faTriangleExclamation} />
                       </span>
