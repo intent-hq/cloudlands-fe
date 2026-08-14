@@ -22,6 +22,8 @@ import {
   updateAgentDigest,
   renameSession,
   renameAgent,
+  setProcessQueueHint,
+  clearProcessQueueHint,
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
@@ -1912,6 +1914,37 @@ describe('agent-session-slice reducer', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       const next = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', null));
       expect(next).toBe(state);
+    });
+  });
+
+  describe('setProcessQueueHint / clearProcessQueueHint', () => {
+    it('stores the hint with the reason from the event (slots)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      expect(state.byAgentId['a1'].processQueueHint).toEqual({
+        waiting: true,
+        used: 3,
+        cap: 3,
+        reason: 'slots',
+      });
+    });
+
+    it('stores the memory-budget reason distinctly', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 2, 8, 'memory-budget'));
+      expect(state.byAgentId['a1'].processQueueHint).toEqual({
+        waiting: true,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      });
+    });
+
+    it('clearProcessQueueHint removes the hint', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      state = agentSessionReducer(state, clearProcessQueueHint('a1'));
+      expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
     });
   });
 

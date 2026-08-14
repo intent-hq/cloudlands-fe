@@ -1313,10 +1313,15 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
- * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
- * without a follow-up read.
+ * `agent:process:queued` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when an agent spawn is queued waiting for admission: a free process
+ * slot (maxConcurrent limit, reason `"slots"`) or memory headroom under the
+ * aggregate budget (reason `"memory-budget"`, intent-hq/intentd#1196). The
+ * payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read. An absent `reason` (older daemons) is normalized
+ * to `"slots"`, the pre-#1196 behavior; a present-but-unrecognized value (a
+ * hypothetical future constraint) also falls back to `"slots"` but logs a
+ * warning so the divergence is observable rather than silently absorbed.
  *
  * The Redux reducer's updateSessionFields is a no-op when the session doesn't
  * exist yet, but during normal operation the agent:created or agent:updated
@@ -1334,13 +1339,21 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  if (data.reason !== undefined && data.reason !== 'slots' && data.reason !== 'memory-budget') {
+    logger.warn('agent:process:queued with unrecognized reason; falling back to slots', {
+      agentId,
+      reason: data.reason,
+    });
+  }
+  const reason = data.reason === 'memory-budget' ? 'memory-budget' : 'slots';
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap, reason));
 }
 
 /**
- * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * a queued agent spawn resumes (a slot freed). The renderer clears the hint so
- * the UI no longer shows the waiting message.
+ * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when a queued agent spawn resumes (a slot freed / memory freed);
+ * `reason` echoes the constraint the spawn originally queued under. The
+ * renderer clears the hint so the UI no longer shows the waiting message.
  */
 function handleProcessResumedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;

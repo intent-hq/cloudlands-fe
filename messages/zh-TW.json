@@ -3056,6 +3056,8 @@
   "tiptap_suggestionTooltip_accept_tooltip": "接受建議",
   "tiptap_suggestionTooltip_reject_tooltip": "拒絕建議",
   "tiptap_taskAgentStatus_waitingSlot_label": "正在等待空閒的智慧體槽位（{used}/{cap} 忙碌）",
+  "tiptap_taskAgentStatus_waitingMemory_label": "正在等待記憶體餘量（{used}/{cap} 個智慧體執行中）",
+  "tiptap_taskAgentStatus_waitingMemory_tooltip": "智慧體程序已用滿記憶體預算。記憶體釋放後此智慧體將啟動；預算由 agents.memoryBudgetMb 設定。",
   "tiptap_taskAgentStatus_working_label": "工作中…",
   "tiptap_taskAgentStatus_spinningUp_label": "啟動中…",
   "tiptap_taskAgentStatus_loadingAgent_label": "正在載入智慧體…",
