@@ -5,7 +5,9 @@ import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import {
   collectCycleAgents,
+  collectUnreadWorkspaceStops,
   compareLastIdleDesc,
+  cycleStopKey,
   getLastIdleTime,
   isSessionIdle,
   isSessionInProgress,
@@ -54,9 +56,7 @@ describe('predicates', () => {
     expect(isSessionInProgress(makeSession('a', { isProcessing: true, status: 'active' }))).toBe(
       true,
     );
-    expect(isSessionInProgress(makeSession('a', { isStreaming: true, status: 'idle' }))).toBe(
-      true,
-    );
+    expect(isSessionInProgress(makeSession('a', { isStreaming: true, status: 'idle' }))).toBe(true);
     expect(isSessionInProgress(makeSession('a'))).toBe(false);
     expect(isSessionInProgress(makeSession('a', { isProcessing: true, status: 'error' }))).toBe(
       false,
@@ -65,16 +65,12 @@ describe('predicates', () => {
   });
 
   it('sessionNeedsAttention matches the LED attention definition', () => {
-    expect(sessionNeedsAttention(makeSession('a', { attentionRequestKind: 'blocker' }))).toBe(
+    expect(sessionNeedsAttention(makeSession('a', { attentionRequestKind: 'blocker' }))).toBe(true);
+    expect(sessionNeedsAttention(makeSession('a', { attentionRequestKind: 'discussion' }))).toBe(
       true,
     );
     expect(
-      sessionNeedsAttention(makeSession('a', { attentionRequestKind: 'discussion' })),
-    ).toBe(true);
-    expect(
-      sessionNeedsAttention(
-        makeSession('a', { metadata: { attentionRequestKind: 'blocker' } }),
-      ),
+      sessionNeedsAttention(makeSession('a', { metadata: { attentionRequestKind: 'blocker' } })),
     ).toBe(true);
     expect(sessionNeedsAttention(makeSession('a'))).toBe(false);
     expect(
@@ -110,9 +106,7 @@ describe('predicates', () => {
     };
     const plainUser = { id: 'msg-2', role: 'user', contentBlocks: [] };
     expect(sessionNeedsAttention(makeSession('a', { messages: [question] }))).toBe(true);
-    expect(sessionNeedsAttention(makeSession('a', { messages: [question, plainUser] }))).toBe(
-      true,
-    );
+    expect(sessionNeedsAttention(makeSession('a', { messages: [question, plainUser] }))).toBe(true);
     const answer = {
       ...plainUser,
       metadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-1' },
@@ -170,7 +164,12 @@ describe('pickLastActivePerWorkspace', () => {
         'b-2': makeSession('b-2', { lastActivity: '2026-08-01T07:00:00.000Z' }),
       },
     );
-    expect(pickLastActivePerWorkspace(state, collectCycleAgents(state, () => true))).toEqual([
+    expect(
+      pickLastActivePerWorkspace(
+        state,
+        collectCycleAgents(state, () => true),
+      ),
+    ).toEqual([
       { wsId: 'ws-1', agentId: 'a-2' },
       { wsId: 'ws-2', agentId: 'b-1' },
     ]);
@@ -181,9 +180,12 @@ describe('pickLastActivePerWorkspace', () => {
       { 'ws-1': ['a-1', 'a-2'] },
       { 'a-1': makeSession('a-1'), 'a-2': makeSession('a-2') },
     );
-    expect(pickLastActivePerWorkspace(state, collectCycleAgents(state, () => true))).toEqual([
-      { wsId: 'ws-1', agentId: 'a-1' },
-    ]);
+    expect(
+      pickLastActivePerWorkspace(
+        state,
+        collectCycleAgents(state, () => true),
+      ),
+    ).toEqual([{ wsId: 'ws-1', agentId: 'a-1' }]);
   });
 });
 
@@ -279,5 +281,78 @@ describe('collectCycleAgents', () => {
     );
     const entries = collectCycleAgents(state, () => true, compareLastIdleDesc, 'all');
     expect(entries.map((entry) => entry.agentId)).toEqual(['sub-1', 'a-1']);
+  });
+});
+
+describe('cycleStopKey', () => {
+  it('keys agent stops by agent id and workspace stops by a prefixed workspace id', () => {
+    expect(cycleStopKey({ wsId: 'ws-1', agentId: 'a-1' })).toBe('a-1');
+    expect(cycleStopKey({ wsId: 'ws-1', agentId: null })).toBe('workspace:ws-1');
+  });
+});
+
+describe('collectUnreadWorkspaceStops (intent-hq/monorepo#2438)', () => {
+  it('emits a workspace-level stop for an unread workspace with no hydrated sessions', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1'], 'ws-2': [] },
+      { 'a-1': makeSession('a-1') },
+      {},
+      { 'ws-2': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-2', agentId: null }]);
+  });
+
+  it('emits the last active agent for an unread workspace with hydrated sessions', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1', 'a-2'] },
+      {
+        'a-1': makeSession('a-1', { lastActivity: '2026-08-01T08:00:00.000Z' }),
+        'a-2': makeSession('a-2', { stopReasonTimestamp: '2026-08-01T10:00:00.000Z' }),
+      },
+      {},
+      { 'ws-1': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-1', agentId: 'a-2' }]);
+  });
+
+  it('mixes agent and workspace-level stops in workspace order', () => {
+    const state = makeState(
+      { 'ws-1': [], 'ws-2': ['b-1'], 'ws-3': [] },
+      { 'b-1': makeSession('b-1') },
+      {},
+      {
+        'ws-1': { attention: 'unread' },
+        'ws-2': { attention: 'unread' },
+        'ws-3': { attention: 'unread' },
+      },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([
+      { wsId: 'ws-1', agentId: null },
+      { wsId: 'ws-2', agentId: 'b-1' },
+      { wsId: 'ws-3', agentId: null },
+    ]);
+  });
+
+  it('falls back to a workspace-level stop when the only sessions are not cyclable', () => {
+    const state = makeState(
+      { 'ws-1': ['a-1'] },
+      { 'a-1': makeSession('a-1', { status: 'deleted' }) },
+      {},
+      { 'ws-1': { attention: 'unread' } },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([{ wsId: 'ws-1', agentId: null }]);
+  });
+
+  it('skips non-unread and non-key-assignable workspaces', () => {
+    const state = makeState(
+      { 'ws-1': [], 'ws-2': [], 'ws-3': [] },
+      {},
+      {},
+      {
+        'ws-2': { attention: 'unread', status: WorkspaceStatus.Archived },
+        'ws-3': { attention: 'unread', archived: true },
+      },
+    );
+    expect(collectUnreadWorkspaceStops(state)).toEqual([]);
   });
 });
