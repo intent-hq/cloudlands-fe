@@ -877,6 +877,27 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     expect(conflict.classList.contains('ov-edge-hover')).toBe(false);
   });
 
+  it('arrowhead markers are fixed user-space size (immune to hover stroke thickening)', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // markerUnits="userSpaceOnUse" keeps arrowheads at a constant size when
+    // the hovered edge stroke thickens (default strokeWidth units would
+    // scale them with the stroke); 10.5 matches the pre-hover appearance
+    // (7 marker units × 1.5 stroke).
+    const markers = screen.getByTestId('hud-takeover-edges').querySelectorAll('defs marker');
+    expect(markers.length).toBeGreaterThan(0);
+    for (const marker of markers) {
+      expect(marker.getAttribute('markerUnits')).toBe('userSpaceOnUse');
+      expect(marker.getAttribute('markerWidth')).toBe('10.5');
+      expect(marker.getAttribute('markerHeight')).toBe('10.5');
+    }
+  });
+
   it('pulses ready dep edges green and mutes resolved conflicts', () => {
     // b is ready: deps met (no unmetDependsOn), not started. The a↔b
     // conflict is resolved (a complete) → static muted.
