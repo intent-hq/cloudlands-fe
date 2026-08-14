@@ -22,10 +22,6 @@ import {
 } from './loopback-rewrite';
 import { resolveRewrittenRemoteTarget, type TunnelProvider } from './loopback-url-resolver';
 
-// Re-exported for existing consumers; the implementation now lives in the
-// shared `loopback-url-resolver.ts` (also backing `browser:resolve-url`).
-export { REMOTE_REWRITE_PROBE_TIMEOUT_MS, type TunnelProvider } from './loopback-url-resolver';
-
 const logger = new Logger('BrowserActionExecutor');
 
 // ============================================================================
