@@ -2209,6 +2209,7 @@
       );
 
       let foundSticky: string | null = null;
+      const scrollRect = boundContainer.getBoundingClientRect();
 
       // Check each message to see if it's in sticky position
       for (const container of messageContainers) {
@@ -2219,29 +2220,44 @@
           (container.classList.contains('sticky') ? container : null);
         if (!stickyElement) continue;
 
-        const rect = stickyElement.getBoundingClientRect();
-        const scrollRect = boundContainer.getBoundingClientRect();
+        const conversationTurn = container.closest('.conversation-turn');
+        if (!conversationTurn) continue;
 
-        // A message is sticky when its top is at (or very close to) the scroll container top
-        // The sticky offset is -top-px which is -1px, so check if within a few pixels
+        const rect = stickyElement.getBoundingClientRect();
+        const turnRect = conversationTurn.getBoundingClientRect();
+
+        // The turn "owns" the container top while it spans it: we've scrolled into
+        // the turn and its bottom hasn't passed the container top yet.
+        const turnSpansTop = turnRect.top < scrollRect.top && turnRect.bottom > scrollRect.top;
+
+        // Hysteresis: the currently-pinned row STAYS pinned while its turn still
+        // spans the container top. This stay condition is keyed on the turn's
+        // geometry only — never on the sticky element's own rect — so the height
+        // change caused by the row's own sticky compaction (line-clamp-6 →
+        // line-clamp-2 in ChatMessage) can never un-stick it, and the row keeps
+        // its compact rendering while it is pushed out at the end of the turn.
+        if (container.getAttribute('data-message-id') === stickyMessageId) {
+          if (turnSpansTop) {
+            foundSticky = stickyMessageId;
+            break;
+          }
+          continue;
+        }
+
+        // Enter condition: a row becomes sticky when its top is at (or very close
+        // to) the scroll container top. The sticky offset is -top-px which is -1px,
+        // so check if within a few pixels.
         const stickyThreshold = 20; // pixels
         const isAtStickyPosition = Math.abs(rect.top - scrollRect.top + 1) < stickyThreshold;
 
-        // Also check that we've scrolled past the message's natural position
-        // by checking if the turn's top is above the scroll container's top
-        const conversationTurn = container.closest('.conversation-turn');
-        if (conversationTurn && isAtStickyPosition) {
-          const turnRect = conversationTurn.getBoundingClientRect();
-          // The element is sticky if:
-          // 1. It's at the sticky position (near the top)
-          // 2. The turn's top is above the viewport (we've scrolled into the turn)
-          // 3. The turn's bottom is still below the sticky element (the turn hasn't scrolled past)
-          const scrolledPastTurnStart = turnRect.top < scrollRect.top;
-          const turnStillVisible = turnRect.bottom > rect.bottom;
-          if (scrolledPastTurnStart && turnStillVisible) {
-            foundSticky = container.getAttribute('data-message-id');
-            break;
-          }
+        // The element becomes sticky if:
+        // 1. It's at the sticky position (near the top)
+        // 2. The turn spans the container top (we've scrolled into the turn)
+        // 3. The turn's bottom is still below the sticky element (the turn hasn't scrolled past)
+        const turnStillVisible = turnRect.bottom > rect.bottom;
+        if (isAtStickyPosition && turnSpansTop && turnStillVisible) {
+          foundSticky = container.getAttribute('data-message-id');
+          break;
         }
       }
 
@@ -3123,6 +3139,12 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+    <!-- overflow-anchor: none — Chromium scroll anchoring otherwise compensates for the
+         pinned row's sticky compaction (line-clamp shrink) by shifting scrollTop, which
+         re-fires the sticky detection with moved geometry and un-pins the row; the row
+         re-expands, anchoring shifts back, and the loop repeats every frame (visible as
+         the top-of-chat flicker). followBottom manages this container's scroll position,
+         so native anchoring is not needed here. -->
     <div
       bind:this={scrollContainer}
       use:followBottom={{
@@ -3144,7 +3166,7 @@
       }}
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}
-      style="scrollbar-gutter: stable;"
+      style="scrollbar-gutter: stable; overflow-anchor: none;"
     >
       <div
         class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
