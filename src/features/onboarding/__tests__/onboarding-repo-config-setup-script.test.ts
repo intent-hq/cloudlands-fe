@@ -456,6 +456,54 @@ describe('onboarding repo-config setup script detection', () => {
     );
   });
 
+  it('mints a progressId, registers it before create, sends it on the wire, and clears it on settle', async () => {
+    // Live clone progress: the FE mints a correlation id, registers the slice
+    // entry BEFORE workspace.create (so mid-flight git:clone:progress frames
+    // find it), echoes it as `progressId` on the create request (PROTOCOL
+    // §5.1), and drops the entry once the create settles.
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0] as { progressId?: string };
+    expect(typeof request.progressId).toBe('string');
+    expect(request.progressId).not.toBe('');
+
+    const actions = mocks.dispatch.mock.calls.map(
+      ([action]) => action as { type: string; payload?: unknown[] },
+    );
+    const begin = actions.find((a) => a.type === 'workspaceCreateProgress/begin');
+    expect(begin?.payload).toEqual([request.progressId]);
+    // begin must be dispatched before the create request goes out.
+    const beginIndex = mocks.dispatch.mock.calls.findIndex(
+      ([action]) => (action as { type: string }).type === 'workspaceCreateProgress/begin',
+    );
+    expect(beginIndex).toBeGreaterThanOrEqual(0);
+    expect(mocks.workspaceCreate.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.dispatch.mock.invocationCallOrder[beginIndex],
+    );
+    // The create settled (failure here) — the entry is dropped.
+    await waitFor(() => {
+      const clear = mocks.dispatch.mock.calls
+        .map(([action]) => action as { type: string; payload?: unknown[] })
+        .find((a) => a.type === 'workspaceCreateProgress/clear');
+      expect(clear?.payload).toEqual([request.progressId]);
+    });
+  });
+
   it('submits a picked-repo create for GitHub selections: githubUrl only, no repositoryPath/clonePath', async () => {
     // Picked-repo flow: the daemon hydrates the checkout from its repo
     // cache. The create request must carry the GitHub URL and MUST NOT
