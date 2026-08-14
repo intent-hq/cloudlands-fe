@@ -121,7 +121,7 @@
         class="text-ui truncate min-w-0 text-left cursor-pointer hover:text-foreground transition-colors"
         onclick={copyBranch}
         title={m.workspace_sidebarChanges_copyBranch_tooltip()}
-        aria-label={m.workspace_sidebarChanges_copyBranch_tooltip()}
+        aria-label={m.workspace_sidebarChanges_copyBranch_ariaLabel({ branch: branchName })}
         data-testid="secondary-root-branch-copy">{branchLabel}</button
       >
     {:else}
