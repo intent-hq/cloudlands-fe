@@ -1142,7 +1142,7 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
-{:else if questionOnlyTurn && !shouldShowStoppedIndicator}
+{:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}

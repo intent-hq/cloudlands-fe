@@ -2628,6 +2628,25 @@ describe('agent-session selectors', () => {
       expect(selectAgentSessionStreamingContent.select(state, 'a1')).toBe('');
       expect(selectAgentSessionStreamingContent.select(state, 'unknown')).toBe('');
     });
+
+    it('treats metadata.finishReason as terminal — an abnormal-finish row is never the current streaming message', () => {
+      // PROTOCOL §7.3: the daemon only stamps finishReason on finalized rows,
+      // so even while the session-level isStreaming flag is momentarily stale
+      // (between agent:stream:end and agent:idle) the marker row must not be
+      // picked up as live streaming content.
+      const session = makeSession('a1', 'ws-1', {
+        isStreaming: true,
+        messages: [
+          {
+            ...makeUniqueMessage('marker-row', 'assistant'),
+            metadata: { finishReason: 'refusal' },
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+
+      expect(selectAgentSessionStreamingContent.select(state, 'a1')).toBe('');
+    });
   });
 
   it('selectAgentSessionExists returns whether a session is present for the agent ID', () => {

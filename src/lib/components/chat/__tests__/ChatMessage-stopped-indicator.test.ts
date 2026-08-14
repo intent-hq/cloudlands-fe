@@ -198,4 +198,18 @@ describe('ChatMessage finishReason notices', () => {
     });
     expect(screen.queryByText(/Response stopped/)).toBeNull();
   });
+
+  it('a question-only turn with an abnormal finishReason still renders the notice (bubble not suppressed)', () => {
+    const questionBlock = {
+      type: 'resource',
+      resource: {
+        mimeType: 'application/vnd.intent.question+json',
+        text: JSON.stringify({ question: 'Which option?', options: [{ label: 'A' }] }),
+      },
+    };
+    render(ChatMessage, {
+      props: { message: finishedAssistant('refusal', [questionBlock]), isStreaming: false },
+    });
+    expect(screen.getByText('Response stopped — the model refused to continue')).toBeTruthy();
+  });
 });
