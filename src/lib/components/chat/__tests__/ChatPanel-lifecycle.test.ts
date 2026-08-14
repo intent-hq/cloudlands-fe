@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => {
     animateMessageSend: vi.fn(),
     createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
+    followBottomOptions: null as { onFollowChange?: (follow: boolean) => void } | null,
     selector,
   };
 });
@@ -112,7 +113,18 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
 vi.mock('$lib/utils/smartScroll', () => ({
-  followBottom: () => ({ update: () => {}, destroy: () => {} }),
+  followBottom: (
+    _container: HTMLElement,
+    options: { onFollowChange?: (follow: boolean) => void },
+  ) => {
+    mocks.followBottomOptions = options;
+    return {
+      update: (next: { onFollowChange?: (follow: boolean) => void }) => {
+        mocks.followBottomOptions = next;
+      },
+      destroy: () => {},
+    };
+  },
   scrollToBottom: vi.fn(),
 }));
 vi.mock('../message-send-transition', () => ({
@@ -147,6 +159,9 @@ vi.mock('../BackgroundHooksRow.svelte', async () => ({
 vi.mock('../questions/QuestionWizard.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
+vi.mock('../ChatMessage.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 vi.mock('../questions/wizard-gate', () => ({
   deriveWizardPendingQuestions: () => mocks.pendingQuestions,
 }));
@@ -156,6 +171,12 @@ vi.mock('svelte-fa', async () => ({
 
 import ChatPanel from '../ChatPanel.svelte';
 import { clearDraftCacheForTests } from '../chat-draft-cache';
+import {
+  clearChatScrollCacheForTests,
+  getCachedChatScroll,
+  setCachedChatScroll,
+} from '../chat-scroll-cache';
+import { scrollToBottom as scrollToBottomMock } from '$lib/utils/smartScroll';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
@@ -221,6 +242,7 @@ beforeEach(() => {
   );
   vi.clearAllMocks();
   clearDraftCacheForTests();
+  clearChatScrollCacheForTests();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   mocks.dispatch.mockImplementation((action) => {
@@ -240,6 +262,7 @@ beforeEach(() => {
     return bubble;
   });
   mocks.pendingQuestions = null;
+  mocks.followBottomOptions = null;
 });
 
 afterEach(() => {
@@ -600,5 +623,89 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
     expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
     expect(frames).toHaveLength(0);
+  });
+
+  it('caches the scroll position on unmount when the user scrolled away from the bottom', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+
+    // Simulate the user scrolling up: followBottom reports follow=false and
+    // the container sits at a mid-transcript offset.
+    mocks.followBottomOptions?.onFollowChange?.(false);
+    await tick();
+    scrollContainer.scrollTop = 1234;
+
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toEqual({
+      scrollTop: 1234,
+      shouldFollowBottom: false,
+      isScrollUnlocked: false,
+    });
+  });
+
+  it('does not cache scroll state for an empty transcript', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    view.unmount();
+
+    expect(getCachedChatScroll('workspace-a', 'agent-a')).toBeUndefined();
+  });
+
+  it('restores the cached reading position on remount instead of scrolling to bottom', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 987,
+      shouldFollowBottom: false,
+      isScrollUnlocked: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    // Let the first-hydration restore (tick continuation) and the mount-time
+    // rAF entry scroll both run.
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    expect(scrollContainer.scrollTop).toBe(987);
+    expect(scrollToBottomMock).not.toHaveBeenCalled();
+  });
+
+  it('re-enters at the bottom on remount when the previous instance was following the bottom', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    setCachedChatScroll('workspace-a', 'agent-a', {
+      scrollTop: 500,
+      shouldFollowBottom: true,
+      isScrollUnlocked: false,
+    });
+    mocks.agentMessages.set([
+      { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
+    ]);
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await Promise.resolve();
+    await tick();
+    flushFrame();
+
+    expect(scrollToBottomMock).toHaveBeenCalled();
   });
 });

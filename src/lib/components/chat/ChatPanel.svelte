@@ -144,6 +144,7 @@
     followBottom,
     scrollToBottom as scrollToBottomUtil,
   } from '$lib/utils/smartScroll';
+  import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
@@ -379,8 +380,18 @@
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
-  let shouldFollowBottom = $state(true);
-  let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
+  // Rehydrate the transcript scroll state cached by the previous instance's
+  // destroy (column windowing unmounts off-screen panels) so a remount keeps
+  // the user's reading position instead of re-entering at the bottom.
+  // svelte-ignore state_referenced_locally -- mount-time snapshot of the identity props.
+  const cachedScroll =
+    workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
+  // Non-null when the previous instance was scrolled away from the bottom;
+  // consumed by the entry-scroll paths below instead of scrolling to bottom.
+  const cachedScrollRestoreTop =
+    cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
+  let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
+  let isScrollUnlocked = $state(cachedScroll?.isScrollUnlocked ?? false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
 
   interface PendingSendTransition {
@@ -1469,6 +1480,22 @@
   // One-shot guard: the divider entry-positioning happens once per panel mount
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
+  // One-shot guard: the cached scroll position is applied once on the first
+  // transcript availability after remount, never again on later hydrations.
+  let hasConsumedCachedScrollRestore = false;
+  // Reapply the previous instance's scroll position (see cachedScrollRestoreTop
+  // above). Returns true when the cached position was consumed.
+  function applyCachedScrollRestore(): boolean {
+    if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    hasConsumedCachedScrollRestore = true;
+    // The unread-divider entry scroll is superseded — the user already had a
+    // deliberate reading position when the panel was unmounted.
+    hasAppliedNewMessagesEntryScroll = true;
+    if (scrollContainer) {
+      scrollContainer.scrollTop = cachedScrollRestoreTop;
+    }
+    return true;
+  }
   // Get the auggie session ID from the most recent assistant message's metadata
   // This is the raw UUID format that auggie uses, needed for debugging/support
   let auggieSessionId = $derived.by(() => {
@@ -1530,7 +1557,14 @@
       // disabled when the unseen tail is taller than the viewport; when it
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
-      if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+      if (isFirstMessage && cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore) {
+        // Remount after column windowing: land at the previous instance's
+        // reading position instead of the divider/bottom entry scroll.
+        tick().then(() => {
+          if (isComponentDestroyed) return;
+          applyCachedScrollRestore();
+        });
+      } else if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
         hasAppliedNewMessagesEntryScroll = true;
         void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
       } else {
@@ -1766,8 +1800,14 @@
     const initialScrollFrame = requestAnimationFrame(() => {
       if (scrollContainer) {
         if ($agentMessages$.length > 0) {
-          // Scroll to bottom if there are messages
-          scrollToBottomUtil(scrollContainer);
+          if (cachedScrollRestoreTop !== null) {
+            // Remount after column windowing: restore the previous instance's
+            // reading position (no-op when the hydration effect already did).
+            applyCachedScrollRestore();
+          } else {
+            // Scroll to bottom if there are messages
+            scrollToBottomUtil(scrollContainer);
+          }
         } else {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
@@ -2542,6 +2582,17 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
     cancelAllSendTransitions();
+
+    // Cache the transcript scroll state so a remount after column windowing
+    // (WorkspaceColumnsView unmounting off-screen surfaces) restores the
+    // user's reading position instead of re-entering at the bottom.
+    if (workspace?.id && agentId && scrollContainer && $agentMessages$.length > 0) {
+      setCachedChatScroll(workspace.id, agentId, {
+        scrollTop: scrollContainer.scrollTop,
+        shouldFollowBottom,
+        isScrollUnlocked,
+      });
+    }
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
