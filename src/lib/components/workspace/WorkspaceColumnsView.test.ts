@@ -19,6 +19,10 @@ const panelCounts = writable<Record<string, number>>({});
 const panelCanvasWidths = writable<Record<string, number>>({});
 const resizablePanelSizes = writable<Record<string, number>>({});
 const hydratedResizablePanelSizes = writable<Record<string, true>>({});
+const panelTabCounts = writable<Record<string, number>>({});
+const panelRevealRequests = writable<Record<string, never>>({});
+const workspaceItems = writable<Array<{ id: string; title: string }>>([]);
+const workspaceStatuses = writable<Record<string, never>>({});
 const focusedPanelTargets = writable<
   Record<string, { panelId: string | null; activeTabId: string | null }>
 >({});
@@ -46,11 +50,19 @@ vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelCanvasWidthsByWorkspaceId: () => panelCanvasWidths,
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
+  selectPanelTabCountsByWorkspaceId: () => panelTabCounts,
+  selectPanelRevealRequestsByWorkspaceId: () => panelRevealRequests,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectResizablePanelSizes: () => resizablePanelSizes,
   selectHydratedResizablePanelSizes: () => hydratedResizablePanelSizes,
+}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceItems: () => workspaceItems,
+}));
+vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
+  selectWorkspaceTabStatuses: () => workspaceStatuses,
 }));
 vi.mock('../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceSurface.svelte')).default,
@@ -87,6 +99,10 @@ describe('WorkspaceColumnsView', () => {
         ]),
       ),
     );
+    panelTabCounts.set({});
+    panelRevealRequests.set({});
+    workspaceItems.set([]);
+    workspaceStatuses.set({});
     focusedPanelTargets.set({});
   });
 
@@ -143,6 +159,53 @@ describe('WorkspaceColumnsView', () => {
 
     expect(screen.getByLabelText('Workspace column ws-1')).toBe(ws1);
     expect(screen.getByLabelText('Workspace column ws-2')).toBe(ws2);
+  });
+
+  it('parks distant surfaces while preserving mounted DOM identity across adjacent switches', async () => {
+    currentWorkspaceId.set('ws-1');
+    workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3'], ['ws-4'], ['ws-5']]);
+    hydratedResizablePanelSizes.set(
+      Object.fromEntries(
+        ['ws-1', 'ws-2', 'ws-3', 'ws-4', 'ws-5'].flatMap((workspaceId) => [
+          [`workspace-left-panel-width:${workspaceId}`, true],
+          [`workspace-left-panel-expanded-width:${workspaceId}`, true],
+        ]),
+      ),
+    );
+    workspaceItems.set(
+      Array.from({ length: 5 }, (_, index) => ({
+        id: `ws-${index + 1}`,
+        title: `Workspace ${index + 1}`,
+      })),
+    );
+    render(WorkspaceColumnsView);
+
+    const ws1 = screen
+      .getByLabelText('Workspace column ws-1')
+      .querySelector('[data-testid="mock-workspace-surface"]');
+    const ws2 = screen
+      .getByLabelText('Workspace column ws-2')
+      .querySelector('[data-testid="mock-workspace-surface"]');
+    expect(document.querySelector('[data-workspace-surface-placeholder="ws-4"]')).toBeTruthy();
+
+    currentWorkspaceId.set('ws-2');
+    await tick();
+
+    expect(
+      screen
+        .getByLabelText('Workspace column ws-1')
+        .querySelector('[data-testid="mock-workspace-surface"]'),
+    ).toBe(ws1);
+    expect(
+      screen
+        .getByLabelText('Workspace column ws-2')
+        .querySelector('[data-testid="mock-workspace-surface"]'),
+    ).toBe(ws2);
+    expect(
+      screen
+        .getByLabelText('Workspace column ws-3')
+        .querySelector('[data-testid="mock-workspace-surface"]'),
+    ).toBeTruthy();
   });
 
   it('keeps each workspace width independent when stack membership changes', async () => {
@@ -367,7 +430,7 @@ describe('WorkspaceColumnsView', () => {
     expect(
       [...workspaceColumns].every(
         (column) =>
-          column.classList.contains('rounded-md') && column.classList.contains('bg-sidebar'),
+          column.classList.contains('rounded-lg') && column.classList.contains('bg-sidebar'),
       ),
     ).toBe(true);
     expect([...workspaceColumns].every((column) => column.classList.contains('shadow-md'))).toBe(

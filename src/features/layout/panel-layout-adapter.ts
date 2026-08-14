@@ -136,7 +136,7 @@ export class PanelLayoutAdapter {
   openTabInAdjacentOrSplit(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
-    options?: { animated?: boolean; force?: boolean },
+    options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
     this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, sourcePanelId, options));
   }

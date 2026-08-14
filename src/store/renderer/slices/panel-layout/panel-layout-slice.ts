@@ -47,6 +47,7 @@ import {
   initializePanelCanvasWidth,
   resolveUserPanelCanvasResize,
 } from './panel-layout-width-provenance';
+import { findEquivalentPanelTab, type EquivalentPanelTab } from './panel-tab-identity';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -90,6 +91,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   canvasWidthSource: null,
   restoreStatus: 'idle',
   pendingFocusTabId: null,
+  pendingPanelReveal: null,
   recentlyClosed: [],
   layoutHistory: [],
   historyIndex: 0,
@@ -189,6 +191,7 @@ export const openTab = createAction(
     newTabId?: string,
     force?: boolean,
     timestamp?: number,
+    allowDuplicate?: boolean,
   ) => ({
     wsId,
     tab,
@@ -196,6 +199,7 @@ export const openTab = createAction(
     newTabId: newTabId ?? generateTabId(),
     force: force ?? false,
     timestamp: timestamp ?? Date.now(),
+    allowDuplicate: allowDuplicate ?? false,
   }),
 );
 
@@ -205,7 +209,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId: string,
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
-    options?: { animated?: boolean; force?: boolean },
+    options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
     timestamp?: number,
   ) => ({
     wsId,
@@ -213,6 +217,7 @@ export const openTabInAdjacentOrSplit = createAction(
     sourcePanelId,
     animated: options?.animated ?? false,
     force: options?.force ?? false,
+    allowDuplicate: options?.allowDuplicate ?? false,
     newTabId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -554,6 +559,10 @@ export const consumePendingFocus = createAction<[wsId: string, tabId: string]>(
   'panelLayout/consumePendingFocus',
 );
 
+export const consumePanelReveal = createAction<[wsId: string, requestId: string]>(
+  'panelLayout/consumePanelReveal',
+);
+
 // --- Agent Reconciliation ---
 export const reconcileStaleAgentTabs = createAction<
   [wsId: string, validAgentIds: string[], replacementAgentId: string, replacementTitle: string]
@@ -608,30 +617,32 @@ function getSplitAtPath(root: PanelLayoutNode, path: number[]): PanelLayoutNode 
   return node;
 }
 
-/** Find an existing tab by type/content match across all panels. Returns [panelId, tab] or null. */
-function findExistingTab(
-  panels: Record<string, PanelState>,
-  tab: Omit<PanelTab, 'id'>,
-): [string, PanelTab] | null {
-  const isSingletonTab =
-    tab.type === 'agent-overview' ||
-    tab.type === 'local-changes' ||
-    tab.type === 'code-review' ||
-    tab.type === 'settings' ||
-    tab.type === 'overview';
-  const isAgentTab = tab.type === 'agent' && tab.agentId;
-
-  // Check across ALL panels for singleton/agent tabs
-  if (isSingletonTab || isAgentTab) {
-    for (const [panelId, panel] of Object.entries(panels)) {
-      const existing = panel.tabs.find((t) => {
-        if (isSingletonTab) return t.type === tab.type;
-        return t.type === 'agent' && t.agentId === tab.agentId;
-      });
-      if (existing) return [panelId, existing];
-    }
-  }
-  return null;
+function activateEquivalentTab(
+  ws: WorkspacePanelLayoutState,
+  match: EquivalentPanelTab,
+  requested: Omit<PanelTab, 'id'>,
+  requestId: string,
+  timestamp: number,
+): WorkspacePanelLayoutState {
+  const panel = ws.panels[match.panelId];
+  const updatedData = requested.data ? { ...match.tab.data, ...requested.data } : match.tab.data;
+  let next: WorkspacePanelLayoutState = {
+    ...ws,
+    panels: {
+      ...ws.panels,
+      [match.panelId]: {
+        ...panel,
+        activeTabId: match.tab.id,
+        tabs: requested.data
+          ? panel.tabs.map((tab) => (tab.id === match.tab.id ? { ...tab, data: updatedData } : tab))
+          : panel.tabs,
+      },
+    },
+    focusedPanelId: match.panelId,
+    pendingPanelReveal: { panelId: match.panelId, tabId: match.tab.id, requestId },
+  };
+  next = addToFocusHistory(next, match.panelId, match.tab.id, timestamp);
+  return next;
 }
 
 function restoreExpandedWorkspaceLayout(
@@ -659,54 +670,6 @@ function restoreExpandedWorkspaceLayout(
     savedCanvasWidthBeforeExpand: undefined,
     savedCanvasWidthSourceBeforeExpand: undefined,
   };
-}
-
-/** Find duplicate tab in a specific panel by content */
-function findDuplicateTabInPanel(panel: PanelState, tab: Omit<PanelTab, 'id'>): PanelTab | null {
-  return (
-    panel.tabs.find((t) => {
-      if (t.type !== tab.type) return false;
-      switch (tab.type) {
-        case 'note':
-          return t.noteId === tab.noteId;
-        case 'file':
-          return t.filePath === tab.filePath;
-        case 'agent':
-          return t.agentId === tab.agentId;
-        case 'terminal':
-          return t.terminalId === tab.terminalId;
-        case 'diff': {
-          const tabHash = (tab.data?.change as { commitHash?: string })?.commitHash;
-          const existingHash = (t.data?.change as { commitHash?: string })?.commitHash;
-          return t.diffPath === tab.diffPath && tabHash === existingHash;
-        }
-        case 'browser':
-          if (t.contextItemId && tab.contextItemId) return t.contextItemId === tab.contextItemId;
-          return t.browserUrl === tab.browserUrl;
-        case 'changes': {
-          const tabHash = (tab.data as { commitHash?: string })?.commitHash;
-          const existingHash = (t.data as { commitHash?: string })?.commitHash;
-          return !!tabHash && tabHash === existingHash;
-        }
-        case 'activity-changes':
-          return t.filePath === tab.filePath;
-        case 'chat-changes': {
-          const tabMsgId = (tab.data as { messageId?: string })?.messageId;
-          const existMsgId = (t.data as { messageId?: string })?.messageId;
-          return !!tabMsgId && tabMsgId === existMsgId;
-        }
-        case 'activity':
-        case 'code-review':
-        case 'settings':
-        case 'overview':
-        case 'agent-overview':
-        case 'local-changes':
-          return true;
-        default:
-          return false;
-      }
-    }) ?? null
-  );
 }
 
 /** Close a panel, returning the updated workspace state */
@@ -1071,50 +1034,20 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   if (ws.deferSpecTab && tab.type === 'note' && tab.noteId === 'spec' && !payload.force)
     return state;
 
-  // Check for existing singleton/agent tab across panels
-  const existing = findExistingTab(ws.panels, tab);
-  if (existing) {
-    const [existPanelId, existTab] = existing;
-    const panel = ws.panels[existPanelId];
-    ws = saveToHistory(ws, timestamp);
-    ws = {
-      ...ws,
-      panels: {
-        ...ws.panels,
-        [existPanelId]: { ...panel, activeTabId: existTab.id },
-      },
-      focusedPanelId: existPanelId,
-    };
-    ws = addToFocusHistory(ws, existPanelId, existTab.id, timestamp);
-    return setWorkspaceState(state, wsId, ws);
-  }
-
   const targetPanelId = panelId ?? ws.focusedPanelId;
+  const existing = payload.allowDuplicate
+    ? null
+    : findEquivalentPanelTab(wsId, ws, tab, targetPanelId);
+  if (existing) {
+    return setWorkspaceState(
+      state,
+      wsId,
+      activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
+    );
+  }
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
-
-  // Check for duplicate in target panel
-  const dupTab = findDuplicateTabInPanel(panel, tab);
-  if (dupTab) {
-    ws = saveToHistory(ws, timestamp);
-    const updatedData = tab.data ? { ...dupTab.data, ...tab.data } : dupTab.data;
-    ws = {
-      ...ws,
-      panels: {
-        ...ws.panels,
-        [targetPanelId]: {
-          ...panel,
-          activeTabId: dupTab.id,
-          tabs: tab.data
-            ? panel.tabs.map((t) => (t.id === dupTab.id ? { ...t, data: updatedData } : t))
-            : panel.tabs,
-        },
-      },
-    };
-    ws = addToFocusHistory(ws, targetPanelId, dupTab.id, timestamp);
-    return setWorkspaceState(state, wsId, ws);
-  }
 
   // Create new tab
   ws = saveToHistory(ws, timestamp);
@@ -1130,6 +1063,7 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
         pristine: false,
       },
     },
+    pendingPanelReveal: null,
   };
   ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
@@ -2130,6 +2064,11 @@ panelLayoutReducer.with(consumePendingFocus, (state, { payload: [wsId, tabId] })
   if (ws.pendingFocusTabId !== tabId) return state;
   return setWorkspaceState(state, wsId, { ...ws, pendingFocusTabId: null });
 });
+panelLayoutReducer.with(consumePanelReveal, (state, { payload: [wsId, requestId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.pendingPanelReveal?.requestId !== requestId) return state;
+  return setWorkspaceState(state, wsId, { ...ws, pendingPanelReveal: null });
+});
 // --- Reconcile Stale Agent Tabs ---
 panelLayoutReducer.with(
   reconcileStaleAgentTabs,
@@ -2175,7 +2114,8 @@ panelLayoutReducer.with(clearPanelLayout, (state, { payload: [wsId] }) => {
 });
 // --- Open Tab In Adjacent Or Split ---
 panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
-  const { wsId, tab, sourcePanelId, animated, force, newTabId, timestamp } = payload;
+  const { wsId, tab, sourcePanelId, animated, force, allowDuplicate, newTabId, timestamp } =
+    payload;
   if (tab.workspaceId && tab.workspaceId !== wsId) return state;
   const ws = getWorkspaceState(state, wsId);
 
@@ -2185,10 +2125,21 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   const effectiveSourcePanelId = sourcePanelId ?? ws.focusedPanelId;
   const sourcePanel = effectiveSourcePanelId ? ws.panels[effectiveSourcePanelId] : undefined;
 
+  const existing = allowDuplicate
+    ? null
+    : findEquivalentPanelTab(wsId, ws, tab, effectiveSourcePanelId);
+  if (existing) {
+    return setWorkspaceState(
+      state,
+      wsId,
+      activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
+    );
+  }
+
   if (sourcePanel && sourcePanel.tabs.length === 0) {
     const result = selfDispatch(
       state,
-      openTab(wsId, tab, sourcePanel.id, newTabId, force, timestamp),
+      openTab(wsId, tab, sourcePanel.id, newTabId, force, timestamp, allowDuplicate),
     );
     const updatedWs = getWorkspaceState(result, wsId);
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
@@ -2197,7 +2148,10 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   // Adjacent tabs always receive a fresh column. Reusing an arbitrary neighbor
   // makes the result depend on object insertion order and replaces its content.
   if (!effectiveSourcePanelId) {
-    const result = selfDispatch(state, openTab(wsId, tab, undefined, newTabId, force, timestamp));
+    const result = selfDispatch(
+      state,
+      openTab(wsId, tab, undefined, newTabId, force, timestamp, allowDuplicate),
+    );
     const updatedWs = getWorkspaceState(result, wsId);
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
   }
@@ -2208,7 +2162,10 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
     splitPanel(wsId, effectiveSourcePanelId, 'horizontal', { animated }, timestamp),
   );
   // The new panel is now focused; open tab there
-  result = selfDispatch(result, openTab(wsId, tab, undefined, newTabId, force, timestamp));
+  result = selfDispatch(
+    result,
+    openTab(wsId, tab, undefined, newTabId, force, timestamp, allowDuplicate),
+  );
   const updatedWs = getWorkspaceState(result, wsId);
   return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
 });

@@ -73,7 +73,7 @@ describe('workspace column layout contract', () => {
       'utf8',
     );
 
-    expect(columns).toContain('overflow-hidden rounded-md bg-sidebar');
+    expect(columns).toContain('overflow-hidden rounded-lg bg-sidebar');
     expect(columns).not.toContain(
       "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
     );

@@ -107,6 +107,7 @@
     active?: boolean;
     manageTab?: boolean;
     columnMode?: boolean;
+    retainWorkspaceSessionOnUnmount?: boolean;
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
@@ -119,6 +120,7 @@
     active = true,
     manageTab = true,
     columnMode = false,
+    retainWorkspaceSessionOnUnmount = false,
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
@@ -873,7 +875,7 @@
 
     // Dispatch workspaceUnmounted so sagas can clean up (cancel agent loading,
     // terminal loading, spec panel, window event watchers for this workspace).
-    if (workspaceId) {
+    if (workspaceId && !retainWorkspaceSessionOnUnmount) {
       appStore.dispatch(workspaceUnmounted(workspaceId));
     }
 
@@ -884,8 +886,10 @@
     workspaceState = null;
 
     // Clear all local state
-    appStore.dispatch(setAgents(workspaceId, []));
-    appStore.dispatch(setAgentsLoaded(workspaceId, false));
+    if (!retainWorkspaceSessionOnUnmount) {
+      appStore.dispatch(setAgents(workspaceId, []));
+      appStore.dispatch(setAgentsLoaded(workspaceId, false));
+    }
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();

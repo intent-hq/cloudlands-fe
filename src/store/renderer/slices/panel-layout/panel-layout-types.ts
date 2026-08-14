@@ -93,6 +93,8 @@ export interface WorkspacePanelLayout {
   newWorkspaceLifecycle?: NewWorkspacePanelLifecycle | null;
   /** Compatibility guard used while the seeded Spec is intentionally empty. */
   deferSpecTab?: boolean;
+  /** One-shot request to reveal a reused panel without stealing DOM focus. */
+  pendingPanelReveal?: PanelRevealRequest | null;
   detachedPanels?: Record<
     string,
     {
@@ -114,6 +116,12 @@ export interface NewWorkspacePanelLifecycle {
     generation: string | null;
     state: 'deferred' | 'revealed';
   };
+}
+
+export interface PanelRevealRequest {
+  panelId: string;
+  tabId: string;
+  requestId: string;
 }
 
 export type PanelLayoutRestoreStatus = 'idle' | 'pending' | 'restored' | 'empty' | 'invalid';
@@ -167,6 +175,7 @@ export interface WorkspacePanelLayoutState {
   canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
+  pendingPanelReveal?: PanelRevealRequest | null;
   recentlyClosed: RecentlyClosedTab[];
   layoutHistory: LayoutSnapshot[];
   historyIndex: number;

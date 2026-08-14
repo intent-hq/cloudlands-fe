@@ -573,7 +573,7 @@ describe('panelLayoutReducer', () => {
       });
     });
 
-    it('fills the focused empty panel before reusing equivalent content elsewhere', () => {
+    it('reveals canonical equivalent content instead of filling an empty panel', () => {
       let state = stateWithPanel('p1', [
         { id: 'existing-browser', type: 'browser', title: 'Browser', browserUrl: 'about:blank' },
       ]);
@@ -598,11 +598,35 @@ describe('panelLayoutReducer', () => {
       expect(result.panels.p1.tabs).toEqual([
         expect.objectContaining({ id: 'existing-browser', browserUrl: 'about:blank' }),
       ]);
-      expect(result.panels[emptyPanelId].tabs).toEqual([
-        expect.objectContaining({ browserUrl: 'about:blank' }),
-      ]);
-      expect(result.focusedPanelId).toBe(emptyPanelId);
+      expect(result.panels[emptyPanelId].tabs).toEqual([]);
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingPanelReveal).toMatchObject({
+        panelId: 'p1',
+        tabId: 'existing-browser',
+      });
       expect(result.canvasWidth).toBe(777);
+    });
+
+    it('allows explicit duplicate creation in an empty target panel', () => {
+      let state = stateWithPanel('p1', [
+        { id: 'existing', type: 'note', title: 'Plan', noteId: 'spec' },
+      ]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 10));
+      const emptyPanelId = state.byWorkspaceId[WS].focusedPanelId!;
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(
+          WS,
+          { type: 'note', title: 'Plan', noteId: 'spec', closable: true },
+          emptyPanelId,
+          { allowDuplicate: true },
+          20,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels[emptyPanelId].tabs).toHaveLength(1);
+      expect(result.panels[emptyPanelId].tabs[0]).toMatchObject({ noteId: 'spec' });
     });
 
     it('creates a third adjacent panel instead of reusing an existing neighbor', () => {
