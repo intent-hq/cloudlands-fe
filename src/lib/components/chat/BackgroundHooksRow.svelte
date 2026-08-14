@@ -31,6 +31,8 @@
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
   import { formatCompactDuration, formatInteger } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
@@ -116,11 +118,28 @@
   }
 
   let expandedHookId = $state<string | null>(null);
+  let focusedHookId = $state<string | null>(null);
 
   function handleViewScript(hook: BackgroundHook, close?: () => void) {
     close?.();
-    appStore.dispatch(selectScript(workspaceId, hook.hookId));
-    appStore.dispatch(openTerminalOverlay(workspaceId));
+    const panelLayoutManager = getPanelLayoutManager(hook.workspaceId);
+    const sourcePanelId = panelLayoutManager
+      .getPanelIds()
+      .find((panelId) =>
+        panelLayoutManager
+          .getPanel(panelId)
+          ?.tabs.some((tab) => tab.type === 'agent' && tab.agentId === agentId),
+      );
+    panelLayoutManager.openTabInAdjacentOrSplit(
+      {
+        type: 'hook-script',
+        title: m.chat_backgroundHooks_modal_title({ name: hook.name }),
+        workspaceId: hook.workspaceId,
+        hookId: hook.hookId,
+        closable: true,
+      },
+      sourcePanelId,
+    );
   }
 
   function toggleHookDetails(hookId: string) {

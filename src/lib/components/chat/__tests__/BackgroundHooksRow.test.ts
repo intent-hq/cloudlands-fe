@@ -1,15 +1,31 @@
 /**
  * @vitest-environment jsdom
  *
- * BackgroundHooksRow inline disclosure geometry, timing details, and actions.
+ * BackgroundHooksRow rendering: "Running Hooks:" label after the bolt icon,
+ * pointer-cursor chips, hover-card timing durations (next-run-in, elapsed,
+ * expires-in — monorepo#1756), and the "View script" affordances (hover-card
+ * link + dropdown item) that open the canonical hook-script panel.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
-const { dispatchMock, hooksState } = vi.hoisted(() => ({
+const { dispatchMock, hooksState, openHookTabMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   hooksState: { hooks: [] as unknown[] },
+  openHookTabMock: vi.fn(),
+}));
+
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: () => ({
+    getPanelIds: () => ['agent-panel'],
+    getPanel: () => ({
+      id: 'agent-panel',
+      activeTabId: 'agent-tab',
+      tabs: [{ id: 'agent-tab', type: 'agent', agentId: 'agent-1' }],
+    }),
+    openTabInAdjacentOrSplit: openHookTabMock,
+  }),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -31,14 +47,7 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
 }));
 
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
-import {
-  cancelBackgroundHookRequested,
-  runBackgroundHookRequested,
-} from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import {
-  openTerminalOverlay,
-  selectScript,
-} from '$store/renderer/slices/terminals/terminals-slice';
+import { formatTime } from '$lib/i18n/format';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {
@@ -67,6 +76,7 @@ describe('BackgroundHooksRow', () => {
   afterEach(() => {
     cleanup();
     dispatchMock.mockClear();
+    openHookTabMock.mockClear();
     vi.useRealTimers();
   });
 
@@ -163,7 +173,7 @@ describe('BackgroundHooksRow', () => {
     expect(hoverCard.textContent).not.toContain('TTL:');
   });
 
-  it('inline details opens the existing script panel without a modal', async () => {
+  it('inline details link opens the hook panel from the owning agent panel', async () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -172,8 +182,17 @@ describe('BackgroundHooksRow', () => {
     await fireEvent.click(link);
 
     expect(screen.queryByTestId('hook-script-modal')).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith(selectScript('ws-1', 'hook-1'));
-    expect(dispatchMock).toHaveBeenCalledWith(openTerminalOverlay('ws-1'));
+    expect(openHookTabMock).toHaveBeenCalledOnce();
+    expect(openHookTabMock).toHaveBeenCalledWith(
+      {
+        type: 'hook-script',
+        title: 'Hook: ci-watch',
+        workspaceId: 'ws-1',
+        hookId: 'hook-1',
+        closable: true,
+      },
+      'agent-panel',
+    );
   });
 
   it('chip dropdown offers "View script" alongside Run now / Cancel and opens the panel', async () => {
@@ -188,21 +207,10 @@ describe('BackgroundHooksRow', () => {
     expect(screen.getByText('Cancel')).toBeTruthy();
 
     await fireEvent.click(item);
-    expect(screen.queryByTestId('hook-script-modal')).toBeNull();
-    expect(dispatchMock).toHaveBeenCalledWith(selectScript('ws-1', 'hook-1'));
-    expect(dispatchMock).toHaveBeenCalledWith(openTerminalOverlay('ws-1'));
-  });
-
-  it('keeps Run now and Cancel dispatch behavior unchanged', async () => {
-    hooksState.hooks = [makeHook()];
-    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
-
-    await fireEvent.click(screen.getByTestId('background-hook-chip'));
-    await fireEvent.click(await waitFor(() => screen.getByText('Run now')));
-    expect(dispatchMock).toHaveBeenCalledWith(runBackgroundHookRequested('ws-1', 'hook-1'));
-
-    await fireEvent.click(screen.getByTestId('background-hook-chip'));
-    await fireEvent.click(await waitFor(() => screen.getByText('Cancel')));
-    expect(dispatchMock).toHaveBeenCalledWith(cancelBackgroundHookRequested('ws-1', 'hook-1'));
+    expect(openHookTabMock).toHaveBeenCalledOnce();
+    expect(openHookTabMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'hook-script', workspaceId: 'ws-1', hookId: 'hook-1' }),
+      'agent-panel',
+    );
   });
 });

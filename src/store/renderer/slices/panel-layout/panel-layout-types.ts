@@ -29,6 +29,7 @@ export type PanelTabType =
   | 'settings'
   | 'overview'
   | 'browser'
+  | 'hook-script'
   | 'activity'
   | 'activity-changes'
   | 'code-review'
@@ -49,6 +50,7 @@ export interface PanelTab {
   filePath?: string;
   agentId?: string;
   terminalId?: string;
+  hookId?: string;
   diffPath?: string;
   browserUrl?: string;
   faviconUrl?: string;

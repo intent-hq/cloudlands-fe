@@ -40,6 +40,13 @@ export function panelTabsAreEquivalent(
     }
     case 'terminal':
       return !!requested.terminalId && existing.terminalId === requested.terminalId;
+    case 'hook-script':
+      return (
+        !!requested.workspaceId &&
+        !!requested.hookId &&
+        existing.workspaceId === requested.workspaceId &&
+        existing.hookId === requested.hookId
+      );
     case 'diff': {
       const path = canonicalWorkspacePath(requested.diffPath);
       return (
