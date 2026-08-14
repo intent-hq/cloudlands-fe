@@ -41,12 +41,13 @@ function measureGeometry(component: Locator) {
  */
 test('keeps the rightmost panel edge inside the visible column (deck mode)', async ({ mount }) => {
   const component = await mount(PanelWorkspaceColumnClipHarness, {
-    props: { sidebarWidth: 360, canvasWidth: 800, insetChrome: 16 },
+    props: { sidebarWidth: 360, canvasWidth: 800 },
   });
 
   const measurements = await measureGeometry(component);
 
   expect(measurements.canvasRight).not.toBeNull();
+  expect(measurements.lastPanelRight).not.toBeNull();
   // The contained inset must reserve symmetric horizontal padding so the
   // canvas is inset from both visible edges.
   expect(measurements.insetPaddingLeft).toBe('8px');
@@ -77,6 +78,8 @@ test('fits an automatic canvas inside the visible frame (tab view)', async ({ mo
   await expect.poll(async () => (await measureGeometry(component)).canvasWidth).toBeGreaterThan(0);
   const measurements = await measureGeometry(component);
 
+  expect(measurements.canvasRight).not.toBeNull();
+  expect(measurements.lastPanelRight).not.toBeNull();
   // No horizontal overflow: the automatic canvas fills exactly the inset's
   // usable content width.
   expect(measurements.insetScrollWidth!).toBeLessThanOrEqual(measurements.insetClientWidth!);

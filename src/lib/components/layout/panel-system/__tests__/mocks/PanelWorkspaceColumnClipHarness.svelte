@@ -1,5 +1,6 @@
 <script lang="ts">
   import PanelLayout from '../../PanelLayout.svelte';
+  import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { store as appStore } from '$store/renderer/store';
   import {
     initializeLayout,
@@ -13,7 +14,7 @@
     sidebarWidth = 360,
     canvasWidth = 800,
     persistedCanvasWidth = 800,
-    insetChrome = 16,
+    insetChrome = CONTAINED_PANEL_INLINE_CHROME,
   }: {
     mode?: 'contained' | 'uncontained';
     sidebarWidth?: number;
