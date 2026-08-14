@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.40.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.39.0...v2.40.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* per-bundle lane stickiness in the takeover map edge router ([#1208](https://github.com/intent-hq/cloudlands-fe/issues/1208)) ([4d568e4](https://github.com/intent-hq/cloudlands-fe/commit/4d568e469a4b5e63578474da35ddeb4fe217eadd))
+* wire live clone progress into onboarding setup card ([#1200](https://github.com/intent-hq/cloudlands-fe/issues/1200)) ([c0b8268](https://github.com/intent-hq/cloudlands-fe/commit/c0b8268dcdcdbe0b196111462708eb233a2bf3a9))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.18 ([#1211](https://github.com/intent-hq/cloudlands-fe/issues/1211)) ([5b3470f](https://github.com/intent-hq/cloudlands-fe/commit/5b3470fcffcb44671396381cf47448fe109133a2))
+* **chat:** collapsed wake card formatting ([#1209](https://github.com/intent-hq/cloudlands-fe/issues/1209)) ([bd8231f](https://github.com/intent-hq/cloudlands-fe/commit/bd8231f075463fc799078c3f054d9cfc8710e18d))
+* strengthen keyboard-focus indicator on DirectoryPickerView inputs ([#1207](https://github.com/intent-hq/cloudlands-fe/issues/1207)) ([d49f740](https://github.com/intent-hq/cloudlands-fe/commit/d49f740a4e3fc681a5e25fbcc89e505e61c92621))
+
 ## [2.39.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.38.0...v2.39.0) (2026-08-14)
 
 
