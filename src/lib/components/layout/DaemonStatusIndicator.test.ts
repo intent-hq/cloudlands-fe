@@ -421,7 +421,9 @@ describe('DaemonStatusIndicator', () => {
       expect(
         screen.getByText('Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)'),
       ).toBeTruthy();
-      expect(screen.getByLabelText('Daemon version mismatch')).toBeTruthy();
+      expect(
+        screen.getByLabelText('Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)'),
+      ).toBeTruthy();
     });
 
     it('shows the "ahead" tooltip when the daemon is newer than the pin', async () => {
@@ -467,7 +469,7 @@ describe('DaemonStatusIndicator', () => {
 
       await fireEvent.click(trigger);
       expect(screen.getByText('1.0.0')).toBeTruthy();
-      expect(screen.queryByLabelText('Daemon version mismatch')).toBeNull();
+      expect(screen.queryByLabelText(/bundled sidecar/)).toBeNull();
       expect(screen.queryByText(/bundled sidecar/)).toBeNull();
     });
 
@@ -508,6 +510,94 @@ describe('DaemonStatusIndicator', () => {
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
       expect(dotOf(trigger).classList.contains('bg-red-500')).toBe(true);
       expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(false);
+    });
+  });
+
+  describe('warning icon accessibility (monorepo#2315)', () => {
+    // Both warning icons live inside DropdownMenu content where keyboard focus
+    // is menu-managed (bits-ui closes the menu on Tab and roving arrow-key
+    // focus only visits menu items), so a focusable tooltip trigger is
+    // unreachable. The full explanation must instead be exposed to AT via the
+    // icon's aria-label.
+    it('exposes the full behind/ahead message as the version warning icon accessible name', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            version: '0.9.0',
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+          transport: { mode: 'sidecar-uds' as const, pinnedVersion: '1.0.0' },
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
+      );
+
+      const icon = screen.getByLabelText(
+        'Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)',
+      );
+      // role="img" so the aria-label on the plain span is reliably exposed.
+      expect(icon.getAttribute('role')).toBe('img');
+    });
+
+    it('exposes the protocol-mismatch explanation on the connection-row icon and its menuitem name', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: null,
+          lastUpdated: null,
+          polling: false,
+        },
+        connections: {
+          connections: createCollection('id', [
+            { id: 'local', label: 'Local', host: null, port: null, fingerprint: null, isLocal: true },
+            {
+              id: 'r1',
+              label: 'desk:4180',
+              host: '10.0.0.2',
+              port: 4180,
+              fingerprint: 'AA:BB',
+              isLocal: false,
+            },
+          ]),
+          activeId: 'r1',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+          protocolMismatch: {
+            id: 'r1',
+            host: '10.0.0.2',
+            port: 4180,
+            localProtocolVersion: '2',
+            remoteProtocolVersion: '3',
+          },
+          protocolMismatchModalDismissed: true,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy — desk:4180' }));
+
+      const icon = screen.getByLabelText('Protocol version differs from local');
+      expect(icon.getAttribute('role')).toBe('img');
+
+      // The label flows into the submenu trigger's name-from-contents, so
+      // arrow-key (menu) navigation announces the explanation with the row.
+      expect(
+        screen.getByRole('menuitem', { name: /Protocol version differs from local/ }),
+      ).toBeTruthy();
     });
   });
 
