@@ -211,7 +211,7 @@ describe('DaemonStoppedOverlay', () => {
     expect(overlay()).toBeNull();
   });
 
-  it.each(['/sandbox', '/sandbox/directory-picker', '/test', '/test/component'])(
+  it.each(['/sandbox', '/sandbox/directory-picker', '/test-comments', '/test-mentions/compact'])(
     'stays hidden while the daemon is disconnected on %s',
     async (pathname) => {
       route.pathname = pathname;
@@ -222,7 +222,7 @@ describe('DaemonStoppedOverlay', () => {
     },
   );
 
-  it.each(['/sandboxed', '/testimonials'])(
+  it.each(['/sandboxed', '/testimonials', '/test'])(
     'shows the overlay for non-sandbox path %s',
     async (pathname) => {
       route.pathname = pathname;
@@ -292,9 +292,7 @@ describe('DaemonStoppedOverlay', () => {
       isLocal: false,
     };
     render(DaemonStoppedOverlay);
-    appStore.dispatch(
-      connectionsListReceived({ connections: [remote], activeId: 'conn-1' }),
-    );
+    appStore.dispatch(connectionsListReceived({ connections: [remote], activeId: 'conn-1' }));
     await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
     const details = screen.getByTestId('daemon-stopped-connection-details');
     expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');
@@ -323,9 +321,7 @@ describe('DaemonStoppedOverlay', () => {
     );
 
     // A later status push with a higher count updates the line live.
-    dispatchAndFlush(
-      connectionStatusChanged('connecting', undefined, { reconnectAttempts: 15 }),
-    );
+    dispatchAndFlush(connectionStatusChanged('connecting', undefined, { reconnectAttempts: 15 }));
     expect(screen.getByTestId('daemon-stopped-retrying').textContent).toContain('(attempt 15)');
   });
 
@@ -545,10 +541,15 @@ describe('DaemonStoppedOverlay', () => {
       fingerprint: null,
       isLocal: true,
     };
-    const wsTransport: BackendTransportInfo = { mode: 'external-ws', target: 'wss://10.0.0.5:8443/ws' };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.5:8443/ws',
+    };
 
     function activateRemote() {
-      dispatchAndFlush(connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: REMOTE.id }));
+      dispatchAndFlush(
+        connectionsListReceived({ connections: [LOCAL, REMOTE], activeId: REMOTE.id }),
+      );
     }
 
     function rejectAuth(statusCode: number) {

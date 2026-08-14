@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_FILES, evaluateRun, formatDiagnostic, parseMachineLine } from './run-svelte-check.mjs';
+import {
+  MIN_FILES,
+  evaluateRun,
+  formatDiagnostic,
+  parseMachineLine,
+  syncEnv,
+} from './run-svelte-check.mjs';
 
 describe('parseMachineLine', () => {
   it('parses a COMPLETED summary line', () => {
@@ -59,6 +65,19 @@ describe('formatDiagnostic', () => {
       '/repo',
     );
     expect(out).toBe("src/lib/Foo.svelte:12:5\nError: Cannot find name 'bar' (ts)\n");
+  });
+});
+
+describe('syncEnv', () => {
+  it('forces NODE_ENV to development so sync typegen covers src/routes', () => {
+    expect(syncEnv({ NODE_ENV: 'production', PATH: '/bin' })).toEqual({
+      NODE_ENV: 'development',
+      PATH: '/bin',
+    });
+  });
+
+  it('sets NODE_ENV even when absent', () => {
+    expect(syncEnv({ PATH: '/bin' })).toEqual({ NODE_ENV: 'development', PATH: '/bin' });
   });
 });
 
