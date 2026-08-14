@@ -257,8 +257,10 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     expect(screen.getByRole('tablist', { name: 'Open spaces' })).toBeTruthy();
+    // pl-3 preserves the 12px corner-flare clip guard; -ml-1 (not -ml-3) keeps
+    // an 8px net inset so the first tab sits clear of the view-mode toggle.
     expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain(
-      'pl-3 -ml-3 pr-3 -mr-2.5',
+      'pl-3 -ml-1 pr-3 -mr-2.5',
     );
     expect(screen.getAllByRole('tab')).toHaveLength(3);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
@@ -349,6 +351,26 @@ describe('WorkspaceTabStrip', () => {
     await rerender({ activeWorkspaceId: 'ws-3' });
 
     expect(strip.scrollLeft).toBe(22);
+  });
+
+  it('does not clamp scrollLeft back to the active tab on user scroll', async () => {
+    const onActiveTabBoundsChange = vi.fn();
+    const { container } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
+    });
+    container.classList.add('window-title-bar');
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    Object.defineProperty(strip, 'scrollLeft', { value: 120, writable: true });
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
+    // Active tab scrolled out past the strip's left edge by the user.
+    activeTab.getBoundingClientRect = () => ({ left: 20, right: 90, width: 70 }) as DOMRect;
+    onActiveTabBoundsChange.mockClear();
+
+    await fireEvent.scroll(strip);
+
+    expect(strip.scrollLeft).toBe(120);
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 20, width: 70 });
   });
 
   it('uses arrow keys to activate adjacent tabs and Delete to close the focused tab', async () => {

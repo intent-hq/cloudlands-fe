@@ -104,6 +104,14 @@ describe('getPrMonitorWakeChipLabel', () => {
   it('prefixes the repo when it differs from the workspace repo', () => {
     expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/monorepo')).toBe('intent-hq/intentd: #42');
   });
+
+  it('renders 4+ digit PR numbers without digit grouping', () => {
+    const bigAttr = { monitorId: 'm', repo: 'intent-hq/intentd', prNumber: 1182 };
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'intent-hq/intentd')).toBe('#1182');
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'intent-hq/monorepo')).toBe(
+      'intent-hq/intentd: #1182',
+    );
+  });
 });
 
 describe('stripPrMonitorWakePrefix', () => {

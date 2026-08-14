@@ -2,7 +2,6 @@ import {
   call,
   cancelled,
   delay,
-  fork,
   put,
   race,
   take,
@@ -15,8 +14,7 @@ import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attem
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { AgentSession, Workspace } from '$shared/types';
-import { WorkspaceStatusEnum } from '$shared/types';
+import type { AgentSession } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryLastMessageRequested,
@@ -41,7 +39,6 @@ import {
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
-import { requestUnarchiveWorkspace } from '../../workspace-operations/workspace-operations-slice';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -157,37 +154,6 @@ function* sendQueuedNow(agentId: string, wsId: string, messageId: string): SagaG
   }
 }
 
-async function suggestUnarchiveIfArchived(workspace: Workspace): Promise<void> {
-  if (!workspace.archived && workspace.status !== WorkspaceStatusEnum.Archived) return;
-  try {
-    const { toast } = await import('svelte-sonner');
-    toast.info(m.agent_chatSend_archivedWorkspace_toast(), {
-      id: `chat-send-unarchive-${workspace.id}`,
-      action: {
-        label: m.agent_chatSend_archivedWorkspace_unarchive_label(),
-        onClick: () => {
-          void (async () => {
-            try {
-              const { store } = await import('../../../store');
-              store.dispatch(requestUnarchiveWorkspace(workspace.id));
-            } catch (error) {
-              logger.error('Unarchive from chat-send suggestion toast failed', {
-                workspaceId: workspace.id,
-                error,
-              });
-            }
-          })();
-        },
-      },
-    });
-  } catch (error) {
-    logger.warn('Failed to surface archived-workspace suggestion toast', {
-      workspaceId: workspace.id,
-      error,
-    });
-  }
-}
-
 function* dispatchToLifecycle(
   agentId: string,
   wsId: string,
@@ -204,7 +170,6 @@ function* dispatchToLifecycle(
     yield* put(chatSendFailed(agentId, m.agent_chatSend_workspaceNotFound_error({ id: wsId })));
     return;
   }
-  yield* fork(suggestUnarchiveIfArchived, workspace);
   const content = workspaceContextStr ? `${workspaceContextStr}\n\n${text.trim()}` : text.trim();
 
   yield* call(hydrateBeforeSend, agentId, wsId);

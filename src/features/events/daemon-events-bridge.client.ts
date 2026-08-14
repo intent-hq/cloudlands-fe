@@ -203,7 +203,10 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
-import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
+import {
+  showAgentAttentionToast,
+  showWorkspaceAutoUnarchiveToast,
+} from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   permissionRequestReceived,
@@ -2138,6 +2141,27 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     });
   } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
     appStore.dispatch(restoreWorkspaceTab(workspaceId));
+  }
+
+  // Auto-unarchive stamp: an additive field the daemon attaches to the
+  // unarchive delta when an agent turn start unarchived the workspace
+  // (absent on manual `workspace.unarchive` / `workspace.restore`). Surface
+  // one transient toast naming the workspace and the agent that became
+  // active; malformed or unknown-reason stamps are ignored.
+  const autoUnarchive = raw.autoUnarchive;
+  if (autoUnarchive && typeof autoUnarchive === 'object') {
+    const stamp = autoUnarchive as Record<string, unknown>;
+    if (
+      stamp.reason === 'agent_activity' &&
+      typeof stamp.agentId === 'string' &&
+      typeof stamp.agentName === 'string'
+    ) {
+      void showWorkspaceAutoUnarchiveToast({
+        workspaceId,
+        agentId: stamp.agentId,
+        agentName: stamp.agentName,
+      });
+    }
   }
 }
 

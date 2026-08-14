@@ -115,6 +115,10 @@ export function takeoverEdgePulse(
 export interface HudTakeoverMapEdge {
   id: string;
   kind: HudTakeoverMapEdgeKind;
+  /** Source endpoint id (a task id, or the spec node id on spec edges). */
+  from: string;
+  /** Destination task id. */
+  to: string;
   points: Array<{ x: number; y: number }>;
   /** Source task's palette slot (dep edges only; null for spec/conflict). */
   colorIndex: number | null;
@@ -126,6 +130,19 @@ export interface HudTakeoverMapEdge {
   dimmed: boolean;
   /** Pulse treatment (see `takeoverEdgePulse`). */
   pulse: HudTakeoverEdgePulse;
+}
+
+/**
+ * True when the edge touches the hovered task — either endpoint id matches
+ * (incoming and outgoing alike, dep/spec/conflict alike). Drives the hover
+ * highlight: touching edges render full-strength with a thicker stroke.
+ * A null hover matches nothing.
+ */
+export function takeoverEdgeTouchesTask(
+  edge: Pick<HudTakeoverMapEdge, 'from' | 'to'>,
+  taskId: string | null,
+): boolean {
+  return taskId !== null && (edge.from === taskId || edge.to === taskId);
 }
 
 /** Extra trim (px) past the target cell's border so the arrowhead sits clear of it. */
@@ -244,6 +261,8 @@ export function takeoverMapEdges(
     edges.push({
       id: route.id,
       kind: route.kind,
+      from: route.from,
+      to: route.to,
       points: points.map((p) => ({ x: round(p.x), y: round(p.y) })),
       colorIndex: sourceIndex !== undefined ? takeoverEdgeColorIndex(sourceIndex) : null,
       dimmed:

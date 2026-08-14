@@ -822,6 +822,61 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     }
   });
 
+  it('hovering a task cell highlights every edge touching it; hover end restores', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'], conflictsWith: ['c'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cells = screen.getAllByTestId('hud-takeover-cell');
+    const cellByTitle = (title: string) =>
+      cells.find((cell) => cell.querySelector('.ov-cell-title')?.textContent?.trim() === title)!;
+    // jsdom has no PointerEvent ctor; the handlers read no pointer fields.
+    const hover = (el: Element, type: string) => {
+      el.dispatchEvent(new MouseEvent(type));
+      flushSync();
+    };
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec')!;
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict')!;
+    // Dep edges by source palette slot (input order: a=0, b=1).
+    const aToB = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)')!;
+    const bToC = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)')!;
+    expect(edges).toHaveLength(4);
+
+    // Hover B: incoming dep, outgoing dep, and the live conflict highlight;
+    // the spec→a edge keeps its normal rendering.
+    hover(cellByTitle('B'), 'pointerenter');
+    expect(aToB.classList.contains('ov-edge-hover')).toBe(true);
+    expect(bToC.classList.contains('ov-edge-hover')).toBe(true);
+    expect(conflict.classList.contains('ov-edge-hover')).toBe(true);
+    expect(spec.classList.contains('ov-edge-hover')).toBe(false);
+    // Full-strength: the consumed a→b edge sheds its dim, the live conflict
+    // its pulse (colors stay).
+    expect(aToB.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-pulse')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-conflict-live')).toBe(true);
+
+    // Hover end restores normal rendering.
+    hover(cellByTitle('B'), 'pointerleave');
+    for (const edge of edges) {
+      expect(edge.classList.contains('ov-edge-hover')).toBe(false);
+    }
+    expect(aToB.classList.contains('ov-edge-dim')).toBe(true);
+    expect(conflict.classList.contains('ov-edge-pulse')).toBe(true);
+
+    // Hover A: its spec edge highlights too (matched via the destination).
+    hover(cellByTitle('A'), 'pointerenter');
+    expect(spec.classList.contains('ov-edge-hover')).toBe(true);
+    expect(aToB.classList.contains('ov-edge-hover')).toBe(true);
+    expect(bToC.classList.contains('ov-edge-hover')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-hover')).toBe(false);
+  });
+
   it('pulses ready dep edges green and mutes resolved conflicts', () => {
     // b is ready: deps met (no unmetDependsOn), not started. The a↔b
     // conflict is resolved (a complete) → static muted.

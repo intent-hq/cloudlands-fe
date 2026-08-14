@@ -673,6 +673,12 @@ export interface WorkspaceTask {
    * then omit `expectedVersion` and last-writer-wins applies.
    */
   rev?: number;
+  /**
+   * Daemon-computed: true iff this task's id is linked from the spec note
+   * body (PROTOCOL §5.4, additive). `undefined` when the daemon predates the
+   * field — consumers then keep their legacy (pre-`specLinked`) behavior.
+   */
+  specLinked?: boolean;
   /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
   dependsOn?: NoteId[];
   /** Task-note ids this task may conflict with (advisory); omitted when empty. */

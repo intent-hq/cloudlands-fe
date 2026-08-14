@@ -10,7 +10,6 @@
     getPrMonitorWakeChipLabel,
     getPrMonitorWakeUrl,
   } from '$lib/utils/pr-monitor-wake-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import type { AutomatedWakePresentation } from './automated-wake-presentation';
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
@@ -73,7 +72,7 @@
     <Button
       type="button"
       variant="plain"
-      class="min-w-0 flex-1 truncate text-left font-inherit text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="min-w-0 flex-1 justify-start truncate text-left font-inherit text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="pr-monitor-wake-chip"
       title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
       onclick={openPr}
@@ -89,14 +88,6 @@
   >
     {statusLabel}
   </span>
-  {#if presentation.queueInfo}
-    <span class="min-w-0 overflow-hidden" style="max-width: 40%;">
-      <QueuedMessageNoticeHeader
-        queueInfo={presentation.queueInfo}
-        class="min-w-0 overflow-hidden [&>span]:truncate"
-      />
-    </span>
-  {/if}
   <button
     type="button"
     class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

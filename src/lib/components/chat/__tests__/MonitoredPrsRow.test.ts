@@ -141,6 +141,17 @@ describe('MonitoredPrsRow', () => {
     expect(screen.queryByTestId('monitored-prs-row')).toBeNull();
   });
 
+  it('renders 4+ digit PR numbers without digit grouping', () => {
+    monitorsState.monitors = [
+      makeMonitor({ prNumber: 1182, url: 'https://github.com/acme/widgets/pull/1182' }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('monitored-pr-chip');
+    expect(chip.textContent).toContain('#1182');
+    expect(chip.textContent).not.toContain('1,182');
+  });
+
   it('prefixes the chip label with org/repo only for cross-repo monitors', () => {
     monitorsState.monitors = [
       makeMonitor({ repo: 'other/lib', url: 'https://github.com/other/lib/pull/42' }),
