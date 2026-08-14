@@ -65,6 +65,8 @@
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
+  let stripElement = $state<HTMLDivElement | null>(null);
+  let isOverflowing = $state(false);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   // Active tab bounds drive the parent border mask that hides the sidebar
@@ -78,6 +80,24 @@
   onMount(() => {
     activeStreamsTracker.startPolling();
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+  });
+
+  // Overflow detection drives the strip's right margin: while tabs are
+  // clipped, the clipped tab edge (not the pr-3 padding) sits at the strip's
+  // right border, so the -mr-2.5 pull toward the "+" launcher must be
+  // replaced with positive spacing. ResizeObserver catches strip resizes;
+  // re-running on visibleTabIds catches tab count changes at constant width.
+  $effect(() => {
+    const strip = stripElement;
+    if (!strip) return;
+    void visibleTabIds;
+    const updateOverflow = () => {
+      isOverflowing = strip.scrollWidth > strip.clientWidth;
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(strip);
+    return () => observer.disconnect();
   });
 
   $effect(() => {
@@ -337,11 +357,19 @@
   <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
        so overflow-x-auto does not clip it; -ml-1 gives that back minus 8px so
        the first tab sits clear of the view-mode toggle instead of flush.
+       The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
+       against the last tab's pr-3 padding when everything fits, but during
+       overflow the clipped tab edge is flush with the strip border, so mr-1
+       (plus the parent's gap-1) keeps 8px of clearance before the "+".
        data-app-region-clip: tabs scrolled out of this container must not carve
        no-drag holes in the titlebar drag strip (unclipped-geometry carving,
        intent-hq/monorepo#2400; rules in app.css). -->
   <div
-    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-1 pr-3 -mr-2.5 scrollbar-none"
+    bind:this={stripElement}
+    class={cn(
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-1 pr-3 scrollbar-none',
+      isOverflowing ? 'mr-1' : '-mr-2.5',
+    )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     data-workspace-tab-strip

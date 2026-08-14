@@ -260,8 +260,9 @@ describe('WorkspaceTabStrip', () => {
     // pl-3 preserves the 12px corner-flare clip guard; -ml-1 (not -ml-3) keeps
     // an 8px net inset so the first tab sits clear of the view-mode toggle.
     expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain(
-      'pl-3 -ml-1 pr-3 -mr-2.5',
+      'pl-3 -ml-1 pr-3',
     );
+    expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain('-mr-2.5');
     expect(screen.getAllByRole('tab')).toHaveLength(3);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });
     expect(alpha.getAttribute('aria-selected')).toBe('true');
@@ -338,6 +339,36 @@ describe('WorkspaceTabStrip', () => {
         (tab) => tab.getAttribute('data-active') === 'false',
       ),
     ).toBe(true);
+  });
+
+  it('swaps the launcher-side negative margin for spacing only while tabs overflow', async () => {
+    const resizeCallbacks: Array<() => void> = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resizeCallbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+
+    render(WorkspaceTabStrip);
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    expect(strip.className).toContain('-mr-2.5');
+    expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
+
+    Object.defineProperty(strip, 'scrollWidth', { value: 500, configurable: true });
+    Object.defineProperty(strip, 'clientWidth', { value: 300, configurable: true });
+    resizeCallbacks.forEach((callback) => callback());
+    await waitFor(() => expect(strip.className).toMatch(/(?:^|\s)mr-1(?:\s|$)/));
+    expect(strip.className).not.toContain('-mr-2.5');
+
+    Object.defineProperty(strip, 'clientWidth', { value: 600, configurable: true });
+    resizeCallbacks.forEach((callback) => callback());
+    await waitFor(() => expect(strip.className).toContain('-mr-2.5'));
+    expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
   });
 
   it('scrolls a newly active final tab fully inside the strip', async () => {
