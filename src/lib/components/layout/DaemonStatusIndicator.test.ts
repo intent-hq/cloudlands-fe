@@ -476,6 +476,21 @@ describe('DaemonStatusIndicator', () => {
       const trigger = screen.getByRole('button', { name: 'intentd: degraded' });
       expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
     });
+
+    it('keeps the red dot and down label when the daemon is down despite a mismatch', async () => {
+      mockStoreState = withVersions({
+        health: 'down',
+        daemonVersion: '0.9.0',
+        pinnedVersion: '1.0.0',
+      });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: not running' });
+      expect(dotOf(trigger).classList.contains('bg-red-500')).toBe(true);
+      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(false);
+    });
   });
 
   describe('unsloth server section', () => {
