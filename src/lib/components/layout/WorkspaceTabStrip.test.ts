@@ -351,6 +351,26 @@ describe('WorkspaceTabStrip', () => {
     expect(strip.scrollLeft).toBe(22);
   });
 
+  it('does not clamp scrollLeft back to the active tab on user scroll', async () => {
+    const onActiveTabBoundsChange = vi.fn();
+    const { container } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
+    });
+    container.classList.add('window-title-bar');
+    const strip = screen.getByRole('tablist', { name: 'Open spaces' });
+    const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
+    Object.defineProperty(strip, 'scrollLeft', { value: 120, writable: true });
+    strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
+    // Active tab scrolled out past the strip's left edge by the user.
+    activeTab.getBoundingClientRect = () => ({ left: 20, right: 90, width: 70 }) as DOMRect;
+    onActiveTabBoundsChange.mockClear();
+
+    await fireEvent.scroll(strip);
+
+    expect(strip.scrollLeft).toBe(120);
+    expect(onActiveTabBoundsChange).toHaveBeenCalledWith({ left: 20, width: 70 });
+  });
+
   it('uses arrow keys to activate adjacent tabs and Delete to close the focused tab', async () => {
     render(WorkspaceTabStrip);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });

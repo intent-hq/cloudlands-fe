@@ -122,20 +122,21 @@
   function reportActiveTabBounds(node: HTMLElement, isActive: boolean) {
     let active = isActive;
     let frameId: number | null = null;
+    let clampQueued = false;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const report = () => {
-      frameId = null;
-      if (!active) return;
-      if (strip) {
-        const tabRect = node.getBoundingClientRect();
-        const stripRect = strip.getBoundingClientRect();
-        if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
-          strip.scrollLeft += tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
-        } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
-          strip.scrollLeft += tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
-        }
+    const clampActiveTabIntoView = () => {
+      if (!strip) return;
+      const tabRect = node.getBoundingClientRect();
+      const stripRect = strip.getBoundingClientRect();
+      if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
+        strip.scrollLeft += tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
+      } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
+        strip.scrollLeft += tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
       }
+    };
+
+    const reportBounds = () => {
       const titlebar = node.closest('.window-title-bar');
       if (!titlebar) return;
       const tabRect = node.getBoundingClientRect();
@@ -146,31 +147,55 @@
       });
     };
 
-    const scheduleReport = () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(report);
+    const clampAndReport = () => {
+      if (!active) return;
+      clampActiveTabIntoView();
+      reportBounds();
     };
 
-    const resizeObserver = new ResizeObserver(scheduleReport);
+    const runFrame = () => {
+      frameId = null;
+      const shouldClamp = clampQueued;
+      clampQueued = false;
+      if (!active) return;
+      if (shouldClamp) clampActiveTabIntoView();
+      reportBounds();
+    };
+
+    const schedule = () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(runFrame);
+    };
+
+    const scheduleClampAndReport = () => {
+      clampQueued = true;
+      schedule();
+    };
+
+    // User scrolling must not be fought by the active-tab clamp: scroll only
+    // refreshes the reported bounds so the titlebar mask keeps tracking.
+    const scheduleBoundsReport = () => schedule();
+
+    const resizeObserver = new ResizeObserver(scheduleClampAndReport);
     resizeObserver.observe(node);
-    window.addEventListener('resize', scheduleReport);
-    strip?.addEventListener('scroll', scheduleReport);
-    activeTabBoundsPollers.add(report);
-    scheduleReport();
+    window.addEventListener('resize', scheduleClampAndReport);
+    strip?.addEventListener('scroll', scheduleBoundsReport);
+    activeTabBoundsPollers.add(clampAndReport);
+    scheduleClampAndReport();
 
     return {
       update(nextIsActive: boolean) {
         const wasActive = active;
         active = nextIsActive;
-        if (active) scheduleReport();
+        if (active) scheduleClampAndReport();
         else if (wasActive) onActiveTabBoundsChange?.(null);
       },
       destroy() {
         if (frameId !== null) cancelAnimationFrame(frameId);
-        activeTabBoundsPollers.delete(report);
+        activeTabBoundsPollers.delete(clampAndReport);
         resizeObserver.disconnect();
-        window.removeEventListener('resize', scheduleReport);
-        strip?.removeEventListener('scroll', scheduleReport);
+        window.removeEventListener('resize', scheduleClampAndReport);
+        strip?.removeEventListener('scroll', scheduleBoundsReport);
         if (active) onActiveTabBoundsChange?.(null);
       },
     };
