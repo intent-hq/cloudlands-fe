@@ -9,6 +9,7 @@ import { initialState as daemonHealthInitialState } from "../daemon-health/daemo
 import {
   selectIsWorkspaceHostLocal,
   selectWorkflowStage,
+  selectWorkspaceIsWaiting,
   selectWorkspaceProgressActions,
   selectWorkspaceProgressHeadline,
 } from "./workspace-selectors";
@@ -134,6 +135,36 @@ describe("selectIsWorkspaceHostLocal (monorepo#2171)", () => {
   it("treats a missing workspace entity as local (optimistic default; remote workspaces always carry environmentConfig)", () => {
     const state = mockLocalityState("local");
     expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(true);
+  });
+});
+
+describe("selectWorkspaceIsWaiting", () => {
+  function mockWaitingState(workspace?: Workspace): StoreState {
+    return {
+      workspace: workspace
+        ? workspaceReducer(initialState, setWorkspaceEntity(workspace))
+        : initialState,
+    } as StoreState;
+  }
+
+  it("is true when the daemon marked the workspace as waiting", () => {
+    const state = mockWaitingState(makeWorkspace({ waiting: true }));
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(true);
+  });
+
+  it("is false when waiting is false", () => {
+    const state = mockWaitingState(makeWorkspace({ waiting: false }));
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false when the field is absent (older daemons never send it)", () => {
+    const state = mockWaitingState(makeWorkspace());
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false for a missing workspace entity", () => {
+    const state = mockWaitingState();
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
   });
 });
 

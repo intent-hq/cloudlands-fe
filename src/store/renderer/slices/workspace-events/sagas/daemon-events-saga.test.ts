@@ -221,6 +221,7 @@ describe('daemonEventsSaga', () => {
       'workspace:activity-changed',
       'workspace:displayStatus-changed',
       'workspace:attention-changed',
+      'workspace:waiting-changed',
       'workspace:updated',
       'workspace:created',
       'workspace:deleted',

@@ -197,7 +197,7 @@ describe('root horizontal panel resizing', () => {
       const shrunk = await dragSplit(0, [-40, -140]);
       expectGeometry(shrunk.pointerDown, [416, 500, 364]);
       expectGeometry(shrunk.preview, [276, 500, 364]);
-      expect(shrunk.previewCanvasWidth).toBe(contained ? 1156 : INITIAL_CANVAS_WIDTH);
+      expect(shrunk.previewCanvasWidth).toBe(1156);
       expectGeometry(panelGeometry(), [276, 500, 364]);
       expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(1156);
     },

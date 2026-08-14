@@ -304,6 +304,13 @@ export interface Workspace {
    *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —
    *  when absent (older daemons) the FE treats it as 'none'. */
   attention?: WorkspaceAttention;
+  /** BE-derived orthogonal waiting flag (PROTOCOL §5.1): true when the
+   *  workspace's agents are purely waiting on external conditions (active
+   *  background hooks, PR monitors, or watched agents). Overlays the real
+   *  displayStatus rather than folding into it. Presence-detected on the
+   *  wire — omitted when false, so older daemons (which never send it) read
+   *  as not waiting. */
+  waiting?: boolean;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;

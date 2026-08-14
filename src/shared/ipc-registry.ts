@@ -477,6 +477,8 @@ export const IPC_CHANNELS = {
     UNREGISTER_TAB: 'browser:unregister-tab',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
+    /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */
+    RESOLVE_URL: 'browser:resolve-url',
     /** Focus a browser tab (bring to front) - main->renderer event */
     FOCUS_TAB: 'browser:focus-tab',
     /** Request browser tab list from renderer (main->renderer event) */

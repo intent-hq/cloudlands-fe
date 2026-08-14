@@ -116,12 +116,7 @@ export interface TranscriptSnapshotMeta {
  * in app-client.ts). Drives the pre-live hydration indicator in ChatPanel.
  * `null`/absent means no standing subscription is open for the agent.
  */
-export type LiveStreamPhase =
-  | 'connecting'
-  | 'awaiting-snapshot'
-  | 'live'
-  | 'resyncing'
-  | 'delayed';
+export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
  * Serializable per-agent chat state stored in Redux.
@@ -194,6 +189,8 @@ export interface ChatAgentState {
  */
 export interface SendMessagePayload {
   text: string;
+  /** Stable identity shared by the optimistic row and its composer transition. */
+  userAppMessageId?: string;
   contextItems?: ChatInputContextItem[];
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;

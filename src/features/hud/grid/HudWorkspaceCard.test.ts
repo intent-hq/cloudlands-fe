@@ -69,6 +69,7 @@ function makeCard(
     stateKey: 'in_progress',
     attention: null,
     isUnread: false,
+    isWaiting: false,
     statusMessage: null,
     attentionSnippet: null,
     prNumber: null,
@@ -215,8 +216,53 @@ describe('HudWorkspaceCard failed attention strip', () => {
   });
 });
 
+describe('HudWorkspaceCard waiting status suffix', () => {
+  const stateSpans = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.hud-ws-card-state'));
+
+  it('renders the dimmed / WAITING suffix after IN PROGRESS while waiting', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([], { stateKey: 'in_progress', isWaiting: true }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const spans = stateSpans(container);
+    expect(spans).toHaveLength(2);
+    expect(spans[0].textContent).toBe('IN PROGRESS');
+    // Base label keeps its state color; only the suffix carries the dimmed
+    // muted-foreground class.
+    expect(spans[0].classList.contains('hud-ws-card-state-waiting')).toBe(false);
+    expect(spans[1].textContent).toBe('/ WAITING');
+    expect(spans[1].classList.contains('hud-ws-card-state-waiting')).toBe(true);
+  });
+
+  it('renders the suffix on non-running states too (COMPLETE / WAITING)', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: {
+        card: makeCard([], { stateKey: 'complete', isWaiting: true }),
+        nowMs: NOW_MS,
+      },
+    });
+
+    const spans = stateSpans(container);
+    expect(spans[0].textContent).toBe('COMPLETE');
+    expect(spans[1].textContent).toBe('/ WAITING');
+  });
+
+  it('renders no suffix when the flag is off', () => {
+    const { container } = render(HudWorkspaceCard, {
+      props: { card: makeCard([], { stateKey: 'in_progress' }), nowMs: NOW_MS },
+    });
+
+    expect(stateSpans(container)).toHaveLength(1);
+    expect(container.textContent).not.toContain('/ WAITING');
+  });
+});
+
 describe('HudWorkspaceCard unread overlay', () => {
-  it('binds the unread border-blink class from the flag, over the real state', () => {
+  it('renders the corner-fold dog-ear from the flag, over the real state', () => {
     const { container } = render(HudWorkspaceCard, {
       props: {
         card: makeCard([], { stateKey: 'complete', isUnread: true }),
@@ -226,15 +272,19 @@ describe('HudWorkspaceCard unread overlay', () => {
 
     const card = container.querySelector('.hud-ws-card');
     expect(card?.classList.contains('hud-ws-card-unread')).toBe(true);
+    const dogear = container.querySelector('.hud-ws-card-dogear');
+    expect(dogear).toBeTruthy();
+    expect(dogear?.getAttribute('aria-hidden')).toBe('true');
     // The real state banner still renders — unread overlays, never masks.
     expect(container.textContent).toContain('COMPLETE');
   });
 
-  it('omits the unread class when the flag is off', () => {
+  it('omits the dog-ear when the flag is off', () => {
     const { container } = render(HudWorkspaceCard, {
       props: { card: makeCard([], { stateKey: 'complete' }), nowMs: NOW_MS },
     });
 
     expect(container.querySelector('.hud-ws-card-unread')).toBeNull();
+    expect(container.querySelector('.hud-ws-card-dogear')).toBeNull();
   });
 });

@@ -627,8 +627,8 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     openTakeover();
 
     // One rootless task at (1,0): bounds x −2…2, y −1…1 cells (base viewport),
-    // in px × the 1-lane pitch (196).
-    const pitch = takeoverPitchPx(1);
+    // in px × the corridor-only pitch (192 floor).
+    const pitch = takeoverPitchPx(0);
     const map = screen.getByTestId('hud-takeover-map');
     dragMap(map, [500, 300], [-10_000, 10_000]);
     expect(panTransform()).toBe(`translate(${-2 * pitch}px, ${1 * pitch}px)`);
@@ -711,9 +711,9 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     expect(panTransform()).toBe('translate(0px, 0px)');
     vi.advanceTimersByTime(2100);
     flushSync();
-    // 12 spec fan-out edges share the spec's exit corridor → 12 lanes →
-    // pitch 284. Cell (1,5) → camera offset (284, 5·284); canvas negates.
-    const pitch = takeoverPitchPx(12);
+    // The 12 spec fan-out edges bundle onto one trunk lane in gutter v:0.5 →
+    // pitch 196. Cell (1,5) → camera offset (196, 5·196); canvas negates.
+    const pitch = takeoverPitchPx(1);
     expect(panTransform()).toBe(`translate(${-1 * pitch}px, ${-5 * pitch}px)`);
   });
 });
@@ -763,8 +763,8 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     const byTitle = new Map(
       cells.map((cell) => [cell.querySelector('.ov-cell-title')?.textContent?.trim(), cell]),
     );
-    // Columns 1..3 on row 0 → left = x·pitch − 90 (chain: 1 lane → 196).
-    const pitch = takeoverPitchPx(1);
+    // Columns 1..3 on row 0 → left = x·pitch − 90 (corridor-only chain → 192 floor).
+    const pitch = takeoverPitchPx(0);
     expect(byTitle.get('A')?.style.left).toBe(`${1 * pitch - 90}px`);
     expect(byTitle.get('B')?.style.left).toBe(`${2 * pitch - 90}px`);
     expect(byTitle.get('C')?.style.left).toBe(`${3 * pitch - 90}px`);
@@ -787,9 +787,10 @@ describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
     const kinds = edges.map((edge) => edge.getAttribute('data-kind')).sort();
     expect(kinds).toEqual(['conflict', 'dep', 'dep', 'spec']);
 
-    // The b→c dep and the conflict both run b→c on the row-0 corridor →
-    // 2 lanes (pitch 204), row-0 edges straddling the centerline by ∓4px.
-    const pitch = takeoverPitchPx(2);
+    // The b→c dep and the conflict both run b→c on the row-0 corridor,
+    // straddling the centerline by ∓4px; corridor spread never widens the
+    // gutter, so the pitch stays at the 192px floor.
+    const pitch = takeoverPitchPx(0);
     const byD = new Map(edges.map((edge) => [edge.getAttribute('d'), edge]));
     const aToB = byD.get(`M${pitch + 90} -4L${2 * pitch - 92} -4`);
     const bToC = byD.get(`M${2 * pitch + 90} -4L${3 * pitch - 92} -4`);
@@ -937,7 +938,7 @@ describe('HudTakeoverOverlay map zoom (default 1:1)', () => {
     return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
   }
 
-  /** Chain t1→…→t5 spans columns 1..5 (1 lane → pitch 196); half-extent 5·196+90=1070 vs the 500px half-viewport. */
+  /** Chain t1→…→t5 spans columns 1..5 (corridor-only → pitch 192); half-extent 5·192+90=1050 vs the 500px half-viewport. */
   function seedWideChain(): void {
     const tasks = Array.from({ length: 5 }, (_, i) => ({
       id: `t${i + 1}`,
@@ -987,7 +988,7 @@ describe('HudTakeoverOverlay map zoom (default 1:1)', () => {
     expect(panTransform()).toBe('translate(0px, 0px)');
     vi.advanceTimersByTime(2500);
     flushSync();
-    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(1)}px, 0px)`);
+    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(0)}px, 0px)`);
   });
 });
 
@@ -1076,8 +1077,8 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
   });
 
   it('FIT shrinks a wide chain to the measured viewport', () => {
-    // Chain t1→…→t5 spans columns 1..5 (1 lane → pitch 196); half-extent
-    // 5·196+90=1070 vs the 500px half-viewport → fit scale 500/1070 = 0.467.
+    // Chain t1→…→t5 spans columns 1..5 (corridor-only → pitch 192); half-extent
+    // 5·192+90=1050 vs the 500px half-viewport → fit scale 500/1050 = 0.476.
     const tasks = Array.from({ length: 5 }, (_, i) => ({
       id: `t${i + 1}`,
       title: `T${i + 1}`,
@@ -1095,7 +1096,7 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     openTakeover();
 
     click('hud-takeover-zoom-fit');
-    expect(panTransform()).toBe('translate(0px, 0px) scale(0.467)');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
   });
 
   it('+/− disable at the zoom limits', () => {
@@ -1162,7 +1163,7 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
     // The scheduled 2s glide lands on the changed cell (5,0).
     vi.advanceTimersByTime(2100);
     flushSync();
-    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(1)}px, 0px)`);
+    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(0)}px, 0px)`);
 
     // Manual drag to a custom camera position.
     const map = screen.getByTestId('hud-takeover-map');
@@ -1174,23 +1175,23 @@ describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
       map.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
       flushSync();
     }
-    expect(panTransform()).toBe('translate(-950px, 10px)');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
 
     // FIT makes the whole graph visible: the latched decision must not flip
     // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
     click('hud-takeover-zoom-fit');
     expect(panTransform()).toBe(
-      `translate(${-950 * 0.467}px, ${10 * 0.467}px) scale(0.467)`,
+      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
     );
     // Banner timing never flips mid-display either.
     expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
 
     // Zooming back to 100% must not re-schedule a surprise 2s glide.
     click('hud-takeover-zoom-reset');
-    expect(panTransform()).toBe('translate(-950px, 10px)');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
     vi.advanceTimersByTime(2500);
     flushSync();
-    expect(panTransform()).toBe('translate(-950px, 10px)');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
   });
 
   it('reduced motion: a chained second takeover for the same workspace re-opens at 100%', () => {

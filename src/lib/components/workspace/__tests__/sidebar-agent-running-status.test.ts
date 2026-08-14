@@ -40,7 +40,8 @@ describe('sidebar overview status summary', () => {
     expect(sidebar).toContain("onclick={() => handleTabClick('changes')}");
     expect(sidebar).toContain('m.workspace_multiSelectSidebar_localChanges_one()');
     expect(sidebar).toContain('m.workspace_multiSelectSidebar_localChanges_many({');
-    expect(sidebar).toContain("{#if tab.id === 'changes' && localChangesCount > 0}");
-    expect(sidebar).toContain('data-sidebar-changes-sync');
+    expect(sidebar).toContain("{#if tab.id === 'changes' && linkedPrimaryPr}");
+    expect(sidebar).toContain('data-sidebar-changes-pr={linkedPrimaryPr.number}');
+    expect(sidebar).not.toContain('data-sidebar-changes-sync');
   });
 });

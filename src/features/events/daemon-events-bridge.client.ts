@@ -1313,10 +1313,15 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
- * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
- * without a follow-up read.
+ * `agent:process:queued` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when an agent spawn is queued waiting for admission: a free process
+ * slot (maxConcurrent limit, reason `"slots"`) or memory headroom under the
+ * aggregate budget (reason `"memory-budget"`, intent-hq/intentd#1196). The
+ * payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read. An absent `reason` (older daemons) is normalized
+ * to `"slots"`, the pre-#1196 behavior; a present-but-unrecognized value (a
+ * hypothetical future constraint) also falls back to `"slots"` but logs a
+ * warning so the divergence is observable rather than silently absorbed.
  *
  * The Redux reducer's updateSessionFields is a no-op when the session doesn't
  * exist yet, but during normal operation the agent:created or agent:updated
@@ -1334,13 +1339,21 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  if (data.reason !== undefined && data.reason !== 'slots' && data.reason !== 'memory-budget') {
+    logger.warn('agent:process:queued with unrecognized reason; falling back to slots', {
+      agentId,
+      reason: data.reason,
+    });
+  }
+  const reason = data.reason === 'memory-budget' ? 'memory-budget' : 'slots';
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap, reason));
 }
 
 /**
- * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * a queued agent spawn resumes (a slot freed). The renderer clears the hint so
- * the UI no longer shows the waiting message.
+ * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when a queued agent spawn resumes (a slot freed / memory freed);
+ * `reason` echoes the constraint the spawn originally queued under. The
+ * renderer clears the hint so the UI no longer shows the waiting message.
  */
 function handleProcessResumedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1827,6 +1840,34 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
   // self-blue-dot while the user is looking at it. The daemon answers with a
   // fresh attention-changed (`none`) that flows back through this handler.
   if (attention === 'unread') markWorkspaceSeenIfViewing(workspaceId);
+}
+
+/**
+ * `workspace:waiting-changed` (PROTOCOL §5.1 / §6.5) carries the
+ * self-sufficient payload `{ workspaceId, waiting }` — the daemon emits it
+ * only on an actual transition of the orthogonal waiting flag (agents purely
+ * waiting on hooks / PR monitors / watched agents), so the FE mirrors the new
+ * boolean directly into the workspace entity without a follow-up
+ * `workspace.get`. Like the attention/displayStatus handlers, the payload's
+ * own `data.workspaceId` wins over the envelope id when present — and because
+ * the payload is self-sufficient, an envelope whose `workspaceId` was
+ * stripped by a relay still applies (routed before the envelope gate with
+ * `envelopeWorkspaceId: null`).
+ */
+function handleWaitingChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string | null,
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const waiting = data.waiting;
+  if (!workspaceId || typeof waiting !== 'boolean') return;
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
 }
 
 /**
@@ -2778,6 +2819,16 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `workspace:waiting-changed` (§5.1 / §6.5) also carries a self-sufficient
+  // `data.workspaceId`, so an envelope with a stripped workspaceId must not
+  // be gated out. Envelope-carrying events fall through to the gated
+  // side-effect route below (keeping the timeline fan-out); only the
+  // envelope-less shape is handled here.
+  if (type === 'workspace:waiting-changed' && !workspaceIdOf(event)) {
+    handleWaitingChangedEvent(event, null);
+    return;
+  }
+
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
   if (type === 'mcp.servers:status-changed') {
@@ -2864,6 +2915,12 @@ export function routeDaemonEventsNotification(
   // update live without a refetch. Side effect, never an early return.
   if (type === 'workspace:attention-changed') {
     handleAttentionChangedEvent(event, workspaceId);
+  }
+  // `workspace:waiting-changed` (§5.1 / §6.5) — merge the BE-derived orthogonal
+  // waiting flag onto the workspace entity so waiting indicators update live
+  // without a refetch. Side effect, never an early return.
+  if (type === 'workspace:waiting-changed') {
+    handleWaitingChangedEvent(event, workspaceId);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
@@ -3244,6 +3301,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
   // attention flag changes so unread indicators update without a refetch.
   'workspace:attention-changed',
+  // `workspace:waiting-changed` (§5.1 / §6.5) — self-sufficient orthogonal
+  // waiting flag transitions so waiting indicators update without a refetch.
+  'workspace:waiting-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',

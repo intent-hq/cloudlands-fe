@@ -82,9 +82,9 @@ describe('panel layout selectors', () => {
     expect(selectPanelColumnCount.select(state as any, 'populated')).toBe(2);
     expect(selectPanelColumnCount.select(state as any, 'vertical')).toBe(1);
     expect(selectPanelCanvasWidthsByWorkspaceId.select(state as any)).toEqual({
-      empty: 480,
+      empty: 500,
       populated: 1000,
-      vertical: 480,
+      vertical: 720,
     });
     expect(selectFocusedPanelTargetsByWorkspaceId.select(state as any)).toEqual({
       empty: { panelId: null, activeTabId: null },

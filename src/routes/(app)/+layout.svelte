@@ -38,6 +38,7 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
+  import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
   import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
@@ -979,7 +980,9 @@
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
           class="flex min-h-0 shrink-0"
-          style:padding-top={showWorkspaceColumns ? `${35 / $zoomFactor}px` : undefined}
+          style:padding-top={showWorkspaceColumns
+            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
+            : undefined}
           data-sidebar-panel-frame
         >
           <SidebarPanel />

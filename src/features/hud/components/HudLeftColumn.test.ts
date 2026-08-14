@@ -154,6 +154,46 @@ describe('HudLeftColumn WORKSPACES-BY-STATE blink gating', () => {
   });
 });
 
+describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
+  function waitingRow(): HTMLElement {
+    return screen.getByTestId('hud-workspace-bar-waiting');
+  }
+
+  it('renders the orthogonal WAITING row and counts flagged workspaces (no blink)', async () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'active' }]),
+        waiting: true,
+      }),
+    );
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-2', [{ id: 'b-0', status: 'active' }])),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(waitingRow().textContent).toContain('1');
+    });
+
+    const row = waitingRow();
+    expect(row.textContent).toContain('WAITING');
+    // Waiting is informational, never a call to action — no blink at any count.
+    expect(blinks(row)).toBe(false);
+  });
+
+  it('shows zero when no workspace carries the flag', () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'active' }])),
+    );
+    flushSync();
+
+    expect(waitingRow().textContent).toContain('0');
+  });
+});
+
 describe('HudLeftColumn AGENTS-BY-STATE rows', () => {
   it('renders only the RUNNING / FAILED / IDLE bars (no NEEDS ATTENTION or DONE)', () => {
     render(HudLeftColumn, { props: { nowMs: NOW_MS } });

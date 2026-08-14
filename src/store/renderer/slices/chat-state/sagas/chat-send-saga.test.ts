@@ -150,6 +150,7 @@ describe('chatSendSaga', () => {
       sendMessage(AGENT, {
         wsId: WS,
         text: ' first ',
+        userAppMessageId: 'app-message-first',
         forceSubmit: true,
         imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
         noteIds: ['note-1'],
@@ -167,6 +168,7 @@ describe('chatSendSaga', () => {
       {
         imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
         noteIds: ['note-1'],
+        userAppMessageId: 'app-message-first',
         priority: 'interrupt',
       },
     );
@@ -239,6 +241,7 @@ describe('chatSendSaga', () => {
         imageBlocks: undefined,
         noteIds: undefined,
         messageMetadata: undefined,
+        userAppMessageId: undefined,
         priority: undefined,
       },
     );

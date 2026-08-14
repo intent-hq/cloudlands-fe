@@ -755,8 +755,8 @@
               }
               if (/\r|\n/.test(text)) {
                 // Multi-line paste below the chip threshold: insert following the
-                // WYSIWYG convention (single \n → hardBreak, blank line → new
-                // paragraph) instead of ProseMirror's default one-<p>-per-line,
+                // WYSIWYG convention (every \n → one hardBreak, no paragraph
+                // splitting) instead of ProseMirror's default one-<p>-per-line,
                 // which would serialize each single break as \n\n (#1151)
                 const { state, dispatch } = view;
                 const paragraphs = pastedTextToParagraphNodes(state.schema, text);

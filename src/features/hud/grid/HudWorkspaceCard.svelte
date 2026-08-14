@@ -20,6 +20,7 @@
     agentBucketColor,
     cardStateColor,
     cardStateLabel,
+    cardWaitingSuffixLabel,
     formatCardTokens,
   } from './hud-card-meta';
   import HudAgentLine from './HudAgentLine.svelte';
@@ -105,6 +106,9 @@
   {/if}
   <div class="hud-ws-card-corner hud-ws-card-corner-tl" style:border-color={color}></div>
   <div class="hud-ws-card-corner hud-ws-card-corner-br" style:border-color={color}></div>
+  {#if card.isUnread}
+    <div class="hud-ws-card-dogear" aria-hidden="true"></div>
+  {/if}
 
   <div class="hud-ws-card-status">
     <span
@@ -114,6 +118,11 @@
       style:background={color}
     ></span>
     <span class="hud-ws-card-state" style:color>{cardStateLabel(card.stateKey)}</span>
+    {#if card.isWaiting}
+      <!-- Orthogonal waiting overlay: dimmed suffix, base label keeps its
+           state color. Never feeds the attention banner/blink. -->
+      <span class="hud-ws-card-state hud-ws-card-state-waiting">{cardWaitingSuffixLabel()}</span>
+    {/if}
   </div>
 
   <div class="hud-ws-card-heading">
@@ -265,6 +274,9 @@
       monospace;
     letter-spacing: 0.12em;
   }
+  .hud-ws-card-state-waiting {
+    color: hsl(var(--muted-foreground));
+  }
   .hud-ws-card-heading {
     padding: 0 12px;
   }
@@ -411,26 +423,29 @@
     animation: hudblink 1.6s step-end infinite;
   }
   /* Unread overlay (workspace.attention === 'unread'): the card keeps its
-     real state banner/colors and blinks a blue border on top — the HUD's
-     non-urgent counterpart to the main app's blue dot. The 1px border plus an
-     inset 1px box-shadow reads as a 2px border (matching the corner brackets)
-     without changing the content box. The takeover pre-roll flash targets
-     `outline` (not `border`), so both can play — the combined rule below
-     keeps them running when both classes apply. */
-  .hud-ws-card-unread {
-    border-color: hsl(var(--ring));
-    box-shadow: inset 0 0 0 1px hsl(var(--ring));
-    animation: hudunreadborder 1.6s step-end infinite;
+     real state banner/colors and shows a blue corner-fold "dog-ear" triangle
+     flush with the top-right corner (hypotenuse facing into the card) — the
+     HUD's non-urgent counterpart to the main app's blue dot. The fold
+     breathes with a gentle opacity pulse; under reduced motion it renders as
+     a static fold. */
+  .hud-ws-card-dogear {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    background: hsl(var(--ring));
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+    pointer-events: none;
+    animation: huddogearbreathe 1s ease-in-out infinite;
   }
-  @keyframes hudunreadborder {
+  @keyframes huddogearbreathe {
     0%,
     100% {
-      border-color: hsl(var(--ring));
-      box-shadow: inset 0 0 0 1px hsl(var(--ring));
+      opacity: 1;
     }
     50% {
-      border-color: hsl(var(--border) / 0.8);
-      box-shadow: inset 0 0 0 1px transparent;
+      opacity: 0.45;
     }
   }
   /* Takeover pre-roll flash: 3 fast blinks (0.18s × 3 = 540ms, inside the
@@ -447,20 +462,11 @@
       outline-color: hsl(var(--primary));
     }
   }
-  /* Both classes set the `animation` shorthand, so an unread card entering the
-     takeover pre-roll needs a combined rule — otherwise the equal-specificity
-     .hud-ws-card-flash rule replaces the unread border blink. */
-  .hud-ws-card-unread.hud-ws-card-flash {
-    animation:
-      hudunreadborder 1.6s step-end infinite,
-      hudwsflash 0.18s step-end 3;
-  }
   @media (prefers-reduced-motion: reduce) {
     .hud-anim-pulse,
     .hud-anim-blink,
     .hud-ws-card-flash,
-    .hud-ws-card-unread,
-    .hud-ws-card-unread.hud-ws-card-flash {
+    .hud-ws-card-dogear {
       animation: none;
     }
   }

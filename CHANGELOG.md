@@ -4,6 +4,40 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.38.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.37.0...v2.38.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* extract shared loopback URL resolver and add browser:resolve-url IPC ([#1181](https://github.com/intent-hq/cloudlands-fe/issues/1181)) ([d539a74](https://github.com/intent-hq/cloudlands-fe/commit/d539a74540b52cc99bd2bf60bf3428277a90f688))
+* route all embedded-browser loads through the resolve-url resolver ([#1183](https://github.com/intent-hq/cloudlands-fe/issues/1183)) ([31211e1](https://github.com/intent-hq/cloudlands-fe/commit/31211e1c60a6ac80edd697576a042b24b6e66b13))
+
+
+### 🐛 Bug Fixes
+
+* **chat:** restore reason-specific stopped indicator labels and add system_suspend ([#1185](https://github.com/intent-hq/cloudlands-fe/issues/1185)) ([20cf852](https://github.com/intent-hq/cloudlands-fe/commit/20cf852e0bf0cf3a657e48bf848f0ab0f904fd75))
+* reconcile verified workspace UI refinements ([#1131](https://github.com/intent-hq/cloudlands-fe/issues/1131)) ([a7b016f](https://github.com/intent-hq/cloudlands-fe/commit/a7b016f78d863123df69f195484284afb0a44a38))
+* stabilize New Workspace modal button and setup-script row heights ([#1186](https://github.com/intent-hq/cloudlands-fe/issues/1186)) ([a890f6d](https://github.com/intent-hq/cloudlands-fe/commit/a890f6deda57f9867b0565e6b37b7f36365338e3))
+
+## [2.37.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.36.1...v2.37.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* resolve loopback URLs against the daemon host in remote mode (rewrite, probe, tunnel fallback) ([e683ae6](https://github.com/intent-hq/cloudlands-fe/commit/e683ae6495f3e3b8dc872dde3d2700febe0e8cce))
+* surface daemon workspace waiting flag in sidebar and HUD ([#1178](https://github.com/intent-hq/cloudlands-fe/issues/1178)) ([7498f5c](https://github.com/intent-hq/cloudlands-fe/commit/7498f5cf7c348ab64109678cac3549c59f636792))
+
+## [2.36.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.36.0...v2.36.1) (2026-08-14)
+
+
+### 🐛 Bug Fixes
+
+* **hud:** count unread workspaces in both UNREAD and their state bucket ([#1172](https://github.com/intent-hq/cloudlands-fe/issues/1172)) ([a8588d6](https://github.com/intent-hq/cloudlands-fe/commit/a8588d6d945272fec5cad90aa54302953eaf9d74))
+* **hud:** thicken workspace card unread blink border to 2px ([#1173](https://github.com/intent-hq/cloudlands-fe/issues/1173)) ([78ca820](https://github.com/intent-hq/cloudlands-fe/commit/78ca820f19ddc1ad31dcbfab5e4a1f7aaed7d9e2))
+* preserve newlines losslessly in chat input restore and paste ([#1175](https://github.com/intent-hq/cloudlands-fe/issues/1175)) ([de57e82](https://github.com/intent-hq/cloudlands-fe/commit/de57e8242af7269722e6c274e9ea7bd837e22668))
+* prevent each_key_duplicate crash in chat response-group rendering ([#1176](https://github.com/intent-hq/cloudlands-fe/issues/1176)) ([de21b1b](https://github.com/intent-hq/cloudlands-fe/commit/de21b1b7b8a7c5edb06d9b8a20144b022fcb81b3))
+* stop sticky-row flicker at top of chat ([#1171](https://github.com/intent-hq/cloudlands-fe/issues/1171)) ([cbd3e3f](https://github.com/intent-hq/cloudlands-fe/commit/cbd3e3f9514c6b0c32abd6708ee2518c2056b1c8))
+
 ## [2.36.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.2...v2.36.0) (2026-08-14)
 
 

@@ -427,7 +427,71 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
 
     // Deliver agent:process:queued event — should set processQueueHint.
     // Use saturated values (used === cap) to match the documented semantics
-    // ("all slots active") per PROTOCOL §6.5.
+    // ("all slots active") per PROTOCOL §6.5. The wire payload carries
+    // reason: 'slots' (intent-hq/intentd#1196).
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 3,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
+
+    // Deliver agent:process:resumed event — should clear processQueueHint.
+    // Include used/cap/reason to match PROTOCOL §6.5 (AgentProcessResumedEvent
+    // carries { agentId, used, cap, reason }) even though the handler only uses
+    // agentId.
+    handler(
+      notification('agent:process:resumed', {
+        agentId: AGENT,
+        used: 2,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toBeUndefined();
+  });
+
+  it('routes agent:process:queued with reason memory-budget into processQueueHint.reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Budget-queued spawn (PROTOCOL §6.5): used/cap still count agent slots,
+    // but the admission constraint is the aggregate memory budget.
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 2,
+      cap: 8,
+      reason: 'memory-budget',
+    });
+  });
+
+  it('normalizes an absent agent:process:queued reason (older daemon) to slots', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Pre-#1196 daemons omit `reason`; the bridge treats absence as 'slots'
+    // (the only queueing constraint that existed before the memory budget).
     handler(
       notification('agent:process:queued', {
         agentId: AGENT,
@@ -440,20 +504,33 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       waiting: true,
       used: 3,
       cap: 3,
+      reason: 'slots',
     });
+  });
 
-    // Deliver agent:process:resumed event — should clear processQueueHint.
-    // Include used/cap to match PROTOCOL §6.5 (AgentProcessResumedEvent carries
-    // { agentId, used, cap }) even though the handler only uses agentId.
+  it('falls back to slots for an unrecognized agent:process:queued reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A hypothetical future constraint the FE doesn't know yet: fall back to
+    // 'slots' (a stale label beats a broken render) — the bridge logs a
+    // warning so the divergence is observable rather than silently absorbed.
     handler(
-      notification('agent:process:resumed', {
+      notification('agent:process:queued', {
         agentId: AGENT,
-        used: 2,
+        used: 3,
         cap: 3,
+        reason: 'gpu-budget',
       }),
     );
 
-    expect(readSession()?.processQueueHint).toBeUndefined();
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
@@ -6801,6 +6878,204 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     const ws = await readWorkspace();
     expect(ws.attention).toBe('unread');
     expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
+  });
+});
+
+describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', () => {
+  const WS_WAIT = 'ws-waiting-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_WAIT,
+        title: 'Waiting ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ waiting?: boolean }> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_WAIT) ?? {}) as never;
+  }
+
+  function waitingChangedNotification(waiting: boolean) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-waiting-${waiting}`,
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:waiting-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:waiting-changed');
+  });
+
+  it('merges waiting=true onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('merges waiting=false onto the workspace entity (transition back)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler(waitingChangedNotification(false));
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(false);
+  });
+
+  it('is a no-op when the waiting value is not a boolean', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-bad',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: 'yes',
+          },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('is a no-op when data is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-data',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId must win so the correct entity is updated.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-data-id',
+          workspaceId: 'ws-waiting-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('applies a self-sufficient payload even when the envelope workspaceId is absent', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A relay that strips the envelope workspaceId must not gate out the
+    // event — the payload carries its own workspaceId (§6.7).
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-envelope-id',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
   });
 });
 

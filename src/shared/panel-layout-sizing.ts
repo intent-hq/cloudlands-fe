@@ -1,5 +1,44 @@
-export const DEFAULT_PANEL_WIDTH = 480;
+export const DEFAULT_PANEL_WIDTH = 500;
+export const DEFAULT_MEDIUM_PANEL_WIDTH = 720;
+export const DEFAULT_BROWSER_PANEL_WIDTH = 900;
+export const MIN_PANEL_CANVAS_WIDTH = 280;
 export const MIN_PANEL_SIZE_PERCENT = 10;
+export const PANEL_SPLIT_GUTTER_WIDTH = 8;
+export const CONTAINED_PANEL_INLINE_INSET = 8;
+export const CONTAINED_PANEL_INLINE_CHROME = CONTAINED_PANEL_INLINE_INSET * 2;
+export const FIRST_CHAT_PREFERRED_WIDTH = 720;
+export const FIRST_CHAT_MIN_LAUNCHER_WIDTH = DEFAULT_PANEL_WIDTH;
+export const MAX_VISIBLE_ROOT_PANEL_RESIZE_COUNT = 3;
+
+export type PanelDefaultWidthTier = 'narrow' | 'medium' | 'wide';
+
+const MEDIUM_PANEL_VIEWPORT_SHARE = 0.6;
+const WIDE_PANEL_VIEWPORT_SHARE = 0.8;
+
+/** Resolve a declared width tier against the usable panel viewport. */
+export function getPanelDefaultWidth(tier: PanelDefaultWidthTier, viewportWidth = 0): number {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+    if (tier === 'wide') return DEFAULT_BROWSER_PANEL_WIDTH;
+    if (tier === 'medium') return DEFAULT_MEDIUM_PANEL_WIDTH;
+    return DEFAULT_PANEL_WIDTH;
+  }
+  if (tier === 'wide') {
+    return Math.max(DEFAULT_BROWSER_PANEL_WIDTH, viewportWidth * WIDE_PANEL_VIEWPORT_SHARE);
+  }
+  if (tier === 'medium') {
+    return Math.max(DEFAULT_PANEL_WIDTH, viewportWidth * MEDIUM_PANEL_VIEWPORT_SHARE);
+  }
+  return DEFAULT_PANEL_WIDTH;
+}
+
+/** Keep root dividers visible only while the workspace has room for safe independent resizing. */
+export function shouldShowRootPanelResizeHandles(panelCount: number): boolean {
+  return (
+    Number.isInteger(panelCount) &&
+    panelCount > 1 &&
+    panelCount <= MAX_VISIBLE_ROOT_PANEL_RESIZE_COUNT
+  );
+}
 
 /**
  * Clamp a root-panel resize so the target alone can absorb the accepted delta.
@@ -29,6 +68,20 @@ export function getAcceptedIndependentPanelResizeWidth(
   return previousReferenceWidth + Math.max(minimumDelta, requestedDelta);
 }
 
+export function canUseWideFirstChatLayout(availableCanvasWidth: number): boolean {
+  return (
+    Number.isFinite(availableCanvasWidth) &&
+    availableCanvasWidth >=
+      FIRST_CHAT_PREFERRED_WIDTH + FIRST_CHAT_MIN_LAUNCHER_WIDTH + PANEL_SPLIT_GUTTER_WIDTH
+  );
+}
+
+export function getWideFirstChatSizes(availableCanvasWidth: number): [number, number] {
+  const contentWidth = Math.max(1, availableCanvasWidth - PANEL_SPLIT_GUTTER_WIDTH);
+  const chatShare = (FIRST_CHAT_PREFERRED_WIDTH / contentWidth) * 100;
+  return [chatShare, 100 - chatShare];
+}
+
 export type PanelCanvasSizing = 'viewport' | 'content';
 
 function isUsableWidth(width: number | null | undefined): width is number {
@@ -44,11 +97,16 @@ function isUsableWidth(width: number | null | undefined): width is number {
  * panel content.
  */
 export function getAutomaticPanelCanvasWidth(
-  panelColumnCount: number,
+  panelColumns: number | readonly number[],
   sizing: PanelCanvasSizing,
   viewportWidth = 0,
 ): number {
-  const preferredWidth = Math.max(1, panelColumnCount) * DEFAULT_PANEL_WIDTH;
+  const preferredWidth = Array.isArray(panelColumns)
+    ? Math.max(
+        DEFAULT_PANEL_WIDTH,
+        panelColumns.reduce((sum, width) => sum + width, 0),
+      )
+    : Math.max(1, panelColumns as number) * DEFAULT_PANEL_WIDTH;
   return sizing === 'viewport' && viewportWidth > 0
     ? Math.max(viewportWidth, preferredWidth)
     : preferredWidth;
@@ -60,14 +118,13 @@ export function getAutomaticPanelCanvasWidth(
  * viewport, but deck view always preserves the content width.
  */
 export function getResolvedPanelCanvasWidth(
-  panelColumnCount: number,
+  panelColumns: number | readonly number[],
   sizing: PanelCanvasSizing,
   viewportWidth: number,
   persistedWidth: number | null | undefined,
 ): number {
-  const intrinsicWidth = isUsableWidth(persistedWidth)
-    ? persistedWidth
-    : getAutomaticPanelCanvasWidth(panelColumnCount, 'content');
+  if (isUsableWidth(persistedWidth)) return persistedWidth;
+  const intrinsicWidth = getAutomaticPanelCanvasWidth(panelColumns, 'content');
   return sizing === 'viewport' && viewportWidth > 0
     ? Math.max(viewportWidth, intrinsicWidth)
     : intrinsicWidth;

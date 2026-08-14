@@ -19,19 +19,19 @@ import type {
   PanelLayoutSliceState,
   LayoutSnapshot,
   RecentlyClosedTab,
-  SavedExpandSizes,
   PanelDragLayoutSnapshot,
 } from './panel-layout-types';
+import { MAX_RECENTLY_CLOSED, MAX_LAYOUT_HISTORY, MAX_FOCUS_HISTORY } from './panel-layout-types';
 import {
-  MAX_RECENTLY_CLOSED,
-  MAX_LAYOUT_HISTORY,
-  MAX_FOCUS_HISTORY,
-  EXPANDED_SHARE,
-} from './panel-layout-types';
+  getDominantPanelCanvasWidth,
+  getDominantSplitGeometry,
+  snapshotPanelSplitSizes,
+} from './panel-dominant-expansion';
 import {
   movePanelInLayout,
   movePanelToRootEdgeInLayout,
   countHorizontalPanelColumns,
+  getAutomaticPanelLayoutCanvasWidth,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
   resizeRootHorizontalPanel,
@@ -42,6 +42,10 @@ import {
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
 } from '../../../../shared/panel-layout-sizing';
+import {
+  initializePanelCanvasWidth,
+  resolveUserPanelCanvasResize,
+} from './panel-layout-width-provenance';
 
 // ============================================================================
 // ID Generation Helpers (used in payload modifiers)
@@ -63,7 +67,7 @@ function generateTabId(): string {
 
 export function createDefaultLayout(): Pick<
   WorkspacePanelLayoutState,
-  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth'
+  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth' | 'canvasWidthSource'
 > {
   const panelId = generatePanelId();
   return {
@@ -73,6 +77,7 @@ export function createDefaultLayout(): Pick<
     },
     focusedPanelId: panelId,
     canvasWidth: null,
+    canvasWidthSource: null,
   };
 }
 
@@ -81,6 +86,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   panels: { default: { id: 'default', tabs: [], activeTabId: null } },
   focusedPanelId: 'default',
   canvasWidth: null,
+  canvasWidthSource: null,
   restoreStatus: 'idle',
   pendingFocusTabId: null,
   recentlyClosed: [],
@@ -91,6 +97,8 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   focusHistoryIndex: -1,
   expandedPanelId: null,
   savedSizesBeforeExpand: [],
+  savedCanvasWidthBeforeExpand: undefined,
+  savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
 };
 
@@ -108,6 +116,7 @@ export const initializeLayout = createAction(
     wsId: string,
     layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'focusedPanelId'> & {
       canvasWidth?: number | null;
+      canvasWidthSource?: WorkspacePanelLayoutState['canvasWidthSource'];
     },
   ) => ({
     wsId,
@@ -410,7 +419,13 @@ export const updateSplitSizes = createAction<[wsId: string, sizes: number[], spl
 );
 
 export const resizePanelLayoutRightEdge = createAction<
-  [wsId: string, previousWidth: number, nextWidth: number, nextCanvasWidth: number]
+  [
+    wsId: string,
+    previousWidth: number,
+    nextWidth: number,
+    nextCanvasWidth: number,
+    resetToAutomatic?: boolean,
+  ]
 >('panelLayout/resizePanelLayoutRightEdge');
 
 /**
@@ -565,6 +580,33 @@ function findExistingTab(
   return null;
 }
 
+function restoreExpandedWorkspaceLayout(
+  workspace: WorkspacePanelLayoutState,
+): WorkspacePanelLayoutState {
+  if (workspace.expandedPanelId === null) return workspace;
+  const root = JSON.parse(JSON.stringify(workspace.root)) as PanelLayoutNode;
+  for (const entry of workspace.savedSizesBeforeExpand) {
+    const node = getSplitAtPath(root, entry.nodePath);
+    if (node?.type === 'split') node.sizes = [...entry.sizes];
+  }
+  return {
+    ...workspace,
+    root,
+    canvasWidth:
+      workspace.savedCanvasWidthBeforeExpand !== undefined
+        ? workspace.savedCanvasWidthBeforeExpand
+        : workspace.canvasWidth,
+    canvasWidthSource:
+      workspace.savedCanvasWidthSourceBeforeExpand !== undefined
+        ? workspace.savedCanvasWidthSourceBeforeExpand
+        : workspace.canvasWidthSource,
+    expandedPanelId: null,
+    savedSizesBeforeExpand: [],
+    savedCanvasWidthBeforeExpand: undefined,
+    savedCanvasWidthSourceBeforeExpand: undefined,
+  };
+}
+
 /** Find duplicate tab in a specific panel by content */
 function findDuplicateTabInPanel(panel: PanelState, tab: Omit<PanelTab, 'id'>): PanelTab | null {
   return (
@@ -620,6 +662,7 @@ function closePanelHelper(
   timestamp?: number,
 ): WorkspacePanelLayoutState {
   if (Object.keys(ws.panels).length <= 1) return ws;
+  ws = restoreExpandedWorkspaceLayout(ws);
 
   const removal = removePanelPreservingHorizontalWidths(ws.root, panelId);
   if (!removal.node || !removal.removed) return ws;
@@ -648,6 +691,8 @@ function closePanelHelper(
     canvasWidth: ws.canvasWidth === null ? null : ws.canvasWidth * removal.remainingWidthRatio,
     expandedPanelId: null,
     savedSizesBeforeExpand: [],
+    savedCanvasWidthBeforeExpand: undefined,
+    savedCanvasWidthSourceBeforeExpand: undefined,
     recentlyClosed: newRecentlyClosed,
   };
 }
@@ -704,6 +749,7 @@ function saveToHistory(
     panels: JSON.parse(JSON.stringify(ws.panels)),
     focusedPanelId: ws.focusedPanelId,
     canvasWidth: ws.canvasWidth,
+    canvasWidthSource: ws.canvasWidthSource,
     timestamp,
   };
   layoutHistory.push(snapshot);
@@ -800,12 +846,13 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
   const { wsId, layout } = payload;
   const ws = getWorkspaceState(state, wsId);
+  const canvasWidthState = initializePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource);
   return setWorkspaceState(state, wsId, {
     ...ws,
     root: layout.root,
     panels: layout.panels,
     focusedPanelId: layout.focusedPanelId,
-    canvasWidth: layout.canvasWidth ?? null,
+    ...canvasWidthState,
   });
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
@@ -1365,6 +1412,7 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   const { wsId, panelId, direction, animated, newPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
 
+  ws = restoreExpandedWorkspaceLayout(ws);
   ws = saveToHistory(ws, timestamp);
   ws = { ...ws, expandedPanelId: null, savedSizesBeforeExpand: [] };
 
@@ -1447,7 +1495,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
 // --- Update Sizes ---
 panelLayoutReducer.with(movePanel, (state, { payload }) => {
   const { wsId, panelId, targetPanelId, position, timestamp } = payload;
-  let ws = getWorkspaceState(state, wsId);
+  let ws = restoreExpandedWorkspaceLayout(getWorkspaceState(state, wsId));
   if (panelId === targetPanelId || !ws.panels[panelId] || !ws.panels[targetPanelId]) return state;
   const root = movePanelInLayout(ws.root, panelId, targetPanelId, position);
   if (!root) return state;
@@ -1457,7 +1505,7 @@ panelLayoutReducer.with(movePanel, (state, { payload }) => {
 
 panelLayoutReducer.with(movePanelToRootEdge, (state, { payload }) => {
   const { wsId, panelId, position, timestamp } = payload;
-  let ws = getWorkspaceState(state, wsId);
+  let ws = restoreExpandedWorkspaceLayout(getWorkspaceState(state, wsId));
   if (!ws.panels[panelId]) return state;
   const root = movePanelToRootEdgeInLayout(ws.root, panelId, position);
   if (!root) return state;
@@ -1509,7 +1557,7 @@ panelLayoutReducer.with(updateSplitSizes, (state, { payload: [wsId, sizes, split
 });
 panelLayoutReducer.with(
   resizePanelLayoutRightEdge,
-  (state, { payload: [wsId, previousWidth, nextWidth, nextCanvasWidth] }) => {
+  (state, { payload: [wsId, previousWidth, nextWidth, nextCanvasWidth, resetToAutomatic] }) => {
     if (
       previousWidth <= 0 ||
       nextWidth <= 0 ||
@@ -1522,8 +1570,19 @@ panelLayoutReducer.with(
     }
     const ws = getWorkspaceState(state, wsId);
     const root = resizePanelTreeRightEdge(ws.root, previousWidth, nextWidth);
-    if (root === ws.root && ws.canvasWidth === nextCanvasWidth) return state;
-    return setWorkspaceState(state, wsId, { ...ws, root, canvasWidth: nextCanvasWidth });
+    const canvasWidthState = resolveUserPanelCanvasResize(
+      nextCanvasWidth,
+      getAutomaticPanelLayoutCanvasWidth(root, ws.panels, 'content'),
+      resetToAutomatic,
+    );
+    if (
+      root === ws.root &&
+      ws.canvasWidth === canvasWidthState.canvasWidth &&
+      ws.canvasWidthSource === canvasWidthState.canvasWidthSource
+    ) {
+      return state;
+    }
+    return setWorkspaceState(state, wsId, { ...ws, root, ...canvasWidthState });
   },
 );
 panelLayoutReducer.with(
@@ -1544,73 +1603,77 @@ panelLayoutReducer.with(
     const resized = resizeRootHorizontalPanel(ws.root, previousWidth, nextWidth, panelIndex);
     const acceptedCanvasWidth = nextCanvasWidth + resized.nextWidth - nextWidth;
     if (!Number.isFinite(acceptedCanvasWidth) || acceptedCanvasWidth <= 0) return state;
-    if (resized.node === ws.root && ws.canvasWidth === acceptedCanvasWidth) return state;
+    const canvasWidthState = resolveUserPanelCanvasResize(
+      acceptedCanvasWidth,
+      getAutomaticPanelLayoutCanvasWidth(resized.node, ws.panels, 'content'),
+    );
+    if (
+      resized.node === ws.root &&
+      ws.canvasWidth === canvasWidthState.canvasWidth &&
+      ws.canvasWidthSource === canvasWidthState.canvasWidthSource
+    ) {
+      return state;
+    }
     return setWorkspaceState(state, wsId, {
       ...ws,
       root: resized.node,
-      canvasWidth: acceptedCanvasWidth,
+      ...canvasWidthState,
     });
   },
 );
 // --- Toggle Expand Panel ---
 panelLayoutReducer.with(toggleExpandPanel, (state, { payload: [wsId, panelId] }) => {
   const ws = getWorkspaceState(state, wsId);
-  const newRoot = JSON.parse(JSON.stringify(ws.root)) as PanelLayoutNode;
 
   if (ws.expandedPanelId === panelId) {
-    // Collapse: restore saved sizes
-    for (const entry of ws.savedSizesBeforeExpand) {
-      const node = getSplitAtPath(newRoot, entry.nodePath);
-      if (node && node.type === 'split') node.sizes = entry.sizes;
-    }
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      root: newRoot,
-      expandedPanelId: null,
-      savedSizesBeforeExpand: [],
-    });
+    return setWorkspaceState(state, wsId, restoreExpandedWorkspaceLayout(ws));
   }
 
-  // If different panel was expanded, restore first
-  if (ws.expandedPanelId !== null) {
-    for (const entry of ws.savedSizesBeforeExpand) {
-      const node = getSplitAtPath(newRoot, entry.nodePath);
-      if (node && node.type === 'split') node.sizes = entry.sizes;
-    }
-  }
+  const restored = restoreExpandedWorkspaceLayout(ws);
+  const newRoot = JSON.parse(JSON.stringify(restored.root)) as PanelLayoutNode;
 
   const panelPath = findPanelPath(newRoot, panelId);
   if (!panelPath || panelPath.length === 0) {
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      root: newRoot,
-      expandedPanelId: null,
-      savedSizesBeforeExpand: [],
-    });
+    return setWorkspaceState(state, wsId, restored);
   }
 
-  const savedSizes: SavedExpandSizes[] = [];
+  const savedSizes = snapshotPanelSplitSizes(restored.root);
+  const availableCanvasWidth =
+    restored.canvasWidth ??
+    getAutomaticPanelLayoutCanvasWidth(restored.root, restored.panels, 'content');
+  const dominantCanvasWidth = getDominantPanelCanvasWidth(
+    restored.root,
+    restored.panels,
+    panelId,
+    availableCanvasWidth,
+  );
   let currentNode: PanelLayoutNode = newRoot;
-  const currentNodePath: number[] = [];
+  let currentOuterWidth = dominantCanvasWidth;
+  let changedHorizontalSplit = false;
 
   for (const childIndex of panelPath) {
     if (currentNode.type === 'split') {
-      savedSizes.push({ nodePath: [...currentNodePath], sizes: [...currentNode.sizes] });
-      const siblingCount = currentNode.children.length - 1;
-      const siblingShare = siblingCount > 0 ? (100 - EXPANDED_SHARE) / siblingCount : 0;
-      currentNode.sizes = currentNode.sizes.map((_, i) =>
-        i === childIndex ? EXPANDED_SHARE : siblingShare,
-      );
-      currentNodePath.push(childIndex);
+      if (currentNode.direction === 'horizontal') {
+        const geometry = getDominantSplitGeometry(currentNode, childIndex, currentOuterWidth);
+        currentNode.sizes = geometry.sizes;
+        currentOuterWidth = geometry.targetWidth;
+        changedHorizontalSplit = true;
+      }
       currentNode = currentNode.children[childIndex];
     }
   }
 
+  if (!changedHorizontalSplit) return setWorkspaceState(state, wsId, restored);
+
   return setWorkspaceState(state, wsId, {
-    ...ws,
+    ...restored,
     root: newRoot,
+    canvasWidth:
+      dominantCanvasWidth > availableCanvasWidth ? dominantCanvasWidth : restored.canvasWidth,
     expandedPanelId: panelId,
     savedSizesBeforeExpand: savedSizes,
+    savedCanvasWidthBeforeExpand: restored.canvasWidth,
+    savedCanvasWidthSourceBeforeExpand: restored.canvasWidthSource,
   });
 });
 // --- Reset Layout ---
@@ -1622,6 +1685,8 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     ...defaultLayout,
     expandedPanelId: null,
     savedSizesBeforeExpand: [],
+    savedCanvasWidthBeforeExpand: undefined,
+    savedCanvasWidthSourceBeforeExpand: undefined,
   });
 });
 // --- Go Back ---
@@ -1639,6 +1704,7 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
       panels: JSON.parse(JSON.stringify(ws.panels)),
       focusedPanelId: ws.focusedPanelId,
       canvasWidth: ws.canvasWidth,
+      canvasWidthSource: ws.canvasWidthSource,
       timestamp,
     });
   }
@@ -1650,13 +1716,17 @@ panelLayoutReducer.with(goBack, (state, { payload: { wsId, timestamp } }) => {
   let panels = JSON.parse(JSON.stringify(snapshot.panels)) as Record<string, PanelState>;
   // Strip spec tabs if deferring
   if (ws.deferSpecTab) panels = stripSpecTabs(panels);
+  const canvasWidthState = initializePanelCanvasWidth(
+    snapshot.canvasWidth,
+    snapshot.canvasWidthSource,
+  );
 
   return setWorkspaceState(state, wsId, {
     ...ws,
     root: JSON.parse(JSON.stringify(snapshot.root)),
     panels,
     focusedPanelId: snapshot.focusedPanelId,
-    canvasWidth: snapshot.canvasWidth ?? null,
+    ...canvasWidthState,
     layoutHistory,
     historyIndex,
   });
@@ -1672,13 +1742,17 @@ panelLayoutReducer.with(goForward, (state, { payload: [wsId] }) => {
 
   let panels = JSON.parse(JSON.stringify(snapshot.panels)) as Record<string, PanelState>;
   if (ws.deferSpecTab) panels = stripSpecTabs(panels);
+  const canvasWidthState = initializePanelCanvasWidth(
+    snapshot.canvasWidth,
+    snapshot.canvasWidthSource,
+  );
 
   return setWorkspaceState(state, wsId, {
     ...ws,
     root: JSON.parse(JSON.stringify(snapshot.root)),
     panels,
     focusedPanelId: snapshot.focusedPanelId,
-    canvasWidth: snapshot.canvasWidth ?? null,
+    ...canvasWidthState,
     historyIndex,
   });
 });

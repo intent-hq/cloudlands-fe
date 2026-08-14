@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    animateMessageSend: vi.fn(),
+    createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
     selector,
   };
@@ -112,6 +114,12 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 vi.mock('$lib/utils/smartScroll', () => ({
   followBottom: () => ({ update: () => {}, destroy: () => {} }),
   scrollToBottom: vi.fn(),
+}));
+vi.mock('../message-send-transition', () => ({
+  captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
+  createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
+  animateMessageSend: mocks.animateMessageSend,
+  MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -224,6 +232,13 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.animateMessageSend.mockResolvedValue(undefined);
+  mocks.createMessageSendLaunchBubble.mockImplementation(() => {
+    const bubble = document.createElement('div');
+    bubble.dataset.messageSendTransition = 'true';
+    document.body.append(bubble);
+    return bubble;
+  });
   mocks.pendingQuestions = null;
 });
 
@@ -337,6 +352,47 @@ describe('ChatPanel mounted lifecycle', () => {
     await vi.advanceTimersByTimeAsync(60);
 
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+  });
+
+  it('expires an unclaimed send launch bubble at the bounded transition deadline', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'send without an optimistic transcript row' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
+    expect(bubble.isConnected).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(599);
+    expect(bubble.isConnected).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(bubble.isConnected).toBe(false);
+    expect(mocks.animateMessageSend).not.toHaveBeenCalled();
+  });
+
+  it('removes a pending send launch bubble when the panel is destroyed', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'pending handoff' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
+    expect(bubble.isConnected).toBe(true);
+
+    view.unmount();
+    expect(bubble.isConnected).toBe(false);
   });
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {

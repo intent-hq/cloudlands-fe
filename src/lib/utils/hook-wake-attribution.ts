@@ -5,8 +5,7 @@
  * `{ type: 'hook_wake', hookId, hookName, reason }` — on the row's
  * `metadata`, on the persisted text block's `messageMetadata`, and on queued
  * entries' `messageMetadata` (PROTOCOL §5.40). This util extracts that
- * attribution metadata-first with graceful fallback: absent or malformed
- * metadata returns `null` so the message renders exactly as before.
+ * attribution metadata-first, with the protocol prefix as a legacy fallback.
  */
 
 import { m } from '$shared/paraglide/messages.js';
@@ -35,27 +34,41 @@ export interface HookWakeAttribution {
 
 const MAX_NAME_LENGTH = 20;
 
-/**
- * Extract hook-wake attribution from an opaque metadata object. Returns
- * `null` unless `metadata.type === 'hook_wake'`.
- */
-export function getHookWakeAttribution(metadata: unknown): HookWakeAttribution | null {
-  if (!metadata || typeof metadata !== 'object') return null;
-  const md = metadata as Record<string, unknown>;
-  if (md.type !== 'hook_wake') return null;
-
-  const hookId = typeof md.hookId === 'string' ? md.hookId.trim() : '';
-  const rawName = typeof md.hookName === 'string' ? md.hookName : '';
+function buildHookWakeAttribution(
+  rawName: string,
+  fields: { hookId?: unknown; reason?: unknown; hookStillActive?: unknown } = {},
+): HookWakeAttribution {
   const name = rawName.trim() || m.chat_hookWakeAttribution_fallbackName_label();
   const displayName =
     name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
-  const reason = typeof md.reason === 'string' ? md.reason : '';
-
-  const attribution: HookWakeAttribution = { hookId, displayName, rawName, reason };
-  if (typeof md.hookStillActive === 'boolean') {
-    attribution.hookStillActive = md.hookStillActive;
+  const attribution: HookWakeAttribution = {
+    hookId: typeof fields.hookId === 'string' ? fields.hookId.trim() : '',
+    displayName,
+    rawName,
+    reason: typeof fields.reason === 'string' ? fields.reason : '',
+  };
+  if (typeof fields.hookStillActive === 'boolean') {
+    attribution.hookStillActive = fields.hookStillActive;
   }
   return attribution;
+}
+
+/**
+ * Extract hook-wake attribution from metadata or a legacy protocol prefix.
+ */
+export function getHookWakeAttribution(
+  metadata: unknown,
+  legacyContent?: string,
+): HookWakeAttribution | null {
+  if (metadata && typeof metadata === 'object') {
+    const md = metadata as Record<string, unknown>;
+    if (md.type === 'hook_wake') {
+      return buildHookWakeAttribution(typeof md.hookName === 'string' ? md.hookName : '', md);
+    }
+  }
+
+  const legacyMatch = legacyContent?.match(/^\[Background hook "([^"]*)"\]\s*/);
+  return legacyMatch ? buildHookWakeAttribution(legacyMatch[1]) : null;
 }
 
 /**

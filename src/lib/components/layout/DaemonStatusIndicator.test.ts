@@ -592,7 +592,14 @@ describe('DaemonStatusIndicator', () => {
         },
         connections: {
           connections: createCollection('id', [
-            { id: 'local', label: 'Local', host: null, port: null, fingerprint: null, isLocal: true },
+            {
+              id: 'local',
+              label: 'Local',
+              host: null,
+              port: null,
+              fingerprint: null,
+              isLocal: true,
+            },
             {
               id: 'r1',
               label: 'desk:4180',
@@ -629,6 +636,43 @@ describe('DaemonStatusIndicator', () => {
       expect(
         screen.getByRole('menuitem', { name: /Protocol version differs from local/ }),
       ).toBeTruthy();
+    });
+
+    it('exposes the active-connection check icon as role="img" (monorepo#2320)', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: null,
+          lastUpdated: null,
+          polling: false,
+        },
+        connections: {
+          connections: createCollection('id', [
+            {
+              id: 'local',
+              label: 'Local',
+              host: null,
+              port: null,
+              fingerprint: null,
+              isLocal: true,
+            },
+          ]),
+          activeId: 'local',
+          status: 'idle',
+          error: null,
+          certMismatch: null,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // role="img" so the aria-label on the plain span is reliably exposed.
+      const icon = screen.getByLabelText('Active');
+      expect(icon.getAttribute('role')).toBe('img');
+      // The name also flows into the row's menuitem name-from-contents.
+      expect(screen.getByRole('menuitem', { name: /Active/ })).toBeTruthy();
     });
   });
 

@@ -121,6 +121,35 @@ describe('WorkspaceCard compact agent metadata', () => {
     expect(container.querySelector('[data-testid="mock-avatar"]')).toBeNull();
   });
 
+  it('renders a static muted waiting dot that loses to running and unread', () => {
+    const workspace = makeWorkspace();
+    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
+
+    const waiting = render(WorkspaceCard, {
+      props: { workspace, isWaiting: true },
+    });
+    const waitingDot = waiting.container.querySelector(waitingDotSelector);
+    expect(waitingDot).toBeTruthy();
+    expect(waitingDot?.className).not.toContain('animate-pulse');
+    expect(waiting.container.querySelector('.bg-success')).toBeNull();
+    expect(waiting.container.querySelector('.bg-info')).toBeNull();
+    waiting.unmount();
+
+    const running = render(WorkspaceCard, {
+      props: { workspace, isWaiting: true, isRunning: true },
+    });
+    expect(running.container.querySelector('.bg-success')).toBeTruthy();
+    expect(running.container.querySelector(waitingDotSelector)).toBeNull();
+    running.unmount();
+
+    const unread = render(WorkspaceCard, {
+      props: { workspace, isWaiting: true, isUnread: true },
+    });
+    expect(unread.container.querySelector('.bg-info')).toBeTruthy();
+    expect(unread.container.querySelector(waitingDotSelector)).toBeNull();
+    unread.unmount();
+  });
+
   it('uses the canonical compact row hierarchy and inset styling', () => {
     const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
     const row = container.querySelector('[data-workspace-card-row]');

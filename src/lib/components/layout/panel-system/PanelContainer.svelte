@@ -23,6 +23,7 @@
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
   import { getAcceptedIndependentPanelResizeWidth } from '$shared/panel-layout-sizing';
+  import { getDominantPanelChildWidth } from './panel-dominant-flex';
 
   import type { DropZone } from './Panel.svelte';
   import type { HandleDropZone } from './PanelSplitHandle.svelte';
@@ -44,6 +45,8 @@
     nodePath?: number[]; // Path to this node in the tree (for size updates)
     /** Zoom state - if set, only this panel is visible */
     zoomedPanelId?: string | null;
+    /** Expanded panel that owns the live width remainder after compact siblings. */
+    dominantPanelId?: string | null;
     onFocusPanel?: (panelId: string) => void;
     onTabClick?: (panelId: string, tabId: string) => void;
     onTabClose?: (panelId: string, tabId: string) => void;
@@ -126,6 +129,7 @@
     onRootReferenceSizeChange,
     nodePath = [],
     zoomedPanelId = null,
+    dominantPanelId = null,
     onFocusPanel,
     onTabClick,
     onTabClose,
@@ -266,6 +270,13 @@
     const hiddenByZoom = isPanelHiddenByZoom(child);
     if (zoomedPanelId && containsPanel(child, zoomedPanelId)) return '1 1 100%';
     if (hiddenByZoom) return '0 0 0%';
+    const dominantWidth = getDominantPanelChildWidth(
+      node,
+      index,
+      dominantPanelId,
+      panelReferenceSize,
+    );
+    if (dominantWidth !== null) return `0 0 ${dominantWidth}px`;
     return getPanelFlexValue(
       resizeSizes[index] ?? node.sizes[index],
       panelReferenceSize,
@@ -724,6 +735,7 @@
             {suppressLayoutMotion}
             nodePath={[...nodePath, item.index]}
             {zoomedPanelId}
+            {dominantPanelId}
             {onFocusPanel}
             {onTabClick}
             {onTabClose}

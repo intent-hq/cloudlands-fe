@@ -83,6 +83,8 @@ export interface WorkspacePanelLayout {
   focusedPanelId: string | null;
   /** User-resized intrinsic horizontal canvas width; null/absent uses automatic sizing. */
   canvasWidth?: number | null;
+  /** Identifies a width that must survive restore; absent is a legacy automatic width. */
+  canvasWidthSource?: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   /** Tab ID that should receive focus when it mounts (consumed when focus is applied) */
   pendingFocusTabId?: string | null;
   detachedPanels?: Record<
@@ -116,6 +118,7 @@ export interface LayoutSnapshot {
   focusedPanelId: string | null;
   /** Optional for backward compatibility with existing persisted history. */
   canvasWidth?: number | null;
+  canvasWidthSource?: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   timestamp: number;
 }
 
@@ -143,6 +146,7 @@ export interface WorkspacePanelLayoutState {
   focusedPanelId: string | null;
   /** Current horizontal panel canvas width in pixels; null uses the default column width. */
   canvasWidth: number | null;
+  canvasWidthSource: import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   restoreStatus: PanelLayoutRestoreStatus;
   pendingFocusTabId: string | null;
   recentlyClosed: RecentlyClosedTab[];
@@ -153,6 +157,11 @@ export interface WorkspacePanelLayoutState {
   focusHistoryIndex: number;
   expandedPanelId: string | null;
   savedSizesBeforeExpand: SavedExpandSizes[];
+  /** Exact pre-expand canvas width; `null` preserves automatic-width provenance. */
+  savedCanvasWidthBeforeExpand?: number | null;
+  /** Exact pre-expand width source; preserved across transient expanded-state resizes. */
+  savedCanvasWidthSourceBeforeExpand?:
+    import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   deferSpecTab: boolean;
 }
 
@@ -175,4 +184,3 @@ export const MAX_RECENTLY_CLOSED = 20;
 export const MAX_LAYOUT_HISTORY = 50;
 export const MAX_FOCUS_HISTORY = 100;
 export const HISTORY_PERSIST_DEBOUNCE_MS = 2000;
-export const EXPANDED_SHARE = 80;

@@ -30,7 +30,8 @@ describe('panel resize rendering', () => {
     expect(canvas).toContain('storageKey={null}');
     expect(canvas).toContain('side="left"');
     expect(canvas).toContain('handleClassName="right-0! panel-canvas-resize-handle"');
-    expect(layout).toContain('canvasWidth={$panelCanvasWidth$}');
+    expect(layout).toContain('panelCanvasResizeCommittedWidth ??');
+    expect(layout).toContain('$panelCanvasWidth$}');
     expect(layout).toContain('scrollContainer={panelWorkspaceInset}');
     expect(layout).toContain('onResizeEnd={handlePanelCanvasResizeEnd}');
     expect(layout).toContain('onResizePreview={handlePanelOuterResizePreview}');
@@ -53,9 +54,9 @@ describe('panel resize rendering', () => {
     const layout = source('PanelLayout.svelte');
     const canvas = source('PanelCanvasFrame.svelte');
 
-    expect(layout).toContain('panelColumnCount={$panelColumnCount$}');
+    expect(layout).toContain('panelColumnWidths={$panelColumnDefaultWidths$}');
     expect(canvas).toContain(
-      'getPanelCanvasWidths(viewportWidth, panelColumnCount, sizing, canvasWidth)',
+      'getPanelCanvasWidths(\n      viewportWidth,\n      panelColumnWidths,',
     );
     expect(layout).toContain('sizing={canvasSizing}');
     expect(canvas).not.toContain('doSkipResize');

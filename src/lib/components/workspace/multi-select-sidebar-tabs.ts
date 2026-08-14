@@ -1,5 +1,12 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
-import { faAsterisk, faFolderTree, faPencil, faRobot } from '@fortawesome/free-solid-svg-icons';
+import {
+  faAsterisk,
+  faFolderTree,
+  faGlobe,
+  faPencil,
+  faRobot,
+  faTerminal,
+} from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
 import { faNote } from '$lib/icons/faNote';
 
@@ -64,6 +71,24 @@ export const TAB_DEFINITIONS: TabDefinition[] = [
     get description() {
       return m.workspace_multiSelectSidebar_filesTab_description();
     },
+  },
+  {
+    id: 'browser',
+    get label() {
+      return m.workspace_multiSelectSidebar_browser_label();
+    },
+    icon: faGlobe,
+    get description() {
+      return m.workspace_addContext_browser_description();
+    },
+  },
+  {
+    id: 'shell',
+    get label() {
+      return m.workspace_terminalDock_shell_label();
+    },
+    icon: faTerminal,
+    description: '',
   },
 ];
 

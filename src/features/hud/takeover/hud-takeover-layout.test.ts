@@ -284,7 +284,7 @@ describe('hud-takeover-layout', () => {
     it('converts a straight spec edge into a border-to-border 2-point line with the arrow gap', () => {
       const tasks = [t('a')];
       const { routing, pitch } = route(tasks);
-      expect(pitch).toBe(196); // one lane → 16px gutter
+      expect(pitch).toBe(192); // corridor-only lanes → gutter stays at the 12px floor
       const [edge] = takeoverMapEdges(routing, infos(tasks), pitch);
       expect(edge.kind).toBe('spec');
       expect(edge.points).toEqual([
@@ -294,6 +294,8 @@ describe('hud-takeover-layout', () => {
     });
 
     it('offsets collinear edges by lane, centered on the channel', () => {
+      // dep + conflict from one source are separate bundles, so their exit
+      // stubs spread lanes (a same-kind fan-out would share one trunk lane).
       const graph: HudTakeoverGraphLayout = {
         coords: new Map([
           ['s', { x: 1, y: 0 }],
@@ -302,11 +304,11 @@ describe('hud-takeover-layout', () => {
         ]),
         edges: [
           { from: 's', to: 'a', kind: 'dep' },
-          { from: 's', to: 'b', kind: 'dep' },
+          { from: 's', to: 'b', kind: 'conflict' },
         ],
       };
       const routing = takeoverEdgeRoutes(graph);
-      const pitch = takeoverPitchPx(routing.maxLanes); // 2 lanes → 204
+      const pitch = takeoverPitchPx(routing.maxLanes); // 1 gutter lane (v:1.5) → 196
       const [toA, toB] = takeoverMapEdges(routing, [], pitch);
       // Exit stubs share corridor h:0 and spread symmetrically: lanes 0/1 → ∓4px.
       expect(toA.points).toEqual([
