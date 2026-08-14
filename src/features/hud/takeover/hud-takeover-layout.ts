@@ -92,14 +92,24 @@ export const HUD_TAKEOVER_SPEC_NODE_ID = 'spec';
 /** Task input to the dependency-graph layout: id plus optional relation id lists. */
 export interface HudTakeoverGraphTask {
   id: string;
+  /**
+   * Daemon-computed spec membership (PROTOCOL §5.4, additive): true iff the
+   * spec note body links this task. When ANY input row carries the boolean,
+   * the layout is spec-aware — only `specLinked === true` tasks may root a
+   * spec edge and unreachable components become islands in the spec column.
+   * When absent on every row (older daemon), the legacy dep-free spec
+   * rooting applies unchanged.
+   */
+  specLinked?: boolean;
   dependsOn?: readonly string[];
   conflictsWith?: readonly string[];
 }
 
 /**
  * Drawable edge: `dep` runs dep → dependent, `spec` runs the virtual spec
- * root → a task with truly empty `dependsOn`, `conflict` is an advisory
- * symmetric pair (emitted once per pair).
+ * root → a task with truly empty `dependsOn` (spec-aware inputs additionally
+ * require `specLinked === true`), `conflict` is an advisory symmetric pair
+ * (emitted once per pair).
  */
 export interface HudTakeoverGraphEdge {
   from: string;
@@ -127,8 +137,11 @@ export interface HudTakeoverGraphLayout {
  * (over dep edges, after dropping dangling references to ids not in the list)
  * are laid out independently: the spec-rooted component surrounds the spec
  * cell at y=0, islands stack below it with a one-cell gutter. Dangling-only
- * deps anchor an island root without a spec edge. Same input ⇒ same output on
- * every HUD instance.
+ * deps anchor an island root without a spec edge. Spec-aware inputs (any row
+ * carries a boolean `specLinked`) restrict spec edges to `specLinked === true`
+ * tasks with truly empty `dependsOn`, and island roots shift into the spec
+ * column (x=0); legacy inputs keep dep-free spec rooting with islands at x=1.
+ * Same input ⇒ same output on every HUD instance.
  */
 export function dependencyGraphLayout(
   tasks: readonly HudTakeoverGraphTask[],
@@ -139,6 +152,9 @@ export function dependencyGraphLayout(
   });
   const unique = tasks.filter((task, i) => inputIndex.get(task.id) === i);
 
+  // Spec-aware mode: the daemon flags spec membership per row. A wholly
+  // absent field (older daemon) keeps the legacy dep-free spec rooting.
+  const specAware = unique.some((task) => typeof task.specLinked === 'boolean');
   const visibleDeps = new Map<string, string[]>();
   const specRooted = new Set<string>();
   for (const task of unique) {
@@ -147,7 +163,7 @@ export function dependencyGraphLayout(
       task.id,
       [...new Set(raw)].filter((dep) => dep !== task.id && inputIndex.has(dep)),
     );
-    if (raw.length === 0) specRooted.add(task.id);
+    if (raw.length === 0 && (!specAware || task.specLinked === true)) specRooted.add(task.id);
   }
 
   // Column = longest dependency path from the roots. The daemon rejects
@@ -273,12 +289,17 @@ export function dependencyGraphLayout(
   const specExtent = layoutComponent(specMembers);
   for (const id of specMembers) placed.set(id, { x: column.get(id)!, y: localY.get(id)! });
 
-  // Islands stack below the spec component with a one-cell gutter.
+  // Islands stack below the spec component with a one-cell gutter. In
+  // spec-aware mode island roots align with the spec column (x=0): every
+  // component's root column is 1 (`columnOf` floor), so shift by −1. Islands
+  // start below the spec row, so no island can occupy the spec cell (0,0).
+  const islandXShift = specAware ? -1 : 0;
   let nextTop = specExtent.maxY + 2;
   for (const members of islands) {
     const { minY, maxY } = layoutComponent(members);
     const offset = nextTop - minY;
-    for (const id of members) placed.set(id, { x: column.get(id)!, y: localY.get(id)! + offset });
+    for (const id of members)
+      placed.set(id, { x: column.get(id)! + islandXShift, y: localY.get(id)! + offset });
     nextTop = maxY + offset + 2;
   }
 
@@ -374,6 +395,9 @@ export const HUD_TAKEOVER_ZOOM_MAX = 2;
 
 /** Multiplicative step for the map's zoom in/out actions. */
 export const HUD_TAKEOVER_ZOOM_STEP = 1.25;
+
+/** Multiplicative step per scroll-wheel tick — gentler than the buttons. */
+export const HUD_TAKEOVER_WHEEL_ZOOM_STEP = 1.1;
 
 /** Clamp a zoom scale into the manual range, rounded to 3 decimals for stable CSS. */
 export function clampZoom(scale: number): number {

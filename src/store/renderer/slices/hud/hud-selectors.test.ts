@@ -3063,4 +3063,22 @@ describe('selectHudTakeoverView task relation projection', () => {
     expect(task && 'conflictsWith' in task).toBe(false);
     expect(task && 'unmetDependsOn' in task).toBe(false);
   });
+
+  it('copies specLinked verbatim (true and false) and omits it when absent', () => {
+    const state = relationsState([
+      { id: 'task-a', title: 'Linked', status: 'not_started', specLinked: true } as WorkspaceTask,
+      {
+        id: 'task-b',
+        title: 'Unlinked',
+        status: 'not_started',
+        specLinked: false,
+      } as WorkspaceTask,
+      { id: 'task-c', title: 'Legacy', status: 'not_started' },
+    ]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    expect(view?.tasks.find((task) => task.id === 'task-a')?.specLinked).toBe(true);
+    expect(view?.tasks.find((task) => task.id === 'task-b')?.specLinked).toBe(false);
+    const legacy = view?.tasks.find((task) => task.id === 'task-c');
+    expect(legacy && 'specLinked' in legacy).toBe(false);
+  });
 });

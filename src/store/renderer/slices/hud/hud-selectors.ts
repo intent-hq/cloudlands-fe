@@ -1141,6 +1141,12 @@ export interface HudTakeoverTask {
    * non-complete tasks and when neither source has text.
    */
   report: string | null;
+  /**
+   * Daemon-computed: true iff the spec note body links this task (§5.4,
+   * additive). Absent on older-daemon rows — the layout then keeps its
+   * legacy dep-free-spec-rooting behavior.
+   */
+  specLinked?: boolean;
   /** Task-note ids this task depends on (hard ordering edges §5.4); omitted when empty. */
   dependsOn?: string[];
   /** Task-note ids this task may conflict with (advisory §5.4); omitted when empty. */
@@ -1229,6 +1235,7 @@ export const selectHudTakeoverView = store.createSelector(
                 task.status === 'complete'
                   ? completeTaskReport(state, workspaceId, task.id, links)
                   : null,
+              ...(task.specLinked !== undefined ? { specLinked: task.specLinked } : {}),
               ...(task.dependsOn ? { dependsOn: task.dependsOn } : {}),
               ...(task.conflictsWith ? { conflictsWith: task.conflictsWith } : {}),
               ...(task.unmetDependsOn ? { unmetDependsOn: task.unmetDependsOn } : {}),
