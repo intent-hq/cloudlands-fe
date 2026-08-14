@@ -20,6 +20,17 @@
  * never shift the scroller. Compensation preserves every turn's
  * viewport-relative position, so it cannot re-trigger IntersectionObserver
  * swaps or re-enter the sticky compaction feedback loop.
+ *
+ * Caveat — concurrent same-frame changes: the pre-change bottom is
+ * reconstructed as `rect.bottom - delta`, which assumes the only geometry
+ * change since the last account() is this turn's own height change. When
+ * several turns above the viewport change height in the same flush (bulk swap
+ * after a scroll jump, container-width re-wrap), a turn accounted while other
+ * turns' deltas are still uncompensated has its rect polluted by those pending
+ * deltas, so the above/below classification is not exact near the boundary.
+ * The compensation magnitude is always this turn's own delta (the ledger never
+ * drifts), and each earlier account()'s scrollTop write progressively restores
+ * the rects for later ones, so any error is boundary-local and self-limiting.
  */
 export interface HeightLedger {
   /**

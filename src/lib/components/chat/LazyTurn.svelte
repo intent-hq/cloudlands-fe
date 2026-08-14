@@ -144,6 +144,10 @@
       // Ledger first (synchronous, no debounce): any height change of a turn
       // fully above the viewport must be compensated in the same frame, or
       // the visible transcript jumps (overflow-anchor is off).
+      // For the swap itself this fire is always second — the tick() microtask
+      // in setVisibleWithScrollCompensation consumes the swap delta before RO
+      // delivery — so here account() sees delta === 0 for the flush and its
+      // real job is the late settles (images, remounted blocks, re-wraps).
       ledger.account();
 
       if (!shouldRenderContent) return;

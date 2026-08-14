@@ -13,11 +13,19 @@ import { createHeightLedger } from '../lazy-turn-scroll-ledger';
 
 interface FakeTurn {
   height: number;
-  /** Turn bottom's offset from the scroller's viewport top (after current height). */
-  bottomOffsetFromScrollerTop: number;
+  /** Turn top's fixed offset within the scroller's content (content coordinates). */
+  contentTop: number;
   connected: boolean;
 }
 
+/**
+ * Physically consistent harness: the turn's viewport-relative bottom is
+ * DERIVED from its content position, current height, and the scroller's
+ * scrollTop (`contentTop + height - scrollTop`), exactly like real layout.
+ * Every scenario therefore exercises the ledger's pre-change bottom
+ * reconstruction (`rect.bottom - delta`) for real — hand-set rects cannot
+ * discriminate pre- vs post-change geometry.
+ */
 function makeHarness(turn: FakeTurn) {
   const scroller = {
     scrollTop: 1000,
@@ -31,7 +39,8 @@ function makeHarness(turn: FakeTurn) {
     get isConnected() {
       return turn.connected;
     },
-    getBoundingClientRect: () => ({ bottom: turn.bottomOffsetFromScrollerTop }) as DOMRect,
+    getBoundingClientRect: () =>
+      ({ bottom: turn.contentTop + turn.height - scroller.scrollTop }) as DOMRect,
   } as unknown as HTMLElement;
 
   const ledger = createHeightLedger(
@@ -43,30 +52,26 @@ function makeHarness(turn: FakeTurn) {
 
 describe('LazyTurn height ledger', () => {
   it('first account() seeds the ledger without shifting the scroller', () => {
-    const { scroller, ledger } = makeHarness({
-      height: 500,
-      bottomOffsetFromScrollerTop: -300,
-      connected: true,
-    });
+    // Turn spans content [200, 700]; viewport starts at 1000 → bottom at -300.
+    const { scroller, ledger } = makeHarness({ height: 500, contentTop: 200, connected: true });
     ledger.account();
     expect(scroller.scrollTop).toBe(1000);
   });
 
   it('compensates a growth that happened entirely above the viewport', () => {
-    const h = makeHarness({ height: 500, bottomOffsetFromScrollerTop: -300, connected: true });
+    // Seeded bottom at -300; +28 late settle reads -272 at account() time.
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
     h.ledger.account(); // seed at 500
-    // Late settle: +28px, turn still fully above (bottom pre-change was -328)
     h.turn.height = 528;
-    h.turn.bottomOffsetFromScrollerTop = -300;
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(1028);
   });
 
   it('compensates a shrink above the viewport (collapse to smaller placeholder)', () => {
-    const h = makeHarness({ height: 800, bottomOffsetFromScrollerTop: -200, connected: true });
+    // Turn spans [0, 800] → bottom -200; shrink to 500 reads -500 pre-compensation.
+    const h = makeHarness({ height: 800, contentTop: 0, connected: true });
     h.ledger.account();
     h.turn.height = 500;
-    h.turn.bottomOffsetFromScrollerTop = -500;
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(700);
   });
@@ -74,16 +79,26 @@ describe('LazyTurn height ledger', () => {
   it('does NOT compensate when the turn straddles or sits within the viewport', () => {
     // Turn bottom pre-change is 150px below the container top: visible content;
     // its growth must flow naturally.
-    const h = makeHarness({ height: 500, bottomOffsetFromScrollerTop: 150, connected: true });
+    const h = makeHarness({ height: 500, contentTop: 650, connected: true });
     h.ledger.account();
     h.turn.height = 530;
-    h.turn.bottomOffsetFromScrollerTop = 180;
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(1000);
   });
 
+  it('classifies by the PRE-change bottom when growth pushes the bottom past the scroller top', () => {
+    // Turn ends 10px above the container top; +28 growth reads +18 (below the
+    // top) at account() time — but the change happened entirely above, so it
+    // must compensate. Kills a mutant that classifies by the post-change rect.
+    const h = makeHarness({ height: 500, contentTop: 490, connected: true });
+    h.ledger.account(); // seed, bottom at -10
+    h.turn.height = 528;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1028);
+  });
+
   it('never double-compensates: a second account() with no height change is a no-op', () => {
-    const h = makeHarness({ height: 500, bottomOffsetFromScrollerTop: -300, connected: true });
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
     h.ledger.account(); // seed
     h.turn.height = 530;
     h.ledger.account(); // swap-flush path consumes the +30 delta
@@ -94,9 +109,11 @@ describe('LazyTurn height ledger', () => {
   });
 
   it('interleaves swap-flush and resize accounting without drift', () => {
-    const h = makeHarness({ height: 200, bottomOffsetFromScrollerTop: -100, connected: true });
+    // Placeholder spans [700, 900] → bottom -100. The +372 swap pushes the
+    // post-change bottom to +272 (well below the top), so the swap-flush path
+    // exercises the pre-change reconstruction across the boundary too.
+    const h = makeHarness({ height: 200, contentTop: 700, connected: true });
     h.ledger.account(); // seed at 200 (placeholder)
-    // Swap placeholder(200) -> content(572); flush path accounts
     h.turn.height = 572;
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(1372);
@@ -110,7 +127,7 @@ describe('LazyTurn height ledger', () => {
   });
 
   it('is inert when the element is disconnected or refs are missing', () => {
-    const turn: FakeTurn = { height: 500, bottomOffsetFromScrollerTop: -300, connected: true };
+    const turn: FakeTurn = { height: 500, contentTop: 200, connected: true };
     const h = makeHarness(turn);
     h.ledger.account();
     turn.connected = false;
