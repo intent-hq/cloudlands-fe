@@ -35,6 +35,7 @@ import { isConsoleOwner } from '../owner-gate';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { focusPanel, setActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { sessionNeedsAttention } from '../actions/agent-cycle';
@@ -142,6 +143,9 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const activeTabId = focusedPanelId ? (layout?.panels[focusedPanelId]?.activeTabId ?? null) : null;
 
   if (appStore.state.workspace.activeWorkspaceId !== workspaceId) {
+    // Mirror the workspace-list click (AllWorkspacesCard.handleClick): open the
+    // workspace tab in tab-state so the columns view scrolls it into view.
+    appStore.dispatch(openWorkspaceTab(workspaceId));
     const navigate = deps.navigate ?? navigateToRoute;
     void navigate(`/workspace/${workspaceId}`).catch((error: unknown) => {
       logger.warn('Failed to switch workspace from agent key', { workspaceId, error });
