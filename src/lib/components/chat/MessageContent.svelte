@@ -41,7 +41,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
-  import { getResponseGroupBlockKeys } from './response-group-blocks';
+  import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
   import { applySpecialistProposal } from './proposals/specialist-proposal-actions';
@@ -341,17 +341,7 @@
   }
 
   // Pre-compute block keys for stable iteration, ensuring uniqueness
-  const blockKeys = $derived.by(() => {
-    const keys = groupedBlocks.map((block, index) => getBlockKey(block, index));
-    // Ensure uniqueness by appending index if duplicates exist
-    const seen = new Map<string, number>();
-    return keys.map((key, index) => {
-      const count = seen.get(key) || 0;
-      seen.set(key, count + 1);
-      // If this key was seen before, make it unique by appending the index
-      return count > 0 ? `${key}-dup-${index}` : key;
-    });
-  });
+  const blockKeys = $derived(dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))));
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent)}

@@ -25,6 +25,7 @@ import { createRawSnippet } from 'svelte';
 import { cubicOut } from 'svelte/easing';
 import ResponseGroup from '../ResponseGroup.svelte';
 import {
+  dedupeKeys,
   getResponseGroupBlockKey,
   getResponseGroupBlockKeys,
   getResponseGroupPreviewBlock,
@@ -35,6 +36,19 @@ import type { ContentBlock } from '$shared/types';
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
+});
+
+vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
+  default: (await import('./mocks/MarkdownViewerStub.svelte')).default,
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ theme: { name: 'light' } }),
+    dispatch: vi.fn(),
+  });
 });
 
 /**
@@ -477,5 +491,52 @@ describe('ResponseGroup - block identity', () => {
     } as ContentBlock;
 
     expect(getResponseGroupPreviewBlock([latestTool, trailingResult])).toBe(latestTool);
+  });
+});
+
+describe('dedupeKeys', () => {
+  it('resolves second-order collisions against already-emitted keys', () => {
+    // A raw input key can collide with a suffix emitted for an earlier
+    // duplicate: ['K', 'K', 'K-dup-1'] must not emit 'K-dup-1' twice.
+    const keys = dedupeKeys(['K', 'K', 'K-dup-1']);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[0]).toBe('K');
+    expect(keys[1]).toBe('K-dup-1');
+    expect(keys[2]).not.toBe('K-dup-1');
+  });
+
+  it('suffixes by occurrence count, stable under prefix insertions', () => {
+    expect(dedupeKeys(['K', 'K', 'K'])).toEqual(['K', 'K-dup-1', 'K-dup-2']);
+    // Inserting an unrelated key before the duplicates must not shift their suffixes.
+    expect(dedupeKeys(['A', 'K', 'K']).slice(1)).toEqual(dedupeKeys(['K', 'K']));
+  });
+
+  it('leaves collision-free inputs byte-identical', () => {
+    const keys = ['a', 'b', 'c-dup-1', 'd'];
+    expect(dedupeKeys(keys)).toEqual(keys);
+  });
+
+  it('propagates through getResponseGroupBlockKeys for id-shaped collisions', () => {
+    const blocks = [
+      { type: 'tool_result', tool_use_id: 'call' },
+      { type: 'tool_result', tool_use_id: 'call' },
+      { type: 'tool_result', tool_use_id: 'call-dup-1' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+  });
+});
+
+describe('MessageContent - outer key dedup', () => {
+  it('renders duplicate top-level tool_results without each_key_duplicate', async () => {
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    const content = [
+      { type: 'tool_result', tool_use_id: 'call-1', output: 'first' },
+      { type: 'tool_result', tool_use_id: 'call-1', output: 'second' },
+    ] as ContentBlock[];
+
+    const { container } = render(MessageContent, { props: { content } });
+    expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 });
