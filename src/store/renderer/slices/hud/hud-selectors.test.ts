@@ -140,18 +140,20 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("buckets the unread flag as UNREAD below the attention/progress axes (intentd#1186)", () => {
+  it('counts the unread flag as an overlay that duplicates into UNREAD (intentd#1186)', () => {
     const state = mockState(
       [
-        // Unread is flag-driven (no `unread` displayStatus anymore): flagged
-        // rows below the attention/progress axes (idle, complete, PR states,
-        // absent) fold to UNREAD — the old daemon promotion precedence — while
-        // flagged in_progress keeps its own bucket.
+        // Unread is flag-driven (no `unread` displayStatus anymore): every
+        // flagged card keeps its state bucket AND increments UNREAD — the
+        // overlay duplicates instead of folding, mirroring the card's unread
+        // border blink over any state.
         withStatus('ws-1', 'idle'),
         withStatus('ws-2', 'in_progress'),
         withStatus('ws-3'),
         withStatus('ws-4', 'complete'),
         withStatus('ws-5', 'pr_merged'),
+        withStatus('ws-6', 'needs_attention'),
+        withStatus('ws-7', 'failed'),
       ],
       [
         ['ws-1', 'unread'],
@@ -159,18 +161,20 @@ describe('selectHudWorkspaceStateBars', () => {
         ['ws-3', 'unread'],
         ['ws-4', 'unread'],
         ['ws-5', 'unread'],
+        ['ws-6', 'unread'],
+        ['ws-7', 'unread'],
       ],
     );
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
-      idle: 0,
-      unread: 4,
+      idle: 2,
+      unread: 7,
       progress: 1,
-      attention: 0,
+      attention: 1,
       prOpen: 0,
-      prMerged: 0,
-      failed: 0,
-      completed: 0,
-      total: 5,
+      prMerged: 1,
+      failed: 1,
+      completed: 1,
+      total: 7,
     });
   });
 
