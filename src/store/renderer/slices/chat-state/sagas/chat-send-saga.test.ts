@@ -596,7 +596,7 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
-  it('shows one archived-workspace suggestion toast while still sending normally', async () => {
+  it('sends normally to an archived workspace with no suggestion toast (daemon auto-unarchives)', async () => {
     mocks.send.mockResolvedValue(undefined);
     const archivedWorkspace = {
       id: WS,
@@ -615,32 +615,7 @@ describe('chatSendSaga', () => {
       expect.objectContaining({ id: WS }),
       expect.any(Object),
     );
-    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
-    const [, options] = mocks.toastInfo.mock.calls[0] as [
-      string,
-      { id?: string; action?: { label?: string } },
-    ];
-    expect(options.id).toBe(`chat-send-unarchive-${WS}`);
-    expect(options.action?.label).toBeTruthy();
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('shows the archived-workspace suggestion when the archived flag is set but status is stale', async () => {
-    mocks.send.mockResolvedValue(undefined);
-    const archivedWorkspace = {
-      id: WS,
-      name: 'Workspace',
-      path: '/repo',
-      status: WorkspaceStatusEnum.Active,
-      archived: true,
-    } as Workspace;
-    const run = harness(session(), undefined, archivedWorkspace);
-    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'hello stale-status' }));
-    await settle();
-
-    expect(mocks.send).toHaveBeenCalledTimes(1);
-    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

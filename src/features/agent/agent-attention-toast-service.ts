@@ -173,3 +173,52 @@ export async function dismissAgentAttentionToast(agentId: string): Promise<void>
   const toast = await getToast();
   toast.dismiss(agentAttentionToastId(agentId));
 }
+
+/**
+ * Payload for the transient workspace auto-unarchive toast — the daemon's
+ * `workspace:updated` unarchive delta carrying the additive `autoUnarchive`
+ * stamp (an agent turn start unarchived the workspace).
+ */
+export interface WorkspaceAutoUnarchiveNotice {
+  workspaceId: string;
+  agentId: string;
+  agentName: string;
+}
+
+/**
+ * Transient (default-duration) toast for a daemon-initiated auto-unarchive:
+ * "<title> was unarchived — <agent> became active", with the same "Switch To"
+ * routing as the attention toast. Fires for ANY workspace (no focused-
+ * workspace gating), like the attention toast. The workspace title is
+ * resolved from the store at toast time and degrades to the generic space
+ * fallback when the entity is unknown. No undo/re-archive affordance by
+ * design — the toast id is stable per workspace so bursts update in place.
+ */
+export async function showWorkspaceAutoUnarchiveToast(
+  notice: WorkspaceAutoUnarchiveNotice,
+): Promise<void> {
+  const { workspaceId, agentId, agentName } = notice;
+  const toast = await getToast();
+  let title: string | undefined;
+  try {
+    const { selectWorkspaceById } = await import(
+      '$store/renderer/slices/workspace/workspace-selectors'
+    );
+    title = selectWorkspaceById.select(appStore.state, workspaceId)?.title;
+  } catch (error) {
+    logger.warn('Workspace title resolution failed — toast uses fallback', { workspaceId, error });
+  }
+  toast.info(
+    m.workspace_autoUnarchive_toast({
+      title: title || m.workspace_ops_space_fallback(),
+      name: agentName,
+    }),
+    {
+      id: `workspace-auto-unarchive:${workspaceId}`,
+      action: {
+        label: m.workspace_autoUnarchive_switchTo_label(),
+        onClick: () => void switchToAttentionAgent(workspaceId, agentId),
+      },
+    },
+  );
+}

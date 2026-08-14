@@ -125,13 +125,15 @@ vi.mock('$features/agent/chat-read-service', () => ({
 }));
 
 // Fake the attention-toast service so the bridge's `agent:attention-requested`
-// routing (monorepo#1709) is observable without a real Sonner/toast-component
-// import chain.
-const { showAgentAttentionToastSpy } = vi.hoisted(() => ({
+// routing (monorepo#1709) and the `workspace:updated` auto-unarchive toast are
+// observable without a real Sonner/toast-component import chain.
+const { showAgentAttentionToastSpy, showWorkspaceAutoUnarchiveToastSpy } = vi.hoisted(() => ({
   showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+  showWorkspaceAutoUnarchiveToastSpy: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
+  showWorkspaceAutoUnarchiveToast: showWorkspaceAutoUnarchiveToastSpy,
 }));
 
 // Fake the terminal manager (dynamically imported by the bridge) so the
@@ -6272,6 +6274,71 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
     await flush();
 
     expect(readTabState()).toBe(before);
+  });
+
+  it('fires the auto-unarchive toast when the unarchive delta carries the autoUnarchive stamp', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        archivedAt: null,
+        autoUnarchive: { reason: 'agent_activity', agentId: 'agent-77', agentName: 'Builder' },
+      }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).toHaveBeenCalledTimes(1);
+    expect(showWorkspaceAutoUnarchiveToastSpy).toHaveBeenCalledWith({
+      workspaceId: WS_TAB,
+      agentId: 'agent-77',
+      agentName: 'Builder',
+    });
+    // The background tab restore still runs alongside the toast.
+    expect(readTabState().openTabs[WS_TAB]).toBe(true);
+  });
+
+  it('shows NO toast on a manual unarchive delta (no autoUnarchive stamp)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed autoUnarchive stamps safely (tab restore unaffected)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    // Non-object stamp, unknown reason, and missing agent fields must all be
+    // dropped without firing the toast or breaking the unarchive handling.
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', autoUnarchive: 'agent_activity' }),
+    );
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        autoUnarchive: { reason: 'something_else', agentId: 'agent-77', agentName: 'Builder' },
+      }),
+    );
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        autoUnarchive: { reason: 'agent_activity' },
+      }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).not.toHaveBeenCalled();
+    expect(readTabState().openTabs[WS_TAB]).toBe(true);
   });
 });
 
