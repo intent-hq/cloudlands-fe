@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.41.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.40.0...v2.41.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* takeover map spec-linked edges, hover edge highlight, wheel zoom ([#1205](https://github.com/intent-hq/cloudlands-fe/issues/1205)) ([1892cd3](https://github.com/intent-hq/cloudlands-fe/commit/1892cd3e199ad36f13704e2321f2eaf55f8311fc))
+
+
+### 🐛 Bug Fixes
+
+* eliminate bottom-of-chat phantom space snap-back via bottom-anchored clamp compensation ([#1203](https://github.com/intent-hq/cloudlands-fe/issues/1203)) ([4034ab4](https://github.com/intent-hq/cloudlands-fe/commit/4034ab4c0e1d1e2bb079d5910f06b276a18462e8))
+* pass URLs targeting active tunnel-local forwards through the resolver untouched ([#1215](https://github.com/intent-hq/cloudlands-fe/issues/1215)) ([f6bf2a5](https://github.com/intent-hq/cloudlands-fe/commit/f6bf2a52f199db39182b92def3a453fee60ae0ca))
+* remove redundant update-download spinner next to settings button ([#1216](https://github.com/intent-hq/cloudlands-fe/issues/1216)) ([7f1a395](https://github.com/intent-hq/cloudlands-fe/commit/7f1a3958d2a017639d62d8869936395ee2da487e))
+* render waiting dot on all workspace card surfaces ([#1210](https://github.com/intent-hq/cloudlands-fe/issues/1210)) ([cd9bc1d](https://github.com/intent-hq/cloudlands-fe/commit/cd9bc1d2fd8b74c34d6212c37c62023b5d17fab8))
+* reserve contained inset chrome in workspace column width ([#1204](https://github.com/intent-hq/cloudlands-fe/issues/1204)) ([f5a092c](https://github.com/intent-hq/cloudlands-fe/commit/f5a092c42c979ce1ab51e22a839749d02ffdc25b))
+* stop scrolled-out tabs carving no-drag holes in the titlebar gap ([#1218](https://github.com/intent-hq/cloudlands-fe/issues/1218)) ([a235bd5](https://github.com/intent-hq/cloudlands-fe/commit/a235bd557a265cffe1830d2113a172e1a96c7909))
+* sync route typegen in pnpm run check and fix dead /test route comparisons ([#1214](https://github.com/intent-hq/cloudlands-fe/issues/1214)) ([0787947](https://github.com/intent-hq/cloudlands-fe/commit/0787947918d30726fdf464f27c82d3a156de32fd))
+* tab strip user scrolling and view-switcher spacing ([#1212](https://github.com/intent-hq/cloudlands-fe/issues/1212)) ([cc3571c](https://github.com/intent-hq/cloudlands-fe/commit/cc3571cd9bb18700cbaa22301c828945dc5755df))
+* trust BE activity for the tab running indicator ([#1217](https://github.com/intent-hq/cloudlands-fe/issues/1217)) ([054be5d](https://github.com/intent-hq/cloudlands-fe/commit/054be5d0b614a64c22cf99bf6f190779eed544dd))
+
 ## [2.40.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.39.0...v2.40.0) (2026-08-14)
 
 
