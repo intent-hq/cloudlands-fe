@@ -7,18 +7,18 @@ import {
 } from './workspace-tab-status-presentation';
 
 const expected: Array<[WorkspaceTabStatusCategory, string, string, string]> = [
-  ['failed', 'circle-xmark', 'text-destructive', 'FAILED'],
-  ['blocker', 'triangle-exclamation', 'text-destructive', 'BLOCKED'],
-  ['question', 'circle-question', 'text-warning', 'QUESTION'],
-  ['discussion', 'comments', 'text-info', 'DISCUSSION REQUIRED'],
-  ['needs_input', 'circle-exclamation', 'text-warning', 'NEEDS ATTENTION'],
-  ['review', 'clipboard-check', 'text-info', 'REVIEW REQUIRED'],
-  ['unread', 'envelope', 'text-info', 'UNREAD'],
+  ['failed', 'circle', 'text-destructive', 'FAILED'],
+  ['blocker', 'circle', 'text-destructive', 'BLOCKED'],
+  ['question', 'circle', 'text-warning', 'QUESTION'],
+  ['discussion', 'circle', 'text-warning', 'DISCUSSION REQUIRED'],
+  ['needs_input', 'circle', 'text-warning', 'NEEDS ATTENTION'],
+  ['review', 'circle', 'text-warning', 'REVIEW REQUIRED'],
+  ['unread', 'circle', 'text-info', 'UNREAD'],
   ['running', 'circle', 'text-success', 'RUNNING'],
 ];
 
 describe('workspace tab status presentation', () => {
-  it('keeps every category on a distinct canonical glyph, color, and label contract', () => {
+  it('uses one circle glyph with the category color and label contract', () => {
     expect(
       expected.map(([category]) => {
         const presentation = getWorkspaceTabStatusPresentation(category);

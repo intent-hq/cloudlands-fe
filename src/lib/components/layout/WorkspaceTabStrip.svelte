@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { faEllipsis, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -10,7 +10,6 @@
   import { cn } from '$lib/utils';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import {
-    formatWorkspaceTabStatusItems,
     formatWorkspaceTabStatusSummary,
     getWorkspaceTabStatusPresentation,
   } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
@@ -388,6 +387,7 @@
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
+          {@const leadingStatus = tabStatus?.categories[0]}
           {@const workspaceTitle =
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           <div
@@ -500,48 +500,29 @@
                   class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
                   data-workspace-tab-controls
                 >
-                  {#if tabStatus}
+                  {#if leadingStatus}
+                    {@const presentation = getWorkspaceTabStatusPresentation(
+                      leadingStatus.category,
+                    )}
                     <span
                       class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end gap-px overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
-                      {#each tabStatus.visibleCategories as item, index (item.category)}
-                        {@const presentation = getWorkspaceTabStatusPresentation(item.category)}
-                        <span
-                          class={cn(
-                            'flex size-3 shrink-0 items-center justify-center',
-                            index === 0 && 'size-4',
-                            presentation.className,
-                          )}
-                          data-workspace-tab-status={item.category}
-                          data-workspace-status-icon={presentation.icon.iconName}
-                          data-status-count={item.count}
-                          data-status-leading={index === 0}
-                          role="img"
-                          aria-label={presentation.label}
-                          title={presentation.label}
-                        >
-                          <Fa
-                            icon={presentation.icon}
-                            class={index === 0 ? 'size-3.5' : 'size-2.5'}
-                          />
-                        </span>
-                      {/each}
-                      {#if tabStatus.hiddenCategoryCount > 0}
-                        {@const hiddenSummary = formatWorkspaceTabStatusItems(
-                          tabStatus.categories.slice(tabStatus.visibleCategories.length),
+                      <span
+                        class={cn(
+                          'flex size-4 shrink-0 items-center justify-center',
+                          presentation.className,
                         )}
-                        <span
-                          class="flex size-3 shrink-0 items-center justify-center text-muted-foreground"
-                          data-workspace-tab-status-overflow
-                          data-status-hidden={tabStatus.hiddenCategoryCount}
-                          role="img"
-                          aria-label={hiddenSummary}
-                          title={hiddenSummary}
-                        >
-                          <Fa icon={faEllipsis} class="size-2.5" />
-                        </span>
-                      {/if}
+                        data-workspace-tab-status={leadingStatus.category}
+                        data-workspace-status-icon={presentation.icon.iconName}
+                        data-status-count={leadingStatus.count}
+                        data-status-leading="true"
+                        role="img"
+                        aria-label={presentation.label}
+                        title={presentation.label}
+                      >
+                        <Fa icon={presentation.icon} class="size-3.5" />
+                      </span>
                     </span>
                   {/if}
                   <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"

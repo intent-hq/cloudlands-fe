@@ -1,14 +1,5 @@
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import {
-  faCircle,
-  faCircleExclamation,
-  faCircleQuestion,
-  faCircleXmark,
-  faClipboardCheck,
-  faComments,
-  faEnvelope,
-  faTriangleExclamation,
-} from '@fortawesome/free-solid-svg-icons';
+import { faCircle } from '@fortawesome/free-solid-svg-icons';
 import { formatInteger } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import type {
@@ -27,13 +18,13 @@ const CATEGORY_VISUALS: Record<
   WorkspaceTabStatusCategory,
   Pick<WorkspaceTabStatusPresentation, 'icon' | 'className'>
 > = {
-  failed: { icon: faCircleXmark, className: 'text-destructive' },
-  blocker: { icon: faTriangleExclamation, className: 'text-destructive' },
-  question: { icon: faCircleQuestion, className: 'text-warning' },
-  discussion: { icon: faComments, className: 'text-info' },
-  needs_input: { icon: faCircleExclamation, className: 'text-warning' },
-  review: { icon: faClipboardCheck, className: 'text-info' },
-  unread: { icon: faEnvelope, className: 'text-info' },
+  failed: { icon: faCircle, className: 'text-destructive' },
+  blocker: { icon: faCircle, className: 'text-destructive' },
+  question: { icon: faCircle, className: 'text-warning' },
+  discussion: { icon: faCircle, className: 'text-warning' },
+  needs_input: { icon: faCircle, className: 'text-warning' },
+  review: { icon: faCircle, className: 'text-warning' },
+  unread: { icon: faCircle, className: 'text-info' },
   running: { icon: faCircle, className: 'text-success' },
 };
 

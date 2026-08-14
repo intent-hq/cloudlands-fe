@@ -221,6 +221,36 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
+  it('renders only the highest-priority status as a circle while announcing every status', () => {
+    mocks.tabStatuses = {
+      'ws-1': {
+        agentCount: 2,
+        categories: [
+          { category: 'question', count: 1, agentNames: ['Coordinator'] },
+          { category: 'unread', count: 1, agentNames: ['Builder'] },
+          { category: 'running', count: 1, agentNames: ['Builder'] },
+        ],
+        visibleCategories: [
+          { category: 'question', count: 1, agentNames: ['Coordinator'] },
+          { category: 'unread', count: 1, agentNames: ['Builder'] },
+        ],
+        hiddenCategoryCount: 1,
+      },
+    };
+
+    render(WorkspaceTabStrip);
+
+    const tab = screen.getByRole('tab', {
+      name: 'Alpha. QUESTION: 1 (Coordinator) · UNREAD: 1 (Builder) · RUNNING: 1 (Builder)',
+    });
+    const statuses = tab.querySelectorAll('[data-workspace-tab-status]');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].getAttribute('data-workspace-tab-status')).toBe('question');
+    expect(statuses[0].getAttribute('data-workspace-status-icon')).toBe('circle');
+    expect(statuses[0].className).toContain('text-warning');
+    expect(tab.querySelector('[data-workspace-tab-status-overflow]')).toBeNull();
+  });
+
   it('keeps persisted tabs opaque and stationary during initial hydration', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/lib/components/layout/WorkspaceTabStrip.svelte'),
