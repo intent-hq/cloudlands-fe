@@ -438,6 +438,24 @@ describe('DaemonStatusIndicator', () => {
       ).toBeTruthy();
     });
 
+    it('strips a leading "v" from both versions in the mismatch tooltip (no "vv" double prefix)', async () => {
+      // system.status may report a v-prefixed version (the comparator accepts
+      // it); the i18n messages prepend their own "v", so the raw value would
+      // render as "vv0.9.1".
+      mockStoreState = withVersions({ daemonVersion: 'v0.9.1', pinnedVersion: 'v1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
+      );
+
+      expect(
+        screen.getByText('Connected intentd v0.9.1 is behind the bundled sidecar (v1.0.0)'),
+      ).toBeTruthy();
+      expect(screen.queryByText(/vv/)).toBeNull();
+    });
+
     it('keeps the green dot and plain version row when the versions match', async () => {
       mockStoreState = withVersions({ daemonVersion: '1.0.0', pinnedVersion: '1.0.0' });
 

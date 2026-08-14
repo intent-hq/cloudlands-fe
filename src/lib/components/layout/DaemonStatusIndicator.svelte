@@ -20,6 +20,16 @@
   }
 
   /**
+   * Strip a leading `v` from a version string. system.status may report a
+   * v-prefixed version (the pin comparator accepts it), but the mismatch
+   * messages prepend their own `v` — without normalization a valid `v0.9.1`
+   * would render as `vv0.9.1`.
+   */
+  export function stripLeadingV(version: string): string {
+    return version.replace(/^v/, '');
+  }
+
+  /**
    * Display label for a remote connection (T14): prefer the captured hostname,
    * rendered as `hostname (host:port)` so the address stays visible for
    * reconnection, and fall back to the record's raw `label` (`host:port`) when
@@ -146,9 +156,11 @@
 
   const versionMismatchTooltip = $derived.by(() => {
     if (!versionMismatch) return null;
+    // The i18n messages prepend "v" — strip any daemon-reported prefix so a
+    // valid v-prefixed version never renders as "vv0.9.1".
     const params = {
-      daemonVersion: versionMismatch.daemonVersion,
-      pinnedVersion: versionMismatch.pinnedVersion,
+      daemonVersion: stripLeadingV(versionMismatch.daemonVersion),
+      pinnedVersion: stripLeadingV(versionMismatch.pinnedVersion),
     };
     return versionMismatch.comparison === 'older'
       ? m.layout_daemonStatus_versionBehind_tooltip(params)
