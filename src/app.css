@@ -55,45 +55,120 @@
 }
 
 html.workspace-view-transition::view-transition-group(*) {
-  animation-duration: 300ms;
+  animation-duration: 280ms;
   animation-timing-function: var(--ease-emphasized-out);
 }
 
-html.workspace-view-transition::view-transition-group(root),
+html.workspace-view-transition::view-transition-group(root) {
+  animation: none;
+}
+
 html.workspace-view-transition::view-transition-old(root),
 html.workspace-view-transition::view-transition-new(root) {
-  animation: none;
+  display: none;
 }
 
 html.workspace-view-transition::view-transition-old(*),
 html.workspace-view-transition::view-transition-new(*) {
+  animation: none;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
   overflow: clip;
   mix-blend-mode: normal;
 }
 
-html.workspace-view-transition::view-transition-old(*) {
-  animation: workspace-view-old-fade 140ms ease-out both;
+html.workspace-view-transition::view-transition-group(workspace-view-active) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-emphasized-out);
+  overflow: clip;
 }
 
-html.workspace-view-transition::view-transition-new(*) {
-  animation: workspace-view-new-reveal 260ms var(--ease-emphasized-out) 40ms both;
+html.workspace-view-transition::view-transition-image-pair(workspace-view-active) {
+  overflow: clip;
 }
 
-@keyframes workspace-view-old-fade {
-  to {
+html.workspace-view-transition::view-transition-old(workspace-view-active) {
+  animation: workspace-anchor-old 280ms ease-out both;
+}
+
+html.workspace-view-transition::view-transition-new(workspace-view-active) {
+  animation: workspace-anchor-new 280ms var(--ease-emphasized-out) both;
+}
+
+html.workspace-view-transition::view-transition-group(workspace-view-titlebar-geometry),
+html.workspace-view-transition::view-transition-group(workspace-view-sidebar-geometry) {
+  animation-duration: 260ms;
+  animation-timing-function: var(--ease-emphasized-out);
+}
+
+@keyframes workspace-anchor-old {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  72%,
+  100% {
     opacity: 0;
   }
 }
 
-@keyframes workspace-view-new-reveal {
-  from {
+@keyframes workspace-anchor-new {
+  0%,
+  42% {
     opacity: 0;
+  }
+  68%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes workspace-secondary-old-to-columns {
+  to {
+    opacity: 0.82;
+    transform: translateX(-4px);
+  }
+}
+
+@keyframes workspace-secondary-new-to-columns {
+  from {
+    opacity: 0.82;
+    transform: translateX(8px);
+  }
+}
+
+@keyframes workspace-secondary-old-to-single {
+  to {
+    opacity: 0.82;
+    transform: translateX(8px);
+  }
+}
+
+@keyframes workspace-secondary-new-to-single {
+  from {
+    opacity: 0.82;
+    transform: translateX(-6px);
+  }
+}
+
+@keyframes workspace-content-reveal {
+  from {
+    opacity: 0.86;
+  }
+}
+
+@keyframes workspace-content-recede {
+  to {
+    opacity: 0.86;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.workspace-view-transition::view-transition-group(*) {
-    animation-duration: 0.01ms;
+  html.workspace-view-transition::view-transition-group(*),
+  html.workspace-view-transition::view-transition-old(*),
+  html.workspace-view-transition::view-transition-new(*) {
+    animation: none !important;
   }
 }
 

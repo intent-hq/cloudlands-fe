@@ -149,6 +149,10 @@ export interface KeyboardShortcut {
    * conflict with standard text editing shortcuts (e.g., Cmd+Up/Down for cursor navigation).
    */
   skipInEditableElements?: boolean;
+  /** If true, held-key repeat events are ignored. */
+  ignoreRepeat?: boolean;
+  /** Checked before preventing the event, so route-scoped shortcuts remain native elsewhere. */
+  enabled?: () => boolean;
   /**
    * If true, this shortcut will always fire even when focus is in an input/textarea/contenteditable.
    * Use this for shortcuts like Ctrl+` (toggle terminal) that should work regardless of focus,
@@ -280,6 +284,9 @@ export class KeyboardShortcutManager {
     const shortcut = this.shortcuts.get(key);
 
     if (shortcut) {
+      if (shortcut.ignoreRepeat && e.repeat) return;
+      if (shortcut.enabled && !shortcut.enabled()) return;
+
       // Check if this shortcut should be skipped when in editable elements
       // This allows standard text editing shortcuts (like Cmd+Up/Down) to work
       if (shortcut.skipInEditableElements && isFocusInEditableElement(target)) {

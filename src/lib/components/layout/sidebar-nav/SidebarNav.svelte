@@ -22,6 +22,7 @@
     TITLEBAR_NAVIGATION_CONTROL_CLASS,
     TITLEBAR_NAVIGATION_GLYPH_CLASS,
   } from '../titlebar-navigation';
+  import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
   import SidebarNavHoverCard from './SidebarNavHoverCard.svelte';
 
   import {
@@ -185,30 +186,35 @@
       {#each navItems as item (item.id)}
         {@const active = isItemActive(item.id)}
         {@const isHovered = $activeCard$ === item.id}
-        <Button
-          bind:ref={iconRefs[item.id]}
-          variant="ghost-light"
-          size="icon"
-          iconOnly
-          class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
-          onclick={() => handleClick(item.id)}
-          onmouseenter={() => handleMouseEnter(item.id)}
-          onmouseleave={handleMouseLeave}
-          onkeydown={(event) => handleMenuKeydown(event, item.id)}
-          oncontextmenu={(event) => handleContextMenu(event, item.id)}
-          aria-label={m.ui_shortcuts_toggleSpaces_label()}
-          aria-pressed={active}
-          aria-haspopup="dialog"
-          aria-expanded={isHovered}
-          aria-controls="spaces-navigation-menu"
-          title={m.ui_shortcuts_toggleSpaces_label()}
-          data-nav-item={item.id}
-          data-titlebar-spaces-control
-        >
-          <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
-            <IntentNavigationIcon name="dandelion" size={16} class="pointer-events-none size-4!" />
-          </span>
-        </Button>
+        <TitlebarNavigationTooltip label={m.ui_shortcuts_toggleSpaces_label()} shortcut="mod+o">
+          <Button
+            bind:ref={iconRefs[item.id]}
+            variant="ghost-light"
+            size="icon"
+            iconOnly
+            class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
+            onclick={() => handleClick(item.id)}
+            onmouseenter={() => handleMouseEnter(item.id)}
+            onmouseleave={handleMouseLeave}
+            onkeydown={(event) => handleMenuKeydown(event, item.id)}
+            oncontextmenu={(event) => handleContextMenu(event, item.id)}
+            aria-label={m.ui_shortcuts_toggleSpaces_label()}
+            aria-pressed={active}
+            aria-haspopup="dialog"
+            aria-expanded={isHovered}
+            aria-controls="spaces-navigation-menu"
+            data-nav-item={item.id}
+            data-titlebar-spaces-control
+          >
+            <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+              <IntentNavigationIcon
+                name="dandelion"
+                size={16}
+                class="pointer-events-none size-4!"
+              />
+            </span>
+          </Button>
+        </TitlebarNavigationTooltip>
       {/each}
     </div>
   </nav>

@@ -91,8 +91,41 @@ describe('SidebarNav unified Spaces control', () => {
     expect(control.className).toContain('focus-visible:ring-0');
     expect(control.className).not.toContain('focus-visible:ring-2');
     expect(control.className).not.toContain('shadow-xs');
+    expect(control.hasAttribute('title')).toBe(false);
+    expect(control.textContent?.trim()).toBe('');
     expect(dandelion?.parentElement?.className).toContain('size-5');
     expect(dandelion?.getAttribute('width')).toBe('16');
     expect(dandelion?.getAttribute('height')).toBe('16');
+  });
+
+  it('shows one accessible shortcut tooltip from keyboard focus', async () => {
+    render(SidebarNavHarness);
+    resetNavState();
+    const control = screen.getByRole('button', { name: 'Toggle Spaces' });
+
+    control.focus();
+    await fireEvent.focus(control);
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    const shortcut = tooltip.querySelector<HTMLElement>('[data-tooltip-shortcut]');
+
+    expect(screen.getAllByRole('tooltip', { hidden: true })).toHaveLength(1);
+    expect(tooltip.textContent).toContain('Toggle Spaces');
+    expect(shortcut?.textContent).toBe('Ctrl+O');
+    expect(shortcut?.className).toContain('text-muted-foreground');
+    expect(control.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(control.getAttribute('aria-label')).toBe('Toggle Spaces');
+  });
+
+  it('opens the same custom shortcut tooltip on pointer hover', async () => {
+    render(SidebarNavHarness);
+    resetNavState();
+    const control = screen.getByRole('button', { name: 'Toggle Spaces' });
+
+    await fireEvent.pointerMove(control, { pointerType: 'mouse' });
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+
+    expect(screen.getAllByRole('tooltip', { hidden: true })).toHaveLength(1);
+    expect(tooltip.querySelector('[data-tooltip-label]')?.textContent).toBe('Toggle Spaces');
+    expect(tooltip.querySelector('[data-tooltip-shortcut]')?.textContent).toBe('Ctrl+O');
   });
 });

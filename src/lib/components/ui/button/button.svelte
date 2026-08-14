@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { TooltipShortcut } from '$lib/components/ui/tooltip';
+  import TooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
   import { cn } from '$lib/utils.js';
   import { buttonVariants, type ButtonProps } from './button.variants';
 

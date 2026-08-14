@@ -76,7 +76,8 @@
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
-  import { COMMAND_PALETTE_COMMANDS as commands } from './command-palette-commands';
+  import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
@@ -89,6 +90,8 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { toggleWorkspaceViewModeWithTransition } from '$features/workspace/workspace-view-mode-action';
 
   const logger = createLogger('CommandPalette');
 
@@ -116,6 +119,8 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
+  const workspaceViewMode$ = selectWorkspaceViewMode();
+  let commands = $derived(COMMAND_PALETTE_COMMANDS($workspaceViewMode$));
   const currentChanges$ = selectCurrentChanges();
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
@@ -797,6 +802,9 @@
       case 'open-usage-stats':
         appStore.dispatch(setStatsOverlayOpen(true));
         return true;
+      case 'workspace-view-mode':
+        void toggleWorkspaceViewModeWithTransition();
+        return true;
       default:
         return true;
     }
@@ -1035,6 +1043,12 @@
                   <div class="flex-none mt-0.5">
                     <AuggieAvatar agentId={item.id} size={18} />
                   </div>
+                {:else if item.navigationIcon}
+                  <IntentNavigationIcon
+                    name={item.navigationIcon}
+                    size={16}
+                    class="text-foreground/25 flex-none mt-0.5"
+                  />
                 {:else}
                   <Fa icon={item.icon} class="text-[15px] text-foreground/25 flex-none mt-0.5" />
                 {/if}

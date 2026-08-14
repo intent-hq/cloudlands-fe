@@ -18,6 +18,8 @@ const {
   createSelectorReadable,
   paletteMruEntries,
   paletteFileMru,
+  workspaceViewMode,
+  toggleWorkspaceViewModeMock,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -29,6 +31,20 @@ const {
       return () => {};
     },
   });
+
+  const workspaceViewMode = {
+    value: 'single' as 'single' | 'columns',
+    listeners: new Set<(value: 'single' | 'columns') => void>(),
+    subscribe(listener: (value: 'single' | 'columns') => void) {
+      this.listeners.add(listener);
+      listener(this.value);
+      return () => this.listeners.delete(listener);
+    },
+    set(value: 'single' | 'columns') {
+      this.value = value;
+      for (const listener of this.listeners) listener(value);
+    },
+  };
 
   return {
     gotoMock: vi.fn(),
@@ -43,6 +59,8 @@ const {
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
+    workspaceViewMode,
+    toggleWorkspaceViewModeMock: vi.fn(() => Promise.resolve()),
   };
 });
 
@@ -96,6 +114,17 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       return () => {};
     },
   }),
+}));
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectWorkspaceViewMode: Object.assign(
+    vi.fn(() => workspaceViewMode),
+    {
+      select: vi.fn(() => workspaceViewMode.value),
+    },
+  ),
+}));
+vi.mock('$features/workspace/workspace-view-mode-action', () => ({
+  toggleWorkspaceViewModeWithTransition: toggleWorkspaceViewModeMock,
 }));
 vi.mock('$features/agent/browser', () => ({}));
 
@@ -236,6 +265,7 @@ describe('CommandPalette new actions', () => {
     sessionSessions.value = [];
     paletteMruEntries.value = [];
     paletteFileMru.value = {};
+    workspaceViewMode.set('single');
   });
 
   it('dispatches Redux actions for agent, terminal, note, and file from keyboard', async () => {
@@ -330,6 +360,29 @@ describe('CommandPalette new actions', () => {
     }
 
     events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
+  });
+
+  it('shows and handles the dynamic workspace view command', async () => {
+    const onClose = vi.fn();
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
+    const input = screen.getByRole('textbox');
+
+    await fireEvent.input(input, { target: { value: 'layout' } });
+    const horizontal = await screen.findByRole('button', {
+      name: /Switch to horizontal workspace view/i,
+    });
+    expect(horizontal.textContent).toContain('Show open workspaces side by side in columns.');
+    expect(horizontal.textContent).toMatch(/L/);
+    expect(horizontal.querySelector('[data-navigation-icon="spaces"]')).toBeTruthy();
+
+    await fireEvent.click(horizontal);
+    expect(toggleWorkspaceViewModeMock).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
+
+    workspaceViewMode.set('columns');
+    const tabs = await screen.findByRole('button', { name: /Switch to tab workspace view/i });
+    expect(tabs.textContent).toContain('Show one workspace at a time with tabs.');
+    expect(tabs.querySelector('[data-navigation-icon="tabs"]')).toBeTruthy();
   });
 });
 

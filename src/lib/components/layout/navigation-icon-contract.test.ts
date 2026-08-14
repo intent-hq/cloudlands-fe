@@ -16,12 +16,18 @@ describe('primary navigation icon contract', () => {
     expect(spaces).not.toContain('name="spaces"');
     expect(viewMode).toContain("name={isColumns ? 'tabs' : 'spaces'}");
     expect(titleBar).toContain('<IntentNavigationIcon name="settings" size={16}');
-    expect(launcher).toContain('triggerIcon={faPlus}');
+    expect(launcher).toContain(
+      '<FaWrapper icon={faPlus} size={16} class="pointer-events-none size-4!" />',
+    );
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar.match(/<SidebarNav \/>/g)).toHaveLength(1);
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(
       titleBar.indexOf('<WorkspaceViewModeToggle />'),
     );
+    expect(spaces).toContain('shortcut="mod+o"');
+    expect(viewMode).toContain('shortcut="mod+shift+l"');
+    expect(spaces).not.toContain('title={m.ui_shortcuts_toggleSpaces_label()}');
+    expect(viewMode).not.toContain('title={toggleLabel}');
   });
 
   it('centers primary glyphs in 32px transparent hit targets', () => {
@@ -33,14 +39,15 @@ describe('primary navigation icon contract', () => {
     expect(spaces).toContain('size="icon"');
     expect(titleBar).toContain('size="icon"');
     expect(viewMode).toContain("'app-no-drag size-8 shrink-0");
-    expect(launcher).toContain('<RepoSelector');
-    expect(launcher).toContain('triggerClass="size-7 min-w-7 justify-center');
+    expect(launcher).toContain('<Button');
+    expect(launcher).toContain('size="icon"');
+    expect(launcher).toContain('class="size-8 shrink-0');
     for (const navSource of [spaces, viewMode, titleBar]) {
       expect(navSource).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
       expect(navSource).toContain('TITLEBAR_NAVIGATION_GLYPH_CLASS');
     }
     expect(source('./titlebar-navigation.ts')).toContain(
-      "'flex size-5 shrink-0 items-center justify-center'",
+      'titlebar-navigation-glyph flex size-5 shrink-0 items-center justify-center',
     );
   });
 
@@ -68,5 +75,9 @@ describe('primary navigation icon contract', () => {
     expect(styles).toContain('border-color: transparent !important');
     expect(styles).toContain('color: hsl(var(--foreground)) !important');
     expect(styles).toContain('box-shadow: none !important');
+    expect(styles).toContain(
+      '.titlebar-navigation-control:focus-visible .titlebar-navigation-glyph',
+    );
+    expect(styles).toContain('transform: scale(1.125)');
   });
 });
