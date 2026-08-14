@@ -5,7 +5,7 @@ import {
   beforeEach,
   vi,
 } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
 import type { GitStatus } from '$shared/types';
@@ -13,11 +13,22 @@ import type { GitStatus } from '$shared/types';
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getHistory: vi.fn(),
+  writeTextToClipboard: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 // gitRootId-scoped read-only per-root reads (PROTOCOL §5.6, monorepo#2053).
 vi.mock('$features/git/git.client', () => ({
   gitClient: { getStatus: mocks.getStatus, getHistory: mocks.getHistory },
+}));
+
+vi.mock('$lib/utils/clipboard', () => ({
+  writeTextToClipboard: mocks.writeTextToClipboard,
+}));
+
+vi.mock('svelte-sonner', () => ({
+  toast: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
@@ -56,7 +67,11 @@ describe('SecondaryRootChangesView', () => {
   beforeEach(() => {
     mocks.getStatus.mockReset();
     mocks.getHistory.mockReset();
+    mocks.writeTextToClipboard.mockReset();
+    mocks.toastSuccess.mockReset();
+    mocks.toastError.mockReset();
     mocks.getHistory.mockResolvedValue({ ok: true, data: [] });
+    mocks.writeTextToClipboard.mockResolvedValue(undefined);
   });
 
   it('prefers the freshly loaded status.branch over the cached entry.branch', async () => {
@@ -92,6 +107,48 @@ describe('SecondaryRootChangesView', () => {
       expect(container.textContent).toContain('Failed to load git root state'),
     );
     expect(container.textContent).not.toContain('No commits');
+  });
+
+  it('copies the exact branch name and shows a success toast on branch label click', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('feature/copy-me') });
+    const { getByTestId } = await renderView(makeEntry('stale-branch'));
+    const button = await waitFor(() => {
+      const el = getByTestId('secondary-root-branch-copy');
+      expect(el.textContent).toContain('feature/copy-me');
+      return el;
+    });
+    expect(button.tagName).toBe('BUTTON');
+    // WCAG 2.5.3: the accessible name must contain the visible label (the branch name).
+    expect(button.getAttribute('aria-label')).toBe('Copy branch name: feature/copy-me');
+    expect(button.getAttribute('title')).toBe('Copy branch name');
+
+    await fireEvent.click(button);
+    await waitFor(() => expect(mocks.writeTextToClipboard).toHaveBeenCalledWith('feature/copy-me'));
+    await waitFor(() =>
+      expect(mocks.toastSuccess).toHaveBeenCalledWith('Branch name copied to clipboard'),
+    );
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast when the clipboard write fails', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.writeTextToClipboard.mockRejectedValue(new Error('clipboard unavailable'));
+    const { getByTestId } = await renderView(makeEntry('main'));
+    const button = await waitFor(() => getByTestId('secondary-root-branch-copy'));
+
+    await fireEvent.click(button);
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith('Failed to copy branch name'),
+    );
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('renders no copy affordance when there is no branch', async () => {
+    mocks.getStatus.mockReturnValue(new Promise(() => {}));
+    mocks.getHistory.mockReturnValue(new Promise(() => {}));
+    const { container, queryByTestId } = await renderView(makeEntry(undefined));
+    await waitFor(() => expect(container.textContent).toContain('no branch'));
+    expect(queryByTestId('secondary-root-branch-copy')).toBeNull();
   });
 
   it('ignores a stale response resolving after a newer load for the same root', async () => {
