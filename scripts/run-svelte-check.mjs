@@ -142,6 +142,7 @@ async function main() {
   ];
   const child = spawn(process.execPath, [resolveBin('svelte-check', 'svelte-check'), ...args], {
     stdio: ['inherit', 'pipe', 'inherit'],
+    env: syncEnv(),
   });
 
   let completed = null;
