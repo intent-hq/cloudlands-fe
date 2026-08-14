@@ -371,6 +371,78 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
   });
 });
 
+// The modal must keep a constant height across loading transitions: the
+// setup-script pill renders in both loading and loaded states (spinner inside
+// the pill), and the Create button's shortcut hint is always mounted with only
+// its visibility toggled by form validity.
+describe('CompactWorkspaceInitializer modal height stability', () => {
+  const PILL_CLASSES = ['rounded-md', 'border', 'border-border', 'bg-background', 'px-2', 'py-0.5'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    mocks.savedFormState = null;
+    mocks.lastUsedSelect.mockReturnValue(undefined);
+    mocks.fetchRepoConfig.mockResolvedValue(null);
+    mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    cleanup();
+    sessionStorage.clear();
+  });
+
+  it('keeps the setup-script pill rendered with the spinner inside it while the probe is in flight', async () => {
+    const probe = deferred<string | null>();
+    mocks.fetchRepoConfig.mockReturnValue(probe.promise);
+    mocks.savedFormState = { repoPath: '/repo/a', repoType: 'local', isValidPath: true };
+
+    const result = renderInitializer();
+    await waitFor(() => {
+      expect(result.getByText(SPINNER_LABEL)).toBeTruthy();
+    });
+    // The sr-only loading label (next to the spinner) sits inside the same
+    // bordered pill that later shows the script name.
+    const loadingPill = result.getByText(SPINNER_LABEL).parentElement;
+    expect(loadingPill).toBeTruthy();
+    for (const cls of PILL_CLASSES) {
+      expect(loadingPill!.classList.contains(cls)).toBe(true);
+    }
+
+    probe.resolve('echo repo-config');
+    await waitFor(() => {
+      expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
+    });
+    const loadedPill = result.getByText(REPO_CONFIG_SCRIPT_NAME);
+    for (const cls of PILL_CLASSES) {
+      expect(loadedPill.classList.contains(cls)).toBe(true);
+    }
+  });
+
+  it('always mounts the shortcut hint span, toggling only its visibility with validity', async () => {
+    // Invalid form (no repo selected): the hint is rendered but invisible,
+    // reserving its space so the button never resizes.
+    const invalid = renderInitializer();
+    const hiddenHint = invalid.getByText(/↵/);
+    expect(hiddenHint.classList.contains('invisible')).toBe(true);
+    expect(hiddenHint.getAttribute('aria-hidden')).toBe('true');
+    cleanup();
+
+    // Valid form: the same span becomes visible (no remount/transition).
+    mocks.savedFormState = {
+      repoPath: '/repo/a',
+      repoType: 'local',
+      branch: 'main',
+      isValidPath: true,
+    };
+    const valid = renderInitializer();
+    await waitFor(() => {
+      expect(valid.getByText(/↵/).classList.contains('invisible')).toBe(false);
+    });
+    expect(valid.getByText(/↵/).getAttribute('aria-hidden')).toBeNull();
+  });
+});
+
 describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#1862)', () => {
   const PREFILL_KEY = 'workspace-prefill';
 

@@ -3155,11 +3155,15 @@
               </span>
             {:else}
               <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
-              {#if isValid}
-                <span class="opacity-50 ml-1" transition:slide={{ axis: 'x', duration: 200 }}>
-                  {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
-                </span>
-              {/if}
+              <!-- Always rendered so the button never resizes when validity flips;
+                   `invisible` reserves the space while hiding it (incl. from AT). -->
+              <span
+                class="opacity-50 ml-1"
+                class:invisible={!isValid}
+                aria-hidden={!isValid ? 'true' : undefined}
+              >
+                {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
+              </span>
             {/if}
           </Button>
         </div>
@@ -3241,17 +3245,21 @@
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              {#if isRepoConfigLoading}
-                <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-                <span class="sr-only"
-                  >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
-                >
-              {:else}
-                <span
-                  class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
-                >
+              <!-- The pill renders in both states (spinner inside while loading)
+                   so the row keeps the same height when the probe resolves. -->
+              <span
+                class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
+              >
+                {#if isRepoConfigLoading}
+                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                  <span class="sr-only"
+                    >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
+                  >
+                {:else}
                   {setupScriptName}
-                </span>
+                {/if}
+              </span>
+              {#if !isRepoConfigLoading}
                 <p class="text-sm text-subtle">
                   {m.workspace_compactInitializer_setupDevEnvWith_after()}
                 </p>
