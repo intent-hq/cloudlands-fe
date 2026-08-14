@@ -67,12 +67,18 @@ describe('editorial conversation presentation contract', () => {
 
     // Hysteresis: the currently-pinned row's stay condition is keyed on the turn's
     // geometry only — never the sticky element's own rect — so its own height
-    // change (line-clamp compaction) can never un-stick it.
-    expect(panel).toContain(
+    // change (line-clamp compaction) can never un-stick it. The detection lives
+    // in sticky-detection.ts (behavioral coverage in sticky-detection.test.ts);
+    // ChatPanel must delegate to it.
+    expect(panel).toContain("import { detectStickyMessageId } from './sticky-detection';");
+    expect(panel).toContain('detectStickyMessageId(boundContainer, stickyMessageId)');
+
+    const detection = source('src/lib/components/chat/sticky-detection.ts');
+    expect(detection).toContain(
       'const turnSpansTop = turnRect.top < scrollRect.top && turnRect.bottom > scrollRect.top;',
     );
-    expect(panel).toMatch(
-      /getAttribute\('data-message-id'\) === stickyMessageId[\s\S]{0,200}if \(turnSpansTop\) \{\s*foundSticky = stickyMessageId;/,
+    expect(detection).toMatch(
+      /getAttribute\('data-message-id'\) === currentStickyId[\s\S]{0,200}if \(turnSpansTop\) \{\s*return currentStickyId;/,
     );
 
     // With native anchoring off, LazyTurn owns scroll compensation for

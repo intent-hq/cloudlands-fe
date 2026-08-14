@@ -40,6 +40,7 @@
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
+  import { detectStickyMessageId } from './sticky-detection';
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -2203,63 +2204,10 @@
     const handleScroll = () => {
       if (!boundContainer) return;
 
-      // Find all user message containers (they have data-message-id and are sticky)
-      const messageContainers = boundContainer.querySelectorAll(
-        '.message-nav-target[data-message-id]',
-      );
-
-      let foundSticky: string | null = null;
-      const scrollRect = boundContainer.getBoundingClientRect();
-
-      // Check each message to see if it's in sticky position
-      for (const container of messageContainers) {
-        // For EventWakeupBanner, the sticky element is inside the container
-        // For regular messages, the container itself is sticky
-        const stickyElement =
-          container.querySelector('.sticky') ??
-          (container.classList.contains('sticky') ? container : null);
-        if (!stickyElement) continue;
-
-        const conversationTurn = container.closest('.conversation-turn');
-        if (!conversationTurn) continue;
-
-        const rect = stickyElement.getBoundingClientRect();
-        const turnRect = conversationTurn.getBoundingClientRect();
-
-        // The turn "owns" the container top while it spans it: we've scrolled into
-        // the turn and its bottom hasn't passed the container top yet.
-        const turnSpansTop = turnRect.top < scrollRect.top && turnRect.bottom > scrollRect.top;
-
-        // Hysteresis: the currently-pinned row STAYS pinned while its turn still
-        // spans the container top. This stay condition is keyed on the turn's
-        // geometry only — never on the sticky element's own rect — so the height
-        // change caused by the row's own sticky compaction (line-clamp-6 →
-        // line-clamp-2 in ChatMessage) can never un-stick it, and the row keeps
-        // its compact rendering while it is pushed out at the end of the turn.
-        if (container.getAttribute('data-message-id') === stickyMessageId) {
-          if (turnSpansTop) {
-            foundSticky = stickyMessageId;
-            break;
-          }
-          continue;
-        }
-
-        // Enter condition: a row becomes sticky when its top is at (or very close
-        // to) the scroll container top. The sticky offset is -top-px which is -1px,
-        // so check if within a few pixels.
-        const stickyThreshold = 20; // pixels
-        const isAtStickyPosition = Math.abs(rect.top - scrollRect.top + 1) < stickyThreshold;
-
-        // The element becomes sticky if:
-        // 1. It's at the sticky position (near the top)
-        // 2. The turn spans the container top (we've scrolled into the turn)
-        // 3. The turn's bottom is still below the sticky element (the turn hasn't scrolled past)
-        const turnStillVisible = turnRect.bottom > rect.bottom;
-        if (isAtStickyPosition && turnSpansTop && turnStillVisible) {
-          foundSticky = container.getAttribute('data-message-id');
-          break;
-        }
-      }
+      // Hysteretic detection lives in sticky-detection.ts: the currently-pinned
+      // row stays pinned while its turn spans the container top (turn geometry
+      // only), so the row's own compaction height change can never un-stick it.
+      const foundSticky = detectStickyMessageId(boundContainer, stickyMessageId);
 
       // Only update if changed to avoid unnecessary re-renders
       if (foundSticky !== stickyMessageId) {
