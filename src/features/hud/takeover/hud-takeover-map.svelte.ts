@@ -116,10 +116,11 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     if (deltaY === 0) return;
     const factor = deltaY < 0 ? HUD_TAKEOVER_WHEEL_ZOOM_STEP : 1 / HUD_TAKEOVER_WHEEL_ZOOM_STEP;
     const next = clampZoom(zoom * factor);
-    if (next === zoom) return;
     // The pan element's origin sits at the clip center, so a content point c
     // renders at (c − pan)·zoom from the center. Keeping the point under the
     // pointer p fixed across the step: pan' = pan + p·(1/zoom − 1/next).
+    // At a clamp limit the shift is 0, but setPan still runs so the wheel
+    // interaction cancels any pending or active auto-pan glide.
     const shift = 1 / zoom - 1 / next;
     drag.setPan({ x: drag.pan.x + pointer.x * shift, y: drag.pan.y + pointer.y * shift });
     zoom = next;

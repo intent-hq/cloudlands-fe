@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import type { HudTakeoverTask } from '$store/renderer/slices/hud/hud-selectors';
 import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
@@ -214,6 +214,26 @@ describe('createTakeoverMapState wheel zoom', () => {
     map.wheelZoom(-100, { x: 0, y: 0 });
     expect(map.drag.animate).toBe(false);
     expect(map.drag.pan).toEqual({ x: 576, y: 0 });
+  });
+
+  it('a wheel step at the zoom limit still cancels a pending auto-pan', () => {
+    vi.useFakeTimers();
+    try {
+      const map = measuredMap(chainTasks(5));
+      for (let i = 0; i < 12; i++) map.wheelZoom(-100, { x: 0, y: 0 });
+      expect(map.scale).toBe(HUD_TAKEOVER_ZOOM_MAX);
+      map.drag.syncAutoPan('ws-1', { x: 3, y: 0 }, 1000);
+      const pinned = { ...map.drag.pan };
+      map.wheelZoom(-100, { x: 0, y: 0 });
+      expect(map.scale).toBe(HUD_TAKEOVER_ZOOM_MAX);
+      expect(map.drag.animate).toBe(false);
+      expect(map.drag.pan).toEqual(pinned);
+      // The scheduled glide was cancelled: the pan never jumps to the far cell.
+      vi.advanceTimersByTime(1000);
+      expect(map.drag.pan).toEqual(pinned);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('attachWheel consumes the event and feeds pointer-anchored steps', () => {
