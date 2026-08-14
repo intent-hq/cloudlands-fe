@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_stopAgent_tooltip": "Detener este agente",
   "chat_agentSubscriptions_stopAll_tooltip": "Detener todos los agentes",
   "chat_agentSubscriptions_stopGroup_tooltip": "Detener todos los agentes de este grupo",
+  "chat_agentSubscriptions_allFinished_label": "Todos los agentes han terminado",
   "chat_agentSubscriptions_waitingForAgents_many": "Esperando a cada uno de los {count} agentes",
   "chat_agentSubscriptions_waitingForAgents_one": "Esperando a {count} agente",
   "chat_agentSubscriptions_waitingFor_label": "Esperando al agente",
@@ -5964,5 +5965,9 @@
   "home_page_title": "Inicio",
   "home_emptyState_noSpaceSelected_label": "Ningún espacio seleccionado",
   "home_emptyState_selectOrCreate_description": "Seleccione un espacio en la barra lateral o cree uno nuevo.",
-  "home_emptyState_newSpace_label": "Espacio nuevo"
+  "home_emptyState_newSpace_label": "Espacio nuevo",
+  "chat_agentSubscriptions_finished_many": "{count} agentes finalizados",
+  "chat_backgroundHooks_details_runCount_one": "1 ejecución completada",
+  "chat_backgroundHooks_details_runCount_many": "{count} ejecuciones completadas",
+  "chat_agentSubscriptions_finished_one": "{count} agente finalizado"
 }

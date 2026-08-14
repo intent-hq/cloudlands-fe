@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_stopAgent_tooltip": "이 에이전트 중지",
   "chat_agentSubscriptions_stopAll_tooltip": "모든 에이전트 중지",
   "chat_agentSubscriptions_stopGroup_tooltip": "이 그룹의 모든 에이전트 중지",
+  "chat_agentSubscriptions_allFinished_label": "모든 에이전트가 완료되었습니다",
   "chat_agentSubscriptions_waitingForAgents_many": "에이전트 {count}개 각각 대기 중",
   "chat_agentSubscriptions_waitingForAgents_one": "에이전트 {count}개 대기 중",
   "chat_agentSubscriptions_waitingFor_label": "에이전트를 기다리는 중",
@@ -5964,5 +5965,9 @@
   "home_page_title": "홈",
   "home_emptyState_noSpaceSelected_label": "선택된 스페이스가 없습니다",
   "home_emptyState_selectOrCreate_description": "사이드바에서 스페이스를 선택하거나 새로 만드세요.",
-  "home_emptyState_newSpace_label": "새 스페이스"
+  "home_emptyState_newSpace_label": "새 스페이스",
+  "chat_agentSubscriptions_finished_many": "에이전트 {count}개 완료",
+  "chat_backgroundHooks_details_runCount_one": "실행 1회 완료",
+  "chat_backgroundHooks_details_runCount_many": "실행 {count}회 완료",
+  "chat_agentSubscriptions_finished_one": "에이전트 {count}개 완료"
 }

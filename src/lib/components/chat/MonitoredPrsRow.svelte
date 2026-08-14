@@ -24,6 +24,7 @@
   import {
     faArrowUpRightFromSquare,
     faArrowsRotate,
+    faChevronDown,
     faCodePullRequest,
     faWindowMaximize,
     faXmark,
@@ -31,8 +32,7 @@
   import { safeSlide } from '$lib/utils/animations';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatTime } from '$lib/i18n/format';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
@@ -45,13 +45,46 @@
     flushPrMonitorRequested,
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import { store as appStore } from '$store/renderer/store';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import {
+    safeSubscriptionSlide,
+    SUBSCRIPTION_CHEVRON_CLASS,
+    SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+  } from './subscription-disclosure';
+  import { getExpandedPrMonitorId, setExpandedPrMonitorId } from './agent-subscriptions-view-state';
 
   interface Props {
     workspaceId: string;
     agentId: string;
+    embedded?: boolean;
+    visible?: boolean;
+    count?: number;
   }
 
-  let { workspaceId, agentId }: Props = $props();
+  let {
+    workspaceId,
+    agentId,
+    embedded: _embedded = false,
+    visible = $bindable(false),
+    count = $bindable(0),
+  }: Props = $props();
+  let expandedMonitorId = $state<string | null>(null);
+  let disclosureKey = $state('');
+
+  $effect(() => {
+    const nextKey = `${workspaceId}:${agentId}`;
+    if (nextKey === disclosureKey) return;
+    disclosureKey = nextKey;
+    expandedMonitorId = getExpandedPrMonitorId(workspaceId, agentId);
+  });
+
+  function toggleMonitorDetails(monitorId: string) {
+    expandedMonitorId = expandedMonitorId === monitorId ? null : monitorId;
+    setExpandedPrMonitorId(workspaceId, agentId, expandedMonitorId);
+  }
 
   // Writable stores mirror the props so the Redux selectors re-evaluate when
   // they change (selector readables are init-time only).
@@ -69,6 +102,11 @@
   // surface, cancelled rows are excluded server-side.
   const activeMonitors = $derived($monitors$.filter((mon) => mon.state === 'active'));
 
+  $effect(() => {
+    visible = activeMonitors.length > 0;
+    count = activeMonitors.length;
+  });
+
   /** `<owner>/<repo>` of the workspace, or undefined when unknown. */
   const workspaceRepo = $derived(
     $workspace$?.repositoryOwner && $workspace$?.repositoryName
@@ -76,13 +114,24 @@
       : undefined,
   );
 
-  /** Chip label: "#42", prefixed "org/repo: " only for cross-repo PRs. */
-  function chipLabel(monitor: PrMonitorRow): string {
-    const number = `#${monitor.prNumber}`;
-    if (workspaceRepo && monitor.repo !== workspaceRepo) {
-      return m.chat_monitoredPrs_crossRepoChip_label({ repo: monitor.repo, number });
-    }
-    return number;
+  function monitorTitle(monitor: PrMonitorRow): string {
+    return (
+      monitor.title ??
+      m.chat_monitoredPrs_hover_untitled_label({
+        repo: monitor.repo,
+        number: String(monitor.prNumber),
+      })
+    );
+  }
+
+  function monitorLabel(monitor: PrMonitorRow): string {
+    const inputs = {
+      number: String(monitor.prNumber),
+      title: monitorTitle(monitor),
+    };
+    return workspaceRepo && monitor.repo !== workspaceRepo
+      ? m.chat_monitoredPrs_monitoringCrossRepo_label({ ...inputs, repo: monitor.repo })
+      : m.chat_monitoredPrs_monitoring_label(inputs);
   }
 
   function handleCheckAndFlush(monitor: PrMonitorRow, close: () => void) {
@@ -114,7 +163,7 @@
     });
   }
 
-  /** Compact checks summary from the last snapshot, e.g. "3/4 passing". */
+  /** Only surface checks that still need attention; completed checks are implied by readiness. */
   function checksSummary(monitor: PrMonitorRow): string | undefined {
     const checks = monitor.lastSnapshot?.checks;
     if (!checks || checks.total === 0) return undefined;
@@ -130,25 +179,21 @@
         total: formatInteger(checks.total),
       });
     }
-    return m.chat_monitoredPrs_hover_checksPassing_label({
-      passed: formatInteger(checks.passed),
-    });
+    return undefined;
   }
 
   /** Compact approvals summary, e.g. "APPROVED (1/1 required)". */
   function approvalsSummary(monitor: PrMonitorRow): string | undefined {
     const approvals = monitor.lastSnapshot?.approvals;
-    if (!approvals) return undefined;
-    if (approvals.needed != null) {
+    if (!approvals || approvals.needed == null || approvals.have >= approvals.needed)
+      return undefined;
+    if (approvals.needed > 0) {
       return m.chat_monitoredPrs_hover_approvalsRequired_label({
         have: formatInteger(approvals.have),
         needed: formatInteger(approvals.needed),
       });
     }
-    return m.chat_monitoredPrs_hover_approvals_label({
-      decision: approvals.decision,
-      have: formatInteger(approvals.have),
-    });
+    return undefined;
   }
 
   /** Unresolved-threads summary; undefined when there are none. */
@@ -162,155 +207,231 @@
         });
   }
 
-  /** Mergeable / blocked line; prefers the explicit blocked reason. */
-  function mergeSummary(monitor: PrMonitorRow): string | undefined {
+  function inferredBlocker(monitor: PrMonitorRow): string | undefined {
     const snapshot = monitor.lastSnapshot;
     if (!snapshot) return undefined;
-    if (snapshot.mergeBlockedReason) {
-      return m.chat_monitoredPrs_hover_blocked_label({ reason: snapshot.mergeBlockedReason });
+    if (snapshot.mergeBlockedReason) return snapshot.mergeBlockedReason;
+    if (snapshot.hasConflicts) return m.chat_monitoredPrs_blocker_conflicts();
+    if (snapshot.isBehind) return m.chat_monitoredPrs_blocker_behind();
+    if ((snapshot.checks.failingRequired ?? 0) > 0 || snapshot.checks.failed > 0) {
+      return m.chat_monitoredPrs_blocker_checksFailing();
     }
-    if (snapshot.mergeable === true) return m.chat_monitoredPrs_hover_mergeable_label();
-    if (snapshot.mergeable === false) return m.chat_monitoredPrs_hover_notMergeable_label();
+    if ((snapshot.checks.pendingRequired ?? 0) > 0) {
+      return m.chat_monitoredPrs_blocker_checksPending();
+    }
+    if (snapshot.approvals.changesRequested > 0) {
+      return m.chat_monitoredPrs_blocker_changesRequested();
+    }
+    if (snapshot.approvals.needed != null && snapshot.approvals.have < snapshot.approvals.needed) {
+      return m.chat_monitoredPrs_blocker_approvals();
+    }
+    if (snapshot.threads.resolutionRequired && snapshot.threads.unresolved > 0) {
+      return m.chat_monitoredPrs_blocker_threads();
+    }
+    if (snapshot.mergeable === false) return m.chat_monitoredPrs_blocker_requirements();
     return undefined;
+  }
+
+  function readinessSummary(monitor: PrMonitorRow): string {
+    const snapshot = monitor.lastSnapshot;
+    if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
+    const blocker = inferredBlocker(monitor);
+    if (blocker) return m.chat_monitoredPrs_status_blocked({ reason: blocker });
+    if (
+      snapshot?.state === 'open' &&
+      snapshot.mergeable === true &&
+      snapshot.rulesKnown &&
+      snapshot.checks.requiredKnown &&
+      snapshot.approvals.needed != null
+    ) {
+      return m.chat_monitoredPrs_status_ready();
+    }
+    return m.chat_monitoredPrs_status_unknown();
   }
 </script>
 
 {#if activeMonitors.length > 0}
   <div
-    class="flex flex-wrap items-center gap-1.5 px-2.5 py-1 opacity-70"
+    class="w-full min-w-0 max-w-full"
     role="group"
     aria-label={m.chat_monitoredPrs_row_ariaLabel()}
     data-testid="monitored-prs-row"
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
-    <Fa icon={faCodePullRequest} class="w-2.5 h-2.5 text-ghost shrink-0" />
-    <span class="text-xs leading-tight text-ghost shrink-0"
-      >{m.chat_monitoredPrs_monitoredPrs_label()}</span
-    >
     {#each activeMonitors as monitor (monitor.monitorId)}
-      <DropdownMenu side="top" align="start" class="max-w-full">
-        {#snippet trigger({ toggle }: { toggle: () => void })}
-          <Tooltip
-            side="top"
-            align="start"
-            class="max-w-full"
-            delayDuration={300}
-            disableHoverableContent={false}
-            contentClass="max-w-sm whitespace-normal"
+      {@const detailsId = `monitored-pr-details-${monitor.monitorId}`}
+      <div
+        class="border-t border-border/40 first:border-t-0"
+        data-monitor-state={monitor.state}
+        role="group"
+        aria-label={monitorLabel(monitor)}
+      >
+        <div class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-subtle">
+          <Button
+            variant="plain"
+            type="button"
+            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} focus-visible:ring-1"
+            data-testid="monitored-pr-summary"
+            data-subscription-row="pr-monitor"
+            aria-expanded={expandedMonitorId === monitor.monitorId}
+            aria-controls={detailsId}
+            onclick={() => toggleMonitorDetails(monitor.monitorId)}
           >
-            {#snippet content()}
-              <div class="flex flex-col gap-1 text-xs" data-testid="monitored-pr-hover-card">
-                <div class="flex items-center gap-1.5 font-medium">
-                  <Fa icon={faCodePullRequest} class="w-2.5 h-2.5 text-ghost shrink-0" />
-                  <span class="truncate"
-                    >{monitor.title ??
-                      m.chat_monitoredPrs_hover_untitled_label({
-                        repo: monitor.repo,
-                        number: String(monitor.prNumber),
-                      })}</span
-                  >
-                  {#if monitor.lastSnapshot}
-                    <span class="text-subtle font-normal">{monitor.lastSnapshot.state}</span>
-                  {/if}
-                </div>
-                <div class="flex flex-col text-subtle">
-                  <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
-                  <span>{monitor.repo}#{monitor.prNumber}</span>
-                  {#if checksSummary(monitor)}
-                    <span>{checksSummary(monitor)}</span>
-                  {/if}
-                  {#if approvalsSummary(monitor)}
-                    <span>{approvalsSummary(monitor)}</span>
-                  {/if}
-                  {#if threadsSummary(monitor)}
-                    <span>{threadsSummary(monitor)}</span>
-                  {/if}
-                  {#if mergeSummary(monitor)}
-                    <span>{mergeSummary(monitor)}</span>
-                  {/if}
-                  {#if monitor.lastChangeAt}
-                    <span
-                      >{m.chat_monitoredPrs_hover_lastChange_label({
-                        time: formatTime(monitor.lastChangeAt, { seconds: true }),
-                      })}</span
-                    >
-                  {/if}
-                  {#if monitor.hasPendingChanges}
-                    <span data-testid="monitored-pr-pending"
-                      >{monitor.pendingChanges.length === 1
-                        ? m.chat_monitoredPrs_hover_pending_one()
-                        : m.chat_monitoredPrs_hover_pending_many({
-                            count: formatInteger(monitor.pendingChanges.length),
-                          })}</span
-                    >
-                  {/if}
-                </div>
+            <Fa icon={faCodePullRequest} class="h-3.5 w-3.5 shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
+            <span class="min-w-0 flex-1 truncate">{monitorLabel(monitor)}</span>
+            {#if monitor.hasPendingChanges}
+              <span
+                class="block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500/80"
+                title={m.chat_monitoredPrs_pendingDot_tooltip()}
+              ></span>
+            {/if}
+          </Button>
+          <DropdownMenu
+            side="top"
+            align="end"
+            collisionPadding={12}
+            contentClass="monitored-pr-menu-content p-0"
+          >
+            {#snippet trigger({ toggle }: { toggle: () => void })}
+              <Button
+                variant="plain"
+                size="icon-xs"
+                type="button"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  toggle();
+                }}
+                class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                data-testid="monitored-pr-chip"
+                aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+              >
+                <KebabIcon class="h-3 w-3" />
+              </Button>
+            {/snippet}
+            {#snippet content({ close }: { close: () => void })}
+              <div
+                class="flex w-full min-w-0 flex-col p-1"
+                style="box-sizing: border-box; width: 260px; max-width: calc(100vw - 24px);"
+                data-testid="monitored-pr-menu"
+                data-viewport-padding="12"
+              >
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  data-testid="monitored-pr-check-flush-item"
+                  onclick={() => handleCheckAndFlush(monitor, close)}
+                >
+                  <Fa icon={faArrowsRotate} class="mt-0.5 h-2.5 w-2.5" />
+                  <span class="min-w-0 break-words leading-4">
+                    {m.chat_monitoredPrs_checkAndFlush_label()}
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  data-testid="monitored-pr-open-in-app-item"
+                  onclick={() => handleOpenInApp(monitor, close)}
+                >
+                  <Fa icon={faWindowMaximize} class="mt-0.5 h-2.5 w-2.5" />
+                  <span class="min-w-0 break-words leading-4">
+                    {m.chat_monitoredPrs_openInApp_label()}
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  data-testid="monitored-pr-open-external-item"
+                  onclick={() => handleOpenExternal(monitor, close)}
+                >
+                  <Fa icon={faArrowUpRightFromSquare} class="mt-0.5 h-2.5 w-2.5" />
+                  <span class="min-w-0 break-words leading-4">
+                    {m.chat_monitoredPrs_openInExternalBrowser_label()}
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost-light"
+                  size="xs"
+                  class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal text-left min-[284px]:whitespace-nowrap"
+                  data-testid="monitored-pr-cancel-item"
+                  onclick={() => handleCancel(monitor, close)}
+                >
+                  <Fa icon={faXmark} class="mt-0.5 h-2.5 w-2.5" />
+                  <span class="min-w-0 break-words leading-4">
+                    {m.chat_monitoredPrs_cancel_label()}
+                  </span>
+                </Button>
               </div>
             {/snippet}
-            <button
-              type="button"
-              onclick={toggle}
-              class="group/chip relative flex max-w-full items-center gap-1 rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors overflow-hidden cursor-pointer"
-              data-testid="monitored-pr-chip"
-              data-monitor-state={monitor.state}
-              data-pending={monitor.hasPendingChanges}
-            >
-              <span class="truncate max-w-full">{chipLabel(monitor)}</span>
-              {#if monitor.hasPendingChanges}
-                <span
-                  class="block h-1.5 w-1.5 rounded-full bg-amber-500/80 shrink-0"
-                  title={m.chat_monitoredPrs_pendingDot_tooltip()}
-                ></span>
-              {/if}
-            </button>
-          </Tooltip>
-        {/snippet}
-
-        {#snippet content({ close }: { close: () => void })}
-          <div class="flex flex-col" data-testid="monitored-pr-menu">
-            <Button
-              variant="ghost-light"
-              size="xs"
-              class="justify-start"
-              data-testid="monitored-pr-check-flush-item"
-              onclick={() => handleCheckAndFlush(monitor, close)}
-            >
-              <Fa icon={faArrowsRotate} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_checkAndFlush_label()}
-            </Button>
-            <Button
-              variant="ghost-light"
-              size="xs"
-              class="justify-start"
-              data-testid="monitored-pr-open-in-app-item"
-              onclick={() => handleOpenInApp(monitor, close)}
-            >
-              <Fa icon={faWindowMaximize} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_openInApp_label()}
-            </Button>
-            <Button
-              variant="ghost-light"
-              size="xs"
-              class="justify-start"
-              data-testid="monitored-pr-open-external-item"
-              onclick={() => handleOpenExternal(monitor, close)}
-            >
-              <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_openInExternalBrowser_label()}
-            </Button>
-            <Button
-              variant="ghost-light"
-              size="xs"
-              class="justify-start"
-              data-testid="monitored-pr-cancel-item"
-              onclick={() => handleCancel(monitor, close)}
-            >
-              <Fa icon={faXmark} class="w-2.5 h-2.5" />
-              {m.chat_monitoredPrs_cancel_label()}
-            </Button>
+          </DropdownMenu>
+          <Button
+            variant="plain"
+            size="icon-xs"
+            type="button"
+            class="h-6 w-6 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            data-testid="monitored-pr-disclosure"
+            aria-label={monitorLabel(monitor)}
+            aria-expanded={expandedMonitorId === monitor.monitorId}
+            aria-controls={detailsId}
+            onclick={(event) => {
+              event.stopPropagation();
+              toggleMonitorDetails(monitor.monitorId);
+            }}
+          >
+            <span data-testid="monitored-pr-chevron">
+              <Fa
+                icon={faChevronDown}
+                class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedMonitorId ===
+                monitor.monitorId
+                  ? ''
+                  : 'rotate-90'}"
+              />
+            </span>
+          </Button>
+        </div>
+        {#if expandedMonitorId === monitor.monitorId}
+          <div
+            id={detailsId}
+            class="grid gap-1 overflow-hidden px-9 pb-2 text-xs text-subtle"
+            data-testid="monitored-pr-details"
+            transition:safeSubscriptionSlide
+          >
+            <strong class="font-medium text-muted-foreground">{readinessSummary(monitor)}</strong>
+            {#if !workspaceRepo || monitor.repo !== workspaceRepo}
+              <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
+              <span>{monitor.repo}#{monitor.prNumber}</span>
+            {/if}
+            {#if checksSummary(monitor)}<span>{checksSummary(monitor)}</span>{/if}
+            {#if approvalsSummary(monitor)}<span>{approvalsSummary(monitor)}</span>{/if}
+            {#if threadsSummary(monitor)}<span>{threadsSummary(monitor)}</span>{/if}
+            {#if monitor.lastChangeAt}
+              <span
+                >{m.chat_monitoredPrs_hover_lastChange_label({
+                  time: formatTime(monitor.lastChangeAt, { seconds: true }),
+                })}</span
+              >
+            {/if}
+            {#if monitor.hasPendingChanges}
+              <span data-testid="monitored-pr-pending"
+                >{monitor.pendingChanges.length === 1
+                  ? m.chat_monitoredPrs_hover_pending_one()
+                  : m.chat_monitoredPrs_hover_pending_many({
+                      count: formatInteger(monitor.pendingChanges.length),
+                    })}</span
+              >
+            {/if}
           </div>
-        {/snippet}
-      </DropdownMenu>
+        {/if}
+      </div>
     {/each}
   </div>
 {/if}
+
+<style>
+  :global(.monitored-pr-menu-content) {
+    width: 260px;
+    max-width: calc(100vw - 24px);
+  }
+</style>

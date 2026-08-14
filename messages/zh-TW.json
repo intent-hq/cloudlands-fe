@@ -1715,6 +1715,7 @@
   "chat_agentSubscriptions_stopAgent_tooltip": "停止此智慧體",
   "chat_agentSubscriptions_stopAll_tooltip": "停止所有智慧體",
   "chat_agentSubscriptions_stopGroup_tooltip": "停止此群組中的所有智慧體",
+  "chat_agentSubscriptions_allFinished_label": "所有智慧體均已完成",
   "chat_agentSubscriptions_waitingForAgents_many": "正在分別等待 {count} 個智慧體",
   "chat_agentSubscriptions_waitingForAgents_one": "正在等待 {count} 個智慧體",
   "chat_agentSubscriptions_waitingFor_label": "正在等待代理程式",
@@ -5964,5 +5965,9 @@
   "home_page_title": "主頁",
   "home_emptyState_noSpaceSelected_label": "未選擇空間",
   "home_emptyState_selectOrCreate_description": "從側邊欄選擇一個空間，或建立一個新空間。",
-  "home_emptyState_newSpace_label": "新空間"
+  "home_emptyState_newSpace_label": "新空間",
+  "chat_agentSubscriptions_finished_many": "{count} 個智慧體已完成",
+  "chat_backgroundHooks_details_runCount_one": "已完成 1 次執行",
+  "chat_backgroundHooks_details_runCount_many": "已完成 {count} 次執行",
+  "chat_agentSubscriptions_finished_one": "{count} 個智慧體已完成"
 }

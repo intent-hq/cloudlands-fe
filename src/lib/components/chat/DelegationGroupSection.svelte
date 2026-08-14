@@ -14,7 +14,6 @@
   import * as Tooltip from '$lib/components/ui/tooltip';
   import {
     faChevronDown,
-    faChevronRight,
     faHourglass,
     faStop,
     faTriangleExclamation,
@@ -28,11 +27,18 @@
     groupDoneCount,
     isGroupDeliveryPending,
     sortWorkingAgentsFirst,
+    uniqueAgentIds,
   } from './delegation-ordering';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import type { Workspace } from '$shared/types';
   import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
+  import {
+    safeSubscriptionSlide,
+    SUBSCRIPTION_CHEVRON_CLASS,
+    SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_ICON_CLASS,
+  } from './subscription-disclosure';
 
   interface Props {
     group: DelegationGroupStatus;
@@ -51,7 +57,7 @@
     onCancelGroup,
   }: Props = $props();
 
-  let isCollapsed: boolean = $state(false);
+  let isCollapsed: boolean = $state(true);
 
   function toggleCollapsed() {
     isCollapsed = !isCollapsed;
@@ -64,51 +70,65 @@
     sortWorkingAgentsFirst(group.expectedAgentIds, completedAgentIdSet),
   );
   const doneCount = $derived(groupDoneCount(group));
-  const totalCount = $derived(group.expectedAgentIds.length);
+  const totalCount = $derived(uniqueAgentIds(group.expectedAgentIds).length);
+  const remainingCount = $derived(Math.max(0, totalCount - doneCount));
   const deliveryPending = $derived(isGroupDeliveryPending(group));
+  const agentListId = $derived(`delegation-group-agent-list-${group.groupId}`);
+
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleCollapsed();
+  }
 </script>
 
-<div class="w-full font-family-child" data-testid="delegation-group-section">
+<div
+  class="w-full min-w-0 max-w-full overflow-hidden font-family-child"
+  data-testid="delegation-group-section"
+>
   <div
-    class="flex items-center gap-2 pl-0 pr-3 py-1.5 text-sm text-subtle"
+    class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm text-subtle"
     data-testid="delegation-group-header"
   >
-    <!-- Collapse/expand toggle -->
     <button
       type="button"
-      class="shrink-0 flex items-center gap-1.5 cursor-pointer hover:text-muted-foreground transition-colors"
+      class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class:text-warning={deliveryPending}
+      data-testid="group-summary-toggle"
+      aria-expanded={!isCollapsed}
+      aria-controls={agentListId}
       onclick={toggleCollapsed}
-    >
-      <Fa icon={isCollapsed ? faChevronRight : faChevronDown} class="w-2.5! h-2.5!" />
-    </button>
-
-    <!-- Group status label with (done/total) counter -->
-    <button
-      type="button"
-      class="shrink-0 flex items-center gap-2 whitespace-nowrap cursor-pointer hover:text-muted-foreground transition-colors"
-      onclick={toggleCollapsed}
+      onkeydown={handleDisclosureKeydown}
     >
       {#if deliveryPending}
-        <Fa icon={faTriangleExclamation} size="13" class="text-warning" />
-        <span class="text-warning" data-testid="group-delivery-pending">
+        <Fa icon={faTriangleExclamation} size={14} class="h-3.5! w-3.5! shrink-0" />
+        <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-delivery-pending">
           {m.chat_agentSubscriptions_deliveryPending_label()}
         </span>
       {:else}
-        <Fa icon={faHourglass} size="13" />
-        {totalCount === 1
-          ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(totalCount) })
-          : m.chat_agentSubscriptions_waitingForAll_label()}
-      {/if}
-      {#if totalCount > 0}
-        <span class="text-subtle" data-testid="group-counter">
-          ({formatInteger(doneCount)}/{formatInteger(totalCount)})
+        <Fa icon={faHourglass} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
+        <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-summary-title">
+          {remainingCount === 0
+            ? m.chat_agentSubscriptions_allFinished_label()
+            : remainingCount === 1
+              ? m.chat_agentSubscriptions_waitingForAgents_one({
+                  count: formatInteger(remainingCount),
+                })
+              : m.chat_agentSubscriptions_waitingForAgents_many({
+                  count: formatInteger(remainingCount),
+                })}
         </span>
       {/if}
     </button>
 
     <!-- Inline agent avatars when collapsed -->
     {#if isCollapsed}
-      <div class="flex items-center -space-x-1.5" transition:fade={{ duration: 150 }}>
+      <div
+        class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+        data-testid="group-avatar-strip"
+        transition:fade={{ duration: 150 }}
+      >
         {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
           <div animate:flip={{ duration: 200 }}>
             <InlineAgentAvatar
@@ -126,64 +146,100 @@
       </div>
     {/if}
 
-    <div class="flex-1"></div>
-    {#if !hideActions}
-      <!-- Provider ensures proper context and cleanup during component destruction -->
-      <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root delayDuration={0}>
-          <Tooltip.Trigger>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={() => onStopGroup?.(group)}
-              class="text-ghost hover:text-muted-foreground/70"
-              data-testid="group-stop"
-              aria-label={m.chat_agentSubscriptions_stopGroup_tooltip()}
-            >
-              <Fa icon={faStop} class="w-2.5! h-2.5!" />
-            </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content side="top" class="text-xs">
-            <p>{m.chat_agentSubscriptions_stopGroup_tooltip()}</p>
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
-      <!-- Provider ensures proper context and cleanup during component destruction -->
-      <Tooltip.Provider delayDuration={0}>
-        <Tooltip.Root delayDuration={0}>
-          <Tooltip.Trigger>
-            <Button
-              variant="ghost-light"
-              size="icon-xs"
-              onclick={() => onCancelGroup?.(group)}
-              class="text-ghost hover:text-muted-foreground/70"
-              data-testid="group-cancel"
-              aria-label={m.chat_agentSubscriptions_cancelGroup_tooltip()}
-            >
-              <Fa icon={faXmark} class="w-2.5! h-2.5!" />
-            </Button>
-          </Tooltip.Trigger>
-          <Tooltip.Content side="top" class="text-xs">
-            <p>{m.chat_agentSubscriptions_cancelGroup_tooltip()}</p>
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </Tooltip.Provider>
-    {/if}
+    <div class="flex shrink-0 items-center gap-0.5" data-testid="group-header-actions">
+      {#if !hideActions}
+        <!-- Provider ensures proper context and cleanup during component destruction -->
+        <Tooltip.Provider delayDuration={0}>
+          <Tooltip.Root delayDuration={0}>
+            <Tooltip.Trigger>
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  onStopGroup?.(group);
+                }}
+                class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
+                data-testid="group-stop"
+                aria-label={m.chat_agentSubscriptions_stopGroup_tooltip()}
+              >
+                <Fa icon={faStop} class="h-3.5! w-3.5!" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="top" class="text-xs">
+              <p>{m.chat_agentSubscriptions_stopGroup_tooltip()}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+        <!-- Provider ensures proper context and cleanup during component destruction -->
+        <Tooltip.Provider delayDuration={0}>
+          <Tooltip.Root delayDuration={0}>
+            <Tooltip.Trigger>
+              <Button
+                variant="ghost-light"
+                size="icon-xs"
+                onclick={(event) => {
+                  event.stopPropagation();
+                  onCancelGroup?.(group);
+                }}
+                class="h-6 w-6 text-ghost opacity-60 hover:text-muted-foreground/70 hover:opacity-100 focus-visible:opacity-100"
+                data-testid="group-cancel"
+                aria-label={m.chat_agentSubscriptions_cancelGroup_tooltip()}
+              >
+                <Fa icon={faXmark} class="h-3.5! w-3.5!" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side="top" class="text-xs">
+              <p>{m.chat_agentSubscriptions_cancelGroup_tooltip()}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      {/if}
+    </div>
+    <button
+      type="button"
+      class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      data-testid="group-collapse-toggle"
+      aria-expanded={!isCollapsed}
+      aria-controls={agentListId}
+      aria-label={isCollapsed
+        ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
+        : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
+      onclick={toggleCollapsed}
+      onkeydown={handleDisclosureKeydown}
+    >
+      <span class="inline-flex" data-testid="group-chevron">
+        <Fa
+          icon={faChevronDown}
+          class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
+            ? 'rotate-90'
+            : ''}"
+        />
+      </span>
+    </button>
   </div>
 
   <!-- Agent cards - shown when expanded -->
   {#if !isCollapsed}
     <div
-      class="flex flex-col gap-0.5 w-full pl-4.5 pr-2 font-family-child"
-      transition:safeSlide={{ duration: 150 }}
+      id={agentListId}
+      class="flex w-full min-w-0 max-w-full flex-col gap-0.5 overflow-hidden border-t border-border/40 pt-1.5 pr-2 pb-0.5 pl-4.5 font-family-child"
+      data-testid="delegation-group-agent-list"
+      transition:safeSubscriptionSlide
     >
       {#each orderedAgentIds.slice(0, 5) as agentId (agentId)}
         <div
-          class="w-full"
+          class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 pt-0.5 first:border-t-0 first:pt-0"
           animate:flip={{ duration: 200 }}
           transition:safeSlide={{ axis: 'y', duration: 200 }}
         >
-          <AgentCard {agentId} {workspace} isCompleted={completedAgentIdSet.has(agentId)} />
+          <AgentCard
+            {agentId}
+            {workspace}
+            isCompleted={completedAgentIdSet.has(agentId)}
+            inline
+            hidePreview
+          />
         </div>
       {/each}
       {#if orderedAgentIds.length > 5}

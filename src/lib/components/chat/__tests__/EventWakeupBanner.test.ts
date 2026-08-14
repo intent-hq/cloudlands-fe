@@ -1,0 +1,358 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('svelte-fa', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+
+vi.mock('../InlineAgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/MockInlineAgentAvatar.svelte')).default,
+}));
+
+import EventWakeupBanner from '../EventWakeupBanner.svelte';
+import { store as appStore } from '$store/renderer/store';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import type { Workspace } from '$shared/types';
+import {
+  SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+  SUBSCRIPTION_CARD_SURFACE_CLASS,
+} from '../subscription-disclosure';
+
+type Metadata = {
+  type: 'event_notification';
+  eventCount: number;
+  eventTypes: string[];
+  events?: Array<{
+    type: string;
+    data: Record<string, unknown>;
+    timestamp: string;
+  }>;
+};
+
+const WORKSPACE = { id: 'ws-event-wakeup' } as Workspace;
+
+beforeAll(() => appStore.init());
+
+function renderBanner(
+  metadata: Metadata,
+  props: Partial<{
+    embedded: boolean;
+    compact: boolean;
+    messageText: string;
+    showAgentCards: boolean;
+    workspace: Workspace;
+  }> = {},
+) {
+  return render(EventWakeupBanner, {
+    props: { metadata, asDivider: true, showAgentCards: false, ...props },
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe('EventWakeupBanner details disclosure', () => {
+  it('uses the shared compact subscription card shell, header rhythm, and separator', async () => {
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['workspace:updated'],
+    });
+
+    const card = screen.getByTestId('event-wakeup-card');
+    const summary = screen.getByTestId('event-wakeup-summary');
+    for (const token of [
+      ...SUBSCRIPTION_CARD_CONTAINMENT_CLASS.split(' '),
+      ...SUBSCRIPTION_CARD_SURFACE_CLASS.split(' '),
+    ]) {
+      expect(card.classList.contains(token)).toBe(true);
+    }
+    expect(card.classList.contains('mt-4')).toBe(true);
+    expect(card.classList.contains('mb-4')).toBe(false);
+    expect(card.getAttribute('data-external-spacing-owner')).toBe('event-wakeup-card');
+    const header = screen.getByTestId('event-wakeup-header');
+    expect(header.className).toContain('items-center');
+    expect(header.className).toContain('px-1.5');
+    expect(header.className).toContain('py-1');
+    expect(header.className).not.toContain('min-h-9');
+
+    await fireEvent.click(summary);
+    const details = screen.getByTestId('event-wakeup-details');
+    expect(details.className).toContain('border-t');
+    expect(details.className).toContain('border-border/40');
+    expect(details.className).toContain('px-1.5');
+    expect(details.className).toContain('py-1.5');
+    expect(details.className).not.toContain('border-l');
+    expect(details.className).not.toContain('pl-5');
+  });
+
+  it('stays flat and spacing-neutral when embedded in an existing card', async () => {
+    renderBanner(
+      { type: 'event_notification', eventCount: 1, eventTypes: ['note:updated'] },
+      { embedded: true },
+    );
+
+    const card = screen.getByTestId('event-wakeup-card');
+    for (const token of SUBSCRIPTION_CARD_CONTAINMENT_CLASS.split(' ')) {
+      expect(card.classList.contains(token)).toBe(true);
+    }
+    for (const token of SUBSCRIPTION_CARD_SURFACE_CLASS.split(' ')) {
+      expect(card.classList.contains(token)).toBe(false);
+    }
+    expect(card.classList.contains('mt-3')).toBe(false);
+    expect(card.classList.contains('mt-4')).toBe(false);
+    expect(card.classList.contains('mb-4')).toBe(false);
+    expect(card.getAttribute('data-embedded')).toBe('true');
+    expect(card.hasAttribute('data-external-spacing-owner')).toBe(false);
+
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    expect(screen.getByTestId('event-wakeup-details').className).toContain('border-t');
+  });
+
+  it('renders structured events in daemon order with friendly labels and safe summaries', async () => {
+    const longSummary = `Completed ${'a-very-long-unbroken-result'.repeat(20)} 你好世界`;
+    renderBanner({
+      type: 'event_notification',
+      eventCount: 4,
+      eventTypes: ['agent:idle', 'note:updated', 'custom:signal', 'custom:signal'],
+      events: [
+        {
+          type: 'agent:idle',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: {
+            agentId: 'agent-private-id',
+            agentName: 'Builder',
+            completionReport: 'Implementation complete',
+            report: 'lower priority report',
+            unrelatedPayload: 'must stay hidden',
+          },
+        },
+        {
+          type: 'note:updated',
+          timestamp: '2026-08-12T12:01:00.000Z',
+          data: { report: 'Specification refreshed' },
+        },
+        {
+          type: 'custom:signal',
+          timestamp: '2026-08-12T12:02:00.000Z',
+          data: { lastResponseSummary: longSummary },
+        },
+        {
+          type: 'custom:signal',
+          timestamp: '2026-08-12T12:02:00.000Z',
+          data: { lastResponseSummary: 'Duplicate trigger remains visible' },
+        },
+      ],
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.tagName).toBe('BUTTON');
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('event-wakeup-details')).toBeNull();
+
+    await fireEvent.click(summary);
+
+    const details = screen.getByTestId('event-wakeup-details');
+    const items = within(details).getAllByTestId('event-wakeup-detail');
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Agent finished'),
+      expect.stringContaining('note changes'),
+      expect.stringContaining('custom:signal'),
+      expect.stringContaining('custom:signal'),
+    ]);
+    expect(items[0].textContent).toContain('Builder');
+    expect(items[0].textContent).toContain('Implementation complete');
+    expect(items[0].textContent).not.toContain('lower priority report');
+    expect(details.textContent).toContain('Specification refreshed');
+    expect(details.textContent).toContain(longSummary);
+    expect(details.textContent).toContain('Duplicate trigger remains visible');
+    expect(details.textContent).not.toContain('agent-private-id');
+    expect(details.textContent).not.toContain('must stay hidden');
+    expect(within(details).getAllByRole('time')).toHaveLength(4);
+  });
+
+  it('contains long untrusted text at narrow widths without truncating the detail', async () => {
+    const summaryText = 'unbroken'.repeat(80);
+    const { container } = renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['custom:event'],
+      events: [
+        {
+          type: 'custom:event',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { agentName: 'Agent'.repeat(40), completionReport: summaryText },
+        },
+      ],
+    });
+    container.style.width = '240px';
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+
+    const details = screen.getByTestId('event-wakeup-details');
+    const report = screen.getByText(summaryText);
+    const card = screen.getByTestId('event-wakeup-card');
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(card.className).toContain('max-w-full');
+    expect(card.className).toContain('overflow-hidden');
+    expect(summary.className).toContain('min-w-0');
+    expect(summary.className).toContain('overflow-hidden');
+    expect(details.className).toContain('min-w-0');
+    expect(report.className).toContain('[overflow-wrap:anywhere]');
+    expect(report.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('retains useful legacy type and count-only fallbacks', async () => {
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: 2,
+      eventTypes: ['file:updated', 'daemon:unknown'],
+    });
+    const summary = screen.getByTestId('event-wakeup-summary');
+    await fireEvent.click(summary);
+    expect(screen.getByTestId('event-wakeup-details').textContent).toContain('file changes');
+    expect(screen.getByTestId('event-wakeup-details').textContent).toContain('daemon:unknown');
+
+    await rerender({
+      metadata: { type: 'event_notification', eventCount: 3, eventTypes: [] },
+      asDivider: true,
+      showAgentCards: false,
+    });
+    expect(screen.getByTestId('event-wakeup-details').textContent).toContain(
+      '3 events triggered this response',
+    );
+  });
+
+  it('renders PR notifications and a navigable legacy completion avatar inside the same surface', async () => {
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: 1,
+      eventTypes: ['pull_request:updated'],
+      events: [
+        {
+          type: 'pull_request:updated',
+          timestamp: '2026-08-12T12:00:00.000Z',
+          data: { report: 'Checks completed' },
+        },
+      ],
+    });
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    expect(screen.getByTestId('event-wakeup-details').textContent).toContain(
+      'pull_request:updated',
+    );
+    expect(screen.getByTestId('event-wakeup-details').textContent).toContain('Checks completed');
+
+    await rerender({
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:reportToParent'],
+      },
+      messageText:
+        '[WORKSPACE EVENTS]\n1. [agent:reportToParent] "Verifier" {{agentId:agent-verifier}} completed',
+      asDivider: true,
+      showAgentCards: true,
+      workspace: WORKSPACE,
+    });
+    const avatar = screen.getByTestId('event-agent-avatar');
+    expect(avatar.tagName).toBe('BUTTON');
+    expect(avatar.getAttribute('data-agent-id')).toBe('agent-verifier');
+    expect(screen.queryByTestId('event-wakeup-agent-list')).toBeNull();
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(avatar, { detail: 0 });
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      openAgentTabRequested(WORKSPACE.id, {
+        agentId: 'agent-verifier',
+        sourcePanelId: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
+  });
+
+  it('uses one completed header avatar without repeating identity in expanded details', async () => {
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+    renderBanner(
+      {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:idle'],
+        events: [
+          {
+            type: 'agent:idle',
+            timestamp: '2026-08-12T12:00:00.000Z',
+            data: {
+              agentId: 'agent-builder',
+              agentName: 'Builder',
+              completionReport: 'Implementation complete',
+            },
+          },
+        ],
+      },
+      { showAgentCards: true, workspace: WORKSPACE },
+    );
+
+    const avatar = screen.getByTestId('event-agent-avatar');
+    expect(avatar.getAttribute('data-completed')).toBe('true');
+    expect(screen.queryByTestId('event-wakeup-agent-list')).toBeNull();
+    await fireEvent.click(avatar);
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(screen.getByTestId('event-wakeup-summary'));
+    const details = screen.getByTestId('event-wakeup-details');
+    expect(details.textContent).toContain('Implementation complete');
+    expect(details.textContent).not.toContain('Builder');
+    expect(details.textContent).not.toContain('Agent finished');
+  });
+
+  it('uses the compact five-avatar stack and overflow treatment for multiple completions', () => {
+    renderBanner(
+      {
+        type: 'event_notification',
+        eventCount: 6,
+        eventTypes: ['agent:idle'],
+        events: Array.from({ length: 6 }, (_, index) => ({
+          type: 'agent:idle',
+          timestamp: `2026-08-12T12:0${index}:00.000Z`,
+          data: { agentId: `agent-${index}`, agentName: `Agent ${index}` },
+        })),
+      },
+      { showAgentCards: true, workspace: WORKSPACE },
+    );
+
+    expect(screen.getAllByTestId('event-agent-avatar')).toHaveLength(5);
+    expect(screen.getByTestId('event-wakeup-avatar-overflow').textContent?.trim()).toBe('+1');
+    expect(screen.queryByTestId('event-wakeup-agent-list')).toBeNull();
+  });
+
+  it('toggles exactly once for pointer and keyboard-generated native activation', async () => {
+    renderBanner({ type: 'event_notification', eventCount: 1, eventTypes: [] });
+    const summary = screen.getByTestId('event-wakeup-summary') as HTMLButtonElement;
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    const detailsId = screen.getByTestId('event-wakeup-details').id;
+    expect(summary.getAttribute('aria-controls')).toBe(detailsId);
+
+    await fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('event-wakeup-details')).toBeNull();
+
+    await fireEvent.click(summary, { detail: 0 });
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('event-wakeup-details')).toBeTruthy();
+  });
+});
