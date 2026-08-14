@@ -16,6 +16,7 @@ const panelCanvasWidths = writable<Record<string, number>>({});
 const focusedPanelTargets = writable<
   Record<string, { panelId: string | null; activeTabId: string | null }>
 >({});
+const workspaceById = writable<{ id: string; title?: string } | undefined>(undefined);
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', () => ({
@@ -42,6 +43,10 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
 }));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: () => workspaceById,
+  selectWorkspaceItems: Object.assign(() => writable([]), { select: () => [] }),
+}));
 vi.mock('../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockWorkspaceSurface.svelte')).default,
 }));
@@ -53,6 +58,41 @@ vi.mock('$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte', asy
 }));
 
 import WorkspaceColumnsView from './WorkspaceColumnsView.svelte';
+
+class MockIntersectionObserver {
+  static instances: MockIntersectionObserver[] = [];
+  elements = new Set<Element>();
+  constructor(
+    private callback: IntersectionObserverCallback,
+    readonly options?: IntersectionObserverInit,
+  ) {
+    MockIntersectionObserver.instances.push(this);
+  }
+  observe(element: Element) {
+    this.elements.add(element);
+  }
+  unobserve(element: Element) {
+    this.elements.delete(element);
+  }
+  disconnect() {
+    this.elements.clear();
+  }
+  fire(entries: Array<{ target: Element; isIntersecting: boolean }>) {
+    this.callback(entries as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
+  }
+}
+
+function stubIntersectionObserver() {
+  MockIntersectionObserver.instances = [];
+  vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+}
+
+const surfaceFor = (workspaceId: string) =>
+  document.querySelector(
+    `[data-testid="mock-workspace-surface"][data-workspace-id="${workspaceId}"]`,
+  );
+const placeholderFor = (workspaceId: string) =>
+  document.querySelector(`[data-workspace-column-placeholder="${workspaceId}"]`);
 
 describe('WorkspaceColumnsView', () => {
   beforeEach(() => {
@@ -577,32 +617,7 @@ describe('WorkspaceColumnsView', () => {
   });
 
   it('tracks per-stack column visibility with overscan on the columns scroller', async () => {
-    class MockIntersectionObserver {
-      static instances: MockIntersectionObserver[] = [];
-      elements = new Set<Element>();
-      constructor(
-        private callback: IntersectionObserverCallback,
-        readonly options?: IntersectionObserverInit,
-      ) {
-        MockIntersectionObserver.instances.push(this);
-      }
-      observe(element: Element) {
-        this.elements.add(element);
-      }
-      unobserve(element: Element) {
-        this.elements.delete(element);
-      }
-      disconnect() {
-        this.elements.clear();
-      }
-      fire(entries: Array<{ target: Element; isIntersecting: boolean }>) {
-        this.callback(
-          entries as IntersectionObserverEntry[],
-          this as unknown as IntersectionObserver,
-        );
-      }
-    }
-    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+    stubIntersectionObserver();
     try {
       workspaceStacks.set([['ws-1', 'ws-2'], ['ws-3']]);
       render(WorkspaceColumnsView);
@@ -641,5 +656,187 @@ describe('WorkspaceColumnsView', () => {
 
     const scroller = screen.getByLabelText('Open spaces in columns');
     expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-1,ws-2,ws-3');
+    expect(surfaceFor('ws-1')).toBeTruthy();
+    expect(surfaceFor('ws-2')).toBeTruthy();
+    expect(surfaceFor('ws-3')).toBeTruthy();
+    expect(document.querySelector('[data-workspace-column-placeholder]')).toBeNull();
+  });
+
+  it('renders placeholders for off-window columns while keeping the current column mounted', async () => {
+    stubIntersectionObserver();
+    try {
+      render(WorkspaceColumnsView);
+      await tick();
+      const observer = MockIntersectionObserver.instances[0]!;
+
+      // Nothing reported visible yet: only the current column (ws-2) mounts.
+      expect(surfaceFor('ws-2')).toBeTruthy();
+      expect(placeholderFor('ws-1')).toBeTruthy();
+      expect(placeholderFor('ws-3')).toBeTruthy();
+      expect(surfaceFor('ws-1')).toBeNull();
+      expect(surfaceFor('ws-3')).toBeNull();
+
+      observer.fire([
+        { target: document.querySelector('[data-workspace-stack="ws-3"]')!, isIntersecting: true },
+      ]);
+      await tick();
+
+      expect(surfaceFor('ws-3')).toBeTruthy();
+      expect(placeholderFor('ws-3')).toBeNull();
+      expect(surfaceFor('ws-2')).toBeTruthy();
+      expect(placeholderFor('ws-1')).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('activates and mounts an off-screen workspace on pointer-down on its placeholder', async () => {
+    stubIntersectionObserver();
+    try {
+      render(WorkspaceColumnsView);
+      await tick();
+
+      const placeholder = placeholderFor('ws-1')!;
+      expect(surfaceFor('ws-1')).toBeNull();
+      await fireEvent.pointerDown(placeholder);
+
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/openWorkspaceTab',
+        payload: ['ws-1'],
+      });
+      expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
+
+      currentWorkspaceId.set('ws-1');
+      await tick();
+
+      expect(surfaceFor('ws-1')).toBeTruthy();
+      expect(placeholderFor('ws-1')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('mounts the target workspace when panel cycling crosses a column boundary', async () => {
+    stubIntersectionObserver();
+    try {
+      panelCounts.set({ 'ws-1': 1, 'ws-2': 2, 'ws-3': 0 });
+      render(WorkspaceColumnsView);
+      await tick();
+      const observer = MockIntersectionObserver.instances[0]!;
+      observer.fire([
+        { target: document.querySelector('[data-workspace-stack="ws-2"]')!, isIntersecting: true },
+      ]);
+      await tick();
+      expect(placeholderFor('ws-1')).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Cycle next panel from ws-2' }));
+
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'tabState/openWorkspaceTab',
+        payload: ['ws-1'],
+      });
+      expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1');
+
+      currentWorkspaceId.set('ws-1');
+      await tick();
+
+      expect(surfaceFor('ws-1')).toBeTruthy();
+      expect(placeholderFor('ws-1')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the drag source and drop target mounted for the duration of a drag', async () => {
+    stubIntersectionObserver();
+    try {
+      render(WorkspaceColumnsView);
+      await tick();
+      const observer = MockIntersectionObserver.instances[0]!;
+      const stackA = document.querySelector('[data-workspace-stack="ws-1"]')!;
+      observer.fire([
+        { target: stackA, isIntersecting: true },
+        { target: document.querySelector('[data-workspace-stack="ws-2"]')!, isIntersecting: true },
+      ]);
+      await tick();
+      expect(surfaceFor('ws-1')).toBeTruthy();
+
+      const dataTransfer = {
+        effectAllowed: 'none',
+        dropEffect: 'none',
+        setData: vi.fn(),
+        getData: vi.fn(() => 'ws-1'),
+        setDragImage: vi.fn(),
+      };
+      const dragEvent = (type: string, clientX: number, clientY: number) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          clientX: { value: clientX },
+          clientY: { value: clientY },
+          dataTransfer: { value: dataTransfer },
+        });
+        return event;
+      };
+      const sourceTitle = screen
+        .getByLabelText('Workspace column ws-1')
+        .querySelector('[data-workspace-title-region]')!;
+      await fireEvent(sourceTitle, dragEvent('dragstart', 120, 120));
+
+      // The drag source scrolls out of the window mid-drag but stays mounted.
+      observer.fire([{ target: stackA, isIntersecting: false }]);
+      await tick();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(surfaceFor('ws-1')).toBeTruthy();
+
+      // Dragging over an off-screen placeholder column mounts it as a drop target.
+      expect(placeholderFor('ws-3')).toBeTruthy();
+      await fireEvent(screen.getByLabelText('Workspace column ws-3'), dragEvent('dragover', 5, 5));
+      await tick();
+      expect(surfaceFor('ws-3')).toBeTruthy();
+
+      await fireEvent(screen.getByLabelText('Workspace column ws-1'), dragEvent('dragend', 0, 0));
+      await tick();
+
+      expect(placeholderFor('ws-1')).toBeTruthy();
+      expect(placeholderFor('ws-3')).toBeTruthy();
+      expect(surfaceFor('ws-2')).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('delays unmounting a column that leaves the visibility window', async () => {
+    stubIntersectionObserver();
+    try {
+      render(WorkspaceColumnsView);
+      await tick();
+      const observer = MockIntersectionObserver.instances[0]!;
+      const stackC = document.querySelector('[data-workspace-stack="ws-3"]')!;
+      observer.fire([{ target: stackC, isIntersecting: true }]);
+      await tick();
+      expect(surfaceFor('ws-3')).toBeTruthy();
+
+      // Leaving the window keeps the surface mounted through the hysteresis delay.
+      observer.fire([{ target: stackC, isIntersecting: false }]);
+      await tick();
+      expect(surfaceFor('ws-3')).toBeTruthy();
+
+      // Re-entering within the delay cancels the pending unmount.
+      observer.fire([{ target: stackC, isIntersecting: true }]);
+      await tick();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(surfaceFor('ws-3')).toBeTruthy();
+      expect(placeholderFor('ws-3')).toBeNull();
+
+      // Staying out of the window past the delay swaps in the placeholder.
+      observer.fire([{ target: stackC, isIntersecting: false }]);
+      await tick();
+      expect(surfaceFor('ws-3')).toBeTruthy();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(surfaceFor('ws-3')).toBeNull();
+      expect(placeholderFor('ws-3')).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

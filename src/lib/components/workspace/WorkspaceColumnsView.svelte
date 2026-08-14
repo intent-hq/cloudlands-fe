@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { flip } from 'svelte/animate';
   import { cubicOut } from 'svelte/easing';
   import { goto } from '$app/navigation';
@@ -46,6 +46,7 @@
     type ColumnVisibilityTracker,
     type TrackedColumnElement,
   } from './utils/column-visibility';
+  import WorkspaceColumnPlaceholder from './WorkspaceColumnPlaceholder.svelte';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
   import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { m } from '$shared/paraglide/messages.js';
@@ -71,8 +72,21 @@
   let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
   let visibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   let columnVisibilityTracker: ColumnVisibilityTracker | null = null;
+  const UNMOUNT_HYSTERESIS_MS = 300;
+  let recentlyVisibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
+  const unmountHysteresisTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let previouslyVisibleWorkspaceIds: ReadonlySet<string> = new Set();
   const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
   const visibleWorkspaceIdsAttribute = $derived([...visibleWorkspaceIds].sort().join(','));
+  const mountedWorkspaceIds = $derived.by(() => {
+    const mounted = new Set(visibleWorkspaceIds);
+    for (const workspaceId of recentlyVisibleWorkspaceIds) mounted.add(workspaceId);
+    const currentWorkspaceId = $currentWorkspaceId$;
+    if (currentWorkspaceId) mounted.add(currentWorkspaceId);
+    if (draggedWorkspaceId) mounted.add(draggedWorkspaceId);
+    if (dragOverWorkspaceId) mounted.add(dragOverWorkspaceId);
+    return mounted;
+  });
 
   onMount(() => {
     const frame = requestAnimationFrame(() => {
@@ -236,7 +250,53 @@
     tracker.setElements(tracked);
   });
 
-  onDestroy(cancelPendingReveal);
+  // Unmount hysteresis: a column that leaves the visibility window stays
+  // mounted for a short delay so straddling the overscan edge during scroll
+  // does not thrash mount/unmount. Re-entering the window cancels the timer.
+  $effect(() => {
+    const visible = visibleWorkspaceIds;
+    const departed = [...previouslyVisibleWorkspaceIds].filter(
+      (workspaceId) => !visible.has(workspaceId),
+    );
+    previouslyVisibleWorkspaceIds = visible;
+
+    for (const workspaceId of visible) {
+      const timer = unmountHysteresisTimers.get(workspaceId);
+      if (timer === undefined) continue;
+      clearTimeout(timer);
+      unmountHysteresisTimers.delete(workspaceId);
+    }
+
+    untrack(() => {
+      const retained = new Set(recentlyVisibleWorkspaceIds);
+      let changed = false;
+      for (const workspaceId of retained) {
+        if (!visible.has(workspaceId)) continue;
+        retained.delete(workspaceId);
+        changed = true;
+      }
+      for (const workspaceId of departed) {
+        retained.add(workspaceId);
+        changed = true;
+        unmountHysteresisTimers.set(
+          workspaceId,
+          setTimeout(() => {
+            unmountHysteresisTimers.delete(workspaceId);
+            const next = new Set(recentlyVisibleWorkspaceIds);
+            next.delete(workspaceId);
+            recentlyVisibleWorkspaceIds = next;
+          }, UNMOUNT_HYSTERESIS_MS),
+        );
+      }
+      if (changed) recentlyVisibleWorkspaceIds = retained;
+    });
+  });
+
+  onDestroy(() => {
+    cancelPendingReveal();
+    for (const timer of unmountHysteresisTimers.values()) clearTimeout(timer);
+    unmountHysteresisTimers.clear();
+  });
 
   function updateSidebarWidth(workspaceId: string, width: number) {
     if (sidebarWidths[workspaceId] === width) return;
@@ -398,18 +458,25 @@
         data-workspace-stack-preview={dragOverPlacement}
       ></div>
     {/if}
-    <WorkspaceSurface
-      {workspaceId}
-      active={$currentWorkspaceId$ === workspaceId}
-      manageTab={false}
-      columnMode={true}
-      onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}
-      onSidebarWidthChange={(width) => updateSidebarWidth(workspaceId, width)}
-      onPanelMovePreviewWidthRatioChange={(ratio) =>
-        updatePanelPreviewWidthRatio(workspaceId, ratio)}
-      onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth(workspaceId, width)}
-      onCyclePanelBoundary={(direction) => handlePanelCycleBoundary(workspaceId, direction)}
-    />
+    {#if mountedWorkspaceIds.has(workspaceId)}
+      <WorkspaceSurface
+        {workspaceId}
+        active={$currentWorkspaceId$ === workspaceId}
+        manageTab={false}
+        columnMode={true}
+        onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}
+        onSidebarWidthChange={(width) => updateSidebarWidth(workspaceId, width)}
+        onPanelMovePreviewWidthRatioChange={(ratio) =>
+          updatePanelPreviewWidthRatio(workspaceId, ratio)}
+        onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth(workspaceId, width)}
+        onCyclePanelBoundary={(direction) => handlePanelCycleBoundary(workspaceId, direction)}
+      />
+    {:else}
+      <WorkspaceColumnPlaceholder
+        {workspaceId}
+        onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}
+      />
+    {/if}
   </section>
 {/snippet}
 
