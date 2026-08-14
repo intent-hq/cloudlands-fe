@@ -5,10 +5,13 @@
  * gutter channels (the cell-free strips at half-integer lattice coords
  * between columns/rows); short exit/entry stubs and straight neighbor links
  * lie in border corridors (the integer row/column through the cell
- * centers). Every segment gets a lane index within its channel so no two
- * edges ever share a collinear span (90° crossings are fine); px conversion
- * later offsets segments off the channel centerline by lane. Pure and
- * deterministic: same layout ⇒ same routes on every HUD instance.
+ * centers). Every segment gets a lane index within its channel; edges in the
+ * same bundle (same `kind` + same `from`) may share a lane over overlapping
+ * spans so a fan-out renders as one trunk that branches, while edges of
+ * different bundles never overlap or touch on the same lane (90° crossings
+ * are fine). Px conversion later offsets segments off the channel centerline
+ * by lane. Pure and deterministic: same layout ⇒ same routes on every HUD
+ * instance.
  */
 import {
   HUD_TAKEOVER_CELL_PX,
@@ -54,7 +57,12 @@ export interface HudTakeoverEdgeRoute {
 
 export interface HudTakeoverEdgeRouting {
   routes: HudTakeoverEdgeRoute[];
-  /** Max lane count over all channels — drives the global gutter width. */
+  /**
+   * Max lane count over the gutter (half-integer) channels — drives the
+   * global gutter width. Border-corridor (integer) channels are excluded:
+   * corridor lanes spread along the cell border, not across the gutter, so
+   * port fan-in/fan-out stubs never inflate the gutter width.
+   */
   maxLanes: number;
 }
 
@@ -132,14 +140,16 @@ function routePoints(
  * Orthogonal routes for the layout's edges. Edges whose endpoints are
  * missing from the layout or degenerate (same cell) are dropped — parity
  * with `takeoverMapEdges`. Lane assignment is first-fit in edge order per
- * channel: a segment takes the lowest lane whose already-assigned spans it
- * does not touch or overlap, so fan-in/fan-out stubs spread across lanes
- * (= entry/exit ports) and parallel gutter runs never merge.
+ * channel, bundling edges of the same `kind` + `from`: a segment takes the
+ * lowest lane where every already-assigned span it would overlap or touch
+ * belongs to its own bundle, so a fan-out's exit stubs and common gutter
+ * runs share one trunk lane and branch where routes diverge, while spans
+ * from other bundles block the lane and never merge with it.
  */
 export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEdgeRouting {
   const coordOf = (id: string): HudTakeoverCellCoord | undefined =>
     id === HUD_TAKEOVER_SPEC_NODE_ID ? { x: 0, y: 0 } : graph.coords.get(id);
-  const occupied = new Map<string, { lane: number; lo: number; hi: number }[]>();
+  const occupied = new Map<string, { lane: number; lo: number; hi: number; bundle: string }[]>();
   let maxLanes = 0;
   const routes: HudTakeoverEdgeRoute[] = [];
   for (const edge of graph.edges) {
@@ -148,6 +158,7 @@ export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEd
     if (!from || !to) continue;
     const points = routePoints(from, to);
     if (!points) continue;
+    const bundle = `${edge.kind}\u0000${edge.from}`;
     const segments = points.slice(0, -1).map((p, i): HudTakeoverRouteSegment => {
       const q = points[i + 1];
       const axis = p.y === q.y ? 'h' : 'v';
@@ -157,10 +168,15 @@ export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEd
       const key = `${axis}:${channel}`;
       const spans = occupied.get(key) ?? [];
       let lane = 0;
-      while (spans.some((s) => s.lane === lane && s.lo <= hi && lo <= s.hi)) lane += 1;
-      spans.push({ lane, lo, hi });
+      while (
+        spans.some((s) => s.lane === lane && s.bundle !== bundle && s.lo <= hi && lo <= s.hi)
+      )
+        lane += 1;
+      spans.push({ lane, lo, hi, bundle });
       occupied.set(key, spans);
-      maxLanes = Math.max(maxLanes, lane + 1);
+      // Only gutter (half-integer) channels drive maxLanes — corridor lanes
+      // spread along the cell border and need no gutter room.
+      if (channel % 1 !== 0) maxLanes = Math.max(maxLanes, lane + 1);
       return { axis, channel, lane };
     });
     routes.push({
