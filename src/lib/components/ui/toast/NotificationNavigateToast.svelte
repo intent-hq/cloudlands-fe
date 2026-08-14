@@ -58,7 +58,7 @@
 </script>
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding). -->
-<div class="flex max-w-125 items-center gap-3">
+<div class="flex w-full min-w-0 flex-wrap items-center gap-3 sm:flex-nowrap">
   <div class="flex-1 min-w-0">
     {#if structured}
       <!-- Line 1: slot square (when resolved) baseline-aligned with the workspace title. -->

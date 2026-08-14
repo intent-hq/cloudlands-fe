@@ -26,7 +26,7 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the kind-flavored border tint is passed as a wrapper class by the service. -->
-<div class="flex max-w-125 items-start gap-3">
+<div class="flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {kind === 'blocker' ? 'text-destructive' : 'text-primary'}">
     <Fa icon={kind === 'blocker' ? faTriangleExclamation : faComments} class="w-5 h-5" />
@@ -38,17 +38,17 @@
       {#if keySlot != null}
         <MicroKeySlotSquare slot={keySlot} />
       {/if}
-      <p class="text-sm font-medium text-foreground">
+      <p class="min-w-0 break-words text-sm font-medium text-foreground">
         {title}
         {#if timestamp}
           <RelativeTime date={timestamp} class="text-xs font-normal text-muted-foreground ml-1" />
         {/if}
       </p>
     </div>
-    <p class="text-sm text-muted-foreground line-clamp-3 mt-0.5">{reason}</p>
+    <p class="text-sm text-muted-foreground line-clamp-3 mt-0.5 break-words">{reason}</p>
 
     <!-- Action buttons -->
-    <div class="flex items-center gap-2 mt-3">
+    <div class="flex flex-wrap items-center gap-2 mt-3">
       <Button variant="outline" size="sm" onclick={onSwitchTo}>
         {m.agent_attentionToast_switchTo_label()}
       </Button>
@@ -58,7 +58,7 @@
   <!-- Close button -->
   <button
     type="button"
-    class="flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    class="-mr-1 -mt-1 flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
     onclick={onClose}
     aria-label={m.agent_attentionToast_close_ariaLabel()}
   >

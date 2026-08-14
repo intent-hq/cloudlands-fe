@@ -67,6 +67,7 @@
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
   import ResourceNotFound from '$lib/components/common/ResourceNotFound.svelte';
+  import WorkspaceSurfaceLoadBoundary from './WorkspaceSurfaceLoadBoundary.svelte';
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
@@ -1038,20 +1039,28 @@
   data-active={active}
   data-loading={!$workspace}
 >
-  <WorkspaceLayout
-    sidebar={sidebarContent}
-    content={mainContent}
-    terminalOverlay={terminalOverlayContent}
-    modals={modalsContent}
-    sidebarSide={$sidebarSide$}
-    sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
-    sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-    {sidebarFillsAvailableWidth}
-    disableSidebarWidthTransition={columnMode}
-    {columnMode}
-    {onSidebarWidthChange}
-    startCollapsed={isOnboarding}
-  />
+  <WorkspaceSurfaceLoadBoundary
+    loadError={isCreatingWorkspace ? null : workspaceLoader.loadError}
+    resourceLabel={m.workspace_page_workspaceResource_label()}
+    resourceId={workspaceId}
+    onNavigateAway={() => void navigateToFirstWorkspace()}
+  >
+    {#snippet children()}
+      <WorkspaceLayout
+        sidebar={sidebarContent}
+        content={mainContent}
+        terminalOverlay={terminalOverlayContent}
+        modals={modalsContent}
+        sidebarSide={$sidebarSide$}
+        sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
+        sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
+        {sidebarFillsAvailableWidth}
+        disableSidebarWidthTransition={columnMode}
+        {onSidebarWidthChange}
+        startCollapsed={isOnboarding}
+      />
+    {/snippet}
+  </WorkspaceSurfaceLoadBoundary>
 </div>
 
 <style>
