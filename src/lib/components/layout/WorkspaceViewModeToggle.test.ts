@@ -5,12 +5,63 @@ import { writable } from 'svelte/store';
 
 const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
 const viewMode = writable<'single' | 'columns'>('single');
+const onboardingActive = writable(false);
+
+const readable = <T,>(value: T) => ({
+  subscribe(run: (value: T) => void) {
+    run(value);
+    return () => {};
+  },
+});
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectWorkspaceViewMode: () => viewMode,
 }));
+
+// ── Mocks for rendering WindowTitleBar (onboarding gating suite below) ──
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/'), params: {} },
+}));
+vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectActiveTab: () => readable(null),
+}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceItems: () => readable([]),
+}));
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectZoomFactor: () => readable(1),
+  selectCounterScale: () => readable(1),
+}));
+vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
+  selectOnboardingActive: () => onboardingActive,
+  selectPanelItem: () => readable(null),
+  selectPanelWidth: () => readable(0),
+}));
+vi.mock('$features/agent/services/active-streams-tracker', () => ({
+  activeStreamsTracker: {
+    startPolling: vi.fn(),
+    subscribe: vi.fn(() => () => {}),
+    getStreamingAgentIdsForWorkspace: vi.fn(() => []),
+  },
+}));
+vi.mock('$features/file-tracking/file-tracking.client', () => ({
+  getLineStats: vi.fn(async () => ({ additions: 0, deletions: 0 })),
+}));
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: vi.fn(),
+  navigateBackFromSettings: vi.fn(),
+}));
+vi.mock('./sidebar-nav/SidebarNav.svelte', () => ({ default: () => null }));
+vi.mock('./WorkspaceTabStrip.svelte', () => ({ default: () => null }));
+vi.mock('./DaemonStatusIndicator.svelte', () => ({ default: () => null }));
+vi.mock('$lib/components/workspace/initializer/RepoSelector.svelte', () => ({
+  default: () => null,
+}));
+
 import WorkspaceViewModeToggle from './WorkspaceViewModeToggle.svelte';
+import WindowTitleBar from './WindowTitleBar.svelte';
 
 describe('WorkspaceViewModeToggle', () => {
   beforeEach(() => {
@@ -74,5 +125,50 @@ describe('WorkspaceViewModeToggle', () => {
     expect(icon?.parentElement?.className).toContain('size-5');
     expect(icon?.getAttribute('width')).toBe('16');
     expect(icon?.getAttribute('height')).toBe('16');
+  });
+});
+
+describe('WindowTitleBar onboarding gating', () => {
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    viewMode.set('single');
+    onboardingActive.set(false);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  it('hides the view-mode toggle and repo launcher while onboarding is active', async () => {
+    render(WindowTitleBar);
+
+    expect(screen.getByRole('button', { name: 'Open spaces in columns' })).toBeTruthy();
+    expect(document.querySelector('[data-workspace-repo-launcher]')).toBeTruthy();
+    expect(document.querySelector('[data-titlebar-settings]')).toBeTruthy();
+
+    onboardingActive.set(true);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Open spaces in columns' })).toBeNull();
+      expect(document.querySelector('[data-workspace-repo-launcher]')).toBeNull();
+    });
+    // Other titlebar controls stay untouched.
+    expect(document.querySelector('[data-titlebar-settings]')).toBeTruthy();
+  });
+
+  it('restores both controls when onboarding ends', async () => {
+    onboardingActive.set(true);
+    render(WindowTitleBar);
+
+    expect(screen.queryByRole('button', { name: 'Open spaces in columns' })).toBeNull();
+    expect(document.querySelector('[data-workspace-repo-launcher]')).toBeNull();
+
+    onboardingActive.set(false);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Open spaces in columns' })).toBeTruthy();
+      expect(document.querySelector('[data-workspace-repo-launcher]')).toBeTruthy();
+    });
   });
 });
