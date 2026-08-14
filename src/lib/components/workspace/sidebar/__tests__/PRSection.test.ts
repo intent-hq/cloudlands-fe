@@ -11,6 +11,10 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -212,6 +216,27 @@ const testPR = {
   status: 'open',
 };
 
+const crossRepoPR = {
+  ...testPR,
+  crossRepo: 'acme/other',
+  crossRepoDisplay: 'other',
+  monitorSnapshot: {
+    state: 'open',
+    isDraft: false,
+    hasConflicts: false,
+    isBehind: false,
+    checks: { total: 2, passed: 1, failed: 1, pending: 0 },
+    approvals: {
+      decision: 'REVIEW_REQUIRED',
+      have: 0,
+      needed: 1,
+      changesRequested: 0,
+    },
+    threads: { unresolved: 0 },
+    rulesKnown: false,
+  },
+};
+
 function makePushedCommit(hash: string, overrides: Record<string, unknown> = {}) {
   return {
     hash,
@@ -241,6 +266,30 @@ describe('PRSection', () => {
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
+  });
+
+  it('affirms the linked PR action in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = await renderPR({
+        hasPRs: true,
+        pullRequests: [crossRepoPR],
+      });
+      const target = await waitFor(
+        () => view.container.querySelector<HTMLElement>('div[title]')!,
+      );
+      target.tabIndex = 0;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(view.container.textContent).toContain('other:');
+          expect(target.getAttribute('title')).toContain(
+            'Checks: 1 passed, 1 failed, 0 pending',
+          );
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('triggerCreatePR calls backgroundGitActionsService.createPR with provided title and description when authenticated', async () => {

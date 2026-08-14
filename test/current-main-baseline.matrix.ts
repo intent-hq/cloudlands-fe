@@ -245,7 +245,10 @@ export const baselineRows = [
     'Initial Coordinator first in Agents preview',
     'sidebar',
     [...visual, 'mixed-agents'],
-    ['src/lib/components/workspace/utils/sidebar-launcher-preview.test.ts'],
+    [
+      'src/lib/components/workspace/utils/sidebar-launcher-preview.test.ts',
+      'src/lib/components/workspace/__tests__/MultiSelectTabbedSidebar.open-in.test.ts',
+    ],
   ),
   row(
     'WORKSPACE-18',

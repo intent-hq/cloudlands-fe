@@ -8,6 +8,10 @@ import {
   MESSAGE_SEND_TRANSITION_EASING,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
 } from '../message-send-transition';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const originalAnimate = HTMLElement.prototype.animate;
 
@@ -86,6 +90,34 @@ afterEach(() => {
 });
 
 describe('message send transition', () => {
+  it('affirms the composer-to-bubble transition in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async ({ reducedMotion }) => {
+      const { composer, target, scrollContainer } = fixture();
+      target.tabIndex = 0;
+      const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
+      const origin = captureMessageSendOrigin(composer);
+      await animateMessageSend({ origin, target, scrollContainer });
+      return {
+        container: composer,
+        target,
+        unmount: () => {
+          composer.remove();
+          target.remove();
+        },
+        assertCapability: () => {
+          if (reducedMotion) expect(animate).not.toHaveBeenCalled();
+          else
+            expect(animate).toHaveBeenCalledWith(
+              expect.any(Array),
+              expect.objectContaining({ duration: 280 }),
+            );
+          expect(target.style.opacity).toBe('');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('uses the emphasized 280ms composer-to-bubble animation and smooth scroll', async () => {
     const { composer, target, scrollContainer } = fixture();
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));

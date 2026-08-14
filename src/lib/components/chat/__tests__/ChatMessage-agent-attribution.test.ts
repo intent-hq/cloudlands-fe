@@ -5,6 +5,10 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
   SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
@@ -232,6 +236,31 @@ describe('ChatMessage user message text rendering', () => {
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();
+  });
+
+  it('affirms attributed message hierarchy and density in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const attributed = render(ChatMessage, {
+        props: {
+          message: userMessage({
+            type: 'agent_message',
+            fromAgentId: 'agent-sender-visual',
+            fromAgentName: 'Builder',
+          }),
+        },
+      });
+      const target = attributed.getByTestId('agent-message-attribution');
+      return {
+        container: attributed.container,
+        target,
+        unmount: attributed.unmount,
+        assertCapability: () => {
+          expect(attributed.getByTestId('agent-message-attribution')).toBeTruthy();
+          expect(attributed.getByTestId('user-message-surface').className).toContain('min-w-0');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('renders the attribution header for an agent_message user row', () => {
@@ -527,6 +556,26 @@ describe('ChatMessage hook wake attribution', () => {
       ...(opts.rowMetadata ? { metadata } : {}),
     };
   }
+
+  it('affirms wake disclosure containment in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(ChatMessage, {
+        props: { message: hookWakeMessage({ rowMetadata: true }) },
+      });
+      const target = view.getByTestId('automated-wake-toggle');
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(
+            view.getByTestId('user-message-surface').hasAttribute('data-automated-wake-card'),
+          ).toBe(true);
+          expect(view.getByTestId('automated-wake-header')).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
 
   it('renders a collapsed hook wake card and strips the prefix when expanded', async () => {
     render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });

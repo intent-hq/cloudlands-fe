@@ -11,6 +11,10 @@ import {
   waitFor,
 } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -128,6 +132,26 @@ describe('BranchDisplay', () => {
     (window as unknown as { electronAPI: { invoke: typeof mockInvoke } }).electronAPI = {
       invoke: mockInvoke,
     };
+  });
+
+  it('affirms repository branch metadata and alignment in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = await renderBranchDisplay({ trunkBranch: 'develop' });
+      const target = view.container.querySelector<HTMLButtonElement>('button')!;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.textContent).toContain('feature/branch');
+          expect(
+            view.container
+              .querySelector('[data-testid="branch-selector"]')
+              ?.getAttribute('data-value'),
+          ).toBe('develop');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('renders the workspace branch and trunk branch', async () => {

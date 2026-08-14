@@ -11,6 +11,10 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -221,6 +225,26 @@ describe('WorkspaceProgressCard checkout mode in repository hover card', () => {
     mocks.update.mockReset();
     mocks.notes.length = 0;
     mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
+  });
+
+  it('affirms repository pill contrast in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = await renderProgressCard({ checkoutMode: 'cow' });
+      const target = view.getByRole('button', { name: 'augment/intent' });
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(
+            view.container.querySelector('[data-checkout-mode-details]')?.textContent,
+          ).toContain('Checkout mode: CoW');
+          expect(
+            view.container.querySelector('[data-sidebar-repository-branch-metadata]'),
+          ).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it.each([

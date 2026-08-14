@@ -3,6 +3,10 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -69,6 +73,33 @@ describe('WorkspaceColumnsView', () => {
     panelCounts.set({});
     panelCanvasWidths.set({});
     focusedPanelTargets.set({});
+  });
+
+  it('affirms heading-band geometry and bidirectional column choreography in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      workspaceStacks.set([['ws-1']]);
+      const view = render(WorkspaceColumnsView);
+      const scroller = view.container.querySelector<HTMLElement>('[data-workspace-columns]')!;
+      scroller.scrollTo = vi.fn();
+      const target = view.getByLabelText('Workspace column ws-1');
+      target.tabIndex = 0;
+      workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
+      await tick();
+      expect(document.querySelectorAll('[data-workspace-column-motion]')).toHaveLength(3);
+      workspaceStacks.set([['ws-1']]);
+      await tick();
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(document.querySelectorAll('[data-workspace-column-motion]')).toHaveLength(1);
+          expect(
+            document.querySelector<HTMLElement>('[data-workspace-stack="ws-1"]')?.style.width,
+          ).toBe('360px');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('renders vertically stacked workspaces in one content-sized column', () => {

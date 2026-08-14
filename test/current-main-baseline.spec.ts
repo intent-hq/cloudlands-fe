@@ -157,6 +157,12 @@ test('locks the complete 55-row current-main evidence contract', () => {
     expect(assertion.status, assertion.evidenceId).toBe('passed');
     expect(approvedRowIds).toContain(assertion.rowId);
     expect(Object.keys(assertion.stateAssertions)).toEqual(assertion.observedStates);
+    expect(Object.keys(assertion.configuredStates)).toEqual(assertion.observedStates);
+    for (const state of assertion.observedStates) {
+      expect(assertion.configuredStates[state], `${assertion.evidenceId}:${state}`).toContain(
+        state,
+      );
+    }
     for (const assertionId of Object.values(assertion.stateAssertions)) {
       expect(passedAssertionIds.has(assertionId), assertion.evidenceId).toBe(true);
     }
@@ -276,6 +282,9 @@ async function assertMountedScene(page: Page, scene: MountedScene) {
     await page.keyboard.press('Escape');
     await expect(overlay).toBeHidden();
     await expect(agentTrigger).toBeFocused();
+    await page.mouse.move(0, 0);
+    await agentTrigger.evaluate((node) => node.blur());
+    await page.waitForTimeout(100);
 
     const accessibility = await agents.evaluate((node) => {
       const label = node.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;

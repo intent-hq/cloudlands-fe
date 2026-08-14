@@ -4,12 +4,38 @@ import {
   capturePanelPositions,
   translatePanel,
 } from '../panel-reorder-animation';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
   return { left, top, width, height } as DOMRect;
 }
 
 describe('translatePanel', () => {
+  it('affirms adjacent-panel first-frame translation in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const target = document.createElement('button');
+      document.body.append(target);
+      const animation = translatePanel(
+        target,
+        { from: rect(20, 10, 600, 800), to: rect(420, 10, 280, 800) },
+        { duration: 180 },
+      );
+      return {
+        container: target,
+        target,
+        unmount: () => target.remove(),
+        assertCapability: () => {
+          expect(animation.css?.(0, 1)).toContain('translate(-400px, 0px)');
+          expect(animation.css?.(0, 1)).not.toContain('scale');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('moves between differently sized slots without scaling panel contents', () => {
     const animation = translatePanel(
       document.createElement('div'),
