@@ -1459,7 +1459,7 @@
           </button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
-          <div class="flex items-center rounded-lg bg-sidebar">
+          <div class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring">
             <Fa icon={faGithub} class="ml-3" />
             <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
@@ -1591,7 +1591,7 @@
                   handleConfirmNewRepo();
                 }
               }}
-              class="bg-sidebar border-none"
+              class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
               noFocusStyle
             />
           </div>
