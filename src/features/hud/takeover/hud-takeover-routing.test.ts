@@ -144,6 +144,72 @@ describe('hud-takeover-routing (orthogonal edge router)', () => {
     expect(maxLanes).toBe(1);
   });
 
+  it('stickiness: a cross-bundle span bumping one member off lane 0 no longer splits the trunk', () => {
+    // u→v's gutter run takes lane 0 on v:1.5 over [2,3]. s→c's run ([0,2])
+    // touches it at y=2, so s→c is bumped to lane 1. s→b's run ([0,1]) does
+    // NOT reach the blocker — first-fit would drop it on the free lane 0,
+    // splitting the s trunk into two parallel lines. Stickiness makes it
+    // follow s→c onto the memoized lane 1 instead.
+    const graph = g(
+      [
+        ['s', { x: 1, y: 0 }],
+        ['b', { x: 2, y: 1 }],
+        ['c', { x: 2, y: 2 }],
+        ['u', { x: 1, y: 2 }],
+        ['v', { x: 2, y: 3 }],
+      ],
+      [
+        { from: 'u', to: 'v', kind: 'dep' },
+        { from: 's', to: 'c', kind: 'dep' },
+        { from: 's', to: 'b', kind: 'dep' },
+      ],
+    );
+    const gutter = allSpans(takeoverEdgeRoutes(graph).routes).filter(
+      (s) => s.axis === 'v' && s.channel === 1.5,
+    );
+    expect(gutter.find((s) => s.from === 'u')?.lane).toBe(0);
+    const trunk = gutter.filter((s) => s.from === 's');
+    expect(trunk).toHaveLength(2);
+    expect(trunk.map((s) => s.lane)).toEqual([1, 1]);
+  });
+
+  it('stickiness: a blocked member falls back to first-fit without overwriting the memo', () => {
+    // As above, s's bundle memoizes lane 1 on v:1.5 (s→c bumped by u→v).
+    // u→q's conflict run then claims lane 1 over [2.5,3.5], so s→e's run
+    // ([0,4]) finds its sticky lane blocked and falls back to first-fit
+    // (lanes 0 and 1 both blocked ⇒ lane 2). The fallback must not overwrite
+    // the memo: s→b's run ([0,1]) clears every blocker and still converges
+    // on the sticky lane 1, not lane 0 or the fallback lane 2.
+    const graph = g(
+      [
+        ['s', { x: 1, y: 0 }],
+        ['b', { x: 2, y: 1 }],
+        ['c', { x: 2, y: 2 }],
+        ['e', { x: 2, y: 4 }],
+        ['u', { x: 1, y: 2 }],
+        ['v', { x: 2, y: 3 }],
+        ['q', { x: 1, y: 4 }],
+      ],
+      [
+        { from: 'u', to: 'v', kind: 'dep' },
+        { from: 's', to: 'c', kind: 'dep' },
+        { from: 'u', to: 'q', kind: 'conflict' },
+        { from: 's', to: 'e', kind: 'dep' },
+        { from: 's', to: 'b', kind: 'dep' },
+      ],
+    );
+    const gutter = allSpans(takeoverEdgeRoutes(graph).routes).filter(
+      (s) => s.axis === 'v' && s.channel === 1.5,
+    );
+    const laneOf = (id: string) => gutter.find((s) => s.id.startsWith(`${id}\u0000`))?.lane;
+    expect(laneOf('u')).toBe(0);
+    const conflictRun = gutter.find((s) => s.kind === 'conflict');
+    expect(conflictRun?.lane).toBe(1);
+    expect(gutter.find((s) => s.id === 's\u0000c\u0000dep')?.lane).toBe(1);
+    expect(gutter.find((s) => s.id === 's\u0000e\u0000dep')?.lane).toBe(2);
+    expect(gutter.find((s) => s.id === 's\u0000b\u0000dep')?.lane).toBe(1);
+  });
+
   it('bundling: same source but different kinds are separate bundles with distinct lanes', () => {
     const graph = g(
       [

@@ -9,9 +9,11 @@
  * same bundle (same `kind` + same `from`) may share a lane over overlapping
  * spans so a fan-out renders as one trunk that branches, while edges of
  * different bundles never overlap or touch on the same lane (90° crossings
- * are fine). Px conversion later offsets segments off the channel centerline
- * by lane. Pure and deterministic: same layout ⇒ same routes on every HUD
- * instance.
+ * are fine). Lane choice is sticky per bundle: once a bundle lands on a lane
+ * in a channel, its later segments there prefer that lane over lower free
+ * ones, so one blocked member cannot split the trunk into parallel lines.
+ * Px conversion later offsets segments off the channel centerline by lane.
+ * Pure and deterministic: same layout ⇒ same routes on every HUD instance.
  */
 import {
   HUD_TAKEOVER_CELL_PX,
@@ -145,11 +147,22 @@ function routePoints(
  * belongs to its own bundle, so a fan-out's exit stubs and common gutter
  * runs share one trunk lane and branch where routes diverge, while spans
  * from other bundles block the lane and never merge with it.
+ *
+ * Lanes are sticky per bundle: the first lane a bundle lands on in a channel
+ * is memoized, and its later segments there try the sticky lane FIRST — even
+ * when a lower lane is free — so a cross-bundle span that bumps one member
+ * off lane 0 cannot split the trunk into parallel same-colored lines. When a
+ * cross-bundle span blocks the sticky lane over a segment's own range, that
+ * segment alone falls back to normal first-fit; the fallback lane does not
+ * overwrite the memo, so the rest of the bundle keeps converging on the
+ * sticky lane.
  */
 export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEdgeRouting {
   const coordOf = (id: string): HudTakeoverCellCoord | undefined =>
     id === HUD_TAKEOVER_SPEC_NODE_ID ? { x: 0, y: 0 } : graph.coords.get(id);
   const occupied = new Map<string, { lane: number; lo: number; hi: number; bundle: string }[]>();
+  /** First lane each bundle landed on per channel, keyed `bundle\u0000axis:channel`. */
+  const stickyLanes = new Map<string, number>();
   let maxLanes = 0;
   const routes: HudTakeoverEdgeRoute[] = [];
   for (const edge of graph.edges) {
@@ -167,11 +180,18 @@ export function takeoverEdgeRoutes(graph: HudTakeoverGraphLayout): HudTakeoverEd
         axis === 'h' ? [p.x, q.x].sort((m, n) => m - n) : [p.y, q.y].sort((m, n) => m - n);
       const key = `${axis}:${channel}`;
       const spans = occupied.get(key) ?? [];
-      let lane = 0;
-      while (
-        spans.some((s) => s.lane === lane && s.bundle !== bundle && s.lo <= hi && lo <= s.hi)
-      )
-        lane += 1;
+      const blocked = (candidate: number): boolean =>
+        spans.some((s) => s.lane === candidate && s.bundle !== bundle && s.lo <= hi && lo <= s.hi);
+      const stickyKey = `${bundle}\u0000${key}`;
+      const stickyLane = stickyLanes.get(stickyKey);
+      let lane: number;
+      if (stickyLane !== undefined && !blocked(stickyLane)) {
+        lane = stickyLane;
+      } else {
+        lane = 0;
+        while (blocked(lane)) lane += 1;
+        if (stickyLane === undefined) stickyLanes.set(stickyKey, lane);
+      }
       spans.push({ lane, lo, hi, bundle });
       occupied.set(key, spans);
       // Only gutter (half-integer) channels drive maxLanes — corridor lanes
