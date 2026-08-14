@@ -1,14 +1,15 @@
 /**
- * Regression tests for line-break doubling in the chat input serialization
- * (intent-hq/monorepo#1151).
+ * Regression tests for line-break doubling (intent-hq/monorepo#1151) and
+ * newline loss on draft restore in the chat input serialization.
  *
  * The chat input convention (defined by plainTextToEditorHTML) is:
- * - single visual line break (hardBreak / <br>) ↔ "\n"
- * - paragraph boundary (blank line) ↔ "\n\n"
+ * - every "\n" ↔ exactly one hardBreak (<br>), inside a single paragraph
+ * - no paragraph splitting, so consecutive/leading/trailing newlines
+ *   round-trip losslessly (blank lines are consecutive hardBreaks)
  *
  * These tests fail against the old behavior (editor.getText() with default
- * options drops hardBreaks, and pasted single "\n"s became paragraph
- * boundaries, doubling into "\n\n").
+ * options drops hardBreaks; pasted single "\n"s became paragraph boundaries,
+ * doubling into "\n\n"; and paragraph splitting dropped blank lines).
  *
  * @vitest-environment jsdom
  */
@@ -85,6 +86,12 @@ describe('editor-text-serialization (#1151)', () => {
     const cases = [
       'a\nb',
       'a\n\nb',
+      'a\n\n\nb',
+      '\na',
+      'a\n',
+      'a\n\n',
+      '\n\na',
+      '\n',
       'line one\nline two\n\nsecond paragraph\nwith another line',
       '  indented line\nplain line',
       'word ',
@@ -109,6 +116,11 @@ describe('editor-text-serialization (#1151)', () => {
     it('pasting "a\\n\\nb" preserves the blank line as "a\\n\\nb"', () => {
       pastePlainText(editor, 'a\n\nb');
       expect(serializeEditorText(editor)).toBe('a\n\nb');
+    });
+
+    it('pasting "a\\n\\n\\nb" preserves consecutive blank lines', () => {
+      pastePlainText(editor, 'a\n\n\nb');
+      expect(serializeEditorText(editor)).toBe('a\n\n\nb');
     });
 
     it('normalizes CRLF line endings on paste', () => {

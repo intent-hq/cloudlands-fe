@@ -2,8 +2,10 @@
  * Text serialization helpers for the chat input TipTap editor.
  *
  * Defines the WYSIWYG plain-text convention for the chat input:
- * - a single visual line break (hardBreak / <br>) ↔ "\n"
- * - a paragraph boundary (blank line) ↔ "\n\n"
+ * - every "\n" ↔ exactly one hardBreak (<br>)
+ * - plain text maps to a single paragraph — no paragraph splitting — so
+ *   consecutive, leading, and trailing newlines all survive the round trip
+ *   (blank lines are represented as consecutive hardBreaks)
  *
  * `plainTextToEditorHTML` maps plain text → editor HTML and
  * `serializeEditorText` is its inverse (editor doc → plain text). The two
@@ -13,22 +15,6 @@
 import type { Editor } from '@tiptap/core';
 import type { Node as PMNode, Schema } from '@tiptap/pm/model';
 import { injectMentionSpans } from '$lib/utils/markdown-mention-injector';
-
-/**
- * Group lines into paragraphs: consecutive non-empty lines form one
- * paragraph, empty lines start a new one. Empty groups are dropped.
- */
-function groupLinesIntoParagraphs(lines: string[]): string[][] {
-  const paragraphs: string[][] = [[]];
-  for (const line of lines) {
-    if (line === '') {
-      paragraphs.push([]);
-    } else {
-      paragraphs[paragraphs.length - 1].push(line);
-    }
-  }
-  return paragraphs.filter((p) => p.length > 0);
-}
 
 function preserveCollapsibleSpaces(text: string): string {
   return text
@@ -48,7 +34,7 @@ function preserveCollapsibleSpaces(text: string): string {
  * markdown-generated HTML tags would be silently removed.
  */
 export function plainTextToEditorHTML(text: string): string {
-  if (!text || text.trim() === '') return '';
+  if (!text) return '';
 
   // If the value is already HTML (e.g., from comment editing where the caller
   // pre-processes markdown → HTML via processMarkdownToHTML), pass it through
@@ -60,9 +46,8 @@ export function plainTextToEditorHTML(text: string): string {
 
   // Process line-by-line to escape HTML and preserve whitespace that HTML
   // parsing would otherwise collapse. A single internal space stays breakable.
-  const lines = text.split('\n');
-  const processedLines = lines.map((line) => {
-    if (line === '') return ''; // empty-line marker for paragraph splitting
+  const processedLines = text.split('\n').map((line) => {
+    if (line === '') return '';
 
     // Escape HTML entities so user text is safe
     const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -70,10 +55,9 @@ export function plainTextToEditorHTML(text: string): string {
     return preserveCollapsibleSpaces(escaped);
   });
 
-  // Build HTML: each paragraph group → <p>, lines within joined by <br>
-  const html = groupLinesIntoParagraphs(processedLines)
-    .map((p) => `<p>${p.join('<br>')}</p>`)
-    .join('');
+  // Build HTML: one paragraph, one <br> per "\n". No paragraph splitting, so
+  // consecutive/leading/trailing newlines are preserved exactly.
+  const html = `<p>${processedLines.join('<br>')}</p>`;
 
   // Rehydrate @-mentions into TipTap mention chip spans
   return injectMentionSpans(html);
@@ -81,8 +65,9 @@ export function plainTextToEditorHTML(text: string): string {
 
 /**
  * Serialize the editor document to plain text, inverting
- * plainTextToEditorHTML: hardBreak → "\n", paragraph boundary → "\n\n",
- * preserved non-breaking whitespace → regular spaces.
+ * plainTextToEditorHTML: hardBreak → "\n", preserved non-breaking whitespace
+ * → regular spaces. Paragraph boundaries (possible via the HTML pass-through
+ * path) still serialize as "\n\n".
  */
 export function serializeEditorText(editor: Editor | null | undefined): string {
   const raw =
@@ -97,17 +82,15 @@ export function serializeEditorText(editor: Editor | null | undefined): string {
 
 /**
  * Convert pasted plain text into paragraph nodes following the same
- * convention as plainTextToEditorHTML: single "\n" → hardBreak within a
- * paragraph, blank line → paragraph split.
+ * convention as plainTextToEditorHTML: every "\n" → one hardBreak inside a
+ * single paragraph (blank lines become consecutive hardBreaks).
  */
 export function pastedTextToParagraphNodes(schema: Schema, text: string): PMNode[] {
   const normalized = text.replace(/\r\n?/g, '\n');
-  return groupLinesIntoParagraphs(normalized.split('\n')).map((lines) => {
-    const inline: PMNode[] = [];
-    lines.forEach((line, index) => {
-      if (index > 0) inline.push(schema.nodes.hardBreak.create());
-      inline.push(schema.text(line));
-    });
-    return schema.nodes.paragraph.create(null, inline);
+  const inline: PMNode[] = [];
+  normalized.split('\n').forEach((line, index) => {
+    if (index > 0) inline.push(schema.nodes.hardBreak.create());
+    if (line !== '') inline.push(schema.text(line));
   });
+  return [schema.nodes.paragraph.create(null, inline)];
 }
