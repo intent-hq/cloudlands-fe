@@ -29,6 +29,14 @@ vi.mock('../../shared/generated/ipc-client', () => ({
   invoke: invokeIpcMock,
 }));
 
+// Entry-point URL resolution (loopback rewrite/probe/tunnel); echoes by default
+const resolveBrowserLinkForOpenMock = vi.hoisted(() =>
+  vi.fn(async (url: string) => url),
+);
+vi.mock('$lib/utils/browser-link-open', () => ({
+  resolveBrowserLinkForOpen: resolveBrowserLinkForOpenMock,
+}));
+
 const showLinkActionMenuMock = vi.hoisted(() => vi.fn());
 vi.mock('./link-action-menu-state.svelte', () => ({
   showLinkActionMenu: showLinkActionMenuMock,
@@ -516,6 +524,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     showLinkActionMenuMock.mockClear();
     writeTextToClipboardMock.mockClear();
     gotoMock.mockClear();
+    resolveBrowserLinkForOpenMock.mockClear();
   });
 
   it('Cmd+Click routes http(s) links to the embedded browser panel', async () => {
@@ -528,6 +537,34 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(result).toBe(true);
     expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
     expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves the URL BEFORE opening the browser panel and opens the resolved URL', async () => {
+    const url = 'http://localhost:5173/app';
+    const resolvedUrl = 'http://10.0.0.5:5173/app';
+    resolveBrowserLinkForOpenMock.mockResolvedValueOnce(resolvedUrl);
+
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(resolveBrowserLinkForOpenMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(resolvedUrl);
+  });
+
+  it('opens the URL unresolved when entry-point resolution throws', async () => {
+    const url = 'http://localhost:5173/app';
+    resolveBrowserLinkForOpenMock.mockRejectedValueOnce(new Error('ipc unavailable'));
+
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
   });
 
   it('Cmd+Click without a workspaceId falls back to the external browser', async () => {

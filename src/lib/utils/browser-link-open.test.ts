@@ -62,7 +62,9 @@ describe('resolveBrowserLinkForOpen', () => {
     const url = await resolveBrowserLinkForOpen('http://localhost:5173/');
 
     expect(url).toBe('http://10.0.0.5:5173/');
-    expect(mocks.toastWarning).toHaveBeenCalledWith('the URL used a bare loopback host');
+    expect(mocks.toastWarning).toHaveBeenCalledWith(expect.any(String), {
+      description: 'the URL used a bare loopback host',
+    });
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
 

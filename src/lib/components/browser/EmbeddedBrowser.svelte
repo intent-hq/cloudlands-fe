@@ -254,7 +254,10 @@
   // IMPORTANT: Only triggers when the PROP changes, not when user navigates internally
   $effect(() => {
     const decision = reconcileEmbeddedBrowserUrlProp(navigationSync, url, {
-      webviewReady,
+      // `|| !webviewRef` keeps prop-driven navigations alive when no webview
+      // is mounted (about:blank / invalid current URL): loadUrl's no-webview
+      // branch recreates the webview with the new URL.
+      webviewReady: webviewReady || !webviewRef,
       isValidBrowserUrl,
     });
 

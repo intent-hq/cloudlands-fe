@@ -27,7 +27,9 @@ export async function resolveBrowserLinkForOpen(rawUrl: string): Promise<string>
   if (resolved.error && resolved.rewritten) {
     toast.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
   } else if (resolved.warning) {
-    toast.warning(resolved.warning);
+    toast.warning(m.browser_linkOpen_loopbackAmbiguity_warning(), {
+      description: resolved.warning,
+    });
   }
   return resolved.url;
 }

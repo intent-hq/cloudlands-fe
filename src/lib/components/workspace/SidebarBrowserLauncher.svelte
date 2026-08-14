@@ -6,6 +6,7 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { getRunningScriptBrowserTarget } from '$features/scripts/utils/running-script-browser-target';
   import { Button } from '$lib/components/ui/button';
+  import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
   import { selectAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
 
@@ -28,7 +29,12 @@
   function openRunningScriptUrl(event: MouseEvent) {
     event.stopPropagation();
     if (!browserTarget) return;
-    getPanelLayoutManager(panelLayoutId).openBrowserPanel(browserTarget.url);
+    // Resolve (rewrite → probe → tunnel) BEFORE the tab opens — the embedded
+    // browser loads exactly the URL it is given (intent-hq/monorepo#2404).
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- click-time URL resolution IPC, not domain data fetching
+    void resolveBrowserLinkForOpen(browserTarget.url).then((resolvedUrl) => {
+      getPanelLayoutManager(panelLayoutId).openBrowserPanel(resolvedUrl);
+    });
   }
 
   $effect(() => workspaceIdStore.set(workspaceId));
