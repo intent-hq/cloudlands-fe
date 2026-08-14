@@ -177,6 +177,7 @@
 
   // Get the active tab - use optional chaining to handle workspace transitions
   let activeTab = $derived(panel?.tabs?.find((t) => t.id === panel.activeTabId) ?? null);
+  let panelRef = $state.raw<HTMLDivElement | null>(null);
 
   // Keep recently-visited tabs mounted for faster switching
   // Tabs are kept for PANEL_TAB_CACHE_TTL_MS after switching away, then unmounted
@@ -211,6 +212,17 @@
     applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
+  // Clear focus before a content-triggered tab switch hides its cached wrapper.
+  // Header controls are outside these wrappers and keep their focus normally.
+  $effect.pre(() => {
+    const activeTabId = panel.activeTabId;
+    if (typeof document === 'undefined' || !panelRef) return;
+    const focusedElement = document.activeElement;
+    if (!(focusedElement instanceof HTMLElement) || !panelRef.contains(focusedElement)) return;
+    const focusedWrapper = focusedElement.closest<HTMLElement>('.tab-content-wrapper');
+    if (focusedWrapper && focusedWrapper.dataset.tabId !== activeTabId) focusedElement.blur();
+  });
+
   // Enforce the TTL even when the active tab does not change again. Without
   // this timer, inactive browser/editor/diff tabs can stay mounted forever.
   $effect(() => {
@@ -243,8 +255,6 @@
   let isDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
   let panelDropPlacement = $state<PanelDragPlacement | null>(null);
-  let panelRef = $state.raw<HTMLDivElement | null>(null);
-
   // Tab bar height in pixels (h-9 = 2.25rem = 36px)
   const TAB_BAR_HEIGHT = 36;
 
@@ -514,6 +524,7 @@
           <div
             class="tab-content-wrapper h-full w-full"
             class:hidden={!isActive}
+            data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
           >

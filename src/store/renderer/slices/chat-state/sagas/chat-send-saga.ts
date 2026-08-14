@@ -29,9 +29,8 @@ import {
 import {
   removeQueuedMessageFromAgentQueue,
   removeQueuedMessageRequested,
-  replaceAgentQueue,
+  upsertQueuedMessageInAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
-import { selectAgentQueueMessages } from '../../agent-queue/agent-queue-selectors';
 import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
 import {
   getChiefThreadTitle,

@@ -286,9 +286,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     // PROTOCOL §5.5: agent.queueMessage accepts optional imageBlocks; the
     // daemon persists them on the QueuedMessage so queued attachments
     // survive queue-on-send. The seam forwards them verbatim.
-    const imageBlocks = [
-      { type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' },
-    ];
+    const imageBlocks = [{ type: 'image' as const, data: 'aGVsbG8=', mimeType: 'image/png' }];
     const queuedMessage = {
       id: 'qm-img-1',
       content: 'later with image',
@@ -1338,6 +1336,52 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const page = await client.getConversation('agent-1');
     expect(page.prevToken).toBeNull();
+  });
+
+  it('retries an explicit oversized conversation response with progressively smaller limits', async () => {
+    let attempts = 0;
+    backend.onRequest('agent.getConversation', () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new BackendError(
+          buildErrorPayload(
+            'OVERSIZED_RESPONSE',
+            `response for agent.getConversation exceeds maximum outbound frame size: ${attempts === 1 ? 62_571_863 : 47_361_902} bytes > 41943040 bytes`,
+          ),
+        );
+      }
+      return { messages: [{ id: 'm-fit' }], truncated: true, totalMessages: 420 };
+    });
+    const client = new LiveAgentsClient();
+    await expect(client.getConversation('agent-1', 200)).resolves.toMatchObject({
+      messages: [{ id: 'm-fit' }],
+    });
+    expect(backend.requests.map((request) => request.params.limit)).toEqual([200, 100, 50]);
+  });
+
+  it('does not retry unrelated or lookalike daemon failures', async () => {
+    backend.onRequest('agent.getConversation', () => {
+      throw new BackendError(buildErrorPayload('INTERNAL_ERROR', 'ordinary failure'));
+    });
+    const client = new LiveAgentsClient();
+    await expect(client.getConversation('agent-1')).rejects.toThrow('ordinary failure');
+    expect(backend.requests).toHaveLength(1);
+  });
+
+  it('stops reducing the frame-safe page size at one', async () => {
+    backend.onRequest('agent.getConversation', () => {
+      throw new BackendError(
+        buildErrorPayload(
+          'OVERSIZED_RESPONSE',
+          'response for agent.getConversation exceeds maximum outbound frame size: 62571863 bytes > 41943040 bytes',
+        ),
+      );
+    });
+    const client = new LiveAgentsClient();
+    await expect(client.getConversation('agent-1', 4, 'older')).rejects.toThrow(
+      'exceeds maximum outbound frame size',
+    );
+    expect(backend.requests.map((request) => request.params.limit)).toEqual([4, 2, 1]);
   });
 
   describe('retry', () => {

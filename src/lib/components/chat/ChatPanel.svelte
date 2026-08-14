@@ -40,7 +40,6 @@
   import { writable } from 'svelte/store';
   import { WorkspaceRebindTracker } from './workspace-rebind-tracker';
   import { shouldHandleChatFocusRequest, type ChatFocusRequest } from './chat-focus-ownership';
-  import { detectStickyMessageId } from './sticky-detection';
   import type { AgentMessage } from '$shared/types';
   import { saveAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
@@ -85,6 +84,7 @@
   import {
     sendMessage,
     initializeChatRequested,
+    refreshChatTranscriptRequested,
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
@@ -101,6 +101,7 @@
     selectChatStreamingStartTime,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
+    selectTranscriptSnapshotMeta,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
   import { appClient } from '$lib/client';
@@ -181,6 +182,25 @@
   } from './message-send-transition';
 
   import LazyTurn from './LazyTurn.svelte';
+  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
+  import {
+    attachPinnedPromptMessage,
+    createPinnedPromptController,
+    type PinnedPromptState,
+  } from './pinned-prompt';
+  import {
+    createLazyTurnCacheScope,
+    createLazyTurnHeightCache,
+    type LazyTurnHeightCache,
+  } from './lazy-turn-height-cache';
+  import { isTurnInRecentWindow, shouldVirtualizeTurns } from './chat-turn-virtualization';
+  import {
+    EMPTY_TEMPORARY_TURN_MATERIALIZATION,
+    isTurnTemporarilyMaterialized,
+    materializeTurn,
+    releaseMaterializedTurn,
+    type TemporaryTurnMaterialization,
+  } from './temporary-turn-materialization';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -214,6 +234,7 @@
   import { resolveHydratedInputModel } from './input-hydration';
   import {
     deriveQueuedMessagesVisibility,
+    hasAuthoritativeConversationEvidence,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
     shouldShowSetupCardOnly,
@@ -229,10 +250,6 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
-  /** PERF: Number of recent turns to always render (for streaming and smooth UX) */
-  const FORCE_VISIBLE_TURN_COUNT = 3;
-  /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
-  const LAZY_TURN_THRESHOLD = 10;
 
   interface Props {
     workspace: Workspace;
@@ -317,6 +334,7 @@
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
+  const transcriptSnapshotMeta$ = selectTranscriptSnapshotMeta(agentIdStore);
   // First-hydration latch: false until the initial hydration settles, then
   // true for the agent's lifetime — gates the indeterminate skeleton so a
   // partially-loaded transcript never renders as if complete.
@@ -328,6 +346,13 @@
   // re-hydrations (latch already true) keep the messages visible.
   const isFirstHydrationLoading = $derived(
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
+  );
+  const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
+  const authoritativeConversationEvidence = $derived(
+    hasAuthoritativeConversationEvidence(
+      $agentSession$ ?? null,
+      $transcriptSnapshotMeta$?.totalMessages ?? 0,
+    ),
   );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
@@ -383,6 +408,20 @@
   let shouldFollowBottom = $state(true);
   let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
+  let lazyTurnCacheScope = 'unbound';
+
+  $effect(() => {
+    const scope = createLazyTurnCacheScope({
+      workspaceId: String(workspace?.id ?? ''),
+      agentId,
+      sessionId: $agentSession$?.backendSessionId ?? $agentSession$?.acpSessionId ?? null,
+    });
+    if (scope === lazyTurnCacheScope) return;
+    lazyTurnHeightCache.clear();
+    lazyTurnCacheScope = scope;
+    lazyTurnHeightCache = createLazyTurnHeightCache(scope);
+  });
 
   interface PendingSendTransition {
     origin: MessageSendOrigin;
@@ -465,8 +504,8 @@
     return started;
   }
 
-  // Track which message is currently "sticky" (scrolled past its natural position)
-  let stickyMessageId = $state<string | null>(null);
+  const pinnedPromptController = createPinnedPromptController();
+  let pinnedPrompt = $state<PinnedPromptState | null>(null);
 
   // Onboarding context — reconstructed from workspace + agent session data.
   // No external storage needed; all essential fields live on the workspace object.
@@ -491,6 +530,18 @@
     }
   }
 
+  function handleRetryTranscriptHydration() {
+    appStore.dispatch(refreshChatTranscriptRequested(String(workspace.id), agentId));
+  }
+
+  function handlePinnedPromptClick() {
+    if (!scrollContainer || !pinnedPrompt) return;
+    const source = scrollContainer.querySelector<HTMLElement>(
+      `[data-pinned-prompt-id="${CSS.escape(pinnedPrompt.id)}"]`,
+    );
+    if (source) smoothScrollTo(source, 'center');
+  }
+
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
   // This prevents "N is not a function" errors when Svelte's reactive system tries to call
   // nullified internal functions. This MUST be set FIRST in onDestroy, before any other cleanup.
@@ -504,25 +555,12 @@
   const COMPACT_HEIGHT_EXIT = 640; // Exit compact mode above this
   let isCompactMode = $state(false);
 
-  // Track whether sticky positioning should be enabled
-  // Disable sticky when panel is too short (< 400px) to avoid awkward UX
-  const STICKY_HEIGHT_ENABLE = 420; // Enable sticky above this
-  const STICKY_HEIGHT_DISABLE = 400; // Disable sticky below this
-  let shouldEnableSticky = $state(true);
-
   $effect(() => {
     if (containerHeight > 0) {
       if (!isCompactMode && containerHeight < COMPACT_HEIGHT_ENTER) {
         isCompactMode = true;
       } else if (isCompactMode && containerHeight > COMPACT_HEIGHT_EXIT) {
         isCompactMode = false;
-      }
-
-      // Track sticky enable/disable with hysteresis
-      if (shouldEnableSticky && containerHeight < STICKY_HEIGHT_DISABLE) {
-        shouldEnableSticky = false;
-      } else if (!shouldEnableSticky && containerHeight > STICKY_HEIGHT_ENABLE) {
-        shouldEnableSticky = true;
       }
     }
   });
@@ -1488,7 +1526,7 @@
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
   // PERF: Enable lazy loading only for larger conversations
-  const shouldUseLazyLoading = $derived(totalTurnCount > LAZY_TURN_THRESHOLD);
+  const shouldUseLazyLoading = $derived(shouldVirtualizeTurns(totalTurnCount));
 
   // PERF: Pre-compute message index and turn number maps for O(1) lookups
   // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
@@ -1597,6 +1635,10 @@
   // Maps turnKey (userMessageId or `group-${groupIndex}-turn-${turnIndex}`) to global index
   const globalTurnIndexMap = $derived(conversationTurnIndex.globalIndexByTurnKey);
 
+  $effect(() => {
+    lazyTurnHeightCache.retain(globalTurnIndexMap.keys());
+  });
+
   // Map each messageId to its enclosing turnKey. Used by allSearchMatches so that
   // matches in virtualized LazyTurn placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
@@ -1607,8 +1649,10 @@
     const globalIndex = globalTurnIndexMap.get(turnKey);
     if (globalIndex === undefined) return true; // Unknown turn, render it
     const totalTurns = globalTurnIndexMap.size;
-    // Force visible if it's in the last N turns
-    return globalIndex >= totalTurns - FORCE_VISIBLE_TURN_COUNT;
+    return (
+      isTurnInRecentWindow(globalIndex, totalTurns) ||
+      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey)
+    );
   }
 
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
@@ -2124,10 +2168,28 @@
   // highlights the query terms via the CSS Custom Highlight API (cleared on the
   // next user interaction or a short timeout — no persistent markup).
   let deepOpenTurnKey = $state<string | null>(null);
+  let deepOpenReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  let temporaryTurnMaterialization = $state<TemporaryTurnMaterialization>({
+    ...EMPTY_TEMPORARY_TURN_MATERIALIZATION,
+  });
   const handledOpenMessageRequestIds = new Set<string>();
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+
+  function handleTurnEditStateChange(turnKey: string, isEditing: boolean) {
+    temporaryTurnMaterialization = isEditing
+      ? materializeTurn(temporaryTurnMaterialization, 'editing', turnKey)
+      : releaseMaterializedTurn(temporaryTurnMaterialization, 'editing', turnKey);
+  }
+
+  function scheduleDeepOpenRelease(turnKey = deepOpenTurnKey) {
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = setTimeout(() => {
+      if (deepOpenTurnKey === turnKey) deepOpenTurnKey = null;
+      deepOpenReleaseTimer = null;
+    }, 200);
+  }
 
   // Force-render a message's turn through the LazyTurn virtualization (reuses
   // the deep-open force-visible key) and resolve its DOM element once rendered.
@@ -2144,6 +2206,7 @@
       if (targetElement) return targetElement;
     }
     logger.warn('[ChatPanel] Message turn not rendered after force-visible', { messageId });
+    scheduleDeepOpenRelease();
     return null;
   }
 
@@ -2167,6 +2230,7 @@
     if (!targetElement) {
       shouldFollowBottom = true;
       scrollToBottomUtil(scrollContainer);
+      scheduleDeepOpenRelease();
       return;
     }
     const containerRect = scrollContainer.getBoundingClientRect();
@@ -2182,9 +2246,11 @@
       shouldFollowBottom = true;
       isScrollUnlocked = false;
       scrollToBottomUtil(scrollContainer);
+      scheduleDeepOpenRelease();
       return;
     }
     smoothScrollTo(targetElement, 'center');
+    scheduleDeepOpenRelease();
   }
 
   // Collect ranges for every case-insensitive occurrence of each query token
@@ -2241,6 +2307,7 @@
       }
       handledOpenMessageRequestIds.add(detail.requestId);
       smoothScrollTo(targetElement, 'center');
+      scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
       setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
@@ -2256,6 +2323,7 @@
     return () => {
       window.removeEventListener('chat:open-message', listener);
       clearDeepOpenHighlight?.();
+      if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     };
   });
 
@@ -2333,7 +2401,29 @@
     };
   });
 
-  // Track sticky state for user messages
+  function setPinnedPrompt(next: PinnedPromptState | null) {
+    if (next?.id === pinnedPrompt?.id) return;
+    const previousTurnKey = pinnedPrompt ? messageIdToTurnKey.get(pinnedPrompt.id) : undefined;
+    if (previousTurnKey) {
+      temporaryTurnMaterialization = releaseMaterializedTurn(
+        temporaryTurnMaterialization,
+        'pinned',
+        previousTurnKey,
+      );
+    }
+    pinnedPrompt = next;
+    const nextTurnKey = next ? messageIdToTurnKey.get(next.id) : undefined;
+    if (nextTurnKey) {
+      temporaryTurnMaterialization = materializeTurn(
+        temporaryTurnMaterialization,
+        'pinned',
+        nextTurnKey,
+      );
+    }
+  }
+
+  // Track the independent pinned overlay. Source transcript rows stay mounted
+  // in their original turn and never change height or ownership.
   // Use onMount pattern to avoid effect loops - scrollContainer binding can cause
   // effects to re-run when state changes trigger re-renders
   onMount(() => {
@@ -2346,15 +2436,7 @@
     const handleScroll = () => {
       if (!boundContainer) return;
 
-      // Hysteretic detection lives in sticky-detection.ts: the currently-pinned
-      // row stays pinned while its turn spans the container top (turn geometry
-      // only), so the row's own compaction height change can never un-stick it.
-      const foundSticky = detectStickyMessageId(boundContainer, stickyMessageId);
-
-      // Only update if changed to avoid unnecessary re-renders
-      if (foundSticky !== stickyMessageId) {
-        stickyMessageId = foundSticky;
-      }
+      setPinnedPrompt(pinnedPromptController.update(boundContainer, containerHeight >= 400));
     };
 
     // Throttle the scroll handler for performance
@@ -2392,6 +2474,8 @@
       if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
       if (throttledScrollFrame !== null) cancelAnimationFrame(throttledScrollFrame);
       boundContainer?.removeEventListener('scroll', throttledHandler);
+      pinnedPromptController.reset();
+      setPinnedPrompt(null);
     };
   });
 
@@ -2455,19 +2539,6 @@
       // setTimeout(() => {
       //   targetElement.classList.remove('message-highlight-flash');
       // }, 600);
-    }
-  }
-
-  function scrollUserMessageToTop(messageId: string) {
-    if (!scrollContainer) return;
-
-    const messageContainer = scrollContainer.querySelector(
-      `.message-nav-target[data-message-id="${CSS.escape(messageId)}"]`,
-    ) as HTMLElement | null;
-    const target = messageContainer?.closest('.conversation-turn') as HTMLElement | null;
-
-    if (target) {
-      smoothScrollTo(target, 'start');
     }
   }
 
@@ -2557,6 +2628,9 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    pinnedPromptController.reset();
+    lazyTurnHeightCache.clear();
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
     // The service will persist data for when the panel is reopened
@@ -3256,12 +3330,18 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
-    <!-- overflow-anchor: none — Chromium scroll anchoring otherwise compensates for the
-         pinned row's sticky compaction (line-clamp shrink) by shifting scrollTop, which
-         re-fires the sticky detection with moved geometry and un-pins the row; the row
-         re-expands, anchoring shifts back, and the loop repeats every frame (visible as
-         the top-of-chat flicker). followBottom manages this container's scroll position,
-         so native anchoring is not needed here. -->
+    {#if pinnedPrompt}
+      <div class="pointer-events-none absolute left-6 right-6 top-2 z-30">
+        <div class="pointer-events-auto">
+          <PinnedUserPrompt
+            message={pinnedPrompt.message}
+            compact={isCompactMode}
+            onClick={handlePinnedPromptClick}
+          />
+        </div>
+      </div>
+    {/if}
+    <!-- followBottom and the LazyTurn height ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
       use:followBottom={{
@@ -3307,10 +3387,17 @@
           </a>
         {/if}
 
-        {#if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && $agentSession$.backendSessionId === null}
+        {#if transcriptHydrationFailed && $agentMessages$.length === 0}
+          <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+            <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
+            <Button variant="outline" onclick={handleRetryTranscriptHydration}>
+              {m.chat_shared_retry_label()}
+            </Button>
+          </div>
+        {:else if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
           <ChiefStarterPrompts onSelect={handleSelectSuggestedPrompt} compact={isCompactMode} />
-        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && $agentSession$.backendSessionId === null}
-          <!-- Welcome page: settled hydration + zero messages + never-used session (backendSessionId === null) -->
+        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
+          <!-- Welcome page: settled hydration + zero messages + no durable conversation evidence. -->
           <div class="mt-16"></div>
           <RegularAgentWelcome
             onSpecialistChange={handleSpecialistChange}
@@ -3342,8 +3429,8 @@
               skipIsolation={onboardingContext.skipWorktree}
             />
           </div>
-        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasBackendSession: $agentSession$?.backendSessionId != null, hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
-          <!-- Skeleton: FIRST hydration in flight (even with partial/streaming messages — never render a partial transcript as complete), or hydration not settled / existing session with zero messages (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
+        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
+          <!-- Skeleton: initial newest-window hydration is unresolved. -->
           {#if isInitialWorkspaceAgent && onboardingContext}
             <div class="pt-16 pb-6">
               <WorkspaceSetupCard
@@ -3733,6 +3820,7 @@
                     <LazyTurn
                       {turnKey}
                       scrollRoot={scrollContainer}
+                      heightCache={lazyTurnHeightCache}
                       forceVisible={isTurnForceVisible(turnKey) ||
                         ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
                         visibleSearchTurnKeys.has(turnKey) ||
@@ -3751,15 +3839,16 @@
                           {@const message = turn.userMessage}
                           {@const globalIndex = getMessageIndex(message.id)}
                           {@const messageText = extractAllContent(message)}
-                          <!-- Sticky, compact wake-up row (z-10 to stay above scrolling content) -->
+                          <!-- Source wake-up row remains owned by this transcript turn. -->
                           <div
                             data-message-id={message.id}
+                            data-pinnable-user-prompt
+                            data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
-                            class:sticky={shouldEnableSticky}
-                            class:-top-px={shouldEnableSticky}
+                            use:attachPinnedPromptMessage={message}
                             transition:safeSlide={{ axis: 'y', duration: 200 }}
                           >
                             <EventWakeupBanner
@@ -3775,7 +3864,6 @@
                               }}
                               {messageText}
                               asDivider={true}
-                              isSticky={stickyMessageId === message.id}
                               onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                               showAgentCards={!isDelegatedBackgroundTaskAgent}
                               {workspace}
@@ -3783,7 +3871,7 @@
                           </div>
                           {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/if}
-                        <!-- User message (sticky within this turn) - skip for event notifications (already shown above) -->
+                        <!-- User message source row; the independent overlay never moves this node. -->
                         <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
                         {@const isEventNotification =
                           turn.userMessage?.metadata?.type === 'event_notification' ||
@@ -3797,23 +3885,24 @@
                           <div
                             data-message-id={message.id}
                             data-message-role="user"
+                            data-pinnable-user-prompt
+                            data-pinned-prompt-id={message.id}
                             data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20 mb-4"
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
-                            class:sticky={shouldEnableSticky}
-                            class:-top-px={shouldEnableSticky}
+                            use:attachPinnedPromptMessage={message}
                           >
                             <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
                                 {workspace}
-                                isSticky={stickyMessageId === message.id}
-                                onStickyClick={() => scrollUserMessageToTop(message.id)}
                                 onEditSubmit={(newText, model, blocks) =>
                                   handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
