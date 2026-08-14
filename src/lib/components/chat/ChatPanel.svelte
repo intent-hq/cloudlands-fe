@@ -2209,6 +2209,7 @@
       );
 
       let foundSticky: string | null = null;
+      const scrollRect = boundContainer.getBoundingClientRect();
 
       // Check each message to see if it's in sticky position
       for (const container of messageContainers) {
@@ -2223,7 +2224,6 @@
         if (!conversationTurn) continue;
 
         const rect = stickyElement.getBoundingClientRect();
-        const scrollRect = boundContainer.getBoundingClientRect();
         const turnRect = conversationTurn.getBoundingClientRect();
 
         // The turn "owns" the container top while it spans it: we've scrolled into
