@@ -9,13 +9,20 @@
  * turn's height on every swap flush and every ResizeObserver fire.
  */
 import { describe, it, expect } from 'vitest';
-import { createHeightLedger } from '../lazy-turn-scroll-ledger';
+import { createHeightLedger, snapshotScroller } from '../lazy-turn-scroll-ledger';
 
 interface FakeTurn {
   height: number;
   /** Turn top's fixed offset within the scroller's content (content coordinates). */
   contentTop: number;
   connected: boolean;
+}
+
+interface HarnessOptions {
+  /** Total height of all content OTHER than the fake turn. */
+  restHeight?: number;
+  clientHeight?: number;
+  initialScrollTop?: number;
 }
 
 /**
@@ -25,10 +32,29 @@ interface FakeTurn {
  * Every scenario therefore exercises the ledger's pre-change bottom
  * reconstruction (`rect.bottom - delta`) for real — hand-set rects cannot
  * discriminate pre- vs post-change geometry.
+ *
+ * The scroller models real overflow geometry too: scrollHeight is derived
+ * from the turn's current height, and scrollTop writes clamp to
+ * [0, scrollHeight - clientHeight] exactly like the browser. `flush()`
+ * re-applies the native clamp after a height change — the browser does this
+ * at layout-flush time, BEFORE the ledger's account() microtask runs.
+ * Defaults keep the scroller far from its extents so classic scenarios are
+ * clamp-free.
  */
-function makeHarness(turn: FakeTurn) {
+function makeHarness(turn: FakeTurn, opts: HarnessOptions = {}) {
+  const { restHeight = 100000, clientHeight = 600, initialScrollTop = 1000 } = opts;
+  let scrollTop = initialScrollTop;
   const scroller = {
-    scrollTop: 1000,
+    get scrollTop() {
+      return scrollTop;
+    },
+    set scrollTop(v: number) {
+      scrollTop = Math.min(Math.max(0, v), Math.max(0, this.scrollHeight - clientHeight));
+    },
+    get scrollHeight() {
+      return restHeight + turn.height;
+    },
+    clientHeight,
     getBoundingClientRect: () => ({ top: 0 }) as DOMRect,
   } as unknown as HTMLElement;
 
@@ -47,7 +73,11 @@ function makeHarness(turn: FakeTurn) {
     () => scroller,
     () => el,
   );
-  return { scroller, ledger, turn };
+  /** Simulate the browser's native scrollTop clamp at layout-flush time. */
+  const flush = () => {
+    scroller.scrollTop = scroller.scrollTop;
+  };
+  return { scroller, ledger, turn, flush };
 }
 
 describe('LazyTurn height ledger', () => {
@@ -140,5 +170,118 @@ describe('LazyTurn height ledger', () => {
       () => null,
     );
     expect(() => nullLedger.account()).not.toThrow();
+  });
+});
+
+describe('bottom-anchored clamp compensation (phantom space snap-back)', () => {
+  // Geometry shared by the clamp scenarios: content = 2000px of other turns
+  // + this turn (a stale 800px-overestimated placeholder at the top of the
+  // transcript), 600px viewport. scrollHeight 2800 → maxScrollTop 2200; the
+  // range above the true max is the "phantom" space a stale cache fabricates.
+
+  it('swap path: reader at the phantom max stays pinned at the bottom through the clamp (the snap-back)', () => {
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 2200 },
+    );
+    h.ledger.account(); // seed at 800
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 300; // placeholder -> real content: -500
+    h.flush(); // native clamp: max drops to 1700, scrollTop 2200 -> 1700
+    h.ledger.account(pre);
+    // Without the snapshot the raw -500 shift lands at 1200 — a 500px yank
+    // up from the bottom the reader was looking at.
+    expect(h.scroller.scrollTop).toBe(1700);
+  });
+
+  it('swap path: partial clamp preserves the pre-swap distance-from-bottom exactly', () => {
+    // Reader 200px above the (phantom) bottom; the clamp eats 300 of the 500
+    // shrink. Raw delta on top of the clamp would land 300px too high.
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 2000 },
+    );
+    h.ledger.account();
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 300;
+    h.flush(); // clamp: 2000 -> 1700 (new max)
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(1500); // new max 1700 - preserved 200
+  });
+
+  it('swap path: off the clamp, the bottom-anchored target equals the classic shift', () => {
+    // Reader 400px above the bottom; -100 shrink never hits the clamp, so
+    // bottom-anchoring (new max 2100 - 400) and the classic shift
+    // (1800 - 100) must agree at 1700.
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 1800 },
+    );
+    h.ledger.account();
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 700;
+    h.flush();
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(1700);
+  });
+
+  it('swap path: far from the bottom (> one viewport) the classic shift applies unchanged', () => {
+    const h = makeHarness({ height: 800, contentTop: 0, connected: true });
+    h.ledger.account();
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 500;
+    h.flush();
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(700); // identical to the snapshot-free shrink case
+  });
+
+  it('swap path: growth near the bottom flows through the classic shift (bottom stays preserved)', () => {
+    // Placeholder underestimated: growth extends scrollHeight, no clamp can
+    // fire, and += delta keeps the reader glued to the same content.
+    const h = makeHarness(
+      { height: 300, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 1700 },
+    );
+    h.ledger.account();
+    const pre = snapshotScroller(h.scroller);
+    h.turn.height = 800;
+    h.flush();
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(2200);
+  });
+
+  it('ResizeObserver path (no snapshot): a shrink already clamped to the new max is not re-applied', () => {
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 2200 },
+    );
+    h.ledger.account();
+    h.turn.height = 500; // late settle: -300
+    h.flush(); // native clamp: max 1900, scrollTop 2200 -> 1900
+    h.ledger.account(); // RO fire — no pre-flush snapshot exists
+    expect(h.scroller.scrollTop).toBe(1900); // raw shift would snap to 1600
+  });
+
+  it('ResizeObserver path (no snapshot): an unclamped above-viewport shrink still compensates classically', () => {
+    const h = makeHarness({ height: 800, contentTop: 0, connected: true });
+    h.ledger.account();
+    h.turn.height = 500;
+    h.flush();
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(700);
+  });
+
+  it('snapshotScroller returns null for a missing scroller and captures live geometry otherwise', () => {
+    expect(snapshotScroller(null)).toBeNull();
+    expect(snapshotScroller(undefined)).toBeNull();
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 2200 },
+    );
+    expect(snapshotScroller(h.scroller)).toEqual({
+      scrollTop: 2200,
+      scrollHeight: 2800,
+      clientHeight: 600,
+    });
   });
 });

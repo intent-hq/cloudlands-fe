@@ -31,7 +31,7 @@
   type Snippet,
 } from 'svelte';
 
-  import { createHeightLedger } from './lazy-turn-scroll-ledger';
+  import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';
 
   // PERF: Default estimated height for turns that haven't been measured yet
   // This allows us to start with placeholders instead of rendering all content
@@ -55,6 +55,14 @@
   // components re-evaluate their $derived(heightCache.get()) causing massive layout thrashing.
   // Plain Map avoids this - we manually trigger re-renders only when needed.
   const heightCache: Map<string, number> = (globalThis as any).__lazyTurnHeightCache ??= new Map();
+
+  // Cached heights are only valid at the wrap width they were measured at —
+  // a scroller width change (panel resize, sidebar toggle) re-wraps text, so
+  // every stale entry becomes an over/underestimate (phantom bottom space).
+  // One shared stamp per scroller lets the first turn observing the new width
+  // clear the cache exactly once.
+  const cacheWidthByScroller: WeakMap<HTMLElement, number> = (globalThis as any)
+    .__lazyTurnCacheWidthByScroller ??= new WeakMap();
 
   let containerRef = $state<HTMLDivElement>();
 
@@ -89,8 +97,14 @@
 
   function setVisibleWithScrollCompensation(next: boolean) {
     if (isVisible === next) return;
+    // Snapshot the scroller BEFORE the swap flushes: when the swap shrinks
+    // scrollHeight (stale overestimated placeholder collapsing to real
+    // content), the browser clamps scrollTop natively at flush time — the
+    // snapshot lets the ledger preserve the reader's distance-from-bottom
+    // through that clamp instead of double-shifting (bottom snap-back).
+    const preSwap = snapshotScroller(scrollRoot);
     isVisible = next;
-    void tick().then(() => ledger.account());
+    void tick().then(() => ledger.account(preSwap));
   }
 
   onMount(() => {
@@ -149,6 +163,18 @@
       // delivery — so here account() sees delta === 0 for the flush and its
       // real job is the late settles (images, remounted blocks, re-wraps).
       ledger.account();
+
+      // Width-change cache invalidation: the first turn to observe a new
+      // scroller width clears the shared cache (all entries were measured at
+      // the old wrap width); peers then see a matching stamp and skip.
+      const observedWidth = entry.contentRect.width;
+      if (scrollRoot && observedWidth > 0) {
+        const stampedWidth = cacheWidthByScroller.get(scrollRoot);
+        if (stampedWidth !== undefined && Math.abs(stampedWidth - observedWidth) > 1) {
+          heightCache.clear();
+        }
+        cacheWidthByScroller.set(scrollRoot, observedWidth);
+      }
 
       if (!shouldRenderContent) return;
 
