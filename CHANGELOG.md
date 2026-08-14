@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.39.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.38.0...v2.39.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* bundle same-source takeover map edge lanes to narrow gutters ([#1197](https://github.com/intent-hq/cloudlands-fe/issues/1197)) ([052d164](https://github.com/intent-hq/cloudlands-fe/commit/052d1645598ad5e02f28e5319d2b3a2046db0764))
+* **hardware-console:** prioritize blocked/question/discussion stops in the unread cycle walk ([#1192](https://github.com/intent-hq/cloudlands-fe/issues/1192)) ([b5025cc](https://github.com/intent-hq/cloudlands-fe/commit/b5025cc8f2ca680f6fd115edb94e39289bb39e53))
+* make repo path in workspace hover card a copy link ([#1201](https://github.com/intent-hq/cloudlands-fe/issues/1201)) ([5d6cf77](https://github.com/intent-hq/cloudlands-fe/commit/5d6cf779b51bc6e698651be3533717579c6c4731))
+* render a notice for refusal / max_tokens turn endings ([#1199](https://github.com/intent-hq/cloudlands-fe/issues/1199)) ([9b7f6a7](https://github.com/intent-hq/cloudlands-fe/commit/9b7f6a7e0e8fd9be6f1e4e124c19547e43b55c89))
+* render budget-queued agents distinctly from slot-queued ones ([#1190](https://github.com/intent-hq/cloudlands-fe/issues/1190)) ([2650f2b](https://github.com/intent-hq/cloudlands-fe/commit/2650f2b16680150c5f49a14d88c2ead53ef3ea56))
+* toast when a workspace auto-unarchives ([#1187](https://github.com/intent-hq/cloudlands-fe/issues/1187)) ([63649a5](https://github.com/intent-hq/cloudlands-fe/commit/63649a50448bebf0a1bc94db60c97de257080c80))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.17 ([#1202](https://github.com/intent-hq/cloudlands-fe/issues/1202)) ([6a83c71](https://github.com/intent-hq/cloudlands-fe/commit/6a83c71be0dbe20b3f29101e7cb147595ed3ae22))
+* center-align relation pills and trailing buttons in task rows ([#1188](https://github.com/intent-hq/cloudlands-fe/issues/1188)) ([9618bdd](https://github.com/intent-hq/cloudlands-fe/commit/9618bdd5eb13bceb3e7f26bdce4ac7be57468d6b))
+* compensate late-settling turn height changes above the viewport ([#1194](https://github.com/intent-hq/cloudlands-fe/issues/1194)) ([65745ed](https://github.com/intent-hq/cloudlands-fe/commit/65745ed072d7905ceb4383fb6fc22b03451b712d))
+* daemon status dropdown a11y — no nested interactive tooltip triggers in menus, role=img on labeled icons ([#1189](https://github.com/intent-hq/cloudlands-fe/issues/1189)) ([b53fc89](https://github.com/intent-hq/cloudlands-fe/commit/b53fc89dc0655b6d402ffaef4fbe22534e170f71))
+* layer global focus rules and add focus-within indicators to composite repo inputs ([#1195](https://github.com/intent-hq/cloudlands-fe/issues/1195)) ([628dbf2](https://github.com/intent-hq/cloudlands-fe/commit/628dbf2a82db2536b81af2cf195dd51a69772ea5))
+* normalize onboarding branch/model chip heights and row spacing ([#1196](https://github.com/intent-hq/cloudlands-fe/issues/1196)) ([2ff1503](https://github.com/intent-hq/cloudlands-fe/commit/2ff1503dcc7f87dc886ddbebcb46da488cc84652))
+
 ## [2.38.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.37.0...v2.38.0) (2026-08-14)
 
 
