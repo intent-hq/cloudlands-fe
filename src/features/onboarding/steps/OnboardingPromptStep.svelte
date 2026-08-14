@@ -570,7 +570,7 @@
       </div>
     </div>
 
-    <div class="w-full">
+    <div class="w-full space-y-1">
       <!-- Branch picker -->
       {#if projectSelection?.type === 'local' && projectSelection?.repoPath}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -592,7 +592,7 @@
           <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
           <BranchSelector
             variant="ghost"
-            triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath}
             repoType="local"
@@ -633,7 +633,7 @@
           <span class="text-muted-foreground">{m.onboarding_promptStep_branchOff_label()}</span>
           <BranchSelector
             variant="ghost"
-            triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath || ''}
             repoType="github"
