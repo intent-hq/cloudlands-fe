@@ -258,7 +258,12 @@ async function resolveRewrittenRemoteTarget(
   if (!rewrite.rewritten || !rewrite.remoteHost) return { rewrite, tunneled: false };
   const target = new URL(rewrite.url);
   try {
-    await fetch(target.origin, { signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS) });
+    const response = await fetch(target.origin, {
+      signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS),
+    });
+    // Only reachability matters — cancel the body so undici releases the
+    // connection instead of holding it until GC.
+    void response.body?.cancel().catch(() => {});
     return { rewrite, tunneled: false };
   } catch (error) {
     const detail =
@@ -279,6 +284,11 @@ async function resolveRewrittenRemoteTarget(
     if (tunnel) {
       try {
         const localPort = await tunnel.forwardPort(Number(port));
+        // Known limitation: an `https` URL keeps its scheme with the host
+        // swapped to 127.0.0.1, so the origin server's cert fails hostname
+        // verification in the embedded browser. Nothing better is possible
+        // without terminating TLS locally; the practical targets are `http`
+        // dev servers.
         const tunneledUrl = new URL(rewrite.url);
         tunneledUrl.hostname = '127.0.0.1';
         tunneledUrl.port = String(localPort);

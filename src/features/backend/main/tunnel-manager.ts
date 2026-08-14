@@ -635,6 +635,10 @@ export class TunnelManager {
         this.endStream(stream, { sendClose: false });
         break;
       case 'data':
+        // `write()`'s return value is deliberately ignored: the frozen frame
+        // contract has no per-stream flow-control window and pausing the
+        // shared WebSocket would stall every stream, so a slow local reader
+        // buffers in its socket — bounded in practice by the daemon-side caps.
         if (!stream.socket.destroyed) stream.socket.write(frame.payload);
         break;
       case 'eof':
