@@ -82,6 +82,8 @@
     variant?: 'compact' | 'expanded' | 'header' | 'row';
     isRunning?: boolean;
     isUnread?: boolean;
+    /** Daemon-flagged waiting workspace (grey dot; loses to running/unread) */
+    isWaiting?: boolean;
     isPinned?: boolean;
     streamingAgentIds?: string[];
     /** Whether the spec note has content */
@@ -124,6 +126,7 @@
     variant = 'compact',
     isRunning = false,
     isUnread = false,
+    isWaiting = false,
     isPinned = false,
     streamingAgentIds = [],
     hasSpec = false,
@@ -516,6 +519,11 @@
         {:else if isUnread}
           <div
             class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-info"
+            aria-hidden="true"
+          ></div>
+        {:else if isWaiting}
+          <div
+            class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-muted-foreground/60"
             aria-hidden="true"
           ></div>
         {/if}

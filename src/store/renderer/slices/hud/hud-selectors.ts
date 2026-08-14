@@ -204,6 +204,13 @@ export interface HudWorkspaceStateBars {
   progress: number;
   /** Attention states (`wait` / `blocked`). */
   attention: number;
+  /**
+   * Orthogonal waiting overlay — flag-driven (`workspace.waiting`, §5.1):
+   * counts every card carrying the flag REGARDLESS of its state bucket, so a
+   * Complete+waiting card counts in COMPLETED **and** WAITING (unlike the
+   * disjoint buckets below, which each count a card once).
+   */
+  waiting: number;
   /** `pr_open` + `pr_ready`. */
   prOpen: number;
   /** `pr_merged`. */
@@ -228,8 +235,10 @@ export interface HudWorkspaceStateBars {
  * displayStatus): an OVERLAY axis over the state buckets, mirroring the
  * card's unread border blink — every card with `isUnread` ALSO increments
  * UNREAD, so an unread card counts twice (its state bucket + UNREAD).
- * `total` stays the workspace count (one per workspace — the bar
- * denominator), so the state buckets alone sum to `total`.
+ * WAITING is the other overlay axis (`workspace.waiting`, §5.1): a waiting
+ * card counts in its state bucket AND in WAITING. `total` stays the
+ * workspace count (one per workspace — the bar denominator), so the state
+ * buckets alone sum to `total`.
  */
 export const selectHudWorkspaceStateBars = store.createSelector((state): HudWorkspaceStateBars => {
   const bars: HudWorkspaceStateBars = {
@@ -237,6 +246,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
     unread: 0,
     progress: 0,
     attention: 0,
+    waiting: 0,
     prOpen: 0,
     prMerged: 0,
     failed: 0,
@@ -246,6 +256,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
   for (const card of selectHudWorkspaceCards.select(state)) {
     bars.total += 1;
     if (card.isUnread) bars.unread += 1;
+    if (card.isWaiting) bars.waiting += 1;
     switch (card.stateKey) {
       case 'wait':
       case 'blocked':
@@ -521,6 +532,13 @@ export interface HudWorkspaceCard {
    * state-bar bucket on top of the card's state bucket.
    */
   isUnread: boolean;
+  /**
+   * Orthogonal waiting overlay (`workspace.waiting`, §5.1 — BE-derived, set
+   * while the workspace's agents are purely waiting on external conditions):
+   * the card keeps its real state and adds the dimmed `/ WAITING` status
+   * suffix; also the WAITING state-bar row. Never feeds ATTENTION.
+   */
+  isWaiting: boolean;
   /** Workspace status message (agent content; i18n-exempt), null when empty. */
   statusMessage: string | null;
   /** Attention-reason strip content; null outside `wait`/`blocked`/`failed` or when no reason is known. */
@@ -951,6 +969,7 @@ export const selectHudWorkspaceCards = store.createSelector((state): HudWorkspac
       stateKey,
       attention,
       isUnread: attention === HUD_UNREAD_ATTENTION_VALUE,
+      isWaiting: workspace.waiting === true,
       statusMessage,
       attentionSnippet: cardAttentionSnippet(state, stateKey, agents),
       prNumber: typeof workspace.prNumber === 'number' ? workspace.prNumber : null,

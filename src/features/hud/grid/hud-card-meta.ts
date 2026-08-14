@@ -62,6 +62,15 @@ export function cardStateLabel(stateKey: HudCardStateKey): string {
   }
 }
 
+/**
+ * Dimmed `/ WAITING` status-line suffix rendered after the state label when
+ * the orthogonal `workspace.waiting` flag is set (any state, including
+ * IN PROGRESS). Styling (muted-foreground) lives in HudWorkspaceCard.
+ */
+export function cardWaitingSuffixLabel(): string {
+  return m.hud_card_stateWaitingSuffix_label();
+}
+
 /** Card accent color for a state key (mock `wsMeta.c`) — canonical table. */
 export function cardStateColor(stateKey: HudCardStateKey): string {
   switch (stateKey) {

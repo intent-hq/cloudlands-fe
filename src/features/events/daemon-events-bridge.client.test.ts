@@ -6804,6 +6804,204 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   });
 });
 
+describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', () => {
+  const WS_WAIT = 'ws-waiting-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_WAIT,
+        title: 'Waiting ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ waiting?: boolean }> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_WAIT) ?? {}) as never;
+  }
+
+  function waitingChangedNotification(waiting: boolean) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-waiting-${waiting}`,
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:waiting-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:waiting-changed');
+  });
+
+  it('merges waiting=true onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('merges waiting=false onto the workspace entity (transition back)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler(waitingChangedNotification(false));
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(false);
+  });
+
+  it('is a no-op when the waiting value is not a boolean', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-bad',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: 'yes',
+          },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('is a no-op when data is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-data',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId must win so the correct entity is updated.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-data-id',
+          workspaceId: 'ws-waiting-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('applies a self-sufficient payload even when the envelope workspaceId is absent', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A relay that strips the envelope workspaceId must not gate out the
+    // event — the payload carries its own workspaceId (§6.7).
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-envelope-id',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+});
+
 describe('daemonEventsBridge (completion-watch refresh routing)', () => {
   beforeAll(() => {
     appStore.init();
