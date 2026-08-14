@@ -22,7 +22,9 @@
   import PanelEmptyState from './PanelEmptyState.svelte';
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
+  import { createPanelFileDropContext } from './panel-file-drop-context.svelte';
   import { setPanelContext } from './panel-context';
+  import { createFileDropTarget } from '$lib/components/chat/input/file-drop';
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
@@ -122,6 +124,42 @@
 
   // Create header context for content components to register their actions
   const { actions: headerActions } = createPanelHeaderContext();
+
+  // File-drop seam: chat content (ChatPanel) registers a handler while it is
+  // the active tab, extending its OS-file drop target to the panel header.
+  // Header handlers are gated on both the Files drag type (inside
+  // createFileDropTarget) and a registered handler, so tab drags, panel-move
+  // drags, and non-agent tabs are untouched.
+  const { handler: fileDropHandler } = createPanelFileDropContext();
+  const headerFileDrop = createFileDropTarget({
+    onDragChange: (dragging) => fileDropHandler.current?.onDragChange(dragging),
+    onDrop: (files) => fileDropHandler.current?.onDrop(files),
+  });
+
+  // Clear stale drag state if the handler unregisters mid-drag (tab switch/close).
+  $effect(() => {
+    if (!fileDropHandler.current) headerFileDrop.reset();
+  });
+
+  function handleHeaderFileDragEnter(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragEnter(e);
+  }
+
+  function handleHeaderFileDragLeave(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragLeave(e);
+  }
+
+  function handleHeaderFileDragOver(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragOver(e);
+  }
+
+  function handleHeaderFileDrop(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDrop(e);
+  }
 
   // Set panel context so child components can access the panel ID
   // This is more reliable than DOM traversal for navigation events
@@ -409,9 +447,14 @@
     {/if}
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
+      data-panel-header
       style={animateTabBar
         ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
         : ''}
+      ondragenter={handleHeaderFileDragEnter}
+      ondragleave={handleHeaderFileDragLeave}
+      ondragover={handleHeaderFileDragOver}
+      ondrop={handleHeaderFileDrop}
     >
       <PanelTabBar
         tabs={panel.tabs}
