@@ -150,6 +150,64 @@ describe('WorkspaceCard compact agent metadata', () => {
     unread.unmount();
   });
 
+  it('derives the waiting dot from workspace.waiting when isWaiting is not passed', () => {
+    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
+
+    // No prop: the BE-sent flag drives the dot on every card surface.
+    const derived = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace({ waiting: true }) },
+    });
+    const derivedDot = derived.container.querySelector(waitingDotSelector);
+    expect(derivedDot).toBeTruthy();
+    expect(derivedDot?.className).not.toContain('animate-pulse');
+    derived.unmount();
+
+    // Flag absent (older daemons omit it): no dot.
+    const notWaiting = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
+    expect(notWaiting.container.querySelector(waitingDotSelector)).toBeNull();
+    notWaiting.unmount();
+
+    // Explicit prop overrides the flag in both directions.
+    const suppressed = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace({ waiting: true }), isWaiting: false },
+    });
+    expect(suppressed.container.querySelector(waitingDotSelector)).toBeNull();
+    suppressed.unmount();
+
+    const forced = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace(), isWaiting: true },
+    });
+    expect(forced.container.querySelector(waitingDotSelector)).toBeTruthy();
+    forced.unmount();
+  });
+
+  it('suppresses the derived waiting dot under running/unread precedence and keeps it on pinned rows', () => {
+    const waitingDotSelector = '[class*="bg-muted-foreground/60"]';
+
+    // Models the Active-card Running row: isRunning={true}, no isWaiting prop.
+    const running = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace({ waiting: true }), isRunning: true },
+    });
+    expect(running.container.querySelector('.bg-success')).toBeTruthy();
+    expect(running.container.querySelector(waitingDotSelector)).toBeNull();
+    running.unmount();
+
+    // Models the Active-card Unread row: isUnread={true}, no isWaiting prop.
+    const unread = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace({ waiting: true }), isUnread: true },
+    });
+    expect(unread.container.querySelector('.bg-info')).toBeTruthy();
+    expect(unread.container.querySelector(waitingDotSelector)).toBeNull();
+    unread.unmount();
+
+    // A pinned waiting row keeps the informational grey dot.
+    const pinned = render(WorkspaceCard, {
+      props: { workspace: makeWorkspace({ waiting: true }), isPinned: true, onTogglePin: vi.fn() },
+    });
+    expect(pinned.container.querySelector(waitingDotSelector)).toBeTruthy();
+    pinned.unmount();
+  });
+
   it('uses the canonical compact row hierarchy and inset styling', () => {
     const { container } = render(WorkspaceCard, { props: { workspace: makeWorkspace() } });
     const row = container.querySelector('[data-workspace-card-row]');
