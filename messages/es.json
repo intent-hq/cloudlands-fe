@@ -1383,6 +1383,7 @@
   "workspace_progressCard_base_label": "Base {ref}",
   "workspace_progressCard_closeWorkspace_ariaLabel": "Cerrar el espacio de trabajo {id}",
   "workspace_progressCard_copied_label": "Copiado",
+  "workspace_progressCard_copyPath_ariaLabel": "Copiar la ruta del espacio de trabajo",
   "workspace_checkoutModePill_tooltip": "Modo de checkout: {label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "Árbol de trabajo",

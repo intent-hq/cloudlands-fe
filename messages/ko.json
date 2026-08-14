@@ -1383,6 +1383,7 @@
   "workspace_progressCard_base_label": "베이스 {ref}",
   "workspace_progressCard_closeWorkspace_ariaLabel": "작업 공간 {id} 닫기",
   "workspace_progressCard_copied_label": "복사됨",
+  "workspace_progressCard_copyPath_ariaLabel": "작업 공간 경로 복사",
   "workspace_checkoutModePill_tooltip": "체크아웃 모드: {label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "워크트리",

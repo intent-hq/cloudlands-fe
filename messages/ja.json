@@ -1383,6 +1383,7 @@
   "workspace_progressCard_base_label": "ベース {ref}",
   "workspace_progressCard_closeWorkspace_ariaLabel": "ワークスペース {id} を閉じる",
   "workspace_progressCard_copied_label": "コピーしました",
+  "workspace_progressCard_copyPath_ariaLabel": "ワークスペースのパスをコピー",
   "workspace_checkoutModePill_tooltip": "チェックアウトモード: {label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "ワークツリー",

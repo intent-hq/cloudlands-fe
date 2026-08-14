@@ -1383,6 +1383,7 @@
   "workspace_progressCard_base_label": "基準 {ref}",
   "workspace_progressCard_closeWorkspace_ariaLabel": "關閉工作區 {id}",
   "workspace_progressCard_copied_label": "已複製",
+  "workspace_progressCard_copyPath_ariaLabel": "複製工作區路徑",
   "workspace_checkoutModePill_tooltip": "檢出模式：{label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "工作樹",
