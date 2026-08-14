@@ -23,6 +23,7 @@ const {
   deferMarkdownConversion,
   takeDeferredMarkdownConversion,
   resetDeferredMarkdownConversions,
+  editorWorkspaceIds,
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
@@ -39,6 +40,7 @@ const {
     string,
     Array<{ promise: Promise<string>; resolve: (html: string) => void }>
   >();
+  const editorWorkspaceIds: string[] = [];
 
   const deferMarkdownConversion = (markdown: string) => {
     let resolve!: (html: string) => void;
@@ -144,6 +146,7 @@ const {
     resetDeferredMarkdownConversions() {
       deferredMarkdownConversions.clear();
     },
+    editorWorkspaceIds,
   };
 });
 
@@ -454,25 +457,29 @@ vi.mock('$lib/utils/editor-config', async () => {
   const { createWorkspacesLink } = await import('$lib/utils/tiptap-link-extension');
 
   return {
-    createEditorConfig: ({ element, content, editable, onUpdate }: any) => ({
-      element,
-      content,
-      editable,
-      extensions: [
-        StarterKit.configure({
-          link: false,
-        }),
-        createWorkspacesLink({ openOnClick: false }),
-        TaskList,
-        CustomTaskItem.configure({
-          nested: true,
-          taskListTypeName: 'taskList',
-        }),
-      ],
-      onUpdate: ({ editor }: { editor: { getHTML: () => string } }) => {
-        onUpdate(editor.getHTML());
-      },
-    }),
+    createEditorConfig: ({ element, content, editable, onUpdate, workspace }: any) => {
+      editorWorkspaceIds.push(workspace?.id ?? '');
+      return {
+        element,
+        content,
+        editable,
+        extensions: [
+          StarterKit.configure({
+            link: false,
+          }),
+          createWorkspacesLink({ openOnClick: false }),
+          TaskList,
+          CustomTaskItem.configure({
+            nested: true,
+            workspaceId: workspace?.id,
+            taskListTypeName: 'taskList',
+          }),
+        ],
+        onUpdate: ({ editor }: { editor: { getHTML: () => string } }) => {
+          onUpdate(editor.getHTML());
+        },
+      };
+    },
   };
 });
 
@@ -509,6 +516,7 @@ describe('NoteWithComments task conversion regression', () => {
     vi.clearAllMocks();
     resetNotes();
     resetDeferredMarkdownConversions();
+    editorWorkspaceIds.length = 0;
 
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -632,6 +640,50 @@ describe('NoteWithComments task conversion regression', () => {
 
     expect(mockApplyExternalUpdateHtml).not.toHaveBeenCalled();
     expect(mockMaybeCreateCommentManagerV2).not.toHaveBeenCalled();
+  });
+
+  it('recreates the editor with a new owner when the workspace changes', async () => {
+    const view = await renderInitializedNote();
+    expect(editorWorkspaceIds.at(-1)).toBe(WORKSPACE_ID);
+
+    await view.rerender({
+      workspace: { id: 'ws-2' } as any,
+      noteId: 'baseline',
+      content: 'Baseline content',
+      editable: true,
+      showSuggestions: false,
+      showComments: true,
+    });
+
+    await waitFor(() => expect(editorWorkspaceIds.at(-1)).toBe('ws-2'));
+  });
+
+  it('does not retain the old owner when workspace changes during editor initialization', async () => {
+    const pending = deferMarkdownConversion('Baseline content');
+    const view = render(NoteWithComments, {
+      props: {
+        workspace: { id: WORKSPACE_ID } as any,
+        noteId: 'baseline',
+        content: 'Baseline content',
+        editable: true,
+        showSuggestions: false,
+        showComments: true,
+      },
+    });
+
+    await view.rerender({
+      workspace: { id: 'ws-2' } as any,
+      noteId: 'baseline',
+      content: 'Baseline content',
+      editable: true,
+      showSuggestions: false,
+      showComments: true,
+    });
+    await tick();
+    pending.resolve('<p>Baseline content</p>');
+
+    await waitFor(() => expect(editorWorkspaceIds.at(-1)).toBe('ws-2'));
+    expect(editorWorkspaceIds).not.toContain(WORKSPACE_ID);
   });
 
   it('renders converted linked tasks when converted note content arrives after mount without the CustomEvent path', async () => {
