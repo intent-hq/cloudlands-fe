@@ -397,7 +397,7 @@
         role="group"
         contenteditable="false"
       >
-        <div class="flex items-center gap-1.5 w-full pl-2.5 pr-2 pt-1.5 pb-1.5">
+        <div class="flex items-center gap-1.5 w-full pl-2.5 pr-2 pt-1.5 pb-2">
           <span class="shrink-0" onclick={(e) => e.stopPropagation()} role="presentation">
             {#key status}
               <TaskStatusIcon
@@ -408,7 +408,7 @@
             {/key}
           </span>
           <span
-            class="flex-1 min-w-0 pb-0.5 font-medium overflow-hidden text-ellipsis whitespace-nowrap [&_p]:m-0"
+            class="flex-1 min-w-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap [&_p]:m-0"
           >
             <NodeViewContent />
           </span>
@@ -445,7 +445,7 @@
           onclick={(e) => handleOpenLinkedNote(e)}
           contenteditable="false"
         >
-          <div class="flex items-center gap-2 w-full pl-2.5 pr-2 pt-2">
+          <div class="flex items-center gap-2 w-full pl-2.5 pr-2 pt-2 pb-1.5">
             <span class="shrink-0" onclick={(e) => e.stopPropagation()} role="presentation">
               {#key linkedTaskStatus}
                 <TaskStatusIcon
@@ -456,7 +456,7 @@
               {/key}
             </span>
             <span
-              class="flex-1 min-w-0 pb-1.5 font-medium overflow-hidden text-ellipsis whitespace-nowrap {linkedTaskNotFound
+              class="flex-1 min-w-0 font-medium overflow-hidden text-ellipsis whitespace-nowrap {linkedTaskNotFound
                 ? 'text-muted-foreground italic'
                 : ''}"
             >
@@ -536,7 +536,7 @@
               <Button
                 variant="ghost-light"
                 size="icon-xs"
-                class="shrink-0 opacity-30 hover:opacity-100 transition-opacity pb-2"
+                class="shrink-0 opacity-30 hover:opacity-100 transition-opacity"
                 title={m.tiptap_taskItem_assignToAgent_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
