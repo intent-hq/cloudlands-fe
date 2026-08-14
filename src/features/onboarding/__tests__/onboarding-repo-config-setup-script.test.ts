@@ -13,6 +13,12 @@
  * (reviewer finding on cloudlands-fe#443): switching repos clears the
  * detected GitHub owner/repo immediately, and late responses for a previous
  * path never apply.
+ *
+ * Also covers the onboarding `workspace.create` wire request shape: the
+ * picked-repo payloads (githubUrl vs repositoryPath) and the live clone
+ * progress correlation — a minted `progressId` registered in the
+ * workspaceCreateProgress slice before the create goes out, echoed on the
+ * request (PROTOCOL §5.1), and cleared once the create settles.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
