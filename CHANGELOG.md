@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.45.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.45.0...v2.45.1) (2026-08-14)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.6.21 ([#1237](https://github.com/intent-hq/cloudlands-fe/issues/1237)) ([a691086](https://github.com/intent-hq/cloudlands-fe/commit/a69108616a0d655433140917c846a632e7ede731))
+* replace workspace tab status icons with one circle ([3da598e](https://github.com/intent-hq/cloudlands-fe/commit/3da598e9993bb7ad51fb8e1ed1f36fe1c5ba56bc))
+
 ## [2.45.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.44.0...v2.45.0) (2026-08-14)
 
 
