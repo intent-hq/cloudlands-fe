@@ -11,10 +11,12 @@ describe('activity navigation contract', () => {
     const appCss = source('src/app.css');
     const preview = source('src/lib/components/workspace/sidebar/ActivityLogPreview.svelte');
 
-    expect(appCss).toContain(':focus:not(:focus-visible) {\n  outline: none;');
-    expect(appCss).toContain(':focus-visible {\n  outline: 2px solid hsl(var(--ring));');
+    // The global focus rules live inside `@layer base` (indented one level) so
+    // Tailwind utilities can override them; see input.test.ts for the layering test.
+    expect(appCss).toContain(':focus:not(:focus-visible) {\n    outline: none;');
+    expect(appCss).toContain(':focus-visible {\n    outline: 2px solid hsl(var(--ring));');
     expect(appCss).toContain('outline-offset: 2px;');
-    expect(appCss).not.toMatch(/(^|\n):focus\s*\{[^}]*outline:\s*none;/);
+    expect(appCss).not.toMatch(/(^|\n)\s*:focus\s*\{[^}]*outline:\s*none;/);
     expect(preview).toContain('rounded-md outline-none');
   });
 

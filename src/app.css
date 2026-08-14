@@ -125,14 +125,19 @@ kbd {
   cursor: pointer;
 }
 
-/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
+/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback.
+   Layered so Tailwind utilities (e.g. `focus-visible:outline-none` from the Input
+   component's `noFocusStyle` opt-out) can override these rules — unlayered author
+   CSS would otherwise beat every layered utility under Tailwind v4. */
+@layer base {
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 body {
