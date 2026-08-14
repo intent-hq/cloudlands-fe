@@ -140,6 +140,16 @@
   const map = createTakeoverMapState(() => $view$?.tasks ?? []);
   const drag = $derived(map.drag);
 
+  // Hovered task cell: the edge layer highlights every edge touching it
+  // (full-strength, thicker stroke). Reset on display/workspace changes so
+  // a cell removed under the pointer never leaves a stale highlight.
+  let hoveredTaskId = $state<string | null>(null);
+  $effect(() => {
+    void visible;
+    void queue.active?.workspaceId;
+    hoveredTaskId = null;
+  });
+
   // Measure the map viewport once per display, keyed by workspace PLUS the
   // controller's display counter: reduced motion chains closing → opening
   // directly (no idle/blinking reset between displays), so a chained second
@@ -316,6 +326,7 @@
                 data-testid="hud-takeover-map"
                 bind:this={mapClipEl}
                 {@attach drag.attach}
+                {@attach map.attachWheel}
               >
                 <div
                   class="ov-map-pan"
@@ -323,7 +334,7 @@
                   class:ov-map-pan-animate={motion && drag.animate}
                 >
                   <!-- Dependency edges under the cells (arrowheads point at the dependent). -->
-                  <HudTakeoverEdges edges={map.edges} box={map.edgeBox} {motion} />
+                  <HudTakeoverEdges edges={map.edges} box={map.edgeBox} {motion} {hoveredTaskId} />
 
                   <!-- Spec cell anchored at (0,0) -->
                   <div
@@ -367,6 +378,11 @@
                       style:outline-color={changed ? meta.color : 'transparent'}
                       style:animation-delay={motion ? `${(0.9 + i * 0.012).toFixed(2)}s` : '0s'}
                       data-testid="hud-takeover-cell"
+                      role="presentation"
+                      onpointerenter={() => (hoveredTaskId = task.id)}
+                      onpointerleave={() => {
+                        if (hoveredTaskId === task.id) hoveredTaskId = null;
+                      }}
                     >
                       <div class="ov-cell-head">
                         <span

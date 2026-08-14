@@ -2,7 +2,8 @@
  * Takeover map state (runes) — dependency-graph placement, drawable edges,
  * manual zoom and the drag/auto-pan camera for the overlay's task map.
  * Every display renders 1:1 by default; zoom is manual (in/out steps,
- * reset, zoom-to-fit against the measured viewport) and resets to 1 per
+ * scroll wheel anchored at the pointer, reset, zoom-to-fit against the
+ * measured viewport) and resets to 1 per
  * display. Owns the per-display viewport measurement (the overlay keys it
  * by workspace + display counter so back-to-back displays of the same
  * workspace still re-measure); the drag controller divides
@@ -17,6 +18,7 @@ import {
   dependencyGraphLayout,
   emptyCellCoords,
   fitScale,
+  HUD_TAKEOVER_WHEEL_ZOOM_STEP,
   HUD_TAKEOVER_ZOOM_MAX,
   HUD_TAKEOVER_ZOOM_MIN,
   HUD_TAKEOVER_ZOOM_STEP,
@@ -48,6 +50,20 @@ export interface HudTakeoverMapState {
   zoomReset(): void;
   /** Fit the occupied cells to the measured viewport (clamped, never above 1). */
   zoomFit(): void;
+  /**
+   * Scroll-wheel zoom step anchored at `pointer` (screen px from the
+   * viewport center): wheel-up zooms in, wheel-down out, clamped to the same
+   * range as the buttons; the map point under the pointer stays put (the pan
+   * shifts, clamped to the pan bounds).
+   */
+  wheelZoom(deltaY: number, pointer: { x: number; y: number }): void;
+  /**
+   * Svelte attachment for the map clip: a NON-passive wheel listener (the
+   * component's `onwheel` attribute is passive by default, so preventDefault
+   * would be ignored) that consumes the event — no page/ancestor scrolling
+   * over the map, even at the zoom range limits — and feeds `wheelZoom`.
+   */
+  attachWheel(node: HTMLElement): () => void;
   /** CSS transform for `.ov-map-pan`: pan (content px, scaled back) + current zoom. */
   readonly panTransform: string;
   /** Coord of `changedTaskId`, null when none/absent. */
@@ -96,6 +112,19 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     return cells.find((cell) => cell.task.id === changedTaskId)?.coord ?? null;
   };
 
+  const wheelZoom = (deltaY: number, pointer: { x: number; y: number }) => {
+    if (deltaY === 0) return;
+    const factor = deltaY < 0 ? HUD_TAKEOVER_WHEEL_ZOOM_STEP : 1 / HUD_TAKEOVER_WHEEL_ZOOM_STEP;
+    const next = clampZoom(zoom * factor);
+    if (next === zoom) return;
+    // The pan element's origin sits at the clip center, so a content point c
+    // renders at (c − pan)·zoom from the center. Keeping the point under the
+    // pointer p fixed across the step: pan' = pan + p·(1/zoom − 1/next).
+    const shift = 1 / zoom - 1 / next;
+    drag.setPan({ x: drag.pan.x + pointer.x * shift, y: drag.pan.y + pointer.y * shift });
+    zoom = next;
+  };
+
   return {
     get cells() {
       return cells;
@@ -132,6 +161,21 @@ export function createTakeoverMapState(getTasks: () => HudTakeoverTask[]): HudTa
     },
     zoomFit() {
       zoom = fitScale(occupied, viewport, pitch);
+    },
+    wheelZoom,
+    attachWheel(node) {
+      const onWheel = (e: WheelEvent) => {
+        // Consume unconditionally: the wheel never scrolls the page while
+        // the pointer is over the map clip, even at the zoom range limits.
+        e.preventDefault();
+        const rect = node.getBoundingClientRect();
+        wheelZoom(e.deltaY, {
+          x: e.clientX - (rect.left + rect.width / 2),
+          y: e.clientY - (rect.top + rect.height / 2),
+        });
+      };
+      node.addEventListener('wheel', onWheel, { passive: false });
+      return () => node.removeEventListener('wheel', onWheel);
     },
     get panTransform() {
       return zoom === 1

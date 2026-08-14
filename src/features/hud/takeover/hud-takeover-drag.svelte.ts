@@ -33,6 +33,11 @@ export interface HudTakeoverMapDrag {
    * moved) so the pan re-centers on the shifted cell.
    */
   syncAutoPan(workspaceId: string, coord: HudTakeoverCellCoord | null, delayMs: number): void;
+  /**
+   * Manual camera move (wheel-zoom anchoring): clamps to the pan bounds and,
+   * like a drag, cancels any pending auto-pan and the glide transition.
+   */
+  setPan(next: { x: number; y: number }): void;
   /** Recenter and cancel any pending auto-pan or in-flight drag. */
   reset(): void;
   /** Svelte attachment wiring pointer + click-suppression listeners to the map. */
@@ -125,6 +130,11 @@ export function createTakeoverMapDrag(
       };
       if (delayMs <= 0) apply();
       else autoPanTimer = setTimeout(apply, delayMs);
+    },
+    setPan(next) {
+      clearTimeout(autoPanTimer);
+      animate = false;
+      pan = clampTakeoverPan(next, getBounds());
     },
     reset() {
       clearTimeout(autoPanTimer);

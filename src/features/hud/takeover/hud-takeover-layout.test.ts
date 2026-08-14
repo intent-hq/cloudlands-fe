@@ -33,6 +33,7 @@ import {
   takeoverEdgeColorIndex,
   takeoverEdgePathD,
   takeoverEdgePulse,
+  takeoverEdgeTouchesTask,
   takeoverMapEdges,
   type HudTakeoverEdgeTask,
 } from './hud-takeover-edges';
@@ -242,6 +243,117 @@ describe('hud-takeover-layout', () => {
     });
   });
 
+  describe('dependencyGraphLayout (spec-aware: specLinked on the wire)', () => {
+    const s = (
+      id: string,
+      specLinked: boolean,
+      dependsOn?: string[],
+      conflictsWith?: string[],
+    ) => ({ id, specLinked, dependsOn, conflictsWith });
+
+    it('mixed linked/unlinked: spec edges only for linked dep-free tasks, unlinked islands at x=0', () => {
+      const { coords, edges } = dependencyGraphLayout([
+        s('a', true),
+        s('b', true, ['a']),
+        s('u', false),
+      ]);
+      expect(coords.get('a')).toEqual({ x: 1, y: 0 });
+      expect(coords.get('b')).toEqual({ x: 2, y: 0 });
+      // u is an island root aligned with the spec column, below the spec component.
+      expect(coords.get('u')).toEqual({ x: 0, y: 2 });
+      expect(edges).toEqual([
+        { from: HUD_TAKEOVER_SPEC_NODE_ID, to: 'a', kind: 'spec' },
+        { from: 'a', to: 'b', kind: 'dep' },
+      ]);
+    });
+
+    it('unlinked dep chains stay connected by dep edges but never gain a spec edge', () => {
+      const { coords, edges } = dependencyGraphLayout([
+        s('a', true),
+        s('u', false),
+        s('v', false, ['u']),
+      ]);
+      expect(coords.get('a')).toEqual({ x: 1, y: 0 });
+      expect(coords.get('u')).toEqual({ x: 0, y: 2 });
+      expect(coords.get('v')).toEqual({ x: 1, y: 2 });
+      expect(edges).toEqual([
+        { from: HUD_TAKEOVER_SPEC_NODE_ID, to: 'a', kind: 'spec' },
+        { from: 'u', to: 'v', kind: 'dep' },
+      ]);
+    });
+
+    it('a linked task with deps joins the spec component via deps, not a spec edge', () => {
+      const { edges } = dependencyGraphLayout([s('a', true), s('b', true, ['a'])]);
+      expect(edges.filter((e) => e.kind === 'spec')).toEqual([
+        { from: HUD_TAKEOVER_SPEC_NODE_ID, to: 'a', kind: 'spec' },
+      ]);
+    });
+
+    it('all-unlinked (daemon fallback): zero spec edges, every component is an island', () => {
+      const { coords, edges } = dependencyGraphLayout([
+        s('u', false),
+        s('v', false, ['u']),
+        s('w', false),
+      ]);
+      expect(edges.filter((e) => e.kind === 'spec')).toEqual([]);
+      // Islands stack below the (empty) spec extent with the one-cell gutter.
+      expect(coords.get('u')).toEqual({ x: 0, y: 2 });
+      expect(coords.get('v')).toEqual({ x: 1, y: 2 });
+      expect(coords.get('w')).toEqual({ x: 0, y: 4 });
+    });
+
+    it('subtask islands: an unlinked chain roots in the spec column and grows rightward', () => {
+      const { coords } = dependencyGraphLayout([
+        s('parent', true),
+        s('sub1', false),
+        s('sub2', false, ['sub1']),
+        s('sub3', false, ['sub2']),
+      ]);
+      expect(coords.get('parent')).toEqual({ x: 1, y: 0 });
+      expect(coords.get('sub1')).toEqual({ x: 0, y: 2 });
+      expect(coords.get('sub2')).toEqual({ x: 1, y: 2 });
+      expect(coords.get('sub3')).toEqual({ x: 2, y: 2 });
+    });
+
+    it('islands never occupy the spec origin and never overlap', () => {
+      const tasks = [
+        s('a', true),
+        s('b', true, ['a']),
+        s('u', false),
+        s('v', false, ['u']),
+        s('w', false),
+        s('x', false, ['ghost']),
+      ];
+      const { coords } = dependencyGraphLayout(tasks);
+      const keys = [...coords.values()].map(({ x, y }) => `${x},${y}`);
+      expect(new Set(keys).size).toBe(tasks.length);
+      expect(keys).not.toContain('0,0');
+      for (const { x, y } of coords.values()) {
+        expect(Number.isInteger(x)).toBe(true);
+        expect(Number.isInteger(y)).toBe(true);
+        expect(x).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('legacy rows without the field keep dep-free spec rooting at x=1 (absent ≠ false)', () => {
+      const { coords, edges } = dependencyGraphLayout([
+        { id: 'a' },
+        { id: 'e', dependsOn: ['ghost'] },
+      ]);
+      expect(coords.get('a')).toEqual({ x: 1, y: 0 });
+      expect(coords.get('e')).toEqual({ x: 1, y: 2 });
+      expect(edges).toEqual([{ from: HUD_TAKEOVER_SPEC_NODE_ID, to: 'a', kind: 'spec' }]);
+    });
+
+    it('is deterministic in spec-aware mode: same input yields the same coords and edges', () => {
+      const tasks = [s('a', true), s('b', true, ['a']), s('u', false), s('v', false, ['u'])];
+      const one = dependencyGraphLayout(tasks);
+      const two = dependencyGraphLayout(tasks.map((task) => ({ ...task })));
+      expect([...one.coords.entries()]).toEqual([...two.coords.entries()]);
+      expect(one.edges).toEqual(two.edges);
+    });
+  });
+
   describe('takeoverGutterPx / takeoverPitchPx (dynamic gutter width)', () => {
     it('keeps the mock 12px gutter / 192px pitch when no channel carries lanes', () => {
       expect(takeoverGutterPx(0)).toBe(HUD_TAKEOVER_PITCH_PX - HUD_TAKEOVER_CELL_PX);
@@ -434,6 +546,18 @@ describe('hud-takeover-layout', () => {
       expect(unmet.every((edge) => edge.pulse !== 'ready')).toBe(true);
     });
 
+    it('carries the route endpoint ids on every drawable edge (dep/spec/conflict)', () => {
+      const tasks = [t('a'), t('b', ['a'], ['c']), t('c', ['b'])];
+      const { routing, pitch } = route(tasks);
+      const edges = takeoverMapEdges(routing, infos(tasks), pitch);
+      expect(edges.map((edge) => ({ kind: edge.kind, from: edge.from, to: edge.to }))).toEqual(
+        routing.routes.map((r) => ({ kind: r.kind, from: r.from, to: r.to })),
+      );
+      // The rootless task's spec edge anchors at the virtual spec node.
+      const spec = edges.find((edge) => edge.kind === 'spec');
+      expect(spec).toMatchObject({ from: HUD_TAKEOVER_SPEC_NODE_ID, to: 'a' });
+    });
+
     it('busy fixture: px segments stay orthogonal and never cross a cell interior', () => {
       const busy = [
         t('a'),
@@ -555,6 +679,25 @@ describe('hud-takeover-layout', () => {
           status,
         ).toBeNull();
       }
+    });
+  });
+
+  describe('takeoverEdgeTouchesTask (hover-highlight edge matching)', () => {
+    const edge = (from: string, to: string) => ({ from, to });
+
+    it('matches incoming and outgoing edges of the hovered task', () => {
+      expect(takeoverEdgeTouchesTask(edge('a', 'b'), 'a')).toBe(true);
+      expect(takeoverEdgeTouchesTask(edge('a', 'b'), 'b')).toBe(true);
+      expect(takeoverEdgeTouchesTask(edge('a', 'b'), 'c')).toBe(false);
+    });
+
+    it("matches the task's spec edge via its destination", () => {
+      expect(takeoverEdgeTouchesTask(edge(HUD_TAKEOVER_SPEC_NODE_ID, 'a'), 'a')).toBe(true);
+      expect(takeoverEdgeTouchesTask(edge(HUD_TAKEOVER_SPEC_NODE_ID, 'a'), 'b')).toBe(false);
+    });
+
+    it('a null hover matches nothing', () => {
+      expect(takeoverEdgeTouchesTask(edge('a', 'b'), null)).toBe(false);
     });
   });
 
