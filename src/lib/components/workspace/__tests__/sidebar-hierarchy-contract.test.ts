@@ -82,12 +82,15 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
   it('renders one task progress bar with status details in its hover surface', () => {
     const progress = source('../sidebar/FlameGraph.svelte');
+    const sharedProgress = source('../TaskStatusProgress.svelte');
 
-    expect(progress).toContain('role="progressbar"');
-    expect(progress).toContain('style:flex-grow={bar.count}');
-    expect(progress).toContain('TASK_STATUS_BAR_CLASSES[bar.status]');
+    expect(progress).toContain('<TaskStatusProgress');
+    expect(sharedProgress).toContain('role="progressbar"');
+    expect(sharedProgress).toContain('style:flex-grow={segment.count}');
+    expect(sharedProgress).toContain('TASK_PROGRESS_SEGMENT_CLASSES[');
+    expect(sharedProgress).toContain('segment.visualState');
     expect(progress).toContain('content={taskListTooltip}');
-    expect(progress).toContain('contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"');
+    expect(progress).toContain('bg-secondary!');
     expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 pt-2');
     expect(progress).toContain('onclick={() => specNoteId && onTaskClick?.(specNoteId)}');
     expect(progress).toContain('onclick={() => onTaskClick?.(task.note.id as string)}');

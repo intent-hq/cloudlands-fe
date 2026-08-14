@@ -16,6 +16,7 @@
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import {
+    filterWorkspaceAgentRows,
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
     isCoordinatorAgentSession as isCoordinator,
@@ -36,6 +37,7 @@
     workspaceId?: string;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    searchQuery?: string;
   }
 
   let {
@@ -49,15 +51,18 @@
     workspaceId = '',
     openPanelTabs = [],
     activePanelTab,
+    searchQuery = '',
   }: Props = $props();
 
   const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
+  const filteredAgentRows = $derived(filterWorkspaceAgentRows(flatAgentRows, searchQuery));
+  const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
   const runningAgentIdSet = $derived(new Set(runningAgentIds));
   const directChildrenByAgentId = $derived.by(() => {
     const children = new Map<string, AgentSession[]>();
     const ancestors: { id: string; depth: number }[] = [];
 
-    for (const row of flatAgentRows) {
+    for (const row of filteredAgentRows) {
       while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= row.depth) {
         ancestors.pop();
       }
@@ -73,7 +78,7 @@
     return children;
   });
   const topLevelAgents = $derived(
-    flatAgentRows.filter((row) => row.depth === 0).map((row) => row.agent),
+    filteredAgentRows.filter((row) => row.depth === 0).map((row) => row.agent),
   );
   const topLevelForegroundAgents = $derived(
     topLevelAgents.filter((agent) => !isBackgroundAgent(agent)),
@@ -84,7 +89,7 @@
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
-  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(flatAgentRows));
+  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
   // Matches the slim card's base height (LazyAgentCard's estimatedHeight default);
   // virtualized rows hide the preview line so every row stays uniform.
   const itemHeight = 48;
@@ -147,7 +152,7 @@
 
     {@const children = directChildrenByAgentId.get(agent.id) ?? []}
     {#if children.length > 0}
-      {@const isExpanded = expandedAgentIds.has(agent.id)}
+      {@const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
       <div class="mb-2" style="padding-left: 26px;">
         <Button
@@ -244,7 +249,14 @@
     {/each}
   </div>
 {:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
-  <ListEmpty message={m.workspace_agentsList_empty_label()} />
+  <ListEmpty
+    message={hasActiveSearch
+      ? m.workspace_agentsList_noSearchResults_label()
+      : m.workspace_agentsList_empty_label()}
+    class={hasActiveSearch ? 'min-h-14 py-3' : undefined}
+    role="status"
+    aria-live="polite"
+  />
 {:else if shouldUseVirtual}
   <!-- Virtual scrolling fallback (flat, no delegations, no coordinator) -->
   <div class="h-full max-h-150 overflow-hidden">
@@ -353,7 +365,7 @@
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {@const panelState = getAgentPanelState(agent.id)}
-      {#if showBackgroundAgents || isAgentRunning(agent.id)}
+      {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
         <div transition:slide={{ axis: 'y', duration: 150 }}>
           <LazyAgentCard
             cacheKey={agent.id}

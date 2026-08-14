@@ -3,6 +3,7 @@
   import Fa from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
 
   interface Props {
     onCreate?: () => void;
@@ -22,15 +23,11 @@
 </script>
 
 {#if compact}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    aria-label={m.workspace_createAgentSection_createNewAgent_label()}
-    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-none"
+  <SidebarHeaderAction
+    icon="plus"
+    label={m.workspace_createAgentSection_createNewAgent_label()}
     onclick={handleCreateAgent}
-  >
-    <Fa icon={faPlus} size="xs" />
-  </Button>
+  />
 {:else}
   <div class="w-full pb-2 -mt-1">
     <!-- Toggle Button -->

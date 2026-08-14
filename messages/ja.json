@@ -5978,5 +5978,13 @@
   "chat_agentSubscriptions_finished_many": "{count} 件のエージェントが完了",
   "chat_backgroundHooks_details_runCount_one": "1 回の実行が完了",
   "chat_backgroundHooks_details_runCount_many": "{count} 回の実行が完了",
-  "chat_agentSubscriptions_finished_one": "{count} 件のエージェントが完了"
+  "chat_agentSubscriptions_finished_one": "{count} 件のエージェントが完了",
+  "layout_sidebarPanel_workspaceListOptions_tooltip": "ワークスペース一覧のオプション",
+  "layout_sidebarPanel_groupBy_label": "グループ化",
+  "workspace_multiSelectSidebar_searchAgents_placeholder": "エージェントを検索...",
+  "workspace_multiSelectSidebar_searchContext_placeholder": "コンテキストを検索...",
+  "workspace_agentsList_noSearchResults_label": "検索に一致するエージェントはありません。",
+  "workspace_contextPanel_noSearchResults_label": "検索に一致するコンテキストはありません。",
+  "workspace_sidebarSearch_clear_ariaLabel": "検索をクリア",
+  "layout_allCard_archived_label": "アーカイブ済み"
 }

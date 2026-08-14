@@ -115,6 +115,7 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses equal muted launchers with direct item actions that disappear when expanded', () => {
     const workspace = source('../../../workspace/WorkspaceLayout.svelte');
     const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
+    const headerAction = source('../../../workspace/sidebar/SidebarHeaderAction.svelte');
     const tabDefinitions = source('../../../workspace/multi-select-sidebar-tabs.ts');
     const launcherMarkup = sidebar.slice(sidebar.indexOf('<!-- Lightweight launchers'));
 
@@ -137,9 +138,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
-    expect(sidebar).toContain('aria-label={m.ui_tab_close_ariaLabel()}');
-    expect(sidebar).toContain('data-sidebar-close');
-    expect(sidebar).toContain('hover:bg-muted/50 hover:text-foreground');
+    expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');
+    expect(headerAction).toContain('data-sidebar-close');
+    expect(headerAction).toContain('hover:bg-muted/50!');
     expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
     expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');

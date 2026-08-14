@@ -50,7 +50,6 @@
     faExpandAlt,
     faPencil,
     faPlus,
-    faTimes,
   } from '@fortawesome/free-solid-svg-icons';
 
   import { onMount, tick } from 'svelte';
@@ -72,6 +71,8 @@
   import ActivityLogPreview from './sidebar/ActivityLogPreview.svelte';
   import AddContextSection from './sidebar/AddContextSection.svelte';
   import ContextPanel from './sidebar/ContextPanel.svelte';
+  import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
+  import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -178,8 +179,6 @@
     'launcher-overflow-button pointer-events-auto relative z-10 flex h-7 min-w-7 w-auto shrink-0 cursor-pointer items-center justify-start rounded-none! border-0! bg-transparent! p-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-transparent! hover:text-foreground focus-visible:z-30 focus-visible:bg-transparent! focus-visible:text-foreground focus-visible:underline';
   const LAUNCHER_OVERFLOW_STYLE =
     'line-height: 12px; font-weight: 500; background: transparent; border: 0; border-radius: 0; padding: 0; box-shadow: none;';
-  const EXPANDED_CARD_ACTION_CLASS =
-    'expanded-card-action flex size-8 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-foreground opacity-100 shadow-none outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground';
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -276,6 +275,8 @@
   );
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  let agentSearchQuery = $state('');
+  let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(({ id, label }) => ({
       id,
@@ -350,6 +351,8 @@
   function handleTabClick(tabId: TabId) {
     const previousTabId = [...selectedTabs][0] ?? 'overview';
     const nextTabId = previousTabId === tabId ? 'overview' : tabId;
+    if (previousTabId === 'agents' && nextTabId !== 'agents') agentSearchQuery = '';
+    if (previousTabId === 'context' && nextTabId !== 'context') contextSearchQuery = '';
     if (previousTabId === 'overview' && tabId !== 'overview') {
       const launcher = sidebarElement?.querySelector<HTMLElement>(
         `[data-sidebar-launcher="${tabId}"]`,
@@ -410,6 +413,12 @@
   const focusedContentFilePath = $derived($activeTab$?.filePath ?? null);
   const focusedContentDiffPath = $derived($activeTab$?.diffPath ?? null);
   let lastInitializedNotesWorkspaceId: string | null = null;
+
+  $effect(() => {
+    workspaceId;
+    agentSearchQuery = '';
+    contextSearchQuery = '';
+  });
 
   $effect(() => {
     if (!workspaceId || lastInitializedNotesWorkspaceId === workspaceId) return;
@@ -925,50 +934,44 @@
                       >
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
-                          {#if tabId === 'agents' && (onCreateAgent || onCreateAgentWithSpecialist)}
-                            <CreateAgentSection
-                              onCreate={onCreateAgent}
-                              onCreateWithSpecialist={onCreateAgentWithSpecialist}
-                              compact
+                          {#if tabId === 'agents'}
+                            <SidebarExpandableSearch
+                              bind:query={agentSearchQuery}
+                              scope="agents"
+                              placeholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
                             />
+                            {#if onCreateAgent || onCreateAgentWithSpecialist}
+                              <CreateAgentSection
+                                onCreate={onCreateAgent}
+                                onCreateWithSpecialist={onCreateAgentWithSpecialist}
+                                compact
+                              />
+                            {/if}
                           {:else if tabId === 'context'}
+                            <SidebarExpandableSearch
+                              bind:query={contextSearchQuery}
+                              scope="context"
+                              placeholder={m.workspace_multiSelectSidebar_searchContext_placeholder()}
+                            />
                             <AddContextSection onAddNote={onCreateNote} compact />
                           {:else if tabId === 'browser'}
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.menu_new_browser()}
                               onclick={createBrowser}
-                              aria-label={m.menu_new_browser()}
-                              data-sidebar-browser-new
-                            >
-                              <Fa icon={faPlus} class="size-4!" />
-                            </Button>
+                            />
                           {:else if tabId === 'shell'}
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.menu_new_terminal()}
                               onclick={createTerminal}
-                              aria-label={m.menu_new_terminal()}
-                              data-sidebar-shell-new
-                            >
-                              <Fa icon={faPlus} class="size-4!" />
-                            </Button>
+                            />
                           {/if}
-                          <Tooltip
-                            content={m.ui_tab_close_ariaLabel()}
-                            side="top"
-                            delayDuration={300}
-                          >
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
-                              onclick={() => dismissExpandedCard(true)}
-                              aria-label={m.ui_tab_close_ariaLabel()}
-                              data-sidebar-close
-                            >
-                              <Fa icon={faTimes} class="size-4!" />
-                            </Button>
-                          </Tooltip>
+                          <SidebarHeaderAction
+                            icon="close"
+                            label={m.ui_tab_close_ariaLabel()}
+                            onclick={() => dismissExpandedCard(true)}
+                          />
                         </span>
                       </h6>
                       {#if tabId !== 'agents' && tabId !== 'shell'}
@@ -1047,6 +1050,7 @@
                           <WorkspaceAgentsList
                             agents={$allWorkspaceAgents}
                             loading={$agentsLoading}
+                            searchQuery={agentSearchQuery}
                             runningAgentIds={runningLauncherAgents.map((agent) => agent.id)}
                             selectedAgentId={effectiveSelectedAgentId}
                             {workspaceId}
@@ -1067,6 +1071,7 @@
                             loading={$notesLoading$}
                             openPanelTabs={$allPanelTabs$}
                             activePanelTab={$activeTab$}
+                            searchQuery={contextSearchQuery}
                             showAddSection={false}
                           />
                         </div>
