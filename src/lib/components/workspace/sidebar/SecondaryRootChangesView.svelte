@@ -254,9 +254,10 @@
 
         {#if olderCommits.length > 0}
           <!-- Registration boundary divider + older-commits expander -->
-          <button
+          <Button
             type="button"
-            class="group/boundary relative w-full cursor-pointer text-left"
+            variant="plain"
+            class="group/boundary relative h-auto w-full cursor-pointer justify-start text-left"
             data-testid="secondary-root-boundary-toggle"
             aria-expanded={olderExpanded}
             aria-label={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
@@ -277,7 +278,7 @@
               </span>
             </div>
             <div class="absolute top-3.5 left-0 right-0 flex-1 border-t border-border/50"></div>
-          </button>
+          </Button>
 
           {#if olderExpanded}
             <!-- Older commits (dimmed, at/below the registration boundary) -->
@@ -292,9 +293,10 @@
           {/if}
         {:else if registeredCommitSha && nextToken}
           <!-- Boundary not in the loaded pages: extend the window -->
-          <button
+          <Button
             type="button"
-            class="w-full text-ui text-ghost hover:text-muted-foreground py-1 transition-colors cursor-pointer"
+            variant="plain"
+            class="h-auto w-full !py-1 text-ui text-ghost hover:text-muted-foreground"
             data-testid="secondary-root-show-more"
             disabled={loadingMore}
             onclick={() => loadMore(workspaceId, gitRootId)}
@@ -303,7 +305,7 @@
               <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
             {/if}
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
-          </button>
+          </Button>
         {/if}
       {:else}
         <p class="text-xs text-ghost">{m.workspace_sidebarChanges_rootNoCommits_label()}</p>
