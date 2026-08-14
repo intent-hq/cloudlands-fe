@@ -16,6 +16,7 @@ vi.mock('../ChangesTabType.svelte', mockTabType);
 vi.mock('../LocalChangesTabType.svelte', mockTabType);
 vi.mock('../ChatChangesTabType.svelte', mockTabType);
 vi.mock('../ActivityChangesTabType.svelte', mockTabType);
+vi.mock('../HookScriptTabType.svelte', mockTabType);
 vi.mock('../SettingsTabType.svelte', mockTabType);
 vi.mock('../OverviewTabType.svelte', mockTabType);
 
@@ -32,6 +33,7 @@ const expectedTiers = {
   'code-review': 'wide',
   diff: 'wide',
   file: 'wide',
+  'hook-script': 'medium',
   'local-changes': 'wide',
   note: 'medium',
   overview: 'narrow',

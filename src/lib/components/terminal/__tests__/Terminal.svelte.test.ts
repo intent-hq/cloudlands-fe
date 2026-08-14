@@ -16,7 +16,7 @@
  * post-`getOrCreateTerminal` apply (Terminal.svelte:138) or the live
  * `$effect` still passes every adapter unit test, but fails here.
  */
-import { render } from '@testing-library/svelte';
+import { cleanup, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,10 +63,9 @@ vi.mock('$features/terminal/terminal-manager.svelte', () => ({
 }));
 
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectCodeFontFamilyCSS: Object.assign(
-    () => fontReadableRef.value,
-    { select: () => fontReadableRef.value.value },
-  ),
+  selectCodeFontFamilyCSS: Object.assign(() => fontReadableRef.value, {
+    select: () => fontReadableRef.value.value,
+  }),
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -87,6 +86,7 @@ function makePendingAdapter() {
     findNext: vi.fn(),
     findPrevious: vi.fn(),
     clearSearch: vi.fn(),
+    setVisible: vi.fn(),
   };
   let resolve!: () => void;
   const promise = new Promise<typeof adapter>((res) => {
@@ -113,6 +113,8 @@ describe('Terminal.svelte code-font wiring', () => {
     (adapterRef as any).promise = pending.promise;
     getOrCreateSpy.mockImplementation(() => pending.promise);
   });
+
+  afterEach(() => cleanup());
 
   it('forwards the current font to the adapter after getOrCreateTerminal resolves', async () => {
     render(Terminal, { props: { terminalId: 't-1', workspaceId: 'ws-1' } });
@@ -145,6 +147,24 @@ describe('Terminal.svelte code-font wiring', () => {
     expect(adapterRef.value.updateFontFamily).toHaveBeenLastCalledWith("'Fira Code', monospace");
 
     // No adapter / PTY / XTerm recreation on font change.
+    expect(getOrCreateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('parks and reveals the same adapter without detaching it', async () => {
+    const { rerender } = render(Terminal, {
+      props: { terminalId: 't-1', workspaceId: 'ws-1', visible: true },
+    });
+    (adapterRef as any).resolve();
+    await flushMicrotasks();
+
+    await rerender({ terminalId: 't-1', workspaceId: 'ws-1', visible: false });
+    await tick();
+    expect(adapterRef.value.setVisible).toHaveBeenLastCalledWith(false);
+    expect(detachSpy).not.toHaveBeenCalled();
+
+    await rerender({ terminalId: 't-1', workspaceId: 'ws-1', visible: true });
+    await tick();
+    expect(adapterRef.value.setVisible).toHaveBeenLastCalledWith(true);
     expect(getOrCreateSpy).toHaveBeenCalledTimes(1);
   });
 });

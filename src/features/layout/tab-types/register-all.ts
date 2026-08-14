@@ -21,6 +21,7 @@ import ChangesTabType from './ChangesTabType.svelte';
 import LocalChangesTabType from './LocalChangesTabType.svelte';
 import ChatChangesTabType from './ChatChangesTabType.svelte';
 import ActivityChangesTabType from './ActivityChangesTabType.svelte';
+import HookScriptTabType from './HookScriptTabType.svelte';
 import SettingsTabType from './SettingsTabType.svelte';
 import OverviewTabType from './OverviewTabType.svelte';
 
@@ -36,6 +37,7 @@ import {
   faPencil,
   faCodeCommit,
   faRobot,
+  faCode,
 } from '@fortawesome/free-solid-svg-icons';
 import { faNote } from '$lib/icons/faNote';
 import { m } from '$shared/paraglide/messages.js';
@@ -230,6 +232,20 @@ export function registerAllTabTypes(): void {
     },
     get categoryLabel() {
       return m.layout_tabTypes_changes_category();
+    },
+    renameable: false,
+  });
+
+  tabTypeRegistry.register({
+    type: 'hook-script',
+    component: HookScriptTabType,
+    defaultWidthTier: 'medium',
+    icon: faCode,
+    get defaultTitle() {
+      return m.chat_backgroundHooks_viewScript_label();
+    },
+    get categoryLabel() {
+      return m.layout_tabTypes_panel_category();
     },
     renameable: false,
   });

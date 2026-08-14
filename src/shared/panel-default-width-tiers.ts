@@ -11,6 +11,7 @@ export const PANEL_DEFAULT_WIDTH_TIERS = {
   'code-review': 'wide',
   diff: 'wide',
   file: 'wide',
+  'hook-script': 'medium',
   'local-changes': 'wide',
   note: 'medium',
   overview: 'narrow',

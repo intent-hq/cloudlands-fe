@@ -33,6 +33,32 @@ describe('panel tab canonical identity', () => {
     ).toBe(false);
   });
 
+  it('uses workspace and hook identity for hook script panels', () => {
+    const existing = tab('hook', {
+      type: 'hook-script',
+      workspaceId: 'ws-1',
+      hookId: 'hook-1',
+    });
+    expect(
+      panelTabsAreEquivalent(existing, {
+        type: 'hook-script',
+        title: 'Hook',
+        closable: true,
+        workspaceId: 'ws-1',
+        hookId: 'hook-1',
+      }),
+    ).toBe(true);
+    expect(
+      panelTabsAreEquivalent(existing, {
+        type: 'hook-script',
+        title: 'Other hook',
+        closable: true,
+        workspaceId: 'ws-1',
+        hookId: 'hook-2',
+      }),
+    ).toBe(false);
+  });
+
   it('selects the nearest active equivalent in deterministic layout order', () => {
     const requested = {
       type: 'file' as const,
