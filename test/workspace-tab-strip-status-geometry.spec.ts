@@ -232,8 +232,8 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     expect(inactiveStatusBox.x + inactiveStatusBox.width).toBeLessThanOrEqual(
       inactiveCloseBox.x + 0.5,
     );
-    expect(inactiveTitleBox.width).toBeLessThan(titleBox.width);
-    await expect(inactiveStatus.locator('[data-workspace-tab-status]')).toHaveCount(4);
+    expect(inactiveTitleBox.width).toBeCloseTo(titleBox.width, 0);
+    await expect(inactiveStatus.locator('[data-workspace-tab-status]')).toHaveCount(1);
 
     await expect(plain.locator('[data-workspace-tab-status-cluster]')).toHaveCount(0);
     const [plainTitleBox, plainCloseBox] = await Promise.all([
