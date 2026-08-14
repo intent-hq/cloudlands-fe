@@ -91,10 +91,12 @@ export function planEmbeddedBrowserLoad(
 export interface EmbeddedBrowserResolvedLoadState {
   requestedUrl: string | null;
   resolvedUrl: string | null;
+  /** True once a navigation event has matched the resolved URL (load committed). */
+  committed: boolean;
 }
 
 export function createEmbeddedBrowserResolvedLoadState(): EmbeddedBrowserResolvedLoadState {
-  return { requestedUrl: null, resolvedUrl: null };
+  return { requestedUrl: null, resolvedUrl: null, committed: false };
 }
 
 /** Record the mapping for a load that is about to start. */
@@ -103,6 +105,7 @@ export function recordEmbeddedBrowserResolvedLoad(
   requestedUrl: string,
   resolved: EmbeddedBrowserResolvedUrl,
 ): void {
+  state.committed = false;
   if (!resolved.rewritten || resolved.url === requestedUrl) {
     state.requestedUrl = null;
     state.resolvedUrl = null;
@@ -142,12 +145,9 @@ export function getEmbeddedBrowserExternalUrl(
 }
 
 /**
- * Map a webview navigation URL to its display URL. While the navigation
- * matches the resolved URL of the current load, the requested URL is
- * displayed instead; any other navigation (link click, redirect, in-page
- * route change) clears the mapping and displays the real URL. `about:blank`
- * never clears the mapping — Electron emits it for freshly created webviews
- * before the first real load commits.
+ * Map a webview navigation URL to its display URL — PURE, safe for read-only
+ * callers. While the navigation matches the resolved URL of the current load,
+ * the requested URL is returned instead; anything else returns as-is.
  */
 export function mapEmbeddedBrowserNavigationUrl(
   state: EmbeddedBrowserResolvedLoadState,
@@ -161,7 +161,35 @@ export function mapEmbeddedBrowserNavigationUrl(
   ) {
     return state.requestedUrl;
   }
-  state.requestedUrl = null;
-  state.resolvedUrl = null;
+  return navigatedUrl;
+}
+
+/**
+ * Stateful companion to `mapEmbeddedBrowserNavigationUrl` for navigation
+ * EVENT handlers. A match marks the load committed; a mismatch clears the
+ * mapping (link click, redirect, in-page route change) — but only after the
+ * current load has committed, so a late event from a superseded load cannot
+ * destroy the newer load's mapping before its own commit arrives.
+ * `about:blank` never touches the mapping — Electron emits it for freshly
+ * created webviews before the first real load commits.
+ */
+export function reconcileEmbeddedBrowserNavigation(
+  state: EmbeddedBrowserResolvedLoadState,
+  navigatedUrl: string,
+): string {
+  if (!navigatedUrl || navigatedUrl === 'about:blank') return navigatedUrl;
+  if (
+    state.requestedUrl !== null &&
+    state.resolvedUrl !== null &&
+    urlsEquivalent(navigatedUrl, state.resolvedUrl)
+  ) {
+    state.committed = true;
+    return state.requestedUrl;
+  }
+  if (state.committed) {
+    state.requestedUrl = null;
+    state.resolvedUrl = null;
+    state.committed = false;
+  }
   return navigatedUrl;
 }

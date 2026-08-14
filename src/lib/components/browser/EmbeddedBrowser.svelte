@@ -36,6 +36,7 @@
     mapEmbeddedBrowserNavigationUrl,
     planEmbeddedBrowserLoad,
     recordEmbeddedBrowserResolvedLoad,
+    reconcileEmbeddedBrowserNavigation,
     resolveEmbeddedBrowserUrl,
   } from './embedded-browser-url-resolution';
   import Fa from 'svelte-fa';
@@ -565,11 +566,12 @@
       updateNavigationState();
     });
 
-    // Navigation events. URLs are mapped through the resolved-load state so a
-    // rewritten/tunneled load displays (and reports) the requested URL, while
-    // any other navigation clears the mapping and shows the real URL.
+    // Navigation events. URLs are reconciled through the resolved-load state
+    // so a rewritten/tunneled load displays (and reports) the requested URL,
+    // while any other post-commit navigation clears the mapping and shows the
+    // real URL.
     addWebviewListener('did-navigate', (e: any) => {
-      const shownUrl = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, e.url);
+      const shownUrl = reconcileEmbeddedBrowserNavigation(resolvedLoadState, e.url);
       displayUrl = shownUrl;
       isSecure = shownUrl?.startsWith('https://');
       errorMessage = '';
@@ -583,7 +585,7 @@
     });
 
     addWebviewListener('did-navigate-in-page', (e: any) => {
-      const shownUrl = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, e.url);
+      const shownUrl = reconcileEmbeddedBrowserNavigation(resolvedLoadState, e.url);
       displayUrl = shownUrl;
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       recordEmbeddedBrowserNavigation(navigationSync, shownUrl);
@@ -758,6 +760,14 @@
         logger.warn('URL resolution failed', { url: targetUrl, detail: plan.detail });
         return;
       }
+      // Defense-in-depth: re-validate the resolved URL before feeding it to
+      // the webview (the resolver only swaps host/port, but the renderer
+      // validates everything it loads).
+      if (!isValidBrowserUrl(plan.url)) {
+        errorMessage = m.browser_embedded_invalidUrl_error();
+        logger.warn('Resolved URL failed validation', { url: targetUrl, resolvedUrl: plan.url });
+        return;
+      }
       resolveErrorDetail = '';
       resolveErrorUrl = '';
       recordEmbeddedBrowserResolvedLoad(resolvedLoadState, targetUrl, resolved);
@@ -794,6 +804,14 @@
         logger.info('loadUrl: recreating webview', { targetUrl, loadTarget });
         isRecreatingWebview = true;
         await tick(); // Wait for webview to be removed from DOM
+        if (sequence !== loadSequence) {
+          // A newer load started during the tick - don't clobber it. Reset
+          // the recreation flag so a newer load that errored before reaching
+          // its own recreate step doesn't leave the webview hidden.
+          isRecreatingWebview = false;
+          logger.debug('loadUrl: superseded during webview recreation', { targetUrl });
+          return;
+        }
         currentWebviewUrl = loadTarget;
         isRecreatingWebview = false;
         webviewReady = false;

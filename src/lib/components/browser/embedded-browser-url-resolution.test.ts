@@ -6,6 +6,7 @@ import {
   mapEmbeddedBrowserNavigationUrl,
   planEmbeddedBrowserLoad,
   recordEmbeddedBrowserResolvedLoad,
+  reconcileEmbeddedBrowserNavigation,
   resolveEmbeddedBrowserUrl,
   type EmbeddedBrowserResolvedUrl,
 } from './embedded-browser-url-resolution';
@@ -83,11 +84,11 @@ describe('resolved-load display mapping', () => {
       requestedUrl: 'http://localhost:3000/app',
     });
 
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/app')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/app')).toBe(
       'http://localhost:3000/app',
     );
     // Mapping is stable across repeated events for the same load (reload).
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/app')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/app')).toBe(
       'http://localhost:3000/app',
     );
   });
@@ -99,24 +100,48 @@ describe('resolved-load display mapping', () => {
       rewritten: true,
     });
 
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/')).toBe(
       'http://localhost:3000',
     );
   });
 
-  it('clears the mapping when the webview navigates elsewhere', () => {
+  it('clears the mapping when the webview navigates elsewhere after commit', () => {
     const state = createEmbeddedBrowserResolvedLoadState();
     recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/app', {
       url: 'http://10.0.0.5:3000/app',
       rewritten: true,
     });
 
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/other')).toBe(
+    // The load commits, then the user clicks a link.
+    reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/app');
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/other')).toBe(
       'http://10.0.0.5:3000/other',
     );
     // Once cleared, even the original resolved URL displays as-is.
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/app')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/app')).toBe(
       'http://10.0.0.5:3000/app',
+    );
+  });
+
+  it('does not let a stale event from a superseded load clear an uncommitted mapping', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    // Load A commits...
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/a', {
+      url: 'http://10.0.0.5:3000/a',
+      rewritten: true,
+    });
+    reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/a');
+    // ...then load B records its mapping, and A's queued event arrives late.
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/b', {
+      url: 'http://10.0.0.5:3000/b',
+      rewritten: true,
+    });
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/a')).toBe(
+      'http://10.0.0.5:3000/a',
+    );
+    // B's own commit still maps to its requested URL.
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/b')).toBe(
+      'http://localhost:3000/b',
     );
   });
 
@@ -127,8 +152,8 @@ describe('resolved-load display mapping', () => {
       rewritten: true,
     });
 
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'about:blank')).toBe('about:blank');
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/app')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'about:blank')).toBe('about:blank');
+    expect(reconcileEmbeddedBrowserNavigation(state, 'http://10.0.0.5:3000/app')).toBe(
       'http://localhost:3000/app',
     );
   });
@@ -141,9 +166,26 @@ describe('resolved-load display mapping', () => {
     });
 
     expect(state.requestedUrl).toBeNull();
-    expect(mapEmbeddedBrowserNavigationUrl(state, 'https://example.com/')).toBe(
+    expect(reconcileEmbeddedBrowserNavigation(state, 'https://example.com/')).toBe(
       'https://example.com/',
     );
+  });
+
+  it('mapEmbeddedBrowserNavigationUrl is pure - read-only callers never mutate the mapping', () => {
+    const state = createEmbeddedBrowserResolvedLoadState();
+    recordEmbeddedBrowserResolvedLoad(state, 'http://localhost:3000/app', {
+      url: 'http://10.0.0.5:3000/app',
+      rewritten: true,
+    });
+
+    // A non-matching read does NOT clear the mapping.
+    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/other')).toBe(
+      'http://10.0.0.5:3000/other',
+    );
+    expect(mapEmbeddedBrowserNavigationUrl(state, 'http://10.0.0.5:3000/app')).toBe(
+      'http://localhost:3000/app',
+    );
+    expect(state.requestedUrl).toBe('http://localhost:3000/app');
   });
 });
 

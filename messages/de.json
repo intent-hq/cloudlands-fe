@@ -4331,7 +4331,7 @@
   "browser_embedded_localhostRefusedPort_error": "Verbindung mit localhost:{port} nicht möglich. Der Server läuft möglicherweise nicht.",
   "browser_embedded_localhostRefused_error": "Verbindung mit localhost nicht möglich. Der Server läuft möglicherweise nicht.",
   "browser_embedded_loadFailed_error": "Seite konnte nicht geladen werden",
-  "browser_embedded_resolveFailed_error": "Diese URL ist vom Remote-Daemon aus nicht erreichbar",
+  "browser_embedded_resolveFailed_error": "Diese URL ist auf dem Remote-Daemon-Host nicht erreichbar",
   "browser_embedded_protocolNotAllowed_error": "Protokoll \"{protocol}\" ist nicht erlaubt. Unterstützt: {protocols}",
   "browser_embedded_selfLoad_error": "Die App kann nicht in sich selbst geladen werden",
   "browser_embedded_invalidUrlFormat_error": "Ungültiges URL-Format",
