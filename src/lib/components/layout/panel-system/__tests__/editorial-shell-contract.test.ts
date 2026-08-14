@@ -249,7 +249,7 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-4 py-2');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-3 py-2');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');
