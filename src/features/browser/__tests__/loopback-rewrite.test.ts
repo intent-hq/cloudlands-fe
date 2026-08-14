@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyLoopbackHost,
+  loopbackContextFromTransport,
   rewriteLoopbackUrl,
   type LoopbackRewriteContext,
 } from '../main/loopback-rewrite';
@@ -137,5 +138,50 @@ describe('rewriteLoopbackUrl — no-op paths', () => {
     expect(result.url).toBe('not a url');
     expect(result.rewritten).toBe(false);
     expect(result.reason).toContain('not a parseable URL');
+  });
+});
+
+describe('loopbackContextFromTransport', () => {
+  it('resolves local when the backend is same-host or UDS', () => {
+    expect(loopbackContextFromTransport(true)).toEqual({ daemonIsRemote: false });
+    expect(loopbackContextFromTransport(false, { transport: 'uds' })).toEqual({
+      daemonIsRemote: false,
+    });
+  });
+
+  it('resolves the remote host for wss and tcp transports', () => {
+    expect(loopbackContextFromTransport(false, { transport: 'wss', host: '10.0.0.5' })).toEqual({
+      daemonIsRemote: true,
+      daemonHost: '10.0.0.5',
+    });
+    expect(loopbackContextFromTransport(false, { transport: 'tcp', host: '10.0.0.5' })).toEqual({
+      daemonIsRemote: true,
+      daemonHost: '10.0.0.5',
+    });
+  });
+
+  it('resolves the remote host from the ws URL', () => {
+    expect(
+      loopbackContextFromTransport(false, { transport: 'ws', wsUrl: 'ws://10.0.0.5:5181/ws' }),
+    ).toEqual({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+  });
+
+  it('treats loopback ws/tcp targets as local (dev loopback WS)', () => {
+    expect(
+      loopbackContextFromTransport(false, { transport: 'ws', wsUrl: 'ws://127.0.0.1:5181/ws' }),
+    ).toEqual({ daemonIsRemote: false });
+    expect(loopbackContextFromTransport(false, { transport: 'tcp', host: 'localhost' })).toEqual({
+      daemonIsRemote: false,
+    });
+  });
+
+  it('degrades to remote-without-host for missing or unparseable targets', () => {
+    expect(loopbackContextFromTransport(false)).toEqual({ daemonIsRemote: true });
+    expect(loopbackContextFromTransport(false, { transport: 'ws', wsUrl: 'not-a-url' })).toEqual({
+      daemonIsRemote: true,
+    });
+    expect(loopbackContextFromTransport(false, { transport: 'wss' })).toEqual({
+      daemonIsRemote: true,
+    });
   });
 });

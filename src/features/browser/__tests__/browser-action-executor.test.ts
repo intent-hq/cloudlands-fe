@@ -345,6 +345,179 @@ describe('browser-action-executor', () => {
       });
     });
   });
+
+  // =========================================================================
+  // Loopback-hostname rewrite (intent-hq/monorepo#2323)
+  // =========================================================================
+  describe('loopback rewrite', () => {
+    const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+    const localContext = () => ({ daemonIsRemote: false });
+
+    it('openTab rewrites bare loopback to the daemon host with echo + warning in remote mode', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/x?q=1', undefined);
+      expect(result.results[0]?.result).toMatchObject({
+        requestedUrl: 'http://127.0.0.1:3000/x?q=1',
+        finalUrl: 'http://10.0.0.5:3000/x?q=1',
+        rewritten: true,
+      });
+      const payload = result.results[0]?.result as Record<string, unknown>;
+      expect(payload.reason).toContain('10.0.0.5');
+      expect(payload.warning).toContain('daemon.localhost');
+      expect(payload.warning).toContain('client.localhost');
+    });
+
+    it('openTab rewrites daemon.localhost to the daemon host without a warning', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+      const payload = result.results[0]?.result as Record<string, unknown>;
+      expect(payload.rewritten).toBe(true);
+      expect(payload.warning).toBeUndefined();
+    });
+
+    it('openTab rewrites client.localhost to 127.0.0.1 in remote mode', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://client.localhost:5173/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined);
+      const payload = result.results[0]?.result as Record<string, unknown>;
+      expect(payload.rewritten).toBe(true);
+      expect(payload.warning).toBeUndefined();
+    });
+
+    it('openTab idle-tab reuse navigates the reused tab to the rewritten URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
+        'tab-idle',
+        `window.location.href = ${JSON.stringify('http://10.0.0.5:3000/')}`,
+      );
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        tabId: 'tab-idle',
+        url: 'http://10.0.0.5:3000/',
+        requestedUrl: 'http://localhost:3000/',
+        finalUrl: 'http://10.0.0.5:3000/',
+        rewritten: true,
+      });
+    });
+
+    it('navigate rewrites bare loopback and echoes the rewrite in remote mode', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://[::1]:8080/page' }] },
+        undefined,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
+        'tab-1',
+        `window.location.href = ${JSON.stringify('http://10.0.0.5:8080/page')}`,
+      );
+      expect(result.results[0]?.result).toMatchObject({
+        tabId: 'tab-1',
+        url: 'http://10.0.0.5:8080/page',
+        requestedUrl: 'http://[::1]:8080/page',
+        finalUrl: 'http://10.0.0.5:8080/page',
+        rewritten: true,
+      });
+    });
+
+    it('keeps bare loopback unchanged with an unchanged result shape in local mode', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://127.0.0.1:8080/page' }] },
+        undefined,
+        undefined,
+        undefined,
+        localContext,
+      );
+      // Byte-identical result for non-rewritten URLs: no rewrite echo fields.
+      expect(result.results[0]?.result).toEqual({
+        tabId: 'tab-1',
+        url: 'http://127.0.0.1:8080/page',
+      });
+    });
+
+    it('rewrites daemon.localhost and client.localhost to 127.0.0.1 in local mode', async () => {
+      for (const url of ['http://daemon.localhost:3000/', 'http://client.localhost:3000/']) {
+        mockOpenTabFn.mockClear();
+        const result = await executeActions(
+          { actions: [{ action: 'openTab', url }] },
+          mockOpenTabFn,
+          undefined,
+          undefined,
+          localContext,
+        );
+        expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+        expect(result.results[0]?.result).toMatchObject({
+          requestedUrl: url,
+          finalUrl: 'http://127.0.0.1:3000/',
+          rewritten: true,
+        });
+      }
+    });
+
+    it('defaults to local-daemon behavior when no context getter is supplied', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        mockOpenTabFn,
+      );
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/', undefined);
+      expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
+    });
+
+    it('leaves non-loopback URLs untouched in remote mode', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined);
+      expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
+    });
+  });
 });
 
 // =============================================================================

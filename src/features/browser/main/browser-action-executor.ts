@@ -15,6 +15,11 @@ import { Logger } from '../../../shared/logger';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
+import {
+  rewriteLoopbackUrl,
+  type LoopbackRewriteContext,
+  type LoopbackRewriteResult,
+} from './loopback-rewrite';
 
 const logger = new Logger('BrowserActionExecutor');
 
@@ -189,6 +194,22 @@ function requireWorkspaceId(workspaceId: string | undefined, action: string): st
   return workspaceId;
 }
 
+/**
+ * Echo fields merged into an action's result when its URL was rewritten by
+ * the loopback-hostname table (intent-hq/monorepo#2323). Empty for
+ * non-rewritten URLs so their result shape is unchanged.
+ */
+function rewriteEcho(rewrite: LoopbackRewriteResult): Record<string, unknown> {
+  if (!rewrite.rewritten) return {};
+  return {
+    requestedUrl: rewrite.requestedUrl,
+    finalUrl: rewrite.url,
+    rewritten: true,
+    reason: rewrite.reason,
+    ...(rewrite.warning ? { warning: rewrite.warning } : {}),
+  };
+}
+
 // Schema for the full action sequence
 const ActionSequenceSchema = z.object({
   actions: z.array(BrowserActionSchema),
@@ -231,6 +252,7 @@ async function executeAction(
   ) => { success: boolean; message: string },
   agentId?: string,
   workspaceId?: string,
+  getLoopbackContext?: () => LoopbackRewriteContext,
 ): Promise<ActionResult> {
   const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
 
@@ -366,25 +388,34 @@ async function executeAction(
           return { action: 'openTab', success: false, error: openTabUrlError };
         }
 
+        // Loopback-hostname rewrite (daemon.localhost / client.localhost /
+        // bare loopback) — a no-op for non-loopback URLs and local daemons.
+        const rewrite = rewriteLoopbackUrl(
+          action.url,
+          getLoopbackContext?.() ?? { daemonIsRemote: false },
+        );
+        const echo = rewriteEcho(rewrite);
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
         if (agentId) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
           if (idleTabId) {
             logger.info('Reusing idle browser tab instead of opening new one', {
               tabId: idleTabId,
-              url: action.url,
+              url: rewrite.url,
+              requestedUrl: action.url,
               agentId,
             });
             try {
               await embeddedBrowserCdp.evaluate(
                 idleTabId,
-                `window.location.href = ${JSON.stringify(action.url)}`,
+                `window.location.href = ${JSON.stringify(rewrite.url)}`,
               );
               embeddedBrowserCdp.focusTab(idleTabId, workspaceId);
               return {
                 action: 'openTab',
                 success: true,
-                result: { reused: true, tabId: idleTabId, url: action.url },
+                result: { reused: true, tabId: idleTabId, url: rewrite.url, ...echo },
               };
             } catch (err) {
               logger.warn('Failed to reuse idle tab, falling back to opening new tab', {
@@ -403,8 +434,8 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
-        const result = openTabFn(action.url, action.position);
-        return { action: 'openTab', success: result.success, result };
+        const result = openTabFn(rewrite.url, action.position);
+        return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
       }
 
       case 'closeTab': {
@@ -432,14 +463,20 @@ async function executeAction(
           };
         }
 
+        // Loopback-hostname rewrite (daemon.localhost / client.localhost /
+        // bare loopback) — a no-op for non-loopback URLs and local daemons.
+        const rewrite = rewriteLoopbackUrl(
+          action.url,
+          getLoopbackContext?.() ?? { daemonIsRemote: false },
+        );
         await embeddedBrowserCdp.evaluate(
           resolvedTabId,
-          `window.location.href = ${JSON.stringify(action.url)}`,
+          `window.location.href = ${JSON.stringify(rewrite.url)}`,
         );
         return {
           action: 'navigate',
           success: true,
-          result: { tabId: resolvedTabId, url: action.url },
+          result: { tabId: resolvedTabId, url: rewrite.url, ...rewriteEcho(rewrite) },
         };
       }
 
@@ -472,6 +509,10 @@ async function executeAction(
  * and the error is returned along with results from successful actions.
  *
  * @param agentId - If provided, enables tab lease tracking and idle tab reuse
+ * @param getLoopbackContext - Injectable resolver for the daemon loopback
+ *   locality (see `loopback-rewrite.ts`); defaults to a local daemon, so
+ *   `daemon.localhost`/`client.localhost` resolve to `127.0.0.1` and bare
+ *   loopback URLs pass through unchanged
  */
 export async function executeActions(
   input: unknown,
@@ -481,6 +522,7 @@ export async function executeActions(
   ) => { success: boolean; message: string },
   agentId?: string,
   workspaceId?: string,
+  getLoopbackContext?: () => LoopbackRewriteContext,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -498,7 +540,14 @@ export async function executeActions(
   const results: ActionResult[] = [];
 
   for (const action of actions) {
-    const result = await executeAction(action, defaultTabId, openTabFn, agentId, workspaceId);
+    const result = await executeAction(
+      action,
+      defaultTabId,
+      openTabFn,
+      agentId,
+      workspaceId,
+      getLoopbackContext,
+    );
     results.push(result);
 
     if (!result.success) {

@@ -18,6 +18,8 @@ import {
   type ActionSequence,
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
+import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
+import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserIPC');
@@ -75,6 +77,24 @@ const ExecSchema = z.object({
 });
 
 /**
+ * Resolve the daemon loopback locality from the active backend connection so
+ * `navigate`/`openTab` URLs can be rewritten per the loopback-hostname table
+ * (intent-hq/monorepo#2323). Falls back to a local daemon (no bare-loopback
+ * rewriting; `*.localhost` aliases still resolve to `127.0.0.1`) if the
+ * connection state cannot be read.
+ */
+function getDaemonLoopbackContext(): LoopbackRewriteContext {
+  try {
+    return loopbackContextFromTransport(isSameHostBackendActive(), getBackendClient().getConfig());
+  } catch (err) {
+    logger.warn('Could not resolve daemon loopback context; assuming local daemon', {
+      error: (err as Error).message,
+    });
+    return { daemonIsRemote: false };
+  }
+}
+
+/**
  * Execute a sequence of browser actions.
  *
  * This is a secure alternative to arbitrary code execution - each action
@@ -93,6 +113,7 @@ export async function executeBrowserActions(
     (url, position) => openBrowserTab(url, position, workspaceId),
     agentId,
     workspaceId,
+    getDaemonLoopbackContext,
   );
 }
 

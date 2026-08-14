@@ -56,6 +56,41 @@ export function classifyLoopbackHost(hostname: string): LoopbackHostKind {
   return 'other';
 }
 
+/** Transport-config subset needed to resolve the daemon loopback context. */
+export interface TransportConfigForLoopback {
+  transport: 'uds' | 'tcp' | 'ws' | 'wss';
+  wsUrl?: string;
+  host?: string;
+}
+
+/**
+ * Resolve the rewrite context from the active backend transport. `sameHost`
+ * is `isSameHostBackendActive()` (UDS ⇒ same host by construction); for the
+ * env/dev `ws`/`tcp` transports — which `isSameHostBackendActive()` reports as
+ * not-same-host — a loopback target host still means the daemon runs on this
+ * machine, so it resolves as local. Pure and never throws.
+ */
+export function loopbackContextFromTransport(
+  sameHost: boolean,
+  config?: TransportConfigForLoopback,
+): LoopbackRewriteContext {
+  if (sameHost || config?.transport === 'uds') return { daemonIsRemote: false };
+  let host: string | undefined;
+  if (config?.transport === 'ws') {
+    try {
+      host = config.wsUrl ? new URL(config.wsUrl).hostname : undefined;
+    } catch {
+      host = undefined;
+    }
+  } else if (config?.transport === 'wss' || config?.transport === 'tcp') {
+    host = config.host;
+  }
+  if (host && classifyLoopbackHost(host) === 'bare-loopback') {
+    return { daemonIsRemote: false };
+  }
+  return host ? { daemonIsRemote: true, daemonHost: host } : { daemonIsRemote: true };
+}
+
 /** IPv6 daemon hosts must be bracketed before assignment to `URL.hostname`. */
 function toUrlHostname(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
@@ -144,8 +179,11 @@ export function rewriteLoopbackUrl(
     requestedUrl: rawUrl,
     reason: `bare loopback URL assumed daemon-local; rewritten to remote daemon host ${daemonHost}`,
     warning:
+      // i18n-ignore (agent-facing protocol warning, not user-facing)
       `Loopback host "${url.hostname}" was assumed to mean the daemon machine and rewritten to ` +
+      // i18n-ignore (agent-facing protocol warning, not user-facing)
       `${daemonHost}. Use http(s)://${DAEMON_LOCALHOST} to target the daemon machine explicitly, or ` +
+      // i18n-ignore (agent-facing protocol warning, not user-facing)
       `http(s)://${CLIENT_LOCALHOST} to target the user's machine.`,
   };
 }
