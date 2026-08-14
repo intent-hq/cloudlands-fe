@@ -19,6 +19,7 @@ import {
   selectSidecarRunLog,
   selectSidecarRunLogPending,
   selectSidecarRunLogError,
+  selectDaemonVersionComparison,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
@@ -110,5 +111,75 @@ describe('sidecar startup-failure + hasEverConnected selectors', () => {
     expect(selectSidecarRunLog.select(fetched)).toEqual(runLog);
     expect(selectSidecarRunLogPending.select(fetched)).toBe(true);
     expect(selectSidecarRunLogError.select(fetched)).toBe('bridge unavailable');
+  });
+});
+
+describe('selectDaemonVersionComparison', () => {
+  function versionState(daemonVersion?: string, pinnedVersion?: string): StoreState {
+    return {
+      daemonHealth: {
+        ...initialState,
+        stats:
+          daemonVersion === undefined
+            ? { clients: 0, agents: 0, listenMode: 'uds', os: 'linux', arch: 'x64' }
+            : {
+                clients: 0,
+                agents: 0,
+                listenMode: 'uds',
+                os: 'linux',
+                arch: 'x64',
+                version: daemonVersion,
+              },
+        transport:
+          pinnedVersion === undefined
+            ? { mode: 'sidecar-uds' as const }
+            : { mode: 'sidecar-uds' as const, pinnedVersion },
+      },
+    } as unknown as StoreState;
+  }
+
+  it('reports equal when the daemon version matches the pin', () => {
+    expect(selectDaemonVersionComparison.select(versionState('0.9.3', '0.9.3'))).toEqual({
+      comparison: 'equal',
+      daemonVersion: '0.9.3',
+      pinnedVersion: '0.9.3',
+    });
+  });
+
+  it('reports older when the daemon is behind the pin', () => {
+    expect(selectDaemonVersionComparison.select(versionState('0.9.2', '0.9.3'))).toEqual({
+      comparison: 'older',
+      daemonVersion: '0.9.2',
+      pinnedVersion: '0.9.3',
+    });
+  });
+
+  it('reports newer when the daemon is ahead of the pin', () => {
+    expect(selectDaemonVersionComparison.select(versionState('1.0.0', '0.9.3'))).toEqual({
+      comparison: 'newer',
+      daemonVersion: '1.0.0',
+      pinnedVersion: '0.9.3',
+    });
+  });
+
+  it('returns null when stats.version is missing (older daemon)', () => {
+    expect(selectDaemonVersionComparison.select(versionState(undefined, '0.9.3'))).toBeNull();
+  });
+
+  it('returns null when the transport carries no pinnedVersion', () => {
+    expect(selectDaemonVersionComparison.select(versionState('0.9.3', undefined))).toBeNull();
+  });
+
+  it('returns null before any system.status poll or transport info', () => {
+    const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
+    expect(selectDaemonVersionComparison.select(empty)).toBeNull();
+  });
+
+  it('reports unknown (no mismatch) for an unparsable version', () => {
+    expect(selectDaemonVersionComparison.select(versionState('dev-build', '0.9.3'))).toEqual({
+      comparison: 'unknown',
+      daemonVersion: 'dev-build',
+      pinnedVersion: '0.9.3',
+    });
   });
 });

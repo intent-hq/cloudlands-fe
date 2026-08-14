@@ -37,11 +37,11 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-// Mock tooltip with a passthrough component so the real dropdown can render
+// Mock tooltip with a passthrough component so the real dropdown can render.
+// The mock also renders the `content` snippet inline (role="tooltip") so tests
+// can assert tooltip text without simulating hover.
 vi.mock('$lib/components/ui/tooltip', async () => {
-  const Tooltip = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockTooltip.svelte')
-  ).default;
+  const Tooltip = (await import('./__tests__/mocks/MockTooltipWithContent.svelte')).default;
   return { Tooltip };
 });
 
@@ -365,6 +365,116 @@ describe('DaemonStatusIndicator', () => {
       const style = menu.getAttribute('style') ?? '';
       expect(style).toContain('max-height: var(--bits-dropdown-menu-content-available-height)');
       expect(style).not.toContain('24rem');
+    });
+  });
+
+  describe('daemon-vs-pin version mismatch', () => {
+    function withVersions(opts: {
+      health?: 'healthy' | 'degraded' | 'down';
+      daemonVersion?: string;
+      pinnedVersion?: string;
+    }) {
+      const { health = 'healthy', daemonVersion, pinnedVersion } = opts;
+      return {
+        daemonHealth: {
+          health,
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            ...(daemonVersion ? { version: daemonVersion } : {}),
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+          ...(pinnedVersion ? { transport: { mode: 'sidecar-uds' as const, pinnedVersion } } : {}),
+        },
+      };
+    }
+
+    const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
+
+    it('turns the healthy dot yellow and updates the trigger label when the daemon is behind the pin', async () => {
+      mockStoreState = withVersions({ daemonVersion: '0.9.0', pinnedVersion: '1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', {
+        name: 'intentd: healthy (version mismatch)',
+      });
+      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
+      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
+    });
+
+    it('shows the "behind" tooltip and warning icon on the version row when the daemon is older', async () => {
+      mockStoreState = withVersions({ daemonVersion: '0.9.0', pinnedVersion: '1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
+      );
+
+      expect(
+        screen.getByText('Connected intentd v0.9.0 is behind the bundled sidecar (v1.0.0)'),
+      ).toBeTruthy();
+      expect(screen.getByLabelText('Daemon version mismatch')).toBeTruthy();
+    });
+
+    it('shows the "ahead" tooltip when the daemon is newer than the pin', async () => {
+      mockStoreState = withVersions({ daemonVersion: '2.0.0', pinnedVersion: '1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'intentd: healthy (version mismatch)' }),
+      );
+
+      expect(
+        screen.getByText('Connected intentd v2.0.0 is ahead of the bundled sidecar (v1.0.0)'),
+      ).toBeTruthy();
+    });
+
+    it('keeps the green dot and plain version row when the versions match', async () => {
+      mockStoreState = withVersions({ daemonVersion: '1.0.0', pinnedVersion: '1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+
+      await fireEvent.click(trigger);
+      expect(screen.getByText('1.0.0')).toBeTruthy();
+      expect(screen.queryByLabelText('Daemon version mismatch')).toBeNull();
+      expect(screen.queryByText(/bundled sidecar/)).toBeNull();
+    });
+
+    it('keeps the green dot when there is no pin to compare against', async () => {
+      mockStoreState = withVersions({ daemonVersion: '1.0.0' });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(true);
+    });
+
+    it('does not override the degraded label/dot with the mismatch state', async () => {
+      mockStoreState = withVersions({
+        health: 'degraded',
+        daemonVersion: '0.9.0',
+        pinnedVersion: '1.0.0',
+      });
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const trigger = screen.getByRole('button', { name: 'intentd: degraded' });
+      expect(dotOf(trigger).classList.contains('bg-yellow-500')).toBe(true);
     });
   });
 

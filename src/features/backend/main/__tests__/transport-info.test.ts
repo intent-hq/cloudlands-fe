@@ -118,4 +118,46 @@ describe('formatTransportInfo', () => {
       target: 'tcp:10.0.0.1:6000',
     });
   });
+
+  it('includes pinnedVersion for sidecar-uds when a pin is injected', () => {
+    setConnectionMode('sidecar');
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, '0.1.0')).toEqual({
+      mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
+      pinnedVersion: '0.1.0',
+    });
+  });
+
+  it('includes pinnedVersion for external-uds alongside the version handshake fields', () => {
+    setConnectionMode('external');
+    setDaemonVersionInfo({ daemonVersion: '0.2.0', pinnedVersion: '0.1.0', versionMismatch: true });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, '0.1.0')).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      daemonVersion: '0.2.0',
+      versionMismatch: true,
+      pinnedVersion: '0.1.0',
+    });
+  });
+
+  it('includes pinnedVersion for external-ws (ws, wss, and the TCP stub)', () => {
+    expect(
+      formatTransportInfo({ transport: 'ws', wsUrl: 'ws://127.0.0.1:5181/ws' }, '0.1.0'),
+    ).toEqual({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws', pinnedVersion: '0.1.0' });
+    expect(formatTransportInfo({ transport: 'wss', host: 'h', port: 443 }, '0.1.0')).toEqual({
+      mode: 'external-ws',
+      target: 'wss:h:443',
+      pinnedVersion: '0.1.0',
+    });
+    expect(formatTransportInfo({ transport: 'tcp', host: '10.0.0.1', port: 6000 }, '0.1.0')).toEqual(
+      { mode: 'external-ws', target: 'tcp:10.0.0.1:6000', pinnedVersion: '0.1.0' },
+    );
+  });
+
+  it('omits pinnedVersion when the pin is null (missing/malformed pin file)', () => {
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' }, null)).toEqual({
+      mode: 'sidecar-uds',
+      target: '/tmp/i.sock',
+    });
+  });
 });

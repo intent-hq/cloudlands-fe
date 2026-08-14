@@ -87,6 +87,8 @@ export interface BackendTransportInfo {
   daemonVersion?: string;
   /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
   versionMismatch?: boolean;
+  /** The bundled intentd.version pin, reported in every transport mode. */
+  pinnedVersion?: string;
 }
 
 /**
