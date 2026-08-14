@@ -99,7 +99,7 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     if (result.ok) expect(result.data.hash).toBe('abc1234');
   });
 
-  it('getHistory forwards git.commits with limit and unwraps the items page', async () => {
+  it('getHistory forwards git.commits with limit and returns the items page envelope', async () => {
     const items = [
       {
         hash: 'aaaa111',
@@ -116,7 +116,8 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     const result = await gitClient.getHistory(wsId, 5);
 
     expect(mockedRequest).toHaveBeenCalledWith('git.commits', { workspaceId: wsId, limit: 5 });
-    expect(result).toEqual({ ok: true, data: items });
+    // A null wire nextToken (last page) folds to an absent field.
+    expect(result).toEqual({ ok: true, data: { items } });
   });
 
   it('getHistory omits limit when not provided and folds errors', async () => {
@@ -139,6 +140,23 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
       limit: 30,
       gitRootId: 'root-1',
     });
+  });
+
+  it('getHistory forwards nextToken and surfaces the returned nextToken', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: [], nextToken: 'page-3' });
+
+    const result = await gitClient.getHistory(wsId, 30, {
+      gitRootId: 'root-1',
+      nextToken: 'page-2',
+    });
+
+    expect(mockedRequest).toHaveBeenCalledWith('git.commits', {
+      workspaceId: wsId,
+      limit: 30,
+      gitRootId: 'root-1',
+      nextToken: 'page-2',
+    });
+    expect(result).toEqual({ ok: true, data: { items: [], nextToken: 'page-3' } });
   });
 
   it('showFile forwards git.showFile and unwraps { content }', async () => {

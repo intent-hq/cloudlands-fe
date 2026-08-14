@@ -644,7 +644,7 @@ async function resetMocks() {
   vi.clearAllMocks();
   mockStoreState.value = {};
   mockRootGetStatus.mockResolvedValue({ ok: true, data: {} });
-  mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+  mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
   mockFileTrackingStore.loading = false;
   mockFileTrackingStore.currentWorkspaceId = 'ws-1';
   mockFileTrackingStore.stagedChanges = [];
@@ -2157,16 +2157,18 @@ describe('SidebarChangesPanel', () => {
       });
       mockRootGetHistory.mockResolvedValue({
         ok: true,
-        data: [
-          {
-            hash: 'aaaa1111bbbb',
-            sha: 'aaaa111',
-            author: 'Dev',
-            email: 'dev@example.com',
-            date: new Date().toISOString(),
-            message: 'feat: sub work',
-          },
-        ],
+        data: {
+          items: [
+            {
+              hash: 'aaaa1111bbbb',
+              sha: 'aaaa111',
+              author: 'Dev',
+              email: 'dev@example.com',
+              date: new Date().toISOString(),
+              message: 'feat: sub work',
+            },
+          ],
+        },
       });
 
       const { container } = await renderPanel();
@@ -2260,7 +2262,7 @@ describe('SidebarChangesPanel', () => {
           hasUntrackedFiles: false,
         },
       });
-      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
 
       const { container } = await renderPanel();
 
@@ -2328,7 +2330,7 @@ describe('SidebarChangesPanel', () => {
           hasUntrackedFiles: false,
         },
       });
-      mockRootGetHistory.mockResolvedValue({ ok: true, data: [] });
+      mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
 
       const { container } = await renderPanel();
 
