@@ -3846,6 +3846,23 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     });
   });
 
+  it.each(['created', 'updated', 'removed'] as const)(
+    'refreshes script.list after a script definition is %s',
+    async (action) => {
+      await primeBridge();
+      const refreshScripts = await import('$store/renderer/slices/scripts/scripts-slice').then(
+        (module) => module.refreshScripts,
+      );
+      const dispatchSpy = vi.fn();
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+
+      capturedHandlers[0]!(notification('script:changed', { scriptId: SCRIPT_ID, action }));
+
+      expect(dispatchSpy).toHaveBeenCalledWith(refreshScripts(WS));
+      dispatchGetterSpy.mockRestore();
+    },
+  );
+
   it('mirrors detectedUrl from script:state into the runtime state', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -6352,9 +6369,8 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
     capturedHandlers.length = 0;
     // Tab state persists across tests via appStore — clear the whole strip
     // (openTabs, currentTabId, stacks, recently-closed) before each test.
-    const { cleanupInvalidWorkspaceTabs } = await import(
-      '$store/renderer/slices/tab-state/tab-state-slice'
-    );
+    const { cleanupInvalidWorkspaceTabs } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
     appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
   });
 
@@ -6382,9 +6398,7 @@ describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () =
   }
 
   async function openTab(workspaceId: string): Promise<void> {
-    const { openWorkspaceTab } = await import(
-      '$store/renderer/slices/tab-state/tab-state-slice'
-    );
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
     appStore.dispatch(openWorkspaceTab(workspaceId));
   }
 
@@ -8040,7 +8054,11 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
 
     // Parentless failure: inline banner + failure-registry entry (toast).
     handler(
-      notification('agent:failed', { agentId: AGENT, error: 'previous turn failed', status: 'error' }),
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'previous turn failed',
+        status: 'error',
+      }),
     );
     expect(readChatAgent()?.error).toBe('previous turn failed');
     expect(listAgentFailureEntries()).toHaveLength(1);
