@@ -15,6 +15,7 @@ import type {
   RecentlyClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
+import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
   closeActiveWorkspaceTab,
   closePanelOrWorkspaceTab,
@@ -407,6 +408,7 @@ describe('global workspace tab navigation', () => {
   it('registers the conventional macOS global-tab shortcut set', () => {
     const shortcuts: KeyboardShortcut[] = [];
     const openNewWorkspace = vi.fn();
+    const toggleWorkspaceViewMode = vi.fn();
 
     registerWorkspaceTabShortcuts({
       isMac: true,
@@ -415,6 +417,7 @@ describe('global workspace tab navigation', () => {
       getCurrentPath: () => '/workspace/ws-1',
       navigate: vi.fn(),
       openNewWorkspace,
+      toggleWorkspaceViewMode,
     });
 
     const chord = (shortcut: KeyboardShortcut) =>
@@ -429,6 +432,7 @@ describe('global workspace tab navigation', () => {
         .join('+');
     expect(shortcuts.map(chord)).toEqual([
       'meta+n',
+      'meta+shift+l',
       'meta+t',
       'meta+w',
       'meta+shift+t',
@@ -447,5 +451,55 @@ describe('global workspace tab navigation', () => {
 
     shortcuts[0].action();
     expect(openNewWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['macOS', true, 'meta+shift+l'],
+    ['Windows', false, 'ctrl+shift+l'],
+    ['Linux', false, 'ctrl+shift+l'],
+  ])('registers the workspace view shortcut on %s', (_platform, isMac, expectedChord) => {
+    const shortcuts: KeyboardShortcut[] = [];
+    const toggleWorkspaceViewMode = vi.fn();
+    let currentPath = '/workspace/ws-1';
+
+    registerWorkspaceTabShortcuts({
+      isMac,
+      register: (shortcut) => shortcuts.push(shortcut),
+      store: makeStore(),
+      getCurrentPath: () => currentPath,
+      navigate: vi.fn(),
+      openNewWorkspace: vi.fn(),
+      toggleWorkspaceViewMode,
+    });
+
+    const shortcut = shortcuts.find((candidate) => candidate.key.toLowerCase() === 'l')!;
+    const chord = [
+      shortcut.meta && 'meta',
+      shortcut.ctrl && 'ctrl',
+      shortcut.shift && 'shift',
+      shortcut.alt && 'alt',
+      shortcut.key.toLowerCase(),
+    ]
+      .filter(Boolean)
+      .join('+');
+    expect(chord).toBe(expectedChord);
+    expect(shortcut).toMatchObject({
+      ignoreRepeat: true,
+      description: 'Switch workspace view',
+    });
+    expect(shortcut.skipInEditableElements).toBeUndefined();
+    expect(shortcut.enabled?.()).toBe(true);
+    shortcut.action();
+    expect(toggleWorkspaceViewMode).toHaveBeenCalledOnce();
+
+    for (currentPath of ['/', '/settings', '/workspace/new']) {
+      expect(shortcut.enabled?.()).toBe(false);
+    }
+  });
+
+  it('does not collide with either panel split chord', () => {
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).toBe('mod+shift+l');
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_HORIZONTAL.key);
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE.key).not.toBe(SHORTCUTS.SPLIT_PANEL_VERTICAL.key);
   });
 });

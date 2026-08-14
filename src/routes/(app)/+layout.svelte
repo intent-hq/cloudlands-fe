@@ -30,6 +30,10 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import {
+    cancelWorkspaceViewModeTransition,
+    toggleWorkspaceViewModeWithTransition,
+  } from '$features/workspace/workspace-view-mode-action';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -451,6 +455,8 @@
       description: string;
       skipInEditableElements?: boolean;
       global?: boolean;
+      ignoreRepeat?: boolean;
+      enabled?: () => boolean;
       action: () => void;
     }) => {
       paletteShortcuts!.register({
@@ -462,6 +468,8 @@
         description: opts.description,
         skipInEditableElements: opts.skipInEditableElements,
         global: opts.global,
+        ignoreRepeat: opts.ignoreRepeat,
+        enabled: opts.enabled,
         action: opts.action,
       });
     };
@@ -476,6 +484,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      toggleWorkspaceViewMode: () => void toggleWorkspaceViewModeWithTransition(),
     });
 
     // Optionally register config-driven shortcut for opening the command palette
@@ -550,6 +559,7 @@
       key: 'o',
       meta: true,
       description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      skipInEditableElements: true,
       action: toggleAllSpaces,
     });
     if (!isMac) {
@@ -557,6 +567,7 @@
         key: 'o',
         ctrl: true,
         description: 'Toggle All Spaces (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+        skipInEditableElements: true,
         action: toggleAllSpaces,
       });
     }
@@ -880,6 +891,8 @@
 
   // Set currentWorkspaceId when navigating to workspace pages
   beforeNavigate(({ to }: any) => {
+    cancelWorkspaceViewModeTransition();
+
     if (to && to.url.pathname.startsWith('/workspace/')) {
       const workspaceId = to.url.pathname.split('/')[2];
       // Don't set workspace for 'new' page - let the page handle it

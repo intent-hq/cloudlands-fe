@@ -27,6 +27,8 @@ import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace
 import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
+import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
+import { isWorkspaceViewModeRoute } from '$features/workspace/workspace-view-mode-action';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
 
@@ -77,6 +79,7 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  toggleWorkspaceViewMode: () => void;
 }
 
 function navigateToSelectedWorkspace(
@@ -266,8 +269,10 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  toggleWorkspaceViewMode,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
+  const workspaceViewModeChord = getShortcutChord('WORKSPACE_VIEW_MODE', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
 
   register({
@@ -276,6 +281,13 @@ export function registerWorkspaceTabShortcuts({
     global: true,
     description: m.workspace_shortcuts_newSpace_description(),
     action: openNewWorkspace,
+  });
+  register({
+    ...workspaceViewModeChord,
+    description: SHORTCUTS.WORKSPACE_VIEW_MODE.label,
+    ignoreRepeat: true,
+    enabled: () => isWorkspaceViewModeRoute(getCurrentPath()),
+    action: toggleWorkspaceViewMode,
   });
   register({
     ...mod,
