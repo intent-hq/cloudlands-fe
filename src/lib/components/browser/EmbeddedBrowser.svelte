@@ -871,9 +871,11 @@
     const loadedUrl = webviewRef?.getURL?.();
     let urlToCopy = '';
     if (loadedUrl && loadedUrl !== 'about:blank') {
-      urlToCopy = loadedUrl;
+      // Copy what the address bar shows: a rewritten load displays the
+      // requested URL, so map the loaded (resolved) URL back to it.
+      urlToCopy = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, loadedUrl);
     } else if (currentWebviewUrl !== 'about:blank') {
-      urlToCopy = currentWebviewUrl;
+      urlToCopy = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, currentWebviewUrl);
     }
     if (!urlToCopy) {
       toast.error(m.browser_embedded_noUrlToCopy_error());
