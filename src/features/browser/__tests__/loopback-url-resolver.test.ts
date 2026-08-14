@@ -214,6 +214,7 @@ describe('resolveBrowserUrl', () => {
       );
       expect(result.url).toBe('http://127.0.0.1:50241/page?q=1');
       expect(result.rewritten).toBe(false);
+      expect(result.reason).toContain('127.0.0.1:50241');
       expect(result.reason).toContain('active daemon-tunnel forward');
       expect(result.error).toBeUndefined();
       expect(fetchMock).not.toHaveBeenCalled();
@@ -228,7 +229,22 @@ describe('resolveBrowserUrl', () => {
       );
       expect(result.url).toBe('http://localhost:50241/');
       expect(result.rewritten).toBe(false);
+      expect(result.reason).toContain('localhost:50241');
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('normalizes an IPv6-loopback tunnel URL to 127.0.0.1 (forward listener is IPv4-only)', async () => {
+      const result = await resolveBrowserUrl(
+        'http://[::1]:50241/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:50241/page');
+      expect(result.rewritten).toBe(true);
+      expect(result.reason).toContain('normalized to 127.0.0.1');
+      expect(result.error).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
     });
 
     it('does not re-tunnel an executor-tunneled URL on second resolution (openTab handoff)', async () => {

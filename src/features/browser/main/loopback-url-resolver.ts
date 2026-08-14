@@ -84,20 +84,47 @@ function findTunnelLocalPassthrough(
   }
   const forward = forwards.find((f) => f.localPort === port);
   if (!forward) return null;
-  logger.info('URL points at an active tunnel-local forward; passing it through untouched', {
+  // Residual limitation: if the idle sweep closed this forward between the
+  // executor's resolution and a re-resolution, no forward matches anymore and
+  // the URL falls through to the ordinary rewrite → probe → tunnel path (the
+  // URL does not carry the remote port, so nothing better is possible here).
+  //
+  // The forward listener binds 127.0.0.1 only and Chromium does not fall back
+  // to IPv4 for an explicit IPv6 literal, so an `[::1]` host is normalized to
+  // 127.0.0.1 instead of passing through to a listener that does not exist.
+  const isIpv6Loopback = requested.hostname === '[::1]' || requested.hostname === '::1';
+  logger.info('URL points at an active tunnel-local forward; passing it through', {
     requestedUrl: rewrite.requestedUrl,
     localPort: forward.localPort,
     remotePort: forward.remotePort,
+    ipv6Normalized: isIpv6Loopback,
   });
+  const forwardNote =
+    // i18n-ignore (agent-facing protocol detail, not user-facing)
+    `${requested.hostname}:${port} is this machine's active daemon-tunnel forward for remote ` +
+    // i18n-ignore (agent-facing protocol detail, not user-facing)
+    `port ${forward.remotePort}`;
+  if (isIpv6Loopback) {
+    const normalized = new URL(rewrite.requestedUrl);
+    normalized.hostname = '127.0.0.1';
+    return {
+      rewrite: {
+        url: normalized.toString(),
+        rewritten: true,
+        requestedUrl: rewrite.requestedUrl,
+        reason:
+          // i18n-ignore (agent-facing protocol detail, not user-facing)
+          `${forwardNote}, which listens on 127.0.0.1 only; hostname normalized to 127.0.0.1`,
+      },
+      tunneled: false,
+    };
+  }
   return {
     rewrite: {
       url: rewrite.requestedUrl,
       rewritten: false,
-      reason:
-        // i18n-ignore (agent-facing protocol detail, not user-facing)
-        `127.0.0.1:${port} is this machine's active daemon-tunnel forward for remote port ` +
-        // i18n-ignore (agent-facing protocol detail, not user-facing)
-        `${forward.remotePort}; the URL is already resolved and passed through untouched`,
+      // i18n-ignore (agent-facing protocol detail, not user-facing)
+      reason: `${forwardNote}; the URL is already resolved and passed through untouched`,
     },
     tunneled: false,
   };
