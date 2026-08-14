@@ -1018,16 +1018,16 @@
               {/if}
             </div>
             {#if workspacePath}
-              <button
-                type="button"
-                class="mt-1 block w-full max-w-full cursor-copy truncate border-none bg-transparent p-0 text-left text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+              <Button
+                variant="plain"
+                class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
                 title={workspacePath}
                 aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
                 onclick={copyRepoPath}
                 data-sidebar-repository-path-copy
               >
-                {workspacePath}
-              </button>
+                <span class="block min-w-0 truncate">{workspacePath}</span>
+              </Button>
             {/if}
             {#if $workspace?.checkoutMode}
               <div class="mt-1.5 border-t border-border/50 pt-1.5">

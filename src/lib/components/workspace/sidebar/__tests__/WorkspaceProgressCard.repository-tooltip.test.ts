@@ -30,10 +30,10 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     expect(source).toContain('{#if workspacePath}');
     expect(source.match(/onclick=\{copyRepoPath\}/g)).toHaveLength(2);
     const pathButton = source.match(
-      /<button[^>]*data-sidebar-repository-path-copy[\s\S]*?<\/button>/,
+      /<Button[^>]*data-sidebar-repository-path-copy[\s\S]*?<\/Button>/,
     );
     expect(pathButton).not.toBeNull();
-    expect(pathButton?.[0]).toContain('type="button"');
+    expect(pathButton?.[0]).toContain('variant="plain"');
     expect(pathButton?.[0]).toContain('underline decoration-dotted underline-offset-2');
     expect(pathButton?.[0]).toContain('truncate');
     expect(pathButton?.[0]).toContain('title={workspacePath}');
