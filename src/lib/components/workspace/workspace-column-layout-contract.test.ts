@@ -99,7 +99,8 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('absolute right-2 top-2');
     expect(surface).toContain('{onCloseWorkspace}');
     expect(surface).toContain('draggableTitleRegion={columnMode}');
-    expect(sidebar).toContain('{onCloseWorkspace} />');
+    expect(sidebar).toContain('{onCloseWorkspace}');
+    expect(sidebar).toContain('hideActionsMenu={!isLauncherOverview}');
     expect(sidebar).toContain('draggable={draggableTitleRegion}');
     expect(progress).toContain('data-workspace-header-actions');
     expect(
