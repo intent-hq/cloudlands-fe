@@ -9,7 +9,7 @@
  * - Action sequence validation
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 
 // Mock the CDP service before importing the executor
@@ -353,6 +353,15 @@ describe('browser-action-executor', () => {
     const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
     const localContext = () => ({ daemonIsRemote: false });
 
+    // Remote rewrites trigger the reachability probe; stub it as reachable.
+    beforeEach(() => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('openTab rewrites bare loopback to the daemon host with echo + warning in remote mode', async () => {
       const result = await executeActions(
         { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
@@ -516,6 +525,161 @@ describe('browser-action-executor', () => {
       );
       expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined);
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
+    });
+  });
+
+  // =========================================================================
+  // Remote-rewrite reachability probe
+  // =========================================================================
+  describe('remote rewrite reachability probe', () => {
+    const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+    const localContext = () => ({ daemonIsRemote: false });
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('openTab fails with an explanatory error and opens no tab when the rewritten origin is unreachable', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.action).toBe('openTab');
+      const error = result.results[0]?.error ?? '';
+      expect(error).toContain('http://127.0.0.1:3000/x');
+      expect(error).toContain('http://10.0.0.5:3000/x');
+      expect(error).toContain('0.0.0.0');
+      expect(error).toContain('firewall');
+      expect(error).toContain('port 3000');
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('openTab probe failure also prevents idle-tab reuse navigation', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+        remoteContext,
+      );
+      expect(result.success).toBe(false);
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('navigate fails with an explanatory error and does not navigate when unreachable', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as any);
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
+        undefined,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.action).toBe('navigate');
+      expect(result.results[0]?.error).toContain('http://daemon.localhost:8080/page');
+      expect(result.results[0]?.error).toContain('http://10.0.0.5:8080/page');
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('probes the rewritten origin with a timeout signal and proceeds on success', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith('http://10.0.0.5:3000', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/x?q=1', undefined);
+    });
+
+    it('treats any HTTP response as reachable, including error statuses', async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 502 });
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+    });
+
+    it('never probes non-rewritten URLs in remote mode', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'https://example.com/x' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('never probes local-mode rewrites (daemon.localhost → 127.0.0.1)', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        localContext,
+      );
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+    });
+
+    it('never probes client.localhost rewrites in remote mode (target is this machine)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as any);
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://client.localhost:5173/' }] },
+        undefined,
+        undefined,
+        undefined,
+        remoteContext,
+      );
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
+        'tab-1',
+        `window.location.href = ${JSON.stringify('http://127.0.0.1:5173/')}`,
+      );
     });
   });
 });

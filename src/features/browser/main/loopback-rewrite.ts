@@ -40,6 +40,12 @@ export interface LoopbackRewriteResult {
   reason?: string;
   /** Ambiguity warning for bare-loopback rewrites in remote mode. */
   warning?: string;
+  /**
+   * True only when the URL was rewritten to the REMOTE daemon host (never for
+   * local-mode or `client.localhost` rewrites, which stay on this machine).
+   * The executor probes reachability before navigating when this is set.
+   */
+  remoteHost?: boolean;
 }
 
 /**
@@ -159,6 +165,7 @@ export function rewriteLoopbackUrl(
       rewritten: true,
       requestedUrl: rawUrl,
       reason: `${DAEMON_LOCALHOST} targets the daemon machine; rewritten to remote daemon host ${daemonHost}`,
+      remoteHost: true,
     };
   }
 
@@ -178,6 +185,7 @@ export function rewriteLoopbackUrl(
     rewritten: true,
     requestedUrl: rawUrl,
     reason: `bare loopback URL assumed daemon-local; rewritten to remote daemon host ${daemonHost}`,
+    remoteHost: true,
     warning:
       // i18n-ignore (agent-facing protocol warning, not user-facing)
       `Loopback host "${url.hostname}" was assumed to mean the daemon machine and rewritten to ` +

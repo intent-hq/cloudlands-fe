@@ -210,6 +210,52 @@ function rewriteEcho(rewrite: LoopbackRewriteResult): Record<string, unknown> {
   };
 }
 
+/** Timeout for the remote-rewrite reachability probe. */
+export const REMOTE_REWRITE_PROBE_TIMEOUT_MS = 1500;
+
+/**
+ * Probe the origin of a URL that was rewritten to the REMOTE daemon host
+ * before navigating to it. Any HTTP response (including error statuses)
+ * proves the host:port is reachable from this machine; only a network-level
+ * failure (connection refused, unroutable, timeout) fails the probe. URLs
+ * that were not rewritten to a remote host are never probed.
+ *
+ * Returns null when no probe is needed or the origin is reachable, else an
+ * explanatory agent-facing error message.
+ */
+async function probeRewrittenRemoteOrigin(rewrite: LoopbackRewriteResult): Promise<string | null> {
+  if (!rewrite.rewritten || !rewrite.remoteHost) return null;
+  const target = new URL(rewrite.url);
+  try {
+    await fetch(target.origin, { signal: AbortSignal.timeout(REMOTE_REWRITE_PROBE_TIMEOUT_MS) });
+    return null;
+  } catch (error) {
+    const detail =
+      error instanceof Error
+        ? error.cause instanceof Error
+          ? error.cause.message
+          : error.message
+        : String(error);
+    const port = target.port || (target.protocol === 'https:' ? '443' : '80');
+    logger.warn('Reachability probe failed for rewritten remote URL', {
+      requestedUrl: rewrite.requestedUrl,
+      rewrittenUrl: rewrite.url,
+      origin: target.origin,
+      detail,
+    });
+    return (
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `The requested URL ${rewrite.requestedUrl} was rewritten to ${rewrite.url} because the daemon runs on a remote machine, ` +
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `but ${target.origin} is not reachable from this machine (probe failed within ${REMOTE_REWRITE_PROBE_TIMEOUT_MS}ms: ${detail}). ` +
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `The server on the daemon machine is likely listening on 127.0.0.1 only — it must bind 0.0.0.0 to accept remote ` +
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `connections — or a firewall is blocking port ${port}.`
+    );
+  }
+}
+
 // Schema for the full action sequence
 const ActionSequenceSchema = z.object({
   actions: z.array(BrowserActionSchema),
@@ -396,6 +442,12 @@ async function executeAction(
         );
         const echo = rewriteEcho(rewrite);
 
+        // Rewritten to a remote host: verify reachability before opening a tab.
+        const openTabProbeError = await probeRewrittenRemoteOrigin(rewrite);
+        if (openTabProbeError) {
+          return { action: 'openTab', success: false, error: openTabProbeError };
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
         if (agentId) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
@@ -469,6 +521,13 @@ async function executeAction(
           action.url,
           getLoopbackContext?.() ?? { daemonIsRemote: false },
         );
+
+        // Rewritten to a remote host: verify reachability before navigating.
+        const navigateProbeError = await probeRewrittenRemoteOrigin(rewrite);
+        if (navigateProbeError) {
+          return { action: 'navigate', success: false, error: navigateProbeError };
+        }
+
         await embeddedBrowserCdp.evaluate(
           resolvedTabId,
           `window.location.href = ${JSON.stringify(rewrite.url)}`,

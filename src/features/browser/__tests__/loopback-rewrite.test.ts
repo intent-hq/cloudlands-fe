@@ -47,6 +47,7 @@ describe('rewriteLoopbackUrl — local (same-host) setup', () => {
     expect(result.requestedUrl).toBe('http://daemon.localhost:3000/app?x=1#top');
     expect(result.reason).toContain('daemon is local');
     expect(result.warning).toBeUndefined();
+    expect(result.remoteHost).toBeUndefined();
   });
 
   it('rewrites client.localhost to 127.0.0.1', () => {
@@ -70,6 +71,7 @@ describe('rewriteLoopbackUrl — remote daemon setup', () => {
     expect(result.requestedUrl).toBe('https://daemon.localhost:8443/a/b?q=1&r=2#frag');
     expect(result.reason).toContain('10.0.0.5');
     expect(result.warning).toBeUndefined();
+    expect(result.remoteHost).toBe(true);
   });
 
   it('rewrites client.localhost to 127.0.0.1', () => {
@@ -77,6 +79,7 @@ describe('rewriteLoopbackUrl — remote daemon setup', () => {
     expect(result.url).toBe('http://127.0.0.1:5173/');
     expect(result.rewritten).toBe(true);
     expect(result.warning).toBeUndefined();
+    expect(result.remoteHost).toBeUndefined();
   });
 
   it('rewrites bare loopback to the daemon host with an ambiguity warning', () => {
@@ -91,6 +94,7 @@ describe('rewriteLoopbackUrl — remote daemon setup', () => {
       expect(result.requestedUrl).toBe(url);
       expect(result.warning).toContain('daemon.localhost');
       expect(result.warning).toContain('client.localhost');
+      expect(result.remoteHost).toBe(true);
     }
   });
 
