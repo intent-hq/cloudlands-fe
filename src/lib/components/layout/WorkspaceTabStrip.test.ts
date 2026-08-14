@@ -257,8 +257,10 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     expect(screen.getByRole('tablist', { name: 'Open spaces' })).toBeTruthy();
+    // pl-3 preserves the 12px corner-flare clip guard; -ml-1 (not -ml-3) keeps
+    // an 8px net inset so the first tab sits clear of the view-mode toggle.
     expect(screen.getByRole('tablist', { name: 'Open spaces' }).className).toContain(
-      'pl-3 -ml-3 pr-3 -mr-2.5',
+      'pl-3 -ml-1 pr-3 -mr-2.5',
     );
     expect(screen.getAllByRole('tab')).toHaveLength(3);
     const alpha = screen.getByRole('tab', { name: /Alpha/ });

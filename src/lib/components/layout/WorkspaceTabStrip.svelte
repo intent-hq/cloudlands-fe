@@ -334,8 +334,11 @@
 </script>
 
 {#if $workspaceTabOrder$.length > 0}
+  <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
+       so overflow-x-auto does not clip it; -ml-1 gives that back minus 8px so
+       the first tab sits clear of the view-mode toggle instead of flush. -->
   <div
-    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-3 pr-3 -mr-2.5 scrollbar-none"
+    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-1 pr-3 -mr-2.5 scrollbar-none"
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     data-workspace-tab-strip
