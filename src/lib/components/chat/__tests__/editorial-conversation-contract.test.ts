@@ -81,14 +81,21 @@ describe('editorial conversation presentation contract', () => {
       /getAttribute\('data-message-id'\) === currentStickyId[\s\S]{0,200}if \(turnSpansTop\) \{\s*return currentStickyId;/,
     );
 
-    // With native anchoring off, LazyTurn owns scroll compensation for
-    // placeholder <-> content swaps above the reader's viewport so height
-    // deltas there cannot move the visible transcript.
+    // With native anchoring off, LazyTurn owns scroll compensation for ALL of
+    // its height changes above the reader's viewport — placeholder <-> content
+    // swaps AND late-settling content after a swap (the v2.37.0 one-shot
+    // compensation missed the latter, showing as intermittent 20–30px jumps at
+    // the top of the chat while scrolling; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
     const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
+    expect(lazyTurn).toContain("import { createHeightLedger } from './lazy-turn-scroll-ledger';");
     expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
-    expect(lazyTurn).toMatch(/if \(!wasAboveViewport\) return;[\s\S]{0,300}scroller\.scrollTop \+= delta;/);
+    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(\)\);/);
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
+    // The ResizeObserver path must reconcile the ledger on EVERY fire (before
+    // the shouldRenderContent early-return) so post-swap settles are caught.
+    expect(lazyTurn).toMatch(/ledger\.account\(\);\s*\n\s*if \(!shouldRenderContent\) return;/);
   });
 
   it('does not restore the removed date separators', () => {
