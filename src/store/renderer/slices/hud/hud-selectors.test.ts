@@ -175,6 +175,72 @@ describe('selectWorkspaceTabStatuses', () => {
     });
   });
 
+  it('trusts BE activity for running when agentSummary agents have no hydrated sessions', () => {
+    // Regression: an unopened workspace's agentSummary carries agents, but no
+    // session is hydrated locally — the BE `activity: 'agent_running'` flag
+    // must still raise the running category (the green dot).
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'active' }],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace]);
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
+      agentCount: 0,
+      categories: [{ category: 'running', count: 1, agentNames: [] }],
+      visibleCategories: [{ category: 'running', count: 1, agentNames: [] }],
+      hiddenCategoryCount: 0,
+    });
+  });
+
+  it('trusts BE activity for running when only a delegated child agent runs', () => {
+    // The top-level coordinator is parked idle while its delegated child does
+    // the work: no tracked relevant agent contributes running, but the BE
+    // activity rollup is authoritative.
+    const workspace = withAgents(
+      'ws-1',
+      [
+        { id: 'root', name: 'Coordinator', status: 'idle' },
+        { id: 'child', name: 'Child', status: 'active', parentAgentId: 'root' },
+      ],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace], {
+      root: { status: 'idle' },
+      child: { status: 'active', isResponding: true },
+    });
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
+      agentCount: 1,
+      categories: [{ category: 'running', count: 1, agentNames: [] }],
+      visibleCategories: [{ category: 'running', count: 1, agentNames: [] }],
+      hiddenCategoryCount: 0,
+    });
+  });
+
+  it('keeps named running agents from tracked sessions over the BE activity fallback', () => {
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'active' }],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace], {
+      root: { status: 'active', isResponding: true },
+    });
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1'].categories).toEqual([
+      { category: 'running', count: 1, agentNames: ['Coordinator'] },
+    ]);
+  });
+
+  it('raises no running category when activity is idle and no tracked agent runs', () => {
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'idle' }],
+      { activity: 'idle' },
+    );
+    const state = stateWithSessions([workspace], { root: { status: 'idle' } });
+    expect(categories(state)).toEqual([]);
+  });
+
   it('uses deterministic priority and a final overflow slot', () => {
     const question: HudCapturedQuestion = {
       workspaceId: 'ws-1',

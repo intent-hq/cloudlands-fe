@@ -1044,11 +1044,11 @@ export const selectWorkspaceTabStatuses = store.createSelector(
           : null);
       if (attention === 'review_required') namesByCategory.set('review', []);
       if (attention === 'unread') namesByCategory.set('unread', []);
-      if (
-        infos.length === 0 &&
-        workspace.activity === 'agent_running' &&
-        !namesByCategory.has('running')
-      ) {
+      // BE activity is authoritative for the running axis (§5.1 "green
+      // dot"): unopened workspaces have no hydrated sessions and delegated
+      // children never pass the relevance gate, so trust the rollup whenever
+      // no tracked relevant agent already contributed a named running entry.
+      if (workspace.activity === 'agent_running' && !namesByCategory.has('running')) {
         namesByCategory.set('running', []);
       }
 
