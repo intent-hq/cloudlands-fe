@@ -52,7 +52,6 @@
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
 
   import {
@@ -968,11 +967,6 @@
       workspaceId={$activeWorkspaceId || undefined}
       overlayWorkspaceColumns={showWorkspaceColumns}
     />
-
-    <!-- Update indicator (top-right corner) -->
-    <div class="app-no-drag absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
-    </div>
 
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">

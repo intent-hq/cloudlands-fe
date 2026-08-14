@@ -25,7 +25,6 @@ import { fileURLToPath } from 'url';
 const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const read = (relativeToSrc: string) => readFileSync(resolve(srcDir, relativeToSrc), 'utf8');
 
-const appLayoutSource = read('routes/(app)/+layout.svelte');
 const appLayoutCss = read('routes/(app)/app-layout.css');
 const rootLayoutSource = read('routes/+layout.svelte');
 const globalCss = read('app.css');
@@ -114,12 +113,7 @@ describe('drag surfaces carry the .app-drag-region scope class', () => {
     expect(source).toContain('class="hud-header app-drag-region"');
   });
 
-  it('update indicator overlaying the titlebar keeps an explicit no-drag', () => {
-    // It sits over the titlebar drag strip but outside any .app-drag-region
-    // subtree, so it opts into no-drag inline (tooltip hover would otherwise
-    // be swallowed by the drag region).
-    const wrapper = appLayoutSource.match(/<div[^>]*>\s*<UpdateDownloadIndicator \/>/)?.[0] ?? '';
-    expect(wrapper).toContain('app-no-drag');
+  it('the .app-no-drag opt-out rule exists in app.css', () => {
     expect(globalCss).toMatch(/\.app-no-drag\s*\{[^}]*-webkit-app-region:\s*no-drag/s);
   });
 });
