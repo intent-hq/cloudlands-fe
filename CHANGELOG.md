@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.43.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.42.0...v2.43.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* make secondary-root branch label click-to-copy ([#1225](https://github.com/intent-hq/cloudlands-fe/issues/1225)) ([bb68521](https://github.com/intent-hq/cloudlands-fe/commit/bb68521eeff87e0e2c81753c47687dfa40a795c1))
+
 ## [2.42.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.41.0...v2.42.0) (2026-08-14)
 
 
