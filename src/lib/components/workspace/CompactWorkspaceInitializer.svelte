@@ -55,6 +55,7 @@
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectSpecialists,
@@ -120,14 +121,8 @@
   import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-  hasBlockingAttachments,
-  type ContextItem,
-} from '$lib/components/chat/input/context-api';
-  import {
-  hasStagedFileItems,
-  redeemStagedAttachments,
-} from './initializer/staged-attachments';
+  import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
+  import { hasStagedFileItems, redeemStagedAttachments } from './initializer/staged-attachments';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
@@ -2030,6 +2025,46 @@
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
 
+      // Clear reused-ID state before installing the authoritative first-frame
+      // layout. The panel seed owns the initial agent identity; legacy
+      // navigation stays an empty shell so drawer migration cannot compete.
+      try {
+        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        getPanelLayoutManager(workspace.id).clearLayout();
+      } catch (error) {
+        logger.debug('Could not clear panel layout', { error });
+      }
+      try {
+        const { workspaceStorageManager } =
+          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        workspaceStorageManager.clearState(workspace.id);
+      } catch (error) {
+        logger.debug('Could not clear workspace storage state', { error });
+      }
+
+      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (initialAgentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
+      }
+      appStore.dispatch(
+        bootstrapNewWorkspaceLayout(
+          workspace.id,
+          initialAgentId ?? null,
+          agentName,
+          specialistId === 'spec-writer',
+        ),
+      );
+      const initialState: WorkspaceNavigationWorkspaceState = {
+        version: 2,
+        workspace: { id: workspace.id, status: 'loading' },
+        mainPanel: { type: 'empty' },
+        drawer: { open: false, type: null, itemId: null },
+        navigation: { history: [], currentIndex: -1 },
+        ui: { hasInitialized: false },
+      };
+      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
+      appStore.dispatch(openWorkspaceTab(workspace.id));
+
       // Redeem staged attachments now that the workspace exists: place each
       // from its sourcePath, then send the held-back first message with the
       // attachment-reference file blocks. A placement failure keeps the modal
@@ -2080,32 +2115,6 @@
           });
       }
 
-      // Clear any stale panel layout data for this workspace ID.
-      // This is important when workspace IDs are reused (e.g., after deletion and recreation).
-      // Without this, the workspace page may load stale layout data with duplicate tabs.
-      try {
-        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
-        getPanelLayoutManager(workspace.id).clearLayout();
-      } catch (error) {
-        logger.debug('Could not clear panel layout', { error });
-      }
-
-      // Clear any stale workspace storage state (drawer state, main panel, etc.)
-      // for this workspace ID. When workspace IDs are reused, stale drawer state
-      // can cause the workspace page to open a non-existent agent from a previous
-      // workspace, leading to spurious agent creation.
-      try {
-        const { workspaceStorageManager } =
-          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
-        workspaceStorageManager.clearState(workspace.id);
-      } catch (error) {
-        logger.debug('Could not clear workspace storage state', { error });
-      }
-
-      // Pre-populate Redux with the workspace entity so the workspace page
-      // has data on the very first render frame (before sagas/effects run).
-      appStore.dispatch(setWorkspaceEntity(workspace));
-
       // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
       // is its source of truth, and recording a copy would shadow future
@@ -2124,32 +2133,6 @@
           repoType === 'github' ? githubUrl : undefined,
         );
       }
-
-      // Initial-agent delivery (message + sends) is owned by the daemon; the
-      // FE only records which agent is the initial one so the UI can highlight
-      // and focus it. The id is daemon-assigned (from the create result); when
-      // it is somehow absent, skip the highlight/focus rather than invent one.
-      if (initialAgentId) {
-        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
-      }
-
-      // Pre-store the workspace state so the workspace page mounts on the
-      // initial-agent conversation as its only tab (full-width, no spec split).
-      // The spec note stays reachable manually from the sidebar; leaving the
-      // main panel empty here keeps the hydration payload consistent with the
-      // agent-only intent instead of asking the middleware to special-case it.
-      const initialState: WorkspaceNavigationWorkspaceState = {
-        version: 2,
-        workspace: { id: workspace.id, status: 'loading' },
-        mainPanel: { type: 'empty' },
-        drawer: initialAgentId
-          ? { open: true, type: 'agent' as const, itemId: initialAgentId }
-          : { open: false, type: null, itemId: null },
-        navigation: { history: [], currentIndex: -1 },
-        ui: { hasInitialized: false },
-      };
-      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
-      appStore.dispatch(openWorkspaceTab(workspace.id));
 
       await goto(`/workspace/${workspace.id}`);
 
@@ -2444,9 +2427,7 @@
         };
         contextItems = [...contextItems, contextItem];
         if (!sourcePath) {
-          toast.error(
-            m.workspace_compactInitializer_attachmentNoPath_error({ fileName }),
-          );
+          toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName }));
         }
         insertedFileCount.value++;
       }
@@ -2496,9 +2477,7 @@
   }
 
   function isImageAttachment(item: ContextItem): boolean {
-    return Boolean(
-      (item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'),
-    );
+    return Boolean((item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'));
   }
 
   // Set when workspace.create succeeded but staged-attachment placement (or
@@ -2606,9 +2585,7 @@
       return;
     }
     if (!item.sourcePath) {
-      toast.error(
-        m.workspace_compactInitializer_attachmentNoPath_error({ fileName: item.label }),
-      );
+      toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName: item.label }));
       return;
     }
     // Pre-create failure with a sourcePath (shouldn't normally happen):
@@ -3089,7 +3066,9 @@
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-warning-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-warning-foreground">{m.workspace_compactInitializer_gitCheckUnknown_label()}</p>
+              <p class="font-medium text-warning-foreground">
+                {m.workspace_compactInitializer_gitCheckUnknown_label()}
+              </p>
               <p class="text-subtle mt-1">
                 {m.workspace_compactInitializer_gitCheckUnknown_description()}
               </p>

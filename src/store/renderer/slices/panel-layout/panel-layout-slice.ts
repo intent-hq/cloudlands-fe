@@ -32,6 +32,7 @@ import {
   movePanelToRootEdgeInLayout,
   countHorizontalPanelColumns,
   getAutomaticPanelLayoutCanvasWidth,
+  getPanelOrder,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
   resizeRootHorizontalPanel,
@@ -100,6 +101,7 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   savedCanvasWidthBeforeExpand: undefined,
   savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
+  newWorkspaceLifecycle: null,
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
@@ -117,10 +119,42 @@ export const initializeLayout = createAction(
     layout: Pick<WorkspacePanelLayoutState, 'root' | 'panels' | 'focusedPanelId'> & {
       canvasWidth?: number | null;
       canvasWidthSource?: WorkspacePanelLayoutState['canvasWidthSource'];
+      deferSpecTab?: boolean;
+      newWorkspaceLifecycle?: WorkspacePanelLayoutState['newWorkspaceLifecycle'];
     },
   ) => ({
     wsId,
     layout,
+  }),
+);
+
+export const bootstrapNewWorkspaceLayout = createAction(
+  'panelLayout/bootstrapNewWorkspaceLayout',
+  (
+    wsId: string,
+    initialAgentId: string | null,
+    initialAgentTitle: string,
+    coordinator = false,
+  ) => ({
+    wsId,
+    initialAgentId,
+    initialAgentTitle,
+    coordinator,
+    panelId: generatePanelId(),
+    placeholderPanelId: generatePanelId(),
+    tabId: generateTabId(),
+  }),
+);
+
+export const resolveNewWorkspaceInitialAgent = createAction(
+  'panelLayout/resolveNewWorkspaceInitialAgent',
+  (wsId: string, agentId: string, title: string, timestamp?: number) => ({
+    wsId,
+    agentId,
+    title,
+    panelId: generatePanelId(),
+    tabId: generateTabId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -495,6 +529,26 @@ export const setDeferSpecTab = createAction<[wsId: string, value: boolean]>(
   'panelLayout/setDeferSpecTab',
 );
 
+export const markPanelTouched = createAction<[wsId: string, panelId: string]>(
+  'panelLayout/markPanelTouched',
+);
+
+export const observeDeferredSpecGeneration = createAction<[wsId: string, generation: string]>(
+  'panelLayout/observeDeferredSpecGeneration',
+);
+
+export const revealDeferredSpecTab = createAction(
+  'panelLayout/revealDeferredSpecTab',
+  (wsId: string, generation: string, title: string, timestamp?: number) => ({
+    wsId,
+    generation,
+    title,
+    panelId: generatePanelId(),
+    tabId: generateTabId(),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 // --- Pending Focus ---
 export const consumePendingFocus = createAction<[wsId: string, tabId: string]>(
   'panelLayout/consumePendingFocus',
@@ -853,7 +907,145 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     panels: layout.panels,
     focusedPanelId: layout.focusedPanelId,
     ...canvasWidthState,
+    deferSpecTab: layout.deferSpecTab ?? false,
+    newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
   });
+});
+panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
+  const {
+    wsId,
+    initialAgentId,
+    initialAgentTitle,
+    coordinator,
+    panelId,
+    placeholderPanelId,
+    tabId,
+  } = payload;
+  const tabs: PanelTab[] = initialAgentId
+    ? [
+        {
+          id: tabId,
+          type: 'agent',
+          title: initialAgentTitle,
+          agentId: initialAgentId,
+          workspaceId: wsId,
+          closable: true,
+        },
+      ]
+    : [];
+  const panels: Record<string, PanelState> = {
+    [panelId]: {
+      id: panelId,
+      tabs,
+      activeTabId: tabs[0]?.id ?? null,
+      pristine: false,
+    },
+  };
+  if (coordinator) {
+    panels[placeholderPanelId] = {
+      id: placeholderPanelId,
+      tabs: [],
+      activeTabId: null,
+      pristine: true,
+    };
+  }
+  return setWorkspaceState(state, wsId, {
+    ...emptyWorkspaceState,
+    root: coordinator
+      ? {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId },
+            { type: 'panel', panelId: placeholderPanelId },
+          ],
+          sizes: [50, 50],
+        }
+      : { type: 'panel', panelId },
+    panels,
+    focusedPanelId: panelId,
+    restoreStatus: 'restored',
+    pendingFocusTabId: tabs[0]?.id ?? null,
+    deferSpecTab: true,
+    newWorkspaceLifecycle: {
+      coordinator,
+      initialAgentId,
+      initialAgentPending: initialAgentId === null,
+      spec: { noteId: 'spec', generation: null, state: 'deferred' },
+    },
+  });
+});
+panelLayoutReducer.with(resolveNewWorkspaceInitialAgent, (state, { payload }) => {
+  const { wsId, agentId, title, tabId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const lifecycle = ws.newWorkspaceLifecycle;
+  if (!lifecycle?.initialAgentPending) return state;
+
+  for (const [existingPanelId, panel] of Object.entries(ws.panels)) {
+    const existing = panel.tabs.find((tab) => tab.type === 'agent' && tab.agentId === agentId);
+    if (!existing) continue;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: { ...ws.panels, [existingPanelId]: { ...panel, activeTabId: existing.id } },
+      focusedPanelId: existingPanelId,
+      pendingFocusTabId: existing.id,
+      newWorkspaceLifecycle: {
+        ...lifecycle,
+        initialAgentId: agentId,
+        initialAgentPending: false,
+      },
+    });
+  }
+
+  const tab: PanelTab = {
+    id: tabId,
+    type: 'agent',
+    title,
+    agentId,
+    workspaceId: wsId,
+    closable: true,
+  };
+  const emptyPanel = Object.values(ws.panels).find(
+    (panel) => panel.tabs.length === 0 && panel.pristine !== true,
+  );
+  if (!emptyPanel) {
+    const { id: _tabId, ...tabWithoutId } = tab;
+    const opened = selfDispatch(
+      state,
+      openTabInAdjacentOrSplit(
+        wsId,
+        tabWithoutId,
+        ws.focusedPanelId ?? undefined,
+        { force: true },
+        timestamp,
+      ),
+    );
+    const openedWorkspace = getWorkspaceState(opened, wsId);
+    return setWorkspaceState(opened, wsId, {
+      ...openedWorkspace,
+      newWorkspaceLifecycle: {
+        ...lifecycle,
+        initialAgentId: agentId,
+        initialAgentPending: false,
+      },
+    });
+  }
+  ws = {
+    ...ws,
+    panels: {
+      ...ws.panels,
+      [emptyPanel.id]: { ...emptyPanel, tabs: [tab], activeTabId: tabId, pristine: false },
+    },
+    focusedPanelId: emptyPanel.id,
+    pendingFocusTabId: tabId,
+    newWorkspaceLifecycle: {
+      ...lifecycle,
+      initialAgentId: agentId,
+      initialAgentPending: false,
+    },
+  };
+  ws = addToFocusHistory(ws, emptyPanel.id, tabId, timestamp);
+  return setWorkspaceState(state, wsId, ws);
 });
 panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatus] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -935,6 +1127,7 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
         ...panel,
         tabs: [...panel.tabs, newTab],
         activeTabId: newTabId,
+        pristine: false,
       },
     },
   };
@@ -1687,6 +1880,8 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     savedSizesBeforeExpand: [],
     savedCanvasWidthBeforeExpand: undefined,
     savedCanvasWidthSourceBeforeExpand: undefined,
+    deferSpecTab: false,
+    newWorkspaceLifecycle: null,
   });
 });
 // --- Go Back ---
@@ -1816,6 +2011,117 @@ panelLayoutReducer.with(setDeferSpecTab, (state, { payload: [wsId, value] }) => 
   if (value) {
     ws = { ...ws, panels: stripSpecTabs(ws.panels) };
   }
+  return setWorkspaceState(state, wsId, ws);
+});
+panelLayoutReducer.with(markPanelTouched, (state, { payload: [wsId, panelId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const panel = ws.panels[panelId];
+  if (!panel?.pristine) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    panels: { ...ws.panels, [panelId]: { ...panel, pristine: false } },
+  });
+});
+panelLayoutReducer.with(observeDeferredSpecGeneration, (state, { payload: [wsId, generation] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const lifecycle = ws.newWorkspaceLifecycle;
+  if (
+    !lifecycle ||
+    lifecycle.spec.state !== 'deferred' ||
+    lifecycle.spec.generation === generation
+  ) {
+    return state;
+  }
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    newWorkspaceLifecycle: {
+      ...lifecycle,
+      spec: { ...lifecycle.spec, generation },
+    },
+  });
+});
+panelLayoutReducer.with(revealDeferredSpecTab, (state, { payload }) => {
+  const { wsId, generation, title, tabId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const lifecycle = ws.newWorkspaceLifecycle;
+  if (!lifecycle || lifecycle.spec.state !== 'deferred') return state;
+
+  const revealedLifecycle = {
+    ...lifecycle,
+    spec: { ...lifecycle.spec, generation, state: 'revealed' as const },
+  };
+  for (const [existingPanelId, panel] of Object.entries(ws.panels)) {
+    const existing = panel.tabs.find(
+      (tab) => tab.type === 'note' && tab.noteId === lifecycle.spec.noteId,
+    );
+    if (!existing) continue;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: { ...ws.panels, [existingPanelId]: { ...panel, activeTabId: existing.id } },
+      focusedPanelId: existingPanelId,
+      pendingFocusTabId: existing.id,
+      deferSpecTab: false,
+      newWorkspaceLifecycle: revealedLifecycle,
+    });
+  }
+
+  const tab: Omit<PanelTab, 'id'> = {
+    type: 'note',
+    title,
+    noteId: lifecycle.spec.noteId,
+    workspaceId: wsId,
+    closable: true,
+  };
+  if (lifecycle.coordinator !== true) {
+    const agentPanelId = Object.entries(ws.panels).find(([, panel]) =>
+      panel.tabs.some(
+        (candidate) => candidate.type === 'agent' && candidate.agentId === lifecycle.initialAgentId,
+      ),
+    )?.[0];
+    const opened = selfDispatch(
+      state,
+      openTabInAdjacentOrSplit(
+        wsId,
+        tab,
+        agentPanelId ?? ws.focusedPanelId ?? undefined,
+        {
+          force: true,
+        },
+        timestamp,
+      ),
+    );
+    const openedWorkspace = getWorkspaceState(opened, wsId);
+    return setWorkspaceState(opened, wsId, {
+      ...openedWorkspace,
+      deferSpecTab: false,
+      newWorkspaceLifecycle: revealedLifecycle,
+    });
+  }
+
+  const pristinePlaceholder = Object.values(ws.panels).find(
+    (panel) => panel.pristine === true && panel.tabs.length === 0 && panel.activeTabId === null,
+  );
+  const targetPanelId = pristinePlaceholder?.id ?? getPanelOrder(ws.root).at(-1);
+  const targetPanel = targetPanelId ? ws.panels[targetPanelId] : undefined;
+  if (!targetPanelId || !targetPanel) return state;
+  const nextTab: PanelTab = { ...tab, id: tabId };
+  ws = {
+    ...ws,
+    panels: {
+      ...ws.panels,
+      [targetPanelId]: {
+        ...targetPanel,
+        tabs: pristinePlaceholder ? [nextTab] : [...targetPanel.tabs, nextTab],
+        activeTabId: tabId,
+        pristine: false,
+      },
+    },
+    focusedPanelId: targetPanelId,
+    pendingFocusTabId: tabId,
+    deferSpecTab: false,
+    newWorkspaceLifecycle: revealedLifecycle,
+  };
+  ws = addToFocusHistory(ws, targetPanelId, tabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Consume Pending Focus ---

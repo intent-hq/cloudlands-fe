@@ -268,15 +268,26 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     const hydrateIndex = dispatched.findIndex(
       (action) => action.type === 'workspaceNavigation/hydrateWorkspaceNavigation',
     );
+    const bootstrapIndex = dispatched.findIndex(
+      (action) => action.type === 'panelLayout/bootstrapNewWorkspaceLayout',
+    );
     const openIndex = dispatched.findIndex((action) => action.type === 'tabState/openWorkspaceTab');
     expect(dispatched[hydrateIndex]?.payload).toEqual([
       'ws-created',
       expect.objectContaining({
         mainPanel: { type: 'empty' },
-        drawer: { open: true, type: 'agent', itemId: 'agent-created' },
+        drawer: { open: false, type: null, itemId: null },
       }),
     ]);
+    expect(dispatched[bootstrapIndex]?.payload).toEqual(
+      expect.objectContaining({
+        wsId: 'ws-created',
+        initialAgentId: 'agent-created',
+        coordinator: true,
+      }),
+    );
     expect(dispatched[openIndex]?.payload).toEqual(['ws-created']);
+    expect(bootstrapIndex).toBeLessThan(hydrateIndex);
     expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 });

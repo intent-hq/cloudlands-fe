@@ -505,7 +505,7 @@
   function handleOpenNoteInPanel(noteId: string) {
     const note = $notes.find((n) => n.id === noteId);
     const title = note?.title || m.workspace_addContext_note_label();
-    panelLayoutManager.openTab({
+    panelLayoutManager.openUserTab({
       type: 'note',
       title,
       closable: true,
@@ -800,11 +800,7 @@
   class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}
 >
   <!-- Fixed Top Section: Progress Card -->
-  <div
-    class="shrink-0 px-6 pb-2 pt-5"
-    data-workspace-title-region
-    draggable={draggableTitleRegion}
-  >
+  <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region draggable={draggableTitleRegion}>
     <WorkspaceProgressCard
       {workspaceId}
       onOpenNote={handleOpenNoteInPanel}

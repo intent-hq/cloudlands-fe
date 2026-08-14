@@ -21,7 +21,7 @@ import {
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const invoke = vi.fn().mockResolvedValue({ success: true });
-  const openTab = vi.fn();
+  const openUserTab = vi.fn();
   const selector = <T>(value: T) =>
     Object.assign(
       () => ({
@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => {
   return {
     dispatch,
     invoke,
-    openTab,
+    openUserTab,
     selector,
     selectorFrom,
     // eslint-disable-next-line themis/collection-state-shape -- test-only dynamic selector fixture
@@ -152,7 +152,7 @@ vi.mock('$store/renderer/slices/workspace-events/workspace-events-selectors', ()
   selectWorkspaceEvents: mocks.selector([]),
 }));
 vi.mock('$features/layout/panel-layout-adapter', () => ({
-  getPanelLayoutManager: () => ({ openTab: mocks.openTab }),
+  getPanelLayoutManager: () => ({ openUserTab: mocks.openUserTab }),
 }));
 vi.mock('../workspace-phase', () => ({
   deriveWorkspacePhase: () => ({
@@ -678,10 +678,10 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       ),
     ).toHaveLength(1);
 
-    mocks.openTab.mockClear();
+    mocks.openUserTab.mockClear();
     await fireEvent.click(container.querySelector('[data-sidebar-context="spec"]')!);
-    expect(mocks.openTab).toHaveBeenCalledTimes(1);
-    expect(mocks.openTab).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'spec' }));
+    expect(mocks.openUserTab).toHaveBeenCalledTimes(1);
+    expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'spec' }));
 
     mocks.dispatch.mockClear();
     await fireEvent.click(container.querySelector('[data-sidebar-change="file.ts"]')!);

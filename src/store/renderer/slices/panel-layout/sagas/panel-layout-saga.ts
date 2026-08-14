@@ -13,6 +13,7 @@ import {
 import { buffers, channel, type Channel } from 'redux-saga';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
+import { m } from '$shared/paraglide/messages.js';
 import {
   loadPanelLayoutHistory,
   savePanelLayoutHistory,
@@ -33,11 +34,23 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import {
+  resolveCanonicalInitialAgent,
+  selectAllWorkspaceAgents,
+} from '../../workspace-agents/workspace-agents-selectors';
+import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
+import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
+import {
+  applyNoteCreated,
+  applyNoteUpdated,
+  loadWorkspaceNotesSucceeded,
+} from '../../workspace-notes/workspace-notes-slice';
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
 import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
 import {
   clearPanelLayout,
+  bootstrapNewWorkspaceLayout,
   closeActiveTab,
   closeAllOthersEverywhere,
   closeAllTabs,
@@ -56,6 +69,7 @@ import {
   goForwardInFocusHistory,
   initializeLayout,
   loadLayoutHistory,
+  markPanelTouched,
   movePanel,
   movePanelToRootEdge,
   moveTabToPanel,
@@ -63,12 +77,15 @@ import {
   moveTabToSplitLevel,
   openTab,
   openTabInAdjacentOrSplit,
+  observeDeferredSpecGeneration,
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   reconcileStaleAgentTabs,
   reorderTabs,
   reopenClosedTab,
   resetLayout,
+  resolveNewWorkspaceInitialAgent,
+  revealDeferredSpecTab,
   resizePanelLayoutAtHorizontalPanel,
   resizePanelLayoutRightEdge,
   selectNextTab,
@@ -114,6 +131,7 @@ const PERSIST_ACTIONS = [
   closeAllTabs,
   closeAllOthersEverywhere,
   focusPanel,
+  markPanelTouched,
   splitPanel,
   closePanel,
   updateSizes,
@@ -127,6 +145,9 @@ const PERSIST_ACTIONS = [
   goBackInFocusHistory,
   goForwardInFocusHistory,
   setDeferSpecTab,
+  observeDeferredSpecGeneration,
+  revealDeferredSpecTab,
+  resolveNewWorkspaceInitialAgent,
   reconcileStaleAgentTabs,
   updateTabTitle,
   updateTabBrowserUrl,
@@ -237,6 +258,20 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     ) {
       return false;
     }
+    if (layout.deferSpecTab !== undefined && typeof layout.deferSpecTab !== 'boolean') return false;
+    if (layout.newWorkspaceLifecycle !== undefined && layout.newWorkspaceLifecycle !== null) {
+      const lifecycle = layout.newWorkspaceLifecycle;
+      if (
+        (lifecycle.coordinator !== undefined && typeof lifecycle.coordinator !== 'boolean') ||
+        typeof lifecycle.initialAgentPending !== 'boolean' ||
+        (lifecycle.initialAgentId !== null && typeof lifecycle.initialAgentId !== 'string') ||
+        lifecycle.spec?.noteId !== 'spec' ||
+        !['deferred', 'revealed'].includes(lifecycle.spec.state) ||
+        (lifecycle.spec.generation !== null && typeof lifecycle.spec.generation !== 'string')
+      ) {
+        return false;
+      }
+    }
     const panelIds = new Set<string>();
     if (!collectPanelIds(layout.root, panelIds) || panelIds.size === 0) return false;
     for (const panelId of panelIds) {
@@ -245,6 +280,7 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     if (layout.focusedPanelId !== null && !panelIds.has(layout.focusedPanelId)) return false;
     for (const [panelId, panel] of Object.entries(layout.panels)) {
       if (!panel || panel.id !== panelId || !Array.isArray(panel.tabs)) return false;
+      if (panel.pristine !== undefined && typeof panel.pristine !== 'boolean') return false;
       if (
         !panel.tabs.every((tab) => tab && typeof tab === 'object' && typeof tab.id === 'string')
       ) {
@@ -263,7 +299,6 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
 function hasAnyTab(layout: WorkspacePanelLayout): boolean {
   return Object.values(layout.panels).some((panel) => panel.tabs.length > 0);
 }
-
 
 function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
   if (workspace.expandedPanelId === null || workspace.savedSizesBeforeExpand.length === 0) {
@@ -286,11 +321,15 @@ function normalizeLayoutForWorkspace(
   workspaceId: string,
   layout: WorkspacePanelLayout,
 ): WorkspacePanelLayout {
-  const normalized = normalizeTablessPanelLayout(removeForeignWorkspaceTabs(layout, workspaceId));
-  return {
-    ...normalized,
-    ...migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource),
-  };
+  const normalized: WorkspacePanelLayout = normalizeTablessPanelLayout(
+    removeForeignWorkspaceTabs(layout, workspaceId),
+  );
+  Object.assign(normalized, migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource));
+  if (layout.deferSpecTab !== undefined) normalized.deferSpecTab = layout.deferSpecTab;
+  if (layout.newWorkspaceLifecycle !== undefined) {
+    normalized.newWorkspaceLifecycle = layout.newWorkspaceLifecycle;
+  }
+  return normalized;
 }
 
 export function* loadLayoutFromStorage(
@@ -340,6 +379,10 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
           ? workspace.savedCanvasWidthSourceBeforeExpand
           : workspace.canvasWidthSource,
     };
+    if (workspace.deferSpecTab) layout.deferSpecTab = true;
+    if (workspace.newWorkspaceLifecycle) {
+      layout.newWorkspaceLifecycle = workspace.newWorkspaceLifecycle;
+    }
     if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(layout)) {
       const stored = yield* call(loadLayoutFromStorage, wsId);
       if (stored !== null && stored !== 'invalid' && hasAnyTab(stored)) return;
@@ -478,6 +521,73 @@ function* clearPersistedLayout(action: ReturnType<typeof clearPanelLayout>): Sag
   yield* call(removeLocalStorageItem, storageKey(wsId, yield* selectActiveBackendId()));
 }
 
+function specGeneration(note: { id: unknown; createdAt: Date | string }): string {
+  const createdAt = note.createdAt instanceof Date ? note.createdAt.toISOString() : note.createdAt;
+  return `${String(note.id)}:${createdAt}`;
+}
+
+function* reconcileDeferredSpec(workspaceId: string): SagaGenerator<void> {
+  const layout = yield* selectPanelLayoutWorkspace.effect(workspaceId);
+  if (layout.newWorkspaceLifecycle?.spec.state !== 'deferred') return;
+  const spec = yield* selectSpec.effect(workspaceId);
+  if (!spec) return;
+  const generation = specGeneration(spec);
+  if (spec.content.trim().length > 0) {
+    yield* put(revealDeferredSpecTab(workspaceId, generation, m.layout_shared_spec_title()));
+  } else if (layout.newWorkspaceLifecycle.spec.generation !== generation) {
+    yield* put(observeDeferredSpecGeneration(workspaceId, generation));
+  }
+}
+
+function noteActionWorkspaceIds(action: { type: string; payload?: unknown }): string[] {
+  if (!Array.isArray(action.payload)) return [];
+  if (action.type === loadWorkspaceNotesSucceeded.type) {
+    return Array.isArray(action.payload[0])
+      ? action.payload[0].filter((id): id is string => typeof id === 'string')
+      : [];
+  }
+  return typeof action.payload[0] === 'string' ? [action.payload[0]] : [];
+}
+
+function* reconcileSpecFromNoteAction(action: {
+  type: string;
+  payload?: unknown;
+}): SagaGenerator<void> {
+  for (const workspaceId of noteActionWorkspaceIds(action)) {
+    yield* call(reconcileDeferredSpec, workspaceId);
+  }
+}
+
+function* resolveInitialAgentFromSnapshot(
+  action: ReturnType<typeof setAgents>,
+): SagaGenerator<void> {
+  const [workspaceId, agents] = action.payload;
+  const layout = yield* selectPanelLayoutWorkspace.effect(workspaceId);
+  if (!layout.newWorkspaceLifecycle?.initialAgentPending) return;
+  const initial = resolveCanonicalInitialAgent(agents);
+  if (!initial) return;
+  const agentId = String(initial.id);
+  yield* put(setInitialAgentId(workspaceId, agentId));
+  yield* put(resolveNewWorkspaceInitialAgent(workspaceId, agentId, initial.name));
+}
+
+function* handleNewWorkspaceBootstrap(
+  action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
+): SagaGenerator<void> {
+  const { wsId, initialAgentId } = action.payload;
+  if (!initialAgentId) {
+    const initial = resolveCanonicalInitialAgent(yield* selectAllWorkspaceAgents.effect(wsId));
+    if (initial) {
+      const agentId = String(initial.id);
+      yield* put(setInitialAgentId(wsId, agentId));
+      yield* put(resolveNewWorkspaceInitialAgent(wsId, agentId, initial.name));
+    }
+  }
+  restoredWorkspaceIds.add(wsId);
+  yield* call(persistPanelLayout, action);
+  yield* call(reconcileDeferredSpec, wsId);
+}
+
 function* retroactiveRestore(): SagaGenerator<void> {
   const activeWsId = yield* selectActiveWorkspaceId.effect();
   if (isValidWorkspaceId(activeWsId)) {
@@ -535,6 +645,12 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     yield* handleWorkspaceUnmounted(historyMailboxes, action);
   }
   try {
+    yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
+    yield* takeEvery(setAgents, resolveInitialAgentFromSnapshot);
+    yield* takeEvery(
+      [applyNoteCreated, applyNoteUpdated, loadWorkspaceNotesSucceeded],
+      reconcileSpecFromNoteAction,
+    );
     yield* takeEvery(PERSIST_ACTIONS, persistPanelLayout);
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);

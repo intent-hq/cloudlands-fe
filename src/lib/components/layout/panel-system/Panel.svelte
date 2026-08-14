@@ -44,6 +44,7 @@
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -274,6 +275,10 @@
     onFocus?.();
   }
 
+  function markUserTouch() {
+    if (panel.pristine) appStore.dispatch(markPanelTouched(layoutId, panel.id));
+  }
+
   // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
   // fires when a focusable descendant receives focus; clicks on non-focusable
   // content (empty area, static text, non-interactive tab content) would
@@ -281,8 +286,13 @@
   // panel focuses before nested interactive elements handle the event, and it
   // stays passive — no preventDefault / stopPropagation.
   function handlePanelPointerDown() {
+    markUserTouch();
     if (isFocused) return;
     onFocus?.();
+  }
+
+  function handlePanelKeyDown() {
+    markUserTouch();
   }
 
   // Determine which drop zone based on cursor position (relative to content area below tab bar)
@@ -370,6 +380,7 @@
   }
 
   function handleDrop(e: DragEvent) {
+    markUserTouch();
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
@@ -435,8 +446,10 @@
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-zoomed={isZoomed}
+    data-pristine={panel.pristine === true}
     onfocusin={handlePanelFocus}
     onpointerdowncapture={handlePanelPointerDown}
+    onkeydowncapture={handlePanelKeyDown}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
