@@ -73,6 +73,7 @@ import {
   sessionAttentionPriority,
   sessionHasFailed,
   sessionNeedsAttention,
+  WORKSPACE_STOP_KEY_PREFIX,
   type CycleAgentEntry,
   type CycleStopEntry,
   type SessionAttentionPriority,
@@ -349,11 +350,24 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
           : entries[0].wsId === activeWorkspaceId(state));
       if (alreadyThere) {
         lastCycledStopByAction.set(spec.id, cycleStopKey(entries[0]));
+        // Workspace-level stop we're already on: still (re-)request hydration
+        // so the press converges the session cache even if the route-mount
+        // hydration failed.
+        if (entries[0].agentId === null) {
+          context.dispatch(hydrateAgentsRequested(entries[0].wsId));
+        }
         context.showHint(spec.getSingleCandidateHint());
         return;
       }
       const cursor = lastCycledStopByAction.get(spec.id);
       let index = cursor === undefined ? -1 : entries.findIndex((e) => cycleStopKey(e) === cursor);
+      if (index === -1 && cursor !== undefined && cursor.startsWith(WORKSPACE_STOP_KEY_PREFIX)) {
+        // The stored cursor was a workspace-level stop whose workspace has
+        // since hydrated (its stop now keys by agent id): resume from that
+        // workspace's stop instead of restarting the walk.
+        const cursorWsId = cursor.slice(WORKSPACE_STOP_KEY_PREFIX.length);
+        index = entries.findIndex((e) => e.wsId === cursorWsId);
+      }
       if (index === -1 && focused !== null) {
         index = entries.findIndex((e) => e.agentId === focused);
       }

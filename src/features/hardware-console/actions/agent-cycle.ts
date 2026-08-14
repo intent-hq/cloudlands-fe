@@ -55,13 +55,16 @@ export interface CycleAgentEntry extends CycleStopEntry {
   agentId: string;
 }
 
+/** Key prefix marking a workspace-level stop in `cycleStopKey` values. */
+export const WORKSPACE_STOP_KEY_PREFIX = 'workspace:';
+
 /**
  * Stable cursor/dedup key for a stop. Agent stops key by agent id;
  * workspace-level stops key by a `workspace:`-prefixed workspace id, which
  * cannot collide with an agent id.
  */
 export function cycleStopKey(entry: CycleStopEntry): string {
-  return entry.agentId ?? `workspace:${entry.wsId}`;
+  return entry.agentId ?? `${WORKSPACE_STOP_KEY_PREFIX}${entry.wsId}`;
 }
 
 /** Local mirror of the "agent turn active" gate (no selector imports). */

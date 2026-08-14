@@ -884,12 +884,48 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-2'],
     });
-    const { context, navigate, showHint } = makeContext(state);
+    const { context, dispatch, navigate, showHint } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
     expect(showHint).toHaveBeenCalledWith(
       m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
     );
     expect(navigate).not.toHaveBeenCalled();
+    // Still re-requests hydration so the press converges the session cache
+    // even if the route-mount hydration failed.
+    expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
+  });
+
+  it('resumes the walk when a workspace-level cursor hydrates before the next press', () => {
+    const before = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+    });
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const first = makeContext(before);
+    definition.execute(first.context); // -> ws-1/a-1
+    definition.execute(first.context); // -> ws-2 workspace-level stop
+    expect(activeAgentDispatches(first.dispatch)).toEqual([['ws-1', 'a-1']]);
+    expect(hydrateDispatches(first.dispatch)).toEqual([['ws-2']]);
+
+    // ws-2 hydrates before the next press while still unread: its stop now
+    // keys by agent id, so the stored workspace-level cursor resumes from
+    // that workspace's stop instead of restarting the walk at ws-1.
+    const after = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+    });
+    const second = makeContext(after);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
   });
 });
 
