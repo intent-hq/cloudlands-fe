@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.36.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.2...v2.36.0) (2026-08-14)
+
+
+### 🚀 Features
+
+* anchor takeover-map cards at the barycenter of their parents ([#1165](https://github.com/intent-hq/cloudlands-fe/issues/1165)) ([aa60056](https://github.com/intent-hq/cloudlands-fe/commit/aa60056dd351904f134ec7639ac6206e5cc8cd63))
+* hide titlebar view toggle and new-workspace button during onboarding ([#1164](https://github.com/intent-hq/cloudlands-fe/issues/1164)) ([ec1a571](https://github.com/intent-hq/cloudlands-fe/commit/ec1a571569eff8a5f13ebccf58b74a98f18583ee))
+* scroll columns view to workspace on hardware agent key press ([#1170](https://github.com/intent-hq/cloudlands-fe/issues/1170)) ([53f8e29](https://github.com/intent-hq/cloudlands-fe/commit/53f8e29c3d75b43a9f98ecf95535983448edb33c))
+* show only user-authored queued messages in the chat queue ([#1167](https://github.com/intent-hq/cloudlands-fe/issues/1167)) ([292e3ce](https://github.com/intent-hq/cloudlands-fe/commit/292e3cef36d07c3736dc774d8b87eaade31f02df))
+* surface intentd sidecar version mismatch in daemon status indicator ([#1168](https://github.com/intent-hq/cloudlands-fe/issues/1168)) ([f7f918e](https://github.com/intent-hq/cloudlands-fe/commit/f7f918e701ce86dd9d10912f90e29541607841d1))
+
+
+### 🐛 Bug Fixes
+
+* expose daemon-status warning tooltip text to assistive technology ([#1169](https://github.com/intent-hq/cloudlands-fe/issues/1169)) ([0ac9891](https://github.com/intent-hq/cloudlands-fe/commit/0ac9891361eea74757fd47d029bf1c0d8ce836a3))
+
 ## [2.35.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.1...v2.35.2) (2026-08-13)
 
 
