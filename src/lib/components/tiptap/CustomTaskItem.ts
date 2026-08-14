@@ -19,6 +19,8 @@ export interface TaskMenuClickDetail {
 export interface CustomTaskItemOptions {
   nested: boolean;
   HTMLAttributes: Record<string, any>;
+  /** Workspace that owns this editor's note. Node views use it instead of global focus. */
+  workspaceId?: string;
   onReadOnlyChecked?: (node: ProseMirrorNode, checked: boolean) => boolean;
   taskListTypeName?: string;
 }
@@ -73,6 +75,7 @@ export const CustomTaskItem = TaskItem.extend<CustomTaskItemOptions>({
       HTMLAttributes: {
         class: 'custom-task-item',
       },
+      workspaceId: undefined,
       onReadOnlyChecked: undefined,
       taskListTypeName: 'taskList',
       ...this.parent?.(),
