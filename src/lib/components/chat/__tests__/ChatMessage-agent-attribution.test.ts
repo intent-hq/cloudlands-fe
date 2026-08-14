@@ -622,7 +622,7 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.queryByText(/\[This hook/)).toBeNull();
   });
 
-  it('keeps queued timing in the header and suppresses the raw delivery note', async () => {
+  it('shows queued timing only when expanded and suppresses the raw delivery note', async () => {
     render(ChatMessage, {
       props: {
         message: hookWakeMessage({
@@ -638,10 +638,11 @@ describe('ChatMessage hook wake attribution', () => {
       },
     });
 
-    const timing = screen.getByTestId('queued-message-notice');
-    expect(screen.getByTestId('automated-wake-header').contains(timing)).toBe(true);
-    expect(timing.textContent).toContain('waited');
+    expect(screen.queryByTestId('queued-message-notice')).toBeNull();
     await expandAutomatedWake();
+    const timing = screen.getByTestId('queued-message-notice');
+    expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(true);
+    expect(timing.textContent).toContain('waited');
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.queryByText(/SYSTEM NOTE/)).toBeNull();
   });
@@ -762,7 +763,10 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     const header = screen.getByTestId('automated-wake-header');
     expect(header).toBeTruthy();
     // Workspace repo matches → plain #N chip
-    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('#42');
+    const chip = screen.getByTestId('pr-monitor-wake-chip');
+    expect(chip.textContent?.trim()).toBe('#42');
+    // Label sits flush left next to the PR icon (overrides the Button base justify-center)
+    expect(chip.className).toContain('justify-start');
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();
     expect(screen.getByText('Checks failed')).toBeTruthy();
