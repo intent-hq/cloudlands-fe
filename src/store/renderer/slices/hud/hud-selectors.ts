@@ -195,9 +195,9 @@ export interface HudWorkspaceStateBars {
   /** `not_started` / `idle` / no displayStatus. */
   idle: number;
   /**
-   * Non-urgent unread — flag-driven (`attention === 'unread'`): counts cards
-   * in any state below the attention/progress axes (`complete`, the PR
-   * states, `idle`, `not_started`) that carry the unread flag.
+   * Non-urgent unread — flag-driven (`attention === 'unread'`): counts every
+   * card carrying the unread flag, whatever its state. An overlay axis: an
+   * unread card ALSO counts in its state bucket.
    */
   unread: number;
   /** `in_progress`. */
@@ -222,13 +222,14 @@ export interface HudWorkspaceStateBars {
  * verbatim BE displayStatus) so the rollups always agree with the center
  * grid: `wait`/`blocked` bucket as ATTENTION, `failed` as FAILED,
  * `in_progress` as PROGRESS, `complete` as COMPLETED, PR states as
- * PR OPEN / PR MERGED, and everything else (`idle`/`not_started`) as IDLE.
- * UNREAD is the one flag-driven bucket (intentd#1186 — unread is no longer a
- * displayStatus): an unread card in any state below the attention/progress
- * axes (complete, the PR states, idle, not_started) folds to UNREAD — the
- * old daemon precedence `failed > blocked > needs_attention > in_progress >
- * unread > PR/task rollup`, kept here so the bars match what the promotion
- * used to produce. Buckets stay disjoint (each card counts once).
+ * PR OPEN / PR MERGED, and everything else (`idle`/`not_started`) as IDLE —
+ * every card counts toward its state bucket unconditionally. UNREAD is the
+ * one flag-driven bucket (intentd#1186 — unread is no longer a
+ * displayStatus): an OVERLAY axis over the state buckets, mirroring the
+ * card's unread border blink — every card with `isUnread` ALSO increments
+ * UNREAD, so an unread card counts twice (its state bucket + UNREAD).
+ * `total` stays the workspace count (one per workspace — the bar
+ * denominator), so the state buckets alone sum to `total`.
  */
 export const selectHudWorkspaceStateBars = store.createSelector((state): HudWorkspaceStateBars => {
   const bars: HudWorkspaceStateBars = {
@@ -244,6 +245,7 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
   };
   for (const card of selectHudWorkspaceCards.select(state)) {
     bars.total += 1;
+    if (card.isUnread) bars.unread += 1;
     switch (card.stateKey) {
       case 'wait':
       case 'blocked':
@@ -255,18 +257,18 @@ export const selectHudWorkspaceStateBars = store.createSelector((state): HudWork
       case 'in_progress':
         bars.progress += 1;
         break;
+      case 'complete':
+        bars.completed += 1;
+        break;
+      case 'pr_open':
+      case 'pr_ready':
+        bars.prOpen += 1;
+        break;
+      case 'pr_merged':
+        bars.prMerged += 1;
+        break;
       default:
-        if (card.isUnread) {
-          bars.unread += 1;
-        } else if (card.stateKey === 'complete') {
-          bars.completed += 1;
-        } else if (card.stateKey === 'pr_open' || card.stateKey === 'pr_ready') {
-          bars.prOpen += 1;
-        } else if (card.stateKey === 'pr_merged') {
-          bars.prMerged += 1;
-        } else {
-          bars.idle += 1;
-        }
+        bars.idle += 1;
     }
   }
   return bars;
@@ -515,8 +517,8 @@ export interface HudWorkspaceCard {
   /**
    * Non-urgent unread overlay (`workspace.attention === 'unread'`, §5.1 —
    * unread is a flag, not a displayStatus since intentd#1186): the card keeps
-   * its real state and adds the blue border blink; also the UNREAD state-bar
-   * bucket for cards below the attention/progress axes.
+   * its real state and adds the blue border blink; also increments the UNREAD
+   * state-bar bucket on top of the card's state bucket.
    */
   isUnread: boolean;
   /** Workspace status message (agent content; i18n-exempt), null when empty. */
