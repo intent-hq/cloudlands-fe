@@ -74,6 +74,15 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toMatch(
       /getAttribute\('data-message-id'\) === stickyMessageId[\s\S]{0,200}if \(turnSpansTop\) \{\s*foundSticky = stickyMessageId;/,
     );
+
+    // With native anchoring off, LazyTurn owns scroll compensation for
+    // placeholder <-> content swaps above the reader's viewport so height
+    // deltas there cannot move the visible transcript.
+    const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
+    expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
+    expect(lazyTurn).toMatch(/if \(!wasAboveViewport\) return;[\s\S]{0,300}scroller\.scrollTop \+= delta;/);
+    expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
+    expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
   });
 
   it('does not restore the removed date separators', () => {

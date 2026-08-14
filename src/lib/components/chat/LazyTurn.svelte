@@ -27,6 +27,7 @@
 
   import {
   onMount,
+  tick,
   type Snippet,
 } from 'svelte';
 
@@ -73,6 +74,41 @@
   // Previously had fallbacks that caused all items to render initially
   let shouldRenderContent = $derived(forceVisible || isVisible);
 
+  /**
+   * Swap placeholder <-> content while compensating the scroll position.
+   *
+   * The chat scroll container disables native scroll anchoring
+   * (overflow-anchor: none in ChatPanel — required to keep the pinned sticky
+   * row from oscillating), so when a swap ABOVE the reader's viewport changes
+   * this turn's height (cached/estimated placeholder height vs real content
+   * height), the browser no longer holds the visible content in place. We do
+   * it ourselves: measure before the swap, re-measure after Svelte flushes,
+   * and shift the scroller by the delta. One-shot per swap — the pinned
+   * sticky turn is always rendered (visible), so this can never re-enter the
+   * sticky compaction feedback loop.
+   */
+  function setVisibleWithScrollCompensation(next: boolean) {
+    if (isVisible === next) return;
+    const scroller = scrollRoot;
+    const el = containerRef;
+    if (!scroller || !el) {
+      isVisible = next;
+      return;
+    }
+    const prevHeight = el.offsetHeight;
+    const wasAboveViewport =
+      el.getBoundingClientRect().top < scroller.getBoundingClientRect().top;
+    isVisible = next;
+    if (!wasAboveViewport) return;
+    void tick().then(() => {
+      if (!containerRef || !containerRef.isConnected) return;
+      const delta = containerRef.offsetHeight - prevHeight;
+      if (delta !== 0) {
+        scroller.scrollTop += delta;
+      }
+    });
+  }
+
   onMount(() => {
     if (!containerRef) return;
 
@@ -95,15 +131,15 @@
         if (!entry) return;
 
         if (entry.isIntersecting) {
-          isVisible = true;
           // Refresh local cache in case it was updated by another instance
           const cached = heightCache.get(turnKey);
           if (cached !== undefined && cached !== localCachedHeight) {
             localCachedHeight = cached;
           }
+          setVisibleWithScrollCompensation(true);
         } else if (hasBeenMeasured && localCachedHeight !== null) {
           // Only hide if we have a cached height to use for placeholder
-          isVisible = false;
+          setVisibleWithScrollCompensation(false);
         }
       },
       {
