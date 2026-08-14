@@ -646,6 +646,39 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
     ]);
   });
 
+  it('agents in the same bucket keep the workspace walk order', () => {
+    // Two blockers and two questions across workspaces: priority groups
+    // them (blockers first), and inside each bucket the workspace order
+    // (ws-1, ws-2, ...) is preserved — never re-sorted.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['q-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['q-2'], activeAgentId: null },
+        'ws-4': { ids: ['b-2'], activeAgentId: null },
+      },
+      sessionOverrides: {
+        'q-1': { messages: [questionMessage('msg-1')] },
+        'b-1': { attentionRequestKind: 'blocker' },
+        'q-2': { messages: [questionMessage('msg-2')] },
+        'b-2': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-2', 'b-1'],
+      ['ws-4', 'b-2'],
+      ['ws-1', 'q-1'],
+      ['ws-3', 'q-2'],
+    ]);
+  });
+
   it('an agent with several attention signals classifies at its highest bucket', () => {
     // dq-1 (discussion + question) walks in the question bucket — after the
     // blocker+question bq-1 (blocker wins) and before the discussion-only d-1.
