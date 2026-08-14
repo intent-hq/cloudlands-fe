@@ -87,6 +87,8 @@ const ExecSchema = z.object({
 
 const ResolveUrlSchema = z.object({
   url: z.string(),
+  /** `rewrite-only` applies the loopback rewrite with no probe and no tunnel (display-only). */
+  mode: z.enum(['full', 'rewrite-only']).optional(),
 });
 
 /**
@@ -218,10 +220,13 @@ export function registerBrowserHandlers(): void {
   );
 
   // Resolve a URL through the shared rewrite → probe → tunnel pipeline so
-  // renderer navigations (script URLs, terminal links, address bar) reach
-  // the same target `browser.exec` navigate/openTab would. Never throws:
-  // probe+tunnel failures return the rewritten URL plus a structured
-  // `error`, and unexpected failures degrade to a non-rewritten passthrough.
+  // programmatic renderer entry points (script URL clicks, terminal links)
+  // reach the same target `browser.exec` navigate/openTab would — the
+  // address bar never resolves (intent-hq/monorepo#2404). `mode:
+  // "rewrite-only"` skips the probe/tunnel stage for display-only callers.
+  // Never throws: probe+tunnel failures return the rewritten URL plus a
+  // structured `error`, and unexpected failures degrade to a non-rewritten
+  // passthrough.
   ipcMain.handle(
     IPC_CHANNELS.BROWSER.RESOLVE_URL,
     createSafeValidatedHandler(
@@ -232,6 +237,7 @@ export function registerBrowserHandlers(): void {
             validated.url,
             getDaemonLoopbackContext(),
             getBrowserTunnelProvider,
+            { rewriteOnly: validated.mode === 'rewrite-only' },
           );
         } catch (err) {
           const detail = err instanceof Error ? err.message : String(err);

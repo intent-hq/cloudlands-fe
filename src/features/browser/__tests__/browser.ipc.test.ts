@@ -163,4 +163,32 @@ describe('browser:resolve-url IPC handler', () => {
     expect(result.success).toBe(false);
     expect(result.error.code).toBe('VALIDATION_ERROR');
   });
+
+  it('rewrite-only mode rewrites without probing or tunneling', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const handler = await registerAndGetHandler();
+    const result = await handler(
+      {},
+      { url: 'http://daemon.localhost:3000/a', mode: 'rewrite-only' },
+    );
+    expect(result.url).toBe('http://10.0.0.5:3000/a');
+    expect(result.rewritten).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.forwardPort).not.toHaveBeenCalled();
+  });
+
+  it('mode: "full" behaves like an absent mode (probe runs)', async () => {
+    const handler = await registerAndGetHandler();
+    const result = await handler({}, { url: 'http://daemon.localhost:3000/a', mode: 'full' });
+    expect(result.url).toBe('http://10.0.0.5:3000/a');
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('rejects an unknown mode with a VALIDATION_ERROR envelope', async () => {
+    const handler = await registerAndGetHandler();
+    const result = await handler({}, { url: 'http://localhost:3000/', mode: 'probe-hard' });
+    expect(result.success).toBe(false);
+    expect(result.error.code).toBe('VALIDATION_ERROR');
+  });
 });

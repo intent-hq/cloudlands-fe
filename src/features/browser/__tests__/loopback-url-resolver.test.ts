@@ -193,4 +193,45 @@ describe('resolveBrowserUrl', () => {
     const result = await resolveBrowserUrl('http://daemon.localhost:3000/', remoteContext);
     expect(result.error).toContain('ECONNREFUSED');
   });
+
+  describe('rewriteOnly mode', () => {
+    it('applies the remote rewrite with no probe and no tunnel', async () => {
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:3000/a',
+        remoteContext,
+        tunnelProvider,
+        { rewriteOnly: true },
+      );
+      expect(result.url).toBe('http://10.0.0.5:3000/a');
+      expect(result.rewritten).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('never tunnels an unreachable target in rewrite-only mode', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      const result = await resolveBrowserUrl(
+        'http://localhost:8080/page',
+        remoteContext,
+        tunnelProvider,
+        { rewriteOnly: true },
+      );
+      expect(result.url).toBe('http://10.0.0.5:8080/page');
+      expect(result.tunneled).toBeUndefined();
+      expect(result.error).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('passes non-loopback URLs through unchanged in rewrite-only mode', async () => {
+      const result = await resolveBrowserUrl(
+        'https://example.com/x',
+        remoteContext,
+        tunnelProvider,
+        { rewriteOnly: true },
+      );
+      expect(result).toEqual({ url: 'https://example.com/x', rewritten: false });
+    });
+  });
 });

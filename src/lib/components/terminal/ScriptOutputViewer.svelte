@@ -17,6 +17,7 @@
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { scriptsClient } from '$features/scripts/scripts.client';
+  import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
     selectScriptById,
@@ -111,18 +112,22 @@
     xterm.loadAddon(fitAddon);
 
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
-      // Open localhost URLs in browser panel, others externally
+      // Open localhost URLs in browser panel (resolved through
+      // browser:resolve-url first, so remote-mode loads land on the daemon
+      // host or a tunnel port), others externally.
       try {
         const url = new URL(uri);
         if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-          import('$features/layout/panel-layout-adapter')
-            .then(({ getPanelLayoutManager }) => {
-              const layoutManager = getPanelLayoutManager(workspaceId);
-              layoutManager.openBrowserPanel(uri);
-            })
-            .catch(() => {
-              window.open(uri, '_blank');
-            });
+          void resolveBrowserLinkForOpen(uri).then((resolvedUrl) => {
+            import('$features/layout/panel-layout-adapter')
+              .then(({ getPanelLayoutManager }) => {
+                const layoutManager = getPanelLayoutManager(workspaceId);
+                layoutManager.openBrowserPanel(resolvedUrl);
+              })
+              .catch(() => {
+                window.open(resolvedUrl, '_blank');
+              });
+          });
         } else {
           window.open(uri, '_blank');
         }

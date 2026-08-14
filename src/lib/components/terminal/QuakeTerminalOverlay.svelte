@@ -69,6 +69,8 @@
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
+  import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
+  import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
     selectWorkspaceScriptEntries,
@@ -330,6 +332,26 @@
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
 
+  // Display form of the selected script's detected URL: the loopback rewrite
+  // only (daemon host in remote mode), NO probe and NO tunnel, so the chip
+  // shows where the link actually points without side effects. The full
+  // resolve (probe + tunnel) runs only on click.
+  let displayedDetectedUrl = $state<string | null>(null);
+  $effect(() => {
+    const rawUrl = selectedScriptRuntime?.detectedUrl;
+    if (!rawUrl) {
+      displayedDetectedUrl = null;
+      return;
+    }
+    displayedDetectedUrl = rawUrl;
+    void rewriteBrowserLinkForDisplay(rawUrl, window.electronAPI?.invoke).then((rewritten) => {
+      // Only apply if the detected URL hasn't changed while resolving.
+      if (selectedScriptRuntime?.detectedUrl === rawUrl) {
+        displayedDetectedUrl = rewritten;
+      }
+    });
+  });
+
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
     idle: {
       get label() {
@@ -450,16 +472,24 @@
     showScriptEditPanel = false;
   }
 
+  // Resolve a script's detected URL (rewrite → probe → tunnel; toasts on
+  // resolver warning/error) BEFORE opening the browser panel on it.
+  function openScriptUrl(rawUrl: string): void {
+    void resolveBrowserLinkForOpen(rawUrl).then((resolvedUrl) => {
+      import('$features/layout/panel-layout-adapter')
+        .then(({ getPanelLayoutManager }) => {
+          const layoutManager = getPanelLayoutManager(workspaceId!);
+          layoutManager.openBrowserPanel(resolvedUrl);
+        })
+        .catch(() => {
+          window.open(resolvedUrl, '_blank');
+        });
+    });
+  }
+
   function handleScriptOpenUrl(): void {
     if (!selectedScriptRuntime?.detectedUrl) return;
-    import('$features/layout/panel-layout-adapter')
-      .then(({ getPanelLayoutManager }) => {
-        const layoutManager = getPanelLayoutManager(workspaceId!);
-        layoutManager.openBrowserPanel(selectedScriptRuntime.detectedUrl);
-      })
-      .catch(() => {
-        window.open(selectedScriptRuntime.detectedUrl, '_blank');
-      });
+    openScriptUrl(selectedScriptRuntime.detectedUrl);
   }
 
   // Live and previously-running scripts shown as tabs in the bottom bar.
@@ -993,16 +1023,17 @@
                 {selectedScriptStatusInfo.label}
               </span>
 
-              <!-- Detected URL -->
+              <!-- Detected URL (display shows the rewrite-only form) -->
               {#if selectedScriptRuntime.detectedUrl}
+                {@const shownUrl = displayedDetectedUrl ?? selectedScriptRuntime.detectedUrl}
                 <Button
                   variant="plain"
                   class="text-blue-400 hover:underline text-xs flex items-center gap-1 cursor-pointer flex-shrink-0"
                   onclick={handleScriptOpenUrl}
-                  title={selectedScriptRuntime.detectedUrl}
+                  title={shownUrl}
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                  <span class="max-w-[200px] truncate">{selectedScriptRuntime.detectedUrl}</span>
+                  <span class="max-w-[200px] truncate">{shownUrl}</span>
                 </Button>
               {/if}
             </div>
@@ -1306,16 +1337,7 @@
                     onclick={(e) => {
                       e.stopPropagation();
                       const url = script.runtime.detectedUrl;
-                      if (url) {
-                        import('$features/layout/panel-layout-adapter')
-                          .then(({ getPanelLayoutManager }) => {
-                            const layoutManager = getPanelLayoutManager(workspaceId!);
-                            layoutManager.openBrowserPanel(url);
-                          })
-                          .catch(() => {
-                            window.open(url, '_blank');
-                          });
-                      }
+                      if (url) openScriptUrl(url);
                     }}
                     title={m.terminal_quakeOverlay_openUrl_tooltip()}
                     aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
