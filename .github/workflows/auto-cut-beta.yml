@@ -1,29 +1,46 @@
-# Scheduled auto-merge of the release-please Release PR — "auto-cut beta".
+# Auto-merge of the release-please Release PR — "auto-cut beta".
 #
 # Merging the Release PR is what cuts a beta: the squash-merge push to main
 # triggers release-please.yml, which creates the vX.Y.Z tag + GitHub Release,
 # and the tag triggers release-beta.yml (build + publish to
 # intent-hq/cloudlands-releases). That merge used to be a manual click; this
-# workflow performs it on a schedule whenever the Release PR is already green
+# workflow performs it automatically whenever the Release PR is already green
 # — the release-PR CI fast path makes that ~1 min after each refresh — so
 # betas ship hands-free. Stable promotion stays manual (release-stable.yml);
 # this workflow only affects beta.
 #
-# Cadence: hourly at :30, offset from intentd's auto-cut (:00) and the
-# sidecar pin bump (:15) so an intentd beta cut at the top of the hour has
-# been pinned (and release-please has refreshed the Release PR) before the
-# fe beta is cut.
+# Triggers — event-chained cut plus an hourly cron backstop:
+# - push to main touching `intentd.version`: the sidecar pin-bump squash
+#   merge (pushed with RELEASE_PAT, so it triggers workflows) chains straight
+#   into a cut. Push-triggered runs poll (30s interval, up to 15 min total)
+#   for release-please to refresh the Release PR with the pushed pin and for
+#   CI Gate to go green, then merge — an intentd change ships in the same fe
+#   beta cycle instead of waiting for the next cron tick.
+# - Hourly cron at :30 (offset from intentd's auto-cut at :00 and the
+#   sidecar pin bump at :15): the backstop, and the normal path for fe-only
+#   changes. Cron and manual-dispatch runs keep the check-once-and-exit
+#   behavior (no polling).
 #
 # Guardrails:
 # - The `hold-release` label on the Release PR pauses auto-merge (skip with
 #   a notice) until the label is removed.
+# - An in-flight intentd release build defers the cut: when intent-hq/intentd
+#   has a semver tag newer than the published alpha channel manifest and the
+#   tag is younger than 90 minutes, a release build is running and a pin bump
+#   is imminent — cutting now would ship a stale sidecar. The age bound stops
+#   a failed intentd build from deferring fe betas forever, and the check
+#   fails OPEN on any lookup error (missing INTENTD_READ_PAT, unreachable
+#   manifest, unreadable tags) so an unreadable intentd never blocks fe
+#   releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
 #   in-flight intentd pin must land first so the fe beta carries the new
-#   sidecar; the next hourly run cuts a beta that includes it.
+#   sidecar; its merge push then chains straight into a cut via the push
+#   trigger above.
 # - Merge happens ONLY when GitHub already reports the PR clean: not a
 #   draft, mergeable, required check "CI Gate" green on the current head,
-#   and no unresolved review threads. Anything else logs and exits 0 — the
-#   next scheduled run retries. Never force-merges.
+#   and no unresolved review threads. Anything else logs and exits 0 (push
+#   runs first retry transient states within their bounded wait) — the next
+#   scheduled run retries. Never force-merges.
 # - The PR branch is never updated from here: release-please owns the
 #   Release PR branch content and force-refreshes it on every push to main.
 #
@@ -31,11 +48,13 @@
 # mergeability, CI Gate via statusCheckRollup, review threads) authenticate
 # with the implicit GITHUB_TOKEN under least-privilege job permissions —
 # fine-grained PATs cannot read statusCheckRollup without Checks/
-# Commit-statuses read access. The merge itself authenticates with the
-# RELEASE_PAT PAT, NOT the implicit GITHUB_TOKEN: pushes made with
-# GITHUB_TOKEN do not trigger other workflows, and the merge push to main
-# must trigger release-please.yml to cut the tag. Fail-soft when the secret
-# is absent (same convention as the other release workflows).
+# Commit-statuses read access. The in-flight intentd check reads a different
+# repo, so it authenticates with INTENTD_READ_PAT. The merge itself
+# authenticates with the RELEASE_PAT PAT, NOT the implicit GITHUB_TOKEN:
+# pushes made with GITHUB_TOKEN do not trigger other workflows, and the
+# merge push to main must trigger release-please.yml to cut the tag.
+# Fail-soft when the secret is absent (same convention as the other release
+# workflows).
 
 name: Auto-cut beta
 
@@ -43,9 +62,14 @@ permissions: {}
 
 on:
   schedule:
-    # Hourly at :30; each run is a seconds-long API check that either
-    # squash-merges a green Release PR or exits quietly.
+    # Hourly at :30 (backstop); each run is a seconds-long API check that
+    # either squash-merges a green Release PR or exits quietly.
     - cron: "30 * * * *"
+  push:
+    branches: [main]
+    # The sidecar pin-bump squash merge touching only the pin file; chains
+    # straight into a (polling) cut so the new sidecar ships this cycle.
+    paths: [intentd.version]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -54,9 +78,10 @@ on:
         default: false
         type: boolean
 
-# Serialize runs so a scheduled run and a manual dispatch can never race a
-# merge of the same Release PR. `cancel-in-progress: false` because a run
-# that has already decided to merge must not be cancelled mid-merge.
+# Serialize runs so scheduled, push-triggered, and manually dispatched runs
+# can never race a merge of the same Release PR. `cancel-in-progress: false`
+# because a run that has already decided to merge must not be cancelled
+# mid-merge.
 concurrency:
   group: auto-cut-beta
   cancel-in-progress: false
@@ -68,11 +93,14 @@ jobs:
   # merge.
   auto-merge-release-pr:
     name: Auto-merge green Release PR
-    # Seconds-long API-only job: ubuntu-latest so a self-hosted slot is not
+    # API-only job (seconds on cron/dispatch runs; up to ~15 min of polling
+    # on push-triggered runs): ubuntu-latest so a self-hosted slot is not
     # wasted on it.
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == 'intent-hq' }}
-    timeout-minutes: 5
+    # Covers the 15-min push-run polling budget plus setup headroom; cron
+    # and dispatch runs still finish in seconds.
+    timeout-minutes: 20
     permissions:
       pull-requests: read
       checks: read
@@ -95,8 +123,98 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::warning::RELEASE_PAT secret is not configured; skipping Release PR auto-merge"
           fi
-      - name: Merge the Release PR when green
+      # In-flight intentd release guardrail (all run types): when
+      # intent-hq/intentd carries a release tag whose build has not published
+      # to the alpha channel yet (latest semver tag newer than the alpha.json
+      # version), cutting an fe beta now would ship a stale sidecar that the
+      # imminent pin bump immediately obsoletes — defer with a notice instead;
+      # the pin merge's push-triggered run (or the next cron) cuts the beta
+      # with the new sidecar. The 90-minute age bound stops a FAILED intentd
+      # build from deferring fe betas forever (cargo-dist builds take 20-45
+      # min). Strictly fail-open: any lookup problem (missing
+      # INTENTD_READ_PAT, unreachable manifest, unreadable tags) proceeds with
+      # the cut — this guardrail must never block fe releases when intentd is
+      # unreadable.
+      - name: Check for an in-flight intentd release build
+        id: inflight
         if: steps.token.outputs.enabled == 'true'
+        shell: bash
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+          MANIFEST_MIRROR_URL: https://github.com/intent-hq/intentd-releases/releases/download/channel-alpha/alpha.json
+        run: |
+          # Deliberately no `set -e`: every lookup failure must fail OPEN
+          # (defer=false), never fail the run.
+          set -uo pipefail
+          echo "defer=false" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "${INTENTD_READ_PAT:-}" ]]; then
+            echo "INTENTD_READ_PAT is not set; cannot check for an in-flight intentd release (failing open)."
+            exit 0
+          fi
+
+          # Latest intentd release tag (release-plz cuts plain vX.Y.Z tags),
+          # SemVer-ordered with sort -V across all matching refs.
+          tag=$(GH_TOKEN="$INTENTD_READ_PAT" gh api --paginate \
+            repos/intent-hq/intentd/git/matching-refs/tags/v \
+            --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) || tag=""
+          if [[ -z "$tag" ]]; then
+            echo "Could not list intentd release tags (failing open)."
+            exit 0
+          fi
+
+          # Published alpha version: mirror manifest first, coded fallback to
+          # the intentd repo copy (same pattern as auto-pin-intentd.yml).
+          manifest=$(curl -fsSL "$MANIFEST_MIRROR_URL" || true)
+          if [[ -z "$manifest" ]]; then
+            echo "Mirror manifest unavailable; falling back to intent-hq/intentd."
+            tmp=$(mktemp -d)
+            if GH_TOKEN="$INTENTD_READ_PAT" gh release download channel-alpha \
+                --repo intent-hq/intentd --pattern alpha.json --dir "$tmp" 2>/dev/null; then
+              manifest=$(cat "$tmp/alpha.json")
+            fi
+            rm -rf "$tmp"
+          fi
+          published=$(jq -er '.version' <<<"$manifest" 2>/dev/null) || published=""
+          if [[ -z "$published" ]]; then
+            echo "Could not read the intentd alpha channel manifest (failing open)."
+            exit 0
+          fi
+
+          # Mapping '-' to '~' before sort -V gives SemVer prerelease
+          # precedence (same trick as auto-pin-intentd.yml). Tag equal to or
+          # older than the published alpha means nothing is in flight.
+          tagged="${tag#v}"
+          if [[ "$tagged" == "$published" ]] \
+            || [[ "$(printf '%s\n%s\n' "${tagged//-/\~}" "${published//-/\~}" | sort -V | tail -1)" == "${published//-/\~}" ]]; then
+            echo "No intentd release in flight (latest tag $tag, alpha channel $published)."
+            exit 0
+          fi
+
+          # The tag is newer than the published alpha: a build is (or was) in
+          # flight. The tag commit's date approximates when the build started.
+          tag_date=$(GH_TOKEN="$INTENTD_READ_PAT" gh api \
+            "repos/intent-hq/intentd/commits/$tag" \
+            --jq '.commit.committer.date' 2>/dev/null) || tag_date=""
+          if [[ -z "$tag_date" ]]; then
+            echo "Could not resolve the age of intentd tag $tag (failing open)."
+            exit 0
+          fi
+          tag_epoch=$(date -d "$tag_date" +%s 2>/dev/null) || tag_epoch=""
+          if [[ -z "$tag_epoch" ]]; then
+            echo "Could not parse the date of intentd tag $tag (failing open)."
+            exit 0
+          fi
+          age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
+          if (( age_min < 90 )); then
+            echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the beta cut so the next beta ships the new sidecar"
+            echo "defer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
+          fi
+      - name: Merge the Release PR when green
+        if: steps.token.outputs.enabled == 'true' && steps.inflight.outputs.defer != 'true'
         shell: bash
         env:
           # Reads use the implicit token (job permissions above); the PAT is
@@ -106,148 +224,223 @@ jobs:
           # Boolean input; on schedule events the inputs context is empty and
           # this renders "false".
           DRY_RUN: ${{ inputs.dry_run == true }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          # Identify the open release-please Release PR: head branch
-          # `release-please--*` and the `chore(release): X.Y.Z` title this
-          # repo's config produces. Branch name and title alone are
-          # attacker-controlled (a fork PR can use both), so the candidate is
-          # also required to come from a branch in THIS repository (no fork
-          # heads), and its author is verified below against the RELEASE_PAT
-          # identity.
-          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --json number,title,headRefName,isDraft,labels,isCrossRepository,author \
-            --jq '[.[] | select((.isCrossRepository == false)
-                  and (.headRefName | startswith("release-please--"))
-                  and (.title | test("^chore\\(release\\): [0-9]+\\.[0-9]+\\.[0-9]+")))]')
-          count=$(jq 'length' <<<"$prs")
-          if [[ "$count" -eq 0 ]]; then
-            echo "No open release-please Release PR — no changes, no release."
-            exit 0
-          fi
-          if [[ "$count" -gt 1 ]]; then
-            # Should never happen (release-please maintains a single Release
-            # PR); refuse to guess rather than merge the wrong one.
-            echo "::warning::Found $count open PRs that look like the Release PR ($(jq -r '[.[].number | tostring] | join(", #")' <<<"$prs" | sed 's/^/#/')); refusing to guess"
-            exit 0
-          fi
-          number=$(jq -r '.[0].number' <<<"$prs")
-          title=$(jq -r '.[0].title' <<<"$prs")
-          echo "Release PR: #$number ($title)"
-
-          # Bind the candidate to the release-please identity: the Release
-          # PR is opened with the same RELEASE_PAT the merge below
-          # authenticates with, so its author must be the token's own login.
-          # This viewer lookup must run with the PAT (it resolves the PAT's
-          # identity, not the workflow's). Together with the same-repo check
-          # above, this pins the merge target to the repository-managed
-          # release-please PR — a PR that merely imitates the
-          # branch-name/title shape never qualifies.
-          viewer=$(GH_TOKEN="$RELEASE_PAT" gh api graphql \
-            -f query='query { viewer { login } }' \
-            --jq '.data.viewer.login')
-          author=$(jq -r '.[0].author.login' <<<"$prs")
-          if [[ -z "$viewer" || "$author" != "$viewer" ]]; then
-            echo "::warning::Release PR #$number author ($author) is not the RELEASE_PAT identity ($viewer); refusing to auto-merge"
-            exit 0
+          # Push-triggered runs (the pin-bump squash merge touching
+          # intentd.version) poll instead of checking once: release-please
+          # needs ~1 min after the push to refresh the Release PR and the
+          # release-PR CI fast path another ~1 min to turn CI Gate green, so
+          # the run waits (30s interval, up to 15 min total) for the PR to
+          # exist, carry the pushed pin, and go green — then merges through
+          # the same guardrail chain. Cron and manual-dispatch runs keep the
+          # check-once-and-exit behavior (deadline stays 0, so transient()
+          # never retries).
+          deadline=0
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            deadline=$(( $(date +%s) + 15 * 60 ))
+            echo "Push-triggered chained cut (intentd.version changed on main): polling up to 15 min for a refreshed, green Release PR."
           fi
 
-          # Pause guardrail: a human puts `hold-release` on the Release PR to
-          # stop auto-cutting (e.g. to batch more changes or hold a bad
-          # commit out of a beta); remove the label to resume.
-          if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
-            echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
+          # Transient-condition helper: a push run with budget left returns
+          # so the caller can sleep 30s and retry; every other case logs and
+          # exits 0 — the next scheduled run retries. Hard guardrails below
+          # (fork/identity, hold-release, pin PR, conflicts, failed gate,
+          # unresolved threads) exit directly and are never retried.
+          transient() {
+            if [[ "$EVENT_NAME" == "push" ]] && (( $(date +%s) < deadline )); then
+              echo "$1 — retrying in 30s."
+              return 0
+            fi
+            echo "$1; skipping."
             exit 0
+          }
+
+          # The pin the triggering push landed on main: the Release PR head
+          # must carry the same pin before the cut (i.e. release-please has
+          # refreshed the PR after the push) so the beta actually ships the
+          # new sidecar. Read failures fall back to check-once behavior.
+          push_pin=""
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            push_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$PUSH_SHA" \
+              --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || push_pin=""
+            if [[ -z "$push_pin" ]]; then
+              echo "::warning::could not read intentd.version at $PUSH_SHA; falling back to a single check"
+              deadline=0
+            fi
           fi
 
-          # Pipeline ordering guardrail: an open pin-bump PR (the rolling
-          # `auto/intentd-pin` PR from auto-pin-intentd.yml) means a newer
-          # intentd sidecar is in flight. Let it land first — its fix-typed
-          # commit refreshes the Release PR — so the fe beta carries the new
-          # sidecar; the next hourly run cuts a beta that includes it.
-          # `--head` also matches fork PRs whose branch merely shares the
-          # name, so restrict to same-repo heads — otherwise a fork PR named
-          # auto/intentd-pin could defer beta cuts indefinitely.
-          pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --head auto/intentd-pin --json number,isCrossRepository \
-            --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
-          if [[ -n "$pin_pr" ]]; then
-            echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the beta cut until the new sidecar pin lands"
-            exit 0
-          fi
+          while :; do
+            # Identify the open release-please Release PR: head branch
+            # `release-please--*` and the `chore(release): X.Y.Z` title this
+            # repo's config produces. Branch name and title alone are
+            # attacker-controlled (a fork PR can use both), so the candidate
+            # is also required to come from a branch in THIS repository (no
+            # fork heads), and its author is verified below against the
+            # RELEASE_PAT identity.
+            prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+              --json number,title,headRefName,isDraft,labels,isCrossRepository,author \
+              --jq '[.[] | select((.isCrossRepository == false)
+                    and (.headRefName | startswith("release-please--"))
+                    and (.title | test("^chore\\(release\\): [0-9]+\\.[0-9]+\\.[0-9]+")))]')
+            count=$(jq 'length' <<<"$prs")
+            if [[ "$count" -eq 0 ]]; then
+              transient "No open release-please Release PR — no changes, no release (on push runs: the refresh may still be in flight)"
+              sleep 30; continue
+            fi
+            if [[ "$count" -gt 1 ]]; then
+              # Should never happen (release-please maintains a single
+              # Release PR); refuse to guess rather than merge the wrong one.
+              echo "::warning::Found $count open PRs that look like the Release PR ($(jq -r '[.[].number | tostring] | join(", #")' <<<"$prs" | sed 's/^/#/')); refusing to guess"
+              exit 0
+            fi
+            number=$(jq -r '.[0].number' <<<"$prs")
+            title=$(jq -r '.[0].title' <<<"$prs")
+            echo "Release PR: #$number ($title)"
 
-          detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
-            --json isDraft,mergeable,mergeStateStatus,statusCheckRollup)
+            # Bind the candidate to the release-please identity: the Release
+            # PR is opened with the same RELEASE_PAT the merge below
+            # authenticates with, so its author must be the token's own
+            # login. This viewer lookup must run with the PAT (it resolves
+            # the PAT's identity, not the workflow's). Together with the
+            # same-repo check above, this pins the merge target to the
+            # repository-managed release-please PR — a PR that merely
+            # imitates the branch-name/title shape never qualifies.
+            viewer=$(GH_TOKEN="$RELEASE_PAT" gh api graphql \
+              -f query='query { viewer { login } }' \
+              --jq '.data.viewer.login')
+            author=$(jq -r '.[0].author.login' <<<"$prs")
+            if [[ -z "$viewer" || "$author" != "$viewer" ]]; then
+              echo "::warning::Release PR #$number author ($author) is not the RELEASE_PAT identity ($viewer); refusing to auto-merge"
+              exit 0
+            fi
 
-          if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
-            echo "Release PR #$number is a draft; skipping."
-            exit 0
-          fi
+            # Chained-cut freshness gate (push runs only): the Release PR
+            # head must already contain the pin the push landed on main —
+            # otherwise release-please has not refreshed the PR yet and
+            # merging now would cut a beta with the OLD sidecar.
+            if [[ -n "$push_pin" ]]; then
+              head_ref=$(jq -r '.[0].headRefName' <<<"$prs")
+              head_pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/intentd.version?ref=$head_ref" \
+                --jq '.content' | base64 -d | grep -Ev '^[[:space:]]*(#|$)' | tr -d '[:space:]') || head_pin=""
+              if [[ "$head_pin" != "$push_pin" ]]; then
+                transient "Release PR #$number head does not carry the pushed intentd pin yet (head: ${head_pin:-unreadable}, pushed: $push_pin)"
+                sleep 30; continue
+              fi
+            fi
 
-          # This repo's ruleset does not require branches to be up to date,
-          # so a behind-main head does not block the merge — and release-
-          # please force-refreshes the Release PR branch on every push to
-          # main anyway. Only a real conflict makes the PR unmergeable.
-          mergeable=$(jq -r '.mergeable' <<<"$detail")
-          if [[ "$mergeable" != "MERGEABLE" ]]; then
-            echo "Release PR #$number is not mergeable (mergeable=$mergeable, mergeStateStatus=$(jq -r '.mergeStateStatus' <<<"$detail")); skipping."
-            exit 0
-          fi
+            # Pause guardrail: a human puts `hold-release` on the Release PR
+            # to stop auto-cutting (e.g. to batch more changes or hold a bad
+            # commit out of a beta); remove the label to resume.
+            if jq -e '.[0].labels | any(.name == "hold-release")' <<<"$prs" >/dev/null; then
+              echo "::notice::Release PR #$number carries the hold-release label; auto-merge paused until it is removed"
+              exit 0
+            fi
 
-          # Required check "CI Gate" must be green on the current head
-          # (statusCheckRollup reflects the head commit). "missing" covers
-          # a head whose checks have not started yet — the release-PR CI
-          # fast path normally turns the gate green ~1 min after each
-          # release-please refresh.
-          gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
-            | if length == 0 then "missing"
-              elif all(.conclusion == "SUCCESS") then "success"
-              else (map(.conclusion // .status // "PENDING") | join(","))
-              end' <<<"$detail")
-          if [[ "$gate" != "success" ]]; then
-            echo "CI Gate is not green on the current head (state: $gate); skipping."
-            exit 0
-          fi
+            # Pipeline ordering guardrail: an open pin-bump PR (the rolling
+            # `auto/intentd-pin` PR from auto-pin-intentd.yml) means a newer
+            # intentd sidecar is in flight. Let it land first — its fix-typed
+            # commit refreshes the Release PR — so the fe beta carries the
+            # new sidecar; its merge push chains straight into a fresh cut
+            # run (and the next hourly run backstops it).
+            # `--head` also matches fork PRs whose branch merely shares the
+            # name, so restrict to same-repo heads — otherwise a fork PR
+            # named auto/intentd-pin could defer beta cuts indefinitely.
+            pin_pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+              --head auto/intentd-pin --json number,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository == false)][0].number // empty')
+            if [[ -n "$pin_pr" ]]; then
+              echo "::notice::Pin-bump PR #$pin_pr (auto/intentd-pin) is open; deferring the beta cut until the new sidecar pin lands"
+              exit 0
+            fi
 
-          # --paginate walks every reviewThreads page (an unresolved thread
-          # past the first page must still block the merge); --jq emits one
-          # per-page count, summed by awk.
-          unresolved=$(gh api graphql --paginate \
-            -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
-              repository(owner: $owner, name: $repo) {
-                pullRequest(number: $pr) {
-                  reviewThreads(first: 100, after: $endCursor) {
-                    nodes { isResolved }
-                    pageInfo { hasNextPage endCursor }
+            detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup)
+
+            if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
+              echo "Release PR #$number is a draft; skipping."
+              exit 0
+            fi
+
+            # This repo's ruleset does not require branches to be up to date,
+            # so a behind-main head does not block the merge — and release-
+            # please force-refreshes the Release PR branch on every push to
+            # main anyway. Only a real conflict makes the PR unmergeable;
+            # UNKNOWN just means GitHub is still computing mergeability.
+            mergeable=$(jq -r '.mergeable' <<<"$detail")
+            if [[ "$mergeable" == "UNKNOWN" ]]; then
+              transient "Release PR #$number mergeability is still being computed (mergeable=UNKNOWN)"
+              sleep 30; continue
+            fi
+            if [[ "$mergeable" != "MERGEABLE" ]]; then
+              echo "Release PR #$number is not mergeable (mergeable=$mergeable, mergeStateStatus=$(jq -r '.mergeStateStatus' <<<"$detail")); skipping."
+              exit 0
+            fi
+
+            # Required check "CI Gate" must be green on the current head
+            # (statusCheckRollup reflects the head commit). "missing" covers
+            # a head whose checks have not started yet — the release-PR CI
+            # fast path normally turns the gate green ~1 min after each
+            # release-please refresh. A terminal non-success conclusion is a
+            # hard skip (retrying cannot rerun a failed check); anything else
+            # (missing/pending) is transient.
+            gate=$(jq -r '[.statusCheckRollup[]? | select(.name == "CI Gate")]
+              | if length == 0 then "missing"
+                elif all(.conclusion == "SUCCESS") then "success"
+                else (map(.conclusion // .status // "PENDING") | join(","))
+                end' <<<"$detail")
+            if [[ "$gate" != "success" ]]; then
+              if grep -Eq 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED' <<<"$gate"; then
+                echo "CI Gate concluded unsuccessfully on the current head (state: $gate); skipping."
+                exit 0
+              fi
+              transient "CI Gate is not green on the current head (state: $gate)"
+              sleep 30; continue
+            fi
+
+            # --paginate walks every reviewThreads page (an unresolved
+            # thread past the first page must still block the merge); --jq
+            # emits one per-page count, summed by awk.
+            unresolved=$(gh api graphql --paginate \
+              -f query='query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    reviewThreads(first: 100, after: $endCursor) {
+                      nodes { isResolved }
+                      pageInfo { hasNextPage endCursor }
+                    }
                   }
                 }
-              }
-            }' \
-            -f owner="${GITHUB_REPOSITORY%/*}" \
-            -f repo="${GITHUB_REPOSITORY#*/}" \
-            -F pr="$number" \
-            --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
-            | awk '{ sum += $1 } END { print sum + 0 }')
-          if [[ "$unresolved" -ne 0 ]]; then
-            echo "Release PR #$number has $unresolved unresolved review thread(s); skipping."
-            exit 0
-          fi
+              }' \
+              -f owner="${GITHUB_REPOSITORY%/*}" \
+              -f repo="${GITHUB_REPOSITORY#*/}" \
+              -F pr="$number" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length' \
+              | awk '{ sum += $1 } END { print sum + 0 }')
+            if [[ "$unresolved" -ne 0 ]]; then
+              echo "Release PR #$number has $unresolved unresolved review thread(s); skipping."
+              exit 0
+            fi
 
-          if [[ "$DRY_RUN" == "true" ]]; then
-            echo "DRY RUN: would squash-merge Release PR #$number ($title)."
-            exit 0
-          fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: would squash-merge Release PR #$number ($title)."
+              exit 0
+            fi
 
-          # Squash-merge with the PAT so the push to main triggers
-          # release-please.yml (tag + GitHub Release → release-beta.yml
-          # builds and publishes to intent-hq/cloudlands-releases). The
-          # squash commit title defaults to the single release commit's
-          # message, which release-please writes in the same conventional
-          # form as the PR title. A failure here is not fatal: the PR state
-          # may have changed under us, and the next scheduled run retries.
-          if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
-            echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-beta.yml publishes the beta automatically."
-          else
-            echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
-          fi
+            # Squash-merge with the PAT so the push to main triggers
+            # release-please.yml (tag + GitHub Release → release-beta.yml
+            # builds and publishes to intent-hq/cloudlands-releases). The
+            # squash commit title defaults to the single release commit's
+            # message, which release-please writes in the same conventional
+            # form as the PR title. A failure here is not fatal: the PR
+            # state may have changed under us, and the next scheduled run
+            # retries.
+            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
+              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-beta.yml publishes the beta automatically."
+            else
+              echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
+            fi
+            exit 0
+          done
