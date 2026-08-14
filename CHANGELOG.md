@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.36.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.36.0...v2.36.1) (2026-08-14)
+
+
+### 🐛 Bug Fixes
+
+* **hud:** count unread workspaces in both UNREAD and their state bucket ([#1172](https://github.com/intent-hq/cloudlands-fe/issues/1172)) ([a8588d6](https://github.com/intent-hq/cloudlands-fe/commit/a8588d6d945272fec5cad90aa54302953eaf9d74))
+* **hud:** thicken workspace card unread blink border to 2px ([#1173](https://github.com/intent-hq/cloudlands-fe/issues/1173)) ([78ca820](https://github.com/intent-hq/cloudlands-fe/commit/78ca820f19ddc1ad31dcbfab5e4a1f7aaed7d9e2))
+* preserve newlines losslessly in chat input restore and paste ([#1175](https://github.com/intent-hq/cloudlands-fe/issues/1175)) ([de57e82](https://github.com/intent-hq/cloudlands-fe/commit/de57e8242af7269722e6c274e9ea7bd837e22668))
+* prevent each_key_duplicate crash in chat response-group rendering ([#1176](https://github.com/intent-hq/cloudlands-fe/issues/1176)) ([de21b1b](https://github.com/intent-hq/cloudlands-fe/commit/de21b1b7b8a7c5edb06d9b8a20144b022fcb81b3))
+* stop sticky-row flicker at top of chat ([#1171](https://github.com/intent-hq/cloudlands-fe/issues/1171)) ([cbd3e3f](https://github.com/intent-hq/cloudlands-fe/commit/cbd3e3f9514c6b0c32abd6708ee2518c2056b1c8))
+
 ## [2.36.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.35.2...v2.36.0) (2026-08-14)
 
 
