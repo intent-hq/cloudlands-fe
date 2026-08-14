@@ -112,6 +112,8 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
+  import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -150,6 +152,7 @@
     faSquareCheck,
     faLock,
     faLockOpen,
+    faPaperclip,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
@@ -676,6 +679,45 @@
   // on the panel wrapper plus an initial sync below.
   let isInternallyFocused = $state(false);
   const isChatFocused = $derived(isPanelFocused || isInternallyFocused);
+
+  // Panel-wide OS-file drop target: dropping files anywhere over the chat panel
+  // attaches them via SimpleRichInput's pipeline (which renders with
+  // externalDropTarget so its own drag handlers/overlay stay off in this
+  // context). Gated on isFileDragEvent inside the helper, so text/content and
+  // tab drags are unaffected, and on input availability, so the overlay never
+  // invites a drop that would be discarded (e.g. while the question wizard is
+  // expanded and SimpleRichInput is unmounted).
+  let isFileDragOverPanel = $state(false);
+  const panelFileDrop = createFileDropTarget({
+    onDragChange: (dragging) => (isFileDragOverPanel = dragging),
+    onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    isEnabled: () => !!inputComponent,
+  });
+
+  // Clear stale drag state if the input unmounts mid-drag (wizard expands).
+  $effect(() => {
+    if (!inputComponent) panelFileDrop.reset();
+  });
+
+  // The panel header (agent name row) is part of the drop target too: while
+  // this chat is the active tab and the input can accept files, register the
+  // same pipeline with the surrounding panel-system Panel (context is null
+  // outside a panel, e.g. the Chief of Staff sidebar). Header drags drive the
+  // same overlay via isFileDragOverHeader.
+  const panelFileDropContext = getPanelFileDropContext();
+  let isFileDragOverHeader = $state(false);
+  $effect(() => {
+    if (!panelFileDropContext || !isActive || !inputComponent) return;
+    const handler = {
+      onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
+      onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),
+    };
+    panelFileDropContext.register(handler);
+    return () => {
+      panelFileDropContext.unregister(handler);
+      isFileDragOverHeader = false;
+    };
+  });
 
   $effect(() => {
     if (!panelElement || typeof document === 'undefined') return;
@@ -3174,7 +3216,24 @@
       isInternallyFocused = false;
     }
   }}
+  ondragenter={panelFileDrop.handleDragEnter}
+  ondragleave={panelFileDrop.handleDragLeave}
+  ondragover={panelFileDrop.handleDragOver}
+  ondrop={panelFileDrop.handleDrop}
 >
+  <!-- Full-panel drop zone overlay (file drags only) -->
+  {#if isFileDragOverPanel || isFileDragOverHeader}
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
+      data-testid="chat-panel-drop-overlay"
+    >
+      <div class="flex flex-col items-center gap-2 text-primary">
+        <Fa icon={faPaperclip} class="w-6 h-6" />
+        <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
+      </div>
+    </div>
+  {/if}
+
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -4073,6 +4132,7 @@
         editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
         contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
         edgeDocked
+        externalDropTarget
         requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />

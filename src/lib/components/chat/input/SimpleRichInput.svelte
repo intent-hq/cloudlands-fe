@@ -149,6 +149,13 @@
     editorClassName?: string;
     /** Override the horizontal inset applied to context rows and the action bar. */
     contentInsetClassName?: string;
+    /**
+     * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
+     * target): the container's own drag handlers and drop overlay are disabled
+     * so drag events bubble up, and the parent forwards dropped files via
+     * `handleDroppedFiles()`.
+     */
+    externalDropTarget?: boolean;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -205,6 +212,7 @@
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
+    externalDropTarget = false,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -894,6 +902,14 @@
     await processImageFiles(Array.from(files));
   }
 
+  // Export for parents that own the drop target (externalDropTarget, e.g.
+  // ChatPanel's full-panel drop zone) — forwards dropped files into the same
+  // attach pipeline as a direct drop on the input.
+  export async function handleDroppedFiles(files: File[]) {
+    if (files.length === 0) return;
+    await processImageFiles(files);
+  }
+
   // Handle clipboard paste for files (images and non-images alike)
   async function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
@@ -1325,10 +1341,10 @@
   style={isAutoExpand
     ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
     : `height: ${containerHeight}px;`}
-  ondragenter={handleDragEnter}
-  ondragleave={handleDragLeave}
-  ondragover={handleDragOver}
-  ondrop={handleDrop}
+  ondragenter={externalDropTarget ? undefined : handleDragEnter}
+  ondragleave={externalDropTarget ? undefined : handleDragLeave}
+  ondragover={externalDropTarget ? undefined : handleDragOver}
+  ondrop={externalDropTarget ? undefined : handleDrop}
   onpaste={handlePaste}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
