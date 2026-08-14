@@ -24,4 +24,19 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     expect(source).not.toContain('data-sidebar-branch-icon');
     expect(source).not.toContain("$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'");
   });
+
+  it('renders the hover-card path as a link-styled copy button', () => {
+    expect(source).toContain('data-sidebar-repository-path-copy');
+    expect(source).toContain('{#if workspacePath}');
+    expect(source.match(/onclick=\{copyRepoPath\}/g)).toHaveLength(2);
+    const pathButton = source.match(
+      /<Button[^>]*data-sidebar-repository-path-copy[\s\S]*?<\/Button>/,
+    );
+    expect(pathButton).not.toBeNull();
+    expect(pathButton?.[0]).toContain('variant="plain"');
+    expect(pathButton?.[0]).toContain('underline decoration-dotted underline-offset-2');
+    expect(pathButton?.[0]).toContain('truncate');
+    expect(pathButton?.[0]).toContain('title={workspacePath}');
+    expect(pathButton?.[0]).toContain('aria-label={m.workspace_progressCard_copyPath_ariaLabel()}');
+  });
 });

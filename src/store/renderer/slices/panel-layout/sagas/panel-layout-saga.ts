@@ -35,6 +35,7 @@ import {
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import { normalizeTablessPanelLayout, removeForeignWorkspaceTabs } from '../panel-layout-tabless';
+import { migratePanelCanvasWidth } from '../panel-layout-width-provenance';
 import {
   clearPanelLayout,
   closeActiveTab,
@@ -89,6 +90,7 @@ import {
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   type PanelLayoutNode,
   type WorkspacePanelLayout,
+  type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
 
 const PERSIST_ACTIONS = [
@@ -228,6 +230,13 @@ export function isStoredLayoutValid(value: unknown): value is WorkspacePanelLayo
     ) {
       return false;
     }
+    if (
+      layout.canvasWidthSource !== undefined &&
+      layout.canvasWidthSource !== null &&
+      layout.canvasWidthSource !== 'explicit'
+    ) {
+      return false;
+    }
     const panelIds = new Set<string>();
     if (!collectPanelIds(layout.root, panelIds) || panelIds.size === 0) return false;
     for (const panelId of panelIds) {
@@ -255,11 +264,33 @@ function hasAnyTab(layout: WorkspacePanelLayout): boolean {
   return Object.values(layout.panels).some((panel) => panel.tabs.length > 0);
 }
 
+
+function getPersistableRoot(workspace: WorkspacePanelLayoutState): PanelLayoutNode {
+  if (workspace.expandedPanelId === null || workspace.savedSizesBeforeExpand.length === 0) {
+    return workspace.root;
+  }
+  const root = JSON.parse(JSON.stringify(workspace.root)) as PanelLayoutNode;
+  for (const entry of workspace.savedSizesBeforeExpand) {
+    let node = root;
+    for (const index of entry.nodePath) {
+      if (node.type !== 'split' || !node.children[index]) return workspace.root;
+      node = node.children[index];
+    }
+    if (node.type !== 'split') return workspace.root;
+    node.sizes = [...entry.sizes];
+  }
+  return root;
+}
+
 function normalizeLayoutForWorkspace(
   workspaceId: string,
   layout: WorkspacePanelLayout,
 ): WorkspacePanelLayout {
-  return normalizeTablessPanelLayout(removeForeignWorkspaceTabs(layout, workspaceId));
+  const normalized = normalizeTablessPanelLayout(removeForeignWorkspaceTabs(layout, workspaceId));
+  return {
+    ...normalized,
+    ...migratePanelCanvasWidth(layout.canvasWidth, layout.canvasWidthSource),
+  };
 }
 
 export function* loadLayoutFromStorage(
@@ -296,10 +327,18 @@ export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerato
     const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
     if (workspace === emptyWorkspaceState) return;
     const layout: WorkspacePanelLayout = {
-      root: workspace.root,
+      root: getPersistableRoot(workspace),
       panels: workspace.panels,
       focusedPanelId: workspace.focusedPanelId,
-      canvasWidth: workspace.canvasWidth,
+      canvasWidth:
+        workspace.expandedPanelId !== null && workspace.savedCanvasWidthBeforeExpand !== undefined
+          ? workspace.savedCanvasWidthBeforeExpand
+          : workspace.canvasWidth,
+      canvasWidthSource:
+        workspace.expandedPanelId !== null &&
+        workspace.savedCanvasWidthSourceBeforeExpand !== undefined
+          ? workspace.savedCanvasWidthSourceBeforeExpand
+          : workspace.canvasWidthSource,
     };
     if (!restoredWorkspaceIds.has(wsId) && !hasAnyTab(layout)) {
       const stored = yield* call(loadLayoutFromStorage, wsId);

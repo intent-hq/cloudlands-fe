@@ -3,9 +3,16 @@ import {
   DEFAULT_PANEL_WIDTH,
   getAcceptedIndependentPanelResizeWidth,
   getAutomaticPanelCanvasWidth,
+  getPanelDefaultWidth,
+  type PanelCanvasSizing,
+  type PanelDefaultWidthTier,
 } from '../../../../shared/panel-layout-sizing';
+import { getPanelDefaultWidthTier } from '../../../../shared/panel-default-width-tiers';
 
-type LayoutShape = Pick<WorkspacePanelLayout, 'root' | 'panels' | 'focusedPanelId' | 'canvasWidth'>;
+type LayoutShape = Pick<
+  WorkspacePanelLayout,
+  'root' | 'panels' | 'focusedPanelId' | 'canvasWidth' | 'canvasWidthSource'
+>;
 
 export function getPanelOrder(node: PanelLayoutNode): string[] {
   if (node.type === 'panel') return [node.panelId];
@@ -18,6 +25,55 @@ export function countHorizontalPanelColumns(node: PanelLayoutNode): number {
   return node.direction === 'horizontal'
     ? childCounts.reduce((sum, count) => sum + count, 0)
     : Math.max(...childCounts, 0);
+}
+
+/** Return declared width tiers for each horizontal column in layout order. */
+export function getHorizontalPanelColumnDefaultWidthTiers(
+  node: PanelLayoutNode,
+  panels: Record<string, PanelState>,
+): PanelDefaultWidthTier[] {
+  if (node.type === 'panel') {
+    const panel = panels[node.panelId];
+    const activeTab = panel?.tabs.find((tab) => tab.id === panel.activeTabId) ?? panel?.tabs[0];
+    return [activeTab ? getPanelDefaultWidthTier(activeTab.type) : 'narrow'];
+  }
+  const childTiers = node.children.map((child) =>
+    getHorizontalPanelColumnDefaultWidthTiers(child, panels),
+  );
+  if (node.direction === 'horizontal') return childTiers.flat();
+  return [
+    childTiers
+      .flat()
+      .reduce<PanelDefaultWidthTier>(
+        (widest, tier) =>
+          getPanelDefaultWidth(tier) > getPanelDefaultWidth(widest) ? tier : widest,
+        'narrow',
+      ),
+  ];
+}
+
+/** Return resolved intrinsic widths for each horizontal column in layout order. */
+export function getHorizontalPanelColumnDefaultWidths(
+  node: PanelLayoutNode,
+  panels: Record<string, PanelState>,
+  viewportWidth = 0,
+): number[] {
+  return getHorizontalPanelColumnDefaultWidthTiers(node, panels).map((tier) =>
+    getPanelDefaultWidth(tier, viewportWidth),
+  );
+}
+
+export function getAutomaticPanelLayoutCanvasWidth(
+  root: PanelLayoutNode,
+  panels: Record<string, PanelState>,
+  sizing: PanelCanvasSizing,
+  viewportWidth = 0,
+): number {
+  return getAutomaticPanelCanvasWidth(
+    getHorizontalPanelColumnDefaultWidths(root, panels, viewportWidth),
+    sizing,
+    viewportWidth,
+  );
 }
 
 /**
@@ -345,6 +401,7 @@ export function removeForeignWorkspaceTabs(layout: LayoutShape, workspaceId: str
     root,
     panels,
     canvasWidth: layout.canvasWidth ?? null,
+    canvasWidthSource: layout.canvasWidthSource ?? null,
     focusedPanelId:
       layout.focusedPanelId && panels[layout.focusedPanelId]
         ? layout.focusedPanelId
@@ -620,6 +677,7 @@ export function normalizeTablessPanelLayout(layout: LayoutShape): LayoutShape {
     root,
     panels,
     canvasWidth: layout.canvasWidth ?? null,
+    canvasWidthSource: layout.canvasWidthSource ?? null,
     focusedPanelId: focusedPanelId ?? getPanelOrder(root)[0],
   };
 }

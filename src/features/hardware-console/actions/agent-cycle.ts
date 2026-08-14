@@ -97,13 +97,31 @@ function hasPendingQuestion(session: StoredAgentSession): boolean {
   return !(typeof dismissedId === 'string' && dismissedId === pending.messageId);
 }
 
+/** Attention priority buckets, highest urgency first. */
+export type SessionAttentionPriority = 'blocker' | 'question' | 'discussion';
+
+/**
+ * Classify a session's attention priority: a pending blocker report beats a
+ * pending wizard question beats a pending discussion request; `null` when
+ * the session needs no attention. Consistent with `sessionNeedsAttention` —
+ * a session needs attention iff its priority is non-null.
+ */
+export function sessionAttentionPriority(
+  session: StoredAgentSession | undefined,
+): SessionAttentionPriority | null {
+  if (!session || session.status === AgentStatus.Deleted) return null;
+  const kind = getAgentAttentionRequest(session)?.kind ?? null;
+  if (kind === 'blocker') return 'blocker';
+  if (hasPendingQuestion(session)) return 'question';
+  return kind === 'discussion' ? 'discussion' : null;
+}
+
 /**
  * Attention = pending attention request (discussion/blocker) or pending
  * wizard question — the LED engine's attention definition (led/snapshot.ts).
  */
 export function sessionNeedsAttention(session: StoredAgentSession | undefined): boolean {
-  if (!session || session.status === AgentStatus.Deleted) return false;
-  return getAgentAttentionRequest(session) !== null || hasPendingQuestion(session);
+  return sessionAttentionPriority(session) !== null;
 }
 
 /** Failed = error status — the LED engine's failed definition. */

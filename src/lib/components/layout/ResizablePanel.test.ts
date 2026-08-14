@@ -244,6 +244,37 @@ describe('ResizablePanel reactive defaults', () => {
     expect(panel.className).toContain('transition-[width,min-width,max-width]');
   });
 
+  it('restores the starting width and reports cancellation on Escape', async () => {
+    const onResizeCancel = vi.fn();
+    const onResizeEnd = vi.fn();
+    const { container } = render(ResizablePanel, {
+      props: { defaultWidth: 360, onResizeCancel, onResizeEnd },
+    });
+    const panel = container.firstElementChild!;
+    const handle = container.querySelector('button')!;
+
+    await fireEvent.mouseDown(handle, { clientX: 360 });
+    await fireEvent.mouseMove(document, { clientX: 320 });
+    expect(panel.getAttribute('style')).toContain('width: 400px');
+
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    expect(panel.getAttribute('style')).toContain('width: 360px');
+    expect(onResizeCancel).toHaveBeenCalledOnce();
+    expect(onResizeEnd).not.toHaveBeenCalled();
+  });
+
+  it('uses the canonical reset width on handle double-click', async () => {
+    const onResizeEnd = vi.fn();
+    const { container } = render(ResizablePanel, {
+      props: { defaultWidth: 360, resetWidth: 540, maxWidth: 800, onResizeEnd },
+    });
+
+    await fireEvent.dblClick(container.querySelector('button')!);
+
+    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 540px');
+    expect(onResizeEnd).toHaveBeenCalledWith(360, 540);
+  });
+
   it('includes horizontal scroll distance when enlarging at the viewport edge', async () => {
     const scrollContainer = document.createElement('div');
     scrollContainer.scrollLeft = 100;

@@ -83,6 +83,22 @@ describe('Tooltip', () => {
     await waitFor(() => expect(richTrigger.getAttribute('aria-describedby')).toBe(richTooltip.id));
   });
 
+  it('does not add an interactive role or tab stop inside menu content (monorepo#2320)', async () => {
+    render(TooltipHarness);
+    const menuCase = screen.getByTestId('menu-tooltip');
+    const span = menuCase.querySelector<HTMLElement>('[data-tooltip-trigger]');
+    expect(span).not.toBeNull();
+    // No nested role=button inside role=menuitem, and no unreachable tab stop.
+    await waitFor(() => expect(span!.getAttribute('role')).toBeNull());
+    expect(span!.hasAttribute('tabindex')).toBe(false);
+
+    // The tooltip itself still opens on hover.
+    await fireEvent.pointerMove(span!, { pointerType: 'mouse' });
+    expect(
+      await screen.findByRole('tooltip', { name: 'Menu status help', hidden: true }),
+    ).not.toBeNull();
+  });
+
   it('keeps passive trigger content keyboard focusable and interactive triggers hoverable', async () => {
     render(TooltipHarness);
     const passiveTrigger = screen.getByRole('button', { name: 'Passive status' });

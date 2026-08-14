@@ -10,7 +10,7 @@ describe('editorial workspace shell presentation contract', () => {
     const layout = source('../PanelLayout.svelte');
 
     expect(layout).toContain(
-      "contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
+      "contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
     );
     expect(layout).toContain("use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}");
     expect(layout).toContain('data-testid="panel-workspace-inset"');
@@ -122,7 +122,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain('rounded-lg bg-card border border-border p-3');
+    expect(launcherMarkup).toContain(
+      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
+    );
     expect(sidebar).toContain('<AuggieAvatar');
     expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
@@ -135,9 +137,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('{#if isLauncherOverview}');
     expect(sidebar).toContain('aria-label={m.ui_tab_close_ariaLabel()}');
     expect(sidebar).toContain('data-sidebar-close');
-    expect(sidebar).toContain('hover:bg-transparent hover:text-foreground');
+    expect(sidebar).toContain('hover:bg-muted/50 hover:text-foreground');
     expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
-    expect(sidebar).toContain('rounded-lg bg-background border border-border');
+    expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
     expect(sidebar).not.toContain('view-transition-name: sidebar-section');
     expect(sidebar).toContain('in:cardMorph|global');
@@ -240,11 +242,14 @@ describe('editorial workspace shell presentation contract', () => {
     const terminal = source('../../../terminal/QuakeTerminalOverlay.svelte');
     const route = source('../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte');
 
-    expect(sidebar).toContain('<WorkspaceTerminalDock {workspaceId} />');
-    expect(sidebar).toContain("class={cn('flex h-full flex-col bg-transparent', className)}");
+    expect(sidebar).toContain('<WorkspaceTerminalDock');
+    expect(sidebar).toContain("onExpand={() => handleTabClick('shell')}");
+    expect(sidebar).toContain(
+      "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
+    );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-4 py-2');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-3 py-2');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');

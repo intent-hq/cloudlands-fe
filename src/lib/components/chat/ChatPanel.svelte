@@ -112,6 +112,8 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
+  import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -127,6 +129,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
+  import { createAppMessageId } from '$shared/utils/app-message-id';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
@@ -149,6 +152,7 @@
     faSquareCheck,
     faLock,
     faLockOpen,
+    faPaperclip,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
@@ -167,6 +171,13 @@
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import {
+    animateMessageSend,
+    captureMessageSendOrigin,
+    createMessageSendLaunchBubble,
+    MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+    type MessageSendOrigin,
+  } from './message-send-transition';
 
   import LazyTurn from './LazyTurn.svelte';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
@@ -365,10 +376,92 @@
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
   let scrollContainer = $state<HTMLDivElement>();
+  let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
   let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+
+  interface PendingSendTransition {
+    origin: MessageSendOrigin;
+    launchBubble: HTMLElement | null;
+    expiry: ReturnType<typeof setTimeout>;
+  }
+
+  const pendingSendTransitions = new Map<string, PendingSendTransition>();
+  const activeSendTransitions = new Map<string, AbortController>();
+
+  function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
+    if (pendingSendTransitions.get(key) !== pending) return;
+    clearTimeout(pending.expiry);
+    pending.launchBubble?.remove();
+    pendingSendTransitions.delete(key);
+  }
+
+  function cancelAllSendTransitions(): void {
+    for (const [key, pending] of pendingSendTransitions) {
+      cancelPendingSendTransition(key, pending);
+    }
+    for (const controller of activeSendTransitions.values()) controller.abort();
+    activeSendTransitions.clear();
+  }
+
+  function prepareMessageSendTransition(
+    text: string,
+    options: { enabled: boolean; allowOverlap?: boolean },
+  ): string {
+    const userAppMessageId = createAppMessageId();
+    if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
+      return userAppMessageId;
+    }
+    if (!composerElement) return userAppMessageId;
+    const origin = captureMessageSendOrigin(composerElement);
+    if (origin.width <= 0) return userAppMessageId;
+    const key = String(userAppMessageId);
+    const launchBubble = createMessageSendLaunchBubble(origin, text);
+    const pending: PendingSendTransition = {
+      origin,
+      launchBubble,
+      expiry: setTimeout(
+        () => cancelPendingSendTransition(key, pending),
+        MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+      ),
+    };
+    pendingSendTransitions.set(key, pending);
+    return userAppMessageId;
+  }
+
+  function startPendingSendTransitions(): boolean {
+    if (!scrollContainer || pendingSendTransitions.size === 0) return false;
+    let started = false;
+    for (const message of $agentMessages$) {
+      const key = message.role === 'user' ? String(message.appMessageId ?? '') : '';
+      const pending = pendingSendTransitions.get(key);
+      if (!pending) continue;
+      const row = Array.from(
+        scrollContainer.querySelectorAll<HTMLElement>('[data-send-app-message-id]'),
+      ).find((candidate) => candidate.dataset.sendAppMessageId === key);
+      if (!row) continue;
+      clearTimeout(pending.expiry);
+      pendingSendTransitions.delete(key);
+      const target = row.querySelector<HTMLElement>('[data-testid="user-message-surface"]') ?? row;
+      activeSendTransitions.get(key)?.abort();
+      const controller = new AbortController();
+      activeSendTransitions.set(key, controller);
+      const settle = () => {
+        if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
+      };
+      void animateMessageSend({
+        origin: pending.origin,
+        target,
+        scrollContainer,
+        launchBubble: pending.launchBubble,
+        signal: controller.signal,
+      }).then(settle, settle);
+      started = true;
+    }
+    return started;
+  }
 
   // Track which message is currently "sticky" (scrolled past its natural position)
   let stickyMessageId = $state<string | null>(null);
@@ -586,6 +679,45 @@
   // on the panel wrapper plus an initial sync below.
   let isInternallyFocused = $state(false);
   const isChatFocused = $derived(isPanelFocused || isInternallyFocused);
+
+  // Panel-wide OS-file drop target: dropping files anywhere over the chat panel
+  // attaches them via SimpleRichInput's pipeline (which renders with
+  // externalDropTarget so its own drag handlers/overlay stay off in this
+  // context). Gated on isFileDragEvent inside the helper, so text/content and
+  // tab drags are unaffected, and on input availability, so the overlay never
+  // invites a drop that would be discarded (e.g. while the question wizard is
+  // expanded and SimpleRichInput is unmounted).
+  let isFileDragOverPanel = $state(false);
+  const panelFileDrop = createFileDropTarget({
+    onDragChange: (dragging) => (isFileDragOverPanel = dragging),
+    onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    isEnabled: () => !!inputComponent,
+  });
+
+  // Clear stale drag state if the input unmounts mid-drag (wizard expands).
+  $effect(() => {
+    if (!inputComponent) panelFileDrop.reset();
+  });
+
+  // The panel header (agent name row) is part of the drop target too: while
+  // this chat is the active tab and the input can accept files, register the
+  // same pipeline with the surrounding panel-system Panel (context is null
+  // outside a panel, e.g. the Chief of Staff sidebar). Header drags drive the
+  // same overlay via isFileDragOverHeader.
+  const panelFileDropContext = getPanelFileDropContext();
+  let isFileDragOverHeader = $state(false);
+  $effect(() => {
+    if (!panelFileDropContext || !isActive || !inputComponent) return;
+    const handler = {
+      onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
+      onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),
+    };
+    panelFileDropContext.register(handler);
+    return () => {
+      panelFileDropContext.unregister(handler);
+      isFileDragOverHeader = false;
+    };
+  });
 
   $effect(() => {
     if (!panelElement || typeof document === 'undefined') return;
@@ -1410,7 +1542,9 @@
         tick().then(() => {
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
-          if (scrollContainer) scrollToBottomUtil(scrollContainer);
+          if (scrollContainer && !startPendingSendTransitions()) {
+            scrollToBottomUtil(scrollContainer);
+          }
         });
       }
     }
@@ -1669,6 +1803,12 @@
     }, 100);
 
     return () => clearTimeout(autoFocusTimer);
+  });
+
+  $effect(() => {
+    const transitionWorkspaceId = workspace?.id;
+    if (!transitionWorkspaceId) return;
+    return cancelAllSendTransitions;
   });
 
   // WORKSPACE REBIND FIX: Reactively re-initialize chat state when the workspace
@@ -2400,6 +2540,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    cancelAllSendTransitions();
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
@@ -2674,12 +2815,16 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: !$agentIsResponding$,
+    });
 
     // Dispatch all orchestration to the send-message saga
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -2836,11 +2981,16 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: true,
+      allowOverlap: true,
+    });
 
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -3066,7 +3216,24 @@
       isInternallyFocused = false;
     }
   }}
+  ondragenter={panelFileDrop.handleDragEnter}
+  ondragleave={panelFileDrop.handleDragLeave}
+  ondragover={panelFileDrop.handleDragOver}
+  ondrop={panelFileDrop.handleDrop}
 >
+  <!-- Full-panel drop zone overlay (file drags only) -->
+  {#if isFileDragOverPanel || isFileDragOverHeader}
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
+      data-testid="chat-panel-drop-overlay"
+    >
+      <div class="flex flex-col items-center gap-2 text-primary">
+        <Fa icon={faPaperclip} class="w-6 h-6" />
+        <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
+      </div>
+    </div>
+  {/if}
+
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -3605,6 +3772,7 @@
                           <div
                             data-message-id={message.id}
                             data-message-role="user"
+                            data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20 mb-4"
                             class:bg-sidebar={isChiefWorkspace}
@@ -3905,6 +4073,7 @@
 
   <!-- Message Input with Aurora Background -->
   <div
+    bind:this={composerElement}
     class="conversation-composer relative z-20 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
@@ -3963,6 +4132,7 @@
         editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
         contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
         edgeDocked
+        externalDropTarget
         requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />

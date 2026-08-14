@@ -38,6 +38,7 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
+  import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
   import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
@@ -51,7 +52,6 @@
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
 
   import {
@@ -968,18 +968,15 @@
       overlayWorkspaceColumns={showWorkspaceColumns}
     />
 
-    <!-- Update indicator (top-right corner) -->
-    <div class="app-no-drag absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
-    </div>
-
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2">
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
           class="flex min-h-0 shrink-0"
-          style:padding-top={showWorkspaceColumns ? `${35 / $zoomFactor}px` : undefined}
+          style:padding-top={showWorkspaceColumns
+            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
+            : undefined}
           data-sidebar-panel-frame
         >
           <SidebarPanel />

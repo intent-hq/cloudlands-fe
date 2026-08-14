@@ -338,7 +338,11 @@ function reduceQueuedRecordRemoved(
 
 function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
   if (payload.error) return payload.error;
-  if (payload.eventType === 'timeout' || payload.finishReason === 'timeout') {
+  // Scoped to the timeout eventType only: `finishReason` is the OPEN union of
+  // abnormal ACP stop reasons from the wire (PROTOCOL §7.3), so a future
+  // daemon-side reason spelled "timeout" on a `complete` payload must not
+  // surface a stream-failure banner.
+  if (payload.eventType === 'timeout') {
     return m.chat_state_timeout_error();
   }
   return null;

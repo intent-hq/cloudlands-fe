@@ -262,7 +262,7 @@ describe('HudWorkspaceCard waiting status suffix', () => {
 });
 
 describe('HudWorkspaceCard unread overlay', () => {
-  it('binds the unread border-blink class from the flag, over the real state', () => {
+  it('renders the corner-fold dog-ear from the flag, over the real state', () => {
     const { container } = render(HudWorkspaceCard, {
       props: {
         card: makeCard([], { stateKey: 'complete', isUnread: true }),
@@ -272,15 +272,19 @@ describe('HudWorkspaceCard unread overlay', () => {
 
     const card = container.querySelector('.hud-ws-card');
     expect(card?.classList.contains('hud-ws-card-unread')).toBe(true);
+    const dogear = container.querySelector('.hud-ws-card-dogear');
+    expect(dogear).toBeTruthy();
+    expect(dogear?.getAttribute('aria-hidden')).toBe('true');
     // The real state banner still renders — unread overlays, never masks.
     expect(container.textContent).toContain('COMPLETE');
   });
 
-  it('omits the unread class when the flag is off', () => {
+  it('omits the dog-ear when the flag is off', () => {
     const { container } = render(HudWorkspaceCard, {
       props: { card: makeCard([], { stateKey: 'complete' }), nowMs: NOW_MS },
     });
 
     expect(container.querySelector('.hud-ws-card-unread')).toBeNull();
+    expect(container.querySelector('.hud-ws-card-dogear')).toBeNull();
   });
 });

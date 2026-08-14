@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 
 const mocks = vi.hoisted(() => ({
   forwardPort: vi.fn(),
+  activeForwards: vi.fn(),
   TunnelManager: vi.fn(),
   getBackendClient: vi.fn(),
   isSameHostBackendActive: vi.fn(),
@@ -55,8 +56,10 @@ describe('browser:resolve-url IPC handler', () => {
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
     mocks.forwardPort.mockResolvedValue(45678);
+    mocks.activeForwards.mockReturnValue([]);
     mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
       this.forwardPort = mocks.forwardPort;
+      this.activeForwards = mocks.activeForwards;
       this.dispose = vi.fn();
     });
   });
@@ -102,6 +105,17 @@ describe('browser:resolve-url IPC handler', () => {
     expect(result.url).toBe('http://127.0.0.1:45678/page');
     expect(result.tunneled).toBe(true);
     expect(result.error).toBeUndefined();
+  });
+
+  it('passes a URL pointing at an active tunnel-local forward through untouched', async () => {
+    mocks.activeForwards.mockReturnValue([{ remotePort: 8742, localPort: 50241 }]);
+    const handler = await registerAndGetHandler();
+    const result = await handler({}, { url: 'http://127.0.0.1:50241/page' });
+    expect(result.url).toBe('http://127.0.0.1:50241/page');
+    expect(result.rewritten).toBe(false);
+    expect(result.reason).toContain('active daemon-tunnel forward');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.forwardPort).not.toHaveBeenCalled();
   });
 
   it('returns the rewritten URL plus an error when both probe and tunnel fail', async () => {

@@ -125,14 +125,19 @@ kbd {
   cursor: pointer;
 }
 
-/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
+/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback.
+   Layered so Tailwind utilities (e.g. `focus-visible:outline-none` from the Input
+   component's `noFocusStyle` opt-out) can override these rules — unlayered author
+   CSS would otherwise beat every layered utility under Tailwind v4. */
+@layer base {
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 body {
@@ -685,4 +690,32 @@ body.panel-resizing webview {
 .app-drag-region [tabindex]:not([tabindex='-1']),
 .app-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Scrollable containers inside a drag region (e.g. the workspace tab strip)
+   need their no-drag geometry CLIPPED: Chromium computes draggable regions
+   from UNCLIPPED element geometry, so interactive children scrolled out of
+   the container still carve no-drag holes in the titlebar drag strip where
+   their invisible rects land (intent-hq/monorepo#2400 — the dead gap left of
+   the tabs; same mechanism as #1907). Mark the container itself no-drag (its
+   own border box is exactly its visible area) and reset the per-element
+   no-drag on its interactive descendants so their unclipped geometry
+   contributes nothing. Visible descendants stay clickable — they sit inside
+   the container's no-drag region. Keep the reset list in sync with the rule
+   above (drag-region-no-drag-scoping.test.ts asserts the mirror). */
+.app-drag-region [data-app-region-clip] {
+  -webkit-app-region: no-drag;
+}
+
+.app-drag-region [data-app-region-clip] button,
+.app-drag-region [data-app-region-clip] a,
+.app-drag-region [data-app-region-clip] input,
+.app-drag-region [data-app-region-clip] select,
+.app-drag-region [data-app-region-clip] textarea,
+.app-drag-region [data-app-region-clip] [role='button'],
+.app-drag-region [data-app-region-clip] [role='tab'],
+.app-drag-region [data-app-region-clip] [role='menuitem'],
+.app-drag-region [data-app-region-clip] [data-interactive],
+.app-drag-region [data-app-region-clip] [tabindex]:not([tabindex='-1']) {
+  -webkit-app-region: initial;
 }

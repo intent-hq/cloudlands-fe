@@ -6,13 +6,36 @@ function source(relativePath: string) {
 }
 
 describe('workspace sidebar bottom launchers', () => {
-  it('keeps Browser and Terminals in equal-width columns', () => {
+  it('keeps Browser and Terminals equal-width only in compact launcher mode', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const browserLauncher = source('../SidebarBrowserLauncher.svelte');
     const terminalDock = source('../WorkspaceTerminalDock.svelte');
+    const bottomStart = sidebar.indexOf('<!-- Compact launchers stay fixed;');
+    const bottomEnd = sidebar.indexOf('\n</div>\n\n<style>', bottomStart);
+    const bottomLaunchers = sidebar.slice(bottomStart, bottomEnd);
+    const overviewStart = bottomLaunchers.indexOf('{#if isLauncherOverview}');
+    const expandedStart = bottomLaunchers.indexOf('{:else}', overviewStart);
+    const usesConditionalOuterGrid =
+      bottomLaunchers.includes("isLauncherOverview ? 'grid gap-3 px-6 pt-3' : 'px-4 pt-2'") &&
+      bottomLaunchers.includes(
+        "isLauncherOverview ? (isNewWorkspaceSession ? 'grid-cols-1' : 'grid-cols-2') : ''",
+      ) &&
+      bottomLaunchers.includes('data-sidebar-compact-bottom-row={isLauncherOverview || undefined}');
+    const usesNestedOverviewGrid =
+      bottomLaunchers.includes("class={cn('grid w-full gap-3'") &&
+      bottomLaunchers.includes("isNewWorkspaceSession ? 'grid-cols-1' : 'grid-cols-2'") &&
+      bottomLaunchers.includes('data-sidebar-compact-bottom-row');
 
-    expect(sidebar).toContain('grid w-full shrink-0 gap-3');
-    expect(sidebar).toContain("isNewWorkspaceSession ? 'grid-cols-1' : 'grid-cols-2'");
+    expect(bottomStart).toBeGreaterThan(-1);
+    expect(bottomEnd).toBeGreaterThan(bottomStart);
+    expect(bottomLaunchers).toContain("'relative z-30 w-full shrink-0");
+    expect(usesConditionalOuterGrid || usesNestedOverviewGrid).toBe(true);
+    expect(overviewStart).toBeGreaterThan(-1);
+    expect(expandedStart).toBeGreaterThan(overviewStart);
+    expect(bottomLaunchers.slice(overviewStart, expandedStart)).not.toContain(
+      '<SidebarExpandedTabStrip',
+    );
+    expect(bottomLaunchers.slice(expandedStart)).toContain('<SidebarExpandedTabStrip');
     expect(browserLauncher).toContain('group/launcher relative flex min-w-0 w-full');
     expect(terminalDock).toContain('flex min-w-0 w-full items-center');
     expect(terminalDock).not.toContain('shrink-0 flex-1');
@@ -40,11 +63,24 @@ describe('workspace sidebar bottom launchers', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const browserLauncher = source('../SidebarBrowserLauncher.svelte');
 
-    expect(sidebar).toContain('<SidebarBrowserLauncher {workspaceId} {panelLayoutId} />');
+    expect(sidebar).toContain('<SidebarBrowserLauncher');
+    expect(sidebar).toContain("onExpand={() => handleTabClick('browser')}");
     expect(browserLauncher).toContain('getRunningScriptBrowserTarget($scripts$)');
     expect(browserLauncher).toContain('{#if browserTarget && !hasOpenBrowserTab}');
     expect(browserLauncher).toContain('resolveBrowserLinkForOpen(browserTarget.url)');
     expect(browserLauncher).toContain('openBrowserPanel(resolvedUrl)');
     expect(browserLauncher).toContain('data-sidebar-running-url={browserTarget.url}');
+  });
+
+  it('keeps the linked PR Changes action and scoped Files action without Sync regression', () => {
+    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
+
+    expect(sidebar).toContain('data-sidebar-changes-pr={linkedPrimaryPr.number}');
+    expect(sidebar).toContain('openExternalUrl(linkedPrimaryPr.url)');
+    expect(sidebar).not.toContain('data-sidebar-changes-sync');
+    expect(sidebar).toContain(
+      'filePath={$fileExplorerWorkspacePath}\n                          {workspaceId}',
+    );
+    expect(sidebar).toContain('data-files-open-in');
   });
 });

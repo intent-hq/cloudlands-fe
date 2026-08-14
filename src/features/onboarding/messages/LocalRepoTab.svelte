@@ -220,7 +220,7 @@
       bind:value={searchQuery}
       type="text"
       placeholder={m.onboarding_localRepoTab_search_placeholder()}
-      class="w-full py-5! pr-11"
+      class="w-full py-5! pr-11 focus-visible:border-ring"
       noFocusStyle
       onkeydown={handleKeydown}
       role="combobox"

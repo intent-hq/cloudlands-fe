@@ -203,7 +203,10 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
-import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
+import {
+  showAgentAttentionToast,
+  showWorkspaceAutoUnarchiveToast,
+} from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   permissionRequestReceived,
@@ -595,6 +598,7 @@ function dispatchStreamUpdate(
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
   stopReason?: string,
+  finishReason?: string,
 ): void {
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -606,6 +610,7 @@ function dispatchStreamUpdate(
       assistantMessageId: state.messageId,
       contentBlocks: buildContentBlocks(state),
       ...(stopReason ? { stopReason } : {}),
+      ...(finishReason ? { finishReason } : {}),
     }),
   );
 }
@@ -1083,6 +1088,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
+  // emit carries `finishReason` when the turn completed with a non-`end_turn`
+  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`); absent
+  // on normal completions. The same value is persisted on the assistant row
+  // as `metadata.finishReason`, so stamping it here just makes the notice
+  // render live without waiting for a reconcile.
+  const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
   // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
   // `trailingBlocks` — the standalone resource blocks the daemon appended to
@@ -1135,25 +1147,28 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
       });
     }
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason, finishReason);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    // The stopReason belongs to THIS event's messageId — do not stamp the
-    // Stopped badge onto the unrelated accumulated turn.
+    // The stopReason/finishReason belong to THIS event's messageId — do not
+    // stamp the Stopped badge / finish notice onto the unrelated accumulated
+    // turn.
     dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
   // No local stream state for this turn (pre-first-token): the daemon
   // persisted an assistant row under `messageId` anyway — a synthetic empty
-  // interrupted row on `agent.stop`, or a turn whose ONLY content is the
-  // trailing blocks (e.g. questions with no streamed text). Finalize a
-  // matching placeholder so the Stopped indicator / question wizard appears
-  // live. A later `agents.getConversation` reconcile dedupes by message id.
-  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted')) {
+  // interrupted row on `agent.stop`, a zero-output abnormal turn (refusal /
+  // token-limit marker row carrying `finishReason`), or a turn whose ONLY
+  // content is the trailing blocks (e.g. questions with no streamed text).
+  // Finalize a matching placeholder so the Stopped indicator / finish notice /
+  // question wizard appears live. A later `agents.getConversation` reconcile
+  // dedupes by message id.
+  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
         workspaceId,
@@ -1164,6 +1179,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         assistantMessageId: messageId,
         contentBlocks: dedupeResourceBlocks(trailingBlocks),
         ...(stopReason ? { stopReason } : {}),
+        ...(finishReason ? { finishReason } : {}),
       }),
     );
     return;
@@ -1313,10 +1329,15 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
- * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
- * without a follow-up read.
+ * `agent:process:queued` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when an agent spawn is queued waiting for admission: a free process
+ * slot (maxConcurrent limit, reason `"slots"`) or memory headroom under the
+ * aggregate budget (reason `"memory-budget"`, intent-hq/intentd#1196). The
+ * payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read. An absent `reason` (older daemons) is normalized
+ * to `"slots"`, the pre-#1196 behavior; a present-but-unrecognized value (a
+ * hypothetical future constraint) also falls back to `"slots"` but logs a
+ * warning so the divergence is observable rather than silently absorbed.
  *
  * The Redux reducer's updateSessionFields is a no-op when the session doesn't
  * exist yet, but during normal operation the agent:created or agent:updated
@@ -1334,13 +1355,21 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  if (data.reason !== undefined && data.reason !== 'slots' && data.reason !== 'memory-budget') {
+    logger.warn('agent:process:queued with unrecognized reason; falling back to slots', {
+      agentId,
+      reason: data.reason,
+    });
+  }
+  const reason = data.reason === 'memory-budget' ? 'memory-budget' : 'slots';
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap, reason));
 }
 
 /**
- * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * a queued agent spawn resumes (a slot freed). The renderer clears the hint so
- * the UI no longer shows the waiting message.
+ * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when a queued agent spawn resumes (a slot freed / memory freed);
+ * `reason` echoes the constraint the spawn originally queued under. The
+ * renderer clears the hint so the UI no longer shows the waiting message.
  */
 function handleProcessResumedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -2112,6 +2141,27 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
     });
   } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
     appStore.dispatch(restoreWorkspaceTab(workspaceId));
+  }
+
+  // Auto-unarchive stamp: an additive field the daemon attaches to the
+  // unarchive delta when an agent turn start unarchived the workspace
+  // (absent on manual `workspace.unarchive` / `workspace.restore`). Surface
+  // one transient toast naming the workspace and the agent that became
+  // active; malformed or unknown-reason stamps are ignored.
+  const autoUnarchive = raw.autoUnarchive;
+  if (autoUnarchive && typeof autoUnarchive === 'object') {
+    const stamp = autoUnarchive as Record<string, unknown>;
+    if (
+      stamp.reason === 'agent_activity' &&
+      typeof stamp.agentId === 'string' &&
+      typeof stamp.agentName === 'string'
+    ) {
+      void showWorkspaceAutoUnarchiveToast({
+        workspaceId,
+        agentId: stamp.agentId,
+        agentName: stamp.agentName,
+      });
+    }
   }
 }
 

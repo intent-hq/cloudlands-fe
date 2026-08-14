@@ -68,9 +68,11 @@ import {
   isSessionIdle,
   isSessionInProgress,
   pickLastActivePerWorkspace,
+  sessionAttentionPriority,
   sessionHasFailed,
   sessionNeedsAttention,
   type CycleAgentEntry,
+  type SessionAttentionPriority,
 } from './agent-cycle';
 import type { CycleScope, CycleScopeFamilyId } from './cycle-scope';
 
@@ -206,17 +208,19 @@ function inProgressAgents(state: ActionKeyState): CycleAgentEntry[] {
 
 /**
  * The unread-cycle walk: union of two walks, deduped by agent id — each
- * walk is in workspace order, and unread-workspace entries precede
- * attention-only entries: (a) one stop per unread workspace (unread is
+ * walk is in workspace order, and attention entries precede unread-workspace
+ * entries, ordered by attention priority: (a) every attention-requesting
+ * agent (the LED attention definition) bucketed blocker → pending wizard
+ * question → discussion (`sessionAttentionPriority`; an agent with several
+ * signals classifies at its highest bucket), following the
+ * `cycle-attention-agents` configured scope so the settings toggle also
+ * governs this portion; then (b) one stop per unread workspace (unread is
  * workspace-level, BE-owned `workspace.attention`) — its last active
  * top-level agent (`getLastIdleTime` recency, falling back to the first
  * foreground agent when no recency signal exists), since visiting the
  * workspace clears its whole unread flag anyway
- * (intent-hq/monorepo#1779); and (b) every attention-requesting agent
- * (the LED attention definition), which follows the
- * `cycle-attention-agents` configured scope so the settings toggle also
- * governs this portion. `attentionAgentIds` records walk (b) membership
- * independent of dedup position, for the remaining-stop count.
+ * (intent-hq/monorepo#1779). `attentionAgentIds` records walk (a)
+ * membership independent of dedup position, for the remaining-stop count.
  */
 function collectUnreadCycleEntries(state: ActionKeyState): {
   entries: CycleAgentEntry[];
@@ -239,8 +243,22 @@ function collectUnreadCycleEntries(state: ActionKeyState): {
     undefined,
     familyScope(state, 'cycle-attention-agents'),
   );
+  const buckets: Record<SessionAttentionPriority, CycleAgentEntry[]> = {
+    blocker: [],
+    question: [],
+    discussion: [],
+  };
+  for (const entry of attentionEntries) {
+    const priority = sessionAttentionPriority(state.agentSessions.byAgentId[entry.agentId]);
+    if (priority !== null) buckets[priority].push(entry);
+  }
   const seen = new Set<string>();
-  const entries = [...unreadEntries, ...attentionEntries].filter((entry) => {
+  const entries = [
+    ...buckets.blocker,
+    ...buckets.question,
+    ...buckets.discussion,
+    ...unreadEntries,
+  ].filter((entry) => {
     if (seen.has(entry.agentId)) return false;
     seen.add(entry.agentId);
     return true;

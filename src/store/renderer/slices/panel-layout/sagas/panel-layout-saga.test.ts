@@ -104,6 +104,7 @@ const layout: WorkspacePanelLayout = {
   panels: { 'panel-1': { id: 'panel-1', tabs: [tab], activeTabId: tab.id } },
   focusedPanelId: 'panel-1',
   canvasWidth: null,
+  canvasWidthSource: null,
 };
 const snapshot: LayoutSnapshot = { ...layout, timestamp: 10 };
 
@@ -208,6 +209,10 @@ describe('panelLayoutSaga', () => {
   it('validates stored tree references, focus, tabs, and active tab ids', () => {
     expect(isStoredLayoutValid(layout)).toBe(true);
     expect(isStoredLayoutValid({ ...layout, canvasWidth: 1080 })).toBe(true);
+    expect(
+      isStoredLayoutValid({ ...layout, canvasWidth: 1080, canvasWidthSource: 'explicit' }),
+    ).toBe(true);
+    expect(isStoredLayoutValid({ ...layout, canvasWidthSource: 'viewport' } as never)).toBe(false);
     expect(isStoredLayoutValid({ ...layout, canvasWidth: 0 })).toBe(false);
     expect(isStoredLayoutValid({ ...layout, canvasWidth: Number.NaN })).toBe(false);
     expect(isStoredLayoutValid(null)).toBe(false);
@@ -318,6 +323,55 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  it.each([
+    {
+      name: 'drops an unprovenanced legacy fill',
+      stored: { ...layout, canvasWidth: 1600, canvasWidthSource: undefined },
+      expectedWidth: null,
+      expectedSource: null,
+    },
+    {
+      name: 'preserves a proven user width',
+      stored: { ...layout, canvasWidth: 720, canvasWidthSource: 'explicit' as const },
+      expectedWidth: 720,
+      expectedSource: 'explicit',
+    },
+  ])('$name during restore', async ({ stored, expectedWidth, expectedSource }) => {
+    mocks.getJSON.mockReturnValue(stored);
+    const { channel, dispatch, task } = startSaga();
+    await settle();
+    channel.put(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    const restored = dispatch.mock.calls.find(
+      ([action]) => action.type === initializeLayout.type,
+    )?.[0].payload.layout;
+    expect(restored).toMatchObject({
+      canvasWidth: expectedWidth,
+      canvasWidthSource: expectedSource,
+    });
+    await cancelSaga(task);
+  });
+
+  it('persists explicit width provenance with the exact user width', async () => {
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      canvasWidth: 720,
+      canvasWidthSource: 'explicit',
+    };
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls[0]?.[1]).toMatchObject({
+      canvasWidth: 720,
+      canvasWidthSource: 'explicit',
+    });
+    await cancelSaga(task);
+  });
+
   it.each(persistActionCreators)(
     'persists the exact post-reducer layout for $type',
     async (creator) => {
@@ -331,6 +385,43 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(task);
     },
   );
+
+  it('persists saved widths instead of the session-only expanded geometry', async () => {
+    const state = storeState();
+    state.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState(),
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'panel-1' },
+          { type: 'panel', panelId: 'panel-2' },
+        ],
+        sizes: [100, 0],
+      },
+      panels: {
+        ...layout.panels,
+        'panel-2': { id: 'panel-2', tabs: [], activeTabId: null },
+      },
+      expandedPanelId: 'panel-1',
+      savedSizesBeforeExpand: [{ nodePath: [], sizes: [35, 65] }],
+      canvasWidth: 1652,
+      savedCanvasWidthBeforeExpand: null,
+      canvasWidthSource: 'explicit',
+      savedCanvasWidthSourceBeforeExpand: null,
+    };
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(toggleExpandPanel(WS_1, 'panel-1'));
+    await settle();
+
+    expect(mocks.setJSON.mock.calls[0]?.[1]).toMatchObject({
+      root: { sizes: [35, 65] },
+      canvasWidth: null,
+      canvasWidthSource: null,
+    });
+    await cancelSaga(task);
+  });
 
   it('protects a non-empty stored layout from a pre-restore empty-state write', async () => {
     mocks.getJSON.mockReturnValue(layout);

@@ -94,11 +94,16 @@ export interface MessageMetadata {
     | 'preempted_by_message'
     | 'daemon_shutdown'
     | 'agent_stopped'
+    | 'system_suspend'
     | (string & {});
   interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
 
   // Streaming
   stopReason?: string;
+  // Abnormal finish reason persisted on the turn's assistant row (PROTOCOL
+  // §7.3): "refusal" | "max_tokens" | "max_turn_requests" today (open union);
+  // absent on normal end_turn completions.
+  finishReason?: string;
   sessionId?: string;
   frontendSessionId?: string;
   streamId?: string;

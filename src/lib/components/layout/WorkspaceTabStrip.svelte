@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faEllipsis, faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -9,6 +9,11 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
+  import {
+    formatWorkspaceTabStatusItems,
+    formatWorkspaceTabStatusSummary,
+    getWorkspaceTabStatusPresentation,
+  } from '$lib/components/workspace/utils/workspace-tab-status-presentation';
   import { getWorkspaceViewTransitionName } from '$lib/components/workspace/workspace-view-transition';
   import {
     closeWorkspaceTab,
@@ -28,6 +33,8 @@
     selectWorkspaceViewMode,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
+  import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -44,6 +51,7 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceViewMode$ = selectWorkspaceViewMode();
   const workspaceItems$ = selectWorkspaceItems();
+  const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
 
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
@@ -57,6 +65,8 @@
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let reorderAnnouncement = $state('');
   let activeStreamsVersion = $state(0);
+  let stripElement = $state<HTMLDivElement | null>(null);
+  let isOverflowing = $state(false);
   const tabButtons = new Map<string, HTMLButtonElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   // Active tab bounds drive the parent border mask that hides the sidebar
@@ -70,6 +80,24 @@
   onMount(() => {
     activeStreamsTracker.startPolling();
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
+  });
+
+  // Overflow detection drives the strip's right margin: while tabs are
+  // clipped, the clipped tab edge (not the pr-3 padding) sits at the strip's
+  // right border, so the -mr-2.5 pull toward the "+" launcher must be
+  // replaced with positive spacing. ResizeObserver catches strip resizes;
+  // re-running on visibleTabIds catches tab count changes at constant width.
+  $effect(() => {
+    const strip = stripElement;
+    if (!strip) return;
+    void visibleTabIds;
+    const updateOverflow = () => {
+      isOverflowing = strip.scrollWidth > strip.clientWidth;
+    };
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(strip);
+    return () => observer.disconnect();
   });
 
   $effect(() => {
@@ -103,23 +131,32 @@
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
 
+  function tabAccessibleLabel(title: string, status?: WorkspaceTabStatus): string {
+    if (!status) return title;
+    return m.layout_workspaceTabStrip_status_ariaLabel({
+      name: title,
+      statuses: formatWorkspaceTabStatusSummary(status),
+    });
+  }
+
   function reportActiveTabBounds(node: HTMLElement, isActive: boolean) {
     let active = isActive;
     let frameId: number | null = null;
+    let clampQueued = false;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const report = () => {
-      frameId = null;
-      if (!active) return;
-      if (strip) {
-        const tabRect = node.getBoundingClientRect();
-        const stripRect = strip.getBoundingClientRect();
-        if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
-          strip.scrollLeft += tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
-        } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
-          strip.scrollLeft += tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
-        }
+    const clampActiveTabIntoView = () => {
+      if (!strip) return;
+      const tabRect = node.getBoundingClientRect();
+      const stripRect = strip.getBoundingClientRect();
+      if (tabRect.left < stripRect.left + ACTIVE_TAB_EDGE_GAP) {
+        strip.scrollLeft += tabRect.left - stripRect.left - ACTIVE_TAB_EDGE_GAP;
+      } else if (tabRect.right > stripRect.right - ACTIVE_TAB_EDGE_GAP) {
+        strip.scrollLeft += tabRect.right - stripRect.right + ACTIVE_TAB_EDGE_GAP;
       }
+    };
+
+    const reportBounds = () => {
       const titlebar = node.closest('.window-title-bar');
       if (!titlebar) return;
       const tabRect = node.getBoundingClientRect();
@@ -130,31 +167,55 @@
       });
     };
 
-    const scheduleReport = () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(report);
+    const clampAndReport = () => {
+      if (!active) return;
+      clampActiveTabIntoView();
+      reportBounds();
     };
 
-    const resizeObserver = new ResizeObserver(scheduleReport);
+    const runFrame = () => {
+      frameId = null;
+      const shouldClamp = clampQueued;
+      clampQueued = false;
+      if (!active) return;
+      if (shouldClamp) clampActiveTabIntoView();
+      reportBounds();
+    };
+
+    const schedule = () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(runFrame);
+    };
+
+    const scheduleClampAndReport = () => {
+      clampQueued = true;
+      schedule();
+    };
+
+    // User scrolling must not be fought by the active-tab clamp: scroll only
+    // refreshes the reported bounds so the titlebar mask keeps tracking.
+    const scheduleBoundsReport = () => schedule();
+
+    const resizeObserver = new ResizeObserver(scheduleClampAndReport);
     resizeObserver.observe(node);
-    window.addEventListener('resize', scheduleReport);
-    strip?.addEventListener('scroll', scheduleReport);
-    activeTabBoundsPollers.add(report);
-    scheduleReport();
+    window.addEventListener('resize', scheduleClampAndReport);
+    strip?.addEventListener('scroll', scheduleBoundsReport);
+    activeTabBoundsPollers.add(clampAndReport);
+    scheduleClampAndReport();
 
     return {
       update(nextIsActive: boolean) {
         const wasActive = active;
         active = nextIsActive;
-        if (active) scheduleReport();
+        if (active) scheduleClampAndReport();
         else if (wasActive) onActiveTabBoundsChange?.(null);
       },
       destroy() {
         if (frameId !== null) cancelAnimationFrame(frameId);
-        activeTabBoundsPollers.delete(report);
+        activeTabBoundsPollers.delete(clampAndReport);
         resizeObserver.disconnect();
-        window.removeEventListener('resize', scheduleReport);
-        strip?.removeEventListener('scroll', scheduleReport);
+        window.removeEventListener('resize', scheduleClampAndReport);
+        strip?.removeEventListener('scroll', scheduleBoundsReport);
         if (active) onActiveTabBoundsChange?.(null);
       },
     };
@@ -293,11 +354,26 @@
 </script>
 
 {#if $workspaceTabOrder$.length > 0}
+  <!-- pl-3 keeps the active tab's 12px corner-flare SVG inside the padding box
+       so overflow-x-auto does not clip it; -ml-1 gives that back minus 8px so
+       the first tab sits clear of the view-mode toggle instead of flush.
+       The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
+       against the last tab's pr-3 padding when everything fits, but during
+       overflow the clipped tab edge is flush with the strip border, so mr-1
+       (plus the parent's gap-1) keeps 8px of clearance before the "+".
+       data-app-region-clip: tabs scrolled out of this container must not carve
+       no-drag holes in the titlebar drag strip (unclipped-geometry carving,
+       intent-hq/monorepo#2400; rules in app.css). -->
   <div
-    class="flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-3 pr-3 -mr-2.5 scrollbar-none"
+    bind:this={stripElement}
+    class={cn(
+      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto pl-3 -ml-1 pr-3 scrollbar-none',
+      isOverflowing ? 'mr-1' : '-mr-2.5',
+    )}
     aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
     role="tablist"
     data-workspace-tab-strip
+    data-app-region-clip
   >
     {#each $workspaceTabOrder$ as workspaceId (workspaceId)}
       {@const workspace = workspaceById.get(workspaceId)}
@@ -311,6 +387,9 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
+          {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
+          {@const workspaceTitle =
+            workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
           <div
             class={cn(
               'group/workspace-tab relative flex h-8 w-40 max-w-[40vw] shrink-0 items-center border transition-[background-color,border-color,box-shadow,opacity,transform] motion-reduce:transition-none',
@@ -404,25 +483,70 @@
               <button
                 type="button"
                 use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] px-3 pr-8 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                class="flex h-full w-full min-w-0 cursor-pointer items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! active:cursor-grabbing focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
                 onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
                 onkeydown={(event) => handleTabKeydown(event, workspaceId)}
                 role="tab"
                 aria-selected={isCurrent}
                 aria-current={isCurrent ? 'page' : undefined}
+                aria-label={tabAccessibleLabel(workspaceTitle, tabStatus)}
                 tabindex={isCurrent ? 0 : -1}
                 data-workspace-tab-hover-trigger
               >
-                {#if workspace.activity === 'agent_running'}
-                  <span
-                    class="size-1.5 shrink-0 rounded-full bg-success"
-                    data-workspace-tab-status-dot
-                    aria-label={m.layout_workspaceTabStrip_agentWorking_ariaLabel()}
-                  ></span>
-                {/if}
-                <span class="truncate" data-workspace-tab-title
-                  >{workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}</span
+                <span class="min-w-0 flex-1 truncate" data-workspace-tab-title
+                  >{workspaceTitle}</span
                 >
+                <span
+                  class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
+                  data-workspace-tab-controls
+                >
+                  {#if tabStatus}
+                    <span
+                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end gap-px overflow-hidden"
+                      data-workspace-tab-status-cluster
+                    >
+                      {#each tabStatus.visibleCategories as item, index (item.category)}
+                        {@const presentation = getWorkspaceTabStatusPresentation(item.category)}
+                        <span
+                          class={cn(
+                            'flex size-3 shrink-0 items-center justify-center',
+                            index === 0 && 'size-4',
+                            presentation.className,
+                          )}
+                          data-workspace-tab-status={item.category}
+                          data-workspace-status-icon={presentation.icon.iconName}
+                          data-status-count={item.count}
+                          data-status-leading={index === 0}
+                          role="img"
+                          aria-label={presentation.label}
+                          title={presentation.label}
+                        >
+                          <Fa
+                            icon={presentation.icon}
+                            class={index === 0 ? 'size-3.5' : 'size-2.5'}
+                          />
+                        </span>
+                      {/each}
+                      {#if tabStatus.hiddenCategoryCount > 0}
+                        {@const hiddenSummary = formatWorkspaceTabStatusItems(
+                          tabStatus.categories.slice(tabStatus.visibleCategories.length),
+                        )}
+                        <span
+                          class="flex size-3 shrink-0 items-center justify-center text-muted-foreground"
+                          data-workspace-tab-status-overflow
+                          data-status-hidden={tabStatus.hiddenCategoryCount}
+                          role="img"
+                          aria-label={hiddenSummary}
+                          title={hiddenSummary}
+                        >
+                          <Fa icon={faEllipsis} class="size-2.5" />
+                        </span>
+                      {/if}
+                    </span>
+                  {/if}
+                  <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
+                  ></span>
+                </span>
               </button>
             </TooltipRich>
             <button

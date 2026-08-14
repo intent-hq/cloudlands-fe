@@ -82,7 +82,11 @@
     variant?: 'compact' | 'expanded' | 'header' | 'row';
     isRunning?: boolean;
     isUnread?: boolean;
-    /** Daemon-flagged waiting workspace (grey dot; loses to running/unread) */
+    /**
+     * Daemon-flagged waiting workspace (grey dot; loses to running/unread).
+     * Defaults to the workspace's own BE-sent `waiting` flag (PROTOCOL §5.1)
+     * when not explicitly passed; an explicit value overrides the flag.
+     */
     isWaiting?: boolean;
     isPinned?: boolean;
     streamingAgentIds?: string[];
@@ -126,7 +130,7 @@
     variant = 'compact',
     isRunning = false,
     isUnread = false,
-    isWaiting = false,
+    isWaiting,
     isPinned = false,
     streamingAgentIds = [],
     hasSpec = false,
@@ -149,6 +153,10 @@
     class: className,
     actions,
   }: Props = $props();
+
+  // Waiting dot signal: explicit prop wins; otherwise fall back to the
+  // workspace's BE-sent `waiting` flag so every card surface renders it.
+  const showWaiting = $derived(isWaiting ?? workspace?.waiting === true);
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -521,7 +529,7 @@
             class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-info"
             aria-hidden="true"
           ></div>
-        {:else if isWaiting}
+        {:else if showWaiting}
           <div
             class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-muted-foreground/60"
             aria-hidden="true"

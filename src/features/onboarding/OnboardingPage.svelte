@@ -21,6 +21,7 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
+  import { v4 as uuidv4 } from 'uuid';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -38,6 +39,10 @@
     setOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { STEP_ORDER as ONBOARDING_STEP_ORDER } from '$store/renderer/slices/onboarding/onboarding-types';
+  import {
+    beginWorkspaceCreateProgress,
+    clearWorkspaceCreateProgress,
+  } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
@@ -403,6 +408,12 @@
   let setupWorktreePath = $state<string | undefined>(undefined);
   let setupWorkspaceId = $state<string | undefined>(undefined);
   let setupScriptStatus = $state<SetupStepStatus | undefined>(undefined);
+  // progressId of the in-flight create — drives the live clone progress on
+  // the setup card's repo step; null until the first create is submitted.
+  // Kept across settlement so the visible card isn't remounted mid-flow; a
+  // retry create mints a fresh id, which rekeys the card and rebinds its
+  // init-bound selector cleanly.
+  let onboardingCreateProgressId = $state<string | null>(null);
 
   // Setup script state — session-local: the default is restored per repo
   // from the repo config / localStorage last-used, never from persisted
@@ -958,6 +969,15 @@
     setupAgentStatus = 'pending';
     setupScriptStatus = setupScript.trim() ? 'pending' : undefined;
 
+    // FE-minted correlation id for this create's provisioning progress: the
+    // daemon echoes it on git:clone:progress/done frames (PROTOCOL §5.1), and
+    // the bridge folds them into the workspaceCreateProgress slice. Registered
+    // BEFORE the request so mid-flight frames always find their entry; cleared
+    // in the finally below once the create settles.
+    const createProgressId = uuidv4();
+    appStore.dispatch(beginWorkspaceCreateProgress(createProgressId));
+    onboardingCreateProgressId = createProgressId;
+
     try {
       const reduxState = appStore.state;
       const {
@@ -1085,6 +1105,7 @@
             specialist: specialistId,
           },
         },
+        progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
       if (!result.ok) {
@@ -1265,6 +1286,12 @@
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
+    } finally {
+      // The create settled (success or failure) — drop the transient progress
+      // entry so the slice never accumulates stale ids. The local
+      // onboardingCreateProgressId is kept: the card stays mounted on success
+      // and its selector just reads null; a retry mints a fresh id.
+      appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
 </script>
@@ -1285,25 +1312,30 @@
           in:fly={{ y: 20, duration: 400, easing: cubicOut }}
         >
           <div class="w-full max-w-lg">
-            <WorkspaceSetupCard
-              repoName={projectSelection?.projectName ||
-                projectSelection?.repoPath?.split('/').pop() ||
-                m.onboarding_page_yourProject_label()}
-              repoUrl={projectSelection?.githubUrl}
-              repoPath={projectSelection?.repoPath}
-              worktreePath={setupWorktreePath}
-              workspaceId={setupWorkspaceId}
-              branch={projectSelection?.branch}
-              baseRef={projectSelection?.branch
-                ? `origin/${projectSelection.branch}`
-                : 'origin/main'}
-              specialistName="Coordinator"
-              {setupScriptStatus}
-              repoStatus={setupRepoStatus}
-              branchStatus={setupBranchStatus}
-              agentStatus={setupAgentStatus}
-              skipIsolation={onboardingSkipIsolation}
-            />
+            <!-- Key on the progressId: the card binds its progress selector at
+                 init, so a retry create (fresh id) must destroy/recreate it. -->
+            {#key onboardingCreateProgressId}
+              <WorkspaceSetupCard
+                repoName={projectSelection?.projectName ||
+                  projectSelection?.repoPath?.split('/').pop() ||
+                  m.onboarding_page_yourProject_label()}
+                repoUrl={projectSelection?.githubUrl}
+                repoPath={projectSelection?.repoPath}
+                worktreePath={setupWorktreePath}
+                workspaceId={setupWorkspaceId}
+                branch={projectSelection?.branch}
+                baseRef={projectSelection?.branch
+                  ? `origin/${projectSelection.branch}`
+                  : 'origin/main'}
+                specialistName="Coordinator"
+                {setupScriptStatus}
+                repoStatus={setupRepoStatus}
+                branchStatus={setupBranchStatus}
+                agentStatus={setupAgentStatus}
+                skipIsolation={onboardingSkipIsolation}
+                progressId={onboardingCreateProgressId ?? undefined}
+              />
+            {/key}
           </div>
         </div>
       {:else}

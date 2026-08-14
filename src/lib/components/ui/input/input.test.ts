@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { parseUiComponentMetadata } from '../component-metadata';
 import { invalidControlContrastCases } from '../../../../../tests/helpers/invalid-control-contrast';
 import Input from './input.svelte';
@@ -92,5 +94,42 @@ describe('Input', () => {
     expect(inputFixtures[0].states).toEqual(
       expect.arrayContaining(['compact-28', 'medium-32', 'large-36', 'invalid', 'long-content']),
     );
+  });
+
+  it('lets noFocusStyle opt out of the focus ring via utilities', () => {
+    const { getByRole } = render(Input, {
+      props: { 'aria-label': 'Composite field', noFocusStyle: true },
+    });
+    const classes = getByRole('textbox', { name: 'Composite field' }).className.split(/\s+/);
+    expect(classes).toContain('focus-visible:outline-none');
+    expect(classes).toContain('focus-visible:ring-0');
+    expect(classes).not.toContain('focus-visible:border-ring');
+  });
+});
+
+const readSource = (relativePath: string): string =>
+  readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
+
+describe('global focus rules (composite repo input regression)', () => {
+  const appCss = readSource('../../../../app.css');
+  const gitHubRepoTabSource = readSource(
+    '../../../../features/onboarding/messages/GitHubRepoTab.svelte',
+  );
+
+  // Under Tailwind v4, unlayered author CSS beats every layered utility, which
+  // silently defeated `noFocusStyle` (`focus-visible:outline-none`) everywhere.
+  // The global keyboard-focus fallback must live in `@layer base` so utilities
+  // can override it, and composite wrappers must carry their own indicator.
+  it('keeps the global focus-visible fallback inside @layer base', () => {
+    const layerBase = /@layer base \{[\s\S]*?^\}/m.exec(appCss)?.[0] ?? '';
+    expect(layerBase).toContain(':focus:not(:focus-visible)');
+    expect(layerBase).toContain(':focus-visible {');
+    const outsideLayer = appCss.replace(layerBase, '');
+    expect(outsideLayer).not.toMatch(/^:focus-visible\s*\{/m);
+    expect(outsideLayer).not.toMatch(/^:focus:not\(:focus-visible\)/m);
+  });
+
+  it('gives the onboarding GitHub repo wrapper a focus-within indicator', () => {
+    expect(gitHubRepoTabSource).toContain('focus-within:border-ring');
   });
 });

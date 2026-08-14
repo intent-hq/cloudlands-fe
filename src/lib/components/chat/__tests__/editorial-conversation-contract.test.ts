@@ -47,14 +47,12 @@ describe('editorial conversation presentation contract', () => {
     );
 
     const message = source('src/lib/components/chat/ChatMessage.svelte');
-    expect(message).toMatch(/isSticky \|\|[\s\S]{0,100}'line-clamp-2'/);
-    expect(message).toContain(
-      "agentAttribution\n                ? ''\n                : 'line-clamp-6'",
-    );
+    expect(message).toMatch(/agentAttribution[\s\S]{0,80}: isSticky[\s\S]{0,40}line-clamp-2/);
+    expect(message).toContain("? 'max-w-full [overflow-wrap:anywhere]'");
+    expect(message).toContain(": 'line-clamp-6'");
     expect(message).toContain('imageBlocks.length > 0 && !isSticky');
     expect(message).toContain('fileBlocks.length > 0 && !isSticky');
-    expect(message).toContain('transition: height var(--motion-slow) var(--ease-emphasized-out)');
-    expect(message).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(message).toContain('transition:safeSubscriptionSlide');
   });
 
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
@@ -81,14 +79,41 @@ describe('editorial conversation presentation contract', () => {
       /getAttribute\('data-message-id'\) === currentStickyId[\s\S]{0,200}if \(turnSpansTop\) \{\s*return currentStickyId;/,
     );
 
-    // With native anchoring off, LazyTurn owns scroll compensation for
-    // placeholder <-> content swaps above the reader's viewport so height
-    // deltas there cannot move the visible transcript.
+    // With native anchoring off, LazyTurn owns scroll compensation for ALL of
+    // its height changes above the reader's viewport — placeholder <-> content
+    // swaps AND late-settling content after a swap (the v2.37.0 one-shot
+    // compensation missed the latter, showing as intermittent 20–30px jumps at
+    // the top of the chat while scrolling; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
     const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
+    expect(lazyTurn).toContain(
+      "import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';",
+    );
     expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
-    expect(lazyTurn).toMatch(/if \(!wasAboveViewport\) return;[\s\S]{0,300}scroller\.scrollTop \+= delta;/);
+    // The swap path must capture the scroller geometry BEFORE the flush and
+    // hand it to account(): a swap that shrinks scrollHeight can natively
+    // clamp scrollTop at flush time, and only the pre-flush snapshot lets the
+    // ledger preserve the reader's distance-from-bottom through that clamp
+    // (the bottom-of-chat snap-back; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
+    expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
+    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(preSwap\)\);/);
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
     expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
+    // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
+    // (before the shouldRenderContent early-return) so post-swap settles are
+    // caught in the same frame.
+    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.account\(\);/);
+    expect(lazyTurn).toMatch(/ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/);
+    // Cached heights are wrap-width-dependent: reads and writes must go
+    // through the width-validated cache helpers so stale-width entries
+    // cannot fabricate phantom space at the bottom of the chat (behavioral
+    // coverage in lazy-turn-height-cache.test.ts). No raw Map access.
+    expect(lazyTurn).toContain("} from './lazy-turn-height-cache';");
+    expect(lazyTurn).toContain('const heightCache = getTurnHeightCache();');
+    expect(lazyTurn).not.toMatch(/heightCache\.(get|set|clear)\(/);
+    expect(lazyTurn).toMatch(/writeCachedHeight\(heightCache, turnKey, height, /);
+    expect(lazyTurn).toContain('readCachedHeight(heightCache, turnKey, observedWidth)');
   });
 
   it('does not restore the removed date separators', () => {
@@ -156,7 +181,7 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
-    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass}');
+    expect(message).toContain('`relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`');
     expect(message).toContain(
       "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
     );
@@ -212,10 +237,12 @@ describe('editorial conversation presentation contract', () => {
 
   it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(message.match(/group-focus-within:opacity-100/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(message).toContain('showOnHover={false}');
+    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
+    expect(actionSurface).toContain('group-focus-within:opacity-100');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
@@ -286,9 +313,9 @@ describe('editorial conversation presentation contract', () => {
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
-    expect(message).toContain('pointer-events-none absolute bottom-0 right-0 z-10');
-    expect(message).toContain('rounded-md bg-background/95 p-0.5');
-    expect(message).toContain('group-hover:pointer-events-auto group-hover:opacity-100');
+    expect(message).toContain('class="absolute right-1 z-10');
+    expect(message).toContain('<MessageActions');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(message).not.toContain('group-hover:grid-rows-[1fr]');
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');

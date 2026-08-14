@@ -109,7 +109,7 @@ describe('WorkspaceColumnsView', () => {
       '360px',
     );
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-2"]')?.style.width).toBe(
-      '1440px',
+      '1456px',
     );
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
       '360px',
@@ -120,7 +120,7 @@ describe('WorkspaceColumnsView', () => {
 
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
-    ).toBe('1440px');
+    ).toBe('1456px');
   });
 
   it('sizes a vertical stack to its widest workspace', () => {
@@ -131,7 +131,7 @@ describe('WorkspaceColumnsView', () => {
 
     expect(
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')?.style.width,
-    ).toBe('1320px');
+    ).toBe('1336px');
   });
 
   it('fills the shared stack width after the final panel closes', async () => {
@@ -140,11 +140,11 @@ describe('WorkspaceColumnsView', () => {
     panelCanvasWidths.set({ 'ws-1': 480, 'ws-2': 960 });
     render(WorkspaceColumnsView);
     const stack = document.querySelector<HTMLElement>('[data-workspace-stack="ws-1,ws-2"]')!;
-    expect(stack.style.width).toBe('1320px');
+    expect(stack.style.width).toBe('1336px');
     panelCounts.set({ 'ws-1': 1, 'ws-2': 0 });
     await tick();
 
-    expect(stack.style.width).toBe('840px');
+    expect(stack.style.width).toBe('856px');
   });
 
   it('uses the shared top and horizontal zones for stack and reorder drops', async () => {
@@ -274,13 +274,13 @@ describe('WorkspaceColumnsView', () => {
     expect(columnsLayout?.classList.contains('pt-2')).toBe(true);
   });
 
-  it('adds the intrinsic panel canvas width to the measured sidebar width', () => {
+  it('adds the intrinsic panel canvas width and inset chrome to the measured sidebar width', () => {
     panelCounts.set({ 'ws-3': 2 });
     panelCanvasWidths.set({ 'ws-3': 960 });
     render(WorkspaceColumnsView);
 
     expect(document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')?.style.width).toBe(
-      '1320px',
+      '1336px',
     );
   });
 
@@ -290,14 +290,14 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
     const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
 
-    expect(panelColumn.style.width).toBe('1320px');
+    expect(panelColumn.style.width).toBe('1336px');
     await fireEvent.click(document.querySelector('[data-mock-panel-preview="ws-3"]')!);
     await tick();
-    expect(panelColumn.style.width).toBe('840px');
+    expect(panelColumn.style.width).toBe('856px');
 
     await fireEvent.click(document.querySelector('[data-mock-panel-preview-clear="ws-3"]')!);
     await tick();
-    expect(panelColumn.style.width).toBe('1320px');
+    expect(panelColumn.style.width).toBe('1336px');
   });
 
   it('reactively adopts a restored intrinsic canvas width', async () => {
@@ -309,7 +309,7 @@ describe('WorkspaceColumnsView', () => {
     panelCanvasWidths.set({ 'ws-3': 960 });
     await tick();
 
-    expect(panelColumn.style.width).toBe('1320px');
+    expect(panelColumn.style.width).toBe('1336px');
   });
 
   it('uses measured sidebar pixels instead of persisted percentage values', async () => {
@@ -318,12 +318,12 @@ describe('WorkspaceColumnsView', () => {
     render(WorkspaceColumnsView);
 
     const panelColumn = document.querySelector<HTMLElement>('[data-workspace-stack="ws-3"]')!;
-    expect(panelColumn.style.width).toBe('1320px');
+    expect(panelColumn.style.width).toBe('1336px');
 
     await fireEvent.click(document.querySelector('[data-mock-sidebar-width="ws-3"]')!);
     await tick();
 
-    expect(panelColumn.style.width).toBe('1380px');
+    expect(panelColumn.style.width).toBe('1396px');
   });
 
   it('lets the inner panel canvas own resize updates without a competing dispatch', async () => {
@@ -334,7 +334,7 @@ describe('WorkspaceColumnsView', () => {
     await fireEvent.click(document.querySelector('[data-mock-panel-resize-preview="ws-3"]')!);
     await tick();
 
-    expect(panelColumn.style.width).toBe('1440px');
+    expect(panelColumn.style.width).toBe('1456px');
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 

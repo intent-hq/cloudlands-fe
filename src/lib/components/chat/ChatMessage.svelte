@@ -35,7 +35,11 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
-  import { isQuestionOnlyContent } from './message-display-utils';
+  import {
+    isQuestionOnlyContent,
+    resolveStoppedIndicatorLabel,
+    resolveFinishReasonNotice,
+  } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
@@ -44,17 +48,13 @@
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
-  import HookWakeAttributionHeader from './HookWakeAttributionHeader.svelte';
+  import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
+  import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import {
-    getHookWakeAttribution,
-    stripHookWakePrefix,
-    stripHookWakeStateNote,
-  } from '$lib/utils/hook-wake-attribution';
-  import PrMonitorWakeAttributionHeader from './PrMonitorWakeAttributionHeader.svelte';
-  import {
-    getPrMonitorWakeAttribution,
-    stripPrMonitorWakePrefix,
-  } from '$lib/utils/pr-monitor-wake-attribution';
+    safeSubscriptionSlide,
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
@@ -235,6 +235,13 @@
   // the `message` prop to preserve today's behavior for pending/optimistic
   // messages where ids may not be Redux-backed.
   let message = $derived(agentId && messageId ? $storeMessage$ : messageProp);
+  let messageCreatedAt = $derived.by(() => {
+    if (!message || !('createdAt' in message)) return undefined;
+    const value = message.createdAt;
+    return typeof value === 'string' || typeof value === 'number' || value instanceof Date
+      ? value
+      : undefined;
+  });
   // Edit mode state
   let isEditing = $state(false);
   let editValue = $state('');
@@ -270,56 +277,83 @@
     });
   });
 
+  // Reason-specific Stopped label (PROTOCOL §7 interrupted-row metadata);
+  // legacy rows without `interruptReason` keep the generic "Stopped".
+  let stoppedIndicatorLabel = $derived.by(() => {
+    const label = resolveStoppedIndicatorLabel(message);
+    switch (label.kind) {
+      case 'preempted-by-message':
+        return m.chat_chatMessage_stoppedPreemptedByMessage_label();
+      case 'preempted-by-agent':
+        return m.chat_chatMessage_stoppedPreemptedByAgent_label({ name: label.name });
+      case 'daemon-shutdown':
+        return m.chat_chatMessage_stoppedDaemonRestarted_label();
+      case 'agent-stopped':
+        return m.chat_chatMessage_stoppedAgentTerminated_label();
+      case 'system-suspend':
+        return m.chat_chatMessage_stoppedSystemSuspend_label();
+      case 'stopped':
+        return m.chat_chatMessage_stopped_label();
+      default: {
+        // Compile-time exhaustiveness: a new descriptor kind is a type error
+        // here; at runtime it still falls back to the generic "Stopped".
+        const _exhaustive: never = label;
+        void _exhaustive;
+        return m.chat_chatMessage_stopped_label();
+      }
+    }
+  });
+
+  // Abnormal-finish notice (PROTOCOL §7.3 `metadata.finishReason`): rendered
+  // once the turn is over — live via the `agent:stream:end` finishReason
+  // stamp, and after reload from the persisted row metadata. Suppressed while
+  // streaming so it never flashes mid-turn.
+  let finishReasonNoticeLabel = $derived.by(() => {
+    if (isStreaming) return undefined;
+    const notice = resolveFinishReasonNotice(message);
+    if (!notice) return undefined;
+    switch (notice.kind) {
+      case 'refusal':
+        return m.chat_chatMessage_finishReasonRefusal_label();
+      case 'max-tokens':
+        return m.chat_chatMessage_finishReasonMaxTokens_label();
+      default: {
+        // Compile-time exhaustiveness: a new descriptor kind is a type error
+        // here; at runtime an unknown kind renders no notice.
+        const _exhaustive: never = notice;
+        void _exhaustive;
+        return undefined;
+      }
+    }
+  });
+
   // Sender attribution for agent-to-agent messages (metadata-first, null when
   // metadata is absent or malformed so plain user messages render unchanged).
   let agentAttribution = $derived(
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let shouldOfferAgentMessageExpansion = $derived(
-    !!agentAttribution && !!message && extractAllContent(message).trim().length > 160,
-  );
+  let agentMessagePreview = $derived(message ? extractAllContent(message).trim() : '');
+  let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
   // (metadata-first, null when absent/malformed so old transcripts keep
   // rendering the raw [SYSTEM NOTE] unchanged).
   let queueInfo = $derived(role === 'user' ? getQueueInfo(message?.metadata) : null);
 
-  // Background-hook wake attribution (PROTOCOL §5.40): the daemon tags the
-  // row's `metadata` AND the persisted text block's `messageMetadata` with
-  // `{ type: 'hook_wake', hookId, hookName, reason }` — check both so older
-  // rows missing one surface still render the chip.
-  let hookWakeAttribution = $derived.by(() => {
-    if (role !== 'user') return null;
-    const fromRow = getHookWakeAttribution(message?.metadata);
-    if (fromRow) return fromRow;
-    const blocks = Array.isArray(message?.contentBlocks) ? message.contentBlocks : [];
-    for (const block of blocks) {
-      if (block.type === 'text') {
-        const fromBlock = getHookWakeAttribution(block.messageMetadata);
-        if (fromBlock) return fromBlock;
-      }
-    }
-    return null;
-  });
-
-  // PR-monitor wake attribution (PROTOCOL §5.42): same dual check as hook
-  // wakes — the daemon tags the row's `metadata` AND the persisted text
-  // block's `messageMetadata` with
-  // `{ type: 'pr_monitor_wake', monitorId, repo, prNumber, reason, url? }`.
-  let prMonitorWakeAttribution = $derived.by(() => {
-    if (role !== 'user') return null;
-    const fromRow = getPrMonitorWakeAttribution(message?.metadata);
-    if (fromRow) return fromRow;
-    const blocks = Array.isArray(message?.contentBlocks) ? message.contentBlocks : [];
-    for (const block of blocks) {
-      if (block.type === 'text') {
-        const fromBlock = getPrMonitorWakeAttribution(block.messageMetadata);
-        if (fromBlock) return fromBlock;
-      }
-    }
-    return null;
-  });
+  // Delivered background-hook and PR-monitor wakes share one metadata-first
+  // classifier, including the protocol's legacy text prefixes.
+  let automatedWakePresentation = $derived(
+    role === 'user' ? getAutomatedWakePresentation(message) : null,
+  );
+  let hookWakeAttribution = $derived(
+    automatedWakePresentation?.kind === 'hook' ? automatedWakePresentation.attribution : null,
+  );
+  let prMonitorWakeAttribution = $derived(
+    automatedWakePresentation?.kind === 'pr' ? automatedWakePresentation.attribution : null,
+  );
+  let isAutomatedWakeExpanded = $state(false);
+  let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -790,17 +824,7 @@
 
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
-    // Display-only strip of the daemon's literal `[Background hook "…"]` /
-    // `[PR monitor …]` prefix on wake rows (plus the trailing `[This hook …]`
-    // state note for hook wakes) — the attribution chip already names the
-    // hook / PR and conveys the post-fire state.
-    const rawText = hookWakeAttribution
-      ? stripHookWakeStateNote(
-          stripHookWakePrefix(extractTextFromMessage(), hookWakeAttribution.rawName),
-        )
-      : prMonitorWakeAttribution
-        ? stripPrMonitorWakePrefix(extractTextFromMessage())
-        : extractTextFromMessage();
+    const rawText = automatedWakePresentation?.bodyText ?? extractTextFromMessage();
     if (role === 'user') {
       // Hide the daemon's dequeue-wait [SYSTEM NOTE] from the displayed body
       // when structured queueInfo metadata renders it as a chip instead.
@@ -1118,7 +1142,7 @@
   />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
-{:else if questionOnlyTurn && !shouldShowStoppedIndicator}
+{:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
@@ -1150,7 +1174,16 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           data-testid="user-message-surface"
-          class="relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass} {onEditSubmit &&
+          data-conversation-role="user"
+          data-automated-wake-card={automatedWakePresentation ? '' : undefined}
+          data-external-spacing-owner={automatedWakePresentation
+            ? 'automated-wake-card'
+            : undefined}
+          class="{agentAttribution
+            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            : automatedWakePresentation
+              ? `relative mt-4 ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+              : `relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&
           !prMonitorWakeAttribution
@@ -1164,244 +1197,259 @@
             handleStartEdit()}
         >
           <!-- Actions -->
-          <div
-            class="absolute right-1 top-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-          >
-            <div
-              class="flex items-center gap-0.5 bg-sidebar/95 backdrop-blur-sm rounded-md border border-border"
-            >
-              <MessageActions
-                role="user"
-                onCopy={handleCopy}
-                showOnHover={false}
-                requestId={backendSessionId ?? undefined}
-                {onScrollToPrevious}
-              />
-            </div>
-          </div>
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+            <MessageActions
+              role="user"
+              onCopy={handleCopy}
+              requestId={backendSessionId ?? undefined}
+              {onScrollToPrevious}
+              timestamp={message.timestamp}
+              createdAt={messageCreatedAt}
+              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+            />
+          {/if}
 
           <!-- Sender attribution header for agent-to-agent messages -->
           {#if agentAttribution}
-            <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
-          {:else if hookWakeAttribution}
-            <!-- Background-hook wake attribution header (PROTOCOL §5.40) -->
-            <HookWakeAttributionHeader attribution={hookWakeAttribution} class="mb-1.5" />
-          {:else if prMonitorWakeAttribution}
-            <!-- PR-monitor wake attribution header (PROTOCOL §5.42) -->
-            <PrMonitorWakeAttributionHeader attribution={prMonitorWakeAttribution} class="mb-1.5" />
+            <AgentMessageAttributionHeader
+              attribution={agentAttribution}
+              preview={agentMessagePreview}
+              expanded={isAgentMessageExpanded}
+              controlsId={agentMessageBodyId}
+              ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
+            />
+          {:else if automatedWakePresentation}
+            <AutomatedWakeCardHeader
+              presentation={automatedWakePresentation}
+              expanded={isAutomatedWakeExpanded}
+              controlsId={automatedWakeBodyId}
+              {workspace}
+              ontoggle={() => (isAutomatedWakeExpanded = !isAutomatedWakeExpanded)}
+            />
           {/if}
 
-          <!-- Queued-delivery notice for messages drained from the pending queue -->
-          {#if queueInfo}
-            <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-          {/if}
-
-          <div
-            id={agentAttribution ? `agent-message-body-${message.id}` : undefined}
-            class="type-body select-text font-medium! text-pretty text-foreground {isSticky ||
-            (agentAttribution && !isAgentMessageExpanded)
-              ? 'line-clamp-2'
-              : agentAttribution
-                ? ''
-                : 'line-clamp-6'} {isSticky ||
-            (onEditSubmit && !agentAttribution && !hookWakeAttribution && !prMonitorWakeAttribution)
-              ? 'cursor-pointer'
-              : 'cursor-text'} {agentAttribution && shouldOfferAgentMessageExpansion
-              ? 'agent-message-body'
-              : ''}"
-            data-expanded={agentAttribution && shouldOfferAgentMessageExpansion
-              ? isAgentMessageExpanded
-              : undefined}
-            onclick={(e) => {
-              if (isSticky && onStickyClick) {
-                e.preventDefault();
-                e.stopPropagation();
-                onStickyClick();
-                return;
-              }
-              if (
-                onEditSubmit &&
-                !agentAttribution &&
-                !hookWakeAttribution &&
-                !prMonitorWakeAttribution
-              ) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleStartEdit();
-              }
-            }}
-          >
-            <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
-            {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
-              {@const isClickable = !!(
-                pill.path ||
-                pill.noteId ||
-                pill.url ||
-                pill.type === 'spec'
-              )}
-              <button
-                type="button"
-                class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                title={pill.content || pill.path || pill.noteId || pill.label}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  handlePillClick(pill, e);
-                }}
-                disabled={!isClickable}
-              >
-                <Fa icon={pill.icon} size="12" class="opacity-50" />
-                <span class="font-medium truncate max-w-[180px]" title={pill.label}
-                  >{pill.label}</span
-                >
-              </button>
-            {/each}
-            <!-- Render text with inline @mentions as chips -->
-            {#each parsedMessage.segments as segment, i (i)}
-              {#if segment.type === 'text'}
-                <span class="whitespace-pre-wrap">{segment.content}</span>
-              {:else if segment.type === 'mention'}
-                {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
-                  segment.mentionType,
-                )}
-                {@const isClickable = !!(
-                  segment.path ||
-                  segment.noteId ||
-                  segment.mentionType === 'spec' ||
-                  segment.url
-                )}
-                <button
-                  type="button"
-                  class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                  title={segment.path ||
-                    segment.noteId ||
-                    (segment.identifier
-                      ? `${segment.identifier}: ${segment.label}`
-                      : segment.label)}
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    if (segment.url) {
-                      const wsId = getOwningWorkspaceId();
-                      if (wsId) {
-                        handleLink(segment.url, {
-                          workspaceId: WorkspaceId(wsId),
-                          event: e,
-                        });
-                      }
-                    } else if (segment.path) {
-                      openChatFile(segment.path, e);
-                    } else if (segment.noteId) {
-                      if (segment.mentionType === 'spec') {
-                        openChatNote('spec', e);
-                      } else {
-                        openChatNote(segment.noteId, e);
-                      }
-                    }
-                  }}
-                  disabled={!isClickable}
-                >
-                  {#if isContextProvider}
-                    <ProviderIcon
-                      provider={segment.mentionType as ContextProvider}
-                      size={12}
-                      class="shrink-0 opacity-30"
-                    />
-                  {:else}
-                    <Fa icon={segment.icon} size="12" class="opacity-30" />
-                  {/if}
-                  {#if segment.identifier}
-                    <span class="text-subtle shrink-0">{segment.identifier}</span>
-                  {/if}
-                  <span class="max-w-[180px] truncate" title={segment.label}>{segment.label}</span>
-                </button>
-              {/if}
-            {/each}
-          </div>
-          {#if shouldOfferAgentMessageExpansion && !isSticky}
-            <button
-              type="button"
-              class="type-caption mt-1 cursor-pointer text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              onclick={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
-              aria-expanded={isAgentMessageExpanded}
-              aria-controls={`agent-message-body-${message.id}`}
-              data-testid="agent-message-expansion-toggle"
+          {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
+            <div
+              id={agentAttribution
+                ? agentMessageBodyId
+                : automatedWakePresentation
+                  ? automatedWakeBodyId
+                  : undefined}
+              class={agentAttribution || automatedWakePresentation
+                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-3 py-2'
+                : 'contents'}
+              data-testid={agentAttribution
+                ? 'agent-message-expanded-body'
+                : automatedWakePresentation
+                  ? 'automated-wake-details'
+                  : undefined}
+              transition:safeSubscriptionSlide
             >
-              {isAgentMessageExpanded ? 'Collapse' : 'Show full message'}
-            </button>
-          {/if}
+              <!-- Queued-delivery notice for messages drained from the pending queue -->
+              {#if queueInfo}
+                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
+              {/if}
 
-          <!-- Attached images -->
-          {#if imageBlocks.length > 0 && !isSticky}
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              {#each imageBlocks as imageBlock, i (i)}
-                <button
-                  type="button"
-                  class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                  onclick={(e) => {
-                    if (isImageBlock(imageBlock)) {
-                      openImageLightbox(imageBlock, e.currentTarget, i);
-                    }
-                  }}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.currentTarget.click();
-                    }
-                  }}
-                  aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
-                    number: formatInteger(i + 1),
-                    total: formatInteger(imageBlocks.length),
-                  })}
-                >
-                  <img
-                    src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                    alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
-                    class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
-                  />
-                </button>
-              {/each}
-            </div>
-          {/if}
+              <div
+                class="type-body select-text font-medium! text-pretty text-foreground {agentAttribution
+                  ? ''
+                  : isSticky
+                    ? 'line-clamp-2'
+                    : automatedWakePresentation
+                      ? 'max-w-full [overflow-wrap:anywhere]'
+                      : 'line-clamp-6'} {isSticky ||
+                (onEditSubmit &&
+                  !agentAttribution &&
+                  !hookWakeAttribution &&
+                  !prMonitorWakeAttribution)
+                  ? 'cursor-pointer'
+                  : 'cursor-text'}"
+                data-expanded={agentAttribution
+                  ? isAgentMessageExpanded
+                  : automatedWakePresentation
+                    ? isAutomatedWakeExpanded
+                    : undefined}
+                onclick={(e) => {
+                  if (isSticky && onStickyClick) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onStickyClick();
+                    return;
+                  }
+                  if (
+                    onEditSubmit &&
+                    !agentAttribution &&
+                    !hookWakeAttribution &&
+                    !prMonitorWakeAttribution
+                  ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleStartEdit();
+                  }
+                }}
+              >
+                <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
+                {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
+                  {@const isClickable = !!(
+                    pill.path ||
+                    pill.noteId ||
+                    pill.url ||
+                    pill.type === 'spec'
+                  )}
+                  <button
+                    type="button"
+                    class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                    title={pill.content || pill.path || pill.noteId || pill.label}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      handlePillClick(pill, e);
+                    }}
+                    disabled={!isClickable}
+                  >
+                    <Fa icon={pill.icon} size="12" class="opacity-50" />
+                    <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
+                      >{pill.label}</span
+                    >
+                  </button>
+                {/each}
+                <!-- Render text with inline @mentions as chips -->
+                {#each parsedMessage.segments as segment, i (i)}
+                  {#if segment.type === 'text'}
+                    <span class="whitespace-pre-wrap">{segment.content}</span>
+                  {:else if segment.type === 'mention'}
+                    {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
+                      segment.mentionType,
+                    )}
+                    {@const isClickable = !!(
+                      segment.path ||
+                      segment.noteId ||
+                      segment.mentionType === 'spec' ||
+                      segment.url
+                    )}
+                    <button
+                      type="button"
+                      class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                      title={segment.path ||
+                        segment.noteId ||
+                        (segment.identifier
+                          ? `${segment.identifier}: ${segment.label}`
+                          : segment.label)}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        if (segment.url) {
+                          const wsId = getOwningWorkspaceId();
+                          if (wsId) {
+                            handleLink(segment.url, {
+                              workspaceId: WorkspaceId(wsId),
+                              event: e,
+                            });
+                          }
+                        } else if (segment.path) {
+                          openChatFile(segment.path, e);
+                        } else if (segment.noteId) {
+                          if (segment.mentionType === 'spec') {
+                            openChatNote('spec', e);
+                          } else {
+                            openChatNote(segment.noteId, e);
+                          }
+                        }
+                      }}
+                      disabled={!isClickable}
+                    >
+                      {#if isContextProvider}
+                        <ProviderIcon
+                          provider={segment.mentionType as ContextProvider}
+                          size={12}
+                          class="shrink-0 opacity-30"
+                        />
+                      {:else}
+                        <Fa icon={segment.icon} size="12" class="opacity-30" />
+                      {/if}
+                      {#if segment.identifier}
+                        <span class="text-subtle shrink-0">{segment.identifier}</span>
+                      {/if}
+                      <span class="truncate" style="max-width: 180px;" title={segment.label}
+                        >{segment.label}</span
+                      >
+                    </button>
+                  {/if}
+                {/each}
+              </div>
+              <!-- Attached images -->
+              {#if imageBlocks.length > 0 && !isSticky}
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  {#each imageBlocks as imageBlock, i (i)}
+                    <button
+                      type="button"
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                      onclick={(e) => {
+                        if (isImageBlock(imageBlock)) {
+                          openImageLightbox(imageBlock, e.currentTarget, i);
+                        }
+                      }}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.currentTarget.click();
+                        }
+                      }}
+                      aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+                        number: formatInteger(i + 1),
+                        total: formatInteger(imageBlocks.length),
+                      })}
+                    >
+                      <img
+                        src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
+                        alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
+                        class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                      />
+                    </button>
+                  {/each}
+                </div>
+              {/if}
 
-          <!-- Attached files: attachment-reference chips open the file in a
+              <!-- Attached files: attachment-reference chips open the file in a
                tab (resolved by attachmentId); legacy inline-data chips keep
                the data-URL download behavior. -->
-          {#if fileBlocks.length > 0 && !isSticky}
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              {#each fileBlocks as fileBlock, i (i)}
-                {@const secondary = fileChipSecondaryText(fileBlock)}
-                <button
-                  type="button"
-                  data-testid="chat-message-file-chip"
-                  class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onclick={() => {
-                    if (fileBlock.attachmentId) {
-                      openAttachmentReference(fileBlock);
-                    } else {
-                      downloadInlineFileBlock(fileBlock, i);
-                    }
-                  }}
-                  title={fileBlock.attachmentId
-                    ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
-                    : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
-                >
-                  <Fa icon={faFile} class="w-3 h-3" />
-                  <span class="truncate max-w-[150px]">{fileBlock.fileName}</span>
-                  {#if secondary}
-                    <span class="opacity-60 shrink-0">{secondary}</span>
-                  {/if}
-                </button>
-              {/each}
-            </div>
-          {/if}
+              {#if fileBlocks.length > 0 && !isSticky}
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  {#each fileBlocks as fileBlock, i (i)}
+                    {@const secondary = fileChipSecondaryText(fileBlock)}
+                    <button
+                      type="button"
+                      data-testid="chat-message-file-chip"
+                      class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onclick={() => {
+                        if (fileBlock.attachmentId) {
+                          openAttachmentReference(fileBlock);
+                        } else {
+                          downloadInlineFileBlock(fileBlock, i);
+                        }
+                      }}
+                      title={fileBlock.attachmentId
+                        ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
+                        : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
+                    >
+                      <Fa icon={faFile} class="w-3 h-3" />
+                      <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
+                      {#if secondary}
+                        <span class="opacity-60 shrink-0">{secondary}</span>
+                      {/if}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
 
-          <!-- Send failure indicator for optimistic user messages -->
-          {#if message?.error}
-            <div
-              class="type-caption mt-2 flex items-center gap-2 font-medium text-destructive"
-              title={message.error}
-            >
-              <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
-              <span>{m.chat_chatMessage_failedToSend_label()}</span>
+              <!-- Send failure indicator for optimistic user messages -->
+              {#if message?.error}
+                <div
+                  class="type-caption mt-2 flex items-center gap-2 font-medium text-destructive"
+                  title={message.error}
+                >
+                  <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
+                  <span>{m.chat_chatMessage_failedToSend_label()}</span>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -1420,25 +1468,31 @@
         {#if shouldShowStoppedIndicator}
           <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
-            <span>{m.chat_chatMessage_stopped_label()}</span>
+            <span>{stoppedIndicatorLabel}</span>
+          </div>
+        {/if}
+
+        <!-- Abnormal-finish notice (refusal / token limit, PROTOCOL §7.3) -->
+        {#if finishReasonNoticeLabel}
+          <div class="type-caption mt-5 flex items-center gap-2 font-medium text-subtle">
+            <Fa icon={faCircleExclamation} class="size-2.5 opacity-50 mt-px" />
+            <span>{finishReasonNoticeLabel}</span>
           </div>
         {/if}
 
         <!-- Actions for assistant messages: overlay without shifting content on hover/focus -->
         {#if !isStreaming && !questionOnlyTurn}
-          <div
-            class="pointer-events-none absolute bottom-0 right-0 z-10 rounded-md bg-background/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
-          >
-            <MessageActions
-              role="assistant"
-              showOnHover={false}
-              {onRegenerate}
-              {onFork}
-              {onVote}
-              onCopy={handleCopy}
-              requestId={backendSessionId ?? undefined}
-            />
-          </div>
+          <MessageActions
+            role="assistant"
+            {onRegenerate}
+            {onFork}
+            {onVote}
+            onCopy={handleCopy}
+            requestId={backendSessionId ?? undefined}
+            timestamp={message.timestamp}
+            createdAt={messageCreatedAt}
+            class="absolute bottom-0 right-0 z-10"
+          />
         {/if}
       </div>
     {:else if role === 'system'}
@@ -1477,22 +1531,3 @@
   onConfirm={handleConfirmEditSubmit}
   onCancel={() => (showEditConfirm = false)}
 />
-
-<style>
-  .agent-message-body {
-    height: calc(var(--text-body-line-height) + var(--text-body-line-height));
-    overflow: hidden;
-    interpolate-size: allow-keywords;
-    transition: height var(--motion-slow) var(--ease-emphasized-out);
-  }
-
-  .agent-message-body[data-expanded='true'] {
-    height: auto;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .agent-message-body {
-      transition: none;
-    }
-  }
-</style>

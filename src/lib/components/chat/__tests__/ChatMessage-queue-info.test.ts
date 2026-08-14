@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 
@@ -155,7 +155,7 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(container.textContent).toContain(WAIT_NOTE);
   });
 
-  it('coexists with the agent-to-agent attribution chip', () => {
+  it('coexists with the agent-to-agent attribution chip', async () => {
     render(ChatMessage, {
       props: {
         message: userMessage(ANNOTATED_TEXT, {
@@ -168,6 +168,8 @@ describe('ChatMessage queued-delivery notice', () => {
     });
 
     expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('queued-message-notice')).toBeNull();
+    await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
     expect(screen.getByTestId('queued-message-notice')).toBeTruthy();
     expect(screen.getByText('hello queued world')).toBeTruthy();
   });

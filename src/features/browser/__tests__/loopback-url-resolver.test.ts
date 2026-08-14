@@ -194,6 +194,117 @@ describe('resolveBrowserUrl', () => {
     expect(result.error).toContain('ECONNREFUSED');
   });
 
+  describe('tunnel-local passthrough (intent-hq/monorepo#2404)', () => {
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let forwardAwareProvider: () => {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+    };
+
+    beforeEach(() => {
+      activeForwards = vi.fn().mockReturnValue([{ remotePort: 8742, localPort: 50241 }]);
+      forwardAwareProvider = () => ({ forwardPort, activeForwards });
+    });
+
+    it('passes a URL pointing at an active tunnel-local forward through untouched', async () => {
+      const result = await resolveBrowserUrl(
+        'http://127.0.0.1:50241/page?q=1',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:50241/page?q=1');
+      expect(result.rewritten).toBe(false);
+      expect(result.reason).toContain('127.0.0.1:50241');
+      expect(result.reason).toContain('active daemon-tunnel forward');
+      expect(result.error).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('passes a localhost-hostname tunnel URL through untouched too', async () => {
+      const result = await resolveBrowserUrl(
+        'http://localhost:50241/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://localhost:50241/');
+      expect(result.rewritten).toBe(false);
+      expect(result.reason).toContain('localhost:50241');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('normalizes an IPv6-loopback tunnel URL to 127.0.0.1 (forward listener is IPv4-only)', async () => {
+      const result = await resolveBrowserUrl(
+        'http://[::1]:50241/page',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://127.0.0.1:50241/page');
+      expect(result.rewritten).toBe(true);
+      expect(result.reason).toContain('normalized to 127.0.0.1');
+      expect(result.error).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('does not re-tunnel an executor-tunneled URL on second resolution (openTab handoff)', async () => {
+      // First resolution: the executor resolves the daemon URL — probe fails,
+      // a tunnel forward is created.
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      activeForwards.mockReturnValue([]);
+      const first = await resolveBrowserUrl(
+        'http://daemon.localhost:8742/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(first.tunneled).toBe(true);
+      expect(first.url).toBe('http://127.0.0.1:45678/');
+
+      // Second resolution: the EmbeddedBrowser re-resolves the handed-off URL
+      // while the forward is active — it must pass through, not tunnel again.
+      activeForwards.mockReturnValue([{ remotePort: 8742, localPort: 45678 }]);
+      const second = await resolveBrowserUrl(first.url, remoteContext, forwardAwareProvider);
+      expect(second.url).toBe('http://127.0.0.1:45678/');
+      expect(second.rewritten).toBe(false);
+      expect(second.error).toBeUndefined();
+      expect(forwardPort).toHaveBeenCalledTimes(1);
+    });
+
+    it('still rewrites daemon.localhost URLs whose port coincides with a local forward', async () => {
+      const result = await resolveBrowserUrl(
+        'http://daemon.localhost:50241/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://10.0.0.5:50241/');
+      expect(result.rewritten).toBe(true);
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    it('still rewrites bare-loopback URLs whose port matches no active forward', async () => {
+      const result = await resolveBrowserUrl(
+        'http://127.0.0.1:3000/x',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://10.0.0.5:3000/x');
+      expect(result.rewritten).toBe(true);
+    });
+
+    it('resolves normally when activeForwards throws', async () => {
+      activeForwards.mockImplementation(() => {
+        throw new Error('forwards unavailable');
+      });
+      const result = await resolveBrowserUrl(
+        'http://127.0.0.1:50241/',
+        remoteContext,
+        forwardAwareProvider,
+      );
+      expect(result.url).toBe('http://10.0.0.5:50241/');
+      expect(result.rewritten).toBe(true);
+    });
+  });
+
   describe('rewriteOnly mode', () => {
     it('applies the remote rewrite with no probe and no tunnel', async () => {
       const result = await resolveBrowserUrl(

@@ -343,6 +343,48 @@ describe('SimpleRichInput image paste', () => {
   });
 });
 
+describe('SimpleRichInput external drop target (ChatPanel full-panel drop zone)', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  function makeFileDropEvent(files: File[]) {
+    return {
+      dataTransfer: { types: ['Files'], files },
+    };
+  }
+
+  it('handleDroppedFiles forwards files into the attach pipeline like a direct drop', async () => {
+    const { component } = render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const file = new File(['image-bytes'], 'dropped.png', { type: 'image/png' });
+
+    await component.handleDroppedFiles([file]);
+
+    expect(await screen.findByRole('img', { name: 'dropped.png' })).toBeTruthy();
+  });
+
+  it('disables the container drop handlers when externalDropTarget is set', async () => {
+    render(SimpleRichInput, {
+      props: { value: '', contextItems: [], externalDropTarget: true },
+    });
+    const file = new File(['image-bytes'], 'ignored.png', { type: 'image/png' });
+
+    await fireEvent.drop(screen.getByTestId('message-input'), makeFileDropEvent([file]));
+
+    expect(screen.queryByRole('img', { name: 'ignored.png' })).toBeNull();
+  });
+
+  it('keeps local drop handling when externalDropTarget is not set', async () => {
+    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const file = new File(['image-bytes'], 'local.png', { type: 'image/png' });
+
+    await fireEvent.drop(screen.getByTestId('message-input'), makeFileDropEvent([file]));
+
+    expect(await screen.findByRole('img', { name: 'local.png' })).toBeTruthy();
+  });
+});
+
 describe('SimpleRichInput action bar layout', () => {
   afterEach(() => {
     agentModelEffortLevels.value = undefined;

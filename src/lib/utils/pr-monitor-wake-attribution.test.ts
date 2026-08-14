@@ -27,6 +27,7 @@ describe('getPrMonitorWakeAttribution', () => {
       monitorId: 'mon-1',
       repo: 'intent-hq/intentd',
       prNumber: 42,
+      reason: 'checks_failed',
       url: 'https://github.com/intent-hq/intentd/pull/42',
     });
   });
@@ -34,10 +35,10 @@ describe('getPrMonitorWakeAttribution', () => {
   it('omits url when absent or blank', () => {
     expect(
       getPrMonitorWakeAttribution({ type: 'pr_monitor_wake', repo: 'o/r', prNumber: 7 }),
-    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7 });
+    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7, reason: '' });
     expect(
       getPrMonitorWakeAttribution({ type: 'pr_monitor_wake', repo: 'o/r', prNumber: 7, url: '  ' }),
-    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7 });
+    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7, reason: '' });
   });
 
   it('returns null for absent, non-object, or wrong-type metadata', () => {
@@ -103,6 +104,14 @@ describe('getPrMonitorWakeChipLabel', () => {
   it('prefixes the repo when it differs from the workspace repo', () => {
     expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/monorepo')).toBe('intent-hq/intentd: #42');
   });
+
+  it('renders 4+ digit PR numbers without digit grouping', () => {
+    const bigAttr = { monitorId: 'm', repo: 'intent-hq/intentd', prNumber: 1182 };
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'intent-hq/intentd')).toBe('#1182');
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'intent-hq/monorepo')).toBe(
+      'intent-hq/intentd: #1182',
+    );
+  });
 });
 
 describe('stripPrMonitorWakePrefix', () => {
@@ -110,7 +119,7 @@ describe('stripPrMonitorWakePrefix', () => {
     expect(stripPrMonitorWakePrefix('[PR monitor intent-hq/intentd#42] Checks failed')).toBe(
       'Checks failed',
     );
-    expect(stripPrMonitorWakePrefix('[PR monitor ] no details')).toBe('no details');
+    expect(stripPrMonitorWakePrefix('[PR monitor ] no details')).toBe('[PR monitor ] no details');
   });
 
   it('returns non-prefixed text unchanged', () => {

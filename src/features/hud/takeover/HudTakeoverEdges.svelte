@@ -12,11 +12,15 @@
    * ready-to-start task render green and pulse; the pulse animation is
    * gated on the overlay's `motion` flag — reduced motion keeps the same
    * static colors (parity with the overlay's `.ov-no-motion` handling).
+   * While a task cell is hovered (`hoveredTaskId`), every edge touching it
+   * renders full-strength (dim + pulse suppressed) with a thicker stroke;
+   * unrelated edges keep their normal rendering.
    */
   import {
     HUD_TAKEOVER_EDGE_PALETTE,
     HUD_TAKEOVER_EDGE_READY_COLOR,
     takeoverEdgePathD,
+    takeoverEdgeTouchesTask,
     type HudTakeoverMapEdge,
   } from './hud-takeover-edges';
 
@@ -24,10 +28,12 @@
     edges,
     box,
     motion,
+    hoveredTaskId = null,
   }: {
     edges: HudTakeoverMapEdge[];
     box: { left: number; top: number; width: number; height: number };
     motion: boolean;
+    hoveredTaskId?: string | null;
   } = $props();
 </script>
 
@@ -81,12 +87,14 @@
       </marker>
     </defs>
     {#each edges as edge (edge.id)}
+      {@const hovered = takeoverEdgeTouchesTask(edge, hoveredTaskId)}
       <path
         class={`ov-edge ov-edge-${edge.kind}`}
-        class:ov-edge-dim={edge.dimmed}
+        class:ov-edge-hover={hovered}
+        class:ov-edge-dim={edge.dimmed && !hovered}
         class:ov-edge-conflict-live={edge.pulse === 'conflict'}
         class:ov-edge-ready={edge.pulse === 'ready'}
-        class:ov-edge-pulse={motion && edge.pulse !== null}
+        class:ov-edge-pulse={motion && edge.pulse !== null && !hovered}
         d={takeoverEdgePathD(edge.points)}
         style:stroke={edge.pulse === 'ready'
           ? HUD_TAKEOVER_EDGE_READY_COLOR
@@ -149,6 +157,13 @@
      (either endpoint complete or cancelled): dim line + arrowhead, static. */
   .ov-edge-dim {
     opacity: 0.35;
+  }
+  /* Edge touching the hovered task cell: full-strength (the dim and pulse
+     classes are withheld in markup) with a thicker stroke — declared after
+     .ov-edge-ready so its width wins on hovered ready edges. */
+  .ov-edge-hover {
+    opacity: 1;
+    stroke-width: 3;
   }
   /* Attention pulse (live conflict / ready pathway); class applied only
      when the overlay's motion flag allows animation. */
