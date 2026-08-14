@@ -536,7 +536,7 @@
               <Button
                 variant="ghost-light"
                 size="icon-xs"
-                class="shrink-0 opacity-30 hover:opacity-100 transition-opacity pb-2"
+                class="shrink-0 opacity-30 hover:opacity-100 transition-opacity"
                 title={m.tiptap_taskItem_assignToAgent_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
