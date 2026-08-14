@@ -273,6 +273,11 @@
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
+  // Reset the menu when it hides (e.g. a sidebar card expands) so it never remounts open.
+  $effect(() => {
+    if (hideActionsMenu) dropdownOpen = false;
+  });
+
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const repositoryLabel = $derived(
@@ -926,6 +931,7 @@
               <Button
                 variant="ghost-light"
                 size="icon-sm"
+                data-workspace-actions-kebab
                 aria-label={m.workspace_progressCard_actions_ariaLabel()}
                 class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
                 onclick={toggle}
