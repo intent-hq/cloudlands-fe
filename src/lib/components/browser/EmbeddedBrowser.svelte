@@ -30,6 +30,15 @@
     reconcileEmbeddedBrowserUrlProp,
     recordEmbeddedBrowserNavigation,
   } from './embedded-browser-navigation-sync';
+  import {
+    createEmbeddedBrowserResolvedLoadState,
+    getEmbeddedBrowserExternalUrl,
+    mapEmbeddedBrowserNavigationUrl,
+    planEmbeddedBrowserLoad,
+    recordEmbeddedBrowserResolvedLoad,
+    reconcileEmbeddedBrowserNavigation,
+    resolveEmbeddedBrowserUrl,
+  } from './embedded-browser-url-resolution';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -203,16 +212,36 @@
   let isLoading = $state(false);
   let isSecure = $state(false);
   let errorMessage = $state('');
+  // Detailed explanation from browser:resolve-url when a rewritten remote
+  // target is unreachable (probe + tunnel both failed). Agent-facing English
+  // from the main process, shown alongside the localized errorMessage.
+  let resolveErrorDetail = $state('');
+  // The URL whose resolution failed (can differ from the url prop when the
+  // failed load came from the address bar).
+  let resolveErrorUrl = $state('');
   let webviewReady = $state(false);
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
 
-  // Track the current URL that the webview should load
-  // Initialize from url prop if valid, otherwise use about:blank
-  // This ensures the webview starts with the correct URL on first render
-  // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
-  let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
+  // Track the current URL that the webview should load.
+  // Starts blank: the initial url prop is resolved through browser:resolve-url
+  // in onMount before the first load (see loadUrl), so the webview never
+  // loads an unresolved URL.
+  let currentWebviewUrl = $state<string>('about:blank');
+
+  // True while the initial url prop is being resolved, so the template shows
+  // a blank pane instead of flashing the invalid-URL error state.
+  // svelte-ignore state_referenced_locally - intentional: we want initial value only
+  let resolvingInitialUrl = $state(isValidBrowserUrl(url));
+
+  // Monotonic load sequence: a resolution that settles after a newer load
+  // started must not clobber it.
+  let loadSequence = 0;
+
+  // Requested→resolved URL mapping for the current load so navigation events
+  // display the URL the user asked for (see embedded-browser-url-resolution).
+  const resolvedLoadState = createEmbeddedBrowserResolvedLoadState();
 
   // Cached browser tabs stay mounted to preserve page state. Keep inactive
   // guests silent while Chromium applies its normal background throttling.
@@ -252,7 +281,10 @@
   // IMPORTANT: Only triggers when the PROP changes, not when user navigates internally
   $effect(() => {
     const decision = reconcileEmbeddedBrowserUrlProp(navigationSync, url, {
-      webviewReady,
+      // "Ready to accept a load": either the webview is attached and ready,
+      // or there is no webview at all (e.g. after a resolve failure) and
+      // loadUrl will recreate it.
+      webviewReady: webviewReady || !webviewRef,
       isValidBrowserUrl,
     });
 
@@ -403,6 +435,13 @@
   });
 
   onMount(() => {
+    // Kick off the initial load: the url prop resolves through
+    // browser:resolve-url before the webview is created, so even the first
+    // load lands on the resolved (possibly rewritten/tunneled) URL.
+    if (url && isValidBrowserUrl(url)) {
+      void loadUrl(url);
+    }
+
     // Keyboard shortcuts - use capture phase to intercept before panel shortcuts
     const handleKeydown = (e: KeyboardEvent) => {
       // Don't intercept shortcuts when typing in an input field
@@ -527,24 +566,31 @@
       updateNavigationState();
     });
 
-    // Navigation events
+    // Navigation events. URLs are reconciled through the resolved-load state
+    // so a rewritten/tunneled load displays (and reports) the requested URL,
+    // while any other post-commit navigation clears the mapping and shows the
+    // real URL.
     addWebviewListener('did-navigate', (e: any) => {
-      displayUrl = e.url;
-      isSecure = e.url?.startsWith('https://');
+      const shownUrl = reconcileEmbeddedBrowserNavigation(resolvedLoadState, e.url);
+      displayUrl = shownUrl;
+      isSecure = shownUrl?.startsWith('https://');
       errorMessage = '';
+      resolveErrorDetail = '';
+      resolveErrorUrl = '';
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
-      recordEmbeddedBrowserNavigation(navigationSync, e.url);
-      onNavigate?.(e.url);
+      recordEmbeddedBrowserNavigation(navigationSync, shownUrl);
+      onNavigate?.(shownUrl);
       updateNavigationState();
     });
 
     addWebviewListener('did-navigate-in-page', (e: any) => {
-      displayUrl = e.url;
+      const shownUrl = reconcileEmbeddedBrowserNavigation(resolvedLoadState, e.url);
+      displayUrl = shownUrl;
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
-      recordEmbeddedBrowserNavigation(navigationSync, e.url);
+      recordEmbeddedBrowserNavigation(navigationSync, shownUrl);
       // Also call onNavigate for in-page navigation (e.g., clicking links that don't reload)
-      onNavigate?.(e.url);
+      onNavigate?.(shownUrl);
       updateNavigationState();
     });
 
@@ -647,7 +693,7 @@
     const completedUrl = reconcileEmbeddedBrowserLoadCompletion(
       navigationSync,
       requestedUrl,
-      webviewRef?.getURL?.(),
+      mapEmbeddedBrowserNavigationUrl(resolvedLoadState, webviewRef?.getURL?.() ?? ''),
     );
     if (!completedUrl) return;
     displayUrl = completedUrl;
@@ -660,6 +706,7 @@
 
     if (!isValidBrowserUrl(targetUrl)) {
       // Provide specific error messages for different failure cases
+      resolvingInitialUrl = false;
       try {
         const parsed = new URL(targetUrl);
         if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
@@ -691,29 +738,81 @@
         webviewReady,
       });
 
+      // Resolve through browser:resolve-url before any load (loopback rewrite
+      // → reachability probe → tunnel fallback in the main process); in remote
+      // mode the load lands on the daemon host or a tunnel port instead of the
+      // user's machine. A load that started after this one wins.
+      const sequence = ++loadSequence;
+      const resolved = await resolveEmbeddedBrowserUrl(targetUrl, window.electronAPI?.invoke);
+      if (sequence !== loadSequence) {
+        logger.debug('loadUrl: superseded during resolution', { targetUrl });
+        return;
+      }
+      resolvingInitialUrl = false;
+      const plan = planEmbeddedBrowserLoad(resolved);
+      if (plan.kind === 'error') {
+        // The rewritten target is unreachable (probe + tunnel both failed):
+        // surface the explanation instead of navigating to a dead host. The
+        // error pane replaces any previously loaded page (see template).
+        resolveErrorDetail = plan.detail;
+        resolveErrorUrl = targetUrl;
+        errorMessage = m.browser_embedded_resolveFailed_error();
+        logger.warn('URL resolution failed', { url: targetUrl, detail: plan.detail });
+        return;
+      }
+      // Defense-in-depth: re-validate the resolved URL before feeding it to
+      // the webview (the resolver only swaps host/port, but the renderer
+      // validates everything it loads).
+      if (!isValidBrowserUrl(plan.url)) {
+        errorMessage = m.browser_embedded_invalidUrl_error();
+        logger.warn('Resolved URL failed validation', { url: targetUrl, resolvedUrl: plan.url });
+        return;
+      }
+      resolveErrorDetail = '';
+      resolveErrorUrl = '';
+      recordEmbeddedBrowserResolvedLoad(resolvedLoadState, targetUrl, resolved);
+      if (resolved.rewritten) {
+        logger.info('loadUrl: resolved to rewritten URL', {
+          requestedUrl: targetUrl,
+          resolvedUrl: plan.url,
+          tunneled: resolved.tunneled ?? false,
+          reason: resolved.reason,
+          warning: resolved.warning,
+        });
+      }
+      const loadTarget = plan.url;
+
       // An attached webview must navigate through loadURL so Electron emits
       // did-navigate and the owning panel can persist the new URL. dom-ready
       // can fire before our listener is installed, so webviewReady is not a
       // reliable gate for choosing this path.
       if (webviewRef) {
         // Navigate within the existing webview to preserve navigation history
-        logger.info('loadUrl: calling webviewRef.loadURL', { targetUrl });
+        logger.info('loadUrl: calling webviewRef.loadURL', { targetUrl, loadTarget });
         const currentWebview = webviewRef;
-        void navigateEmbeddedBrowserWebview(currentWebview, targetUrl)
+        void navigateEmbeddedBrowserWebview(currentWebview, loadTarget)
           .then(() => {
             syncCompletedWebviewNavigation(targetUrl);
             updateNavigationState();
           })
           .catch((error) => {
-            logger.warn('Webview navigation failed', { targetUrl, error });
+            logger.warn('Webview navigation failed', { targetUrl, loadTarget, error });
           });
       } else {
         // Initial load or webview not ready - recreate the webview
         // This is needed for the first URL or when recovering from errors
-        logger.info('loadUrl: recreating webview', { targetUrl });
+        logger.info('loadUrl: recreating webview', { targetUrl, loadTarget });
         isRecreatingWebview = true;
         await tick(); // Wait for webview to be removed from DOM
-        currentWebviewUrl = targetUrl;
+        if (sequence !== loadSequence) {
+          // A newer load started during the tick - don't clobber it. Reset
+          // the recreation flag so a newer load that errored before reaching
+          // its own recreate step doesn't leave the webview hidden.
+          isRecreatingWebview = false;
+          logger.debug('loadUrl: superseded during webview recreation', { targetUrl });
+          return;
+        }
+        currentWebviewUrl = loadTarget;
         isRecreatingWebview = false;
         webviewReady = false;
       }
@@ -760,7 +859,11 @@
 
   function openExternal() {
     if (displayUrl && hasCapability('shellIntegration')) {
-      void invoke('shell:openExternal', { url: displayUrl });
+      // A rewritten load displays the requested localhost-style URL, which is
+      // not reachable from the user's machine in remote mode - open the
+      // resolved daemon/tunnel URL instead.
+      const externalUrl = getEmbeddedBrowserExternalUrl(resolvedLoadState, displayUrl);
+      void invoke('shell:openExternal', { url: externalUrl });
     }
   }
 
@@ -768,9 +871,11 @@
     const loadedUrl = webviewRef?.getURL?.();
     let urlToCopy = '';
     if (loadedUrl && loadedUrl !== 'about:blank') {
-      urlToCopy = loadedUrl;
+      // Copy what the address bar shows: a rewritten load displays the
+      // requested URL, so map the loaded (resolved) URL back to it.
+      urlToCopy = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, loadedUrl);
     } else if (currentWebviewUrl !== 'about:blank') {
-      urlToCopy = currentWebviewUrl;
+      urlToCopy = mapEmbeddedBrowserNavigationUrl(resolvedLoadState, currentWebviewUrl);
     }
     if (!urlToCopy) {
       toast.error(m.browser_embedded_noUrlToCopy_error());
@@ -944,7 +1049,22 @@
 
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
-    {#if isUrlValid && !isRecreatingWebview}
+    {#if resolveErrorDetail && !isRecreatingWebview}
+      <!--
+        The resolved remote target is unreachable - show the explanation.
+        Checked before the webview branch so a resolver failure on a later
+        navigation (address bar / prop change) replaces the previously loaded
+        page instead of leaving it visible with only the generic banner.
+      -->
+      <div class="flex items-center justify-center h-full text-subtle">
+        <div class="text-center">
+          <div class="text-4xl mb-3 opacity-50">⚠️</div>
+          <p class="text-lg font-medium mb-1">{m.browser_embedded_resolveFailed_error()}</p>
+          <p class="text-sm max-w-md mx-auto">{resolveErrorDetail}</p>
+          <p class="text-xs mt-2 opacity-50 max-w-md break-all">{resolveErrorUrl || url}</p>
+        </div>
+      </div>
+    {:else if isUrlValid && !isRecreatingWebview}
       <!--
         Workaround for Electron bug #43314: Hide webview during URL switch.
         When isRecreatingWebview is true, the webview is removed from DOM.
@@ -957,6 +1077,9 @@
         partition={BROWSER_PANEL_PARTITION}
         allowpopups
       ></webview>
+    {:else if resolvingInitialUrl}
+      <!-- Initial URL is resolving through browser:resolve-url - blank pane, no error flash -->
+      <div class="h-full" data-testid="embedded-browser-resolving"></div>
     {:else if url && !isRecreatingWebview}
       <!-- URL is invalid or blocked - show error with details -->
       <div class="flex items-center justify-center h-full text-subtle">

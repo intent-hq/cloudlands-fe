@@ -4331,6 +4331,7 @@
   "browser_embedded_localhostRefusedPort_error": "localhost:{port} に接続できません。サーバーが実行されていない可能性があります。",
   "browser_embedded_localhostRefused_error": "localhost に接続できません。サーバーが実行されていない可能性があります。",
   "browser_embedded_loadFailed_error": "ページを読み込めませんでした",
+  "browser_embedded_resolveFailed_error": "リモートデーモンのホスト上でこの URL に到達できません",
   "browser_embedded_protocolNotAllowed_error": "プロトコル「{protocol}」は許可されていません。対応: {protocols}",
   "browser_embedded_selfLoad_error": "アプリ自身をアプリ内に読み込むことはできません",
   "browser_embedded_invalidUrlFormat_error": "無効な URL 形式です",

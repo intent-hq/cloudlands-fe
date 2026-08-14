@@ -4331,6 +4331,7 @@
   "browser_embedded_localhostRefusedPort_error": "无法连接到 localhost:{port}。服务器可能没有在运行。",
   "browser_embedded_localhostRefused_error": "无法连接到 localhost。服务器可能没有在运行。",
   "browser_embedded_loadFailed_error": "加载页面失败",
+  "browser_embedded_resolveFailed_error": "无法在远程守护进程主机上访问此 URL",
   "browser_embedded_protocolNotAllowed_error": "不允许使用协议“{protocol}”。支持的协议：{protocols}",
   "browser_embedded_selfLoad_error": "无法在应用内部加载应用自身",
   "browser_embedded_invalidUrlFormat_error": "URL 格式无效",
