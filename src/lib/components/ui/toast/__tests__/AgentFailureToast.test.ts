@@ -59,4 +59,29 @@ describe('AgentFailureToast', () => {
     const switchButton = screen.getByText('Switch To').closest('button');
     expect(switchButton?.disabled).toBe(false);
   });
+
+  it('contains long unbroken JSON-RPC errors and keeps controls keyboard focusable', () => {
+    const longError = `JSON-RPC error: ${'a'.repeat(800)}`;
+    const { container } = render(AgentFailureToast, {
+      props: {
+        title: 'Implementor failed',
+        errorSummary: longError,
+        retryLabel: 'Retry Implementor',
+        retrying: false,
+        onRetry: vi.fn(),
+        onSwitchTo: vi.fn(),
+        onClose: vi.fn(),
+      },
+    });
+
+    const root = container.firstElementChild as HTMLElement;
+    const summary = screen.getByText(longError);
+    const close = screen.getByLabelText('Close') as HTMLButtonElement;
+    expect(root.classList.contains('w-full')).toBe(true);
+    expect(root.classList.contains('min-w-0')).toBe(true);
+    expect(summary.classList.contains('break-words')).toBe(true);
+    close.focus();
+    expect(document.activeElement).toBe(close);
+    expect(close.type).toBe('button');
+  });
 });

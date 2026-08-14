@@ -186,7 +186,8 @@
 
 <style>
   .update-toast {
-    min-width: 280px;
+    width: 100%;
+    min-width: 0;
     position: relative;
     overflow: visible;
   }
@@ -258,12 +259,14 @@
     font-weight: 600;
     font-size: 0.875rem;
     color: hsl(var(--foreground));
+    overflow-wrap: anywhere;
   }
 
   .description {
     font-size: 0.75rem;
     color: hsl(var(--muted-foreground));
     margin-top: 0.125rem;
+    overflow-wrap: anywhere;
   }
 
   .progress-bar {

@@ -1,17 +1,51 @@
 <script lang="ts">
-  import { Toaster as Sonner } from 'svelte-sonner';
+  import { onMount } from 'svelte';
+  import { Toaster as Sonner, toast } from 'svelte-sonner';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
+  import { m } from '$shared/paraglide/messages.js';
 
   const isDarkTheme = selectIsDarkTheme();
+  let visibleToastCount = $state(0);
+  let showClearAll = $derived(visibleToastCount >= 2);
+  let offset = $derived({ bottom: showClearAll ? 68 : 32, left: 32 });
+  let mobileOffset = $derived({ bottom: showClearAll ? 52 : 16, left: 16 });
+
+  onMount(() => {
+    const updateVisibleToastCount = () => {
+      visibleToastCount = document.querySelectorAll(
+        '#app-toast-region [data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
+      ).length;
+    };
+    const observer = new MutationObserver(updateVisibleToastCount);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-visible', 'data-removed'],
+    });
+    updateVisibleToastCount();
+    return () => observer.disconnect();
+  });
+
+  function clearVisibleToasts() {
+    toast.dismiss();
+    visibleToastCount = 0;
+  }
 </script>
 
 <Sonner
+  id="app-toast-region"
   theme={$isDarkTheme ? 'dark' : 'light'}
   class="toaster group"
+  style="--app-toast-width: min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))"
+  {offset}
+  {mobileOffset}
+  containerAriaLabel={m.ui_toast_notifications_ariaLabel()}
+  closeButtonAriaLabel={m.ui_toast_close_ariaLabel()}
   toastOptions={{
     classes: {
       toast:
-        'group toast group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg',
+        'group toast w-full min-w-0 max-w-full group-[.toaster]:bg-card group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-lg',
       description: 'group-[.toast]:text-subtle text-sm',
       actionButton:
         'group-[.toast]:bg-transparent group-[.toast]:text-foreground group-[.toast]:border group-[.toast]:border-border group-[.toast]:hover:bg-muted group-[.toast]:px-4 group-[.toast]:py-2 group-[.toast]:text-sm group-[.toast]:font-semibold group-[.toast]:transition-colors',
@@ -26,7 +60,24 @@
   gap={8}
 />
 
+{#if showClearAll}
+  <button
+    type="button"
+    class="toast-clear-all"
+    onclick={clearVisibleToasts}
+    aria-controls="app-toast-region"
+    aria-label={m.ui_toast_clearAll_ariaLabel({ count: visibleToastCount })}
+  >
+    {m.ui_toast_clearAll_label()}
+  </button>
+{/if}
+
 <style>
+  :global([data-sonner-toaster]) {
+    --width: var(--app-toast-width) !important;
+    width: var(--app-toast-width) !important;
+  }
+
   :global([data-sonner-toast]) {
     background: hsl(var(--card)) !important;
     color: hsl(var(--foreground)) !important;
@@ -39,7 +90,9 @@
     border-color: hsl(var(--border));
     border-radius: 0 !important;
     backdrop-filter: blur(8px);
-    min-width: 360px;
+    width: var(--app-toast-width) !important;
+    min-width: 0;
+    max-width: 100%;
     padding: 1rem 1.25rem;
     align-items: flex-start !important;
     box-shadow:
@@ -61,6 +114,13 @@
     color: hsl(var(--muted-foreground)) !important;
     font-size: 0.875rem;
     margin-top: 0.25rem;
+  }
+
+  :global([data-sonner-toast] [data-content]),
+  :global([data-sonner-toast] [data-title]),
+  :global([data-sonner-toast] [data-description]) {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   /* Action buttons using CSS variables */
@@ -90,6 +150,46 @@
     color: hsl(var(--muted-foreground)) !important;
     border-color: hsl(var(--border)) !important;
     background: hsl(var(--card)) !important;
+  }
+
+  :global([data-sonner-toaster][dir='ltr']) {
+    --toast-close-button-start: unset;
+    --toast-close-button-end: 0;
+    --toast-close-button-transform: translate(35%, -35%);
+  }
+
+  .toast-clear-all {
+    position: fixed;
+    left: 2rem;
+    bottom: 2rem;
+    z-index: 1000000000;
+    min-height: 1.75rem;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1rem;
+    box-shadow: 0 4px 8px rgb(0 0 0 / 0.08);
+    cursor: pointer;
+  }
+
+  .toast-clear-all:hover {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+
+  .toast-clear-all:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 600px) {
+    .toast-clear-all {
+      left: 1rem;
+      bottom: 1rem;
+    }
   }
 
   :global(.sonner-loading-bar) {

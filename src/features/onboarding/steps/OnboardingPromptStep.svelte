@@ -570,13 +570,13 @@
       </div>
     </div>
 
-    <div class="w-full space-y-1">
+    <div class="onboarding-metadata-stack flex w-full min-w-0 flex-col gap-2">
       <!-- Branch picker -->
       {#if projectSelection?.type === 'local' && projectSelection?.repoPath}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="flex items-center gap-0.5 text-sm cursor-pointer"
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
           in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
@@ -589,10 +589,10 @@
             }
           }}
         >
-          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
+          <span class="shrink-0 text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
           <BranchSelector
             variant="ghost"
-            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath}
             repoType="local"
@@ -617,7 +617,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="flex items-center gap-0.5 text-sm cursor-pointer"
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
           in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
@@ -630,10 +630,10 @@
             }
           }}
         >
-          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOff_label()}</span>
+          <span class="shrink-0 text-muted-foreground">{m.onboarding_promptStep_branchOff_label()}</span>
           <BranchSelector
             variant="ghost"
-            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath || ''}
             repoType="github"
@@ -660,16 +660,16 @@
       {#if projectSelection?.repoPath && projectSelection?.type !== 'new'}
         {#if !hideSetupScriptControl}
           <div
-            class="flex items-center gap-0.5 text-sm"
+            class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
             in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           >
             <button
               type="button"
-              class="flex items-center whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
             >
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
-              <span class="bg-card/50 px-1.5 py-0.5 font-medium"
+              <span class="max-w-full break-words rounded-md border border-border/30 bg-card/50 px-1.5 py-1.25 font-medium text-foreground"
                 >{setupScriptName}</span
               >
               <span class="text-muted-foreground">{m.onboarding_promptStep_setupEnvWith_after()}</span>
@@ -690,17 +690,17 @@
 
       <!-- Model picker (initial Coordinator agent) -->
       <div
-        class="flex items-center gap-1.5 text-sm"
+        class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
         in:fly={{ y: 10, duration: 200, easing: cubicOut }}
       >
-        <span class="text-muted-foreground">{m.onboarding_promptStep_usingModel_before()}</span>
+        <span class="shrink-0 text-muted-foreground">{m.onboarding_promptStep_usingModel_before()}</span>
         {#key coordinatorDefaultModel}
           <ModelPicker
             selectedModel={modelWasOverridden ? selectedModel : undefined}
             {onModelChange}
             variant="ghost"
             size="xs"
-            triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
             defaultModelId={coordinatorDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             silentFallback
@@ -740,7 +740,7 @@
     {/if}
 
     <!-- Create button (blocked while any staged pill is placing/failed) -->
-    <div class="flex items-center gap-3 pt-2">
+    <div class="onboarding-create-action flex items-center gap-3 pt-2">
       <Button
         class="group/button"
         size="xl"
