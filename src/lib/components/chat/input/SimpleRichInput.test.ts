@@ -445,6 +445,9 @@ describe('SimpleRichInput action bar layout', () => {
     expect(actionBar?.className).toContain('pr-1.5!');
     expect(primaryActions?.className).toContain('items-center');
     expect(submitActions?.className).toContain('items-center');
+    expect(submitActions?.className).toContain('gap-1');
+    expect(submitActions?.className).not.toContain('gap-px');
+    expect(submitActions?.querySelector('.mr-1')).toBeNull();
     expect(primaryActions?.contains(promptMenu)).toBe(false);
     expect(submitActions?.contains(promptMenu)).toBe(true);
     expect(

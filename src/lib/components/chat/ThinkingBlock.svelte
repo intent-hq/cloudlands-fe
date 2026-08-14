@@ -11,6 +11,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     OPERATIONAL_DISCLOSURE_CLASS,
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    OPERATIONAL_ICON_BOX_CLASS,
     OPERATIONAL_ICON_CLASS,
     OPERATIONAL_PRIMARY_CLASS,
     OPERATIONAL_ROW_CONTAINER_CLASS,
@@ -64,11 +66,13 @@
 
 <div class="{OPERATIONAL_ROW_CONTAINER_CLASS} {className}" data-testid="reasoning-tool-call">
   <div class={OPERATIONAL_ROW_LINE_CLASS} data-operational-disclosure-row>
-    <Fa
-      icon={faBrain}
-      size={14}
-      class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
-    />
+    <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
+      <Fa
+        icon={faBrain}
+        size={14}
+        class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
+      />
+    </span>
     <button
       class="{OPERATIONAL_DISCLOSURE_CLASS} cursor-pointer"
       onclick={toggle}
@@ -87,7 +91,8 @@
 
   {#if isExpanded}
     <div
-      class="type-caption ml-5 pt-1 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption ml-5 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      data-operational-expanded-content
       transition:safeSlide={{ duration: 150 }}
     >
       <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />

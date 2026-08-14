@@ -97,6 +97,9 @@
 
   let expanded = $state(false);
   const isExpandable = $derived(displayModel.hasDetails);
+  const hasInlineFile = $derived(
+    displayModel.sentenceSegments.some((segment) => segment.kind === 'file'),
+  );
   const detailsId = $derived(`tool-details-${toolUse.id}`);
 
   function toggleExpanded() {
@@ -107,6 +110,19 @@
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     toggleExpanded();
+  }
+
+  function openFile(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!workspaceId || !toolDisplay.filePath) return;
+    appStore.dispatch(
+      openWorkspaceFile(workspaceId, toolDisplay.filePath, {
+        line: toolDisplay.fileLine ?? undefined,
+        openInAdjacentPanel: event.metaKey || event.ctrlKey,
+        sourcePanelId: getPanelIdFromEvent(event),
+      }),
+    );
   }
 
   // Transition function for expand/collapse animation
@@ -128,7 +144,27 @@
     <!-- Running state: animate-pulse on the icon indicates running state -->
     <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
       <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
-      {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
+      {#if hasInlineFile && isExpandable}
+        <button
+          type="button"
+          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running'
+            ? 'animate-pulse'
+            : ''} cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:text-foreground"
+          data-tool-icon
+          data-testid="tool-call-disclosure"
+          aria-label={m.chat_toolCall_technicalDetails_label()}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          title={m.chat_toolCall_technicalDetails_label()}
+          onclick={toggleExpanded}
+        >
+          {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
+            <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
+          {:else}
+            <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
+          {/if}
+        </button>
+      {:else if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
         <div
           class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
           data-tool-icon
@@ -144,7 +180,35 @@
         </div>
       {/if}
 
-      {#if isExpandable}
+      {#if hasInlineFile}
+        <span
+          class="{COMPACT_TOOL_SENTENCE_CLASS} flex items-baseline"
+          data-testid="tool-call-summary"
+          data-tool-sentence
+          aria-label={displayModel.accessibleSentence}
+          title={displayModel.accessibleSentence}
+        >
+          {#each displayModel.sentenceSegments as segment}
+            {#if segment.kind === 'file'}
+              {#if workspaceId}
+                <button
+                  type="button"
+                  data-testid="tool-call-file-link"
+                  class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                  aria-label={displayModel.accessibleSentence}
+                  onclick={openFile}>{segment.text}</button
+                >
+              {:else}
+                <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
+                  >{segment.text}</span
+                >
+              {/if}
+            {:else}
+              <span class="shrink-0 whitespace-pre">{segment.text}</span>
+            {/if}
+          {/each}
+        </span>
+      {:else if isExpandable}
         <button
           type="button"
           class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
@@ -198,30 +262,6 @@
         >
           {m.chat_toolClassifier_open_label()}
         </a>
-      {:else if toolDisplay.filePath && !toolDisplay.isDirectory}
-        <button
-          type="button"
-          data-testid="tool-call-file-link"
-          class="{COMPACT_TOOL_TRAILING_CLASS} cursor-pointer border-0 bg-transparent p-0 hover:underline"
-          aria-label={displayModel.accessibleSentence}
-          onclick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            const sourcePanelId = getPanelIdFromEvent(e);
-            if (workspaceId && toolDisplay.filePath) {
-              appStore.dispatch(
-                openWorkspaceFile(workspaceId, toolDisplay.filePath, {
-                  line: toolDisplay.fileLine ?? undefined,
-                  openInAdjacentPanel,
-                  sourcePanelId,
-                }),
-              );
-            }
-          }}
-        >
-          {m.chat_toolClassifier_open_label()}
-        </button>
       {/if}
     </div>
   </div>

@@ -4,8 +4,14 @@ import type { ToolDisplay } from './tool-classifier';
 
 export type ToolState = 'running' | 'completed' | 'error';
 
+export interface CompactToolSentenceSegment {
+  kind: 'text' | 'file';
+  text: string;
+}
+
 export interface CompactToolDisplayModel {
   sentence: string;
+  sentenceSegments: CompactToolSentenceSegment[];
   accessibleSentence: string;
   status: 'success' | 'error' | null;
   isOkOnlyWorkspaceResult: boolean;
@@ -164,6 +170,26 @@ function accessibleSentence(display: ToolDisplay, input: Record<string, any>, co
   return [action, full].filter(Boolean).join(' ');
 }
 
+function sentenceSegments(
+  display: ToolDisplay,
+  input: Record<string, any>,
+  sentence: string,
+): CompactToolSentenceSegment[] {
+  if (!display.filePath || display.isDirectory) return [{ kind: 'text', text: sentence }];
+  const subject = sanitizeToolText(display.subject || '');
+  const file =
+    display.category === 'file-read' && Array.isArray(input.view_range)
+      ? subject.replace(/:\d+-\d+$/, '')
+      : subject;
+  const index = file ? sentence.indexOf(file) : -1;
+  if (index < 0) return [{ kind: 'text', text: sentence }];
+  return [
+    { kind: 'text', text: sentence.slice(0, index) },
+    { kind: 'file', text: file },
+    { kind: 'text', text: sentence.slice(index + file.length) },
+  ].filter((segment) => segment.text.length > 0) as CompactToolSentenceSegment[];
+}
+
 export function buildToolDisplayModel({
   toolName,
   display,
@@ -185,6 +211,7 @@ export function buildToolDisplayModel({
   const hasInput = Object.keys(input || {}).some((key) => !key.startsWith('_'));
   return {
     sentence,
+    sentenceSegments: sentenceSegments(display, input, sentence),
     accessibleSentence: accessibleSentence(display, input, sentence),
     status:
       toolState === 'error' ? 'error' : okOnly && toolState === 'completed' ? 'success' : null,

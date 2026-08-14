@@ -81,7 +81,7 @@ describe('SuggestedPrompts', () => {
   it('connects chat panel compact mode to prompt spacing', () => {
     const chatPanel = readFileSync(resolve('src/lib/components/chat/ChatPanel.svelte'), 'utf8');
 
-    expect(chatPanel).toContain("class=\"w-full {isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'}\"");
+    expect(chatPanel).toContain("class=\"w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}\"");
     expect(chatPanel).toContain('compact={isCompactMode}');
   });
 
