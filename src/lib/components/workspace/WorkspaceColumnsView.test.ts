@@ -575,4 +575,71 @@ describe('WorkspaceColumnsView', () => {
     expect(mocks.selectCurrentWorkspaceTabId).toHaveBeenCalledWith({});
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-3');
   });
+
+  it('tracks per-stack column visibility with overscan on the columns scroller', async () => {
+    class MockIntersectionObserver {
+      static instances: MockIntersectionObserver[] = [];
+      elements = new Set<Element>();
+      constructor(
+        private callback: IntersectionObserverCallback,
+        readonly options?: IntersectionObserverInit,
+      ) {
+        MockIntersectionObserver.instances.push(this);
+      }
+      observe(element: Element) {
+        this.elements.add(element);
+      }
+      unobserve(element: Element) {
+        this.elements.delete(element);
+      }
+      disconnect() {
+        this.elements.clear();
+      }
+      fire(entries: Array<{ target: Element; isIntersecting: boolean }>) {
+        this.callback(
+          entries as IntersectionObserverEntry[],
+          this as unknown as IntersectionObserver,
+        );
+      }
+    }
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
+    try {
+      workspaceStacks.set([['ws-1', 'ws-2'], ['ws-3']]);
+      render(WorkspaceColumnsView);
+      await tick();
+
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      const observer = MockIntersectionObserver.instances[0]!;
+      const stackA = document.querySelector('[data-workspace-stack="ws-1,ws-2"]')!;
+      const stackB = document.querySelector('[data-workspace-stack="ws-3"]')!;
+      expect(observer.options).toEqual({
+        root: scroller,
+        rootMargin: '0px 100% 0px 100%',
+        threshold: 0,
+      });
+      expect(observer.elements).toEqual(new Set([stackA, stackB]));
+      expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('');
+
+      observer.fire([{ target: stackA, isIntersecting: true }]);
+      await tick();
+      expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-1,ws-2');
+
+      observer.fire([
+        { target: stackA, isIntersecting: false },
+        { target: stackB, isIntersecting: true },
+      ]);
+      await tick();
+      expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-3');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('treats every column as visible when IntersectionObserver is unavailable', async () => {
+    render(WorkspaceColumnsView);
+    await tick();
+
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-1,ws-2,ws-3');
+  });
 });

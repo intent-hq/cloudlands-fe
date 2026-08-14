@@ -41,6 +41,11 @@
     scrollWorkspaceColumnIntoView,
     scrollWorkspacePanelIntoView,
   } from './utils/workspace-column-scroll';
+  import {
+    createColumnVisibilityTracker,
+    type ColumnVisibilityTracker,
+    type TrackedColumnElement,
+  } from './utils/column-visibility';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
   import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { m } from '$shared/paraglide/messages.js';
@@ -64,7 +69,10 @@
   let panelColumnCountsInitialized = false;
   let revealFrame: number | null = null;
   let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  let visibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
+  let columnVisibilityTracker: ColumnVisibilityTracker | null = null;
   const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
+  const visibleWorkspaceIdsAttribute = $derived([...visibleWorkspaceIds].sort().join(','));
 
   onMount(() => {
     const frame = requestAnimationFrame(() => {
@@ -196,6 +204,36 @@
         scrollWorkspacePanelIntoView(scroller, workspaceId, panelId, behavior);
       });
     });
+  });
+
+  $effect(() => {
+    const scroller = columnsScroller;
+    if (!scroller) return;
+    const tracker = createColumnVisibilityTracker(scroller, (visible) => {
+      visibleWorkspaceIds = visible;
+    });
+    columnVisibilityTracker = tracker;
+    return () => {
+      if (columnVisibilityTracker === tracker) columnVisibilityTracker = null;
+      tracker.destroy();
+    };
+  });
+
+  $effect(() => {
+    const stacks = $workspaceStacks$;
+    const scroller = columnsScroller;
+    const tracker = columnVisibilityTracker;
+    if (!scroller || !tracker) return;
+
+    const openWorkspaceIds = new Set(stacks.flat());
+    const tracked: TrackedColumnElement[] = [];
+    for (const element of scroller.querySelectorAll('[data-workspace-stack]')) {
+      const workspaceIds = (element.getAttribute('data-workspace-stack') ?? '')
+        .split(',')
+        .filter((workspaceId) => openWorkspaceIds.has(workspaceId));
+      if (workspaceIds.length > 0) tracked.push({ element, workspaceIds });
+    }
+    tracker.setElements(tracked);
   });
 
   onDestroy(cancelPendingReveal);
@@ -398,6 +436,7 @@
   class="scrollbar-none h-full min-h-0 w-full overflow-x-auto overflow-y-hidden bg-transparent"
   aria-label={m.workspace_columns_openSpaces_ariaLabel()}
   data-workspace-columns
+  data-visible-workspace-columns={visibleWorkspaceIdsAttribute}
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
     {#each $workspaceStacks$ as stack (stack[0])}
