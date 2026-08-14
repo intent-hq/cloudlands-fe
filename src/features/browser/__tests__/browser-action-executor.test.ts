@@ -682,6 +682,158 @@ describe('browser-action-executor', () => {
       );
     });
   });
+
+  // =========================================================================
+  // Probe-failure → tunnel fallback (intent-hq/monorepo#2323)
+  // =========================================================================
+  describe('probe-failure tunnel fallback', () => {
+    const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+    const localContext = () => ({ daemonIsRemote: false });
+    let fetchMock: ReturnType<typeof vi.fn>;
+    let forwardPort: ReturnType<typeof vi.fn>;
+    let tunnelProvider: () => { forwardPort: (port: number) => Promise<number> };
+
+    beforeEach(() => {
+      fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      vi.stubGlobal('fetch', fetchMock);
+      forwardPort = vi.fn().mockResolvedValue(45678);
+      tunnelProvider = () => ({ forwardPort });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('openTab falls back to the tunnel when the probe fails and echoes tunneled', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x?q=1' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+        tunnelProvider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).toHaveBeenCalledWith(3000);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:45678/x?q=1', undefined);
+      expect(result.results[0]?.result).toMatchObject({
+        tunneled: true,
+        requestedUrl: 'http://127.0.0.1:3000/x?q=1',
+        finalUrl: 'http://127.0.0.1:45678/x?q=1',
+        rewritten: true,
+      });
+      const payload = result.results[0]?.result as Record<string, unknown>;
+      expect(payload.reason).toContain('tunnel');
+      expect(payload.reason).toContain('127.0.0.1:45678');
+      // Bare-loopback rewrites keep their ambiguity warning through the tunnel.
+      expect(payload.warning).toContain('daemon.localhost');
+    });
+
+    it('navigate falls back to the tunnel when the probe fails and echoes tunneled', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.getFirstTab).mockReturnValue({
+        tabId: 'tab-1',
+        webContentsId: 1,
+      } as any);
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'navigate', url: 'http://daemon.localhost:8080/page' }] },
+        undefined,
+        undefined,
+        undefined,
+        remoteContext,
+        tunnelProvider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).toHaveBeenCalledWith(8080);
+      expect(embeddedBrowserCdp.evaluate).toHaveBeenCalledWith(
+        'tab-1',
+        `window.location.href = ${JSON.stringify('http://127.0.0.1:45678/page')}`,
+      );
+      expect(result.results[0]?.result).toMatchObject({
+        tabId: 'tab-1',
+        url: 'http://127.0.0.1:45678/page',
+        tunneled: true,
+        requestedUrl: 'http://daemon.localhost:8080/page',
+        finalUrl: 'http://127.0.0.1:45678/page',
+        rewritten: true,
+      });
+      // daemon.localhost rewrites carry no bare-loopback warning.
+      expect((result.results[0]?.result as Record<string, unknown>).warning).toBeUndefined();
+    });
+
+    it('keeps the explanatory probe error when the tunnel itself fails', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+      forwardPort.mockRejectedValue(new Error('tunnel connect timed out after 10000ms'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+        tunnelProvider,
+      );
+      expect(result.success).toBe(false);
+      expect(forwardPort).toHaveBeenCalledWith(3000);
+      const error = result.results[0]?.error ?? '';
+      expect(error).toContain('http://10.0.0.5:3000/x');
+      expect(error).toContain('0.0.0.0');
+      expect(error).toContain('firewall');
+      expect(error).toContain('port 3000');
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('never tunnels when the probe succeeds', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+        tunnelProvider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+      expect(result.results[0]?.result).not.toHaveProperty('tunneled');
+    });
+
+    it('never tunnels in local mode (no probe, no forward)', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://daemon.localhost:3000/' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        localContext,
+        tunnelProvider,
+      );
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(forwardPort).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+      expect(result.results[0]?.result).not.toHaveProperty('tunneled');
+    });
+
+    it('keeps the explanatory probe error when no tunnel provider is available (web context)', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://127.0.0.1:3000/x' }] },
+        mockOpenTabFn,
+        undefined,
+        undefined,
+        remoteContext,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('0.0.0.0');
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // =============================================================================

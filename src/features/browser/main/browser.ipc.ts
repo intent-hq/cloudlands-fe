@@ -6,7 +6,7 @@
  * of known browser actions.
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
@@ -20,6 +20,7 @@ import {
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
 import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
+import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserIPC');
@@ -95,6 +96,34 @@ function getDaemonLoopbackContext(): LoopbackRewriteContext {
 }
 
 /**
+ * Lazy singleton TunnelManager backing the executor's probe-failure fallback:
+ * when a rewritten remote origin is unreachable, the port is forwarded over
+ * the daemon's `/tunnel` WebSocket and the embedded browser loads the local
+ * forward instead (intent-hq/monorepo#2323). Reset on backend switch (see
+ * `registerBrowserHandlers`) so forwards never outlive the connection they
+ * were opened against.
+ */
+let tunnelManager: TunnelManager | null = null;
+
+function getBrowserTunnelProvider(): TunnelManager {
+  if (!tunnelManager) {
+    tunnelManager = new TunnelManager({
+      getConfig: () => {
+        try {
+          return getBackendClient().getConfig();
+        } catch (err) {
+          logger.warn('Could not resolve backend config for the browser tunnel', {
+            error: (err as Error).message,
+          });
+          return null;
+        }
+      },
+    });
+  }
+  return tunnelManager;
+}
+
+/**
  * Execute a sequence of browser actions.
  *
  * This is a secure alternative to arbitrary code execution - each action
@@ -114,6 +143,7 @@ export async function executeBrowserActions(
     agentId,
     workspaceId,
     getDaemonLoopbackContext,
+    getBrowserTunnelProvider,
   );
 }
 
@@ -125,6 +155,17 @@ export type { ExecutionResult, ActionSequence };
  */
 export function registerBrowserHandlers(): void {
   logger.info('Registering browser IPC handlers');
+
+  // A backend switch invalidates every tunnel forward (they target the old
+  // daemon's loopback); dispose the manager so the next fallback rebuilds it
+  // against the new connection. Cast: 'backend-connection-changed' is a
+  // custom app event (emitted by backend.ipc.ts), not in Electron's App type.
+  (app as NodeJS.EventEmitter).on('backend-connection-changed', () => {
+    if (tunnelManager) {
+      tunnelManager.dispose();
+      tunnelManager = null;
+    }
+  });
 
   // Register a browser tab for CDP access
   ipcMain.handle(
