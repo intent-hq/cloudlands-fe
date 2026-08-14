@@ -19,6 +19,7 @@ import {
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
+import { resolveBrowserUrl, type ResolvedBrowserUrl } from './loopback-url-resolver';
 import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -42,7 +43,10 @@ function openBrowserTab(
     if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
       const msg = `Protocol "${parsed.protocol}" is not allowed. Supported: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
-      logger.warn('Rejected browser:open-tab with disallowed protocol', { url, protocol: parsed.protocol });
+      logger.warn('Rejected browser:open-tab with disallowed protocol', {
+        url,
+        protocol: parsed.protocol,
+      });
       return { success: false, message: msg };
     }
   } catch {
@@ -56,7 +60,11 @@ function openBrowserTab(
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
   // user happens to be viewing at the moment.
-  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position, workspaceId });
+  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, {
+    url,
+    position,
+    workspaceId,
+  });
   logger.info('Sent browser:open-tab', { url, position, workspaceId });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}` };
@@ -75,6 +83,10 @@ const UnregisterTabSchema = z.object({
 const ExecSchema = z.object({
   actions: z.array(z.record(z.unknown())),
   tabId: z.string().optional(),
+});
+
+const ResolveUrlSchema = z.object({
+  url: z.string(),
 });
 
 /**
@@ -202,6 +214,39 @@ export function registerBrowserHandlers(): void {
         // executeBrowserActions returns { success, results, error? } directly
         executeBrowserActions(validated.actions, validated.tabId),
       IPC_CHANNELS.BROWSER.EXEC,
+    ),
+  );
+
+  // Resolve a URL through the shared rewrite → probe → tunnel pipeline so
+  // renderer navigations (script URLs, terminal links, address bar) reach
+  // the same target `browser.exec` navigate/openTab would. Never throws:
+  // probe+tunnel failures return the rewritten URL plus a structured
+  // `error`, and unexpected failures degrade to a non-rewritten passthrough.
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.RESOLVE_URL,
+    createSafeValidatedHandler(
+      ResolveUrlSchema,
+      async (_event, validated): Promise<ResolvedBrowserUrl> => {
+        try {
+          return await resolveBrowserUrl(
+            validated.url,
+            getDaemonLoopbackContext(),
+            getBrowserTunnelProvider,
+          );
+        } catch (err) {
+          logger.warn('browser:resolve-url failed; passing the URL through unresolved', {
+            url: validated.url,
+            error: (err as Error).message,
+          });
+          return {
+            url: validated.url,
+            rewritten: false,
+            // i18n-ignore (agent/renderer-facing protocol error, not user-facing)
+            error: `URL resolution failed: ${(err as Error).message}`,
+          };
+        }
+      },
+      IPC_CHANNELS.BROWSER.RESOLVE_URL,
     ),
   );
 
