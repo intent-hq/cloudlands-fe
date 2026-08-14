@@ -1923,6 +1923,8 @@
   "chat_chatMessage_edit_placeholder": "Edite su mensaje...",
   "chat_chatMessage_externalLink_fallback": "Enlace externo",
   "chat_chatMessage_failedToSend_label": "Error al enviar",
+  "chat_chatMessage_finishReasonMaxTokens_label": "Respuesta detenida — se alcanzó la longitud máxima",
+  "chat_chatMessage_finishReasonRefusal_label": "Respuesta detenida — el modelo se negó a continuar",
   "chat_chatMessage_githubIssue_fallback": "Issue de GitHub",
   "chat_chatMessage_linearIssue_fallback": "Issue de Linear",
   "chat_chatMessage_loading_label": "Cargando...",

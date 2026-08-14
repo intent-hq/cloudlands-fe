@@ -135,3 +135,67 @@ describe('ChatMessage reason-specific stopped indicator labels', () => {
     expect(screen.getByText('Stopped')).toBeTruthy();
   });
 });
+
+// Abnormal-finish notices (PROTOCOL §7.3 `metadata.finishReason`): the notice
+// renders from the persisted row metadata, so it survives reloads; it must
+// stay hidden while the turn is still streaming and for normal completions.
+function finishedAssistant(finishReason?: string, contentBlocks?: unknown[]): AgentMessage {
+  return {
+    id: 'assistant-2',
+    role: 'assistant',
+    contentBlocks: (contentBlocks ?? [{ type: 'text', text: 'Partial answer' }]) as never,
+    timestamp: new Date('2026-01-01T12:00:00Z'),
+    ...(finishReason !== undefined ? { metadata: { finishReason } } : {}),
+  };
+}
+
+describe('ChatMessage finishReason notices', () => {
+  it('renders the refusal notice for finishReason "refusal"', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('refusal'), isStreaming: false },
+    });
+    expect(screen.getByText('Response stopped — the model refused to continue')).toBeTruthy();
+  });
+
+  it('renders the max-length notice for finishReason "max_tokens"', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('max_tokens'), isStreaming: false },
+    });
+    expect(screen.getByText('Response stopped — maximum length reached')).toBeTruthy();
+  });
+
+  it('renders the max-length notice for finishReason "max_turn_requests"', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('max_turn_requests'), isStreaming: false },
+    });
+    expect(screen.getByText('Response stopped — maximum length reached')).toBeTruthy();
+  });
+
+  it('renders the notice on a zero-output marker row (empty contentBlocks)', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('refusal', []), isStreaming: false },
+    });
+    expect(screen.getByText('Response stopped — the model refused to continue')).toBeTruthy();
+  });
+
+  it('hides the notice while the message is still streaming', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('refusal'), isStreaming: true },
+    });
+    expect(screen.queryByText('Response stopped — the model refused to continue')).toBeNull();
+  });
+
+  it('renders no notice without finishReason metadata', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant(), isStreaming: false },
+    });
+    expect(screen.queryByText(/Response stopped/)).toBeNull();
+  });
+
+  it('renders no notice for an unknown future finishReason (open union)', () => {
+    render(ChatMessage, {
+      props: { message: finishedAssistant('some_future_reason'), isStreaming: false },
+    });
+    expect(screen.queryByText(/Response stopped/)).toBeNull();
+  });
+});

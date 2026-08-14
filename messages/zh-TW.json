@@ -1923,6 +1923,8 @@
   "chat_chatMessage_edit_placeholder": "編輯你的訊息…",
   "chat_chatMessage_externalLink_fallback": "外部連結",
   "chat_chatMessage_failedToSend_label": "傳送失敗",
+  "chat_chatMessage_finishReasonMaxTokens_label": "回應已停止 — 已達到最大長度",
+  "chat_chatMessage_finishReasonRefusal_label": "回應已停止 — 模型拒絕繼續",
   "chat_chatMessage_githubIssue_fallback": "GitHub 議題",
   "chat_chatMessage_linearIssue_fallback": "Linear 議題",
   "chat_chatMessage_loading_label": "載入中…",

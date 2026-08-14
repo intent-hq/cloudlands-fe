@@ -14,6 +14,11 @@ export interface AgentStreamUpdatePayload {
   rawContentBlocks?: ContentBlock[];
   chunk?: string;
   completeMessage?: unknown;
+  /**
+   * Abnormal finish reason (PROTOCOL §7 `agent:stream:end` optional field,
+   * §7.3): `"refusal"` | `"max_tokens"` | `"max_turn_requests"` today (open
+   * union); absent on normal `end_turn` completions.
+   */
   finishReason?: string;
   error?: string;
   createInitialPlaceholder?: boolean;

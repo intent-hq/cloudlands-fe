@@ -236,7 +236,10 @@ import {
   clearWorkspaceCreateProgress,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
-import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import {
+  resolveFinishReasonNotice,
+  shouldShowStoppedIndicator,
+} from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
@@ -2410,6 +2413,147 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       type: 'text',
       text: 'New turn',
     });
+  });
+});
+
+// Abnormal turn endings (PROTOCOL §7.3): the terminal `agent:stream:end`
+// carries `finishReason` when the turn completed with a non-`end_turn` ACP
+// stop reason (`refusal` | `max_tokens` | `max_turn_requests`), and the daemon
+// persists the same value as `metadata.finishReason` on the assistant row
+// (empty marker row on zero-output turns). The bridge must stamp the metadata
+// live so the notice renders without a reconcile, and rehydrated rows must
+// resolve the same notice.
+describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function streamTextChunk(handler: (n: { method: string; params?: unknown }) => void): void {
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Partial answer',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+  }
+
+  it.each(['refusal', 'max_tokens', 'max_turn_requests'] as const)(
+    'stream:end with finishReason=%s stamps metadata.finishReason on the streamed turn — the notice resolves LIVE',
+    async (finishReason) => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      streamTextChunk(handler);
+      handler(
+        notification('agent:stream:end', {
+          agentId: AGENT,
+          streamId: STREAM_ID,
+          messageId: MESSAGE_ID,
+          finishReason,
+        }),
+      );
+
+      const assistantMessages = readAssistantMessages();
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+        type: 'text',
+        text: 'Partial answer',
+      });
+      expect(assistantMessages[0].isStreaming).toBe(false);
+      expect(assistantMessages[0].streamingComplete).toBe(true);
+      expect(assistantMessages[0].metadata).toMatchObject({ finishReason });
+      // Abnormal finish is NOT an interruption — no Stopped indicator.
+      expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+      expect(resolveFinishReasonNotice(assistantMessages[0])).toBeDefined();
+    },
+  );
+
+  it('zero-output abnormal turn: finishReason stream:end with messageId and NO local stream state creates the empty marker row', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Nothing streamed — the daemon persisted an empty marker row under the
+    // turn's minted messageId with metadata.finishReason and emits the
+    // terminal stream:end. The bridge must NOT early-return here.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        finishReason: 'refusal',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata).toMatchObject({ finishReason: 'refusal' });
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toEqual({ kind: 'refusal' });
+  });
+
+  it('normal stream:end (no finishReason) finalizes WITHOUT finishReason metadata — no notice', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamTextChunk(handler);
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].metadata?.finishReason).toBeUndefined();
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toBeUndefined();
+  });
+
+  it('persisted finishReason row reconciles in after reload: the notice resolves from row metadata', async () => {
+    await primeBridge();
+
+    // Simulate the chat-read-service hydration reconcile: agents.getConversation
+    // returns the persisted row with metadata.finishReason (PROTOCOL §7.3) and
+    // bulkUpsertSessions upserts it — no live stream events at all.
+    const session = readSession();
+    expect(session).toBeDefined();
+    const persistedRow = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial answer' }],
+      metadata: { finishReason: 'max_tokens' },
+    } as unknown as AgentMessage;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [persistedRow],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].metadata).toMatchObject({ finishReason: 'max_tokens' });
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toEqual({ kind: 'max-tokens' });
   });
 });
 

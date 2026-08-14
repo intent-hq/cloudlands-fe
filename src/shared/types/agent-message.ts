@@ -100,6 +100,10 @@ export interface MessageMetadata {
 
   // Streaming
   stopReason?: string;
+  // Abnormal finish reason persisted on the turn's assistant row (PROTOCOL
+  // §7.3): "refusal" | "max_tokens" | "max_turn_requests" today (open union);
+  // absent on normal end_turn completions.
+  finishReason?: string;
   sessionId?: string;
   frontendSessionId?: string;
   streamId?: string;

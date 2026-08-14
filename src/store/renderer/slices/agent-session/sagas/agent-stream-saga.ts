@@ -41,6 +41,24 @@ function interruptedMetadata(
     : undefined;
 }
 
+/**
+ * Metadata to stamp on a message finalized by a terminal `complete` payload:
+ * the interrupted marker (Stopped badge) and/or the abnormal `finishReason`
+ * (PROTOCOL §7.3 — refusal / max_tokens / max_turn_requests notice). Mirrors
+ * what the daemon persists on the row, so live and reloaded transcripts agree.
+ */
+function finalizedMetadata(
+  payload: AgentStreamUpdatePayload,
+): Record<string, unknown> | undefined {
+  const interrupted = interruptedMetadata(payload);
+  const finishReason =
+    payload.eventType === 'complete' && payload.finishReason
+      ? { finishReason: payload.finishReason }
+      : undefined;
+  if (!interrupted && !finishReason) return undefined;
+  return { ...interrupted, ...finishReason };
+}
+
 function* clearSessionStreaming(
   agentId: string,
   eventType: AgentStreamUpdatePayload['eventType'],
@@ -88,7 +106,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
       return;
     }
-    const metadata = interruptedMetadata(payload);
+    const metadata = finalizedMetadata(payload);
     const placeholder: AgentMessage = {
       id: assistantMessageId,
       ...(assistantAppMessageId ? { appMessageId: assistantAppMessageId } : {}),
@@ -108,7 +126,7 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   if (eventType === 'complete') {
     const updates: Partial<AgentMessage> = { isStreaming: false, streamingComplete: true };
     if (nextBlocks && nextBlocks !== existing.contentBlocks) updates.contentBlocks = nextBlocks;
-    const metadata = interruptedMetadata(payload);
+    const metadata = finalizedMetadata(payload);
     if (metadata) updates.metadata = { ...existing.metadata, ...metadata };
     yield* put(updateMessage(agentId, existing.id, updates));
     yield* call(clearSessionStreaming, agentId, eventType);
