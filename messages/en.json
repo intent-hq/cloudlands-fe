@@ -5764,6 +5764,8 @@
   "settings_agentFeatures_prMonitorDebounce_save": "Save",
   "settings_agentFeatures_prMonitorDebounce_saving": "Saving…",
   "settings_agentFeatures_prMonitorDebounce_invalid": "Enter a whole number between 10 and 86,400 seconds.",
+  "settings_agentFeatures_taskGraph_label": "Task graph coordination",
+  "settings_agentFeatures_taskGraph_description": "Teach new agent sessions the task-graph coordination workflow (batch delegation, task relations, unblocked-task wakes); off by default",
   "chat_monitoredPrs_row_ariaLabel": "Monitored pull requests",
   "chat_monitoredPrs_monitoring_label": "Monitoring PR #{number}: {title}",
   "chat_monitoredPrs_monitoringCrossRepo_label": "Monitoring PR {repo} #{number}: {title}",
