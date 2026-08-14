@@ -1,13 +1,17 @@
 # Auto-merge of the release-please Release PR — "auto-cut beta".
 #
-# Merging the Release PR is what cuts a beta: the squash-merge push to main
-# triggers release-please.yml, which creates the vX.Y.Z tag + GitHub Release,
-# and the tag triggers release-beta.yml (build + publish to
-# intent-hq/cloudlands-releases). That merge used to be a manual click; this
-# workflow performs it automatically whenever the Release PR is already green
-# — the release-PR CI fast path makes that ~1 min after each refresh — so
-# betas ship hands-free. Stable promotion stays manual (release-stable.yml);
-# this workflow only affects beta.
+# Merging the Release PR is what cuts a release: the squash-merge push to
+# main triggers release-please.yml, which creates the vX.Y.Z tag + GitHub
+# Release, and the tag triggers release-beta.yml (historically named "beta";
+# it builds and publishes to the rolling ALPHA channel on
+# intent-hq/cloudlands-releases — beta and stable are manual promotions of
+# an existing release). That merge used to be a manual click; this workflow
+# performs it automatically whenever the Release PR is already green — the
+# release-PR CI fast path makes that ~1 min after each refresh — so alpha
+# releases ship hands-free. Beta/stable promotion stays manual
+# (promote-beta.yml / release-stable.yml); this workflow only automates the
+# cut. "Beta"/"cut a beta" below follows the historical workflow naming and
+# means this auto-published alpha release.
 #
 # Triggers — event-chained cut plus an hourly cron backstop:
 # - push to main touching `intentd.version`: the sidecar pin-bump squash
@@ -15,7 +19,7 @@
 #   into a cut. Push-triggered runs poll (30s interval, up to 15 min total)
 #   for release-please to refresh the Release PR with the pushed pin and for
 #   CI Gate to go green, then merge — an intentd change ships in the same fe
-#   beta cycle instead of waiting for the next cron tick.
+#   alpha cycle instead of waiting for the next cron tick.
 # - Hourly cron at :30 (offset from intentd's auto-cut at :00 and the
 #   sidecar pin bump at :15): the backstop, and the normal path for fe-only
 #   changes. Cron and manual-dispatch runs keep the check-once-and-exit
@@ -177,8 +181,10 @@ jobs:
             rm -rf "$tmp"
           fi
           published=$(jq -er '.version' <<<"$manifest" 2>/dev/null) || published=""
-          if [[ -z "$published" ]]; then
-            echo "Could not read the intentd alpha channel manifest (failing open)."
+          # Same semver shape auto-pin-intentd.yml accepts; a malformed
+          # manifest version must fail OPEN, not defer cuts for 90 minutes.
+          if ! grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$published"; then
+            echo "Could not read a semver version from the intentd alpha channel manifest (got '${published:-<empty>}'; failing open)."
             exit 0
           fi
 
