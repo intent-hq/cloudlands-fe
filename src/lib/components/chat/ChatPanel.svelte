@@ -3368,7 +3368,7 @@
           ? 'px-0'
           : 'px-4 pt-2 sm:px-6'}"
         class:pb-3={!isChiefWorkspace && isCompactMode}
-        class:pb-8={!isChiefWorkspace && !isCompactMode}
+        class:pb-2={!isChiefWorkspace && !isCompactMode}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -4052,7 +4052,7 @@
 
         <!-- Show suggested prompts for the last message only, when not streaming -->
         {#if suggestedPrompts.length > 0}
-          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'}">
+          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}">
             <SuggestedPrompts
               prompts={suggestedPrompts}
               onSelect={handleSelectSuggestedPrompt}
@@ -4081,7 +4081,7 @@
         {#if workspace?.id}
           {#key `${workspace.id}::${agentId}`}
             <div
-              class="w-full {isCompactMode ? 'pb-1' : 'pb-4'}"
+              class="w-full {isCompactMode ? 'pb-1' : 'pb-2'}"
               transition:safeSlide={{ axis: 'y', duration: 200 }}
             >
               <!-- Pending attention request (discussion/blocker) for this agent -->
@@ -4180,7 +4180,7 @@
 
     {#if pendingQuestions}
       {#key pendingQuestions.messageId}
-        <div class="w-full pb-2">
+        <div class="w-full" data-testid="question-wizard-slot">
           <QuestionWizard
             questions={pendingQuestions.questions}
             collapsed={questionWizardCollapsed}

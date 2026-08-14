@@ -205,6 +205,35 @@ describe('ResponseGroup - collapse state model', () => {
     return !!el && (el.getAttribute('style') ?? '').includes('max-height');
   }
 
+  it('gives duplicate-name instances stable unique details IDs and isolated controls', async () => {
+    const first = render(ResponseGroup, { props: { name: 'Repeated group', children } });
+    const second = render(ResponseGroup, { props: { name: 'Repeated group', children } });
+    const firstButton = header(first.container);
+    const secondButton = header(second.container);
+    const firstId = firstButton.getAttribute('aria-controls')!;
+    const secondId = secondButton.getAttribute('aria-controls')!;
+
+    expect(firstId).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
+    expect(secondId).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
+    expect(firstId).not.toBe(secondId);
+
+    await first.rerender({ name: 'Renamed group' });
+    expect(firstButton.getAttribute('aria-controls')).toBe(firstId);
+
+    await fireEvent.click(firstButton);
+    expect(first.container.contains(document.getElementById(firstId))).toBe(true);
+    expect(document.getElementById(secondId)).toBeNull();
+
+    await fireEvent.click(secondButton);
+    expect(second.container.contains(document.getElementById(secondId))).toBe(true);
+    expect(second.container.contains(document.getElementById(firstId))).toBe(false);
+
+    await fireEvent.click(firstButton);
+    await waitFor(() => expect(document.getElementById(firstId)).toBeNull());
+    expect(document.getElementById(secondId)).not.toBeNull();
+    expect(secondButton.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('uses caption-sized operational titles and only shows the preview while collapsed', async () => {
     const blocks = [{ type: 'text', text: 'Collapsed preview text' }] as ContentBlock[];
     const { container, queryByText } = render(ResponseGroup, {
@@ -221,15 +250,24 @@ describe('ResponseGroup - collapse state model', () => {
     await fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
     expect(queryByText('Collapsed preview text')).toBeNull();
+    expect(container.querySelector('[data-testid="response-group-name"]')?.className).toContain(
+      'font-medium',
+    );
     expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
   });
 
-  it('does not render a leading group icon', () => {
+  it('keeps one aligned operational icon and a spaced expanded guide', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
 
-    expect(header(container).querySelector('svg')).toBeNull();
+    const button = header(container);
+    expect(button.querySelector('[data-operational-icon-box]')).toBeTruthy();
+    expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
+    await fireEvent.click(button);
+    expect(container.querySelector('[data-operational-expanded-content]')?.className).toContain(
+      'pt-1.5',
+    );
   });
 
   it('last completed group toggles expanded ↔ semi-open and never fully closes', async () => {

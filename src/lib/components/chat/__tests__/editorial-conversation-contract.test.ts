@@ -12,10 +12,10 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('conversation-column flex min-h-full w-full flex-col');
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
-    expect(panel).toContain('<div class="w-full pb-2">');
+    expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain('conversation-composer relative z-20 w-full');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
@@ -104,7 +104,9 @@ describe('editorial conversation presentation contract', () => {
     // (before the shouldRenderContent early-return) so post-swap settles are
     // caught in the same frame.
     expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.account\(\);/);
-    expect(lazyTurn).toMatch(/ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/);
+    expect(lazyTurn).toMatch(
+      /ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
+    );
     // Cached heights are wrap-width-dependent: reads and writes must go
     // through the width-validated cache helpers so stale-width entries
     // cannot fabricate phantom space at the bottom of the chat (behavioral
@@ -306,10 +308,10 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
-    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'");
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
-    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-4'");
+    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-2'");
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');

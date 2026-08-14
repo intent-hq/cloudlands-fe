@@ -16,7 +16,7 @@ describe('panel content insets', () => {
     expect(panel).not.toContain('max-w-[var(--content-measure-');
     expect(panel).toContain(": 'px-4 pt-2 sm:px-6'");
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4! sm:px-6!'");
     expect(panel).toContain("? 'w-full px-1.5'");

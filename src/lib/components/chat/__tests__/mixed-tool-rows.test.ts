@@ -52,7 +52,10 @@ describe('screenshot-shaped mixed compact tool sequence', () => {
       expect(row.querySelectorAll('[data-tool-icon]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-tool-sentence]')).toHaveLength(1);
       expect(row.querySelectorAll('[data-testid="tool-call-path"]')).toHaveLength(0);
-      expect(row.querySelectorAll('.truncate')).toHaveLength(1);
+      const sentence = row.querySelector('[data-tool-sentence]')!;
+      const inlineFile = row.querySelector('[data-testid="tool-call-file-link"]');
+      expect(row.querySelectorAll('.truncate')).toHaveLength(inlineFile ? 2 : 1);
+      if (inlineFile) expect(sentence.contains(inlineFile)).toBe(true);
       expect(row.textContent).not.toMatch(/·|\s\|\s/);
     }
 
