@@ -7,7 +7,10 @@
    * once the destination is underway/finished), `spec` (spec root →
    * rootless task, subtler), `conflict` (advisory, dashed, no arrowhead).
    * Arrowheads point at the dependent task and take the edge's color via
-   * per-palette-slot markers. Pulse treatments (derived upstream, see
+   * per-palette-slot markers; they render at a fixed user-space size
+   * (`markerUnits="userSpaceOnUse"`, sized to match a 1.5-wide stroke) so
+   * the hover stroke thickening never scales them.
+   * Pulse treatments (derived upstream, see
    * `takeoverEdgePulse`): live conflicts pulse red, dep edges into a
    * ready-to-start task render green and pulse; the pulse animation is
    * gated on the overlay's `motion` flag — reduced motion keeps the same
@@ -55,8 +58,9 @@
         viewBox="0 0 8 8"
         refX="7"
         refY="4"
-        markerWidth="7"
-        markerHeight="7"
+        markerUnits="userSpaceOnUse"
+        markerWidth="10.5"
+        markerHeight="10.5"
         orient="auto-start-reverse"
       >
         <path d="M0 0.5 L7.5 4 L0 7.5 Z" />
@@ -67,8 +71,9 @@
           viewBox="0 0 8 8"
           refX="7"
           refY="4"
-          markerWidth="7"
-          markerHeight="7"
+          markerUnits="userSpaceOnUse"
+          markerWidth="10.5"
+          markerHeight="10.5"
           orient="auto-start-reverse"
         >
           <path d="M0 0.5 L7.5 4 L0 7.5 Z" fill={color} />
@@ -79,8 +84,9 @@
         viewBox="0 0 8 8"
         refX="7"
         refY="4"
-        markerWidth="7"
-        markerHeight="7"
+        markerUnits="userSpaceOnUse"
+        markerWidth="10.5"
+        markerHeight="10.5"
         orient="auto-start-reverse"
       >
         <path d="M0 0.5 L7.5 4 L0 7.5 Z" fill={HUD_TAKEOVER_EDGE_READY_COLOR} />
