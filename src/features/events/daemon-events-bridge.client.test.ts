@@ -508,6 +508,31 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     });
   });
 
+  it('falls back to slots for an unrecognized agent:process:queued reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A hypothetical future constraint the FE doesn't know yet: fall back to
+    // 'slots' (a stale label beats a broken render) — the bridge logs a
+    // warning so the divergence is observable rather than silently absorbed.
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 3,
+        cap: 3,
+        reason: 'gpu-budget',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
+  });
+
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
