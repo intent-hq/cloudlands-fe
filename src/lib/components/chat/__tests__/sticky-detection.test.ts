@@ -54,12 +54,14 @@ function buildTranscript(messageIds: string[], { innerSticky = false } = {}) {
 
     let sticky: HTMLElement;
     if (innerSticky) {
-      // EventWakeupBanner structure: the sticky element is a child of the row.
+      // Detection's querySelector('.sticky') branch: the sticky element is a
+      // child of the row (defensive path; no current row renders this shape).
       sticky = document.createElement('div');
       sticky.className = 'sticky';
       row.appendChild(sticky);
     } else {
-      // Regular user message: the row itself is the sticky element.
+      // Both user messages and EventWakeupBanner rows: ChatPanel applies
+      // class:sticky to the message-nav-target wrapper itself.
       row.classList.add('sticky');
       sticky = row;
     }
@@ -175,17 +177,32 @@ describe('sticky-row detection stability (flicker regression)', () => {
     expect(detectStickyMessageId(scroller, 'm1')).toBe('m2');
   });
 
-  it('applies the same hysteresis to inner-sticky rows (EventWakeupBanner structure)', () => {
-    const { scroller, rows } = buildTranscript(['wake-1'], { innerSticky: true });
+  it('applies the same hysteresis to event-wakeup banner rows (sticky wrapper, ChatPanel shape)', () => {
+    // EventWakeupBanner rows share the user-message DOM shape: class:sticky on
+    // the message-nav-target wrapper itself (ChatPanel's wake-up row markup).
+    const { scroller, rows } = buildTranscript(['wake-1']);
     const { turn, sticky } = rows.get('wake-1')!;
 
     stubRect(turn, { top: -100, bottom: 500 });
     stubRect(sticky, { top: -1, bottom: 59 });
     expect(detectStickyMessageId(scroller, null)).toBe('wake-1');
 
-    // Compaction geometry change on the inner sticky element must not un-pin.
+    // Compaction geometry change on the banner row must not un-pin.
     stubRect(turn, { top: -140, bottom: 460 });
     stubRect(sticky, { top: -30, bottom: 0 });
     expect(detectStickyMessageId(scroller, 'wake-1')).toBe('wake-1');
+  });
+
+  it('applies the same hysteresis via the inner-sticky querySelector branch', () => {
+    const { scroller, rows } = buildTranscript(['inner-1'], { innerSticky: true });
+    const { turn, sticky } = rows.get('inner-1')!;
+
+    stubRect(turn, { top: -100, bottom: 500 });
+    stubRect(sticky, { top: -1, bottom: 59 });
+    expect(detectStickyMessageId(scroller, null)).toBe('inner-1');
+
+    stubRect(turn, { top: -140, bottom: 460 });
+    stubRect(sticky, { top: -30, bottom: 0 });
+    expect(detectStickyMessageId(scroller, 'inner-1')).toBe('inner-1');
   });
 });
