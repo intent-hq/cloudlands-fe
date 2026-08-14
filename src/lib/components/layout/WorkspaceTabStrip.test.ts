@@ -484,6 +484,8 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     const alphaContainer = document.querySelector('[data-workspace-tab="ws-1"]')!;
     const gammaContainer = document.querySelector('[data-workspace-tab="ws-3"]')!;
+    expect(alphaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-1');
+    expect(gammaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-3');
     const dataTransfer = {
       effectAllowed: 'none',
       dropEffect: 'none',

@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { setContext } from 'svelte';
   import SidebarLauncherHost from './SidebarLauncherHost.svelte';
   import MixedToolRowsHarness from '$lib/components/chat/__tests__/mocks/MixedToolRowsHarness.svelte';
   import WorkspaceViewModeToggle from '$lib/components/layout/WorkspaceViewModeToggle.svelte';
+  import PanelEmptyState from '$lib/components/layout/panel-system/PanelEmptyState.svelte';
   import PanelDominantBrowserGeometryHarness from '$lib/components/layout/panel-system/__tests__/mocks/PanelDominantBrowserGeometryHarness.svelte';
 
   import { store } from '$store/renderer/store';
 
   store.init();
+  setContext('panelLayoutManager', () => ({ splitPanel() {}, reopenClosedTab() {} }));
 
   let {
     scene,
@@ -34,6 +37,17 @@
       <button type="button" class="h-8 rounded border px-3">Panel action</button>
     </section>
   {:else}
-    <PanelDominantBrowserGeometryHarness viewportWidth={width} zoomFactor={1} scenario="nested" />
+    <section data-baseline-panel>
+      <PanelDominantBrowserGeometryHarness viewportWidth={width} zoomFactor={1} scenario="nested" />
+      <div data-baseline-zero-tab-shell class="h-64 border-t">
+        <PanelEmptyState
+          workspaceId="browser-geometry"
+          onCreateAgent={() => {}}
+          onCreateNote={() => {}}
+          onCreateTerminal={() => {}}
+          onOpenBrowser={() => {}}
+        />
+      </div>
+    </section>
   {/if}
 </main>

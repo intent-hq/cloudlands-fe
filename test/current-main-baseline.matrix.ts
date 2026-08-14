@@ -89,6 +89,7 @@ const sidebar = [
 ] as const;
 const tabs = [
   'test/workspace-tab-strip-status-geometry.spec.ts',
+  'src/lib/components/layout/WorkspaceTabStrip.test.ts',
   'src/lib/components/layout/WorkspaceViewModeToggle.test.ts',
 ] as const;
 const panel = [
@@ -206,10 +207,11 @@ export const baselineRows = [
     'Activity safe full-route navigation',
     'interaction',
     [...runtime, 'resolvable', 'internal', 'unresolvable'],
-    ['src/lib/components/workspace/sidebar/__tests__/activity-navigation-contract.test.ts'],
+    ['src/lib/components/workspace/sidebar/__tests__/ActivityLogPreview.test.ts'],
   ),
   row('WORKSPACE-03', 'Activity absent from compact launcher/deck', 'sidebar', visual, sidebar),
   row('WORKSPACE-08', 'Simplified repository/branch metadata', 'sidebar', visual, [
+    'src/lib/components/workspace/sidebar/__tests__/BranchDisplay.test.ts',
     'src/lib/components/workspace/sidebar/__tests__/WorkspaceProgressCard.test.ts',
   ]),
   row('WORKSPACE-09', 'Branch Off/Using row alignment', 'sidebar', visual, [
@@ -336,14 +338,17 @@ export const baselineRows = [
     'Reserved heading-band transition geometry',
     'tabs',
     [...visual, 'single-to-columns', 'columns-to-single'],
-    ['src/lib/components/layout/panel-system/__tests__/panel-workspace-lifecycle-motion.test.ts'],
+    ['src/lib/components/workspace/WorkspaceColumnsView.test.ts'],
   ),
   row(
     'WORKSPACE-40',
     'Smooth tabs-to-columns choreography',
     'tabs',
     [...visual, 'single-to-columns', 'columns-to-single', 'focus'],
-    ['src/lib/components/layout/panel-system/__tests__/panel-workspace-lifecycle-motion.test.ts'],
+    [
+      'src/lib/components/layout/WorkspaceTabStrip.test.ts',
+      'src/lib/components/workspace/WorkspaceColumnsView.test.ts',
+    ],
   ),
   row('WORKSPACE-42', 'Rightmost panel/chrome reachability', 'panel', visual, [
     'src/lib/components/layout/panel-system/__tests__/panel-canvas-width.test.ts',
@@ -370,9 +375,13 @@ export const baselineRows = [
     'Handle reset-to-default semantics',
     'panel',
     [...visual, 'pointer', 'keyboard', 'reset', 'reload'],
-    ['src/lib/components/layout/panel-system/__tests__/panel-resize-handles.test.ts'],
+    [
+      'src/lib/components/layout/ResizablePanel.test.ts',
+      'src/lib/components/layout/panel-system/__tests__/panel-resize-handles.test.ts',
+    ],
   ),
   row('WORKSPACE-46', 'Resize-handle conditional visibility', 'panel', visual, [
+    'src/lib/components/layout/panel-system/__tests__/panel-resize-handles.test.ts',
     'src/lib/components/layout/panel-system/__tests__/panel-resize-rendering-contract.test.ts',
   ]),
   row(
@@ -401,7 +410,10 @@ export const baselineRows = [
     'Recoverable zero-tab workspace shell',
     'interaction',
     [...visual, 'remove-last-tab', 'recovery'],
-    ['src/store/renderer/slices/panel-layout/panel-layout-tabless.test.ts'],
+    [
+      'src/lib/components/layout/panel-system/__tests__/PanelEmptyState.test.ts',
+      'src/store/renderer/slices/panel-layout/panel-layout-tabless.test.ts',
+    ],
   ),
   row(
     'REMAINING-03',
@@ -415,14 +427,21 @@ export const baselineRows = [
     'Files Open in chooser',
     'chooser',
     [...visual, 'editor', 'other', 'copy-path', 'focus-restore'],
-    ['src/lib/components/workspace/__tests__/MultiSelectTabbedSidebar.open-in.test.ts'],
+    [
+      'src/lib/components/ui/__tests__/OpenComboButton.locality.test.ts',
+      'src/lib/components/workspace/__tests__/MultiSelectTabbedSidebar.open-in.test.ts',
+    ],
   ),
   row(
     'REMAINING-08',
     'Terminal script-selection crash prevention',
     'terminal',
     [...runtime, 'no-selection', 'selected', 'running', 'stopped', 'error'],
-    ['src/lib/components/terminal/__tests__/QuakeTerminalOverlay.test.ts'],
+    [
+      'src/lib/components/terminal/__tests__/QuakeTerminalOverlay.delete-script.test.ts',
+      'src/lib/components/terminal/__tests__/QuakeTerminalOverlay.previously-running-tabs.test.ts',
+      'src/lib/components/terminal/__tests__/QuakeTerminalOverlay.test.ts',
+    ],
   ),
   row('REMAINING-12', 'Repo/branch pill contrast', 'chooser', visual, [
     'src/lib/components/workspace/sidebar/__tests__/WorkspaceProgressCard.checkout-pill.test.ts',
@@ -442,6 +461,11 @@ export const baselineRows = [
     'Final accessibility correction',
     'interaction',
     [...visual, 'aria', 'focus-order', 'keyboard'],
-    ['src/lib/utils/__tests__/accessibility.test.ts', 'test/sidebar-launcher-tab-geometry.spec.ts'],
+    [
+      'src/lib/components/layout/WorkspaceTabStrip.test.ts',
+      'src/lib/components/workspace/__tests__/MultiSelectTabbedSidebar.open-in.test.ts',
+      'src/lib/styles/__tests__/theme-contract.test.ts',
+      'test/sidebar-launcher-tab-geometry.spec.ts',
+    ],
   ),
 ] as const;
