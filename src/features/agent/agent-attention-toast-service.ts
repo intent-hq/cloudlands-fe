@@ -17,9 +17,10 @@
  * focuses) the agent's conversation tab in that workspace's panel layout.
  *
  * Dependency-light per AGENTS.md middleware conventions (this module is
- * reachable from the daemon-events bridge middleware): no selector imports;
- * the toast lib, the Svelte component, and the SvelteKit navigation helper
- * are imported lazily.
+ * reachable from the daemon-events bridge middleware): no static selector
+ * imports (selectors are imported lazily at call time only); the toast lib,
+ * the Svelte component, and the SvelteKit navigation helper are also
+ * imported lazily.
  */
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -210,7 +211,7 @@ export async function showWorkspaceAutoUnarchiveToast(
   }
   toast.info(
     m.workspace_autoUnarchive_toast({
-      title: title || m.workspace_ops_space_fallback(),
+      title: title || m.workspace_page_space_title(),
       name: agentName,
     }),
     {
