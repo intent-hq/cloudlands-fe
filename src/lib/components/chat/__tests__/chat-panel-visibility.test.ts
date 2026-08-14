@@ -1,12 +1,5 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import {
-  AgentStatus,
-  type AgentSession,
-} from '$shared/types';
+import { describe, expect, it } from 'vitest';
+import { AgentStatus, type AgentSession } from '$shared/types';
 
 import {
   deriveQueuedMessagesVisibility,
@@ -68,7 +61,9 @@ describe('chat panel visibility helpers', () => {
 
   it('treats responding and legacy Processing sessions as active', () => {
     expect(isSessionActivelyResponding({ ...baseSession, isResponding: true })).toBe(true);
-    expect(isSessionActivelyResponding({ ...baseSession, status: AgentStatus.Processing })).toBe(true);
+    expect(isSessionActivelyResponding({ ...baseSession, status: AgentStatus.Processing })).toBe(
+      true,
+    );
   });
 
   it('stops chat before queued sends while streaming or actively processing', () => {
@@ -285,8 +280,8 @@ describe('shouldShowTranscriptSkeleton', () => {
     ).toBe(true);
   });
 
-  it('covers the failed-hydration case: settled + empty + existing backend session', () => {
-    expect(shouldShowTranscriptSkeleton(settledExistingSession)).toBe(true);
+  it('does not keep a settled empty transcript behind an infinite skeleton', () => {
+    expect(shouldShowTranscriptSkeleton(settledExistingSession)).toBe(false);
   });
 
   it('suppresses the skeleton when a pending initial prompt renders optimistically', () => {

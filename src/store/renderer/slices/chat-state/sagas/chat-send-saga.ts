@@ -28,9 +28,8 @@ import {
 import {
   removeQueuedMessageFromAgentQueue,
   removeQueuedMessageRequested,
-  replaceAgentQueue,
+  upsertQueuedMessageInAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
-import { selectAgentQueueMessages } from '../../agent-queue/agent-queue-selectors';
 import { CHIEF_WORKSPACE_ID } from '../../sidebar-nav/sidebar-nav-types';
 import {
   getChiefThreadTitle,
@@ -199,10 +198,7 @@ function* dispatchToLifecycle(
         if (typeof turnId === 'string') {
           yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
         }
-        const existing = yield* selectAgentQueueMessages.effect(agentId);
-        if (!existing.some((message) => message.id === queuedMessage.id)) {
-          yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
-        }
+        yield* put(upsertQueuedMessageInAgentQueue(agentId, queuedMessage));
       }
       if (wsId === CHIEF_WORKSPACE_ID) {
         yield* call(renameChiefThreadIfPlaceholder, agentId, content);

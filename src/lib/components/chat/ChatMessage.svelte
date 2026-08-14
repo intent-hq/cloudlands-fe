@@ -9,6 +9,7 @@
     faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -190,6 +191,8 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    /** Keeps an edited virtualized turn materialized until edit mode closes. */
+    onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
     onStickyClick?: () => void;
     /** Backend session ID (auggie ID) for debugging */
@@ -215,6 +218,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    onEditStateChange,
     isSticky = false,
     onStickyClick,
     backendSessionId,
@@ -1033,14 +1037,20 @@
     editContextItems = contextItemsForEdit;
     editSelectedModel = editModel;
     isEditing = true;
+    onEditStateChange?.(true);
   }
 
   function handleCancelEdit() {
     isEditing = false;
+    onEditStateChange?.(false);
     editValue = '';
     editContextItems = [];
     editSelectedModel = undefined;
   }
+
+  onDestroy(() => {
+    if (isEditing) onEditStateChange?.(false);
+  });
 
   // Editing regenerates from this message onward — a destructive daemon-side
   // truncation (agent.editAndRegenerate, PROTOCOL §5.5) — so gate the dispatch

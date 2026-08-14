@@ -39,8 +39,7 @@ import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-reco
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
-import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
-import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+import { upsertQueuedMessageInAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -453,11 +452,7 @@ export async function sendMessage(
                             { agentId, queuedMessageId: queuedMessage.id },
                           );
                         }
-                        const existing = selectAgentQueueMessages.select(appStore.state, agentId);
-                        const next = existing.some((m) => m.id === queuedMessage.id)
-                          ? existing
-                          : [...existing, queuedMessage];
-                        dispatchRedux(replaceAgentQueue(agentId, next));
+                        dispatchRedux(upsertQueuedMessageInAgentQueue(agentId, queuedMessage));
                       }
 
                       // Exit early — no stream is starting
