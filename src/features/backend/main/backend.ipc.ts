@@ -39,6 +39,7 @@ import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from '
 import { JsonRpcError } from './json-rpc-errors';
 import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
+import { readPinnedVersion } from './intentd-version-pin';
 import {
   getLocalDaemonProtocolVersion,
   getSidecarRunLog,
@@ -78,6 +79,22 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
 let client: JsonRpcClient | null = null;
 let handlersRegistered = false;
+
+/**
+ * Lazily-read intentd.version pin, injected into every transport payload so
+ * the renderer can compare the connected daemon's version against the pin in
+ * any connection mode. Cached: the pin file cannot change while running.
+ */
+let pinnedVersionCache: string | null | undefined;
+function getPinnedVersion(): string | null {
+  if (pinnedVersionCache === undefined) {
+    pinnedVersionCache = readPinnedVersion({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    });
+  }
+  return pinnedVersionCache;
+}
 
 /**
  * Stable/persistent reconnect forwarder (T8). Main-process services
@@ -418,7 +435,7 @@ export function getBackendClient(): JsonRpcClient {
     backendNotificationForwarder.emit('notification', notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
-    const transport = formatTransportInfo(instance.getConfig());
+    const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
     // `reconnectAttempts` counts retries since the last successful connect so
     // the daemon-loss overlay can show live retry progress (#1750).
     broadcast(BACKEND.STATUS, {
@@ -436,7 +453,7 @@ export function getBackendClient(): JsonRpcClient {
   // coarse state. This piggybacks on the existing `backend:status` channel to
   // avoid growing the preload allow-list surface. See RESUB-1.
   instance.on('reconnected', () => {
-    const transport = formatTransportInfo(instance.getConfig());
+    const transport = formatTransportInfo(instance.getConfig(), getPinnedVersion());
     broadcast(BACKEND.STATUS, {
       status: 'connected',
       reconnected: true,
@@ -1163,7 +1180,7 @@ async function performSpawnSidecar(): Promise<{
       const client = getBackendClient();
       broadcast(BACKEND.STATUS, {
         status: client.getStatus(),
-        transport: formatTransportInfo(client.getConfig()),
+        transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
         reconnectAttempts: client.getReconnectAttempts(),
       });
     }
@@ -1263,7 +1280,7 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(BACKEND.GET_STATUS, async () => {
     const client = getBackendClient();
-    const transport = formatTransportInfo(client.getConfig());
+    const transport = formatTransportInfo(client.getConfig(), getPinnedVersion());
     // Boot-time startup failures fire before this module registers its
     // `onSidecarStartupFailed` listener and before any window exists, so the
     // broadcast alone is lossy. Expose the latched failure here so the
@@ -1307,7 +1324,7 @@ export function registerBackendHandlers(): void {
       status: instance.getStatus(),
       sidecarStartupFailed: true,
       reason,
-      transport: formatTransportInfo(instance.getConfig()),
+      transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
       reconnectAttempts: instance.getReconnectAttempts(),
     });
   });
@@ -1326,7 +1343,7 @@ export function registerBackendHandlers(): void {
       status: instance.getStatus(),
       sidecarGaveUp: true,
       reason,
-      transport: formatTransportInfo(instance.getConfig()),
+      transport: formatTransportInfo(instance.getConfig(), getPinnedVersion()),
       reconnectAttempts: instance.getReconnectAttempts(),
     });
   });

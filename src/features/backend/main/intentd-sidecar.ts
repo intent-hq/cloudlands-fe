@@ -26,7 +26,8 @@ import { RestartPolicy } from './restart-policy';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { isWindowsPipePath, toLocalEndpoint } from './intentd-pipe-name';
 import { setConnectionMode, setDaemonVersionInfo } from './connection-mode';
-import { compareToPinnedVersion, readPinnedVersion } from './intentd-version-pin';
+import { compareToPinnedVersion } from '$shared/intentd-version-compare';
+import { readPinnedVersion } from './intentd-version-pin';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.

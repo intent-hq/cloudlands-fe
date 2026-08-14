@@ -26,6 +26,8 @@ export interface TransportInfo {
   daemonVersion?: string;
   /** True when the adopted daemon's version differs from the intentd.version pin (warn-only). */
   versionMismatch?: boolean;
+  /** The bundled intentd.version pin, reported in every transport mode. */
+  pinnedVersion?: string;
 }
 
 /**
@@ -48,14 +50,22 @@ function sanitizeUrl(rawUrl: string): string | undefined {
   }
 }
 
-/** Shape transport config into a renderer-safe payload. */
-export function formatTransportInfo(config: {
-  transport: 'uds' | 'tcp' | 'ws' | 'wss';
-  socketPath?: string;
-  wsUrl?: string;
-  host?: string;
-  port?: number;
-}): TransportInfo {
+/**
+ * Shape transport config into a renderer-safe payload. `pinnedVersion` is the
+ * intentd.version pin (injected by the caller so this module stays free of fs
+ * access); when provided it is reported in every transport mode.
+ */
+export function formatTransportInfo(
+  config: {
+    transport: 'uds' | 'tcp' | 'ws' | 'wss';
+    socketPath?: string;
+    wsUrl?: string;
+    host?: string;
+    port?: number;
+  },
+  pinnedVersion?: string | null,
+): TransportInfo {
+  const pin = pinnedVersion ? { pinnedVersion } : {};
   if (config.transport === 'uds') {
     // The connection mode is resolved during startIntentdSidecar (which runs
     // before the backend handlers register). Only an explicit `external`
@@ -71,19 +81,20 @@ export function formatTransportInfo(config: {
               versionMismatch: versionInfo.versionMismatch,
             }
           : {}),
+        ...pin,
       };
     }
-    return { mode: 'sidecar-uds', target: config.socketPath };
+    return { mode: 'sidecar-uds', target: config.socketPath, ...pin };
   }
   if (config.transport === 'ws') {
     const sanitized = config.wsUrl ? sanitizeUrl(config.wsUrl) : undefined;
-    return { mode: 'external-ws', target: sanitized };
+    return { mode: 'external-ws', target: sanitized, ...pin };
   }
   if (config.transport === 'wss') {
     // Remote pinned WSS: host:port only — the token and cert fingerprint never
     // reach the renderer-facing payload.
-    return { mode: 'external-ws', target: `wss:${config.host}:${config.port}` };
+    return { mode: 'external-ws', target: `wss:${config.host}:${config.port}`, ...pin };
   }
   // TCP transport is a remote stub; treat it like external WebSocket for UI purposes.
-  return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}` };
+  return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}`, ...pin };
 }

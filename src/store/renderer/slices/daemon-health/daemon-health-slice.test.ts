@@ -112,6 +112,64 @@ describe('daemonHealthReducer', () => {
       expect(next.hostLocality).toBeNull();
     });
 
+    it('clears stale stats when connecting to a different daemon (transport switch)', () => {
+      // Stats (incl. version) polled from the previous daemon must not
+      // survive a switch — the selector would compare the OLD daemon's
+      // version against the NEW transport's pin until the next poll.
+      const state = {
+        ...initialState,
+        health: 'down' as const,
+        transport: {
+          mode: 'external-ws',
+          target: 'wss://remote.example',
+          pinnedVersion: '2.0.0',
+        } as const,
+        stats: {
+          clients: 1,
+          agents: 0,
+          listenMode: 'ws',
+          os: 'linux',
+          arch: 'x64',
+          version: '1.0.0',
+        },
+        lastUpdated: '2026-08-14T00:00:00.000Z',
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', { ...sidecarTransport, pinnedVersion: '2.0.0' }),
+      );
+
+      expect(next.stats).toBeNull();
+      expect(next.lastUpdated).toBeNull();
+    });
+
+    it('preserves stats when reconnecting to the same daemon (no transport change)', () => {
+      const stats = {
+        clients: 1,
+        agents: 0,
+        listenMode: 'uds',
+        os: 'macos',
+        arch: 'aarch64',
+        version: '1.0.0',
+      };
+      const state = {
+        ...initialState,
+        health: 'down' as const,
+        transport: sidecarTransport,
+        stats,
+        lastUpdated: '2026-08-14T00:00:00.000Z',
+      };
+
+      const next = daemonHealthReducer(
+        state,
+        connectionStatusChanged('connected', { ...sidecarTransport }),
+      );
+
+      expect(next.stats).toEqual({ ...stats, transport: sidecarTransport });
+      expect(next.lastUpdated).toBe('2026-08-14T00:00:00.000Z');
+    });
+
     it('preserves forced locality when reconnecting to the same transport', () => {
       const state = {
         ...initialState,

@@ -194,7 +194,17 @@ daemonHealthReducer.with(
       return {
         ...state,
         health: 'healthy',
-        stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
+        // Stats belong to the daemon that reported them. Drop them on a
+        // genuine daemon switch (mode/target changed) so selectors never
+        // compare the OLD daemon's version against the NEW transport's pin
+        // before the next system.status poll; same-daemon reconnects keep
+        // their stats.
+        stats: transportChanged
+          ? null
+          : transport && state.stats
+            ? { ...state.stats, transport }
+            : state.stats,
+        lastUpdated: transportChanged ? null : state.lastUpdated,
         transport: transport ?? state.transport,
         reconnectAttempts: 0,
         // A reported locality belongs to the daemon/transport that produced it.
