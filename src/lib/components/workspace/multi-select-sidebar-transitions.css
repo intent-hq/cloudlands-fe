@@ -30,6 +30,10 @@
 .sidebar-expanded-tab {
   position: relative;
   z-index: var(--sidebar-tab-index);
+  /* Flex (not block) so the inline-flex button is a flex item: block flow adds the
+     line-box strut's descent under the empty-baseline edge tabs, overflowing the
+     clipped h-10 deck and letting platform font metrics push tab bottoms out of view. */
+  display: flex;
   flex: 0 0 30px;
   margin-left: -8px;
   transition: flex-basis 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
