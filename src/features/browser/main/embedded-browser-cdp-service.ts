@@ -59,11 +59,19 @@ class EmbeddedBrowserCdpService {
   /** Set of webContentsIds that have debugger attached */
   private attachedDebuggers = new Set<number>();
 
-  /** Cache of browser tabs from panel layout (includes unmounted tabs) */
-  private panelBrowserTabs: PanelBrowserTab[] = [];
+  /**
+   * Cache of browser tabs from panel layout (includes unmounted tabs),
+   * keyed by the workspaceId the request targeted ('' for untargeted
+   * broadcasts). Per-workspace keying keeps a timed-out request from
+   * falling back to another workspace's tab list.
+   */
+  private panelBrowserTabsCache = new Map<string, PanelBrowserTab[]>();
 
   /** Pending resolvers for list-tabs requests, keyed by request ID */
-  private pendingListTabsRequests = new Map<string, (tabs: PanelBrowserTab[]) => void>();
+  private pendingListTabsRequests = new Map<
+    string,
+    { workspaceId?: string; resolve: (tabs: PanelBrowserTab[]) => void }
+  >();
 
   /** Counter for generating unique request IDs */
   private listTabsRequestCounter = 0;
@@ -80,21 +88,22 @@ class EmbeddedBrowserCdpService {
           count: data.tabs.length,
           requestId: data.requestId,
         });
-        this.panelBrowserTabs = data.tabs;
         if (data.requestId) {
           // Resolve only the request this reply answers, so concurrent
           // requests for different workspaces never consume each other's
           // tab lists.
-          const resolver = this.pendingListTabsRequests.get(data.requestId);
-          if (resolver) {
+          const pending = this.pendingListTabsRequests.get(data.requestId);
+          if (pending) {
             this.pendingListTabsRequests.delete(data.requestId);
-            resolver(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
+            pending.resolve(data.tabs);
           }
         } else {
           // Reply without a requestId — resolve all pending requests
-          for (const [requestId, resolver] of this.pendingListTabsRequests) {
+          for (const [requestId, pending] of this.pendingListTabsRequests) {
             this.pendingListTabsRequests.delete(requestId);
-            resolver(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
+            pending.resolve(data.tabs);
           }
         }
       },
@@ -110,7 +119,7 @@ class EmbeddedBrowserCdpService {
 
     // Create promise that will be resolved when response arrives
     const requestPromise = new Promise<PanelBrowserTab[]>((resolve) => {
-      this.pendingListTabsRequests.set(requestId, resolve);
+      this.pendingListTabsRequests.set(requestId, { workspaceId, resolve });
     });
 
     // Send to workspace windows (falls back to all windows if no workspaceId).
@@ -119,13 +128,18 @@ class EmbeddedBrowserCdpService {
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, { requestId });
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
-    // Create per-request timeout promise
+    // Create per-request timeout promise. The fallback only consults the
+    // cache entry for the SAME workspace target, so a timed-out request
+    // never answers with another workspace's tab list.
     const timeoutPromise = new Promise<PanelBrowserTab[]>((resolve) => {
       setTimeout(() => {
         if (this.pendingListTabsRequests.has(requestId)) {
-          logger.warn('Browser tab list request timed out, using cached data', { requestId });
+          logger.warn('Browser tab list request timed out, using cached data', {
+            requestId,
+            workspaceId,
+          });
           this.pendingListTabsRequests.delete(requestId);
-          resolve(this.panelBrowserTabs);
+          resolve(this.panelBrowserTabsCache.get(workspaceId ?? '') ?? []);
         }
       }, 500);
     });
@@ -348,7 +362,12 @@ class EmbeddedBrowserCdpService {
     // For mounted tabs the webContents `destroyed` hook covers this too, but
     // unmounted tabs have no webContents to fire it.
     this.unregisterTab(tabId);
-    this.panelBrowserTabs = this.panelBrowserTabs.filter((t) => t.tabId !== tabId);
+    for (const [key, tabs] of this.panelBrowserTabsCache) {
+      this.panelBrowserTabsCache.set(
+        key,
+        tabs.filter((t) => t.tabId !== tabId),
+      );
+    }
 
     return { tabId };
   }

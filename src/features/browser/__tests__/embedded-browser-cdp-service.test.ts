@@ -39,6 +39,8 @@ vi.mock('../../system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
 }));
 
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+
 type PanelTab = { tabId: string; url: string; title: string; closable?: boolean };
 
 /** Fake live webview backing a mounted tab. */
@@ -58,13 +60,18 @@ function fakeWebview(id: number, url: string) {
  * reply through the captured LIST_TABS_RESPONSE handler with the current
  * panel layout; CLOSE_TAB removes the tab from the layout (UI close path).
  */
-function wireRenderer(panelTabs: PanelTab[]) {
+function wireRenderer(panelTabs: PanelTab[], respondForWorkspaceId?: string) {
   mocks.sendToWorkspaceWindows.mockImplementation(
-    (_workspaceId: string | undefined, channel: string, payload: { requestId?: string; tabId?: string }) => {
-      if (channel === 'browser:list-tabs-request') {
-        const respond = mocks.handlers.get('browser:list-tabs-response');
+    (
+      workspaceId: string | undefined,
+      channel: string,
+      payload: { requestId?: string; tabId?: string },
+    ) => {
+      if (respondForWorkspaceId !== undefined && workspaceId !== respondForWorkspaceId) return;
+      if (channel === IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST) {
+        const respond = mocks.handlers.get(IPC_CHANNELS.BROWSER.LIST_TABS_RESPONSE);
         respond?.({}, { tabs: [...panelTabs], requestId: payload.requestId });
-      } else if (channel === 'browser:close-tab' && payload.tabId) {
+      } else if (channel === IPC_CHANNELS.BROWSER.CLOSE_TAB && payload.tabId) {
         const idx = panelTabs.findIndex((t) => t.tabId === payload.tabId);
         if (idx >= 0 && panelTabs[idx].closable !== false) panelTabs.splice(idx, 1);
       }
@@ -145,5 +152,25 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
       await expect(service.closeTab(tab.tabId, 'ws-1')).resolves.toEqual({ tabId: tab.tabId });
     }
     expect(await service.listAllTabs('ws-1')).toEqual([]);
+  });
+
+  it('does not fall back to another workspace\'s tabs when a list request times out', async () => {
+    const service = await loadService();
+    // Only ws-a's layout answers list requests; ws-b never responds.
+    wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }], 'ws-a');
+
+    // Populate the cache with ws-a's tab list.
+    expect((await service.listAllTabs('ws-a')).map((t) => t.tabId)).toEqual(['tab-a']);
+
+    // ws-b's request gets no reply and times out; the fallback must not
+    // serve ws-a's cached tabs (which closeTab(..., 'ws-b') would reject).
+    vi.useFakeTimers();
+    try {
+      const pending = service.listAllTabs('ws-b');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(await pending).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

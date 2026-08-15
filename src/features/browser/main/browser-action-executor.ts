@@ -374,7 +374,7 @@ async function executeAction(
       }
 
       case 'resetTab': {
-        const result = await browserCapture.resetTab(tabId);
+        const result = await browserCapture.resetTab(tabId, workspaceId);
         return { action: 'resetTab', success: true, result };
       }
 
