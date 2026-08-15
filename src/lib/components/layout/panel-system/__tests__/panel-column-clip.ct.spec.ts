@@ -19,13 +19,17 @@ function measureGeometry(component: Locator) {
       columnRight: columnRect.right,
       insetLeft: insetRect?.left ?? null,
       insetRight: insetRect?.right ?? null,
+      insetBottom: insetRect?.bottom ?? null,
       insetPaddingLeft: inset ? getComputedStyle(inset).paddingLeft : null,
       insetPaddingRight: inset ? getComputedStyle(inset).paddingRight : null,
+      insetPaddingBottom: inset ? getComputedStyle(inset).paddingBottom : null,
       insetScrollWidth: inset?.scrollWidth ?? null,
       insetClientWidth: inset?.clientWidth ?? null,
       canvasWidth: canvasRect?.width ?? null,
       canvasRight: canvasRect?.right ?? null,
       lastPanelRight: lastPanelRect?.right ?? null,
+      lastPanelBottom: lastPanelRect?.bottom ?? null,
+      lastPanelFlex: panels.at(-1)?.style.flex ?? null,
       panelWidths: panels.map((p) => p.getBoundingClientRect().width),
     };
   });
@@ -85,4 +89,69 @@ test('fits an automatic canvas inside the visible frame (tab view)', async ({ mo
   expect(measurements.insetScrollWidth!).toBeLessThanOrEqual(measurements.insetClientWidth!);
   expect(measurements.canvasRight!).toBeLessThanOrEqual(measurements.columnRight);
   expect(measurements.lastPanelRight!).toBeLessThanOrEqual(measurements.columnRight);
+});
+
+/**
+ * Regression (clipped bottom stacked panel): a root vertical split must size
+ * its children against the inset's content-box height (clientHeight minus the
+ * vertical padding). Before the fix measurePanelReferenceSize used the padded
+ * clientHeight, so the stack overflowed by the inset's vertical padding and
+ * the bottom panel was clipped by overflow-y-hidden.
+ */
+test('keeps the bottom stacked panel inside the inset content box (deck mode)', async ({
+  mount,
+}) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: { direction: 'vertical', sidebarWidth: 360, canvasWidth: 800 },
+  });
+
+  // Wait until the split has measured and applied fixed pixel flex bases —
+  // the pre-measurement percentage bases always fit and would mask the bug.
+  await expect
+    .poll(async () => (await measureGeometry(component)).lastPanelFlex)
+    .toMatch(/0 0 .+px/);
+  const measurements = await measureGeometry(component);
+
+  expect(measurements.insetBottom).not.toBeNull();
+  expect(measurements.lastPanelBottom).not.toBeNull();
+  const paddingBottom = Number.parseFloat(measurements.insetPaddingBottom!);
+  // The harness must exercise a padded viewport, or the assertion is vacuous.
+  expect(paddingBottom).toBeGreaterThan(0);
+  // The regression assertion: the bottom panel's bottom edge must stay at the
+  // inset content-box bottom — the same bottom margin a single panel gets.
+  expect(measurements.lastPanelBottom!).toBeLessThanOrEqual(
+    measurements.insetBottom! - paddingBottom,
+  );
+});
+
+/**
+ * Same regression in the uncontained (tab view) inset, whose vertical padding
+ * differs (`py-2 sm:py-3`): the bottom stacked panel must stay inside the
+ * inset content box.
+ */
+test('keeps the bottom stacked panel inside the inset content box (tab view)', async ({
+  mount,
+}) => {
+  const component = await mount(PanelWorkspaceColumnClipHarness, {
+    props: {
+      mode: 'uncontained',
+      direction: 'vertical',
+      sidebarWidth: 360,
+      canvasWidth: 800,
+      insetChrome: 0,
+    },
+  });
+
+  await expect
+    .poll(async () => (await measureGeometry(component)).lastPanelFlex)
+    .toMatch(/0 0 .+px/);
+  const measurements = await measureGeometry(component);
+
+  expect(measurements.insetBottom).not.toBeNull();
+  expect(measurements.lastPanelBottom).not.toBeNull();
+  const paddingBottom = Number.parseFloat(measurements.insetPaddingBottom!);
+  expect(paddingBottom).toBeGreaterThan(0);
+  expect(measurements.lastPanelBottom!).toBeLessThanOrEqual(
+    measurements.insetBottom! - paddingBottom,
+  );
 });

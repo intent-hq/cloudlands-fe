@@ -17,7 +17,12 @@
   import PanelSplitHandle from './PanelSplitHandle.svelte';
   import PanelCornerHandle from './PanelCornerHandle.svelte';
   import PanelContainer from './PanelContainer.svelte';
-  import { getPanelFlexValue, getPanelReferenceSize, resizeAdjacentPanels } from './panel-resize';
+  import {
+    getElementContentBoxSize,
+    getPanelFlexValue,
+    getPanelReferenceSize,
+    resizeAdjacentPanels,
+  } from './panel-resize';
   import { translatePanel } from './panel-reorder-animation';
   import { getDraggedPanelId } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
@@ -311,12 +316,18 @@
       );
     const rootViewport = containerRef.closest<HTMLElement>('[data-testid="panel-workspace-inset"]');
     const resizeTarget = nodePath.length === 0 ? rootViewport : containerRef.parentElement;
+    // Measure the content box: split children live inside it, so a padded
+    // resize target's clientWidth/clientHeight would oversize the stack.
     const availableSize =
       node.direction === 'horizontal'
         ? nodePath.length === 0 && rootPanelReferenceSize !== null
           ? rootPanelReferenceSize
-          : (resizeTarget?.clientWidth ?? containerRef.clientWidth)
-        : (resizeTarget?.clientHeight ?? containerRef.clientHeight);
+          : resizeTarget
+            ? getElementContentBoxSize(resizeTarget, 'horizontal')
+            : containerRef.clientWidth
+        : resizeTarget
+          ? getElementContentBoxSize(resizeTarget, 'vertical')
+          : containerRef.clientHeight;
 
     panelReferenceSize = getPanelReferenceSize(availableSize, gutterSize);
     if (nodePath.length === 0) onRootReferenceSizeChange?.(panelReferenceSize);
