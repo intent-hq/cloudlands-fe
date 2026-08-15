@@ -7,6 +7,12 @@
  *  - `file:read`   → `file.read`  (bare UTF-8 string; folded into the legacy
  *    `{ success, content, data: { content } }` double shape — the explorer
  *    reads top-level `content`, context-api/diff-viewer read `data.content`).
+ *    EXCEPT `encoding: 'base64'` reads, which forward to the real preload
+ *    bridge instead (same idiom as `file:read-chunk`): the daemon `file.read`
+ *    has no base64 arm and only serves workspace-contained paths, while the
+ *    base64 read exists solely for the remote-attachment data arm reading the
+ *    bytes off the FE host's disk (monorepo#2495 — routing it to the daemon
+ *    made every ≤25MB remote attachment fail with an opaque -32603).
  *  - `file:write`  → `file.write` (UTF-8 only; `encoding: 'base64'` binary
  *    writes have no daemon arm and fail shaped — the FilesPanel drop flow
  *    folds that into its failed-files toast).
@@ -50,6 +56,16 @@ function asRecord(arg: unknown): Record<string, unknown> {
 }
 
 function errorMessage(error: unknown): string {
+  // Prefer the daemon's structured `data.detail` (BackendError, PROTOCOL §1.4)
+  // — a -32603's message is a bare "Internal error" while the actionable
+  // reason (e.g. "Access denied: path outside workspace") rides in the detail.
+  if (error && typeof error === 'object') {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === 'object') {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'string' && detail.trim().length > 0) return detail.trim();
+    }
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -96,6 +112,13 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.READ, async (arg) => {
   const path = readString(request, 'path');
   if (!path) {
     return { success: false, error: { code: 'INVALID_REQUEST', message: 'path is required' } };
+  }
+  if (request.encoding === 'base64') {
+    // FE-host byte read for the remote-attachment data arm (monorepo#2495):
+    // the daemon `file.read` is UTF-8-only and workspace-contained, so a
+    // base64 read of a host path (e.g. a dragged file) must reach the
+    // main-process fs handler, exactly like file:read-chunk / file:hash.
+    return forwardToPreloadBridge(IPC_CHANNELS.FILE.READ, arg, 'main-process host-file read');
   }
   const workspaceId = await resolveWorkspaceId(request);
   if (!workspaceId) {
