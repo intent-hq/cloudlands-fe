@@ -315,7 +315,6 @@
             {#snippet content({ close }: { close: () => void })}
               <div
                 class="flex w-full min-w-0 flex-col p-1"
-                style="box-sizing: border-box; width: 260px; max-width: calc(100vw - 24px);"
                 data-testid="monitored-pr-menu"
                 data-viewport-padding="12"
               >
