@@ -234,7 +234,7 @@ async function assertMountedScene(page: Page, scene: MountedScene) {
     const rows = page.locator('[data-compact-tool-row]');
     expect(await rows.count()).toBeGreaterThanOrEqual(8);
     await expect(page.locator('[data-tool-status="error"]')).toHaveCount(1);
-    const disclosure = rows.first().locator('[data-tool-sentence]');
+    const disclosure = rows.first().locator('[data-testid="tool-call-disclosure"]');
     await disclosure.hover();
     await disclosure.focus();
     await page.keyboard.press('Enter');

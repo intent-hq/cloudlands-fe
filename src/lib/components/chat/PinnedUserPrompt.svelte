@@ -2,6 +2,7 @@
   import type { AgentMessage } from '$shared/types';
   import { extractAllContent } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     message: AgentMessage;
@@ -15,19 +16,18 @@
   );
 </script>
 
-<button
-  type="button"
-  class:compact
-  class="pinned-prompt"
+<Button
+  variant="ghost"
+  class="pinned-prompt {compact ? 'compact' : ''}"
   data-testid="pinned-user-prompt"
   aria-label={promptText}
   onclick={onClick}
 >
   {promptText}
-</button>
+</Button>
 
 <style>
-  .pinned-prompt {
+  :global(.pinned-prompt) {
     display: block;
     width: 100%;
     overflow: hidden;
@@ -43,7 +43,7 @@
     cursor: pointer;
   }
 
-  .compact {
+  :global(.pinned-prompt.compact) {
     padding-block: 0.45rem;
   }
 </style>

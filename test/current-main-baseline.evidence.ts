@@ -431,7 +431,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
     selector(['reuse'], 'reuses existing singleton tab'),
     selector(
       ['reserved-placeholder'],
-      'fills the focused empty panel before reusing equivalent content elsewhere',
+      'reveals canonical equivalent content instead of filling an empty panel',
     ),
   ],
   'WORKSPACE-56': [

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Toaster as Sonner, toast } from 'svelte-sonner';
+  import { Button } from '$lib/components/ui/button';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -61,15 +62,16 @@
 />
 
 {#if showClearAll}
-  <button
-    type="button"
+  <Button
+    variant="outline"
+    size="sm"
     class="toast-clear-all"
     onclick={clearVisibleToasts}
     aria-controls="app-toast-region"
     aria-label={m.ui_toast_clearAll_ariaLabel({ count: visibleToastCount })}
   >
     {m.ui_toast_clearAll_label()}
-  </button>
+  </Button>
 {/if}
 
 <style>
@@ -158,7 +160,7 @@
     --toast-close-button-transform: translate(35%, -35%);
   }
 
-  .toast-clear-all {
+  :global(.toast-clear-all) {
     position: fixed;
     left: 2rem;
     bottom: 2rem;
@@ -175,18 +177,18 @@
     cursor: pointer;
   }
 
-  .toast-clear-all:hover {
+  :global(.toast-clear-all:hover) {
     background: hsl(var(--muted));
     color: hsl(var(--foreground));
   }
 
-  .toast-clear-all:focus-visible {
+  :global(.toast-clear-all:focus-visible) {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 
   @media (max-width: 600px) {
-    .toast-clear-all {
+    :global(.toast-clear-all) {
       left: 1rem;
       bottom: 1rem;
     }

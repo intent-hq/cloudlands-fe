@@ -279,7 +279,7 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
       const firstFramePromise = captureFirstMountedFrame(page);
       await page
         .locator('[data-panel-id="source"] .event-wakeup-banner')
-        .getByRole('button', { name: /^Wakeup target/ })
+        .getByRole('button', { name: /^Open agent Wakeup target$/ })
         .click();
       const frame = await firstFramePromise;
       const target = frame.source.tabs.find(

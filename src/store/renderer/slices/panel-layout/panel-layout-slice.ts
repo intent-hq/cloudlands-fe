@@ -199,7 +199,7 @@ export const openTab = createAction(
     newTabId: newTabId ?? generateTabId(),
     force: force ?? false,
     timestamp: timestamp ?? Date.now(),
-    allowDuplicate: allowDuplicate ?? false,
+    ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
   }),
 );
 
@@ -217,7 +217,7 @@ export const openTabInAdjacentOrSplit = createAction(
     sourcePanelId,
     animated: options?.animated ?? false,
     force: options?.force ?? false,
-    allowDuplicate: options?.allowDuplicate ?? false,
+    ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
     newTabId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),

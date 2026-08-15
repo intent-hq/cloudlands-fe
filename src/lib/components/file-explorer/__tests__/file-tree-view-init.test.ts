@@ -80,6 +80,14 @@ vi.mock('../VirtualizedFileTree.svelte', async () => ({
   default: (await import('../../chat/__tests__/mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('$store/renderer/slices/git/git-slice', () => ({ loadGitStatus: loadGitStatusMock }));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  getPanelTabOpenState: () => ({
+    count: 0,
+    isOpen: false,
+    isActive: false,
+    isOpenElsewhere: false,
+  }),
+}));
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitStatus: { select: vi.fn(() => null) },
 }));

@@ -47,7 +47,6 @@ vi.mock('$store/renderer/slices/background-hooks/background-hooks-selectors', ()
 }));
 
 import BackgroundHooksRow from '../BackgroundHooksRow.svelte';
-import { formatTime } from '$lib/i18n/format';
 
 function makeHook(overrides: Partial<BackgroundHook> = {}): BackgroundHook {
   return {

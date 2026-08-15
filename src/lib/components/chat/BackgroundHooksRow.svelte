@@ -31,7 +31,6 @@
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
   import { formatCompactDuration, formatInteger } from '$lib/i18n/format';
@@ -44,10 +43,6 @@
     runBackgroundHookRequested,
   } from '$store/renderer/slices/background-hooks/background-hooks-slice';
   import { store as appStore } from '$store/renderer/store';
-  import {
-    openTerminalOverlay,
-    selectScript,
-  } from '$store/renderer/slices/terminals/terminals-slice';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     safeSubscriptionSlide,
@@ -118,7 +113,6 @@
   }
 
   let expandedHookId = $state<string | null>(null);
-  let focusedHookId = $state<string | null>(null);
 
   function handleViewScript(hook: BackgroundHook, close?: () => void) {
     close?.();

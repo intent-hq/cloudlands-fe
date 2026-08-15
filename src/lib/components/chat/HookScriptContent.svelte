@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
   import {
@@ -36,24 +37,24 @@
   data-testid="hook-script-content"
 >
   <div class="flex shrink-0 border-b border-border" role="tablist">
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       role="tab"
       aria-selected={activeTab === 'script'}
       class="border-b-2 px-3 py-1.5 text-sm {activeTab === 'script'
         ? 'border-primary text-primary'
         : 'border-transparent text-subtle'}"
       onclick={() => (activeTab = 'script')}
-      >{m.chat_backgroundHooks_modal_scriptTab_label()}</button
+      >{m.chat_backgroundHooks_modal_scriptTab_label()}</Button
     >
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       role="tab"
       aria-selected={activeTab === 'logs'}
       class="border-b-2 px-3 py-1.5 text-sm {activeTab === 'logs'
         ? 'border-primary text-primary'
         : 'border-transparent text-subtle'}"
-      onclick={() => (activeTab = 'logs')}>{m.chat_backgroundHooks_modal_logsTab_label()}</button
+      onclick={() => (activeTab = 'logs')}>{m.chat_backgroundHooks_modal_logsTab_label()}</Button
     >
   </div>
   {#if activeTab === 'script'}
