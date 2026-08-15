@@ -21,6 +21,7 @@ import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
 import { resolveBrowserUrl, type ResolvedBrowserUrl } from './loopback-url-resolver';
 import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
+import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
@@ -123,31 +124,58 @@ function getDaemonLoopbackContext(): LoopbackRewriteContext {
 }
 
 /**
- * Lazy singleton TunnelManager backing the executor's probe-failure fallback:
- * when a rewritten remote origin is unreachable, the port is forwarded over
- * the daemon's `/tunnel` WebSocket and the embedded browser loads the local
- * forward instead (intent-hq/monorepo#2323). Reset on backend switch (see
- * `registerBrowserHandlers`) so forwards never outlive the connection they
- * were opened against.
+ * Lazy singleton tunnel backends behind the executor's provider seam
+ * (intent-hq/monorepo#2323, #2537). Remote daemons (ws/wss transports)
+ * forward ports over the daemon's `/tunnel` WebSocket mux (TunnelManager);
+ * local daemons (UDS / loopback ws / tcp) get a direct FE-side loopback
+ * relay instead (DirectRelay) — routing locally through the daemon would be
+ * a pointless double hop, and `/tunnel` does not exist for UDS transports.
+ * Both are reset on backend switch (see `registerBrowserHandlers`) so
+ * forwards never outlive the connection they were opened against.
  */
 let tunnelManager: TunnelManager | null = null;
+let directRelay: DirectRelay | null = null;
 
-function getBrowserTunnelProvider(): TunnelManager {
-  if (!tunnelManager) {
-    tunnelManager = new TunnelManager({
-      getConfig: () => {
-        try {
-          return getBackendClient().getConfig();
-        } catch (err) {
-          logger.warn('Could not resolve backend config for the browser tunnel', {
-            error: (err as Error).message,
-          });
-          return null;
-        }
-      },
-    });
+function getBrowserTunnelProvider(): TunnelManager | DirectRelay {
+  // Unlike `getDaemonLoopbackContext()`'s assume-local fallback (benign for
+  // URL rewriting), the backend choice decides WHICH MACHINE a forward lands
+  // on: assuming local here would silently relay to the CLIENT's loopback and
+  // report success on a misdirected forward. Unknown locality must fail the
+  // tunnel action instead (the resolver's probe-fallback paths catch getter
+  // throws and degrade to their explanatory error).
+  let daemonIsRemote: boolean;
+  try {
+    daemonIsRemote = loopbackContextFromTransport(
+      isSameHostBackendActive(),
+      getBackendClient().getConfig(),
+    ).daemonIsRemote;
+  } catch (err) {
+    throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `Cannot select a tunnel backend: the backend connection state is unreadable (${(err as Error).message}).`,
+    );
   }
-  return tunnelManager;
+  if (daemonIsRemote) {
+    if (!tunnelManager) {
+      tunnelManager = new TunnelManager({
+        getConfig: () => {
+          try {
+            return getBackendClient().getConfig();
+          } catch (err) {
+            logger.warn('Could not resolve backend config for the browser tunnel', {
+              error: (err as Error).message,
+            });
+            return null;
+          }
+        },
+      });
+    }
+    return tunnelManager;
+  }
+  if (!directRelay) {
+    directRelay = new DirectRelay();
+  }
+  return directRelay;
 }
 
 /**
@@ -184,13 +212,17 @@ export function registerBrowserHandlers(): void {
   logger.info('Registering browser IPC handlers');
 
   // A backend switch invalidates every tunnel forward (they target the old
-  // daemon's loopback); dispose the manager so the next fallback rebuilds it
+  // daemon's loopback); dispose both backends so the next use rebuilds them
   // against the new connection. Cast: 'backend-connection-changed' is a
   // custom app event (emitted by backend.ipc.ts), not in Electron's App type.
   (app as NodeJS.EventEmitter).on('backend-connection-changed', () => {
     if (tunnelManager) {
       tunnelManager.dispose();
       tunnelManager = null;
+    }
+    if (directRelay) {
+      directRelay.dispose();
+      directRelay = null;
     }
   });
 
