@@ -134,13 +134,17 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses an aligned accent user prompt and semantic body typography', () => {
+  it('uses the accepted distinct user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const surface = source('src/lib/components/chat/user-message-surface.ts');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
-    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0');
     expect(message).toContain(
-      "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
+      "import { USER_MESSAGE_SURFACE_CLASS } from './user-message-surface'",
+    );
+    expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
+    expect(surface).toContain(
+      'relative overflow-hidden rounded-lg border border-border/50 bg-secondary px-3 py-2 shadow-sm',
     );
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(
@@ -165,7 +169,7 @@ describe('editorial conversation presentation contract', () => {
     ).toHaveLength(2);
   });
 
-  it('gives Chief user messages an opaque semantic surface so sticky text cannot overlap', () => {
+  it('keeps the accepted opaque user surface in Chief sticky rows', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -176,10 +180,8 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
-    expect(message).toContain('`relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`');
-    expect(message).toContain(
-      "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
-    );
+    expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
+    expect(message).not.toContain('stickySurfaceClass');
   });
 
   it('uses the original Thinking indicator without the staged hydration line', () => {

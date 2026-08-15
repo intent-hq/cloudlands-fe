@@ -14,6 +14,7 @@ import {
   SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
 } from '../subscription-disclosure';
+import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
 
 const { dispatchMock, handleLinkMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
@@ -505,8 +506,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(body).not.toBeNull();
     expect(body.className).toContain('line-clamp-6');
     expect(body.className).not.toContain('line-clamp-2');
-    expect(surface.className).toContain('bg-card');
-    expect(surface.className).not.toContain('bg-transparent');
+    for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(true);
+    }
+    expect(surface.className).not.toContain(SUBSCRIPTION_CARD_SURFACE_CLASS);
 
     await rerender({
       message: userMessage(),
@@ -517,7 +520,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     expect(body.className).toContain('line-clamp-2');
     expect(body.className).not.toContain('line-clamp-6');
-    expect(surface.className).toContain('bg-card');
+    for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(true);
+    }
 
     await fireEvent.click(text);
 

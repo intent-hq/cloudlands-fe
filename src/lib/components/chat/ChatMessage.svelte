@@ -36,6 +36,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import { USER_MESSAGE_SURFACE_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
     resolveStoppedIndicatorLabel,
@@ -59,7 +60,7 @@
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
-  import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -261,10 +262,6 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
-  const stickySurfaceClass = $derived(
-    workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card',
-  );
-
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
 
@@ -1193,7 +1190,7 @@
             ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative mt-4 ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
-              : `relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`} {onEditSubmit &&
+              : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&
           !prMonitorWakeAttribution
