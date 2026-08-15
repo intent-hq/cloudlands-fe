@@ -62,6 +62,17 @@ export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
   eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
 }
 
+/**
+ * Current per-agent live-snapshot seq. Send paths capture this BEFORE their
+ * wire call and skip the queued-response queue seed when it has advanced
+ * (monorepo#2481): a live `agent:queue:updated` snapshot — including the
+ * shrunk-after-drain one — is at least as fresh as the RPC echo, so seeding
+ * from the stale echo would re-add a just-drained row.
+ */
+export function getAgentQueueEventSnapshotSeq(agentId: string): number {
+  return eventSnapshotSeqByAgent.get(agentId) ?? 0;
+}
+
 async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
   // Trailing follow-ups re-enter here without passing the public entry
   // point's guard: skip the RPC (and the slice-entry-creating dispatch) when
