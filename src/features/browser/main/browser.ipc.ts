@@ -31,12 +31,19 @@ const logger = new Logger('BrowserIPC');
  * Validates the URL protocol before sending to the renderer.
  * When workspaceId is provided, sends only to the window displaying that workspace.
  * Falls back to broadcasting to all windows if no workspaceId or no matching window found.
+ *
+ * The tab id is generated here (main) and passed to the renderer so the
+ * caller can lease the new tab immediately — the executor needs the id to
+ * mark agent-opened tabs for exact-URL dedupe (intent-hq/monorepo#2541).
+ * `allowDuplicate` is forwarded so the renderer's own equivalent-tab dedupe
+ * doesn't override an explicit request for a genuinely new tab.
  */
 function openBrowserTab(
   url: string,
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
-): { success: boolean; message: string } {
+  allowDuplicate?: boolean,
+): { success: boolean; message: string; tabId?: string } {
   // Validate URL before sending to renderer
   try {
     const parsed = new URL(url);
@@ -56,6 +63,10 @@ function openBrowserTab(
     return { success: false, message: msg };
   }
 
+  // Pre-generate the tab id so main knows the id of the tab the renderer
+  // will create (same shape as the renderer's own generateTabId()).
+  const tabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
   // Send to workspace windows (falls back to all windows if no workspaceId).
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
@@ -64,10 +75,12 @@ function openBrowserTab(
     url,
     position,
     workspaceId,
+    tabId,
+    ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
   });
-  logger.info('Sent browser:open-tab', { url, position, workspaceId });
+  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate });
   // i18n-ignore (agent-facing protocol message, not user-facing)
-  return { success: true, message: `Opening browser tab with URL: ${url}` };
+  return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
 
 // Schemas for IPC validation
@@ -153,7 +166,7 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position) => openBrowserTab(url, position, workspaceId),
+    (url, position, allowDuplicate) => openBrowserTab(url, position, workspaceId, allowDuplicate),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,

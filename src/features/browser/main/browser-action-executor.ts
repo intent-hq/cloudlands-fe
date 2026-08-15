@@ -127,8 +127,16 @@ const GetSummaryActionSchema = z
 
 const OpenTabActionSchema = z.object({
   action: z.literal('openTab'),
+  // `position` only applies when a genuinely new tab is opened — when an
+  // existing tab is reused (exact-URL dedupe or idle-tab reuse) it is
+  // ignored and the reused tab is focused in place.
   url: z.string(),
   position: z.enum(['adjacent', 'replace', 'same']).optional(),
+  // Opt out of tab reuse (exact-URL dedupe and idle-tab reuse) and always
+  // open a genuinely new tab (intent-hq/monorepo#2541). Also forwarded to
+  // the renderer so its own equivalent-tab dedupe doesn't coalesce the
+  // requested duplicate.
+  allowDuplicate: z.boolean().optional(),
 });
 
 const NavigateActionSchema = z.object({
@@ -253,7 +261,8 @@ async function executeAction(
   openTabFn?: (
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
-  ) => { success: boolean; message: string },
+    allowDuplicate?: boolean,
+  ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
@@ -409,8 +418,39 @@ async function executeAction(
         const finalRewrite = openTabTarget.rewrite;
         const echo = rewriteEcho(finalRewrite, openTabTarget.tunneled);
 
+        // When called by an agent, reuse an existing model-opened tab whose
+        // current URL exactly matches instead of opening a duplicate
+        // (intent-hq/monorepo#2541). User-opened tabs are never considered.
+        if (agentId && !action.allowDuplicate) {
+          const duplicateTabId = await embeddedBrowserCdp.findModelTabByExactUrl(
+            finalRewrite.url,
+            agentId,
+            workspaceId,
+          );
+          if (duplicateTabId) {
+            logger.info('Reusing existing model-opened tab with matching URL', {
+              tabId: duplicateTabId,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
+              agentId,
+            });
+            const focused = embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            return {
+              action: 'openTab',
+              success: true,
+              result: {
+                reused: true,
+                focused,
+                tabId: duplicateTabId,
+                url: finalRewrite.url,
+                ...echo,
+              },
+            };
+          }
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
-        if (agentId) {
+        if (agentId && !action.allowDuplicate) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
           if (idleTabId) {
             logger.info('Reusing idle browser tab instead of opening new one', {
@@ -447,7 +487,21 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
-        const result = openTabFn(finalRewrite.url, action.position);
+        // For agent-driven opens the executor is the dedupe authority — it
+        // already checked model-opened tabs above — so the renderer must
+        // create a genuinely new tab rather than coalesce onto an equivalent
+        // one (which could silently hand the agent a user-opened tab).
+        const result = openTabFn(
+          finalRewrite.url,
+          action.position,
+          agentId ? true : action.allowDuplicate,
+        );
+        // Lease the new tab to the requesting agent right away so a repeat
+        // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
+        // instead of treating it as an untouchable user-opened tab.
+        if (agentId && result.success && result.tabId) {
+          embeddedBrowserCdp.touchLease(result.tabId, agentId);
+        }
         return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
       }
 
@@ -547,7 +601,8 @@ export async function executeActions(
   openTabFn?: (
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
-  ) => { success: boolean; message: string },
+    allowDuplicate?: boolean,
+  ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
