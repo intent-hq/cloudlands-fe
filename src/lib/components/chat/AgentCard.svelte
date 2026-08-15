@@ -669,10 +669,13 @@
       aria-disabled={readOnly}
       tabindex={readOnly ? -1 : undefined}
     >
-      <div class="relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}">
+      <div
+        class="agent-card-avatar-wrapper relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}"
+        data-testid="agent-card-avatar-wrapper"
+      >
         <AgentAvatarWithState
           {agentId}
-          size={20}
+          variant="standard"
           state={avatarState}
           specialist={specialist as import('$lib/constants/specialists').BuiltinSpecialistId | null}
           {provider}
@@ -868,6 +871,18 @@
 {/if}
 
 <style>
+  .agent-card-avatar-wrapper {
+    display: inline-flex;
+    box-sizing: border-box;
+    width: var(--agent-avatar-standard-surface-size);
+    height: var(--agent-avatar-standard-surface-size);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--agent-avatar-standard-corner-radius);
+    line-height: 0;
+  }
+
   /* Hide text content when container is too narrow (< 80px) */
   @container (max-width: 80px) {
     .agent-card-content {

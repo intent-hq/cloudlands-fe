@@ -168,6 +168,73 @@ test('starts every icon-free peek exactly 10px after the primary label', async (
   }
 });
 
+test('uses exact named standard avatar geometry in every subscription row', async ({ mount }) => {
+  const component = await mount(AgentSubscriptionInlineHost);
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [270, 340]) {
+      for (const zoom of [1, 2]) {
+        await component.update({ props: { theme, width, zoom } });
+        const value = await component.evaluate((root) => {
+          const row = root.querySelector('[data-testid="agent-list-item"] button')!;
+          const wrapper = row.querySelector('[data-testid="agent-card-avatar-wrapper"]')!;
+          const surface = wrapper.querySelector('[data-agent-avatar-surface]')!;
+          const glyph = wrapper.querySelector('[data-agent-avatar]')!;
+          const rect = (node: Element) => {
+            const box = node.getBoundingClientRect();
+            return {
+              width: box.width,
+              height: box.height,
+              centerX: (box.left + box.right) / 2,
+              centerY: (box.top + box.bottom) / 2,
+            };
+          };
+          const glyphStyle = getComputedStyle(glyph);
+          return {
+            boxes: [wrapper, surface, glyph].map(rect),
+            row: rect(row),
+            variants: [surface, glyph].map((node) => node.getAttribute('data-avatar-variant')),
+            inlineSizes: [surface, glyph].map((node) => ({
+              width: (node as HTMLElement).style.width,
+              height: (node as HTMLElement).style.height,
+            })),
+            radii: [wrapper, surface, glyph].map((node) => getComputedStyle(node).borderRadius),
+            ringRadius: getComputedStyle(surface, '::after').borderRadius,
+            clearSpace: Number.parseFloat(glyphStyle.paddingInlineStart),
+            artWidth:
+              (glyph as HTMLElement).clientWidth -
+              Number.parseFloat(glyphStyle.paddingInlineStart) -
+              Number.parseFloat(glyphStyle.paddingInlineEnd),
+            devicePixelRatio: window.devicePixelRatio,
+          };
+        });
+
+        expect(value.variants).toEqual(['standard', 'standard']);
+        expect(value.inlineSizes).toEqual([
+          { width: '', height: '' },
+          { width: '', height: '' },
+        ]);
+        for (const box of value.boxes) {
+          expect(box.width).toBeCloseTo(20 * zoom, 1);
+          expect(box.height).toBeCloseTo(20 * zoom, 1);
+          expect(
+            Math.abs(box.centerX - value.boxes[1].centerX) * value.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+          expect(
+            Math.abs(box.centerY - value.boxes[1].centerY) * value.devicePixelRatio,
+          ).toBeLessThanOrEqual(0.5);
+        }
+        expect(value.radii).toEqual(['6px', '6px', '6px']);
+        expect(value.ringRadius).toBe('6px');
+        expect(value.clearSpace).toBe(2);
+        expect(value.artWidth).toBe(16);
+        expect(
+          Math.abs(value.boxes[0].centerY - value.row.centerY) * value.devicePixelRatio,
+        ).toBeLessThanOrEqual(0.5);
+      }
+    }
+  }
+});
+
 test('shares exact header and agent-row padding and minimum height', async ({ mount, page }) => {
   const component = await mount(AgentSubscriptionInlineHost);
   for (const width of [270, 340]) {
