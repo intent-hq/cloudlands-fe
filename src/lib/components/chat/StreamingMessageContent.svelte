@@ -550,7 +550,9 @@
   }
 
   // Pre-compute block keys for stable iteration, ensuring uniqueness
-  let blockKeys = $derived(dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))));
+  let blockKeys = $derived(
+    dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))),
+  );
 </script>
 
 {#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
@@ -752,7 +754,7 @@
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
       <div
-        class="content-block content-block--group my-1.25"
+        class="content-block content-block--group"
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
         <ResponseGroup
@@ -765,7 +767,7 @@
             {@const childKeys = getResponseGroupBlockKeys(group.children)}
             {#each group.children as childBlock, childIndex (childKeys[childIndex])}
               {#if childBlock.type !== 'tool_result'}
-                <div class="content-block content-block--{childBlock.type} my-1.25">
+                <div class="content-block content-block--{childBlock.type}">
                   {@render renderContentBlock(
                     childBlock,
                     `${blockIndex}-${childIndex}`,
@@ -785,7 +787,7 @@
             ? 'card'
             : getProposalFromBlock(block as ContentBlock)
               ? 'proposal'
-              : block.type} my-1.25"
+              : block.type}"
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
         {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
@@ -802,18 +804,6 @@
 </div>
 
 <style>
-  /* Adjacent tool_use blocks should have reduced spacing */
-  .content-block--tool_use + .content-block--tool_use,
-  .content-block--tool_use + .content-block--thinking,
-  .content-block--thinking + .content-block--tool_use,
-  .content-block--thinking + .content-block--thinking {
-    margin-top: -0.5rem;
-  }
-  /* Adjacent tool_use blocks should have reduced spacing */
-  .content-block--group + .content-block--group {
-    margin-top: -0.5rem;
-  }
-
   /* PERF: Content blocks use containment for rendering isolation */
   .content-block {
     contain: layout style;

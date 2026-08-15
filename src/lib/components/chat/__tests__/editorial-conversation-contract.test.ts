@@ -49,13 +49,10 @@ describe('editorial conversation presentation contract', () => {
     expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
     expect(pinned).toContain('truncate whitespace-nowrap');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(surface).toContain('bg-primary');
-    expect(surface).toContain('text-primary-foreground');
-    expect(surface).toContain('selection:bg-primary-foreground selection:text-primary');
-    expect(surface).toContain('[&_a]:text-primary-foreground');
-    expect(surface).toContain('[&_code]:text-primary-foreground');
-    expect(surface).not.toContain('bg-secondary');
-    expect(surface).not.toContain('text-foreground/90');
+    expect(surface).toContain('bg-secondary');
+    expect(surface).toContain('text-secondary-foreground');
+    expect(surface).not.toContain('bg-primary');
+    expect(surface).not.toContain('text-primary-foreground');
   });
 
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
@@ -144,7 +141,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses the canonical primary user prompt surface and semantic body typography', () => {
+  it('uses the soft secondary user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
     const surface = source('src/lib/components/chat/user-message-surface.ts');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
@@ -154,13 +151,27 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(surface).toContain(
-      'relative overflow-hidden rounded-lg border border-border/50 bg-primary px-3 py-2 text-primary-foreground shadow-sm',
+      'relative overflow-hidden rounded-lg border border-border/50 bg-secondary px-3 py-2 shadow-sm',
     );
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
     expect(message).toContain('<div class="type-body text-pretty text-foreground">');
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
+  });
+
+  it('uses one vertical rhythm for static, streaming, and expanded response rows', () => {
+    const staticContent = source('src/lib/components/chat/MessageContent.svelte');
+    const streamingContent = source('src/lib/components/chat/StreamingMessageContent.svelte');
+    const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
+    const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
+
+    expect(staticContent).toContain('class="flex flex-col gap-1.5"');
+    expect(streamingContent).toContain('class="flex flex-col gap-1.5 relative"');
+    expect(streamingContent).not.toContain('my-1.25');
+    expect(streamingContent).not.toContain('margin-top: -0.5rem');
+    expect(responseGroup).toContain('<div class="flex flex-col gap-1.5">');
+    expect(operationalRow).toContain("OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5'");
   });
 
   it('uses quieter Chief message surfaces and neutral proposal borders', () => {

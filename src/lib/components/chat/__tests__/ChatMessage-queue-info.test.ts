@@ -97,10 +97,8 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(chip.textContent).toContain('2 minutes ago');
     expect(chip.textContent).toContain('waited');
     expect(chip.textContent).toContain('before delivery');
-    // On the bright primary bubble the chip uses the on-primary tone, not the
-    // muted subscription-card tone.
-    expect(chip.className).toContain('text-primary-foreground/80');
-    expect(chip.className).not.toContain('text-subtle');
+    expect(chip.className).toContain('text-subtle');
+    expect(chip.className).toContain('mb-1.5');
     // Body keeps the message text but not the raw note
     expect(screen.getByText('hello queued world')).toBeTruthy();
     expect(container.textContent).not.toContain('[SYSTEM NOTE]');
@@ -175,9 +173,7 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(screen.queryByTestId('queued-message-notice')).toBeNull();
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
     const chip = screen.getByTestId('queued-message-notice');
-    // On the subscription-card surface the chip keeps the muted tone.
     expect(chip.className).toContain('text-subtle');
-    expect(chip.className).not.toContain('text-primary-foreground/80');
     expect(screen.getByText('hello queued world')).toBeTruthy();
   });
 });

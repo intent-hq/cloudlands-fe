@@ -21,22 +21,11 @@
     queueInfo: QueueInfo;
     /** Whether the containing user message is currently pinned. */
     isSticky?: boolean;
-    /**
-     * Whether the chip renders on the primary user-message surface (bright
-     * bg-primary bubble) rather than a subscription-card surface; switches the
-     * muted tone to a primary-foreground-derived one that stays readable there.
-     */
-    onPrimarySurface?: boolean;
     /** Optional class name */
     class?: string;
   }
 
-  let {
-    queueInfo,
-    isSticky = false,
-    onPrimarySurface = false,
-    class: className = '',
-  }: Props = $props();
+  let { queueInfo, isSticky = false, class: className = '' }: Props = $props();
 
   // The shared time manager keeps the visible relative timestamp current
   // without per-row timers and resubscribes if the metadata prop changes.
@@ -66,9 +55,9 @@
 </script>
 
 <div
-  class="type-caption flex items-center gap-1.5 rounded-md {onPrimarySurface
-    ? 'text-primary-foreground/80'
-    : 'text-subtle'} {isSticky ? 'min-w-0 overflow-hidden' : ''} {className}"
+  class="type-caption flex items-center gap-1.5 rounded-md text-subtle {isSticky
+    ? 'min-w-0 overflow-hidden'
+    : ''} {className}"
   title={formatFullDateTime(queueInfo.queuedAt)}
   data-testid="queued-message-notice"
 >
