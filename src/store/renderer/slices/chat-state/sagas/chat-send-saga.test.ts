@@ -25,7 +25,7 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-import type { AgentSession, Workspace } from '$shared/types';
+import type { AgentSession, QueuedMessage, Workspace } from '$shared/types';
 import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import {
   agentSessionReducer,
@@ -429,12 +429,19 @@ describe('chatSendSaga', () => {
     // The daemon delivered the queued entry and emitted an EMPTY
     // agent:queue:updated snapshot while the agent.queueMessage response was
     // still in flight — seeding from the stale echo would re-add the row.
+    const supersededQueuedMessage: QueuedMessage = {
+      id: 'queued-superseded',
+      content: 'later',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-superseded',
+    };
     mocks.queue.mockImplementation(async () => {
       noteAgentQueueEventSnapshotApplied(AGENT);
       return {
         success: true,
         turnId: 'turn-superseded',
-        queuedMessage: { id: 'queued-superseded', content: 'later', timestamp: 1 },
+        queuedMessage: supersededQueuedMessage,
       };
     });
     const run = harness(
@@ -456,10 +463,17 @@ describe('chatSendSaga', () => {
   });
 
   it('seeds the queue mirror from the queue RPC echo when no live snapshot intervened', async () => {
+    const freshQueuedMessage: QueuedMessage = {
+      id: 'queued-fresh',
+      content: 'later',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-fresh',
+    };
     mocks.queue.mockResolvedValue({
       success: true,
       turnId: 'turn-fresh',
-      queuedMessage: { id: 'queued-fresh', content: 'later', timestamp: 1 },
+      queuedMessage: freshQueuedMessage,
     });
     const run = harness(
       session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
@@ -467,9 +481,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
     await settle();
 
-    expect(run.dispatch).toHaveBeenCalledWith(
-      replaceAgentQueue(AGENT, [{ id: 'queued-fresh', content: 'later', timestamp: 1 }]),
-    );
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage]));
     run.task.cancel();
     await run.task.toPromise();
   });
