@@ -160,6 +160,15 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  // Disarm the finished test's surviving real-clock timers — same leak class
+  // as the startup timer discarded in setup(): most tests end with their
+  // check pending forever, leaving the 30s watchdog (startCheckTimeout)
+  // armed; past 30s of file runtime it would fire on its stale instance and
+  // broadcast a stray error status to the CURRENT test's window via the
+  // shared electron mock. resetModules() runs in beforeEach, so this import
+  // still resolves the instance this test used.
+  const { autoUpdateService } = await import('../auto-update.service');
+  autoUpdateService.cleanup();
   const { __drainLocalPrefsWriteChainForTesting } = await import('../../../../main/local-prefs');
   await __drainLocalPrefsWriteChainForTesting();
   await fs.rm(testUserDataPath, { recursive: true, force: true });
