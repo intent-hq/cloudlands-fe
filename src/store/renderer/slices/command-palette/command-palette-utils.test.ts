@@ -127,8 +127,16 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(undefined)).toBe("");
   });
 
+  it("returns empty string for the epoch-0 placeholder (unknown attribution time)", () => {
+    expect(formatRelativeTime(0)).toBe("");
+  });
+
   it("returns 'now' for recent timestamps", () => {
     expect(formatRelativeTime(new Date().toISOString())).toBe("now");
+  });
+
+  it("formats real numeric epoch-millisecond timestamps", () => {
+    expect(formatRelativeTime(Date.now())).toBe("now");
   });
 
   it("returns minutes ago for recent past", () => {

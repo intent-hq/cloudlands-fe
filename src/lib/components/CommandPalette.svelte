@@ -207,8 +207,8 @@
       description: `+${c.stats.additions || 0} -${c.stats.deletions || 0}`,
       icon: faCodeBranch,
       path: c.relativePath,
-      timestamp: new Date(c.attribution.timestamp).getTime(),
-      _time: formatRelativeTime(new Date(c.attribution.timestamp).toISOString()),
+      timestamp: c.attribution.timestamp || 0,
+      _time: formatRelativeTime(c.attribution.timestamp),
     }));
   });
   let terminals: WorkspaceObject[] = $state([]);

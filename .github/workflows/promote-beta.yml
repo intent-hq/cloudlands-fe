@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  # Needed by the notifier step's `gh pr view` calls (GH_TOKEN=github.token)
   pull-requests: read
 
 # Never cancel a release in progress
@@ -367,33 +366,6 @@ jobs:
             done
           done
 
-      # The notifier script and the git range come from the tag checkout.
-      # Non-fatal: a failed checkout only skips the issue notifications
-      # (promotion never fails because of notes).
-      - name: Checkout repo at promoted tag
-        id: checkout_tag
-        uses: actions/checkout@v7
-        continue-on-error: true
-        with:
-          ref: refs/tags/v${{ inputs.version }}
-
-      # Recover the bundled intentd version for the notifier comment from the
-      # promoted version's manifest (downloaded with the release assets).
-      # Fail-soft — a missing manifest just omits the mention.
-      - name: Resolve bundled intentd version
-        id: intentd_pin
-        continue-on-error: true
-        run: |
-          HEAD_PIN=""
-          if [ -f "$RUNNER_TEMP/release-assets/release-manifest.json" ]; then
-            HEAD_PIN=$(jq -r '.intentdVersion // empty' "$RUNNER_TEMP/release-assets/release-manifest.json" 2>/dev/null || true)
-          fi
-          if [ -z "$HEAD_PIN" ]; then
-            echo "::warning::No intentdVersion in the promoted release's manifest - the notifier comment will omit the bundled intentd mention"
-          fi
-          echo "head=$HEAD_PIN" >> "$GITHUB_OUTPUT"
-          echo "bundled intentd: '${HEAD_PIN:-<none>}'"
-
       # The version range (prevBeta, version] was computed and validated by
       # the preflight "Validate promotion range" step, before any asset was
       # uploaded — this step only renders the notes from it.
@@ -488,57 +460,6 @@ jobs:
           done
           echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
           exit 1
-
-      # Comments on the intent-hq/monorepo issues fixed in the promoted range
-      # (previous beta, promoted tag]. Fail-soft: skips with a warning when
-      # MONOREPO_ISSUES_TOKEN is absent, on a first promotion (no previous
-      # beta to anchor the range), or when the tag checkout failed — and
-      # never blocks the promotion (continue-on-error). The marker check inside
-      # the script makes re-promotions no-ops (no duplicate comments).
-      - name: Notify fixed monorepo issues
-        continue-on-error: true
-        env:
-          ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
-          PREV_BETA: ${{ steps.range.outputs.prev_beta }}
-          IS_FIRST: ${{ steps.range.outputs.is_first_promotion }}
-          BUNDLED_INTENTD: ${{ steps.intentd_pin.outputs.head }}
-          CHECKOUT_OUTCOME: ${{ steps.checkout_tag.outcome }}
-        run: |
-          if [ -z "$ISSUES_GH_TOKEN" ]; then
-            echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
-            exit 0
-          fi
-          if [ "$IS_FIRST" = "true" ]; then
-            echo "::warning::First beta promotion (no previous beta); skipping issue notifications"
-            exit 0
-          fi
-          # The notifier script and the git range both come from the tag checkout
-          if [ "$CHECKOUT_OUTCOME" != "success" ]; then
-            echo "::warning::Checkout of promoted tag failed (outcome: $CHECKOUT_OUTCOME); skipping issue notifications"
-            exit 0
-          fi
-          # The checkout is shallow (fetch-depth 1); the notifier needs the
-          # commit range and both tags to walk it. --force lets the fetch
-          # update tags left stale by earlier runs on this non-ephemeral
-          # runner — without it a rejected tag update ("would clobber
-          # existing tag") makes the fetch exit 1, and --quiet would
-          # suppress the rejection message entirely, so don't pass it
-          # (intent-hq/monorepo#1921).
-          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-            UNSHALLOW=(--unshallow)
-          else
-            UNSHALLOW=()
-          fi
-          git fetch --force --tags "${UNSHALLOW[@]}" origin || {
-            echo "::error::git fetch --tags failed (exit $?); cannot resolve range v${PREV_BETA}..v${VERSION} - issue notifications skipped"
-            exit 1
-          }
-          # Bundled intentd version from the promoted release's manifest
-          # (resolved fail-soft earlier); empty just omits the mention
-          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
-            "v${PREV_BETA}" "v${VERSION}" "${BUNDLED_INTENTD}"
 
       - name: Post summary
         env:

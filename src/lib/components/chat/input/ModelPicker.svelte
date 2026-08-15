@@ -195,6 +195,8 @@
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showReasoning?: boolean;
+    reasoningEffort?: string | null;
+    onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
     showProviderWarningNotice?: boolean;
     /**
@@ -236,6 +238,8 @@
     updateGlobalDefault = false,
     silentFallback = false,
     showReasoning = false,
+    reasoningEffort,
+    onReasoningChange,
     reasoningDisabled = false,
     showProviderWarningNotice,
     noticeClass,
@@ -1099,7 +1103,11 @@
   )(agentIdStore);
 
   const selectedModelEffortLevels = $derived.by<string[]>(() => {
-    if (Array.isArray($agentModelEffortLevels$) && $agentModelEffortLevels$.length > 0) {
+    if (
+      !onReasoningChange &&
+      Array.isArray($agentModelEffortLevels$) &&
+      $agentModelEffortLevels$.length > 0
+    ) {
       return $agentModelEffortLevels$;
     }
     const levels = selectedCatalogOption?.data?.effortLevels;
@@ -1120,8 +1128,13 @@
   }
 
   const reasoningLevels = $derived(showReasoning ? selectedModelEffortLevels : []);
+  const persistedReasoningEffort = $derived(
+    onReasoningChange ? (reasoningEffort ?? null) : ($reasoningEffort$ ?? null),
+  );
   const currentReasoningEffort = $derived(
-    $reasoningEffort$ && reasoningLevels.includes($reasoningEffort$) ? $reasoningEffort$ : null,
+    persistedReasoningEffort && reasoningLevels.includes(persistedReasoningEffort)
+      ? persistedReasoningEffort
+      : null,
   );
   const currentReasoningLabel = $derived(
     currentReasoningEffort
@@ -1140,8 +1153,7 @@
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
       updatingReasoningEffort ||
-      !agentId ||
-      !workspaceId ||
+      (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
 
@@ -1199,19 +1211,23 @@
     event.preventDefault();
     event.stopPropagation();
     activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs = (event.currentTarget as HTMLButtonElement).parentElement?.querySelectorAll<
-      HTMLButtonElement
-    >('[role="tab"]');
+    const tabs = (
+      event.currentTarget as HTMLButtonElement
+    ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
   async function handleReasoningSelect(value: string | null): Promise<boolean> {
-    if (!agentId || !workspaceId || reasoningControlDisabled) return false;
-    const previous = $reasoningEffort$ ?? null;
+    if (reasoningControlDisabled) return false;
+    const previous = persistedReasoningEffort;
     if (value === previous) return true;
 
     updatingReasoningEffort = true;
     try {
+      if (onReasoningChange) {
+        return (await onReasoningChange(value)) !== false;
+      }
+      if (!agentId || !workspaceId) return false;
       return await applyReasoningEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;

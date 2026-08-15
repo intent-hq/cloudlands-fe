@@ -42,6 +42,7 @@ export interface WorkspaceInitializerAgentSettings {
   selectedSpecialist?: string | null;
   selectedModel?: string;
   modelWasOverridden?: boolean;
+  selectedReasoningEffort?: string;
   isTeamMode?: boolean;
 }
 

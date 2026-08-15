@@ -441,17 +441,11 @@
         bind:value={editedTitle}
         onblur={saveTitle}
         onkeydown={handleTitleKeydown}
-        oninput={(e) => {
-          const target = e.currentTarget;
-          // Auto-resize input based on content
-          target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
-        }}
-        class="type-title min-w-[80px] max-w-full rounded bg-none py-0.5 text-foreground
+        class="type-title w-full rounded bg-none py-0.5 text-foreground
                outline-none leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
         placeholder={m.ui_editableName_placeholder()}
-        style="width: {Math.max(80, Math.min(200, (editedTitle || '').length * 8 + 20))}px"
       />
     {:else}
       <button

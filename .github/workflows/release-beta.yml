@@ -955,18 +955,24 @@ jobs:
           echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
           exit 1
 
-      # Comments on the intent-hq/monorepo issues fixed in this release. Fail-soft:
-      # skips with a warning when MONOREPO_ISSUES_TOKEN is absent, and never blocks
-      # the release (continue-on-error). The marker check inside the script makes
+      # Comments on the intent-hq/monorepo issues whose fix is fully delivered
+      # by this release: the script scans both the fe range and the bundled
+      # intentd delta, then gates each candidate on cross-repo completeness
+      # (every linked fix PR merged and contained in the released fe tag /
+      # bundled intentd tag). Fail-soft: skips with a warning when
+      # MONOREPO_ISSUES_TOKEN is absent, and never blocks the release
+      # (continue-on-error). The marker check inside the script makes
       # workflow_dispatch rebuilds of an existing tag no-ops (no duplicate comments).
       - name: Notify fixed monorepo issues
         continue-on-error: true
         env:
           ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          INTENTD_GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_PIN: ${{ steps.intentd_pin.outputs.version }}
+          INTENTD_BASE: ${{ steps.prev_intentd.outputs.version }}
         run: |
           if [ -z "$ISSUES_GH_TOKEN" ]; then
             echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
@@ -993,8 +999,8 @@ jobs:
           # (authoritative); fall back to the intentd.version pin
           BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
           BUNDLED_INTENTD="${BUNDLED_INTENTD:-$INTENTD_PIN}"
-          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" alpha \
-            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}"
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" \
+            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}" "${INTENTD_BASE}"
 
       - name: Post summary
         env:
