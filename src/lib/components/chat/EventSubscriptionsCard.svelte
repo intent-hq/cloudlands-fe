@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
@@ -9,6 +10,7 @@
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
@@ -23,43 +25,91 @@
     agentId: string;
     compact?: boolean;
     visible?: boolean;
+    /** Static, daemon-free content used by catalog and visual-test previews. */
+    isolatedPreview?: {
+      count: number;
+      initiallyExpanded?: boolean;
+      mode?: 'generic' | 'agents' | 'mixed';
+      agents?: Array<{ id: string; name: string; finished?: boolean }>;
+    };
+    previewContent?: Snippet;
   }
 
-  let { workspaceId, agentId, compact = false, visible = $bindable(false) }: Props = $props();
+  let {
+    workspaceId,
+    agentId,
+    compact = false,
+    visible = $bindable(false),
+    isolatedPreview,
+    previewContent,
+  }: Props = $props();
   let agentsVisible = $state(false);
   let hooksVisible = $state(false);
   let prsVisible = $state(false);
   let agentCount = $state(0);
   let hookCount = $state(0);
   let prCount = $state(0);
-  let isCollapsed = $state(true);
+  let isCollapsed = $state(false);
   let disclosureKey = $state('');
   const componentId = $props.id();
   const bodyId = `event-subscriptions-body-${componentId}`;
-  const hasSubscriptions = $derived(agentsVisible || hooksVisible || prsVisible);
-  const totalCount = $derived(agentCount + hookCount + prCount);
-  const heading = $derived(
-    totalCount === 0
+  const hasSubscriptions = $derived(
+    isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hooksVisible || prsVisible,
+  );
+  const totalCount = $derived(
+    isolatedPreview ? isolatedPreview.count : agentCount + hookCount + prCount,
+  );
+
+  // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
+  const isAgentOnly = $derived(
+    isolatedPreview?.mode === 'agents' ||
+      (!isolatedPreview && agentsVisible && !hooksVisible && !prsVisible),
+  );
+  const agentOnlyCount = $derived(
+    isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,
+  );
+
+  const heading = $derived.by(() => {
+    if (isolatedPreview && !isAgentOnly) {
+      // Preview mode: use generic subscribed language
+      return totalCount === 0
+        ? m.events_ipc_subscribed_description()
+        : totalCount === 1
+          ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
+          : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+    }
+
+    if (isAgentOnly) {
+      // Agent-only: "Waiting for N agents"
+      return agentOnlyCount === 1
+        ? m.chat_agentSubscriptions_waitingForAgents_one({ count: formatInteger(agentOnlyCount) })
+        : m.chat_agentSubscriptions_waitingForAgents_many({ count: formatInteger(agentOnlyCount) });
+    }
+
+    // Mixed or non-agent: "Subscribed to N events"
+    return totalCount === 0
       ? m.events_ipc_subscribed_description()
       : totalCount === 1
         ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
-        : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) }),
-  );
+        : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
+  });
 
   $effect(() => {
     visible = hasSubscriptions;
   });
 
   $effect(() => {
-    const nextKey = `${workspaceId}:${agentId}`;
+    const nextKey = `${workspaceId}:${agentId}:${isolatedPreview?.count ?? 'live'}`;
     if (nextKey === disclosureKey) return;
     disclosureKey = nextKey;
-    isCollapsed = !getEventSubscriptionsExpanded(workspaceId, agentId);
+    isCollapsed = isolatedPreview
+      ? !(isolatedPreview.initiallyExpanded ?? true)
+      : !getEventSubscriptionsExpanded(workspaceId, agentId);
   });
 
   function toggleCollapsed() {
     isCollapsed = !isCollapsed;
-    setEventSubscriptionsExpanded(workspaceId, agentId, !isCollapsed);
+    if (!isolatedPreview) setEventSubscriptionsExpanded(workspaceId, agentId, !isCollapsed);
   }
 
   function handleToggleKeydown(event: KeyboardEvent) {
@@ -81,78 +131,109 @@
     data-testid="event-subscriptions-card"
     aria-label={heading}
   >
-    <h2>
-      <Button
-        variant="plain"
-        type="button"
-        class="h-auto min-h-0 w-full shrink whitespace-normal rounded-none border-0 px-3! py-2! text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-2 focus-visible:ring-inset"
-        data-testid="event-subscriptions-summary"
-        data-subscription-row="grouped-summary"
-        aria-expanded={!isCollapsed}
-        aria-controls={bodyId}
-        onclick={toggleCollapsed}
-        onkeydown={handleToggleKeydown}
-      >
-        <span class="min-w-0 flex-1 truncate">{heading}</span>
-        <span
-          class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-          data-testid="event-subscriptions-chevron"
+    {#if !isAgentOnly}
+      <h2 data-testid="event-subscriptions-outer-header">
+        <Button
+          variant="plain"
+          type="button"
+          class="shrink whitespace-normal rounded-none border-0 text-left {SUBSCRIPTION_DISCLOSURE_ROW_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-2 focus-visible:ring-inset"
+          data-testid="event-subscriptions-summary"
+          data-subscription-row="grouped-summary"
+          aria-expanded={!isCollapsed}
+          aria-controls={bodyId}
+          onclick={toggleCollapsed}
+          onkeydown={handleToggleKeydown}
         >
-          <Fa
-            icon={faChevronDown}
-            class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
-              ? 'rotate-90'
-              : ''}"
-          />
-        </span>
-      </Button>
-    </h2>
+          <span class="min-w-0 flex-1 truncate">{heading}</span>
+          <span
+            class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+            data-testid="event-subscriptions-chevron"
+          >
+            <Fa
+              icon={faChevronDown}
+              class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {isCollapsed
+                ? 'rotate-90'
+                : ''}"
+            />
+          </span>
+        </Button>
+      </h2>
+    {/if}
     <div
       id={bodyId}
-      class:hidden={isCollapsed}
+      class:hidden={!isAgentOnly && isCollapsed}
       data-testid="event-subscriptions-body"
-      aria-hidden={isCollapsed}
+      aria-hidden={!isAgentOnly && isCollapsed}
     >
-      <div
-        class="border-t border-border/40"
-        class:hidden={!agentsVisible}
-        data-testid="event-subscriptions-agents"
-      >
-        <AgentSubscriptions
-          {workspaceId}
-          {agentId}
-          {compact}
-          embedded
-          bind:visible={agentsVisible}
-          bind:count={agentCount}
-        />
-      </div>
-      <div
-        class="border-t border-border/40"
-        class:hidden={!hooksVisible}
-        data-testid="event-subscriptions-hooks"
-      >
-        <BackgroundHooksRow
-          {workspaceId}
-          {agentId}
-          embedded
-          bind:visible={hooksVisible}
-          bind:count={hookCount}
-        />
-      </div>
-      <div
-        class="border-t border-border/40"
-        class:hidden={!prsVisible}
-        data-testid="event-subscriptions-prs"
-      >
-        <MonitoredPrsRow
-          {workspaceId}
-          {agentId}
-          embedded
-          bind:visible={prsVisible}
-          bind:count={prCount}
-        />
-      </div>
+      {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
+        <div
+          class={isAgentOnly ? '' : 'border-t border-border/40'}
+          data-testid="event-subscriptions-agents"
+        >
+          <AgentSubscriptions
+            {workspaceId}
+            {agentId}
+            {compact}
+            embedded
+            forceWaitingHeader
+            isolatedPreview={{
+              agents: isolatedPreview.agents ?? [],
+              initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
+            }}
+          />
+        </div>
+        {#if isolatedPreview.mode === 'mixed'}
+          <div class="border-t border-border/40" data-testid="event-subscriptions-preview">
+            {@render previewContent?.()}
+          </div>
+        {/if}
+      {:else if isolatedPreview}
+        <div class="border-t border-border/40" data-testid="event-subscriptions-preview">
+          {@render previewContent?.()}
+        </div>
+      {:else}
+        <div
+          class={isAgentOnly ? '' : 'border-t border-border/40'}
+          class:hidden={!agentsVisible}
+          data-testid="event-subscriptions-agents"
+        >
+          <AgentSubscriptions
+            {workspaceId}
+            {agentId}
+            {compact}
+            embedded
+            forceWaitingHeader
+            bind:visible={agentsVisible}
+            bind:count={agentCount}
+          />
+        </div>
+        <div
+          class="border-t border-border/40"
+          class:hidden={!hooksVisible}
+          data-testid="event-subscriptions-hooks"
+        >
+          <BackgroundHooksRow
+            {workspaceId}
+            {agentId}
+            embedded
+            bind:visible={hooksVisible}
+            bind:count={hookCount}
+          />
+        </div>
+        <div
+          class="border-t border-border/40"
+          class:hidden={!prsVisible}
+          data-testid="event-subscriptions-prs"
+        >
+          <MonitoredPrsRow
+            {workspaceId}
+            {agentId}
+            embedded
+            bind:visible={prsVisible}
+            bind:count={prCount}
+          />
+        </div>
+      {/if}
     </div>
   </section>
 </div>

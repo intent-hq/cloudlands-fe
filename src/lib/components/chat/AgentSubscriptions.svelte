@@ -55,6 +55,7 @@
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
   } from './subscription-disclosure';
   import { store as appStore } from '$store/renderer/store';
@@ -72,6 +73,7 @@
   } from './agent-subscriptions-view-state';
 
   const logger = createLogger('AgentSubscriptions');
+  const WAITING_AGENT_DISCLOSURE_THRESHOLD = 6;
 
   function createPropStore<T>(read: () => T) {
     return writable(read());
@@ -90,6 +92,13 @@
     embedded?: boolean;
     visible?: boolean;
     count?: number;
+    /** Static rows for daemon-free catalog and visual-test previews. */
+    isolatedPreview?: {
+      agents: Array<{ id: string; name: string; finished?: boolean }>;
+      initiallyExpanded?: boolean;
+    };
+    /** Promote the cohort disclosure to the sole header in an agent-only parent card. */
+    forceWaitingHeader?: boolean;
   }
 
   let {
@@ -99,6 +108,8 @@
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
+    isolatedPreview,
+    forceWaitingHeader = false,
   }: Props = $props();
   const componentId = $props.id();
   const waitingAgentListId = `waiting-agent-list-${componentId}`;
@@ -123,6 +134,7 @@
   // that is already waiting on delegated agents).
   let lastFetchKey: string | null = null;
   $effect(() => {
+    if (isolatedPreview) return;
     if (!workspaceId || !agentId) return;
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
@@ -152,6 +164,8 @@
 
   interface WaitingAgentRow {
     agentId: string;
+    agentName?: string;
+    fixtureFinished?: boolean;
     cancelSubscriptionId?: string;
     cancelGroupId?: string;
   }
@@ -161,6 +175,13 @@
   // their group snapshot has not arrived yet. The first source owns cancel
   // routing; later duplicate references never add another visible row.
   const waitingAgentRows = $derived.by(() => {
+    if (isolatedPreview) {
+      return isolatedPreview.agents.map((agent) => ({
+        agentId: agent.id,
+        agentName: agent.name,
+        fixtureFinished: agent.finished,
+      }));
+    }
     const rows: WaitingAgentRow[] = [];
     const rowsByAgentId = new Map<string, WaitingAgentRow>();
     const add = (agentId: string, source: Omit<WaitingAgentRow, 'agentId'>) => {
@@ -206,6 +227,11 @@
 
   // Agents that have finished (completed or deleted) across delegation groups
   const completedAgentIdSet = $derived.by(() => {
+    if (isolatedPreview) {
+      return new Set(
+        isolatedPreview.agents.filter((agent) => agent.finished).map((agent) => agent.id),
+      );
+    }
     const ids = new Set<string>();
     for (const group of $groups$) {
       for (const id of group.completedAgentIds) ids.add(id);
@@ -220,9 +246,49 @@
     return ids;
   });
 
-  const activeAgentRows = $derived(
-    waitingAgentRows.filter((row) => !completedAgentIdSet.has(row.agentId)),
-  );
+  // Semantic grouping priority order:
+  // 1. attention-required (blocker/discussion)
+  // 2. active work (responding/active/processing)
+  // 3. idle/waiting
+  // 4. terminal (completed/cancelled/deleted/failed)
+  function getSemanticPriority(agentId: string): number {
+    const session = watchedAgentSessionsById.get(agentId);
+    if (!session) return 2; // Default to idle tier
+
+    // Check attention requests first
+    if (session.attentionRequestKind === 'blocker') return 0;
+    if (session.attentionRequestKind === 'discussion') return 1;
+
+    // Terminal states
+    if (completedAgentIdSet.has(agentId)) return 4;
+
+    const status = String(session.status).toLowerCase();
+
+    // Active work
+    if (status === 'responding' || status === 'active' || status === 'processing') return 2;
+
+    // Idle/waiting
+    return 3;
+  }
+
+  const activeAgentRows = $derived.by(() => {
+    const nonTerminal = waitingAgentRows.filter((row) => !completedAgentIdSet.has(row.agentId));
+    // Stable semantic sort: group by priority, preserve source order within each group
+    // Build index map for stable tie-breaking
+    const sourceIndexMap = new Map<string, number>();
+    waitingAgentRows.forEach((row, idx) => sourceIndexMap.set(row.agentId, idx));
+
+    return nonTerminal.slice().sort((a, b) => {
+      const aPriority = getSemanticPriority(a.agentId);
+      const bPriority = getSemanticPriority(b.agentId);
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      // Preserve source order within same priority group (stable tie)
+      const aIndex = sourceIndexMap.get(a.agentId) ?? 0;
+      const bIndex = sourceIndexMap.get(b.agentId) ?? 0;
+      return aIndex - bIndex;
+    });
+  });
+
   const finishedAgentRows = $derived.by(() => {
     return waitingAgentRows
       .filter((row) => completedAgentIdSet.has(row.agentId))
@@ -232,7 +298,12 @@
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
   });
-  const shouldGroupFinishedAgents = $derived(finishedAgentRows.length >= 2);
+  const shouldGroupWaitingAgents = $derived(
+    forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
+  );
+  const shouldGroupFinishedAgents = $derived(
+    shouldGroupWaitingAgents && finishedAgentRows.length >= 2,
+  );
   const ungroupedAgentRows = $derived(
     shouldGroupFinishedAgents ? activeAgentRows : [...activeAgentRows, ...finishedAgentRows],
   );
@@ -254,7 +325,9 @@
     const nextKey = `${workspaceId}:${agentId}`;
     if (nextKey !== waitingDisclosureKey) {
       waitingDisclosureKey = nextKey;
-      waitingAgentsCollapsed = !getWaitingAgentsExpanded(workspaceId, agentId);
+      waitingAgentsCollapsed = isolatedPreview
+        ? !(isolatedPreview.initiallyExpanded ?? false)
+        : !getWaitingAgentsExpanded(workspaceId, agentId);
     }
     if (nextKey === finishedDisclosureKey) return;
     finishedDisclosureKey = nextKey;
@@ -263,7 +336,7 @@
 
   function toggleWaitingAgentsCollapsed() {
     waitingAgentsCollapsed = !waitingAgentsCollapsed;
-    setWaitingAgentsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
+    if (!isolatedPreview) setWaitingAgentsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
   }
 
   function toggleFinishedAgentsExpanded() {
@@ -387,6 +460,7 @@
   });
 
   function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+    if (isolatedPreview) return;
     if (!workspaceId) return;
     const sourcePanelId = findSourcePanelId(event.target);
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
@@ -409,11 +483,11 @@
 {#snippet watchedAgentRow(row: WaitingAgentRow, finished: boolean)}
   {@const watchedAgentId = row.agentId}
   <div
-    class="group/watch w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 pt-1 first:border-t-0 first:pt-0"
+    class="group/watch w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 first:border-t-0"
     transition:safeSlide={{ axis: 'y', duration: 200 }}
   >
     {#snippet oneShotActions()}
-      {#if !isCompleted}
+      {#if !isCompleted && !isolatedPreview}
         {#if !finished}
           <Button
             type="button"
@@ -450,13 +524,15 @@
     {/snippet}
     <AgentCard
       agentId={watchedAgentId}
+      agentName={row.agentName}
       workspace={resolvedWorkspace}
       isCompleted={finished}
       headerActions={oneShotActions}
       inline
-      hidePreview
+      inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}
       typographyClass={SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}
       onclick={(event) => openWatchedAgent(event, watchedAgentId)}
+      readOnly={!!isolatedPreview}
     />
   </div>
 {/snippet}
@@ -564,65 +640,70 @@
         data-testid="one-shot-watches"
         transition:safeSlide={{ duration: 150 }}
       >
-        <!-- Section header: compact waiting summary and disclosure -->
-        <div
-          class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-subtle"
-          data-testid="one-shot-header"
-        >
-          <button
-            type="button"
-            class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
-            data-testid="one-shot-summary-toggle"
-            data-subscription-row="agent-watch"
-            aria-expanded={!waitingAgentsCollapsed}
-            aria-controls={waitingAgentListId}
-            onclick={toggleWaitingAgentsCollapsed}
-            onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
+        {#if shouldGroupWaitingAgents}
+          <!-- Section header: compact waiting summary and disclosure for large lists. -->
+          <div
+            class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden text-subtle {SUBSCRIPTION_ROW_GEOMETRY_CLASS}"
+            data-testid="one-shot-header"
           >
-            <Fa
-              icon={faHourglass}
-              size={14}
-              class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-            />
-            <span class="min-w-0 truncate whitespace-nowrap" data-testid="one-shot-summary-title">
-              {waitingAgentRows.length === 1
-                ? m.chat_agentSubscriptions_waitingForAgents_one({
-                    count: formatInteger(waitingAgentRows.length),
-                  })
-                : m.chat_agentSubscriptions_waitingForAgents_many({
-                    count: formatInteger(waitingAgentRows.length),
-                  })}
-            </span>
-          </button>
-          <button
-            type="button"
-            class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            data-testid="one-shot-collapse-toggle"
-            aria-expanded={!waitingAgentsCollapsed}
-            aria-controls={waitingAgentListId}
-            aria-label={waitingAgentsCollapsed
-              ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
-              : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
-            onclick={toggleWaitingAgentsCollapsed}
-            onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
-          >
-            <span class="inline-flex" data-testid="one-shot-chevron">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-[inherit] text-subtle cursor-pointer hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              data-testid="one-shot-summary-toggle"
+              data-subscription-row="agent-watch"
+              aria-expanded={!waitingAgentsCollapsed}
+              aria-controls={waitingAgentListId}
+              onclick={toggleWaitingAgentsCollapsed}
+              onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
+            >
               <Fa
-                icon={faChevronDown}
-                class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {waitingAgentsCollapsed
-                  ? 'rotate-90'
-                  : ''}"
+                icon={faHourglass}
+                size={14}
+                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
               />
-            </span>
-          </button>
-        </div>
+              <span class="min-w-0 truncate whitespace-nowrap" data-testid="one-shot-summary-title">
+                {waitingAgentRows.length === 1
+                  ? m.chat_agentSubscriptions_waitingForAgents_one({
+                      count: formatInteger(waitingAgentRows.length),
+                    })
+                  : m.chat_agentSubscriptions_waitingForAgents_many({
+                      count: formatInteger(waitingAgentRows.length),
+                    })}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-ghost transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              data-testid="one-shot-collapse-toggle"
+              aria-expanded={!waitingAgentsCollapsed}
+              aria-controls={waitingAgentListId}
+              aria-label={waitingAgentsCollapsed
+                ? m.chat_agentSubscriptions_expandWatches_ariaLabel()
+                : m.chat_agentSubscriptions_collapseWatches_ariaLabel()}
+              onclick={toggleWaitingAgentsCollapsed}
+              onkeydown={(event) => handleActionKeydown(event, toggleWaitingAgentsCollapsed)}
+            >
+              <span class="inline-flex" data-testid="one-shot-chevron">
+                <Fa
+                  icon={faChevronDown}
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {waitingAgentsCollapsed
+                    ? 'rotate-90'
+                    : ''}"
+                />
+              </span>
+            </button>
+          </div>
+        {/if}
 
         <!-- Complete deduplicated list with per-agent actions. -->
-        {#if !waitingAgentsCollapsed}
+        {#if !shouldGroupWaitingAgents || !waitingAgentsCollapsed}
           <div
             id={waitingAgentListId}
-            class="flex w-full min-w-0 max-w-full flex-col gap-1 overflow-hidden border-t border-border/40 px-1 pt-1.5 pb-0.5"
+            class="flex w-full min-w-0 max-w-full flex-col overflow-hidden {shouldGroupWaitingAgents
+              ? 'border-t border-border/40'
+              : ''}"
             data-testid="one-shot-agent-list"
+            data-agent-list-mode={shouldGroupWaitingAgents ? 'grouped' : 'direct'}
             transition:safeSubscriptionSlide
           >
             {#each ungroupedAgentRows as row (row.agentId)}
@@ -663,7 +744,7 @@
                     <RelativeTime
                       date={latestFinishedAt}
                       compact
-                      class="shrink-0 text-ui text-subtle"
+                      class="shrink-0 text-ui font-normal text-muted-foreground/70"
                     />
                   {/if}
                   <span

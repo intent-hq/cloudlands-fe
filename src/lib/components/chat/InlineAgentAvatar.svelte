@@ -4,7 +4,7 @@
    * A small inline avatar for an agent, used in the collapsed AgentSubscriptions view.
    * Subscribes to agent updates to show real-time state.
    */
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
 
   import {
     selectAgentIsResponding,
@@ -15,7 +15,7 @@
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
@@ -75,7 +75,7 @@
     ),
   );
 
-  // Get specialist from agent metadata (typed to match AugieAvatarWithState)
+  // Get specialist from agent metadata (typed to match AgentAvatarWithState)
   const specialist = $derived.by(() => {
     const specialistId = $agent$?.metadata?.specialist || $agent$?.agentMetadata?.specialist;
     if (
@@ -96,14 +96,24 @@
 <Tooltip.Provider delayDuration={0}>
   <Tooltip.Root delayDuration={0}>
     <Tooltip.Trigger
-      class="rounded-full transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
+      class="inline-agent-avatar-trigger transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
       {onclick}
+      data-testid="inline-agent-avatar-trigger"
       aria-label={onclick
         ? m.chat_msgAttribution_openAgent_title({ name: displayName })
         : undefined}
     >
-      <div class="relative rounded-full ring-1 ring-card">
-        <AugieAvatarWithState {agentId} size={18} {state} {specialist} />
+      <div
+        class="inline-agent-avatar-ring relative ring-1 ring-card"
+        data-testid="inline-agent-avatar-ring"
+      >
+        <AgentAvatarWithState
+          {agentId}
+          variant="standard"
+          {state}
+          {specialist}
+          class="inline-agent-avatar-surface"
+        />
       </div>
     </Tooltip.Trigger>
     <Tooltip.Content side="top" class="text-xs">
@@ -119,3 +129,29 @@
     </Tooltip.Content>
   </Tooltip.Root>
 </Tooltip.Provider>
+
+<style>
+  :global(.inline-agent-avatar-trigger),
+  .inline-agent-avatar-ring {
+    display: inline-flex;
+    box-sizing: border-box;
+    width: var(--agent-avatar-standard-surface-size);
+    height: var(--agent-avatar-standard-surface-size);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--agent-avatar-standard-corner-radius);
+    line-height: 0;
+  }
+
+  :global(.inline-agent-avatar-trigger) {
+    border: 0;
+    padding: 0;
+  }
+
+  :global(.inline-agent-avatar-surface) {
+    width: var(--agent-avatar-standard-surface-size);
+    height: var(--agent-avatar-standard-surface-size);
+    line-height: 0;
+  }
+</style>

@@ -33,9 +33,10 @@
   import { classifyTool } from './tool-classifier';
   import { deriveAgentCardPreview } from './agent-card-preview';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import { renderInlineMarkdownPlainText } from './inline-markdown-snippet';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import { safeSlide } from '$lib/utils/animations';
@@ -88,6 +89,8 @@
     inline?: boolean;
     /** Optional row typography override supplied by compact parent disclosures. */
     typographyClass?: string;
+    /** Optional inline-row geometry supplied by compact parent disclosures. */
+    inlineRowClass?: string;
     /** Compact status text shown after the agent name. */
     statusLabel?: string;
     /** Optional workspace to load agent session from (for home page usage) */
@@ -104,6 +107,8 @@
     headerActions?: Snippet;
     openPanelCount?: number;
     activeInPanel?: boolean;
+    /** Disable navigation, mutation, editing, and file operations in isolated previews. */
+    readOnly?: boolean;
   }
 
   let {
@@ -120,6 +125,7 @@
     hidePreview = false,
     inline = false,
     typographyClass = '',
+    inlineRowClass = 'px-1.5 py-1',
     statusLabel,
     workspace = null,
     isCompleted = false,
@@ -127,9 +133,11 @@
     headerActions,
     openPanelCount = 0,
     activeInPanel = false,
+    readOnly = false,
   }: Props = $props();
 
   const logger = createLogger('AgentCard');
+  const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground/70';
 
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
@@ -141,7 +149,7 @@
 
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId) {
+    if (wsId && !readOnly) {
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
   });
@@ -171,6 +179,7 @@
 
   // Start editing the agent name
   async function startEditing() {
+    if (readOnly) return;
     editingValue = displayName;
     isEditing = true;
     await tick();
@@ -236,6 +245,7 @@
 
   // Handle double-click on name
   function handleNameDoubleClick(e: MouseEvent) {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     startEditing();
@@ -243,6 +253,7 @@
 
   // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
+    if (readOnly) return;
     if (onclick && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       e.stopPropagation();
@@ -257,6 +268,7 @@
 
   // Context menu handlers
   function handleContextMenu(e: MouseEvent) {
+    if (readOnly) return;
     e.preventDefault();
     e.stopPropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
@@ -586,9 +598,35 @@
       lastUserMsg,
     }),
   );
+  const inlinePreviewSource = $derived.by(() => {
+    if (!preview || preview.kind === 'live-tool' || preview.kind === 'last-tool') return '';
+    if (preview.kind !== 'attention') return preview.text;
+    const label =
+      preview.attention.kind === 'blocker'
+        ? m.chat_agentCard_attentionBlocker_label()
+        : m.chat_agentCard_attentionDiscussion_label();
+    return preview.attention.reason ? `${label} · ${preview.attention.reason}` : label;
+  });
+  let inlinePreviewText = $state('');
+
+  $effect(() => {
+    const value = inlinePreviewSource;
+    let cancelled = false;
+    if (!value) {
+      inlinePreviewText = '';
+      return;
+    }
+    void renderInlineMarkdownPlainText(value).then((cleaned) => {
+      if (!cancelled) inlinePreviewText = cleaned;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Handle click - navigate to agent
   function handleClick(event: MouseEvent | KeyboardEvent) {
+    if (readOnly) return;
     if (onclick) {
       onclick(event);
     } else {
@@ -621,16 +659,18 @@
     <button
       type="button"
       class="flex w-full min-w-0 max-w-full overflow-hidden text-left gap-2 transition-colors duration-150 cursor-pointer group border {inline
-        ? 'type-body items-center rounded-md px-1.5 py-1'
+        ? `type-body items-center rounded-md ${inlineRowClass}`
         : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
         ? `bg-background border-border ${glowClass} shadow-xs`
-        : 'border-transparent'} {headerActions ? 'pr-14' : ''} {typographyClass}"
+        : 'border-transparent'} {typographyClass}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
+      aria-disabled={readOnly}
+      tabindex={readOnly ? -1 : undefined}
     >
       <div class="relative shrink-0 {inline ? '' : 'mt-[-0.8px] -mb-1'}">
-        <AugieAvatarWithState
+        <AgentAvatarWithState
           {agentId}
           size={20}
           state={avatarState}
@@ -640,9 +680,9 @@
       </div>
 
       <div
-        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {inline
-          ? 'flex-row items-center gap-2'
-          : 'flex-col'}"
+        class="agent-card-content flex min-w-0 max-w-full flex-1 overflow-hidden {headerActions
+          ? 'mr-14'
+          : ''} {inline ? 'flex-row items-center gap-2' : 'flex-col'}"
       >
         <!-- Header row -->
         <div
@@ -653,7 +693,7 @@
           <!-- Avatar with streaming indicator -->
 
           <div
-            class="flex-1 min-w-0 flex items-center {typographyClass
+            class="flex-1 min-w-0 flex items-center {inline ? 'gap-0' : 'gap-1.5'} {typographyClass
               ? 'font-normal'
               : 'font-medium'} {inline ? 'overflow-hidden' : ''}"
           >
@@ -671,9 +711,10 @@
             {:else}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <h3
-                class="min-w-0 shrink whitespace-nowrap truncate text-foreground/90 group-hover:text-foreground {inline
+                class="shrink-0 whitespace-nowrap font-normal text-foreground {inline
                   ? 'type-body'
                   : 'text-sm'}"
+                data-testid="agent-card-name"
                 ondblclick={handleNameDoubleClick}
               >
                 {displayName}
@@ -701,33 +742,52 @@
                 {m.chat_agentCard_background_badge()}
               </div>
             {/if}
+
+            <!-- Inline mode: preview inline after name -->
+            {#if inline && !hidePreview && preview}
+              {#if preview.kind === 'live-tool' || preview.kind === 'last-tool'}
+                <div
+                  class="ml-2.5 min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
+                  data-testid="agent-card-preview"
+                >
+                  <AgentPreviewToolLabel
+                    toolUse={preview.toolUse}
+                    showIcon={false}
+                    class={INLINE_PEEK_TYPOGRAPHY_CLASS}
+                  />
+                </div>
+              {:else}
+                <p
+                  class="ml-2.5 min-w-0 flex-1 truncate whitespace-nowrap text-sm {INLINE_PEEK_TYPOGRAPHY_CLASS}"
+                  data-testid="agent-card-preview"
+                  title={inlinePreviewText}
+                  aria-label={inlinePreviewText}
+                >
+                  {inlinePreviewText}
+                </p>
+              {/if}
+            {/if}
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
-            <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
-            {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
-              <LineChangeStats
-                additions={$lineChanges$.additions}
-                deletions={$lineChanges$.deletions}
-                size="xs"
-              />
-            {/if}
-            {#if updatedAt}
-              <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
-            {/if}
-          </div>
+          {#if !inline}
+            <div class="flex items-center gap-2 shrink-0">
+              <OpenPanelIndicator count={openPanelCount} active={activeInPanel} />
+              {#if $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
+                <LineChangeStats
+                  additions={$lineChanges$.additions}
+                  deletions={$lineChanges$.deletions}
+                  size="xs"
+                />
+              {/if}
+              {#if updatedAt && !headerActions}
+                <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
+              {/if}
+            </div>
+          {/if}
         </div>
 
-        {#if inline && statusLabel}
-          <span class="max-w-[40%] shrink-0 truncate text-ui text-subtle">{statusLabel}</span>
-        {/if}
-
-        <!-- Message preview: one persistent container rendering the derived
-             `preview` value (see agent-card-preview.ts for the precedence
-             chain). Content swaps in place — no per-branch transitions — so
-             source flips don't height-animate; the section as a whole still
-             slides when the preview appears/disappears entirely. -->
-        {#if !hidePreview && preview}
+        <!-- Non-inline mode: preview below header as before -->
+        {#if !inline && !hidePreview && preview}
           <div
             class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
             data-testid="agent-card-preview-row"
@@ -777,8 +837,20 @@
       </div>
     </button>
     {#if headerActions}
-      <div class="absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
-        {@render headerActions()}
+      <div
+        class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2"
+        data-testid="agent-card-trailing-slot"
+      >
+        {#if updatedAt}
+          <RelativeTime
+            date={updatedAt}
+            compact
+            class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
+          />
+        {/if}
+        <div class="absolute inset-0 flex items-center justify-end gap-1">
+          {@render headerActions()}
+        </div>
       </div>
     {/if}
   </div>
@@ -786,7 +858,7 @@
 
 {@render agentCardContent()}
 
-{#if contextMenu}
+{#if contextMenu && !readOnly}
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}

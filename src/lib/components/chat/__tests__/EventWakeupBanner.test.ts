@@ -2,6 +2,8 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('svelte-fa', async () => ({
@@ -19,6 +21,8 @@ import type { Workspace } from '$shared/types';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
+  SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
+  SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
 } from '../subscription-disclosure';
 
 type Metadata = {
@@ -57,6 +61,23 @@ afterEach(() => {
 });
 
 describe('EventWakeupBanner details disclosure', () => {
+  it('uses only named standard avatar geometry in the production wake-up stack', () => {
+    const avatarSource = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/InlineAgentAvatar.svelte'),
+      'utf8',
+    );
+    const bannerSource = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/EventWakeupBanner.svelte'),
+      'utf8',
+    );
+
+    expect(avatarSource).toContain('variant="standard"');
+    expect(avatarSource).not.toContain('size={18}');
+    expect(avatarSource).not.toContain('rounded-full');
+    expect(bannerSource).toContain('--agent-avatar-standard-stack-overlap');
+    expect(bannerSource).not.toMatch(/-space-x-|translate-y-|top-\[/);
+  });
+
   it('uses the shared compact subscription card shell, header rhythm, and separator', async () => {
     renderBanner({
       type: 'event_notification',
@@ -72,14 +93,16 @@ describe('EventWakeupBanner details disclosure', () => {
     ]) {
       expect(card.classList.contains(token)).toBe(true);
     }
-    expect(card.classList.contains('mt-4')).toBe(true);
+    expect(card.classList.contains(SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS)).toBe(true);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-external-spacing-owner')).toBe('event-wakeup-card');
+    for (const token of ['px-1.5', 'py-1']) {
+      expect(card.classList.contains(token)).toBe(false);
+    }
     const header = screen.getByTestId('event-wakeup-header');
-    expect(header.className).toContain('items-center');
-    expect(header.className).toContain('px-3');
-    expect(header.className).toContain('py-2');
-    expect(header.className).toContain('min-h-9');
+    for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
+      expect(header.classList.contains(token)).toBe(true);
+    }
 
     await fireEvent.click(summary);
     const details = screen.getByTestId('event-wakeup-details');
@@ -104,8 +127,7 @@ describe('EventWakeupBanner details disclosure', () => {
     for (const token of SUBSCRIPTION_CARD_SURFACE_CLASS.split(' ')) {
       expect(card.classList.contains(token)).toBe(false);
     }
-    expect(card.classList.contains('mt-3')).toBe(false);
-    expect(card.classList.contains('mt-4')).toBe(false);
+    expect(card.classList.contains(SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS)).toBe(false);
     expect(card.classList.contains('mb-4')).toBe(false);
     expect(card.getAttribute('data-embedded')).toBe('true');
     expect(card.hasAttribute('data-external-spacing-owner')).toBe(false);

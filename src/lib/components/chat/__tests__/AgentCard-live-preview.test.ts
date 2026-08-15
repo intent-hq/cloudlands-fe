@@ -11,7 +11,7 @@
  *   3. the transcript-derived peek text otherwise.
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -174,7 +174,7 @@ describe('AgentCard live tool preview (tool-only stretches)', () => {
 
     const preview = await screen.findByTestId('agent-card-preview');
     expect(preview.textContent).not.toContain('stale persisted text');
-    expect(preview.textContent?.toLowerCase()).toContain('read');
+    await waitFor(() => expect(preview.textContent?.toLowerCase()).toContain('read'));
   });
 
   it('lets live streamed text outrank the live tool label', async () => {
@@ -519,7 +519,7 @@ describe('AgentCard this-turn live text vs previous-turn report (monorepo#1327)'
     // Pin the preview to the tool label (classifyTool subject for the seeded
     // tool_use) so a regression to lastResponse/lastUserMsg cannot pass.
     const preview = await screen.findByTestId('agent-card-preview');
-    expect(preview.textContent).toMatch(/foo\.ts/);
+    await waitFor(() => expect(preview.textContent).toMatch(/foo\.ts/));
     expect(screen.queryByText(/old transcript digest/)).toBeNull();
     expect(screen.queryByText('report from the last turn')).toBeNull();
     expect(screen.queryByText('summary from the last turn')).toBeNull();

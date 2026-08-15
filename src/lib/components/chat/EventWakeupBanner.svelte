@@ -16,7 +16,9 @@
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
+    SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
     safeSubscriptionSlide,
   } from './subscription-disclosure';
   import type { Workspace } from '$shared/types';
@@ -339,9 +341,7 @@
   <div
     class="event-wakeup-banner group/banner {SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded
       ? ''
-      : SUBSCRIPTION_CARD_SURFACE_CLASS}"
-    class:mt-3={!embedded && compact}
-    class:mt-4={!embedded && !compact}
+      : `${SUBSCRIPTION_CARD_SURFACE_CLASS} ${SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS}`}"
     data-testid="event-wakeup-card"
     data-embedded={embedded}
     data-external-spacing-owner={!embedded ? 'event-wakeup-card' : undefined}
@@ -352,12 +352,12 @@
       <div class="relative w-full min-w-0 max-w-full overflow-hidden">
         {#if showSummary}
           <div
-            class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm font-medium text-muted-foreground"
+            class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-medium text-muted-foreground"
             data-testid="event-wakeup-header"
           >
             {#if showAgentCards && agentEvents.length > 0}
               <div
-                class="flex min-w-0 shrink items-center -space-x-1.5 overflow-hidden"
+                class="event-wakeup-avatar-stack flex min-w-0 shrink items-center overflow-hidden"
                 data-testid="event-wakeup-avatar-stack"
               >
                 {#each agentEvents.slice(0, 5) as event (event.agentId)}
@@ -370,7 +370,10 @@
                   />
                 {/each}
                 {#if agentEvents.length > 5}
-                  <span class="pl-2 text-ui text-subtle" data-testid="event-wakeup-avatar-overflow">
+                  <span
+                    class="event-wakeup-avatar-overflow text-ui text-subtle"
+                    data-testid="event-wakeup-avatar-overflow"
+                  >
                     +{formatInteger(agentEvents.length - 5)}
                   </span>
                 {/if}
@@ -391,7 +394,10 @@
               data-testid="event-wakeup-summary"
             >
               <span class="min-w-0 flex-1 truncate">{friendlySummary}</span>
-              <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center">
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="event-wakeup-chevron-column"
+              >
                 <Fa
                   icon={faChevronDown}
                   class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
@@ -476,3 +482,23 @@
     <span>{friendlySummary}</span>
   </div>
 {/if}
+
+<style>
+  .event-wakeup-avatar-stack > :global(* + *) {
+    margin-inline-start: calc(-1 * var(--agent-avatar-standard-stack-overlap));
+  }
+
+  .event-wakeup-avatar-overflow {
+    display: inline-flex;
+    box-sizing: border-box;
+    width: var(--agent-avatar-standard-surface-size);
+    height: var(--agent-avatar-standard-surface-size);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: var(--agent-avatar-standard-ring-width) solid hsl(var(--background) / 0.72);
+    border-radius: var(--agent-avatar-standard-corner-radius);
+    background: hsl(var(--muted));
+    line-height: 1;
+  }
+</style>
