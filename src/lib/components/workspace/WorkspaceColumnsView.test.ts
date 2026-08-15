@@ -872,29 +872,92 @@ describe('WorkspaceColumnsView', () => {
     }
   });
 
-  it('does not re-reveal after width changes once the initial jump has run', async () => {
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollIntoView = scrollIntoView;
-    try {
-      currentWorkspaceId.set('ws-3');
-      render(WorkspaceColumnsView);
-      const scroller = screen.getByLabelText('Open spaces in columns');
-      const scrollTo = vi.fn();
-      scroller.scrollTo = scrollTo as never;
-      await tick();
+  // Boots the view with hydration incomplete, installs scroll/rect mocks, then
+  // completes hydration so the initial left-edge jump runs against the mocks
+  // and leaves the target anchored for the width-settle window.
+  async function renderWithAnchoredInitialJump() {
+    currentWorkspaceId.set('ws-3');
+    hydratedResizablePanelSizes.set({});
+    render(WorkspaceColumnsView);
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    const scrollTo = vi.fn();
+    scroller.scrollTo = scrollTo as never;
+    scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
+    const target = screen.getByLabelText('Workspace column ws-3');
+    target.getBoundingClientRect = vi.fn(() => ({ left: 600, right: 960 }) as DOMRect);
 
-      panelCounts.set({ 'ws-3': 2 });
-      panelCanvasWidths.set({ 'ws-3': 960 });
-      resizablePanelSizes.set({ 'workspace-left-panel-width:ws-3': 390 });
-      await tick();
-      await new Promise((resolve) => setTimeout(resolve, 400));
+    hydratedResizablePanelSizes.set(
+      Object.fromEntries(
+        ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
+          [`workspace-left-panel-width:${workspaceId}`, true],
+          [`workspace-left-panel-expanded-width:${workspaceId}`, true],
+        ]),
+      ),
+    );
+    await tick();
+    expect(scrollTo).toHaveBeenCalledWith({ left: 600, behavior: 'auto' });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
+    return { scroller, target, scrollTo };
+  }
 
-      expect(scrollTo).not.toHaveBeenCalled();
-      expect(scrollIntoView).not.toHaveBeenCalled();
-    } finally {
-      Element.prototype.scrollIntoView = originalScrollIntoView;
-    }
+  it('re-anchors the initial-jump target when widths change before the settle window ends', async () => {
+    const { scroller, target, scrollTo } = await renderWithAnchoredInitialJump();
+
+    // A late width report from a lazily mounted surface shifts the target
+    // right while scrollLeft stays frozen — the anchor must re-align it.
+    target.getBoundingClientRect = vi.fn(() => ({ left: 240, right: 600 }) as DOMRect);
+    panelCanvasWidths.set({ 'ws-1': 960 });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 240, behavior: 'auto' });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBe('ws-3');
+  });
+
+  it('stops re-anchoring as soon as the user scrolls', async () => {
+    const { scroller, target, scrollTo } = await renderWithAnchoredInitialJump();
+
+    scroller.scrollLeft = 250;
+    await fireEvent.scroll(scroller);
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBeNull();
+
+    target.getBoundingClientRect = vi.fn(() => ({ left: 240, right: 600 }) as DOMRect);
+    panelCanvasWidths.set({ 'ws-1': 960 });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-anchor after the width-settle window has elapsed', async () => {
+    const { scroller, target, scrollTo } = await renderWithAnchoredInitialJump();
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await tick();
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBeNull();
+
+    target.getBoundingClientRect = vi.fn(() => ({ left: 240, right: 600 }) as DOMRect);
+    panelCanvasWidths.set({ 'ws-1': 960 });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps layout motion disabled until the post-jump settle window ends', async () => {
+    const { scroller } = await renderWithAnchoredInitialJump();
+
+    // lifecycleMotionReady flips after one rAF, but motion must stay snapped
+    // while the anchor window is live so late width reports do not animate.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(scroller.dataset.layoutMotionDuration).toBe('0');
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await tick();
+    expect(scroller.getAttribute('data-anchored-workspace-column')).toBeNull();
+    expect(scroller.dataset.layoutMotionDuration).toBe('180');
   });
 
   it('smooth-scrolls workspace switches after the initial mount reveal', async () => {

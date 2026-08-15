@@ -94,6 +94,10 @@
   let panelColumnCountsInitialized = false;
   let revealFrame: number | null = null;
   let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  let anchoredWorkspaceId = $state<string | null>(null);
+  let anchorBaselinePending = false;
+  let anchorSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastAnchorScrollLeft = 0;
   let visibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   let columnVisibilityTracker = $state<ColumnVisibilityTracker | null>(null);
   const UNMOUNT_HYSTERESIS_MS = 300;
@@ -104,7 +108,6 @@
   const panelRevealFrames = new Map<string, number>();
   const requestedSidebarWidthKeys = new Set<string>();
   const requestedLayoutRestoreIds = new Set<string>();
-  const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
   const openWorkspaceIds = $derived($workspaceStacks$.flat());
   const sidebarWidthsReady = $derived(
     openWorkspaceIds.every(
@@ -121,6 +124,12 @@
     }),
   );
   const columnsReady = $derived(sidebarWidthsReady && panelLayoutsSettled);
+  // Layout motion stays disabled through the post-jump width-settle window
+  // (anchoredWorkspaceId non-null), not merely until one rAF after mount:
+  // late width reports from lazily mounted surfaces must snap, not animate.
+  const layoutMotionDuration = $derived(
+    lifecycleMotionReady && columnsReady && anchoredWorkspaceId === null ? 180 : 0,
+  );
   const visibleWorkspaceIdsAttribute = $derived([...visibleWorkspaceIds].sort().join(','));
   const mountedWorkspaceIds = $derived.by(() => {
     const mounted = new Set(visibleWorkspaceIds);
@@ -240,6 +249,29 @@
     revealSettleTimer = null;
   }
 
+  function cancelScrollAnchor() {
+    if (anchorSettleTimer !== null) clearTimeout(anchorSettleTimer);
+    anchorSettleTimer = null;
+    anchorBaselinePending = false;
+    if (anchoredWorkspaceId !== null) anchoredWorkspaceId = null;
+  }
+
+  function armAnchorSettleTimer() {
+    if (anchorSettleTimer !== null) clearTimeout(anchorSettleTimer);
+    anchorSettleTimer = setTimeout(() => {
+      anchorSettleTimer = null;
+      anchoredWorkspaceId = null;
+    }, LAYOUT_WIDTH_SETTLE_MS);
+  }
+
+  function handleScrollerScroll() {
+    const scroller = columnsScroller;
+    if (anchoredWorkspaceId === null || !scroller) return;
+    // A scroll position we did not set means the user scrolled: stop
+    // re-anchoring immediately — never fight the user.
+    if (Math.abs(scroller.scrollLeft - lastAnchorScrollLeft) > 1) cancelScrollAnchor();
+  }
+
   function scheduleRevealAfterLayout(
     reveal: (behavior: ScrollBehavior) => void,
     behaviorOverride?: ScrollBehavior,
@@ -272,6 +304,7 @@
     const scroller = columnsScroller;
     if (!scroller) return;
 
+    cancelScrollAnchor();
     lastScrolledWorkspaceId = workspaceId;
     void tick().then(() => {
       if (columnsScroller !== scroller || lastScrolledWorkspaceId !== workspaceId) return;
@@ -304,10 +337,48 @@
       hasRevealedInitialWorkspace = true;
       lastScrolledWorkspaceId = workspaceId;
       scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto', 'start');
+      // The jump is anchored to pre-settle widths: surfaces that lazily mount
+      // after it report live widths that shift the target while scrollLeft
+      // stays frozen. Keep the target anchored (re-align on width changes)
+      // until widths have been stable for the settle window or the user
+      // scrolls, whichever comes first.
+      lastAnchorScrollLeft = scroller.scrollLeft;
+      anchorBaselinePending = true;
+      anchoredWorkspaceId = workspaceId;
+      armAnchorSettleTimer();
       return;
     }
 
     scheduleWorkspaceReveal(workspaceId);
+  });
+
+  // Re-anchor the initial-jump target whenever width-affecting state changes
+  // while the anchor is live. Reads every input of stackWidth so any late
+  // width report (live canvas widths, preview ratios, persisted widths,
+  // sidebar echoes, panel counts) re-runs the left-edge alignment after the
+  // DOM has laid out, and pushes the settle window out.
+  $effect(() => {
+    const workspaceId = anchoredWorkspaceId;
+    const scroller = columnsScroller;
+    void livePanelCanvasWidths;
+    void panelPreviewWidthRatios;
+    void sidebarWidths;
+    void $panelCanvasWidthsByWorkspaceId$;
+    void $panelColumnCountsByWorkspaceId$;
+    void $resizablePanelSizes$;
+    if (!workspaceId || !scroller) return;
+    if (anchorBaselinePending) {
+      // First run after the jump only registers dependencies — the jump
+      // itself already aligned the target.
+      anchorBaselinePending = false;
+      return;
+    }
+    void tick().then(() => {
+      if (anchoredWorkspaceId !== workspaceId || columnsScroller !== scroller) return;
+      scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto', 'start');
+      lastAnchorScrollLeft = scroller.scrollLeft;
+      armAnchorSettleTimer();
+    });
   });
 
   $effect(() => {
@@ -417,6 +488,7 @@
 
   onDestroy(() => {
     cancelPendingReveal();
+    cancelScrollAnchor();
     for (const timer of unmountHysteresisTimers.values()) clearTimeout(timer);
     unmountHysteresisTimers.clear();
     for (const frame of panelRevealFrames.values()) if (frame >= 0) cancelAnimationFrame(frame);
@@ -641,6 +713,9 @@
   data-workspace-columns
   data-visible-workspace-columns={visibleWorkspaceIdsAttribute}
   data-sidebar-widths-ready={sidebarWidthsReady}
+  data-anchored-workspace-column={anchoredWorkspaceId}
+  data-layout-motion-duration={layoutMotionDuration}
+  onscroll={handleScrollerScroll}
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
     {#each $workspaceStacks$ as stack (stack[0])}
