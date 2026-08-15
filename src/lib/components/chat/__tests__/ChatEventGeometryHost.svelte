@@ -5,10 +5,10 @@
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
     attachPinnedPromptMessage,
-    measureScrollbarGutterWidth,
     trackPinnedPrompt,
     type PinnedPromptState,
   } from '$lib/components/chat/pinned-prompt';
+  import { measureScrollbarGutterWidth } from '$lib/components/chat/scrollbar-gutter';
   import {
     USER_MESSAGE_SURFACE_CLASS,
     USER_MESSAGE_TEXT_CLASS,

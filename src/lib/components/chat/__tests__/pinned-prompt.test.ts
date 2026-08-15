@@ -1,11 +1,8 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import {
-  attachPinnedPromptMessage,
-  createPinnedPromptController,
-  measureScrollbarGutterWidth,
-} from '../pinned-prompt';
+import { attachPinnedPromptMessage, createPinnedPromptController } from '../pinned-prompt';
+import { measureScrollbarGutterWidth } from '../scrollbar-gutter';
 
 function message(id: string): AgentMessage {
   return { id, role: 'user', contentBlocks: [{ type: 'text', text: id }] } as AgentMessage;

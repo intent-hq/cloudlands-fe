@@ -184,10 +184,10 @@
   import PinnedUserPrompt from './PinnedUserPrompt.svelte';
   import {
     attachPinnedPromptMessage,
-    measureScrollbarGutterWidth,
     trackPinnedPrompt,
     type PinnedPromptState,
   } from './pinned-prompt';
+  import { measureScrollbarGutterWidth } from './scrollbar-gutter';
   import {
     createLazyTurnCacheScope,
     createLazyTurnHeightCache,
