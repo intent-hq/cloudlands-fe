@@ -3,7 +3,7 @@
   import { cn } from '$lib/utils';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import { renderPanelLayoutPreview } from './panel-stack-preview';
-  import { getPanelReferenceSize } from './panel-resize';
+  import { getElementContentBoxSize, getPanelReferenceSize } from './panel-resize';
 
   let {
     node,
@@ -39,10 +39,16 @@
       const resizeTarget = isRoot
         ? element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')
         : element.parentElement;
+      // Measure the content box: the padded inset viewport's client size
+      // would oversize the preview stack (see measurePanelReferenceSize).
       const availableSize =
         node.direction === 'horizontal'
-          ? (resizeTarget?.clientWidth ?? element.clientWidth)
-          : (resizeTarget?.clientHeight ?? element.clientHeight);
+          ? resizeTarget
+            ? getElementContentBoxSize(resizeTarget, 'horizontal')
+            : element.clientWidth
+          : resizeTarget
+            ? getElementContentBoxSize(resizeTarget, 'vertical')
+            : element.clientHeight;
       const gap = Number.parseFloat(getComputedStyle(element).gap) || 0;
       panelReferenceSize = getPanelReferenceSize(
         availableSize,
