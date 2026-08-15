@@ -42,7 +42,11 @@ interface HarnessOptions {
  * clamp-free.
  */
 function makeHarness(turn: FakeTurn, opts: HarnessOptions = {}) {
-  const { restHeight = 100000, clientHeight = 600, initialScrollTop = 1000 } = opts;
+  const { clientHeight = 600, initialScrollTop = 1000 } = opts;
+  // Mutable so scenarios can model same-flush height changes of content
+  // OTHER than the fake turn (e.g. the streaming tail growing/shrinking in
+  // the same Svelte flush as the swap).
+  let restHeight = opts.restHeight ?? 100000;
   let scrollTop = initialScrollTop;
   const scroller = {
     get scrollTop() {
@@ -81,7 +85,11 @@ function makeHarness(turn: FakeTurn, opts: HarnessOptions = {}) {
   const flush = () => {
     scroller.scrollTop = scroller.scrollTop;
   };
-  return { scroller, ledger, turn, flush };
+  /** Change the height of content other than the fake turn (e.g. the tail). */
+  const setRestHeight = (v: number) => {
+    restHeight = v;
+  };
+  return { scroller, ledger, turn, flush, setRestHeight };
 }
 
 /**
@@ -403,6 +411,47 @@ describe('bottom-anchored clamp compensation (phantom space snap-back)', () => {
     h.ledgerA.account(pre);
     h.ledgerB.account(pre);
     expect(h.scroller.scrollTop).toBe(1272); // 1000 + 372 - 100
+  });
+
+  it('swap path: a no-clamp shrink near the bottom preserves scrollTop movement that landed after the snapshot (streaming bounce)', () => {
+    // The streaming bounce (monorepo#2474): the reader wheels DOWN toward the
+    // bottom while an agent streams; a swap shrink fires with the pre-flush
+    // snapshot taken before the wheel movement reached the scroller. The
+    // clamp never fires (the reader was 400px up), so the write must compose
+    // with the concurrent movement — the classic relative shift. An absolute
+    // restore from the snapshot (max 2100 - preDistance 400 = 1700) rewinds
+    // the 250px the user just scrolled, yanking the viewport back UP.
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 1800 },
+    );
+    h.ledger.account(); // seed at 800
+    const pre = snapshotScroller(h.scroller); // scrollTop 1800, distance 400
+    h.turn.height = 700; // swap shrink: -100
+    h.flush(); // new max 2100 — no clamp (1800 < 2100)
+    h.scroller.scrollTop = 2050; // user wheel scroll lands before account()
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(1950); // 2050 - 100, movement preserved
+  });
+
+  it('swap path: a no-clamp shrink near the bottom is not polluted by same-flush growth elsewhere (detached reader stays put)', () => {
+    // While streaming, other content (the tail, a sibling swap below the
+    // viewport) can grow scrollHeight in the same flush. The reader detached
+    // 400px above the bottom must only be compensated by THIS turn's -100 —
+    // an absolute bottom-anchored target (new max 2500 - preDistance 400 =
+    // 2100) would drag them 300px DOWN toward the new bottom, follow-style,
+    // even though they detached.
+    const h = makeHarness(
+      { height: 800, contentTop: 0, connected: true },
+      { restHeight: 2000, clientHeight: 600, initialScrollTop: 1800 },
+    );
+    h.ledger.account(); // seed at 800
+    const pre = snapshotScroller(h.scroller); // scrollTop 1800, distance 400
+    h.turn.height = 700; // this turn: -100
+    h.setRestHeight(2400); // same flush: +400 growth below the viewport
+    h.flush(); // new max 2500 — no clamp
+    h.ledger.account(pre);
+    expect(h.scroller.scrollTop).toBe(1700); // 1800 - 100 only
   });
 
   it('ResizeObserver path (no snapshot): a shrink already clamped to the new max is not re-applied', () => {
