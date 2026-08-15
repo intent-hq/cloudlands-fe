@@ -13,6 +13,7 @@
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import * as Tooltip from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import {
     faBolt,
     faChevronDown,
@@ -414,8 +415,10 @@
     {#snippet oneShotActions()}
       {#if !isCompleted}
         {#if !finished}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             aria-label={m.chat_agentSubscriptions_stopAgent_tooltip()}
             title={m.chat_agentSubscriptions_stopAgent_tooltip()}
             class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
@@ -426,10 +429,12 @@
             }}
           >
             <Fa icon={faStop} class="h-3.5! w-3.5!" />
-          </button>
+          </Button>
         {/if}
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           aria-label={m.chat_agentSubscriptions_cancelWatch_tooltip()}
           title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
           class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
@@ -440,7 +445,7 @@
           }}
         >
           <Fa icon={faXmark} class="h-3.5! w-3.5!" />
-        </button>
+        </Button>
       {/if}
     {/snippet}
     <AgentCard
