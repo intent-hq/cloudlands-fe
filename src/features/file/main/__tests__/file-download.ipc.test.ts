@@ -230,7 +230,8 @@ describe('file:download-attachment IPC handler', () => {
 
     const CHUNK = 16 * 1024 * 1024;
     const size = CHUNK + 5;
-    const first = Buffer.alloc(8, 1); // content length ≠ bytesRead is fine: write uses content
+    // PROTOCOL §5.9: content decodes to exactly bytesRead bytes.
+    const first = Buffer.alloc(CHUNK, 1);
     const second = Buffer.from('tail!');
     const connectionRequest = vi
       .fn()
@@ -263,8 +264,13 @@ describe('file:download-attachment IPC handler', () => {
       length: CHUNK,
     });
     expect(connectionRequest).toHaveBeenCalledTimes(2);
-    expect(write).toHaveBeenNthCalledWith(1, first, 0);
-    expect(write).toHaveBeenNthCalledWith(2, second, 0);
+    // Buffer.equals (memcmp) instead of deep-equality matchers: vitest's
+    // recursive diff on a 16 MiB buffer takes minutes.
+    expect(write).toHaveBeenCalledTimes(2);
+    expect((write.mock.calls[0]?.[0] as Buffer).equals(first)).toBe(true);
+    expect(write.mock.calls[0]?.[1]).toBe(0);
+    expect((write.mock.calls[1]?.[0] as Buffer).equals(second)).toBe(true);
+    expect(write.mock.calls[1]?.[1]).toBe(0);
     expect(close).toHaveBeenCalled();
     const stagedPath = mocks.open.mock.calls[0]?.[0];
     expect(mocks.renameWithRetry).toHaveBeenCalledWith(stagedPath, '/dest/photo.png');
@@ -297,6 +303,50 @@ describe('file:download-attachment IPC handler', () => {
     expect(write).toHaveBeenNthCalledWith(2, content, 4);
     expect(write).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ success: true, data: { filePath: '/dest/photo.png' } });
+  });
+
+  it('remote backend: fails loudly when content and bytesRead diverge instead of corrupting the file', async () => {
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+    mocks.getConfig.mockReturnValue({ transport: 'wss', url: 'wss://daemon.example' });
+    mocks.shouldUseTransferConnection.mockReturnValue(true);
+
+    const connectionRequest = vi.fn().mockResolvedValue({
+      content: Buffer.alloc(8, 1).toString('base64'),
+      bytesRead: 16 * 1024 * 1024,
+      size: 16 * 1024 * 1024 + 5,
+    });
+    mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
+      fn({ request: connectionRequest, release: vi.fn() }),
+    );
+    const write = vi.fn();
+    const close = vi.fn().mockResolvedValue(undefined);
+    mocks.open.mockResolvedValue({ write, close });
+
+    const result = await getDownloadAttachmentHandler()({}, request);
+
+    expect(write).not.toHaveBeenCalled();
+    expect(mocks.renameWithRetry).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: { code: 'DOWNLOAD_FAILED', message: expect.stringContaining('photo.png') },
+    });
+  });
+
+  it('local backend: rejects an attachment path that escapes the workspace root', async () => {
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+    mocks.backendRequest.mockResolvedValue({ workspace: { path: '/home/u/proj' } });
+
+    const result = await getDownloadAttachmentHandler()(
+      {},
+      { workspaceId: 'ws-1', path: '../../etc/passwd', fileName: 'passwd' },
+    );
+
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+    expect(mocks.renameWithRetry).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: { code: 'DOWNLOAD_FAILED', message: expect.stringContaining('passwd') },
+    });
   });
 
   it('leaves the chosen destination untouched and removes the temp file when the transfer fails', async () => {

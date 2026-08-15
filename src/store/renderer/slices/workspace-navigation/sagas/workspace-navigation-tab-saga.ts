@@ -251,20 +251,28 @@ function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): Sa
       return;
     }
     if (isBinaryExtension(info.fileName) || isBinaryExtension(info.path)) {
-      const result = yield* call(downloadAttachment, workspaceId, info.path, info.fileName);
-      const { toast } = yield* call(() => import('svelte-sonner'));
-      if (result.success && result.data?.filePath) {
-        toast.success(
-          m.chat_chatMessage_attachmentDownloaded_toast({
-            fileName: info.fileName,
-            filePath: result.data.filePath,
-          }),
-        );
-      } else if (!result.canceled) {
-        toast.error(
-          result.error?.message ||
-            m.chat_chatMessage_attachmentDownloadFailed_error({ name: info.fileName }),
-        );
+      // Own the error surface here so a thrown IPC/bridge failure shows the
+      // download-failed toast, not the outer "failed to open" one.
+      try {
+        const result = yield* call(downloadAttachment, workspaceId, info.path, info.fileName);
+        const { toast } = yield* call(() => import('svelte-sonner'));
+        if (result.success && result.data?.filePath) {
+          toast.success(
+            m.chat_chatMessage_attachmentDownloaded_toast({
+              name: info.fileName,
+              filePath: result.data.filePath,
+            }),
+          );
+        } else if (!result.canceled) {
+          toast.error(
+            result.error?.message ||
+              m.chat_chatMessage_attachmentDownloadFailed_error({ name: info.fileName }),
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to download attachment', { attachmentId, error });
+        const { toast } = yield* call(() => import('svelte-sonner'));
+        toast.error(m.chat_chatMessage_attachmentDownloadFailed_error({ name: info.fileName }));
       }
       return;
     }

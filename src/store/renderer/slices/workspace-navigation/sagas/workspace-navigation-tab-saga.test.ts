@@ -713,7 +713,7 @@ describe('workspaceNavigationTabSaga', () => {
       expect(dispatch).not.toHaveBeenCalled();
       expect(mocks.toastSuccess).toHaveBeenCalledWith(
         m.chat_chatMessage_attachmentDownloaded_toast({
-          fileName: 'archive.zip',
+          name: 'archive.zip',
           filePath: '/home/u/Downloads/archive.zip',
         }),
       );
@@ -766,6 +766,30 @@ describe('workspaceNavigationTabSaga', () => {
 
       expect(dispatch).not.toHaveBeenCalled();
       expect(mocks.toastError).toHaveBeenCalledWith('Failed to download: photo.png');
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('surfaces the download-failed toast (not open-failed) when the download IPC throws', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'photo.png',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/photo.png',
+        exists: true,
+      });
+      mocks.downloadAttachment.mockRejectedValue(new Error('bridge unavailable'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'photo.png'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        m.chat_chatMessage_attachmentDownloadFailed_error({ name: 'photo.png' }),
+      );
       task.cancel();
       await task.toPromise();
     });

@@ -1167,18 +1167,26 @@ export function setupFileIPC() {
                       'file.readChunk',
                       { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
                     );
-                    if (chunk.bytesRead > 0) {
+                    // PROTOCOL §5.9 guarantees content decodes to bytesRead
+                    // bytes; fail loudly rather than reassemble a corrupt
+                    // file if they ever diverge.
+                    const buffer = Buffer.from(chunk.content, 'base64');
+                    if (buffer.length !== chunk.bytesRead) {
+                      throw new Error(
+                        `file.readChunk content/bytesRead mismatch (${buffer.length} vs ${chunk.bytesRead})`,
+                      );
+                    }
+                    if (buffer.length > 0) {
                       // FileHandle.write() may complete a short write; loop
                       // until the whole chunk is on disk.
-                      const buffer = Buffer.from(chunk.content, 'base64');
                       let written = 0;
                       while (written < buffer.length) {
                         const { bytesWritten } = await handle.write(buffer, written);
                         written += bytesWritten;
                       }
-                      offset += chunk.bytesRead;
+                      offset += buffer.length;
                     }
-                    if (chunk.bytesRead < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
+                    if (buffer.length < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
                   }
                 } finally {
                   await handle.close();
@@ -1194,7 +1202,13 @@ export function setupFileIPC() {
               if (!workspacePath) {
                 throw new Error(`workspace ${workspaceId} has no path`);
               }
-              await fs.copyFile(path.join(workspacePath, sourcePath), tempPath);
+              // Mirror the daemon-side workspace containment the remote arm
+              // gets from file.readChunk: reject paths escaping the root.
+              const resolved = path.resolve(workspacePath, sourcePath);
+              if (resolved !== workspacePath && !resolved.startsWith(workspacePath + path.sep)) {
+                throw new Error(`attachment path escapes workspace root: ${sourcePath}`);
+              }
+              await fs.copyFile(resolved, tempPath);
             }
             await renameWithRetry(tempPath, filePath);
           } catch (error) {
