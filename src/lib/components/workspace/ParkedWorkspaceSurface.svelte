@@ -2,6 +2,7 @@
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
 
   let {
     workspaceId,
@@ -67,13 +68,14 @@
           aria-hidden="true">{formatInteger(panelTabCount)}</span
         >
       {/if}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-xs"
         class="flex size-5 shrink-0 items-center justify-center rounded text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: title })}
         data-workspace-close
         onpointerdown={(event) => event.stopPropagation()}
-        onclick={onCloseWorkspace}>×</button
+        onclick={onCloseWorkspace}>×</Button
       >
     </header>
     <div class="min-h-0 flex-1 bg-sidebar/70" aria-hidden="true"></div>

@@ -9,25 +9,28 @@
    * - Up to date: Success message (brief)
    */
 
-  import { fly } from "svelte/transition";
+  import { fly } from 'svelte/transition';
   import {
-  faArrowsRotate,
-  faCakeCandles,
-  faDownload,
-  faRotateRight,
-  faTriangleExclamation,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowsRotate,
+    faCakeCandles,
+    faDownload,
+    faRotateRight,
+    faTriangleExclamation,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
   import {
-  selectAutoUpdateStatus,
-  selectAutoUpdateProgress,
-  selectAutoUpdateInfo,
-  selectAutoUpdateCurrentVersion,
-  selectAutoUpdateError,
-} from '$store/renderer/slices/auto-update/auto-update-selectors';
-  import { downloadUpdate, installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
+    selectAutoUpdateStatus,
+    selectAutoUpdateProgress,
+    selectAutoUpdateInfo,
+    selectAutoUpdateCurrentVersion,
+    selectAutoUpdateError,
+  } from '$store/renderer/slices/auto-update/auto-update-selectors';
+  import {
+    downloadUpdate,
+    installUpdate,
+  } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
@@ -143,7 +146,7 @@
     </div>
   {:else if $status$ === 'downloaded'}
     <div class="flex items-center gap-3">
-      <div class="icon-celebrate" transition:fly={{y: 30, duration: 300}}>
+      <div class="icon-celebrate" transition:fly={{ y: 30, duration: 300 }}>
         <Fa icon={faCakeCandles} size="2x" />
       </div>
       <div class="text flex-1">
@@ -305,5 +308,4 @@
   .action-btn.success:hover {
     background: hsl(142 76% 30%);
   }
-
 </style>

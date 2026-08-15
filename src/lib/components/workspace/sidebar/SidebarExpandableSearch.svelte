@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarActionIcon from './SidebarActionIcon.svelte';
@@ -81,8 +82,9 @@
         onkeydown={handleKeydown}
         data-sidebar-search-input={scope}
       />
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon-xs"
         class="absolute right-0 top-0 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:bg-muted motion-reduce:transition-none"
         onclick={() => {
           query = '';
@@ -92,7 +94,7 @@
         data-sidebar-search-clear={scope}
       >
         <SidebarActionIcon icon="close" />
-      </button>
+      </Button>
     </div>
   {:else}
     <SidebarHeaderAction bind:ref={triggerRef} icon="search" label={placeholder} onclick={expand} />

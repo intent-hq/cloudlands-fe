@@ -81,6 +81,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatStreamingStartTime: mocks.selector(null),
   selectTranscriptHydration: mocks.selector('settled'),
   selectTranscriptHydratedOnce: mocks.selector(true),
+  selectTranscriptSnapshotMeta: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),

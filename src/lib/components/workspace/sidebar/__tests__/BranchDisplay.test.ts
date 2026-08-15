@@ -1,15 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 import {
   configuredVisualStates,
@@ -37,7 +27,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -58,7 +49,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
+  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: args,
+  })),
 }));
 
 const mockUpdate = vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
@@ -209,7 +203,9 @@ describe('BranchDisplay', () => {
     });
 
     const { container } = await renderBranchDisplay({ canChangeTrunk: true });
-    const changeBtn = container.querySelector('[data-testid="branch-selector-change"]') as HTMLButtonElement;
+    const changeBtn = container.querySelector(
+      '[data-testid="branch-selector-change"]',
+    ) as HTMLButtonElement;
     await fireEvent.click(changeBtn);
 
     await waitFor(() =>
