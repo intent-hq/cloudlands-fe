@@ -8,6 +8,7 @@
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
 const { dispatchMock, hooksState, openHookTabMock } = vi.hoisted(() => ({
@@ -211,6 +212,71 @@ describe('BackgroundHooksRow', () => {
       },
       'agent-panel',
     );
+  });
+
+  describe('live countdown ticking', () => {
+    /** Also fake interval timers so `vi.advanceTimersByTime` drives the 1s tick. */
+    function useTickingFakeTimers(nowIso = '2026-07-31T10:03:00Z') {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(new Date(nowIso));
+    }
+
+    it('ticks the summary countdown and the Next run / TTL lines every second', async () => {
+      useTickingFakeTimers();
+      hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
+      render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const summary = screen.getByTestId('background-hook-summary');
+      expect(summary.textContent).toContain('3m');
+      await fireEvent.click(summary);
+      const details = screen.getByTestId('background-hook-details');
+      expect(details.textContent).toContain('Next run: in 3m');
+      expect(details.textContent).toContain('TTL: expires in 9m 30s');
+
+      vi.advanceTimersByTime(1000);
+      await tick();
+      expect(summary.textContent).toContain('2m 59s');
+      expect(details.textContent).toContain('Next run: in 2m 59s');
+      expect(details.textContent).toContain('TTL: expires in 9m 29s');
+
+      vi.advanceTimersByTime(1000);
+      await tick();
+      expect(summary.textContent).toContain('2m 58s');
+      expect(details.textContent).toContain('Next run: in 2m 58s');
+      expect(details.textContent).toContain('TTL: expires in 9m 28s');
+    });
+
+    it('clamps the countdown at 0s once the target time passes', async () => {
+      useTickingFakeTimers();
+      hooksState.hooks = [
+        makeHook({
+          nextRunAt: '2026-07-31T10:03:01Z',
+          expiresAt: '2026-07-31T10:03:02Z',
+        }),
+      ];
+      render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      await fireEvent.click(screen.getByTestId('background-hook-summary'));
+      const details = screen.getByTestId('background-hook-details');
+
+      vi.advanceTimersByTime(5000);
+      await tick();
+      expect(screen.getByTestId('background-hook-summary').textContent).toContain('0s');
+      expect(details.textContent).toContain('Next run: in 0s');
+      expect(details.textContent).toContain('TTL: expires in 0s');
+    });
+
+    it('cleans up the ticking interval on unmount', () => {
+      useTickingFakeTimers();
+      hooksState.hooks = [makeHook()];
+      const { unmount } = render(BackgroundHooksRow, {
+        props: { workspaceId: 'ws-1', agentId: 'agent-1' },
+      });
+
+      expect(vi.getTimerCount()).toBe(1);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it('chip dropdown offers "View script" alongside Run now / Cancel and opens the panel', async () => {
