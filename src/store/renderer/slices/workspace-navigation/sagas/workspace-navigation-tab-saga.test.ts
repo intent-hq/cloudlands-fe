@@ -23,12 +23,17 @@ import { workspaceNavigationTabSaga } from './workspace-navigation-tab-saga';
 
 const mocks = vi.hoisted(() => ({
   getAttachmentInfo: vi.fn(),
+  downloadAttachment: vi.fn(),
   toastError: vi.fn(),
+  toastSuccess: vi.fn(),
 }));
 vi.mock('$lib/components/chat/input/context-api', () => ({
   getAttachmentInfo: mocks.getAttachmentInfo,
+  downloadAttachment: mocks.downloadAttachment,
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('svelte-sonner', () => ({
+  toast: { error: mocks.toastError, success: mocks.toastSuccess },
+}));
 
 const settle = async () => {
   await Promise.resolve();
@@ -650,30 +655,141 @@ describe('workspaceNavigationTabSaga', () => {
   describe('openWorkspaceAttachment', () => {
     beforeEach(() => {
       mocks.getAttachmentInfo.mockReset();
+      mocks.downloadAttachment.mockReset();
       mocks.toastError.mockReset();
+      mocks.toastSuccess.mockReset();
     });
 
-    it('resolves the registry row by attachmentId and opens the stored path as a file tab', async () => {
+    it('resolves the registry row by attachmentId and opens an editor-friendly path as a file tab', async () => {
       mocks.getAttachmentInfo.mockResolvedValue({
         attachmentId: 'att-1',
-        fileName: 'report.pdf',
+        fileName: 'report.md',
         size: 10,
         uploadedAt: '2026-08-12T00:00:00Z',
-        path: '.intent/attachments/report.pdf',
+        path: '.intent/attachments/report.md',
         exists: true,
       });
       const channel = stdChannel();
       const dispatch = vi.fn();
       const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
-      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'report.pdf'));
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'report.md'));
       await flush();
 
       expect(mocks.getAttachmentInfo).toHaveBeenCalledWith('att-1');
       expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
         type: 'workspaceNavigation/openWorkspaceFile',
-        payload: ['ws-1', '.intent/attachments/report.pdf'],
+        payload: ['ws-1', '.intent/attachments/report.md'],
       });
+      expect(mocks.downloadAttachment).not.toHaveBeenCalled();
       expect(mocks.toastError).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('downloads a binary attachment via the save-dialog IPC instead of opening a tab', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'archive.zip',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/archive.zip',
+        exists: true,
+      });
+      mocks.downloadAttachment.mockResolvedValue({
+        success: true,
+        data: { filePath: '/home/u/Downloads/archive.zip' },
+      });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'archive.zip'));
+      await flush();
+
+      expect(mocks.downloadAttachment).toHaveBeenCalledWith(
+        'ws-1',
+        '.intent/attachments/archive.zip',
+        'archive.zip',
+      );
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastSuccess).toHaveBeenCalledWith(
+        m.chat_chatMessage_attachmentDownloaded_toast({
+          name: 'archive.zip',
+          filePath: '/home/u/Downloads/archive.zip',
+        }),
+      );
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('treats a canceled save dialog as a silent no-op', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'photo.png',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/photo.png',
+        exists: true,
+      });
+      mocks.downloadAttachment.mockResolvedValue({ success: false, canceled: true });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'photo.png'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastSuccess).not.toHaveBeenCalled();
+      expect(mocks.toastError).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('surfaces a failure toast when the download IPC reports an error', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'photo.png',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/photo.png',
+        exists: true,
+      });
+      mocks.downloadAttachment.mockResolvedValue({
+        success: false,
+        error: { code: 'DOWNLOAD_FAILED', message: 'Failed to download: photo.png' },
+      });
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'photo.png'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith('Failed to download: photo.png');
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('surfaces the download-failed toast (not open-failed) when the download IPC throws', async () => {
+      mocks.getAttachmentInfo.mockResolvedValue({
+        attachmentId: 'att-1',
+        fileName: 'photo.png',
+        size: 10,
+        uploadedAt: '2026-08-12T00:00:00Z',
+        path: '.intent/attachments/photo.png',
+        exists: true,
+      });
+      mocks.downloadAttachment.mockRejectedValue(new Error('bridge unavailable'));
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+      channel.put(openWorkspaceAttachment('ws-1', 'att-1', 'photo.png'));
+      await flush();
+
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        m.chat_chatMessage_attachmentDownloadFailed_error({ name: 'photo.png' }),
+      );
       task.cancel();
       await task.toPromise();
     });

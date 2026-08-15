@@ -1924,6 +1924,8 @@
   "chat_contextEngine_toolCallFailed_label": "工具呼叫失敗",
   "chat_chatMessage_attachedImage_alt": "附加圖片 {number}",
   "chat_chatMessage_attachedImage_fallback": "附加圖片 {number}",
+  "chat_chatMessage_attachmentDownloaded_toast": "已將 {name} 儲存到 {filePath}",
+  "chat_chatMessage_attachmentDownloadFailed_error": "無法下載 {name}",
   "chat_chatMessage_attachmentMissing_error": "{name} 已無法使用 — 檔案已從工作區移除",
   "chat_chatMessage_attachmentOpenFailed_error": "無法開啟 {name}",
   "chat_chatMessage_download_title": "下載 {name}",

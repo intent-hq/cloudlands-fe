@@ -1924,6 +1924,8 @@
   "chat_contextEngine_toolCallFailed_label": "ツール呼び出しに失敗しました",
   "chat_chatMessage_attachedImage_alt": "添付画像 {number}",
   "chat_chatMessage_attachedImage_fallback": "添付画像 {number}",
+  "chat_chatMessage_attachmentDownloaded_toast": "{name} を {filePath} に保存しました",
+  "chat_chatMessage_attachmentDownloadFailed_error": "{name} のダウンロードに失敗しました",
   "chat_chatMessage_attachmentMissing_error": "{name} は利用できません — ファイルはワークスペースから削除されました",
   "chat_chatMessage_attachmentOpenFailed_error": "{name} を開けませんでした",
   "chat_chatMessage_download_title": "{name} をダウンロード",

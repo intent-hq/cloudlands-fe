@@ -219,8 +219,10 @@ export async function withTransferConnection<T>(
 }
 
 /**
- * The attachment placement methods that ride a per-transfer connection on
- * remote backends. Everything else stays on the main channel.
+ * The bulk-payload methods that ride a per-transfer connection on remote
+ * backends: attachment placement/upload plus the chunked download read
+ * (`file.readChunk`, a ~21 MiB base64 frame per chunk). Everything else
+ * stays on the main channel.
  */
 const TRANSFER_METHODS = new Set([
   'file.placeAttachment',
@@ -228,6 +230,7 @@ const TRANSFER_METHODS = new Set([
   'file.attachmentUpload.chunk',
   'file.attachmentUpload.commit',
   'file.attachmentUpload.abort',
+  'file.readChunk',
 ]);
 
 /** Whether `method` is a bulk-transfer call that should route here. */

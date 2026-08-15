@@ -1924,6 +1924,8 @@
   "chat_contextEngine_toolCallFailed_label": "도구 호출 실패",
   "chat_chatMessage_attachedImage_alt": "첨부 이미지 {number}",
   "chat_chatMessage_attachedImage_fallback": "첨부 이미지 {number}",
+  "chat_chatMessage_attachmentDownloaded_toast": "{name}을(를) {filePath}에 저장했습니다",
+  "chat_chatMessage_attachmentDownloadFailed_error": "{name}을(를) 다운로드하지 못했습니다",
   "chat_chatMessage_attachmentMissing_error": "{name}은(는) 더 이상 사용할 수 없습니다 — 파일이 워크스페이스에서 제거되었습니다",
   "chat_chatMessage_attachmentOpenFailed_error": "{name}을(를) 열지 못했습니다",
   "chat_chatMessage_download_title": "{name} 다운로드",
