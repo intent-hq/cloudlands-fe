@@ -566,15 +566,18 @@ interface PendingShow {
 const pendingShows = new Map<string, PendingShow>();
 const pendingNumstats = new Map<string, Promise<NumstatEntry[]>>();
 
-function showKey(workspaceId: string, ref: string, filePath: string): string {
-  return `${workspaceId}::${ref}::${filePath}`;
+function showKey(workspaceId: string, ref: string, filePath: string, gitRootId?: string): string {
+  return `${workspaceId}::${ref}::${filePath}::${gitRootId ?? ''}`;
 }
 
 /**
  * Deduped daemon `git.showFile` fetch (PROTOCOL §5.6: file content at a
  * revision, index ref ':0' supported; a path missing at the ref folds to ''
  * on the daemon side). Concurrent callers for the same `(workspace, ref,
- * path)` share a single in-flight request. Daemon/transport errors fold into
+ * path, gitRootId)` share a single in-flight request; `opts.gitRootId`
+ * scopes the read to a registered secondary git root (v6.15) and is omitted
+ * from the wire call when unset, keeping the primary-root request
+ * byte-identical. Daemon/transport errors fold into
  * `{ success: false, error }`, preserving the legacy handler's envelope; the
  * typed `not-a-file` rejection (gitlink/directory entry, #1739) additionally
  * sets `notAFile: true` so callers can route it instead of treating it as a
@@ -584,8 +587,9 @@ export function dedupedShowFile(
   workspaceId: string,
   ref: string,
   filePath: string,
+  opts?: { gitRootId?: string },
 ): Promise<ShowFileResponse> {
-  const key = showKey(workspaceId, ref, filePath);
+  const key = showKey(workspaceId, ref, filePath, opts?.gitRootId);
   const existing = pendingShows.get(key);
   if (existing) return existing.promise;
 
@@ -593,6 +597,7 @@ export function dedupedShowFile(
     workspaceId,
     filePath,
     ref,
+    ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
   })
     .then((result): ShowFileResponse => ({
       success: true,

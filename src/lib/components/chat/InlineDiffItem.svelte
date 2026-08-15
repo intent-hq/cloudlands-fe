@@ -45,6 +45,14 @@
      * file diffs from a single virtualizer instance.
      */
     virtualizer?: import('@pierre/diffs').Virtualizer;
+    /**
+     * Secondary git root scoping the content fetches (multi git root
+     * tracking, v6.15). Forwarded to `TrackedChangeDiffViewer` together with
+     * `gitRootPath`; absent → primary-root behavior.
+     */
+    gitRootId?: string;
+    /** The secondary root's canonical path, used for path resolution. */
+    gitRootPath?: string;
   }
 
   let {
@@ -61,6 +69,8 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCommit,
     virtualizer,
+    gitRootId = undefined,
+    gitRootPath = undefined,
   }: Props = $props();
 
   const sideBySide = selectDiffSideBySide();
@@ -225,6 +235,8 @@
       useProvidedContent={true}
       {lineOffset}
       {virtualizer}
+      {gitRootId}
+      {gitRootPath}
     />
 
     <!-- Scroll hint overlay -->

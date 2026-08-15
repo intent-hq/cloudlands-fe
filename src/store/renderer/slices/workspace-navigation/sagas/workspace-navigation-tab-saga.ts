@@ -62,7 +62,11 @@ function* openCommit(action: ReturnType<typeof openWorkspaceCommitChangeset>): S
       title: commitTitle(commitHash, commitMessage),
       workspaceId,
       closable: true,
-      data: { commitHash, ...(commitMessage ? { commitMessage } : {}) },
+      data: {
+        commitHash,
+        ...(commitMessage ? { commitMessage } : {}),
+        ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
+      },
     },
     options?.openInAdjacentPanel ?? false,
     options?.sourcePanelId,

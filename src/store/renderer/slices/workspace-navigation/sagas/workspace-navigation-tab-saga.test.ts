@@ -297,6 +297,45 @@ describe('workspaceNavigationTabSaga', () => {
     await task.toPromise();
   });
 
+  it('threads gitRootId into the commit changeset tab data and omits it when absent', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga({ channel, dispatch, getState: () => ({}) }, workspaceNavigationTabSaga);
+
+    channel.put(
+      openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: scoped', {
+        gitRootId: 'root-1',
+      }),
+    );
+    await settle();
+    channel.put(openWorkspaceCommitChangeset('ws-1', 'abcdef123456', 'feat: primary'));
+    await settle();
+
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      type: 'panelLayout/openTab',
+      payload: {
+        wsId: 'ws-1',
+        force: true,
+        tab: {
+          type: 'changes',
+          workspaceId: 'ws-1',
+          data: {
+            commitHash: 'abcdef123456',
+            commitMessage: 'feat: scoped',
+            gitRootId: 'root-1',
+          },
+        },
+      },
+    });
+    const primaryTabData = dispatch.mock.calls[1]?.[0]?.payload?.tab?.data;
+    expect(primaryTabData).toEqual({
+      commitHash: 'abcdef123456',
+      commitMessage: 'feat: primary',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('supports an options-only runtime diff and preserves the undefined change field', async () => {
     const channel = stdChannel();
     const dispatch = vi.fn();

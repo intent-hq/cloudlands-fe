@@ -13,6 +13,7 @@ import {
   chatChangesDedupId,
   markWorkspaceNavigationInitialized,
   openWorkspaceChatChanges,
+  openWorkspaceCommitChangeset,
   openWorkspaceDiff,
   openWorkspaceFile,
   updateWorkspaceCodeReview,
@@ -101,6 +102,42 @@ describe("workspaceNavigationReducer", () => {
         branchBaseCommitSha: "abc123",
       })
     );
+  });
+
+  it("stores the secondary-root gitRootId on commit-changeset panels and history entries", () => {
+    const state = workspaceNavigationReducer(
+      baseState,
+      openWorkspaceCommitChangeset("ws-1", "abcdef123456", "feat: scoped", {
+        gitRootId: "root-1",
+      })
+    );
+    const workspaceState = state.byWorkspaceId["ws-1"]!;
+
+    expect(workspaceState.mainPanel).toMatchObject({
+      type: "commit-changeset",
+      commitHash: "abcdef123456",
+      commitMessage: "feat: scoped",
+      gitRootId: "root-1",
+    });
+    expect(workspaceState.navigation.history[0]).toEqual(
+      expect.objectContaining({
+        type: "commit-changeset",
+        commitHash: "abcdef123456",
+        gitRootId: "root-1",
+      })
+    );
+  });
+
+  it("omits gitRootId from commit-changeset state when the option is absent (primary root)", () => {
+    const state = workspaceNavigationReducer(
+      baseState,
+      openWorkspaceCommitChangeset("ws-1", "abcdef123456", "feat: primary")
+    );
+    const workspaceState = state.byWorkspaceId["ws-1"]!;
+
+    expect(workspaceState.mainPanel.type).toBe("commit-changeset");
+    expect("gitRootId" in workspaceState.mainPanel).toBe(false);
+    expect("gitRootId" in workspaceState.navigation.history[0]!).toBe(false);
   });
 
   it("merges code review updates into the current review panel and history", () => {

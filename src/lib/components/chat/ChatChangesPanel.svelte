@@ -317,6 +317,16 @@
     branchBaseRef?: string | null;
     /** Resolved branch boundary SHA for collapsing multi-commit committed file groups */
     branchBaseCommitSha?: string | null;
+    /**
+     * Secondary git root scoping the committed-content fetches (multi git
+     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     */
+    gitRootId?: string;
+    /**
+     * The secondary root's canonical path — forwarded to the per-file diff
+     * viewers so absolute paths resolve against the root, not the worktree.
+     */
+    gitRootPath?: string;
   }
 
   let {
@@ -338,6 +348,8 @@
     groupByCommit: initialGroupByCommit = false,
     branchBaseRef = null,
     branchBaseCommitSha = null,
+    gitRootId = undefined,
+    gitRootPath = undefined,
   }: Props = $props();
 
   // Group-by-commit toggle state (default: combined view)
@@ -627,6 +639,7 @@
     const currentShowStagingControls = showStagingControls;
     const currentBranchBaseRef = branchBaseRef ?? undefined;
     const currentBranchBaseCommitSha = branchBaseCommitSha ?? undefined;
+    const currentGitRootId = gitRootId;
     const workspaceId = $activeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
@@ -642,7 +655,7 @@
 
     // Check if changes have actually changed by comparing keys
     // Line counts are excluded from the key to avoid re-fetching when content is edited
-    const newChangesKey = `${currentBranchBaseRef ?? ''}|${currentBranchBaseCommitSha ?? ''}::${generateChangesKey(currentChanges)}`;
+    const newChangesKey = `${currentGitRootId ?? ''}|${currentBranchBaseRef ?? ''}|${currentBranchBaseCommitSha ?? ''}::${generateChangesKey(currentChanges)}`;
     // Use untrack to read current length without creating a dependency (prevents infinite loop)
     const currentEnrichedLength = untrack(() => enrichedChanges.length);
     if (newChangesKey === lastChangesKey && currentEnrichedLength > 0) {
@@ -872,9 +885,13 @@
       const resolved = await Promise.all(
         plan.map((item) => {
           if (item.kind === 'fetch-committed') {
+            // `currentGitRootId` scopes the reads to a registered secondary
+            // root (v6.15); absolute paths under that root are made relative
+            // daemon-side, same as primary-worktree paths.
+            const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
             return Promise.all([
-              dedupedShowFile(workspaceId, item.commitHash, item.change.filePath),
-              dedupedShowFile(workspaceId, `${item.commitHash}^`, item.change.filePath),
+              dedupedShowFile(workspaceId, item.commitHash, item.change.filePath, showOpts),
+              dedupedShowFile(workspaceId, `${item.commitHash}^`, item.change.filePath, showOpts),
             ])
               .then(([newRes, oldRes]) => ({ item, newRes, oldRes }))
               .catch((error) => {
@@ -3079,6 +3096,8 @@
                 : undefined}
               onOpenCommit={category === 'committed' ? handleOpenCommit : undefined}
               {virtualizer}
+              {gitRootId}
+              {gitRootPath}
             />
           {/if}
         {:else}
