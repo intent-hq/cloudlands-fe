@@ -821,6 +821,12 @@ export const IPC_CHANNELS = {
     // both steps in main so recovery survives the window teardown.
     SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
+    // Kill-and-restart recovery for an orphaned sidecar (#2444): the adopted
+    // daemon's executable lives inside our own bundle (leftover from a
+    // crashed/force-quit session). The handler re-verifies the classification,
+    // confirms with the user when agents are responding, stops the orphan
+    // (SIGTERM→SIGKILL) and spawns the bundled sidecar.
+    RESTART_ORPHANED_SIDECAR: 'backend:restart-orphaned-sidecar',
   },
 
   // Multi-backend connect: the "Connect to another intentd" registry.
