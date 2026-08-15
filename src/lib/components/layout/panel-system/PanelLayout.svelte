@@ -670,9 +670,7 @@
     // surviving-sibling overflow flicker during the exit outro.
     const panel = $panels$[panelId];
     const collapsesPanel =
-      panel?.tabs.length === 1 &&
-      panel.tabs[0].id === tabId &&
-      Object.keys($panels$).length > 1;
+      panel?.tabs.length === 1 && panel.tabs[0].id === tabId && Object.keys($panels$).length > 1;
     if (collapsesPanel) {
       commitPanelMoveWithoutReplay(() => layoutManager.closeTab(tabId, panelId));
     } else {
