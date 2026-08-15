@@ -5,8 +5,9 @@
    * Faint row above the chat input (rendered ABOVE the background-hooks row
    * when both exist) surfacing the active agent's monitored PRs (PROTOCOL
    * §6.9): one small chip per active monitor. The chip label shows
-   * "#<number>", prefixed with "<org/repo>: " only when the PR's repo
-   * differs from the workspace repository. Hovering shows a last-refresh
+   * "<repo> #<number>", including the owner ("<owner>/<repo> #<number>")
+   * when the PR's owner differs from the workspace repository's owner or
+   * the workspace repository is unknown. Hovering shows a last-refresh
    * details card (title, state, checks/reviews/threads summary,
    * mergeable/blocked reason, last-change time, pending-emit status);
    * clicking opens a 4-item action menu — check and flush
@@ -35,6 +36,7 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatTime } from '$lib/i18n/format';
+  import { getPrChipLabel } from '$lib/utils/pr-chip-label';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
@@ -76,13 +78,9 @@
       : undefined,
   );
 
-  /** Chip label: "#42", prefixed "org/repo: " only for cross-repo PRs. */
+  /** Chip label: `repo #N` same-owner, `owner/repo #N` cross-owner/unknown. */
   function chipLabel(monitor: PrMonitorRow): string {
-    const number = `#${monitor.prNumber}`;
-    if (workspaceRepo && monitor.repo !== workspaceRepo) {
-      return m.chat_monitoredPrs_crossRepoChip_label({ repo: monitor.repo, number });
-    }
-    return number;
+    return getPrChipLabel(monitor.repo, monitor.prNumber, workspaceRepo);
   }
 
   function handleCheckAndFlush(monitor: PrMonitorRow, close: () => void) {
@@ -255,7 +253,7 @@
               data-monitor-state={monitor.state}
               data-pending={monitor.hasPendingChanges}
             >
-              <span class="truncate max-w-full">{chipLabel(monitor)}</span>
+              <span class="min-w-0 break-words">{chipLabel(monitor)}</span>
               {#if monitor.hasPendingChanges}
                 <span
                   class="block h-1.5 w-1.5 rounded-full bg-amber-500/80 shrink-0"

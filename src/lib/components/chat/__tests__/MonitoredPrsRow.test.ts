@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  *
  * MonitoredPrsRow rendering (PROTOCOL §6.9): "Monitored PRs:" chip row for
- * the active agent's ACTIVE monitors, cross-repo label prefixing, hover-card
+ * the active agent's ACTIVE monitors, chip labels (`repo #N` same-owner,
+ * `owner/repo #N` cross-owner or unknown workspace repo), hover-card
  * last-refresh details, and the click action menu (check and flush / open in
  * app / open in external browser / cancel) dispatch wiring.
  */
@@ -108,11 +109,14 @@ async function openHoverCard() {
 }
 
 describe('MonitoredPrsRow', () => {
+  const defaultWorkspace = workspaceState.workspace;
+
   afterEach(() => {
     cleanup();
     dispatchMock.mockClear();
     handleLinkMock.mockClear();
     openInBrowserPanelMock.mockClear();
+    workspaceState.workspace = defaultWorkspace;
   });
 
   it('renders the "Monitored PRs:" label and a chip per active monitor', () => {
@@ -122,9 +126,9 @@ describe('MonitoredPrsRow', () => {
     expect(screen.getByTestId('monitored-prs-row')).toBeTruthy();
     expect(screen.getByText('Monitored PRs:')).toBeTruthy();
     const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('#42');
-    // Same-repo chip carries no org/repo prefix
-    expect(chip.textContent).not.toContain('acme/widgets');
+    // Same-owner chip shows the repo name without the owner
+    expect(chip.textContent).toContain('widgets #42');
+    expect(chip.textContent).not.toContain('acme/');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {
@@ -148,21 +152,54 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('#1182');
+    expect(chip.textContent).toContain('widgets #1182');
     expect(chip.textContent).not.toContain('1,182');
   });
 
-  it('prefixes the chip label with org/repo only for cross-repo monitors', () => {
+  it('labels a same-owner, different-repo monitor with the repo name only', () => {
+    monitorsState.monitors = [
+      makeMonitor({ repo: 'acme/lib', url: 'https://github.com/acme/lib/pull/42' }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('monitored-pr-chip');
+    expect(chip.textContent).toContain('lib #42');
+    expect(chip.textContent).not.toContain('acme/');
+  });
+
+  it('labels a different-owner monitor with owner/repo', () => {
     monitorsState.monitors = [
       makeMonitor({ repo: 'other/lib', url: 'https://github.com/other/lib/pull/42' }),
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('other/lib: #42');
+    expect(chip.textContent).toContain('other/lib #42');
   });
 
-  it('caps every box between the row and the chip label so long labels ellipsize, not overflow', () => {
+  it('labels with owner/repo when the workspace owner/repo is unknown', () => {
+    workspaceState.workspace = { id: 'ws-1' } as unknown;
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('monitored-pr-chip');
+    expect(chip.textContent).toContain('acme/widgets #42');
+  });
+
+  it('does not truncate or ellipsize the chip label', () => {
+    monitorsState.monitors = [
+      makeMonitor({ repo: 'other/lib', url: 'https://github.com/other/lib/pull/42' }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('monitored-pr-chip');
+    const label = chip.querySelector('span') as HTMLElement;
+    expect(label.textContent).toBe('other/lib #42');
+    expect(Array.from(label.classList)).not.toContain('truncate');
+    expect(Array.from(label.classList).some((cls) => cls.startsWith('max-w-'))).toBe(false);
+  });
+
+  it('caps every box between the row and the chip label so long labels wrap, not overflow', () => {
     monitorsState.monitors = [
       makeMonitor({
         repo: 'intent-hq/cloudlands-releases',
@@ -173,10 +210,14 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const chip = screen.getByTestId('monitored-pr-chip');
-    // The chip clips overflow, caps its own width, and its label ellipsizes
+    // The chip clips overflow and caps its own width; its label wraps
+    // (break-words) instead of ellipsizing — never truncate.
     expect(chip.className).toContain('overflow-hidden');
     expect(chip.className).toContain('max-w-full');
-    expect(chip.querySelector('.truncate')).toBeTruthy();
+    expect(chip.querySelector('.truncate')).toBeNull();
+    const label = chip.querySelector('span') as HTMLElement;
+    expect(Array.from(label.classList)).toContain('break-words');
+    expect(Array.from(label.classList)).toContain('min-w-0');
     // The cap must propagate up the trigger chain: the Tooltip trigger span
     // and the DropdownMenu root div (the wrap-row's actual flex item) both
     // need max-w-full — otherwise the flex item's automatic minimum size
