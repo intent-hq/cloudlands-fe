@@ -23,10 +23,15 @@
 # intentd tag (INTENTD_REPO PRs). Containment uses the compare API:
 # tag...sha status "identical" or "behind". An open or uncontained linked PR
 # skips the issue (a later release picks it up); anything indeterminate (API
-# error, a token that cannot see a repo's PRs) skips with a warning — never
-# post a possibly-false claim. Issues with no linked fix PRs at all fall
-# back to the range-scan evidence and are posted best-effort. Comments never
-# name a channel.
+# error, a token that cannot see a repo's PRs, more than 100 linked PRs)
+# skips with a warning — never post a possibly-false claim. Issues with no
+# linked fix PRs at all (or only abandoned, closed-without-merging ones)
+# fall back to the range-scan evidence and are posted best-effort. Comments
+# never name a channel.
+#
+# Scope: only SOURCE_REPO and INTENTD_REPO PRs are gated. Linked fix PRs in
+# any other repo (intent-hq/ios, the monorepo itself) are ignored — the
+# comment only claims the fe + bundled-intentd side by naming those versions.
 #
 # Idempotent: each comment embeds a hidden marker
 # (<!-- release-notifier: <component> vX.Y.Z -->) and issues that already
@@ -52,7 +57,9 @@
 #                     must be able to read PRs on SOURCE_REPO and
 #                     INTENTD_REPO — visibility is probed up front and the
 #                     gate skips everything with a warning when a probe
-#                     fails. Falls back to ambient gh auth when unset.
+#                     fails. Falls back to ambient gh auth when unset —
+#                     note a --dry-run without it probes ambient auth, so a
+#                     passing dry-run does not validate the CI token.
 #   INTENTD_GH_TOKEN  token that can read INTENTD_REPO (compare API + PR
 #                     bodies); falls back to ambient gh auth when unset.
 set -euo pipefail
@@ -187,9 +194,10 @@ else
   if intentd_messages=$(gh_intentd api "repos/${INTENTD_REPO}/compare/${intentd_range}" \
     --paginate --jq '.commits[].commit.message' 2>/dev/null); then
     grep -oE "$issue_ref_re" <<<"$intentd_messages" >>"$refs_file" || true
-    intentd_subjects=$(gh_intentd api "repos/${INTENTD_REPO}/compare/${intentd_range}" \
-      --paginate --jq '.commits[].commit.message | split("\n")[0]' 2>/dev/null || true)
-    intentd_pr_nums=$(grep -oE '\(#[0-9]+\)$' <<<"$intentd_subjects" | grep -oE '[0-9]+' | sort -un || true)
+    # "(#N)" suffixes are matched across all message lines (commit boundaries
+    # are lost in the concatenated blob, so body lines can match too) — safe:
+    # over-collection only adds candidates for the gate to judge.
+    intentd_pr_nums=$(grep -oE '\(#[0-9]+\)$' <<<"$intentd_messages" | grep -oE '[0-9]+' | sort -un || true)
     while IFS= read -r pr; do
       [[ -n "$pr" ]] || continue
       if body=$(gh_intentd pr view "$pr" --repo "$INTENTD_REPO" --json body --jq '.body // ""' 2>/dev/null); then
@@ -232,14 +240,16 @@ fi
 # Completeness gate: enumerate the issue's linked fix PRs (closing-keyword
 # references, e.g. "Fixes intent-hq/monorepo#N") and require every one to be
 # delivered by this release. Sets gate_result to "post" (all linked PRs
-# merged and contained, or no linked PRs at all -> range-scan fallback),
+# merged and contained, or none delivered at all -> range-scan fallback),
 # "incomplete" (an open or not-yet-contained linked PR), or "indeterminate"
-# (an API failure); gate_detail carries the reason.
+# (an API failure, or >100 linked PRs — the enumeration is unpaginated, and
+# a truncated list could hide an open PR); gate_detail carries the reason.
 # shellcheck disable=SC2016  # $owner/$repo/$number are GraphQL variables
 gate_query='query($owner:String!,$repo:String!,$number:Int!){
   repository(owner:$owner,name:$repo){
     issue(number:$number){
       closedByPullRequestsReferences(first:100,includeClosedPrs:true){
+        pageInfo{hasNextPage}
         nodes{number state merged mergeCommit{oid} repository{nameWithOwner}}
       }
     }
@@ -257,14 +267,21 @@ compare_status() {
 }
 
 check_issue_completeness() {
-  local n="$1" nodes repo pr state merged sha tag status linked=0
+  local n="$1" out has_next nodes repo pr state merged sha tag status delivered=0
   gate_result="indeterminate"
   gate_detail=""
-  if ! nodes=$(gh_issues api graphql \
+  # First output line is pageInfo.hasNextPage; TSV node rows follow.
+  if ! out=$(gh_issues api graphql \
     -f query="$gate_query" \
     -f owner="${ISSUES_REPO%%/*}" -f repo="${ISSUES_REPO##*/}" -F number="$n" \
-    --jq '.data.repository.issue.closedByPullRequestsReferences.nodes[] | [.repository.nameWithOwner, (.number|tostring), .state, (.merged|tostring), (.mergeCommit.oid // "")] | @tsv' 2>/dev/null); then
+    --jq '.data.repository.issue.closedByPullRequestsReferences | (.pageInfo.hasNextPage|tostring), (.nodes[] | [.repository.nameWithOwner, (.number|tostring), .state, (.merged|tostring), (.mergeCommit.oid // "")] | @tsv)' 2>/dev/null); then
     gate_detail="could not enumerate linked fix PRs on $ISSUES_REPO#$n"
+    return 0
+  fi
+  has_next="${out%%$'\n'*}"
+  nodes=$(tail -n +2 <<<"$out")
+  if [[ "$has_next" == "true" ]]; then
+    gate_detail="issue has more than 100 linked PRs; enumeration truncated"
     return 0
   fi
   while IFS=$'\t' read -r repo pr state merged sha; do
@@ -274,7 +291,6 @@ check_issue_completeness() {
       "$INTENTD_REPO") tag="v${BUNDLED_INTENTD}" ;;
       *) continue ;; # PRs in other repos are outside this gate's scope
     esac
-    linked=$((linked + 1))
     if [[ "$state" == "OPEN" ]]; then
       gate_result="incomplete"
       gate_detail="$repo#$pr is still open"
@@ -296,12 +312,15 @@ check_issue_completeness() {
       gate_detail="$repo#$pr is not contained in $tag (compare status: $status)"
       return 0
     fi
+    delivered=$((delivered + 1))
   done <<<"$nodes"
   gate_result="post"
-  if [[ "$linked" -eq 0 ]]; then
-    gate_detail="no linked fix PRs; falling back to range-scan evidence"
+  if [[ "$delivered" -eq 0 ]]; then
+    # No linked fix PRs at all, or only abandoned (closed-unmerged) ones:
+    # the claim rests on range-scan evidence only.
+    gate_detail="no delivered linked fix PRs; falling back to range-scan evidence"
   else
-    gate_detail="all $linked linked fix PR(s) merged and contained"
+    gate_detail="all $delivered delivered linked fix PR(s) merged and contained"
   fi
 }
 
@@ -318,7 +337,11 @@ while IFS= read -r n; do
   [[ -n "$n" ]] || continue
   check_issue_completeness "$n"
   if [[ "$gate_result" == "indeterminate" ]]; then
-    echo "warning: issue #$n: completeness is indeterminate (${gate_detail}); skipping to avoid a possibly-false claim" >&2
+    gate_msg="issue #$n: completeness is indeterminate (${gate_detail}); skipping to avoid a possibly-false claim"
+    echo "warning: $gate_msg" >&2
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+      echo "::warning::notify-fixed-issues.sh: $gate_msg"
+    fi
     gated=$((gated + 1))
     continue
   fi
