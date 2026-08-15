@@ -68,6 +68,29 @@ describe('appLayoutNavigationSaga', () => {
         },
       },
     });
+
+    dispatch.mockClear();
+    channel.put(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-1',
+        panelLayoutId: 'layout-1',
+        openInNewColumn: true,
+        adaptiveFirstChat: true,
+        availablePanelCanvasWidth: 1400,
+      }),
+    );
+    await settle();
+    expect(dispatch).toHaveBeenNthCalledWith(1, ensureAgentSessionLoaded('ws-1', 'agent-1'));
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({
+      type: 'panelLayout/openTabInNewRootColumn',
+      payload: {
+        wsId: 'layout-1',
+        adaptiveFirstChat: true,
+        availableCanvasWidth: 1400,
+        force: true,
+        tab: { agentId: 'agent-1', workspaceId: 'ws-1' },
+      },
+    });
     task.cancel();
     await task.toPromise();
   });

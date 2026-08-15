@@ -11,8 +11,8 @@
  * `org/repo #number` identifier, not user-facing prose.
  */
 
-// i18n-ignore (org/repo #number identifier, not user-facing prose)
-export function getPrChipLabel(repo: string, prNumber: number, workspaceRepo?: string): string {
+/** Repo segment of the label: `repo` same-owner, `owner/repo` cross-owner/unknown. */
+export function getPrRepoLabel(repo: string, workspaceRepo?: string): string {
   const slash = repo.indexOf('/');
   const owner = slash === -1 ? undefined : repo.slice(0, slash);
   const name = slash === -1 ? repo : repo.slice(slash + 1);
@@ -20,7 +20,12 @@ export function getPrChipLabel(repo: string, prNumber: number, workspaceRepo?: s
   const workspaceOwner =
     workspaceRepo && workspaceSlash !== -1 ? workspaceRepo.slice(0, workspaceSlash) : undefined;
   if (owner && workspaceOwner && owner.toLowerCase() === workspaceOwner.toLowerCase()) {
-    return `${name} #${prNumber}`;
+    return name;
   }
-  return `${repo} #${prNumber}`;
+  return repo;
+}
+
+// i18n-ignore (org/repo #number identifier, not user-facing prose)
+export function getPrChipLabel(repo: string, prNumber: number, workspaceRepo?: string): string {
+  return `${getPrRepoLabel(repo, workspaceRepo)} #${prNumber}`;
 }

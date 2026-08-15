@@ -666,8 +666,15 @@
 
 {#if node.type === 'panel'}
   {@const panel = panels[node.panelId]}
-  {#if panel}
-    <div class="h-full w-full min-h-0 min-w-0">
+  {@const isEmptySurface = !panel || (panel.pristine === true && panel.tabs.length === 0)}
+  <div
+    class={cn(
+      'h-full w-full min-h-0 min-w-0',
+      isEmptySurface && 'bg-sidebar text-sidebar-foreground',
+    )}
+    data-empty-panel-surface={isEmptySurface || undefined}
+  >
+    {#if panel}
       <Panel
         {panel}
         {workspaceId}
@@ -702,8 +709,8 @@
         onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
         onSplitVertical={() => onSplitPanel?.(node.panelId, 'vertical')}
       />
-    </div>
-  {/if}
+    {/if}
+  </div>
 {:else if node.type === 'split'}
   <div
     bind:this={containerRef}

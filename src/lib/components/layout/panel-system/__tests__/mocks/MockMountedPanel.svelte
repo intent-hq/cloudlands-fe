@@ -18,6 +18,8 @@
 </script>
 
 <div
+  class:bg-transparent={panel.pristine === true && panel.tabs.length === 0}
+  class:bg-card={panel.pristine !== true || panel.tabs.length > 0}
   class="h-full w-full"
   data-mounted-panel={panel.id}
   data-active-tab={panel.activeTabId}

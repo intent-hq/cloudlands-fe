@@ -389,19 +389,32 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 
-  it.each(['light', 'dark'])(
-    'constrains the menu in a narrow zoom-like viewport (%s theme)',
-    async (theme) => {
+  it('affirms model picker bounds and options in every required visual state', async () => {
+    for (const { theme, width, zoom, reducedMotion } of [
+      { theme: 'light', width: 1024, zoom: 1, reducedMotion: false },
+      { theme: 'dark', width: 520, zoom: 2, reducedMotion: true },
+    ]) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
-      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 520 });
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
       Object.defineProperty(window, 'innerHeight', { configurable: true, value: 420 });
-      render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: (query: string) => ({
+          matches: query.includes('prefers-reduced-motion') && reducedMotion,
+          addEventListener() {},
+          removeEventListener() {},
+        }),
+      });
+      const view = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      view.container.style.zoom = String(zoom);
       const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
       dialog.getBoundingClientRect = vi.fn(() => rect(16, 16, 488, 388));
       const trigger = pickerTrigger(modeCard(/Agent orchestration/i));
       trigger.getBoundingClientRect = vi.fn(() => rect(210, 330, 150, 28));
       trigger.parentElement!.getBoundingClientRect = vi.fn(() => rect(210, 330, 150, 28));
 
+      await fireEvent.mouseEnter(trigger);
+      trigger.focus();
       await fireEvent.click(trigger);
       const listbox = await within(dialog).findByRole('listbox');
       expect(listbox.dataset.side).toBe('top');
@@ -420,6 +433,7 @@ describe('NewSpaceModal model-picker composition', () => {
       expect(
         within(listbox).getByRole('option', { name: /^GPT 5\.1 Model 1/ }).dataset.highlighted,
       ).toBe('true');
-    },
-  );
+      view.unmount();
+    }
+  });
 });

@@ -9,6 +9,7 @@
     faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -35,6 +36,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
     resolveStoppedIndicatorLabel,
@@ -58,7 +60,7 @@
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
 
-  import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -190,6 +192,8 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    /** Keeps an edited virtualized turn materialized until edit mode closes. */
+    onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
     onStickyClick?: () => void;
     /** Backend session ID (auggie ID) for debugging */
@@ -215,6 +219,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    onEditStateChange,
     isSticky = false,
     onStickyClick,
     backendSessionId,
@@ -257,10 +262,6 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
-  const stickySurfaceClass = $derived(
-    workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card',
-  );
-
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
 
@@ -1033,14 +1034,20 @@
     editContextItems = contextItemsForEdit;
     editSelectedModel = editModel;
     isEditing = true;
+    onEditStateChange?.(true);
   }
 
   function handleCancelEdit() {
     isEditing = false;
+    onEditStateChange?.(false);
     editValue = '';
     editContextItems = [];
     editSelectedModel = undefined;
   }
+
+  onDestroy(() => {
+    if (isEditing) onEditStateChange?.(false);
+  });
 
   // Editing regenerates from this message onward — a destructive daemon-side
   // truncation (agent.editAndRegenerate, PROTOCOL §5.5) — so gate the dispatch
@@ -1183,7 +1190,7 @@
             ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative mt-4 ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
-              : `relative overflow-hidden py-2 pr-3 pl-0 ${stickySurfaceClass}`} {onEditSubmit &&
+              : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !hookWakeAttribution &&
           !prMonitorWakeAttribution
@@ -1251,7 +1258,10 @@
               {/if}
 
               <div
-                class="type-body select-text font-medium! text-pretty text-foreground {agentAttribution
+                class="type-body select-text text-pretty {agentAttribution ||
+                automatedWakePresentation
+                  ? 'font-medium! text-foreground'
+                  : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
                     ? 'line-clamp-2'

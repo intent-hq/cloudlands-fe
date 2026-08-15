@@ -24,13 +24,17 @@
 
   interface Props {
     agentId: string;
+    /** Static fallback while the session record is loading. */
+    agentName?: string;
     /** Optional workspace for scoping the agent subscription (prevents cross-workspace bleed) */
     workspace?: Workspace | null;
     /** Whether the agent has finished its delegated work (forces completed avatar state) */
     isCompleted?: boolean;
+    /** Optional activation used when the avatar represents a navigation target. */
+    onclick?: (event: MouseEvent) => void;
   }
 
-  let { agentId, workspace = null, isCompleted = false }: Props = $props();
+  let { agentId, agentName, workspace = null, isCompleted = false, onclick }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const permissionCount = selectPendingCount(agentId);
@@ -85,14 +89,20 @@
   });
 
   // Display name for tooltip
-  const displayName = $derived(agentData?.name || m.chat_shared_agentName_fallback());
+  const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
 </script>
 
 <!-- Provider ensures proper context and cleanup during component destruction -->
 <Tooltip.Provider delayDuration={0}>
   <Tooltip.Root delayDuration={0}>
-    <Tooltip.Trigger>
-      <div class="ring-2 ring-background rounded-full">
+    <Tooltip.Trigger
+      class="rounded-full transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
+      {onclick}
+      aria-label={onclick
+        ? m.chat_msgAttribution_openAgent_title({ name: displayName })
+        : undefined}
+    >
+      <div class="relative rounded-full ring-1 ring-card">
         <AugieAvatarWithState {agentId} size={18} {state} {specialist} />
       </div>
     </Tooltip.Trigger>

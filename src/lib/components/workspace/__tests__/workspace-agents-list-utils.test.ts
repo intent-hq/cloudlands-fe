@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import {
+  filterWorkspaceAgentRows,
   getDirectChildCounts,
   getFlatWorkspaceAgentRows,
   getVisibleWorkspaceAgentRows,
@@ -83,6 +84,54 @@ describe('getFlatWorkspaceAgentRows', () => {
   });
 });
 
+describe('filterWorkspaceAgentRows', () => {
+  const agents = [
+    makeAgent('coordinator', {
+      name: 'Coordínator',
+      metadata: { specialist: 'spec-writer' } as any,
+    }),
+    makeAgent('worker-id', {
+      name: 'Worker',
+      metadata: { createdByAgentId: 'coordinator', specialist: 'implementor' } as any,
+    }),
+    makeAgent('nested-worker', {
+      name: 'Nested',
+      metadata: { createdByAgentId: 'worker-id', agentType: 'verification' } as any,
+    }),
+    makeAgent('standalone'),
+  ];
+  const rows = getFlatWorkspaceAgentRows(agents);
+
+  it('matches case and diacritics across name, specialist, role, and id', () => {
+    expect(filterWorkspaceAgentRows(rows, 'coordinator').map((row) => row.agent.id)).toEqual([
+      'coordinator',
+    ]);
+    expect(filterWorkspaceAgentRows(rows, 'IMPLEMENTOR').map((row) => row.agent.id)).toEqual([
+      'coordinator',
+      'worker-id',
+    ]);
+    expect(filterWorkspaceAgentRows(rows, 'verification').map((row) => row.agent.id)).toEqual([
+      'coordinator',
+      'worker-id',
+      'nested-worker',
+    ]);
+    expect(filterWorkspaceAgentRows(rows, 'worker-id').map((row) => row.agent.id)).toEqual([
+      'coordinator',
+      'worker-id',
+    ]);
+  });
+
+  it('keeps every ancestor of a matching descendant without changing row order', () => {
+    expect(filterWorkspaceAgentRows(rows, 'nested').map((row) => row.agent.id)).toEqual([
+      'coordinator',
+      'worker-id',
+      'nested-worker',
+    ]);
+    expect(filterWorkspaceAgentRows(rows, 'missing')).toEqual([]);
+    expect(filterWorkspaceAgentRows(rows, '')).toEqual(rows);
+  });
+});
+
 describe('getDirectChildCounts', () => {
   it('counts only direct children at each depth', () => {
     const rows = getFlatWorkspaceAgentRows([
@@ -147,7 +196,7 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
     expect(list).toContain("import VirtualList from '$lib/components/ui/VirtualList.svelte'");
-    expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(flatAgentRows)');
+    expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(filteredAgentRows)');
     expect(list).toContain('{:else if shouldUseVirtual}');
     expect(list).toContain('<VirtualList');
     expect(list).toContain('items={topLevelForegroundAgents}');
@@ -195,7 +244,7 @@ describe('getVisibleWorkspaceAgentRows', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
     expect(list).toContain('let expandedAgentIds = $state(new Set<string>())');
-    expect(list).toContain('const isExpanded = expandedAgentIds.has(agent.id)');
+    expect(list).toContain('const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)');
     expect(list).toContain('children.filter((child) => isAgentRunning(child.id))');
   });
 });

@@ -6,28 +6,22 @@
    * setup script disclosure, PR branch suggestion, error state, and the
    * "Create workspace" button.
    */
-  import {
-  fly,
-  slide,
-} from 'svelte/transition';
+  import { fly, slide } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
   import {
-  faArrowRight,
-  faPaperclip,
-  faMagicWandSparkles,
-  faArrowsRotate,
-  faCodeBranch,
-} from '@fortawesome/free-solid-svg-icons';
+    faArrowRight,
+    faPaperclip,
+    faMagicWandSparkles,
+    faArrowsRotate,
+    faCodeBranch,
+  } from '@fortawesome/free-solid-svg-icons';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
-  import {
-  hasBlockingAttachments,
-  type ContextItem,
-} from '$lib/components/chat/input/context-api';
+  import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
   import IssueSuggestions from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -253,8 +247,9 @@
         // Stage path-only; no resolvable path (e.g. clipboard bytes) is an
         // immediate failed pill that blocks create until removed.
         const sourcePath =
-          (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-            .electronAPI?.getPathForFile?.(file) ?? '';
+          (
+            window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+          ).electronAPI?.getPathForFile?.(file) ?? '';
         const fileName = file.name || `pasted-file-${Date.now()}`;
         stagedContextItems = [
           ...stagedContextItems,
@@ -384,7 +379,9 @@
             class="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin"
           ></div>
         </div>
-        <span class="text-sm text-muted-foreground">{m.onboarding_promptStep_settingUpWorkspace_label()}</span>
+        <span class="text-sm text-muted-foreground"
+          >{m.onboarding_promptStep_settingUpWorkspace_label()}</span
+        >
       </div>
     </div>
   {:else}
@@ -418,10 +415,7 @@
           </div>
         {/if}
 
-        <div
-          class="w-full relative overflow-hidden rounded-t-xl"
-          bind:this={richTextareaWrapper}
-        >
+        <div class="w-full relative overflow-hidden rounded-t-xl" bind:this={richTextareaWrapper}>
           <RichTextarea
             bind:this={onboardingRichTextarea}
             bind:value={onboardingInputValue}
@@ -436,9 +430,7 @@
             class="bg-transparent border-none"
           />
           {#if !onboardingInputValue.trim()}
-            <div
-              class="absolute left-0 right-0 top-[52px] px-4 pointer-events-none"
-            >
+            <div class="absolute left-0 right-0 top-[52px] px-4 pointer-events-none">
               <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <div
                 class="flex flex-col gap-0.75 pointer-events-auto"
@@ -466,9 +458,7 @@
                     <Fa
                       icon={faArrowRight}
                       size={12}
-                      class={focusedSuggestionIndex === i
-                        ? 'opacity-100'
-                        : 'opacity-60'}
+                      class={focusedSuggestionIndex === i ? 'opacity-100' : 'opacity-60'}
                     />
                     {suggestion}
                   </button>
@@ -477,11 +467,9 @@
                   type="button"
                   role="option"
                   id="suggestion-shuffle"
-                  aria-selected={focusedSuggestionIndex ===
-                    visibleSuggestions.slice(0, 4).length}
+                  aria-selected={focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length}
                   class="text-left text-xs transition-colors cursor-pointer mt-0.75 inline-flex items-center gap-1.5
-                    {focusedSuggestionIndex ===
-                  visibleSuggestions.slice(0, 4).length
+                    {focusedSuggestionIndex === visibleSuggestions.slice(0, 4).length
                     ? 'text-foreground'
                     : 'text-muted-foreground/30 hover:text-muted-foreground/70'}"
                   onclick={onShuffleSuggestions}
@@ -493,9 +481,7 @@
             </div>
           {/if}
           {#if isOnboardingEnhancing}
-            <div
-              class="absolute inset-0 pointer-events-none overflow-hidden rounded-t-xl"
-            >
+            <div class="absolute inset-0 pointer-events-none overflow-hidden rounded-t-xl">
               <div
                 class="absolute inset-0 bg-gradient-to-r from-transparent via-primary/5 to-transparent animate-pulse"
               ></div>
@@ -522,9 +508,7 @@
           </div>
         {/if}
 
-        <div
-          class="flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative"
-        >
+        <div class="flex items-center gap-2 px-2.5 pt-1 pb-2.5 overflow-x-auto relative">
           <IssueSuggestions
             onSelect={(text, metadata) => {
               onIssueSelect(text, metadata);
@@ -570,36 +554,34 @@
       </div>
     </div>
 
-    <div class="w-full space-y-1">
+    <div class="onboarding-metadata-stack flex w-full min-w-0 flex-col gap-2">
       <!-- Branch picker -->
       {#if projectSelection?.type === 'local' && projectSelection?.repoPath}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="flex items-center gap-0.5 text-sm cursor-pointer"
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
           in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
-            if (
-              trigger &&
-              e.target !== trigger &&
-              !trigger.contains(e.target as Node)
-            ) {
+            if (trigger && e.target !== trigger && !trigger.contains(e.target as Node)) {
               trigger.click();
             }
           }}
         >
-          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOffOf_before()}</span>
+          <span class="shrink-0 text-muted-foreground"
+            >{m.onboarding_promptStep_branchOffOf_before()}</span
+          >
           <BranchSelector
             variant="ghost"
-            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath}
             repoType="local"
             hasTriggerIcon={false}
             showUncommittedIndicator={true}
             skipIsolation={onboardingSkipIsolation}
-            onSkipIsolationChange={onSkipIsolationChange}
+            {onSkipIsolationChange}
             onBranchStatusChange={(status) => {
               onBranchBehindChange(status.behind);
             }}
@@ -617,30 +599,28 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="flex items-center gap-0.5 text-sm cursor-pointer"
+          class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm cursor-pointer"
           in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           onclick={(e) => {
             const trigger = e.currentTarget.querySelector('button');
-            if (
-              trigger &&
-              e.target !== trigger &&
-              !trigger.contains(e.target as Node)
-            ) {
+            if (trigger && e.target !== trigger && !trigger.contains(e.target as Node)) {
               trigger.click();
             }
           }}
         >
-          <span class="text-muted-foreground">{m.onboarding_promptStep_branchOff_label()}</span>
+          <span class="shrink-0 text-muted-foreground"
+            >{m.onboarding_promptStep_branchOff_label()}</span
+          >
           <BranchSelector
             variant="ghost"
-            triggerClass="h-6 pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30"
             value={projectSelection?.branch || 'main'}
             repoPath={projectSelection.repoPath || ''}
             repoType="github"
             githubUrl={projectSelection.githubUrl}
             hasTriggerIcon={false}
             skipIsolation={onboardingSkipIsolation}
-            onSkipIsolationChange={onSkipIsolationChange}
+            {onSkipIsolationChange}
             onBranchStatusChange={(status) => {
               onBranchBehindChange(status.behind);
             }}
@@ -660,19 +640,22 @@
       {#if projectSelection?.repoPath && projectSelection?.type !== 'new'}
         {#if !hideSetupScriptControl}
           <div
-            class="flex items-center gap-0.5 text-sm"
+            class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
             in:fly={{ y: 10, duration: 200, easing: cubicOut }}
           >
             <button
               type="button"
-              class="flex items-center whitespace-nowrap text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
             >
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
-              <span class="bg-card/50 px-1.5 py-0.5 font-medium"
+              <span
+                class="max-w-full break-words rounded-md border border-border/30 bg-card/50 px-1.5 py-1.25 font-medium text-foreground"
                 >{setupScriptName}</span
               >
-              <span class="text-muted-foreground">{m.onboarding_promptStep_setupEnvWith_after()}</span>
+              <span class="text-muted-foreground"
+                >{m.onboarding_promptStep_setupEnvWith_after()}</span
+              >
             </button>
           </div>
         {/if}
@@ -690,17 +673,19 @@
 
       <!-- Model picker (initial Coordinator agent) -->
       <div
-        class="flex items-center gap-1.5 text-sm"
+        class="onboarding-metadata-row flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
         in:fly={{ y: 10, duration: 200, easing: cubicOut }}
       >
-        <span class="text-muted-foreground">{m.onboarding_promptStep_usingModel_before()}</span>
+        <span class="shrink-0 text-muted-foreground"
+          >{m.onboarding_promptStep_usingModel_before()}</span
+        >
         {#key coordinatorDefaultModel}
           <ModelPicker
             selectedModel={modelWasOverridden ? selectedModel : undefined}
             {onModelChange}
             variant="ghost"
             size="xs"
-            triggerClass="pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
+            triggerClass="max-w-full pl-1 pr-1.5 font-medium bg-card/50 py-1.25 rounded-md border border-border/30 text-sm"
             defaultModelId={coordinatorDefaultModel}
             defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
             silentFallback
@@ -725,7 +710,10 @@
           }}
         >
           <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-          <span>{m.onboarding_promptStep_usePrBranch_before()} <strong>{selectedPRBranch}</strong></span>
+          <span
+            >{m.onboarding_promptStep_usePrBranch_before()}
+            <strong>{selectedPRBranch}</strong></span
+          >
         </button>
       </div>
     {/if}
@@ -740,7 +728,7 @@
     {/if}
 
     <!-- Create button (blocked while any staged pill is placing/failed) -->
-    <div class="flex items-center gap-3 pt-2">
+    <div class="onboarding-create-action flex items-center gap-3 pt-2">
       <Button
         class="group/button"
         size="xl"
@@ -750,9 +738,7 @@
       >
         {m.onboarding_promptStep_createWorkspace_label()}
         {#if onboardingInputValue.trim()}
-          <span class="mx-1 opacity-50" in:slide={{ axis: 'x', duration: 200 }}>
-            ⌘↵</span
-          >
+          <span class="mx-1 opacity-50" in:slide={{ axis: 'x', duration: 200 }}> ⌘↵</span>
         {/if}
         <Fa
           icon={faArrowRight}

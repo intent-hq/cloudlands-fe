@@ -1,6 +1,6 @@
 export const uiComponentGuardrails = {
   internalImports: {
-    '$lib/components/ui/button/button.svelte': 37,
+    '$lib/components/ui/button/button.svelte': 36,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 3,
     '$lib/components/ui/dropdown/Dropdown.svelte': 1,
@@ -49,5 +49,5 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 2,
   },
-  rawControls: { button: 628, input: 85, select: 0, textarea: 11 },
+  rawControls: { button: 627, input: 85, select: 0, textarea: 11 },
 } as const;

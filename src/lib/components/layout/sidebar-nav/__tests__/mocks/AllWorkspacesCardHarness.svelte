@@ -6,6 +6,7 @@
     /** Runs after store init but before AllWorkspacesCard mounts (seed state here). */
     setup?: () => void;
     expanded?: boolean;
+    searchVisible?: boolean;
     recentsOnly?: boolean;
     recentLimit?: number;
     searchRecents?: boolean;
@@ -17,6 +18,7 @@
   let {
     setup,
     expanded = false,
+    searchVisible = true,
     recentsOnly = false,
     recentLimit,
     searchRecents = false,
@@ -32,6 +34,7 @@
 
 <AllWorkspacesCard
   {expanded}
+  {searchVisible}
   {recentsOnly}
   {recentLimit}
   {searchRecents}

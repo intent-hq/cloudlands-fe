@@ -13,8 +13,10 @@ import {
   faWandMagicSparkles,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
+import type { WorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { getShortcutDisplay } from '$lib/utils/shortcuts';
 
-export const COMMAND_PALETTE_COMMANDS = [
+export const COMMAND_PALETTE_COMMANDS = (viewMode: WorkspaceViewMode) => [
   {
     id: 'new-workspace',
     get label() {
@@ -88,6 +90,24 @@ export const COMMAND_PALETTE_COMMANDS = [
       return m.lib_commandPalette_showOnboarding_command();
     },
     icon: faPlay,
+  },
+  {
+    id: 'workspace-view-mode',
+    get label() {
+      return viewMode === 'single'
+        ? m.lib_commandPalette_switchToHorizontalWorkspaceView_command()
+        : m.lib_commandPalette_switchToTabWorkspaceView_command();
+    },
+    get description() {
+      return viewMode === 'single'
+        ? m.lib_commandPalette_switchToHorizontalWorkspaceView_description()
+        : m.lib_commandPalette_switchToTabWorkspaceView_description();
+    },
+    icon: faFolderOpen,
+    navigationIcon: viewMode === 'single' ? ('spaces' as const) : ('tabs' as const),
+    shortcut: getShortcutDisplay('WORKSPACE_VIEW_MODE'),
+    // i18n-ignore (non-rendered search aliases)
+    searchText: 'tab horizontal stacked columns workspace view layout',
   },
   {
     id: 'enhance-prompt',

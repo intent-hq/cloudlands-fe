@@ -220,7 +220,6 @@ describe('TaskItemNodeView - Basic Rendering', () => {
   });
 
   it('renders dependency and conflict chips for a linked task', async () => {
-
     linkedNoteState.set({
       id: 'task-with-relations',
       workspaceId: 'workspace-1',
@@ -457,6 +456,7 @@ describe('TaskItemNodeView - Reactivity', () => {
     await fireEvent.click(container.querySelector('button')!);
 
     expect(navigateToNoteMock).toHaveBeenCalledWith(noteId, {
+      workspaceId: 'workspace-1',
       openInAdjacentPanel: true,
       openInNewAdjacentPanel: true,
       sourcePanelId: 'panel-note',

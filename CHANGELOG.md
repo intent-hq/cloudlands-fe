@@ -4,6 +4,27 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.49.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.49.0...v2.49.1) (2026-08-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.1 ([#1272](https://github.com/intent-hq/cloudlands-fe/issues/1272)) ([e57521f](https://github.com/intent-hq/cloudlands-fe/commit/e57521f6f6ef51f7034195df2bbf6cfd8068dfc6))
+* restore workspace interaction and presentation contracts ([#1268](https://github.com/intent-hq/cloudlands-fe/issues/1268)) ([19cafec](https://github.com/intent-hq/cloudlands-fe/commit/19cafec14f6d7fb135e98d09ef3794fed7cfcc11))
+
+## [2.49.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.48.1...v2.49.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* show repo name in monitored-PR chip labels ([#1258](https://github.com/intent-hq/cloudlands-fe/issues/1258)) ([690ac34](https://github.com/intent-hq/cloudlands-fe/commit/690ac34ebcf4f4a93207715d0252a7ccd0c16db0))
+
+
+### 🐛 Bug Fixes
+
+* advance queue snapshot seq on hydrate-reconciled folds ([#1261](https://github.com/intent-hq/cloudlands-fe/issues/1261)) ([ba68b20](https://github.com/intent-hq/cloudlands-fe/commit/ba68b20c327ed026cea5d1afa1bb7ec6afcd5d13))
+* stop hidden scroll-lock button from flickering message actions on hover ([#1263](https://github.com/intent-hq/cloudlands-fe/issues/1263)) ([e22619c](https://github.com/intent-hq/cloudlands-fe/commit/e22619c638ace604a8bc2a29eadc126f0b66b7dd))
+
 ## [2.48.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.48.0...v2.48.1) (2026-08-15)
 
 

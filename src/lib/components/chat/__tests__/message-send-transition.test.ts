@@ -8,6 +8,10 @@ import {
   MESSAGE_SEND_TRANSITION_EASING,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
 } from '../message-send-transition';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const originalAnimate = HTMLElement.prototype.animate;
 
@@ -86,7 +90,36 @@ afterEach(() => {
 });
 
 describe('message send transition', () => {
-  it('uses the emphasized 280ms composer-to-bubble animation and smooth scroll', async () => {
+  it('affirms the composer-to-bubble transition in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async ({ reducedMotion }) => {
+      const { composer, target, scrollContainer } = fixture();
+      target.tabIndex = 0;
+      const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
+      const origin = captureMessageSendOrigin(composer);
+      await animateMessageSend({ origin, target, scrollContainer });
+      return {
+        container: composer,
+        target,
+        unmount: () => {
+          composer.remove();
+          target.remove();
+        },
+        assertCapability: () => {
+          if (reducedMotion) expect(animate).not.toHaveBeenCalled();
+          else
+            expect(animate).toHaveBeenCalledWith(
+              expect.any(Array),
+              expect.objectContaining({ duration: 280 }),
+            );
+          expect(target.style.opacity).toBe('');
+          expect(target.style.visibility).toBe('');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
+  it('uses one compositor transform and an instant bottom-follow adjustment', async () => {
     const { composer, target, scrollContainer } = fixture();
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
     const origin = captureMessageSendOrigin(composer);
@@ -96,20 +129,23 @@ describe('message send transition', () => {
 
     expect(MESSAGE_SEND_TRANSITION_DURATION_MS).toBe(280);
     expect(MESSAGE_SEND_TRANSITION_EASING).toBe('cubic-bezier(0.2, 0, 0, 1)');
-    expect(scrollContainer.scrollTo).toHaveBeenCalledWith({ top: 300, behavior: 'smooth' });
+    expect(scrollContainer.scrollTop).toBe(300);
+    expect(scrollContainer.scrollTo).not.toHaveBeenCalled();
     expect(animate).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ duration: 280, easing: MESSAGE_SEND_TRANSITION_EASING }),
     );
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
     expect(target.style.opacity).toBe('');
+    const frames = animate.mock.calls[0][0] as Keyframe[];
+    expect(frames.every((frame) => !('opacity' in frame) && !('borderRadius' in frame))).toBe(true);
   });
 
   it('settles a never-resolving animation within the independent maximum bound', async () => {
     vi.useFakeTimers();
     const { composer, target, scrollContainer } = fixture();
     const cancel = vi.fn();
-    target.style.opacity = '0.42';
+    target.style.visibility = 'collapse';
     stubAnimate(() => ({ finished: new Promise<void>(() => {}), cancel }));
 
     const transition = animateMessageSend({
@@ -122,7 +158,7 @@ describe('message send transition', () => {
 
     expect(MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS).toBe(600);
     expect(cancel).toHaveBeenCalledOnce();
-    expect(target.style.opacity).toBe('0.42');
+    expect(target.style.visibility).toBe('collapse');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
@@ -130,7 +166,7 @@ describe('message send transition', () => {
     const { composer, target, scrollContainer } = fixture();
     const controller = new AbortController();
     const cancel = vi.fn();
-    target.style.opacity = '0.27';
+    target.style.visibility = 'collapse';
     stubAnimate(() => ({ finished: new Promise<void>(() => {}), cancel }));
 
     const transition = animateMessageSend({
@@ -143,7 +179,7 @@ describe('message send transition', () => {
     await transition;
 
     expect(cancel).toHaveBeenCalledOnce();
-    expect(target.style.opacity).toBe('0.27');
+    expect(target.style.visibility).toBe('collapse');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
@@ -159,7 +195,7 @@ describe('message send transition', () => {
     });
     failure.reject(new Error('animation failed'));
     await expect(transition).resolves.toBeUndefined();
-    expect(target.style.opacity).toBe('');
+    expect(target.style.visibility).toBe('');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
@@ -188,19 +224,19 @@ describe('message send transition', () => {
     const animations = [deferred(), deferred()];
     let index = 0;
     stubAnimate(() => ({ finished: animations[index++].promise, cancel: vi.fn() }));
-    target.style.opacity = '0.33';
+    target.style.visibility = 'collapse';
     const options = { origin: captureMessageSendOrigin(composer), target, scrollContainer };
 
     const first = animateMessageSend(options);
     const second = animateMessageSend(options);
     await first;
-    expect(target.style.opacity).toBe('0');
+    expect(target.style.visibility).toBe('hidden');
     animations[0].resolve();
     await Promise.resolve();
     animations[1].resolve();
     await second;
 
-    expect(target.style.opacity).toBe('0.33');
+    expect(target.style.visibility).toBe('collapse');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 

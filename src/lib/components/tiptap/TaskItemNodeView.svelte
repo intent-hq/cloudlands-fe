@@ -49,14 +49,17 @@
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
 
-  // Redux state access - called at component init time for reactive subscriptions
+  let { node, selected, updateAttributes, getPos, editor, extension }: NodeViewProps = $props();
+
+  // Note editors configure an immutable owner on their task-item extension. The active
+  // workspace remains an explicit compatibility fallback for non-note editor callers.
+  let owningWorkspaceId = $derived(extension?.options?.workspaceId as string | undefined);
   const activeWorkspaceId = selectActiveWorkspaceId();
   const wsIdStore = writable<string>('');
   $effect(() => {
-    wsIdStore.set($activeWorkspaceId ?? '');
+    wsIdStore.set(owningWorkspaceId ?? $activeWorkspaceId ?? '');
   });
-
-  let { node, selected, updateAttributes, getPos, editor }: NodeViewProps = $props();
+  let workspaceId = $derived(owningWorkspaceId ?? $activeWorkspaceId ?? '');
 
   // Core derived state
   let checked = $derived(node.attrs.checked ?? false);
@@ -164,7 +167,6 @@
     }
 
     try {
-      const workspaceId = linkedTaskNote?.workspaceId;
       if (!workspaceId) return;
       void updateTaskNoteStatus(workspaceId, linkedTaskNoteId, newStatus);
     } catch (error) {
@@ -195,6 +197,7 @@
       }
 
       await navigateToNote(linkedTaskNoteId, {
+        workspaceId,
         openInAdjacentPanel,
         openInNewAdjacentPanel: true,
         sourcePanelId,
@@ -289,16 +292,13 @@
 
   function emitLinkedTaskDelegateEvent() {
     if (!linkedTaskNoteId) return;
-    // Prefer the linked note's own workspaceId (it may differ from the active workspace
-    // if the task lives in a different workspace), fall back to the active workspace.
-    const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
-    if (!wsId) return;
+    if (!workspaceId) return;
     // TODO(redux-remove): delegation creates an agent and assigns it atomically, which
     // the tasks seam (`task.assignAgent` assigns an EXISTING agent only) cannot express.
     // Stays on the agents-domain saga-trigger pending an AppClient agent-create+assign
     // capability; out of scope for the tasks Part C write-path migration.
     appStore.dispatch(
-      delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false),
+      delegateExistingTaskRequested(workspaceId, linkedTaskNoteId, linkedTaskTitle, false),
     );
   }
 
@@ -338,7 +338,7 @@
     const taskText = getTaskText();
     if (!taskText) return;
 
-    const wsId = $activeWorkspaceId;
+    const wsId = workspaceId;
     if (!wsId) return;
     const reduxState = appStore.state;
     const currentNoteId = selectSelectedNoteId.select(reduxState, wsId);
@@ -434,7 +434,7 @@
       >
         {#snippet content()}
           {#if linkedTaskNoteId && !linkedTaskNotFound}
-            <TaskNotePreview noteId={linkedTaskNoteId} />
+            <TaskNotePreview {workspaceId} noteId={linkedTaskNoteId} />
           {/if}
         {/snippet}
         <button
@@ -477,7 +477,7 @@
                       {m.tiptap_taskItem_waitsOnList_label()}
                     </div>
                     {#each unmetDependsOn as depId (depId)}
-                      <TaskRelationLink noteId={depId} unmet />
+                      <TaskRelationLink {workspaceId} noteId={depId} unmet />
                     {/each}
                   </div>
                 {/snippet}
@@ -505,7 +505,7 @@
                       {m.tiptap_taskItem_conflictsList_label()}
                     </div>
                     {#each linkedTaskConflictsWith as conflictId (conflictId)}
-                      <TaskRelationLink noteId={conflictId} variant="conflict" />
+                      <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
                     {/each}
                   </div>
                 {/snippet}

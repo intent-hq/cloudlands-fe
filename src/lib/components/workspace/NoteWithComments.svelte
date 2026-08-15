@@ -483,6 +483,7 @@
   let externalUpdateVersion = $state(0);
 
   let editor: Editor = $state(null!);
+  let editorInitializationPromise: Promise<void> | null = null;
   let selectedSuggestion: any = $state(null);
   let tooltipPosition = $state({ x: 0, y: 0 });
   // Task menu state - track discovered task buttons
@@ -694,7 +695,7 @@
       if (wasRawNoteViewEnabled && !editor && element && !isComponentDestroyed) {
         wasRawNoteViewEnabled = false;
         isInitializing = true;
-        void initializeEditor()
+        void ensureCurrentWorkspaceEditor()
           .catch((err) => {
             logger.error(
               '[NoteWithComments] Failed to initialize editor after raw view closed',
@@ -1035,6 +1036,12 @@
   async function initializeEditor() {
     if (!element) return;
 
+    // Snapshot the owner for this editor instance. If the component is reused for
+    // another workspace while markdown conversion is pending, do not create an
+    // editor whose task node views retain the previous workspace.
+    const editorWorkspace = workspace;
+    const editorWorkspaceId = editorWorkspace?.id;
+
     let goalContent = '';
     if (noteId && workspace?.id) {
       {
@@ -1101,14 +1108,17 @@
     // right away instead of a blank screen while markdown processing runs
     const isLargeContent = goalContent.length > 5000;
     const enableRichEditorComments = showComments && !isRawNoteViewEnabled;
+    const initialEditorContent = isLargeContent
+      ? ''
+      : await processMarkdownToHTML(goalContent, { preserveAnchors: true });
+
+    if (isComponentDestroyed || editorWorkspaceId !== workspace?.id) return;
 
     const config = createEditorConfig({
       element,
-      content: isLargeContent
-        ? ''
-        : await processMarkdownToHTML(goalContent, { preserveAnchors: true }),
+      content: initialEditorContent,
       editable,
-      workspace, // Pass workspace for mention support
+      workspace: editorWorkspace, // Also supplies the task-item owner workspace.
       onUpdate: () => {
         debounceUpdate();
         // Discover and create TaskMenu popovers for any new task items
@@ -1310,6 +1320,22 @@
     };
   }
 
+  function ensureCurrentWorkspaceEditor(): Promise<void> {
+    if (editorInitializationPromise) return editorInitializationPromise;
+
+    editorInitializationPromise = (async () => {
+      while (!isComponentDestroyed && element && !editor) {
+        const targetWorkspaceId = workspace?.id;
+        await initializeEditor();
+        if (editor || workspace?.id === targetWorkspaceId) return;
+      }
+    })().finally(() => {
+      editorInitializationPromise = null;
+    });
+
+    return editorInitializationPromise;
+  }
+
   // Cleanup
   function cleanup() {
     // Flush any pending save BEFORE destroying the editor
@@ -1356,6 +1382,7 @@
   // NOTE: These are NOT $state to avoid triggering reactive loops when updated in effects
   let lastKnownContent: string = '';
   let lastNoteId: string | undefined = undefined;
+  let lastWorkspaceId: string | undefined = undefined;
   let lastSaveTimestamp: string | null = null; // Track when last save happened
   let noteConversionGeneration = 0;
 
@@ -1368,17 +1395,22 @@
   $effect(() => {
     // Read noteId reactively
     const currentNoteId = noteId;
+    const currentWorkspaceId = workspace?.id;
+    const workspaceChanged = currentWorkspaceId !== lastWorkspaceId;
+    const noteChanged = currentNoteId !== lastNoteId;
 
-    // Compare with non-reactive lastNoteId
-    if (currentNoteId !== lastNoteId) {
+    if (workspaceChanged || noteChanged) {
       const conversionGeneration = ++noteConversionGeneration;
 
-      logger.debug('[NoteWithComments] Note ID changed, scheduling reinitialize', {
+      logger.debug('[NoteWithComments] Editor owner changed, scheduling reinitialize', {
+        oldWorkspaceId: lastWorkspaceId,
+        newWorkspaceId: currentWorkspaceId,
         oldNoteId: lastNoteId,
         newNoteId: currentNoteId,
       });
 
       // Update tracking variables (non-reactive, won't trigger re-runs)
+      lastWorkspaceId = currentWorkspaceId;
       lastNoteId = currentNoteId;
       lastKnownContent = '';
       hasUserEditedSinceLastSave = false;
@@ -1396,7 +1428,40 @@
       commentManager = destroyAndClearCommentManagerV2(commentManager);
 
       // If editor exists and note changed, reinitialize
-      if (editor && isInitialized) {
+      if (editor) {
+        if (workspaceChanged) {
+          // Extension options are immutable for an editor instance. Tear down the
+          // old editor without flushing it through the new workspace prop, then
+          // create a fresh instance with the new explicit owner.
+          taskAgentStatusMountManager.destroy();
+          cleanupFn?.();
+          cleanupFn = null;
+          editor = null!;
+          isInitialized = false;
+          isInitializing = true;
+
+          void ensureCurrentWorkspaceEditor()
+            .then(() => {
+              if (
+                isComponentDestroyed ||
+                conversionGeneration !== noteConversionGeneration ||
+                workspace?.id !== currentWorkspaceId
+              ) {
+                return;
+              }
+              isInitializing = false;
+              isInitialized = true;
+            })
+            .catch((error) => {
+              logger.error('[NoteWithComments] Failed to recreate editor for workspace', error);
+              if (conversionGeneration === noteConversionGeneration) {
+                isInitializing = false;
+                isInitialized = true;
+              }
+            });
+          return;
+        }
+
         const newContent = currentNoteContent;
         const conversionEditor = editor;
         const conversionWorkspaceId = workspace?.id;
@@ -1500,6 +1565,30 @@
             isUpdatingFromExternal = false;
           }, 200);
         });
+      }
+
+      if (workspaceChanged && element && !editor) {
+        isInitialized = false;
+        isInitializing = true;
+        void ensureCurrentWorkspaceEditor()
+          .then(() => {
+            if (
+              isComponentDestroyed ||
+              conversionGeneration !== noteConversionGeneration ||
+              workspace?.id !== currentWorkspaceId
+            ) {
+              return;
+            }
+            isInitializing = false;
+            isInitialized = true;
+          })
+          .catch((error) => {
+            logger.error('[NoteWithComments] Failed to initialize editor for workspace', error);
+            if (conversionGeneration === noteConversionGeneration) {
+              isInitializing = false;
+              isInitialized = true;
+            }
+          });
       }
     }
   });
@@ -1764,7 +1853,7 @@
 
     // Defer editor initialization to next tick for better perceived performance
     requestAnimationFrame(() => {
-      initializeEditor()
+      ensureCurrentWorkspaceEditor()
         .then(() => {
           // Use requestAnimationFrame instead of setTimeout for smoother transition
           requestAnimationFrame(() => {

@@ -5,7 +5,6 @@
     Workspace,
     WorkspaceAgentInfo,
     WorkspaceGitSummary,
-    WorkspaceTask,
   } from '$shared/types';
   import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
   import { formatDistanceToNow } from '$lib/i18n/format';
@@ -23,9 +22,9 @@
   import {
     selectWorkspaceTaskDisplayList,
     selectWorkspaceTaskProgress,
+    selectWorkspaceTasksInitialized,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
-  import type { WorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-types';
   import {
     selectWorkspaceDiffSummary,
     selectWorkspaceGitSummary,
@@ -36,6 +35,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import TaskStatusProgress from './TaskStatusProgress.svelte';
 
   interface Props {
     workspace: Workspace | null;
@@ -175,60 +175,6 @@
     return null;
   }
 
-  function formatTaskProgress(progress: WorkspaceTaskProgress) {
-    if (progress.total === 0) return null;
-
-    const parts = [`${progress.completed}/${progress.total} done`];
-    if (progress.inProgress > 0) parts.push(`${progress.inProgress} active`);
-    return parts.join(' · ');
-  }
-
-  function getTaskStatusColor(status: string) {
-    switch (status) {
-      case 'complete':
-        return 'bg-emerald-500';
-      case 'in_progress':
-        return 'bg-sky-400';
-      case 'review_required':
-        return 'bg-blue-500';
-      case 'waiting':
-        return 'bg-muted';
-      default:
-        return 'bg-muted/60';
-    }
-  }
-
-  function buildTaskProgressSegments(progress: WorkspaceTaskProgress, tasks: WorkspaceTask[]) {
-    if (progress.total === 0) return [];
-
-    if (tasks.length) {
-      return tasks.map((task) => ({
-        label: task.title,
-        status: task.status,
-        weight: 1,
-      }));
-    }
-
-    const waiting = Math.max(0, progress.total - progress.completed - progress.inProgress);
-    return [
-      {
-        label: m.workspace_hoverCard_segmentComplete_label(),
-        status: 'complete',
-        weight: progress.completed,
-      },
-      {
-        label: m.workspace_hoverCard_segmentInProgress_label(),
-        status: 'in_progress',
-        weight: progress.inProgress,
-      },
-      {
-        label: m.workspace_hoverCard_segmentNotStarted_label(),
-        status: 'not_started',
-        weight: waiting,
-      },
-    ].filter((segment) => segment.weight > 0);
-  }
-
   function getAgentStatus(agent: Pick<WorkspaceAgentInfo, 'status'>) {
     return agent.status.toLowerCase();
   }
@@ -309,6 +255,7 @@
   const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
   const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
   const workspaceTaskDisplayList$ = selectWorkspaceTaskDisplayList(workspaceIdStore);
+  const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const workspaceDiffSummary$ = selectWorkspaceDiffSummary(workspaceIdStore);
   const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
 
@@ -446,10 +393,13 @@
     return streamingAgentIds.filter((agentId) => !knownAgentIds.has(agentId));
   });
 
-  let taskSummaryText = $derived(workspace ? formatTaskProgress($workspaceTaskProgress$) : null);
-  let taskProgressSegments = $derived(
-    workspace ? buildTaskProgressSegments($workspaceTaskProgress$, $workspaceTaskDisplayList$) : [],
+  let taskStatuses = $derived(
+    workspace ? $workspaceTaskDisplayList$.map((task) => task.status) : [],
   );
+  let taskProgressRatio = $derived.by(() => {
+    if (!workspace || $workspaceTaskProgress$.total === 0) return 0;
+    return $workspaceTaskProgress$.completed / $workspaceTaskProgress$.total;
+  });
 
   let activePullRequest = $derived(getWorkspacePullRequest(workspace));
   let pullRequestDisplayStatus = $derived(
@@ -511,22 +461,17 @@
           {repoDisplayName}
         </div>
       </div>
-      {#if taskSummaryText}
-        <div class="mt-2 flex flex-col gap-1.5">
-          <div
-            class="flex h-2.5 w-full gap-px rounded-xs overflow-hidden"
-            aria-label={m.workspace_hoverCard_taskProgress_ariaLabel()}
-          >
-            {#each taskProgressSegments as segment, index (`${segment.label}-${index}`)}
-              <div
-                class="min-w-[3px] flex-1 {getTaskStatusColor(segment.status)}"
-                style="flex: {segment.weight} 1 0%;"
-                title={segment.label}
-              ></div>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <div class="mt-2 min-w-0" data-workspace-hover-card-progress>
+        <TaskStatusProgress
+          statuses={taskStatuses}
+          progress={taskProgressRatio}
+          loading={!$workspaceTasksInitialized$}
+          animationKey={String(workspace.id)}
+          ariaLabel={m.workspace_hoverCard_taskProgress_ariaLabel()}
+          size="compact"
+          fallback={$workspaceTaskProgress$}
+        />
+      </div>
       {#if statusMessage}
         <div
           class="mt-2 w-full text-sm text-subtle bg-transparent border-none px-0.5 pt-1 text-left break-words whitespace-pre-wrap transition-all duration-150 leading-snug"

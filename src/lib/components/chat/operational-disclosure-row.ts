@@ -12,12 +12,16 @@ export const OPERATIONAL_DISCLOSURE_CLASS =
 
 export const OPERATIONAL_SUMMARY_CLASS = 'min-w-0 shrink truncate whitespace-nowrap';
 
+export const OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5';
+
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS =
   'text-ghost transition-colors group-hover:text-muted-foreground group-focus-within:text-muted-foreground';
 
-export const OPERATIONAL_ICON_CLASS = `a11y-ignore h-3.5! w-4! shrink-0 ${OPERATIONAL_SECONDARY_CLASS}`;
+export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex h-5 w-4 min-w-4 shrink-0 items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
+
+export const OPERATIONAL_ICON_CLASS = 'h-3.5! w-3.5! shrink-0';
 
 /** Tool-only collapsed row: fixed icon, one truncating sentence, optional trailing state/action. */
 export const COMPACT_TOOL_ROW_CLASS =

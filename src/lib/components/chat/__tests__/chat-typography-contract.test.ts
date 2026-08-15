@@ -83,6 +83,7 @@ describe('chat typography contract', () => {
     expect(divider).toContain('type-caption');
     expect(divider).toContain('whitespace-nowrap');
     expect(divider.match(/bg-border/g)).toHaveLength(2);
+    expect(divider).not.toContain('faEnvelope');
     expect(divider).not.toContain('text-accent');
     expect(divider).not.toContain('rounded-full');
   });

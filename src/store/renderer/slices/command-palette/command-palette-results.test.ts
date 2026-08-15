@@ -1,30 +1,32 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import {
-  computeResults,
-  type ComputeResultsInput,
-} from "./command-palette-results";
-import type { WorkspaceObject } from "./command-palette-utils";
+import { describe, expect, it } from 'vitest';
+import { computeResults, type ComputeResultsInput } from './command-palette-results';
+import type { WorkspaceObject } from './command-palette-utils';
 
-const icon = { iconName: "test" };
+const icon = { iconName: 'test' };
 
 const defaultCommands = [
-  { id: "new-workspace", label: "New Workspace", icon, shortcut: "⌘T" },
-  { id: "settings", label: "Settings", icon, shortcut: "⌘," },
-  { id: "new-agent", label: "New Agent Chat", icon },
-  { id: "new-terminal", label: "New Terminal", icon },
-  { id: "new-note", label: "New Note", icon },
-  { id: "new-file", label: "New File", icon, shortcut: "⌘N" },
+  { id: 'new-workspace', label: 'New Workspace', icon, shortcut: '⌘T' },
+  { id: 'settings', label: 'Settings', icon, shortcut: '⌘,' },
+  { id: 'new-agent', label: 'New Agent Chat', icon },
+  { id: 'new-terminal', label: 'New Terminal', icon },
+  { id: 'new-note', label: 'New Note', icon },
+  { id: 'new-file', label: 'New File', icon, shortcut: '⌘N' },
+  {
+    id: 'workspace-view-mode',
+    label: 'Switch to horizontal workspace view',
+    description: 'Show open workspaces side by side in columns.',
+    searchText: 'tab horizontal stacked columns workspace view layout',
+    navigationIcon: 'spaces' as const,
+    icon,
+    shortcut: '⇧⌘L',
+  },
 ];
 
 function makeInput(overrides: Partial<ComputeResultsInput> = {}): ComputeResultsInput {
   return {
-    query: "",
+    query: '',
     activeFilter: null,
-    workspaceId: "ws-1",
+    workspaceId: 'ws-1',
     agents: [],
     notes: [],
     changes: [],
@@ -39,122 +41,138 @@ function makeInput(overrides: Partial<ComputeResultsInput> = {}): ComputeResults
 }
 
 function makeAgent(id: string, label: string): WorkspaceObject {
-  return { id, type: "agent", label, icon, timestamp: Date.now() };
+  return { id, type: 'agent', label, icon, timestamp: Date.now() };
 }
 
-describe("computeResults", () => {
-  it("returns new actions row when workspace is set and no query", () => {
+describe('computeResults', () => {
+  it('returns new actions row when workspace is set and no query', () => {
     const results = computeResults(makeInput());
     const newActionsRow = results.find((r: any) => r._newActionsRow);
     expect(newActionsRow).toBeDefined();
   });
 
-  it("does not return new actions row when no workspaceId", () => {
+  it('does not return new actions row when no workspaceId', () => {
     const results = computeResults(makeInput({ workspaceId: undefined }));
     // Should still have new workspace button
     const newWs = results.find((r: any) => r._newWorkspace);
     expect(newWs).toBeDefined();
   });
 
-  it("shows agents group with label", () => {
-    const agents = [makeAgent("a1", "Agent 1"), makeAgent("a2", "Agent 2")];
+  it('shows agents group with label', () => {
+    const agents = [makeAgent('a1', 'Agent 1'), makeAgent('a2', 'Agent 2')];
     const results = computeResults(makeInput({ agents }));
-    const agentLabel = results.find((r: any) => r._groupLabel === "Agents");
+    const agentLabel = results.find((r: any) => r._groupLabel === 'Agents');
     expect(agentLabel).toBeDefined();
   });
 
-  it("limits items per group to 3 when not searching", () => {
+  it('limits items per group to 3 when not searching', () => {
     const agents = Array.from({ length: 5 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
     const results = computeResults(makeInput({ agents }));
-    const agentItems = results.filter((r: any) => r.type === "agent");
+    const agentItems = results.filter((r: any) => r.type === 'agent');
     expect(agentItems.length).toBe(3);
-    const showMore = results.find((r: any) => r._showMore && r._itemType === "agent");
+    const showMore = results.find((r: any) => r._showMore && r._itemType === 'agent');
     expect(showMore).toBeDefined();
     expect(showMore._count).toBe(2);
   });
 
-  it("shows all items when activeFilter matches type", () => {
+  it('shows all items when activeFilter matches type', () => {
     const agents = Array.from({ length: 5 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
-    const results = computeResults(makeInput({ agents, activeFilter: "agent" }));
-    const agentItems = results.filter((r: any) => r.type === "agent");
+    const results = computeResults(makeInput({ agents, activeFilter: 'agent' }));
+    const agentItems = results.filter((r: any) => r.type === 'agent');
     expect(agentItems.length).toBe(5);
   });
 
-  it("filters by fuzzy search when query is provided", () => {
-    const agents = [makeAgent("a1", "Build Server"), makeAgent("a2", "Test Runner")];
-    const results = computeResults(makeInput({ agents, query: "build" }));
-    const items = results.filter((r: any) => r.type === "agent");
+  it('filters by fuzzy search when query is provided', () => {
+    const agents = [makeAgent('a1', 'Build Server'), makeAgent('a2', 'Test Runner')];
+    const results = computeResults(makeInput({ agents, query: 'build' }));
+    const items = results.filter((r: any) => r.type === 'agent');
     expect(items.length).toBe(1);
-    expect(items[0].label).toBe("Build Server");
+    expect(items[0].label).toBe('Build Server');
   });
 
-  it("includes workspace items in search results", () => {
+  it.each(['tab', 'horizontal', 'stacked', 'columns', 'workspace', 'view', 'layout'])(
+    'finds the workspace view command by the %s alias',
+    (query) => {
+      const results = computeResults(makeInput({ query }));
+      expect(results).toContainEqual(
+        expect.objectContaining({ id: 'workspace-view-mode', shortcut: '⇧⌘L' }),
+      );
+    },
+  );
+
+  it('hides the workspace view command without an active workspace', () => {
+    const results = computeResults(
+      makeInput({ workspaceId: undefined, query: 'workspace layout' }),
+    );
+    expect(results).not.toContainEqual(expect.objectContaining({ id: 'workspace-view-mode' }));
+  });
+
+  it('includes workspace items in search results', () => {
     const workspaceItems = [
-      { id: "ws-2", label: "Other Space", icon, description: "repo", _workspace: true as const },
+      { id: 'ws-2', label: 'Other Space', icon, description: 'repo', _workspace: true as const },
     ];
-    const results = computeResults(makeInput({ workspaceItems, query: "other" }));
+    const results = computeResults(makeInput({ workspaceItems, query: 'other' }));
     const wsItem = results.find((r: any) => r._workspace);
     expect(wsItem).toBeDefined();
   });
 
-  it("shows recent items group when present and no filter", () => {
-    const recentItems = [makeAgent("a1", "Recent Agent")];
+  it('shows recent items group when present and no filter', () => {
+    const recentItems = [makeAgent('a1', 'Recent Agent')];
     const results = computeResults(makeInput({ recentItems }));
-    const recentLabel = results.find((r: any) => r._groupLabel === "Recent");
+    const recentLabel = results.find((r: any) => r._groupLabel === 'Recent');
     expect(recentLabel).toBeDefined();
   });
 
-  it("hides recent items when activeFilter is set", () => {
-    const recentItems = [makeAgent("a1", "Recent Agent")];
-    const results = computeResults(makeInput({ recentItems, activeFilter: "agent" }));
-    const recentLabel = results.find((r: any) => r._groupLabel === "Recent");
+  it('hides recent items when activeFilter is set', () => {
+    const recentItems = [makeAgent('a1', 'Recent Agent')];
+    const results = computeResults(makeInput({ recentItems, activeFilter: 'agent' }));
+    const recentLabel = results.find((r: any) => r._groupLabel === 'Recent');
     expect(recentLabel).toBeUndefined();
   });
 
-  it("shows border above Other Spaces section", () => {
+  it('shows border above Other Spaces section', () => {
     const workspaceItems = [
-      { id: "ws-2", label: "Other", icon, description: "repo", _workspace: true as const },
+      { id: 'ws-2', label: 'Other', icon, description: 'repo', _workspace: true as const },
     ];
     const results = computeResults(makeInput({ workspaceItems }));
     const border = results.find((r: any) => r._borderAbove);
     expect(border).toBeDefined();
   });
 
-  it("assigns unique _idx to every result item", () => {
-    const agents = [makeAgent("a1", "Agent 1"), makeAgent("a2", "Agent 2")];
+  it('assigns unique _idx to every result item', () => {
+    const agents = [makeAgent('a1', 'Agent 1'), makeAgent('a2', 'Agent 2')];
     const results = computeResults(makeInput({ agents }));
     const indices = results.map((r: any) => r._idx);
     expect(new Set(indices).size).toBe(indices.length);
   });
 
-  it("appends transcript matches as their own group when searching", () => {
+  it('appends transcript matches as their own group when searching', () => {
     const messages = [
-      { id: "ag-1:msg-1", type: "message", label: "Agent 1", description: "hello world", icon },
+      { id: 'ag-1:msg-1', type: 'message', label: 'Agent 1', description: 'hello world', icon },
     ];
-    const results = computeResults(makeInput({ query: "hello", messages }));
-    const groupLabel = results.find((r: any) => r._groupLabel === "Chat messages");
+    const results = computeResults(makeInput({ query: 'hello', messages }));
+    const groupLabel = results.find((r: any) => r._groupLabel === 'Chat messages');
     expect(groupLabel).toBeDefined();
-    const messageItems = results.filter((r: any) => r.type === "message");
+    const messageItems = results.filter((r: any) => r.type === 'message');
     expect(messageItems.length).toBe(1);
-    expect(messageItems[0].description).toBe("hello world");
+    expect(messageItems[0].description).toBe('hello world');
   });
 
-  it("shows only transcript matches when message filter is active", () => {
-    const agents = [makeAgent("a1", "Hello Agent")];
+  it('shows only transcript matches when message filter is active', () => {
+    const agents = [makeAgent('a1', 'Hello Agent')];
     const messages = [
-      { id: "ag-1:msg-1", type: "message", label: "Agent 1", description: "hello world", icon },
+      { id: 'ag-1:msg-1', type: 'message', label: 'Agent 1', description: 'hello world', icon },
     ];
     const results = computeResults(
-      makeInput({ query: "hello", agents, messages, activeFilter: "message" }),
+      makeInput({ query: 'hello', agents, messages, activeFilter: 'message' }),
     );
-    expect(results.filter((r: any) => r.type === "agent").length).toBe(0);
-    expect(results.filter((r: any) => r.type === "message").length).toBe(1);
+    expect(results.filter((r: any) => r.type === 'agent').length).toBe(0);
+    expect(results.filter((r: any) => r.type === 'message').length).toBe(1);
   });
 
-  it("omits transcript group when there are no matches", () => {
-    const results = computeResults(makeInput({ query: "hello", messages: [] }));
-    const groupLabel = results.find((r: any) => r._groupLabel === "Chat messages");
+  it('omits transcript group when there are no matches', () => {
+    const results = computeResults(makeInput({ query: 'hello', messages: [] }));
+    const groupLabel = results.find((r: any) => r._groupLabel === 'Chat messages');
     expect(groupLabel).toBeUndefined();
   });
 });
-

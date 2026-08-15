@@ -19,6 +19,7 @@ import {
   selectPanelItem,
   selectPanelWidth,
   selectPinnedWorkspaceIds,
+  selectShowArchivedWorkspaces,
 } from '../sidebar-nav-selectors';
 import {
   CARD_PINNED_KEY,
@@ -42,6 +43,8 @@ import {
   setMultiSelectSidebarTabOrder,
   setPanelWidth,
   setPinnedWorkspaceIds,
+  setShowArchivedWorkspaces,
+  SHOW_ARCHIVED_KEY,
   toggleCardPinned,
   togglePanel,
   togglePinWorkspace,
@@ -125,6 +128,9 @@ export function* hydrateSidebarNavState(): SagaGenerator<void> {
       if (viewMode.legacy) yield* call(setLocalStorageJSON, VIEW_MODE_KEY, viewMode.mode);
     }
 
+    const showArchived = yield* call(getLocalStorageJSON<unknown>, SHOW_ARCHIVED_KEY);
+    if (typeof showArchived === 'boolean') data.showArchivedWorkspaces = showArchived;
+
     const width = yield* call(getLocalStorageJSON<unknown>, PANEL_WIDTH_KEY);
     if (typeof width === 'number' && Number.isFinite(width)) data.panelWidth = width;
 
@@ -179,6 +185,18 @@ function* persistPinnedWorkspaces(): SagaGenerator<void> {
 function* persistViewMode(): SagaGenerator<void> {
   try {
     yield* call(setLocalStorageJSON, VIEW_MODE_KEY, yield* selectAllSpacesViewMode.effect());
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistShowArchivedWorkspaces(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      SHOW_ARCHIVED_KEY,
+      yield* selectShowArchivedWorkspaces.effect(),
+    );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
   }
@@ -288,6 +306,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* fork(watchBackendSwitch);
   yield* takeEvery(PINNED_ACTIONS, persistPinnedWorkspaces);
   yield* takeEvery(setAllSpacesViewMode, persistViewMode);
+  yield* takeEvery(setShowArchivedWorkspaces, persistShowArchivedWorkspaces);
   yield* takeEvery(setPanelWidth, persistPanelWidth);
   yield* takeEvery(setCombinedPanelSplit, persistCombinedPanelSplit);
   yield* takeEvery(PANEL_ITEM_ACTIONS, persistPanelAndCardState);

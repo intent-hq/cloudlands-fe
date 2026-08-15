@@ -4,6 +4,10 @@ import { readable } from 'svelte/store';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
 
@@ -24,6 +28,22 @@ afterEach(() => {
 });
 
 describe('editorial panel resize handles', () => {
+  it('affirms conditional resize-handle visibility in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(PanelSplitHandle, { props: { direction: 'horizontal' } });
+      const target = view.getByRole('button', { name: 'Resize panel' });
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.classList).toContain('app-resize-handle');
+          expect(target.getAttribute('data-resize-axis')).toBe('x');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('uses one neutral visual contract across resize implementations', () => {
     const sharedStyles = fs.readFileSync(
       path.resolve(__dirname, '../../../../styles/resize-handles.css'),

@@ -29,6 +29,14 @@ export type ScriptOutputBuffer = {
   dropped: number;
 };
 
+export type ScriptQuickAction = 'start' | 'stop' | 'restart';
+
+export type ScriptOperationState = {
+  action: ScriptQuickAction;
+  pending: boolean;
+  error?: string;
+};
+
 /**
  * Per-workspace scripts state.
  */
@@ -37,6 +45,8 @@ export type ScriptsWorkspaceState = {
   scripts: Record<string, ScriptWithState>;
   /** Raw-chunk output ring buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputBuffer>;
+  /** Transient Shell controls state keyed by script ID. */
+  operations: Record<string, ScriptOperationState>;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */

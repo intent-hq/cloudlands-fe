@@ -136,14 +136,14 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
     );
   });
 
-  it('renders the turn-boundary divider immediately after the h-8 inter-turn spacer', () => {
+  it('renders the turn-boundary divider immediately after the semantic inter-turn gap', () => {
     const panel = readFileSync(
       resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
       'utf8',
     ).replace(/<!--[\s\S]*?-->/g, '');
     const normalized = panel.replace(/\s+/g, ' ');
     expect(normalized).toContain(
-      '<div class="h-8" aria-hidden="true"></div> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
+      '{#if !isLastTurnInConversation} <ConversationTurnGap currentIsEventNotification={isEventNotification} currentHasAssistantMessages={turn.assistantMessages.length > 0} nextIsEventNotification={nextTurnIsEventNotification} /> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
     );
   });
 
@@ -159,7 +159,8 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
     // passes the defer flag — anchored to the concrete count so removed or
     // non-matching sites fail rather than vacuously comparing undefined.
     const allSites = panel.match(/@render newMessagesDividerAfter\(/g) ?? [];
-    const withFlag = panel.match(/@render newMessagesDividerAfter\([^)]+, dividerAtTurnBoundary\)/g) ?? [];
+    const withFlag =
+      panel.match(/@render newMessagesDividerAfter\([^)]+,\s*dividerAtTurnBoundary,?\s*\)/g) ?? [];
     expect(allSites.length).toBe(4);
     expect(withFlag.length).toBe(allSites.length);
   });

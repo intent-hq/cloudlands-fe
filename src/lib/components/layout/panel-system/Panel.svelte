@@ -44,6 +44,7 @@
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -177,6 +178,7 @@
 
   // Get the active tab - use optional chaining to handle workspace transitions
   let activeTab = $derived(panel?.tabs?.find((t) => t.id === panel.activeTabId) ?? null);
+  let panelRef = $state.raw<HTMLDivElement | null>(null);
 
   // Keep recently-visited tabs mounted for faster switching
   // Tabs are kept for PANEL_TAB_CACHE_TTL_MS after switching away, then unmounted
@@ -211,6 +213,17 @@
     applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
+  // Clear focus before a content-triggered tab switch hides its cached wrapper.
+  // Header controls are outside these wrappers and keep their focus normally.
+  $effect.pre(() => {
+    const activeTabId = panel.activeTabId;
+    if (typeof document === 'undefined' || !panelRef) return;
+    const focusedElement = document.activeElement;
+    if (!(focusedElement instanceof HTMLElement) || !panelRef.contains(focusedElement)) return;
+    const focusedWrapper = focusedElement.closest<HTMLElement>('.tab-content-wrapper');
+    if (focusedWrapper && focusedWrapper.dataset.tabId !== activeTabId) focusedElement.blur();
+  });
+
   // Enforce the TTL even when the active tab does not change again. Without
   // this timer, inactive browser/editor/diff tabs can stay mounted forever.
   $effect(() => {
@@ -243,8 +256,6 @@
   let isDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
   let panelDropPlacement = $state<PanelDragPlacement | null>(null);
-  let panelRef = $state.raw<HTMLDivElement | null>(null);
-
   // Tab bar height in pixels (h-9 = 2.25rem = 36px)
   const TAB_BAR_HEIGHT = 36;
 
@@ -264,6 +275,10 @@
     onFocus?.();
   }
 
+  function markUserTouch() {
+    if (panel.pristine) appStore.dispatch(markPanelTouched(layoutId, panel.id));
+  }
+
   // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
   // fires when a focusable descendant receives focus; clicks on non-focusable
   // content (empty area, static text, non-interactive tab content) would
@@ -271,8 +286,13 @@
   // panel focuses before nested interactive elements handle the event, and it
   // stays passive — no preventDefault / stopPropagation.
   function handlePanelPointerDown() {
+    markUserTouch();
     if (isFocused) return;
     onFocus?.();
+  }
+
+  function handlePanelKeyDown() {
+    markUserTouch();
   }
 
   // Determine which drop zone based on cursor position (relative to content area below tab bar)
@@ -360,6 +380,7 @@
   }
 
   function handleDrop(e: DragEvent) {
+    markUserTouch();
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
@@ -419,14 +440,21 @@
 {#if panel}
   <div
     bind:this={panelRef}
-    class="panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50 bg-card text-card-foreground"
+    class={cn(
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50',
+      panel.pristine === true && panel.tabs.length === 0
+        ? 'bg-transparent text-sidebar-foreground'
+        : 'bg-card text-card-foreground',
+    )}
     class:contained
     data-panel-id={panel.id}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-zoomed={isZoomed}
+    data-pristine={panel.pristine === true}
     onfocusin={handlePanelFocus}
     onpointerdowncapture={handlePanelPointerDown}
+    onkeydowncapture={handlePanelKeyDown}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
@@ -514,6 +542,7 @@
           <div
             class="tab-content-wrapper h-full w-full"
             class:hidden={!isActive}
+            data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
           >

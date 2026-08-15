@@ -111,6 +111,8 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
 
 /** Options for opening content in panels */
 export interface OpenInPanelOptions {
+  /** Explicit owning workspace. Falls back to the route workspace for legacy callers. */
+  workspaceId?: string;
   /** If true, opens in an adjacent panel (or creates a split if needed). Used for cmd+click. */
   openInAdjacentPanel?: boolean;
   /** If true, creates a new adjacent panel rather than reusing an existing neighbor. */
@@ -146,7 +148,7 @@ export async function navigateToNote(noteId: string, options?: OpenInPanelOption
   logger.info(`[navigateToNote] Navigating to note: ${noteId}`, options);
 
   const currentPage = get(page);
-  const workspaceId = currentPage.params.id;
+  const workspaceId = options?.workspaceId ?? currentPage.params.id;
 
   if (!workspaceId) {
     logger.error('[navigateToNote] No workspace ID found in current page params');

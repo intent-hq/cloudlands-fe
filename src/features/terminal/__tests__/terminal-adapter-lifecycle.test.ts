@@ -18,6 +18,7 @@ function fakeTerminalsClient(): TerminalsClient {
 }
 
 const xtermMock = vi.hoisted(() => ({ instances: [] as any[] }));
+const fitMock = vi.hoisted(() => ({ instances: [] as any[] }));
 
 const fontMock = vi.hoisted(() => ({
   current: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace",
@@ -63,6 +64,10 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit = vi.fn();
     dispose = vi.fn();
+
+    constructor() {
+      fitMock.instances.push(this);
+    }
   },
 }));
 vi.mock('@xterm/addon-web-links', () => ({
@@ -114,6 +119,7 @@ vi.mock('$shared/utils/sanitize-credentials', () => ({
 describe('TerminalAdapter lifecycle cleanup', () => {
   beforeEach(() => {
     xtermMock.instances.length = 0;
+    fitMock.instances.length = 0;
     vi.clearAllMocks();
     document.documentElement.classList.remove('dark', 'light');
     Object.defineProperty(window, 'matchMedia', {
@@ -188,6 +194,57 @@ describe('TerminalAdapter lifecycle cleanup', () => {
 
     expect((adapter as any).container).toBeNull();
     expect((adapter as any).themeManager.container).toBeNull();
+  });
+
+  it('disconnects layout observers while hidden and refits after a hidden resize', async () => {
+    const resizeObservers: Array<{
+      observe: ReturnType<typeof vi.fn>;
+      disconnect: ReturnType<typeof vi.fn>;
+    }> = [];
+    (globalThis as any).ResizeObserver = class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+      constructor() {
+        resizeObservers.push(this);
+      }
+    };
+    let width = 800;
+    const container = document.createElement('div');
+    container.getBoundingClientRect = vi.fn(() => ({
+      width,
+      height: 400,
+      top: 0,
+      right: width,
+      bottom: 400,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }));
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    await adapter.initialize();
+    const fit = fitMock.instances[0].fit;
+    expect(fit).toHaveBeenCalledOnce();
+
+    adapter.setVisible(false);
+    expect(resizeObservers.at(-1)?.disconnect).toHaveBeenCalledOnce();
+    expect(xtermMock.instances[0].blur).toHaveBeenCalledOnce();
+
+    width = 900;
+    adapter.setVisible(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fit).toHaveBeenCalledTimes(2);
+
+    adapter.setVisible(false);
+    adapter.setVisible(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fit).toHaveBeenCalledTimes(2);
+    adapter.dispose({ killPty: false });
   });
 
   it('dispose() drops the PTY through the daemon `terminal.kill`', () => {

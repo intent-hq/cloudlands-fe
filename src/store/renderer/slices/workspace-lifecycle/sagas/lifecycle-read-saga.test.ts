@@ -488,6 +488,120 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('runs a trailing script refresh after an in-flight response can become stale', async () => {
+    let resolveFirst!: (scripts: unknown[]) => void;
+    const stale = [{ id: 'script-old' }];
+    const fresh = [{ id: 'script-new' }];
+    mocks.scripts.list
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce(fresh);
+    const run = start();
+
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS]]);
+
+    resolveFirst(stale);
+    await settle();
+
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS]]);
+    expect(run.actions).toEqual([
+      { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: stale } },
+      { type: 'scripts/setInitialized', payload: [WS, true] },
+      { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: fresh } },
+      { type: 'scripts/setInitialized', payload: [WS, true] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('coalesces a same-workspace script refresh burst into one trailing read', async () => {
+    let resolveFirst!: (scripts: unknown[]) => void;
+    mocks.scripts.list
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce([]);
+    const run = start();
+
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    run.channel.put(refreshScripts(WS));
+    run.channel.put(refreshScripts(WS));
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS]]);
+
+    resolveFirst([]);
+    await settle();
+
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS]]);
+    await settle();
+    expect(mocks.scripts.list).toHaveBeenCalledTimes(2);
+    await stop(run.task);
+  });
+
+  it('keeps in-flight and trailing script refreshes isolated by workspace', async () => {
+    const otherWorkspaceId = 'ws-scripts-other';
+    const pending: Record<string, Array<(scripts: unknown[]) => void>> = {};
+    mocks.scripts.list.mockImplementation(
+      (workspaceId: string) =>
+        new Promise((resolve) => {
+          (pending[workspaceId] ??= []).push(resolve);
+        }),
+    );
+    const run = start();
+
+    run.channel.put(refreshScripts(WS));
+    run.channel.put(refreshScripts(otherWorkspaceId));
+    await settle();
+    run.channel.put(refreshScripts(WS));
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+
+    pending[otherWorkspaceId][0]([{ id: 'other' }]);
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+
+    pending[WS][0]([{ id: 'stale' }]);
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [otherWorkspaceId], [WS]]);
+    pending[WS][1]([{ id: 'fresh' }]);
+    await settle();
+    expect(run.actions).toContainEqual({
+      type: 'scripts/setScriptsData',
+      payload: { wsId: WS, scripts: [{ id: 'fresh' }] },
+    });
+    await stop(run.task);
+  });
+
+  it.each([
+    ['unmount', () => workspaceUnmounted(WS)],
+    ['delete', () => workspaceDeleted(WS, [])],
+  ])('cancels a script refresh and its trailing rerun on workspace %s', async (_name, cleanup) => {
+    let resolveFirst!: (scripts: unknown[]) => void;
+    mocks.scripts.list
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce([]);
+    const run = start();
+
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    run.channel.put(refreshScripts(WS));
+    run.channel.put(cleanup());
+    await settle();
+    resolveFirst([{ id: 'late' }]);
+    await settle();
+
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS]]);
+    expect(run.actions).toEqual([]);
+
+    run.channel.put(refreshScripts(WS));
+    await settle();
+    expect(mocks.scripts.list.mock.calls).toEqual([[WS], [WS]]);
+    await stop(run.task);
+  });
+
   it('marks token usage stale for null and thrown reads', async () => {
     const run = start();
     run.channel.put(fetchWorkspaceTokenUsage(WS));

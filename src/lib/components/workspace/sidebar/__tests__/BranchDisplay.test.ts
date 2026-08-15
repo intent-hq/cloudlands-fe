@@ -1,16 +1,10 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -33,7 +27,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -54,7 +49,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
+  setWorkspaceEntity: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: args,
+  })),
 }));
 
 const mockUpdate = vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
@@ -130,6 +128,26 @@ describe('BranchDisplay', () => {
     };
   });
 
+  it('affirms repository branch metadata and alignment in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = await renderBranchDisplay({ trunkBranch: 'develop' });
+      const target = view.container.querySelector<HTMLButtonElement>('button')!;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.textContent).toContain('feature/branch');
+          expect(
+            view.container
+              .querySelector('[data-testid="branch-selector"]')
+              ?.getAttribute('data-value'),
+          ).toBe('develop');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('renders the workspace branch and trunk branch', async () => {
     const { container } = await renderBranchDisplay({ trunkBranch: 'develop' });
     const branchBtn = container.querySelector('button');
@@ -185,7 +203,9 @@ describe('BranchDisplay', () => {
     });
 
     const { container } = await renderBranchDisplay({ canChangeTrunk: true });
-    const changeBtn = container.querySelector('[data-testid="branch-selector-change"]') as HTMLButtonElement;
+    const changeBtn = container.querySelector(
+      '[data-testid="branch-selector-change"]',
+    ) as HTMLButtonElement;
     await fireEvent.click(changeBtn);
 
     await waitFor(() =>

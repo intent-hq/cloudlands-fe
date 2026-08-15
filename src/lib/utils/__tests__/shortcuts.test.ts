@@ -1,12 +1,11 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   SHORTCUTS,
   SHORTCUT_CATEGORIES,
+  formatShortcut,
+  getShortcutChord,
   getShortcutsForContext,
+  isMacPlatform,
 } from '../shortcuts';
 
 describe('shortcut registry', () => {
@@ -32,5 +31,36 @@ describe('shortcut registry', () => {
     expect(getShortcutsForContext('global').editor?.shortcuts ?? []).not.toContainEqual(
       expect.objectContaining({ key: SHORTCUTS.TOGGLE_TASK_LIST.key }),
     );
+  });
+
+  it('uses one workspace-view shortcut definition for registration and the cheat sheet', () => {
+    expect(SHORTCUTS.WORKSPACE_VIEW_MODE).toEqual({
+      key: 'mod+shift+l',
+      label: 'Switch workspace view',
+    });
+    expect(getShortcutChord('WORKSPACE_VIEW_MODE', true)).toEqual({
+      key: 'l',
+      meta: true,
+      ctrl: false,
+      shift: true,
+      alt: false,
+    });
+    expect(getShortcutChord('WORKSPACE_VIEW_MODE', false)).toEqual({
+      key: 'l',
+      meta: false,
+      ctrl: true,
+      shift: true,
+      alt: false,
+    });
+    expect(SHORTCUT_CATEGORIES.global.shortcuts).toContainEqual({
+      key: SHORTCUTS.WORKSPACE_VIEW_MODE.key,
+      label: SHORTCUTS.WORKSPACE_VIEW_MODE.label,
+      contexts: ['global'],
+    });
+  });
+
+  it('formats the title-bar shortcut hints for the current platform', () => {
+    expect(formatShortcut('mod+o')).toBe(isMacPlatform() ? '⌘O' : 'Ctrl+O');
+    expect(formatShortcut('mod+shift+l')).toBe(isMacPlatform() ? '⌘⇧L' : 'Ctrl+Shift+L');
   });
 });

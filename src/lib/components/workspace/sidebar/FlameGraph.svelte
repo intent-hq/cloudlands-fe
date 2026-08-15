@@ -5,12 +5,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import {
-    TASK_STATUS_BAR_CLASSES,
-    TASK_STATUS_INDICATOR_CLASSES,
-    TASK_STATUS_LABELS,
-    TASK_STATUS_ORDER,
-  } from '../utils/task-status-display';
+  import { TASK_STATUS_INDICATOR_CLASSES, TASK_STATUS_LABELS } from '../utils/task-status-display';
+  import TaskStatusProgress from '../TaskStatusProgress.svelte';
   interface Props {
     notes: Note[];
     onTaskClick?: (noteId: string) => void;
@@ -151,39 +147,9 @@
   const completedCount = $derived(
     taskList.filter((task) => task.note.metadata?.task?.status === 'complete').length,
   );
-  const progressPercent = $derived(Math.min(100, Math.max(0, (progress ?? 0) * 100)));
-
-  interface StatusBar {
-    status: TaskStatus;
-    count: number;
-  }
-
-  const statusBars = $derived.by(() => {
-    const counts = new Map<TaskStatus, number>();
-    for (const task of taskList) {
-      const status = task.note.metadata?.task?.status ?? 'not_started';
-      counts.set(status, (counts.get(status) ?? 0) + 1);
-    }
-    return TASK_STATUS_ORDER.flatMap<StatusBar>((status) => {
-      const count = counts.get(status) ?? 0;
-      return count > 0 ? [{ status, count }] : [];
-    });
-  });
-
-  const progressValueText = $derived(
-    statusBars
-      .map((bar) => `${formatInteger(bar.count)} ${TASK_STATUS_LABELS[bar.status].toLowerCase()}`)
-      .join(', '),
+  const taskStatuses = $derived(
+    taskList.map((task) => task.note.metadata?.task?.status ?? ('not_started' as TaskStatus)),
   );
-
-  function statusBarLabel(status: TaskStatus, count: number): string {
-    return count === 1
-      ? m.workspace_flameGraph_statusTasks_one({ status: TASK_STATUS_LABELS[status] })
-      : m.workspace_flameGraph_statusTasks_many({
-          status: TASK_STATUS_LABELS[status],
-          count: formatInteger(count),
-        });
-  }
 </script>
 
 {#snippet taskListTooltip()}
@@ -229,35 +195,15 @@
   </div>
 {/snippet}
 
-{#snippet progressBar()}
-  <div
-    class="flame-progress-enter flex h-5 w-full overflow-hidden rounded-xs bg-background"
-    role="progressbar"
-    aria-label={m.workspace_flameGraph_taskProgress_ariaLabel()}
-    aria-valuemin="0"
-    aria-valuemax="100"
-    aria-valuenow={Math.round(progressPercent)}
-    aria-valuetext={progressValueText}
-    data-flame-animation-key={animationKey}
-  >
-    {#each statusBars as bar (bar.status)}
-      <div
-        class="flame-status-segment h-full min-w-0 {TASK_STATUS_BAR_CLASSES[bar.status]}"
-        data-flame-status-bar={bar.status}
-        aria-label={statusBarLabel(bar.status, bar.count)}
-        style:flex-basis="0%"
-        style:flex-grow={bar.count}
-        style:mask-image={bar.status === 'in_progress'
-          ? 'var(--status-in-progress-hatch-mask)'
-          : undefined}
-      ></div>
-    {/each}
-  </div>
-{/snippet}
-
 {#key animationKey}
   {#if loading}
-    <div class="h-5 w-full" data-flame-progress-placeholder aria-hidden="true"></div>
+    <TaskStatusProgress
+      statuses={[]}
+      {progress}
+      loading
+      {animationKey}
+      ariaLabel={m.workspace_flameGraph_taskProgress_ariaLabel()}
+    />
   {:else}
     <Tooltip
       content={taskListTooltip}
@@ -266,49 +212,18 @@
       sideOffset={6}
       delayDuration={300}
       disableHoverableContent={false}
-      contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"
+      contentClass="h-auto! min-h-0! max-w-80 border-foreground/20! bg-secondary! p-0! text-secondary-foreground! shadow-(--elevation-overlay)! ring-1 ring-foreground/10 whitespace-normal"
       class="w-full {specNoteId && onTaskClick ? 'cursor-pointer' : ''}"
       onclick={() => specNoteId && onTaskClick?.(specNoteId)}
       showArrow
     >
-      {@render progressBar()}
+      <TaskStatusProgress
+        statuses={taskStatuses}
+        {progress}
+        loading={false}
+        {animationKey}
+        ariaLabel={m.workspace_flameGraph_taskProgress_ariaLabel()}
+      />
     </Tooltip>
   {/if}
 {/key}
-
-<style>
-  .flame-progress-enter {
-    animation: flame-progress-enter var(--motion-slow) var(--ease-emphasized-out) both;
-  }
-
-  .flame-status-segment {
-    transition: flex-grow var(--motion-slow) var(--ease-emphasized-out);
-    animation: flame-status-enter var(--motion-standard) var(--ease-standard) both;
-  }
-
-  @keyframes flame-progress-enter {
-    from {
-      clip-path: inset(0 100% 0 0 round var(--radius-small));
-    }
-    to {
-      clip-path: inset(0 0 0 0 round var(--radius-small));
-    }
-  }
-
-  @keyframes flame-status-enter {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .flame-progress-enter,
-    .flame-status-segment {
-      animation: none;
-      transition: none;
-    }
-  }
-</style>

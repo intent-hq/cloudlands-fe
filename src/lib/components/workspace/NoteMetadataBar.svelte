@@ -268,7 +268,11 @@
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependsOn_label()}</div>
           <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
             {#each dependsOn as depId (depId)}
-              <TaskRelationLink noteId={depId} unmet={!isComplete && unmetDependsOn.has(depId)} />
+              <TaskRelationLink
+                {workspaceId}
+                noteId={depId}
+                unmet={!isComplete && unmetDependsOn.has(depId)}
+              />
             {/each}
           </div>
         </div>
@@ -278,7 +282,7 @@
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependedOnBy_label()}</div>
           <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
             {#each dependedOnBy as dependentId (dependentId)}
-              <TaskRelationLink noteId={dependentId} />
+              <TaskRelationLink {workspaceId} noteId={dependentId} />
             {/each}
           </div>
         </div>
@@ -288,7 +292,7 @@
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_conflictsWith_label()}</div>
           <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
             {#each conflictsWith as conflictId (conflictId)}
-              <TaskRelationLink noteId={conflictId} variant="conflict" />
+              <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
             {/each}
           </div>
         </div>

@@ -76,6 +76,8 @@ import {
   COMPACT_TOOL_ICON_BOX_CLASS,
   COMPACT_TOOL_ROW_CLASS,
   COMPACT_TOOL_SENTENCE_CLASS,
+  OPERATIONAL_EXPANDED_CONTENT_CLASS,
+  OPERATIONAL_ICON_BOX_CLASS,
   OPERATIONAL_ICON_CLASS,
   OPERATIONAL_ROW_LINE_CLASS,
   OPERATIONAL_SECONDARY_CLASS,
@@ -191,7 +193,26 @@ describe('shared operational disclosure-row contract', () => {
     const group = render(ResponseGroup, {
       props: { name: 'Streaming group', isStreaming: true, children },
     });
-    expect(group.container.querySelector('[data-operational-disclosure-row] svg')).toBeNull();
+    const groupIconBox = group.container.querySelector('[data-operational-icon-box]')!;
+    expectClasses(groupIconBox, OPERATIONAL_ICON_BOX_CLASS);
+    expect(groupIconBox.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
+  });
+
+  it('uses the shared expanded-content header gap for reasoning and response groups', async () => {
+    const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Reasoning/ }));
+    expectClasses(
+      reasoning.container.querySelector('[data-operational-expanded-content]')!,
+      OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    );
+    cleanup();
+
+    const group = render(ResponseGroup, { props: { name: 'Group', children } });
+    await fireEvent.click(group.container.querySelector('button')!);
+    expectClasses(
+      group.container.querySelector('[data-operational-expanded-content]')!,
+      OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    );
   });
 
   it('preserves completed and error disclosure semantics and specialized expanded content', async () => {
@@ -259,11 +280,11 @@ describe('shared operational disclosure-row contract', () => {
   });
 
   it.each([
-    ['note-tool', 'tool-call-note-link'],
-    ['file-tool', 'tool-call-file-link'],
+    ['note-tool', 'tool-call-note-link', false],
+    ['file-tool', 'tool-call-file-link', true],
   ])(
-    'keeps the %s action trailing after one truncating sentence at wide and narrow widths',
-    (name, testId) => {
+    'keeps the %s action in the readable sentence flow at wide and narrow widths',
+    (name, testId, isInline) => {
       const { container } = render(ToolCall, {
         props: {
           toolUse: { id: `tool-${name}`, name, input: {} } as any,
@@ -275,11 +296,17 @@ describe('shared operational disclosure-row contract', () => {
       const row = container.querySelector('[data-operational-disclosure-row]')!;
       const sentence = row.querySelector('[data-tool-sentence]')!;
       const action = screen.getByTestId(testId);
-      expect(
-        sentence.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
       expectClasses(sentence, COMPACT_TOOL_SENTENCE_CLASS);
-      expect(action.className).toContain('shrink-0');
+      if (isInline) {
+        expect(sentence.contains(action)).toBe(true);
+        expect(action.className).toContain('min-w-0');
+        expect(action.className).toContain('truncate');
+      } else {
+        expect(
+          sentence.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+        expect(action.className).toContain('shrink-0');
+      }
       expect(row.className).not.toContain('justify-between');
       expect(row.querySelector('.ml-auto')).toBeNull();
 
