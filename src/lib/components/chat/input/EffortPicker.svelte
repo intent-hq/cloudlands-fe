@@ -167,7 +167,7 @@
 
   async function commit(index: number) {
     const step = steps[index];
-    if (!step || disabled || !workspaceId) return;
+    if (!step || disabled || (!embedded && !workspaceId)) return;
 
     // Compare against the persisted field, not `currentValue`: an effort the
     // model no longer advertises also maps to the "Default" position, and
@@ -177,7 +177,7 @@
 
     const applied = embedded
       ? await onEffortChange?.(step.value)
-      : agentId
+      : agentId && workspaceId
         ? await applyReasoningEffort(agentId, workspaceId, step.value, previous)
         : false;
     if (applied === false) sliderIndex = currentIndex;
