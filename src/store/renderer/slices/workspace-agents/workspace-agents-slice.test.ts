@@ -344,7 +344,7 @@ describe('workspace-agents selectors', () => {
       lastActivity: '2026-03-19T02:00:00.000Z',
     } as AgentSession;
 
-    expect(resolveEmptyLayoutAgent([newer, older])).toBe(newer);
+    expect(resolveEmptyLayoutAgent([newer, older], WS_1)).toBe(newer);
   });
 
   it('excludes background and delegated agents from recent-message selection', () => {
@@ -374,7 +374,7 @@ describe('workspace-agents selectors', () => {
     } as AgentSession;
 
     expect(
-      resolveEmptyLayoutAgent([background, metadataBackground, delegated, child, primary]),
+      resolveEmptyLayoutAgent([background, metadataBackground, delegated, child, primary], WS_1),
     ).toBe(primary);
   });
 
@@ -390,21 +390,33 @@ describe('workspace-agents selectors', () => {
       messages: [{ id: 'earlier', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
     } as AgentSession;
 
-    expect(resolveEmptyLayoutAgent([laterCreated, earlierCreated])).toBe(earlierCreated);
+    expect(resolveEmptyLayoutAgent([laterCreated, earlierCreated], WS_1)).toBe(earlierCreated);
   });
 
-  it('ignores missing timestamps and falls back to the canonical initial agent', () => {
+  it('returns null when no eligible agent has a valid ordering timestamp', () => {
     const invalidRecent = {
       ...mockAgent('agent-invalid'),
       messages: [{ id: 'invalid', role: 'user', timestamp: undefined }],
     } as unknown as AgentSession;
-    const initial = {
-      ...mockAgent('agent-initial'),
-      isInitialAgent: true,
-      createdAt: '2026-03-19T01:00:00.000Z',
+
+    expect(resolveEmptyLayoutAgent([invalidRecent], WS_1)).toBeNull();
+  });
+
+  it.each([
+    ['top-level initial marker', { isInitialAgent: true }],
+    ['metadata initial marker', { metadata: { isInitialAgent: true } }],
+    ['alternate metadata initial marker', { agentMetadata: { isInitialAgent: true } }],
+    ['wrong workspace', { workspaceId: WS_2 }],
+    ['deleted status', { status: 'deleted' }],
+    ['pending deletion', { pendingDeleteAt: '2026-03-19T03:00:00.000Z' }],
+  ])('excludes an agent with %s', (_name, overrides) => {
+    const excluded = {
+      ...mockAgent('agent-excluded'),
+      messages: [{ id: 'excluded', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
+      ...overrides,
     } as AgentSession;
 
-    expect(resolveEmptyLayoutAgent([invalidRecent, initial])).toBe(initial);
+    expect(resolveEmptyLayoutAgent([excluded], WS_1)).toBeNull();
   });
 
   it('returns per-workspace agent values (sessions from agent-session slice)', () => {

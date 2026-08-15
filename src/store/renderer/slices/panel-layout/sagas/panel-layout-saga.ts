@@ -342,7 +342,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
   const agent = agents
-    ? resolveEmptyLayoutAgent(agents)
+    ? resolveEmptyLayoutAgent(agents, wsId)
     : yield* selectEmptyLayoutAgent.effect(wsId);
   if (!agent) return;
   yield* put(

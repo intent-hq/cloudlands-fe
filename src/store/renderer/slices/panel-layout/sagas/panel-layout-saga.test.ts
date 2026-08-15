@@ -609,20 +609,31 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(run.task);
     });
 
-    it('falls back to the canonical initial agent and does not duplicate its tab', async () => {
-      const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-      const run = startRestoreSaga(emptyStoredLayout, [initial]);
+    it.each([
+      ['no user-message stamp', {}],
+      ['top-level initial marker', { isInitialAgent: true }],
+      ['metadata initial marker', { metadata: { isInitialAgent: true } }],
+      ['wrong workspace', { workspaceId: WS_2 }],
+      ['deleted status', { status: 'deleted' }],
+      ['pending deletion', { pendingDeleteAt: '2026-07-31T03:00:00.000Z' }],
+      ['background marker', { isBackground: true }],
+      ['delegation marker', { metadata: { createdByAgentId: 'agent-parent' } }],
+      ['child marker', { parentSessionId: 'agent-parent' }],
+    ])('leaves the restored layout empty for %s', async (_name, overrides) => {
+      const timestamp = Object.keys(overrides).length ? '2026-07-31T02:00:00.000Z' : undefined;
+      const ineligible = agent('agent-ineligible', 'Ineligible', timestamp, overrides);
+      const run = startRestoreSaga(emptyStoredLayout, [ineligible]);
       await settle();
-      run.dispatch(setAgents(WS_1, [initial]));
+      run.dispatch(setAgents(WS_1, [ineligible]));
       await settle();
 
       const tabs = Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
         (panel: any) => panel.tabs,
       );
-      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-initial' })]);
+      expect(tabs).toEqual([]);
       expect(
         run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
       await cancelSaga(run.task);
     });
 
@@ -640,6 +651,9 @@ describe('panelLayoutSaga', () => {
         (panel: any) => panel.tabs,
       );
       expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-recent' })]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(1);
       await cancelSaga(run.task);
     });
 

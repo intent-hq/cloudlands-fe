@@ -103,10 +103,19 @@ export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSessi
 }
 
 /** Resolve the primary agent that should fill an otherwise empty restored layout. */
-export function resolveEmptyLayoutAgent(agents: AgentSession[]): AgentSession | null {
+export function resolveEmptyLayoutAgent(
+  agents: AgentSession[],
+  workspaceId: string,
+): AgentSession | null {
   const orderedPrimaryAgents = agents
     .filter(
       (agent) =>
+        String(agent.workspaceId) === workspaceId &&
+        agent.status !== 'deleted' &&
+        !agent.pendingDeleteAt &&
+        agent.isInitialAgent !== true &&
+        agent.metadata?.isInitialAgent !== true &&
+        agent.agentMetadata?.isInitialAgent !== true &&
         agent.isBackground !== true &&
         agent.metadata?.isBackground !== true &&
         !agent.parentSessionId &&
@@ -122,11 +131,11 @@ export function resolveEmptyLayoutAgent(agents: AgentSession[]): AgentSession | 
       newestTimestamp = timestamp;
     }
   }
-  return newestAgent ?? resolveCanonicalInitialAgent(agents);
+  return newestAgent;
 }
 
 export const selectEmptyLayoutAgent = store.createSelector((state, wsId: string) =>
-  resolveEmptyLayoutAgent(selectAllWorkspaceAgents.select(state, wsId)),
+  resolveEmptyLayoutAgent(selectAllWorkspaceAgents.select(state, wsId), wsId),
 );
 
 export const selectInitialAgentId = store.createSelector((state, wsId: string) => {
