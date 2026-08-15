@@ -507,6 +507,83 @@ describe('WorkspaceColumnsView', () => {
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-3');
   });
 
+  it('jumps instantly to the current workspace on initial mount', async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      currentWorkspaceId.set('ws-3');
+      render(WorkspaceColumnsView);
+      await tick();
+
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: 'auto',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('smooth-scrolls workspace switches after the initial mount reveal', async () => {
+    render(WorkspaceColumnsView);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    const target = screen.getByLabelText('Workspace column ws-3');
+    const scrollIntoView = vi.fn();
+    target.scrollIntoView = scrollIntoView;
+    scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
+    target.getBoundingClientRect = vi.fn(() => ({ left: 900, right: 1260 }) as DOMRect);
+
+    currentWorkspaceId.set('ws-3');
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'nearest',
+    });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('mounts only the landing window on initial mount, not intermediate columns', async () => {
+    stubIntersectionObserver();
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    const rect = (left: number, right: number) =>
+      ({ left, right, top: 0, bottom: 600, width: right - left, height: 600 }) as DOMRect;
+    // Post-jump layout: the landing column (ws-3) sits in the viewport while
+    // the columns scrolled past (ws-1, ws-2) are far outside root + overscan.
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.getAttribute?.('aria-label') === 'Open spaces in columns') return rect(0, 800);
+      const stack = this.getAttribute?.('data-workspace-stack');
+      if (stack === 'ws-1') return rect(-3000, -2640);
+      if (stack === 'ws-2') return rect(-2640, -2280);
+      if (stack === 'ws-3') return rect(0, 360);
+      return rect(0, 0);
+    };
+    try {
+      currentWorkspaceId.set('ws-3');
+      render(WorkspaceColumnsView);
+      await tick();
+
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      // No observer entries have fired — the layout seed alone mounts the
+      // landing window, and intermediate columns stay placeholders.
+      expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-3');
+      expect(surfaceFor('ws-3')).toBeTruthy();
+      expect(placeholderFor('ws-1')).toBeTruthy();
+      expect(placeholderFor('ws-2')).toBeTruthy();
+      expect(surfaceFor('ws-1')).toBeNull();
+      expect(surfaceFor('ws-2')).toBeNull();
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('scrolls a newly selected workspace column into horizontal view', async () => {
     render(WorkspaceColumnsView);
     const scroller = screen.getByLabelText('Open spaces in columns');

@@ -66,6 +66,7 @@
   let dragOverPlacement = $state<WorkspaceDragPlacement | null>(null);
   let lifecycleMotionReady = $state(false);
   let lastScrolledWorkspaceId: string | null = null;
+  let hasRevealedInitialWorkspace = false;
   let previousPanelColumnCounts: Record<string, number> = {};
   let panelColumnCountsInitialized = false;
   let revealFrame: number | null = null;
@@ -184,6 +185,19 @@
     const workspaceId = $currentWorkspaceId$;
     const scroller = columnsScroller;
     if (!workspaceId || !scroller || workspaceId === lastScrolledWorkspaceId) return;
+
+    if (!hasRevealedInitialWorkspace) {
+      // The first reveal per mount jumps instantly — a smooth sweep would drag
+      // every intermediate column through the observer window, mounting a full
+      // surface for each just to scroll past it. Jumping synchronously here
+      // (this effect runs before the visibility-tracker effects below) also
+      // makes the layout seed read the post-jump scroll position, so the
+      // landing window mounts immediately without a placeholder flash.
+      hasRevealedInitialWorkspace = true;
+      lastScrolledWorkspaceId = workspaceId;
+      scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto');
+      return;
+    }
 
     scheduleWorkspaceReveal(workspaceId);
   });
