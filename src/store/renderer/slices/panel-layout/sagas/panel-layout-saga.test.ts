@@ -200,6 +200,70 @@ function startLifecycleSaga(initialSpecContent = '', activeWorkspaceId: string |
   return { dispatch, getState: () => state, send, task };
 }
 
+function startRestoreSaga(
+  stored: unknown,
+  agents: AgentSession[],
+  initialLayout = emptyWorkspaceState,
+) {
+  mocks.getJSON.mockReturnValue(stored);
+  let backendId = LOCAL_CONNECTION_ID;
+  let state: any = {
+    ...storeState(WS_1),
+    panelLayout: { byWorkspaceId: { [WS_1]: { ...initialLayout } } },
+    workspaceAgents: {
+      byWorkspaceId: {
+        [WS_1]: {
+          agentIds: agents.map((agent) => String(agent.id)),
+          foregroundAgentIds: agents.map((agent) => agent.id),
+        },
+      },
+    },
+    agentSessions: {
+      byAgentId: Object.fromEntries(agents.map((agent) => [String(agent.id), agent])),
+    },
+  };
+  const channel = stdChannel();
+  const dispatch = vi.fn((action) => {
+    state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+    channel.put(action);
+  });
+  const getState = () => ({
+    ...state,
+    connections: { ...state.connections, activeId: backendId },
+  });
+  const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga);
+  return {
+    dispatch,
+    getState,
+    send: channel.put,
+    setBackendId: (id: string) => {
+      backendId = id;
+    },
+    task,
+  };
+}
+
+function agent(
+  id: string,
+  name: string,
+  userMessageAt?: string,
+  overrides: Partial<AgentSession> = {},
+): AgentSession {
+  return {
+    id,
+    backendSessionId: null,
+    workspaceId: WS_1,
+    name,
+    status: 'idle',
+    messages: userMessageAt
+      ? [{ id: `message-${id}`, role: 'user', timestamp: userMessageAt }]
+      : [],
+    createdAt: '2026-07-31T00:00:00.000Z',
+    updatedAt: '2026-07-31T00:00:00.000Z',
+    ...overrides,
+  } as AgentSession;
+}
+
 async function cancelSaga(task: ReturnType<typeof runSaga>) {
   task.cancel();
   await task.toPromise();
@@ -468,13 +532,128 @@ describe('panelLayoutSaga', () => {
     channel.put(workspaceMounted('optimistic-new'));
     await settle();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      setRestoreStatus.type,
+      resetLayout.type,
+      setRestoreStatus.type,
+      setRestoreStatus.type,
+      resetLayout.type,
+      setRestoreStatus.type,
+    ]);
+    expect(
+      dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === setRestoreStatus.type),
+    ).toEqual([
       setRestoreStatus(WS_1, 'pending'),
       setRestoreStatus(WS_1, 'empty'),
       setRestoreStatus(WS_2, 'pending'),
       setRestoreStatus(WS_2, 'invalid'),
     ]);
     await cancelSaga(task);
+  });
+
+  describe('empty restored layout reconciliation', () => {
+    const emptyStoredLayout: WorkspacePanelLayout = {
+      root: { type: 'panel', panelId: 'empty-panel' },
+      panels: { 'empty-panel': { id: 'empty-panel', tabs: [], activeTabId: null } },
+      focusedPanelId: 'empty-panel',
+    };
+    const foreignOnlyLayout: WorkspacePanelLayout = {
+      root: { type: 'panel', panelId: 'foreign-panel' },
+      panels: {
+        'foreign-panel': {
+          id: 'foreign-panel',
+          tabs: [
+            {
+              id: 'foreign-tab',
+              type: 'agent',
+              title: 'Foreign',
+              agentId: 'foreign-agent',
+              workspaceId: WS_2,
+              closable: true,
+            },
+          ],
+          activeTabId: 'foreign-tab',
+        },
+      },
+      focusedPanelId: 'foreign-panel',
+    };
+
+    it.each([
+      ['missing', undefined],
+      ['invalid', { bad: true }],
+      ['empty', emptyStoredLayout],
+      ['normalized-empty', foreignOnlyLayout],
+    ])('opens the newest primary agent after a %s restore', async (_name, stored) => {
+      const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+      const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
+      const background = agent('agent-background', 'Background', '2026-07-31T03:00:00.000Z', {
+        isBackground: true,
+      });
+      const delegated = agent('agent-delegated', 'Delegated', '2026-07-31T04:00:00.000Z', {
+        metadata: { createdByAgentId: 'agent-initial' },
+      });
+      const run = startRestoreSaga(stored, [initial, recent, background, delegated]);
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-recent' })]);
+      expect(workspace.focusedPanelId).toBeTruthy();
+      expect(workspace.pendingFocusTabId).toBe(tabs[0].id);
+      expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
+        focusedPanelId: workspace.focusedPanelId,
+        panels: workspace.panels,
+      });
+      await cancelSaga(run.task);
+    });
+
+    it('falls back to the canonical initial agent and does not duplicate its tab', async () => {
+      const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(emptyStoredLayout, [initial]);
+      await settle();
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const tabs = Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+        (panel: any) => panel.tabs,
+      );
+      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-initial' })]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(1);
+      await cancelSaga(run.task);
+    });
+
+    it('reconciles once when the agent snapshot arrives after the empty restore', async () => {
+      const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+      const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
+      const run = startRestoreSaga(emptyStoredLayout, []);
+      await settle();
+
+      run.dispatch(setAgents(WS_1, [initial, recent]));
+      run.dispatch(setAgents(WS_1, [initial, recent]));
+      await settle();
+
+      const tabs = Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+        (panel: any) => panel.tabs,
+      );
+      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-recent' })]);
+      await cancelSaga(run.task);
+    });
+
+    it('leaves a non-empty restored layout unchanged', async () => {
+      const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
+      const run = startRestoreSaga(layout, [recent]);
+      await settle();
+
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toMatchObject(layout);
+      expect(
+        run.dispatch.mock.calls.some(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toBe(false);
+      await cancelSaga(run.task);
+    });
   });
 
   it('restores and cleans up a rendered canonical panel-layout scope', async () => {
@@ -984,6 +1163,24 @@ describe('panelLayoutSaga', () => {
       expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
       expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
+    });
+
+    it('opens the same recent primary agent after an empty backend switch restore', async () => {
+      const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
+      const run = startRestoreSaga(layout, [recent]);
+      await settle();
+      run.dispatch.mockClear();
+      mocks.getJSON.mockReturnValue(undefined);
+      run.setBackendId(REMOTE_ID);
+
+      run.send(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-recent' })]);
+      expect(workspace.pendingFocusTabId).toBe(tabs[0].id);
+      await cancelSaga(run.task);
     });
   });
 

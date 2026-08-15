@@ -14,6 +14,7 @@ import { buffers, channel, type Channel } from 'redux-saga';
 
 import { clearPanelLayoutAdapter } from '$features/layout/panel-layout-adapter';
 import { m } from '$shared/paraglide/messages.js';
+import type { AgentSession } from '$shared/types';
 import {
   loadPanelLayoutHistory,
   savePanelLayoutHistory,
@@ -36,7 +37,9 @@ import {
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import {
   resolveCanonicalInitialAgent,
+  resolveEmptyLayoutAgent,
   selectAllWorkspaceAgents,
+  selectEmptyLayoutAgent,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
@@ -334,6 +337,30 @@ function normalizeLayoutForWorkspace(
   return normalized;
 }
 
+function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): SagaGenerator<void> {
+  if (!restoredWorkspaceIds.has(wsId)) return;
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
+  const agent = agents
+    ? resolveEmptyLayoutAgent(agents)
+    : yield* selectEmptyLayoutAgent.effect(wsId);
+  if (!agent) return;
+  yield* put(
+    openTabInAdjacentOrSplit(
+      wsId,
+      {
+        type: 'agent',
+        title: agent.name,
+        agentId: String(agent.id),
+        workspaceId: wsId,
+        closable: true,
+      },
+      layout.focusedPanelId ?? undefined,
+      { force: true },
+    ),
+  );
+}
+
 export function* loadLayoutFromStorage(
   wsId: string,
 ): SagaGenerator<WorkspacePanelLayout | 'invalid' | null> {
@@ -352,13 +379,16 @@ export function* handleWorkspaceMountedRestore(
   yield* put(setRestoreStatus(wsId, 'pending'));
   const stored = yield* call(loadLayoutFromStorage, wsId);
   if (stored === null) {
+    yield* put(resetLayout(wsId));
     yield* put(setRestoreStatus(wsId, 'empty'));
   } else if (stored === 'invalid') {
+    yield* put(resetLayout(wsId));
     yield* put(setRestoreStatus(wsId, 'invalid'));
   } else {
     yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
     yield* put(setRestoreStatus(wsId, 'restored'));
   }
+  yield* call(reconcileEmptyRestoredLayout, wsId);
 }
 
 export function* persistPanelLayout(action: { payload?: unknown }): SagaGenerator<void> {
@@ -573,6 +603,12 @@ function* resolveInitialAgentFromSnapshot(
   yield* put(resolveNewWorkspaceInitialAgent(workspaceId, agentId, initial.name));
 }
 
+function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): SagaGenerator<void> {
+  yield* call(resolveInitialAgentFromSnapshot, action);
+  const [workspaceId, agents] = action.payload;
+  yield* call(reconcileEmptyRestoredLayout, workspaceId, agents);
+}
+
 function* handleNewWorkspaceBootstrap(
   action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
 ): SagaGenerator<void> {
@@ -617,6 +653,7 @@ function* restoreAfterBackendSwitch(): SagaGenerator<void> {
     yield* put(initializeLayout(wsId, normalizeLayoutForWorkspace(wsId, stored)));
     yield* put(setRestoreStatus(wsId, 'restored'));
   }
+  yield* call(reconcileEmptyRestoredLayout, wsId);
 }
 
 /**
@@ -648,7 +685,7 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
   }
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
-    yield* takeEvery(setAgents, resolveInitialAgentFromSnapshot);
+    yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
     yield* takeEvery(
       [applyNoteCreated, applyNoteUpdated, loadWorkspaceNotesSucceeded],
       reconcileSpecFromNoteAction,

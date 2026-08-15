@@ -18,6 +18,8 @@ import {
   selectIsInitialSpecWriteInProgress,
   selectIsLoadingAgents,
   selectRecentlyCreatedAgents,
+  resolveEmptyLayoutAgent,
+  selectEmptyLayoutAgent,
   selectWorkspaceAgentIsSoftDeleted,
   selectWorkspaceAgentIsStreaming,
   selectWorkspaceAgentSession,
@@ -311,6 +313,98 @@ describe('workspace-agents selectors', () => {
     expect(selectIsLoadingAgents.select(state, WS_1)).toBe(false);
     expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual([]);
+    expect(selectEmptyLayoutAgent.select(state, WS_1)).toBeNull();
+  });
+
+  it('resolves the primary agent with the newest valid user-message timestamp', () => {
+    const older = {
+      ...mockAgent('agent-older'),
+      messages: [{ id: 'message-1', role: 'user', timestamp: '2026-03-19T01:00:00.000Z' }],
+    } as AgentSession;
+    const newer = {
+      ...mockAgent('agent-newer'),
+      messages: [{ id: 'message-2', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
+    } as AgentSession;
+    const workspaceAgents = workspaceAgentsReducer(initialState, setAgents(WS_1, [older, newer]));
+
+    expect(selectEmptyLayoutAgent.select(mockState(workspaceAgents, [older, newer]), WS_1)).toBe(
+      newer,
+    );
+  });
+
+  it('orders transcript-free restored AgentLite sessions by durable activity timestamp', () => {
+    const older = {
+      ...mockAgent('agent-older'),
+      lastUserMessage: 'Older message',
+      lastActivity: '2026-03-19T01:00:00.000Z',
+    } as AgentSession;
+    const newer = {
+      ...mockAgent('agent-newer'),
+      lastUserMessage: 'Newer message',
+      lastActivity: '2026-03-19T02:00:00.000Z',
+    } as AgentSession;
+
+    expect(resolveEmptyLayoutAgent([newer, older])).toBe(newer);
+  });
+
+  it('excludes background and delegated agents from recent-message selection', () => {
+    const primary = {
+      ...mockAgent('agent-primary'),
+      messages: [{ id: 'primary', role: 'user', timestamp: '2026-03-19T01:00:00.000Z' }],
+    } as AgentSession;
+    const background = {
+      ...mockBackgroundAgent('agent-background'),
+      messages: [{ id: 'background', role: 'user', timestamp: '2026-03-19T04:00:00.000Z' }],
+    } as AgentSession;
+    const metadataBackground = {
+      ...mockMetadataBackgroundAgent('agent-metadata-background'),
+      messages: [
+        { id: 'metadata-background', role: 'user', timestamp: '2026-03-19T05:00:00.000Z' },
+      ],
+    } as AgentSession;
+    const delegated = {
+      ...mockAgent('agent-delegated'),
+      metadata: { createdByAgentId: 'agent-primary' } as AgentSession['metadata'],
+      messages: [{ id: 'delegated', role: 'user', timestamp: '2026-03-19T03:00:00.000Z' }],
+    } as AgentSession;
+    const child = {
+      ...mockAgent('agent-child'),
+      parentSessionId: 'agent-primary' as AgentSession['parentSessionId'],
+      messages: [{ id: 'child', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
+    } as AgentSession;
+
+    expect(
+      resolveEmptyLayoutAgent([background, metadataBackground, delegated, child, primary]),
+    ).toBe(primary);
+  });
+
+  it('breaks equal user-message timestamp ties by canonical creation order', () => {
+    const laterCreated = {
+      ...mockAgent('agent-later'),
+      createdAt: '2026-03-19T01:00:00.000Z',
+      messages: [{ id: 'later', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
+    } as AgentSession;
+    const earlierCreated = {
+      ...mockAgent('agent-earlier'),
+      createdAt: '2026-03-19T00:00:00.000Z',
+      messages: [{ id: 'earlier', role: 'user', timestamp: '2026-03-19T02:00:00.000Z' }],
+    } as AgentSession;
+
+    expect(resolveEmptyLayoutAgent([laterCreated, earlierCreated])).toBe(earlierCreated);
+  });
+
+  it('ignores missing timestamps and falls back to the canonical initial agent', () => {
+    const invalidRecent = {
+      ...mockAgent('agent-invalid'),
+      messages: [{ id: 'invalid', role: 'user', timestamp: undefined }],
+    } as unknown as AgentSession;
+    const initial = {
+      ...mockAgent('agent-initial'),
+      isInitialAgent: true,
+      createdAt: '2026-03-19T01:00:00.000Z',
+    } as AgentSession;
+
+    expect(resolveEmptyLayoutAgent([invalidRecent, initial])).toBe(initial);
   });
 
   it('returns per-workspace agent values (sessions from agent-session slice)', () => {
