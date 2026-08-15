@@ -366,6 +366,18 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
+  it('renders the title editor full-width without JS auto-resize', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox') as HTMLInputElement;
+
+    expect(titleInput.className.split(/\s+/)).toContain('w-full');
+    expect(titleInput.style.width).toBe('');
+
+    await fireEvent.input(titleInput, { target: { value: 'A much longer workspace title' } });
+    expect(titleInput.style.width).toBe('');
+  });
+
   it('aligns the branch control, explains its context, and copies on click', async () => {
     const { container } = await renderProgressCard({
       branch: 'feature/status',
