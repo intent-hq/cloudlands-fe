@@ -99,10 +99,18 @@ describe('pinned prompt controller', () => {
 });
 
 describe('measureScrollbarGutterWidth', () => {
-  function scrollContainer(offsetWidth: number, clientWidth: number): HTMLElement {
+  function scrollContainer(
+    offsetWidth: number,
+    clientWidth: number,
+    borders: { left: string; right: string } = { left: '0px', right: '0px' },
+  ): HTMLElement {
     const element = document.createElement('div');
     Object.defineProperty(element, 'offsetWidth', { value: offsetWidth });
     Object.defineProperty(element, 'clientWidth', { value: clientWidth });
+    element.style.borderStyle = 'solid';
+    element.style.borderLeftWidth = borders.left;
+    element.style.borderRightWidth = borders.right;
+    document.body.append(element);
     return element;
   }
 
@@ -116,5 +124,17 @@ describe('measureScrollbarGutterWidth', () => {
 
   it('never returns a negative width', () => {
     expect(measureScrollbarGutterWidth(scrollContainer(700, 720))).toBe(0);
+  });
+
+  it('excludes horizontal border widths from the measurement', () => {
+    expect(
+      measureScrollbarGutterWidth(scrollContainer(726, 704, { left: '3px', right: '3px' })),
+    ).toBe(16);
+  });
+
+  it('returns zero when only borders account for the offset/client delta', () => {
+    expect(
+      measureScrollbarGutterWidth(scrollContainer(724, 720, { left: '2px', right: '2px' })),
+    ).toBe(0);
   });
 });

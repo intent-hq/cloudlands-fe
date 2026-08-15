@@ -109,7 +109,7 @@
          column-matched lane, and chief-variant row inset. -->
     <div
       class="pointer-events-none absolute inset-x-0 top-0 z-40"
-      style:padding-right="{scrollbarGutterWidth}px"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="pinned-prompt-overlay-host"
     >
       {#if pinned}

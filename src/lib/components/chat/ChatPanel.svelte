@@ -3363,11 +3363,11 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
-    <!-- Right padding compensates the scroll container's scrollbar gutter so
-         the lane's box matches the conversation column's box. -->
+    <!-- Inline-end padding compensates the scroll container's scrollbar gutter
+         so the lane's box matches the conversation column's box. -->
     <div
       class="pointer-events-none absolute inset-x-0 top-0 z-40"
-      style:padding-right="{scrollbarGutterWidth}px"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="pinned-prompt-overlay-host"
       aria-live="off"
     >
