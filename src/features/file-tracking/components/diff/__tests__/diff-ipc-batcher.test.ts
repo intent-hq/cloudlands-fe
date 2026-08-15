@@ -438,6 +438,45 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 
+  it('dedupedShowFile forwards gitRootId exactly when set and keys the dedupe on it (v6.15)', async () => {
+    mockDaemon({ showFiles: { 'HEAD:a.ts': 'head a' } });
+
+    // Same (workspace, ref, path) but different gitRootId → distinct wire
+    // calls; the scoped request carries gitRootId, the primary one omits it.
+    const [scoped, primary] = await Promise.all([
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts', { gitRootId: 'root-1' }),
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts'),
+    ]);
+
+    expect(scoped.success).toBe(true);
+    expect(primary.success).toBe(true);
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-7',
+      filePath: 'a.ts',
+      ref: 'HEAD',
+      gitRootId: 'root-1',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-7',
+      filePath: 'a.ts',
+      ref: 'HEAD',
+    });
+  });
+
+  it('dedupedShowFile shares one in-flight request per (workspace, ref, path, gitRootId)', async () => {
+    mockDaemon({ showFiles: { 'HEAD:a.ts': 'head a' } });
+
+    const [first, second] = await Promise.all([
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts', { gitRootId: 'root-1' }),
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts', { gitRootId: 'root-1' }),
+    ]);
+
+    expect(first).toEqual({ success: true, data: 'head a' });
+    expect(second).toEqual({ success: true, data: 'head a' });
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('dedupedShowFile folds daemon/transport errors into { success: false, error }', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('unresolvable ref'));
 

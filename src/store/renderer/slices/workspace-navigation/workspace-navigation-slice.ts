@@ -89,6 +89,8 @@ export interface WorkspaceNavigationHistoryEntry {
   chatChangesIsAggregate?: boolean;
   commitHash?: string;
   commitMessage?: string;
+  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  gitRootId?: string;
   result?: string | null;
   agentId?: string | null;
   stagedFiles?: string[];
@@ -116,6 +118,8 @@ export interface WorkspaceNavigationMainPanelState {
   scrollToLine?: number;
   commitHash?: string;
   commitMessage?: string;
+  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  gitRootId?: string;
   branchBaseRef?: string;
   branchBaseCommitSha?: string;
   result?: string | null;
@@ -455,7 +459,7 @@ export const openWorkspaceCommitChangeset = createAction<
     wsId: string,
     commitHash?: string,
     commitMessage?: string,
-    options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    options?: { openInAdjacentPanel?: boolean; sourcePanelId?: string; gitRootId?: string },
   ]
 >('workspaceNavigation/openWorkspaceCommitChangeset');
 
@@ -835,7 +839,7 @@ workspaceNavigationReducer.with(openWorkspaceLocalChanges, (state, { payload: [w
 );
 workspaceNavigationReducer.with(
   openWorkspaceCommitChangeset,
-  (state, { payload: [wsId, commitHash, commitMessage] }) =>
+  (state, { payload: [wsId, commitHash, commitMessage, options] }) =>
     withWorkspaceNavigationState(state, wsId, (workspaceState) => {
       const label = commitMessage
         ? `Commit: ${truncateLabel(commitMessage, 30)}`
@@ -846,6 +850,7 @@ workspaceNavigationReducer.with(
           mainPanel: createMainPanelState('commit-changeset', {
             commitHash,
             commitMessage,
+            ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
           }),
         }),
         {
@@ -854,6 +859,7 @@ workspaceNavigationReducer.with(
           label,
           commitHash,
           commitMessage,
+          ...(options?.gitRootId ? { gitRootId: options.gitRootId } : {}),
         },
       );
     }),

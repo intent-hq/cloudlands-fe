@@ -15,6 +15,7 @@
     selectFileTrackingLoading,
   } from '$store/renderer/slices/changes/changes-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectGitRoots } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
   import {
@@ -42,11 +43,24 @@
   const headerContext = getPanelHeaderContext();
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
+  // svelte-ignore state_referenced_locally
+  const gitRoots$ = selectGitRoots(workspaceId);
 
   // Get commit data from tab
   const commitHash = $derived((tab.data?.commitHash as string) || '');
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
+  // Secondary git root scoping the changeset (multi git root tracking, v6.15).
+  // Absent → primary-root behavior, byte-identical to before.
+  const gitRootId = $derived((tab.data?.gitRootId as string) || '');
+  // Root path used to absolutize the daemon's root-relative file paths: the
+  // registered secondary root's path when `gitRootId` is set, else the
+  // workspace worktree.
+  const gitRootPath = $derived(
+    gitRootId ? $gitRoots$.find((r) => r.id === gitRootId)?.path || '' : '',
+  );
+  const workspacePath = $derived(
+    gitRootPath || $workspace?.worktreePath || $workspace?.repositoryPath || '',
+  );
   // svelte-ignore state_referenced_locally
   const ftCommits$ = selectFileTrackingCommits(workspaceId);
   // svelte-ignore state_referenced_locally
@@ -76,6 +90,7 @@
     const hash = commitHash;
     const storeFiles = storeCommitFiles;
     const wsId = workspaceId;
+    const rootId = gitRootId;
 
     if (!hash || !wsId) return;
     // If store already has files for this commit, no need to fetch
@@ -91,9 +106,10 @@
     // Daemon-backed read (PROTOCOL §5.6): `appClient.git.commitDetails`
     // folds transport/gate errors to `null` and the daemon degrades non-repo /
     // remote / unknown-hash workspaces to an empty envelope, so this $effect
-    // never throws into the renderer.
+    // never throws into the renderer. `gitRootId` scopes the read to a
+    // registered secondary root (v6.15 param family).
     appClient.git
-      .commitDetails(wsId, hash)
+      .commitDetails(wsId, hash, rootId ? { gitRootId: rootId } : undefined)
       .then((result) => {
         if (result) {
           fetchedFileDetails =
@@ -172,6 +188,8 @@
     bind:this={changesPanelRef}
     isLoading={$ftLoading$ || isFetchingDetails}
     {changes}
+    gitRootId={gitRootId || undefined}
+    gitRootPath={gitRootPath || undefined}
     commitInfo={{
       hash: commitHash,
       message: commitMessage,

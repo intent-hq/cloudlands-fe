@@ -484,6 +484,7 @@ export class LiveGitClient implements GitClient {
     if (options?.paths?.length) params.paths = options.paths;
     if (options?.staged === true) params.staged = true;
     if (options?.commitHash) params.commitHash = options.commitHash;
+    if (options?.gitRootId) params.gitRootId = options.gitRootId;
     try {
       const result = await backendRequest<unknown>("git.diffs", params);
       return toDiffChunks(result);
@@ -493,17 +494,21 @@ export class LiveGitClient implements GitClient {
   }
 
   // `git.commitDetails` (PROTOCOL §5.6) returns the metadata + per-file
-  // `(additions, deletions)` for one commit. The daemon already degrades
-  // non-repo / remote / unknown-hash workspaces to an empty envelope, so we
-  // only fold transport failures to `null`.
+  // `(additions, deletions)` for one commit. `opts.gitRootId` scopes the read
+  // to a registered secondary root (v6.15 param family); omitted keeps the
+  // request byte-identical. The daemon already degrades non-repo / remote /
+  // unknown-hash workspaces to an empty envelope, so we only fold transport
+  // failures to `null`.
   async commitDetails(
     workspaceId: string,
     commitHash: string,
+    opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>("git.commitDetails", {
         workspaceId,
         commitHash,
+        ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
       });
       if (!result || typeof result !== "object") return null;
       return normalizeCommitDetails(result, commitHash);
