@@ -587,6 +587,38 @@ class EmbeddedBrowserCdpService {
     return undefined;
   }
 
+  /**
+   * Find a mounted, model-opened tab whose current URL exactly matches the
+   * requested URL, and claim it for the requesting agent.
+   *
+   * Used by openTab dedupe (intent-hq/monorepo#2541): opening a URL the
+   * model already has open focuses the existing tab instead of creating a
+   * duplicate.
+   *
+   * Only tabs with a lease entry (i.e. opened or used by an agent) are
+   * considered — tabs the user opened are never returned, so the model can
+   * never hijack a user tab. A tab actively leased by a different agent is
+   * skipped so one agent never steals another's in-use tab. Matching is
+   * exact string equality on the live webview URL — no normalization.
+   */
+  findModelTabByExactUrl(url: string, requestingAgentId: string): string | undefined {
+    for (const tab of this.listTabs()) {
+      if (tab.url !== url) continue;
+      const lease = this.tabLeases.get(tab.tabId);
+      if (!lease) continue; // user-opened tab — never reuse
+      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
+      logger.info('Found model-opened tab with exact URL match', {
+        tabId: tab.tabId,
+        url,
+        previousAgentId: lease.agentId,
+        requestingAgentId,
+      });
+      this.touchLease(tab.tabId, requestingAgentId);
+      return tab.tabId;
+    }
+    return undefined;
+  }
+
   // ============================================================
   // PUBLIC CDP API - Use these instead of accessing wc.debugger directly
   // ============================================================

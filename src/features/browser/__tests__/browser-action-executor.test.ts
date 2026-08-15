@@ -16,6 +16,7 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   embeddedBrowserCdp: {
     findIdleTab: vi.fn().mockReturnValue(null),
+    findModelTabByExactUrl: vi.fn().mockReturnValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
     focusTab: vi.fn(),
@@ -832,6 +833,130 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(false);
       expect(result.results[0]?.error).toContain('0.0.0.0');
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // openTab exact-URL dedupe of model-opened tabs (#2541)
+  // =========================================================================
+  describe('openTab exact-URL dedupe of model-opened tabs (#2541)', () => {
+    beforeEach(async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue(undefined);
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue(null as never);
+    });
+
+    it('reuses and focuses an existing model-opened tab with the same URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        'agent-1',
+      );
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1');
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+      // No navigation needed — the tab is already on the exact URL
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        tabId: 'tab-dup',
+        url: 'http://localhost:3000/board',
+      });
+    });
+
+    it('takes precedence over idle-tab reuse (no navigation of an idle tab)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue('tab-dup');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-dup' });
+      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('allowDuplicate: true bypasses reuse entirely and opens a new tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue('tab-dup');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'openTab', url: 'http://localhost:3000/board', allowDuplicate: true },
+          ],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined);
+    });
+
+    it('does not dedupe when no agentId is provided (non-agent opens)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined);
+    });
+
+    it('dedupes against the rewritten URL in remote mode and echoes the rewrite', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockReturnValue('tab-dup');
+      const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      try {
+        const result = await executeActions(
+          { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+          mockOpenTabFn,
+          'agent-1',
+          'ws-1',
+          remoteContext,
+        );
+
+        expect(result.success).toBe(true);
+        expect(embeddedBrowserCdp.findModelTabByExactUrl).toHaveBeenCalledWith(
+          'http://10.0.0.5:3000/',
+          'agent-1',
+        );
+        expect(result.results[0]?.result).toMatchObject({
+          reused: true,
+          tabId: 'tab-dup',
+          url: 'http://10.0.0.5:3000/',
+          requestedUrl: 'http://localhost:3000/',
+          finalUrl: 'http://10.0.0.5:3000/',
+          rewritten: true,
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });

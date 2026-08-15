@@ -129,6 +129,9 @@ const OpenTabActionSchema = z.object({
   action: z.literal('openTab'),
   url: z.string(),
   position: z.enum(['adjacent', 'replace', 'same']).optional(),
+  // Opt out of tab reuse (exact-URL dedupe and idle-tab reuse) and always
+  // open a genuinely new tab (intent-hq/monorepo#2541).
+  allowDuplicate: z.boolean().optional(),
 });
 
 const NavigateActionSchema = z.object({
@@ -409,8 +412,32 @@ async function executeAction(
         const finalRewrite = openTabTarget.rewrite;
         const echo = rewriteEcho(finalRewrite, openTabTarget.tunneled);
 
+        // When called by an agent, reuse an existing model-opened tab whose
+        // current URL exactly matches instead of opening a duplicate
+        // (intent-hq/monorepo#2541). User-opened tabs are never considered.
+        if (agentId && !action.allowDuplicate) {
+          const duplicateTabId = embeddedBrowserCdp.findModelTabByExactUrl(
+            finalRewrite.url,
+            agentId,
+          );
+          if (duplicateTabId) {
+            logger.info('Reusing existing model-opened tab with matching URL', {
+              tabId: duplicateTabId,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
+              agentId,
+            });
+            embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            return {
+              action: 'openTab',
+              success: true,
+              result: { reused: true, tabId: duplicateTabId, url: finalRewrite.url, ...echo },
+            };
+          }
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
-        if (agentId) {
+        if (agentId && !action.allowDuplicate) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
           if (idleTabId) {
             logger.info('Reusing idle browser tab instead of opening new one', {

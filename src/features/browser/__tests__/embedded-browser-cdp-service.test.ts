@@ -174,3 +174,60 @@ describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
     }
   });
 });
+
+describe('findModelTabByExactUrl (#2541)', () => {
+  const URL_A = 'http://localhost:3000/board';
+
+  it('returns a tab this agent opened on the exact URL and refreshes its lease', async () => {
+    const service = await loadService();
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(41, URL_A)]);
+    service.registerTab('tab-a', 41);
+    service.touchLease('tab-a', 'agent-1');
+
+    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBe('tab-a');
+    // Reuse re-claims the lease for the requesting agent
+    expect(service.findIdleTab('agent-1')).toBeUndefined();
+  });
+
+  it('never returns a user-opened tab (no lease entry)', async () => {
+    const service = await loadService();
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(42, URL_A)]);
+    service.registerTab('tab-user', 42);
+
+    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
+  });
+
+  it('skips a tab actively leased by a different agent', async () => {
+    const service = await loadService();
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(43, URL_A)]);
+    service.registerTab('tab-other', 43);
+    service.touchLease('tab-other', 'agent-2');
+
+    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
+  });
+
+  it("claims another agent's tab once its lease has expired", async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      mocks.getAllWebContents.mockReturnValue([fakeWebview(44, URL_A)]);
+      service.registerTab('tab-expired', 44);
+      service.touchLease('tab-expired', 'agent-2');
+      vi.advanceTimersByTime(4 * 60 * 1000); // past the 3-minute idle timeout
+
+      expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBe('tab-expired');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('matches by exact string equality only — no URL normalization', async () => {
+    const service = await loadService();
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(45, `${URL_A}/`)]);
+    service.registerTab('tab-slash', 45);
+    service.touchLease('tab-slash', 'agent-1');
+
+    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
+    expect(service.findModelTabByExactUrl(`${URL_A}/`, 'agent-1')).toBe('tab-slash');
+  });
+});
