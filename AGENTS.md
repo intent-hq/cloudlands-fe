@@ -236,5 +236,5 @@ tracker for all components. Do not track issues in markdown files.
 - **Fix references**: when a PR fixes a monorepo issue, use the full cross-repo form
   `Fixes intent-hq/monorepo#N` in the squash-commit message or PR body — it auto-closes
   the issue on merge and lets the release notifier (`scripts/notify-fixed-issues.sh`)
-  comment on it when the fix ships in an alpha release or is promoted to
-  beta/stable.
+  comment on it once a release fully delivers the fix (every linked fix PR across
+  cloudlands-fe and intentd merged and contained in the released versions).
