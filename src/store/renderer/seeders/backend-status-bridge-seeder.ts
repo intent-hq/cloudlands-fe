@@ -63,6 +63,22 @@ registerMockIpcHandler(BACKEND.SWITCH_LOCAL_AND_SPAWN, async () => {
 });
 
 /**
+ * Orphaned-sidecar kill-and-restart recovery (#2444). Only the Electron main
+ * process can verify and signal the orphaned daemon and spawn the bundled
+ * sidecar (ipcMain handler in features/backend/main/backend.ipc.ts); in
+ * bridge-less builds and tests the mock router answers with the real
+ * handler's failure shape so the daemon-health saga surfaces the error
+ * instead of the invoke rejecting. Tests override via `registerMockIpcHandler`.
+ */
+registerMockIpcHandler(BACKEND.RESTART_ORPHANED_SIDECAR, async () => {
+  return {
+    ok: false,
+    spawned: false,
+    reason: "Orphaned-sidecar recovery is not available in this build",
+  };
+});
+
+/**
  * Sidecar last-run log fallback. The per-run capture lives in the Electron
  * main process (features/backend/main/); in bridge-less builds and tests the
  * mock router answers with the contract's "no capture" shape so the
