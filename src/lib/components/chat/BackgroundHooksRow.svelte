@@ -4,8 +4,9 @@
    *
    * Faint row above the chat input surfacing the active agent's background
    * hooks (PROTOCOL §5.40): one small chip per scheduled/running hook with a
-   * shrinking time-to-next-run bar (pure CSS animation derived from
-   * `nextRunAt` — no polling timers) and a spinner while a run is in flight.
+   * live time-to-next-run countdown (a component-local 1s interval ticks a
+   * reactive "now" while any rendered hook carries a `nextRunAt`/`expiresAt`)
+   * and a spinner while a run is in flight.
    * Clicking a chip opens a popover offering "Run now" (`hook.runNow`),
    * "View script" (opens a workspace panel tab), and "Cancel" (`hook.cancel`);
    * the hover card offers the same "View script" affordance. Hidden entirely
@@ -146,13 +147,30 @@
       : m.chat_backgroundHooks_state_scheduled_label();
   }
 
-  /** Relative timing shown beside localized absolute timestamps in the inline details. */
+  // Reactive clock driving the countdown readouts: ticks once per second, but
+  // only while a rendered hook has a timed target. Ephemeral UI state — the
+  // actual row removal/state change still comes from `hook:*` events.
+  let now = $state(Date.now());
+  const hasTimedHook = $derived(agentHooks.some((h) => h.nextRunAt || h.expiresAt));
+  $effect(() => {
+    if (!hasTimedHook) return;
+    now = Date.now();
+    const interval = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+    return () => clearInterval(interval);
+  });
+
+  /**
+   * Relative timing shown beside localized absolute timestamps in the inline
+   * details. `formatCompactDuration` clamps negative durations to "0s".
+   */
   function nextRunIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - Date.now());
+    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - now);
   }
 
   function expiresIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - Date.now());
+    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - now);
   }
 </script>
 
