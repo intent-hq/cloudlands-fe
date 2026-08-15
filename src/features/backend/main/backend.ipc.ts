@@ -1264,8 +1264,12 @@ export function registerBackendHandlers(): void {
         // RPCs stay unaffected) — monorepo#2458. The local UDS sidecar keeps
         // the single socket: no uplink to saturate, same-host bandwidth.
         if (shouldUseTransferConnection(method, client.getConfig())) {
-          const result = await requestOverTransferConnection(client.getConfig(), method,
-            payload?.params, { timeoutMs });
+          const result = await requestOverTransferConnection(
+            client.getConfig(),
+            method,
+            payload?.params,
+            { timeoutMs },
+          );
           return { ok: true, result };
         }
         const result = await client.request(method, payload?.params, { timeoutMs });

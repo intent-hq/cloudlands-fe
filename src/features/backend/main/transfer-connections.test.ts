@@ -19,6 +19,7 @@ import {
   isTransferMethod,
   MAX_TRANSFER_CONNECTIONS,
   requestOverTransferConnection,
+  SESSION_LEASE_IDLE_TTL_MS,
   shouldUseTransferConnection,
   TRANSFER_REQUEST_TIMEOUT_MS,
   withTransferConnection,
@@ -107,7 +108,12 @@ describe('isTransferMethod', () => {
     ]) {
       expect(isTransferMethod(method)).toBe(true);
     }
-    for (const method of ['host.status', 'file.read', 'events.subscribe', 'file.getAttachmentInfo']) {
+    for (const method of [
+      'host.status',
+      'file.read',
+      'events.subscribe',
+      'file.getAttachmentInfo',
+    ]) {
       expect(isTransferMethod(method)).toBe(false);
     }
   });
@@ -163,9 +169,7 @@ describe('concurrency cap', () => {
     installFakeFactory();
 
     const leases = await Promise.all(
-      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () =>
-        acquireTransferConnection(wssConfig),
-      ),
+      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () => acquireTransferConnection(wssConfig)),
     );
     expect(__getActiveTransferCountForTesting()).toBe(MAX_TRANSFER_CONNECTIONS);
 
@@ -364,6 +368,58 @@ describe('chunked upload session routing', () => {
     ).rejects.toThrow(/no live transfer connection/);
     expect(sockets).toHaveLength(0);
   });
+
+  it('reclaims an idle session lease after the TTL (renderer reload/crash mid-upload)', async () => {
+    vi.useFakeTimers();
+    const { sockets, clients } = installFakeFactory();
+
+    const begin = requestOverTransferConnection(wssConfig, 'file.attachmentUpload.begin', {
+      workspaceId: 'ws-1',
+      fileName: 'big.zip',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    respondLast(sockets[0], { uploadId: 'up-idle', maxChunkBytes: 1024 });
+    await begin;
+    expect(__getActiveTransferCountForTesting()).toBe(1);
+
+    // Session activity re-arms the timer: a chunk part-way through the TTL
+    // keeps the lease alive past the original deadline.
+    await vi.advanceTimersByTimeAsync(SESSION_LEASE_IDLE_TTL_MS - 1000);
+    const chunk = requestOverTransferConnection(wssConfig, 'file.attachmentUpload.chunk', {
+      uploadId: 'up-idle',
+      seq: 0,
+      data: 'AAAA',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    respondLast(sockets[0], { uploadId: 'up-idle', seq: 0, receivedBytes: 3 });
+    await chunk;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(__getActiveTransferCountForTesting()).toBe(1);
+
+    // No commit/abort ever arrives: the idle TTL reclaims socket + slot.
+    await vi.advanceTimersByTimeAsync(SESSION_LEASE_IDLE_TTL_MS);
+    expect(clients[0].getStatus()).toBe('disconnected');
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+
+    // A late chunk fails via the self-contained no-live-connection path…
+    await expect(
+      requestOverTransferConnection(wssConfig, 'file.attachmentUpload.chunk', {
+        uploadId: 'up-idle',
+        seq: 1,
+        data: 'BBBB',
+      }),
+    ).rejects.toThrow(/no live transfer connection/);
+
+    // …and a late abort settles the daemon side over a one-shot connection.
+    const abort = requestOverTransferConnection(wssConfig, 'file.attachmentUpload.abort', {
+      uploadId: 'up-idle',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets).toHaveLength(2);
+    respondLast(sockets[1], { uploadId: 'up-idle', aborted: true });
+    await expect(abort).resolves.toEqual({ uploadId: 'up-idle', aborted: true });
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+  });
 });
 
 describe('disposeAllTransferConnections', () => {
@@ -371,9 +427,7 @@ describe('disposeAllTransferConnections', () => {
     const { clients } = installFakeFactory();
 
     const leases = await Promise.all(
-      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () =>
-        acquireTransferConnection(wssConfig),
-      ),
+      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () => acquireTransferConnection(wssConfig)),
     );
     const waiter = acquireTransferConnection(wssConfig);
     const waiterExpectation = expect(waiter).rejects.toThrow(/disposed/);
@@ -386,6 +440,27 @@ describe('disposeAllTransferConnections', () => {
     expect(__getActiveTransferCountForTesting()).toBe(0);
     // Releasing an already-released lease is a no-op (idempotent).
     for (const lease of leases) lease.release();
+    expect(__getActiveTransferCountForTesting()).toBe(0);
+  });
+
+  it('fails a waiter handed a slot in the same tick as a dispose (handoff race)', async () => {
+    const { sockets } = installFakeFactory();
+
+    const leases = await Promise.all(
+      Array.from({ length: MAX_TRANSFER_CONNECTIONS }, () => acquireTransferConnection(wssConfig)),
+    );
+    const socketsBefore = sockets.length;
+    const waiter = acquireTransferConnection(wssConfig);
+
+    // A settling transfer hands its slot to the waiter, then a backend
+    // switch disposes everything in the SAME tick — before the waiter's
+    // continuation runs. The waiter must fail, not connect to the old
+    // backend.
+    leases[0].release();
+    disposeAllTransferConnections();
+
+    await expect(waiter).rejects.toThrow(/disposed/);
+    expect(sockets).toHaveLength(socketsBefore);
     expect(__getActiveTransferCountForTesting()).toBe(0);
   });
 });

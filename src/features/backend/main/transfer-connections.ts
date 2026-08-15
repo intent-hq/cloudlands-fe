@@ -46,6 +46,19 @@ export const MAX_TRANSFER_CONNECTIONS = 4;
 export const TRANSFER_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
+ * Idle TTL on a chunked-upload session lease, mirroring the daemon's
+ * `ATTACHMENT_UPLOAD_IDLE_TTL` (15 min). A session lease is normally
+ * settled by commit/abort, but if the renderer reloads or crashes after
+ * `begin` no abort ever arrives — without reclamation the lease would hold
+ * its socket and pool slot until a backend switch or shutdown, and enough
+ * leaks would starve the pool. The timer resets on session activity; on
+ * expiry the lease is released (socket disposed, slot freed). A late chunk
+ * then fails via the self-contained `no live transfer connection` path, and
+ * commit/abort fall back to a one-shot connection.
+ */
+export const SESSION_LEASE_IDLE_TTL_MS = 15 * 60 * 1000;
+
+/**
  * A leased transfer connection: a dedicated request-only JsonRpcClient plus
  * the concurrency slot it occupies. `release()` disposes the socket and
  * frees the slot (idempotent); every acquirer MUST release when its
@@ -69,6 +82,11 @@ const defaultClientFactory: TransferClientFactory = (config) =>
     requestTimeoutMs: TRANSFER_REQUEST_TIMEOUT_MS,
     // Request-only: no heartbeat (per-request timeouts bound liveness), and
     // callers never register reverse handlers or subscriptions on it.
+    // The client's built-in auto-reconnect (1s→5s backoff) is intentionally
+    // kept: the daemon keys upload sessions by uploadId, not connection, so
+    // a mid-session socket blip recovers transparently. It is bounded — a
+    // one-shot transfer disposes when `fn` settles, and a session lease is
+    // reclaimed by {@link SESSION_LEASE_IDLE_TTL_MS} when no settle arrives.
     heartbeatIntervalMs: 0,
   });
 
@@ -83,8 +101,44 @@ let activeCount = 0;
 /** FIFO queue of transfers waiting for a free slot. */
 let slotWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
 
+/**
+ * Bumped by {@link disposeAllTransferConnections}; a waiter that was handed
+ * a slot in the same tick as a dispose (before its continuation ran) checks
+ * this after waking and fails instead of opening a connection against the
+ * outgoing backend.
+ */
+let disposeGeneration = 0;
+
 /** In-flight chunked upload sessions: uploadId → the lease carrying them. */
-const uploadLeases = new Map<string, TransferConnectionLease>();
+const uploadLeases = new Map<string, SessionLease>();
+
+/** A session lease plus its idle-TTL reclamation timer. */
+interface SessionLease {
+  lease: TransferConnectionLease;
+  idleTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** (Re)arm the idle-TTL timer on a session; called on every session request. */
+function touchSession(uploadId: string, session: SessionLease): void {
+  if (session.idleTimer) clearTimeout(session.idleTimer);
+  session.idleTimer = setTimeout(() => {
+    // No commit/abort ever arrived (renderer reload/crash mid-upload):
+    // reclaim the socket and pool slot. The daemon sweeps its side of the
+    // session independently (ATTACHMENT_UPLOAD_IDLE_TTL).
+    if (uploadLeases.get(uploadId) === session) {
+      uploadLeases.delete(uploadId);
+      logger.warn('Reclaiming idle attachment upload session lease', { uploadId });
+      session.lease.release();
+    }
+  }, SESSION_LEASE_IDLE_TTL_MS);
+  session.idleTimer.unref?.();
+}
+
+/** Settle a session: stop its idle timer and drop it from the map. */
+function settleSession(uploadId: string, session: SessionLease): void {
+  if (session.idleTimer) clearTimeout(session.idleTimer);
+  uploadLeases.delete(uploadId);
+}
 
 function acquireSlot(): Promise<void> {
   if (activeCount < MAX_TRANSFER_CONNECTIONS) {
@@ -117,7 +171,15 @@ function releaseSlot(): void {
 export async function acquireTransferConnection(
   config: BackendConnectionConfig,
 ): Promise<TransferConnectionLease> {
+  const generation = disposeGeneration;
   await acquireSlot();
+  if (generation !== disposeGeneration) {
+    // A dispose landed while we waited (a settling lease handed us its slot
+    // in the same tick the backend was torn down) — do not open a
+    // connection against the outgoing backend.
+    releaseSlot();
+    throw new Error('transfer connections disposed');
+  }
   const client = clientFactory(config);
   client.on('error', (error: Error) => {
     logger.warn('Transfer connection transport error', { error: error.message });
@@ -205,7 +267,8 @@ export function shouldUseTransferConnection(
  * the session's socket is torn down there. An abort/commit for an unknown
  * uploadId (e.g. after a backend switch disposed the session's connection)
  * falls back to a one-shot connection so the daemon-side session is still
- * settled.
+ * settled. A session that never settles (renderer reload/crash after begin)
+ * is reclaimed by the {@link SESSION_LEASE_IDLE_TTL_MS} idle timer.
  */
 export async function requestOverTransferConnection<T = unknown>(
   config: BackendConnectionConfig,
@@ -227,7 +290,9 @@ export async function requestOverTransferConnection<T = unknown>(
           ? String((result as { uploadId: unknown }).uploadId)
           : undefined;
       if (newUploadId) {
-        uploadLeases.set(newUploadId, lease);
+        const session: SessionLease = { lease, idleTimer: null };
+        uploadLeases.set(newUploadId, session);
+        touchSession(newUploadId, session);
         return result;
       }
       // No uploadId to key the session on — nothing can ride this socket.
@@ -240,22 +305,28 @@ export async function requestOverTransferConnection<T = unknown>(
   }
 
   if (method === 'file.attachmentUpload.chunk' && uploadId) {
-    const lease = uploadLeases.get(uploadId);
-    if (lease) return lease.request<T>(method, params, options);
+    const session = uploadLeases.get(uploadId);
+    if (session) {
+      touchSession(uploadId, session);
+      return session.lease.request<T>(method, params, options);
+    }
     // Session connection is gone (backend switch / shutdown mid-upload):
     // fail the chunk with the same self-contained error surface a dead
     // socket would produce; the renderer aborts and retries the upload.
     throw new Error(`attachment upload session ${uploadId} has no live transfer connection`);
   }
 
-  if ((method === 'file.attachmentUpload.commit' || method === 'file.attachmentUpload.abort') && uploadId) {
-    const lease = uploadLeases.get(uploadId);
-    if (lease) {
+  if (
+    (method === 'file.attachmentUpload.commit' || method === 'file.attachmentUpload.abort') &&
+    uploadId
+  ) {
+    const session = uploadLeases.get(uploadId);
+    if (session) {
       try {
-        return await lease.request<T>(method, params, options);
+        return await session.lease.request<T>(method, params, options);
       } finally {
-        uploadLeases.delete(uploadId);
-        lease.release();
+        settleSession(uploadId, session);
+        session.lease.release();
       }
     }
     // Unknown session here (already settled, or its connection was disposed
@@ -278,7 +349,12 @@ export async function requestOverTransferConnection<T = unknown>(
  * against the outgoing backend can no longer complete.
  */
 export function disposeAllTransferConnections(): void {
-  uploadLeases.clear();
+  // Invalidate waiters already handed a slot (their continuation has not run
+  // yet); they fail after waking instead of connecting to the old backend.
+  disposeGeneration += 1;
+  for (const [uploadId, session] of uploadLeases) {
+    settleSession(uploadId, session);
+  }
   // Fail queued waiters BEFORE releasing leases: a release hands its slot
   // straight to the next waiter, which would start a transfer against the
   // backend being torn down.
