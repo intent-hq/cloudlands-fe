@@ -254,7 +254,7 @@
               data-monitor-state={monitor.state}
               data-pending={monitor.hasPendingChanges}
             >
-              <span class="truncate max-w-40">{chipLabel(monitor)}</span>
+              <span class="truncate max-w-full">{chipLabel(monitor)}</span>
               {#if monitor.hasPendingChanges}
                 <span
                   class="block h-1.5 w-1.5 rounded-full bg-amber-500/80 shrink-0"

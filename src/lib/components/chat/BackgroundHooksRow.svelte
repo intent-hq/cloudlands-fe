@@ -210,7 +210,7 @@
               data-testid="background-hook-chip"
               data-hook-state={hook.state}
             >
-              <span class="flex items-center gap-1 max-w-32">
+              <span class="flex items-center gap-1 max-w-full">
                 <span class="truncate">{hook.name}</span>
                 {#if hook.state === 'running'}
                   <Fa icon={faSpinner} class="w-2 h-2 animate-spin shrink-0" />

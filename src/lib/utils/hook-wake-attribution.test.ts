@@ -68,14 +68,14 @@ describe('getHookWakeAttribution', () => {
     expect(attr?.displayName).toBe('my "quoted" hook');
   });
 
-  it('truncates long hook names to ~20 chars with an ellipsis, keeping rawName untruncated', () => {
+  it('preserves long hook names verbatim in displayName (no character cap)', () => {
     const attr = getHookWakeAttribution({
       type: 'hook_wake',
       hookId: 'h1',
       hookName: 'a-very-long-hook-name-that-overflows',
     });
-    expect(attr?.displayName.length).toBe(20);
-    expect(attr?.displayName.endsWith('…')).toBe(true);
+    expect(attr?.displayName).toBe('a-very-long-hook-name-that-overflows');
+    expect(attr?.displayName.includes('…')).toBe(false);
     expect(attr?.rawName).toBe('a-very-long-hook-name-that-overflows');
   });
 
