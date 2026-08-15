@@ -9,16 +9,31 @@
    * commit, push, or PR affordances.
    */
   import { gitClient } from '$features/git/git.client';
+  import type { CommitFile } from '$features/file-tracking/types';
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { store as appStore } from '$store/renderer/store';
   import type { GitStatus, CommitInfo, WorkspaceId } from '$shared/types';
+  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
+  import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
+  import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { appClient } from '$lib/client';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
+  import { logger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
-  import { faArrowsRotate, faChevronDown, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowsRotate,
+    faChevronDown,
+    faCodeCommit,
+    faSpinner,
+  } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
 
   interface Props {
@@ -40,6 +55,13 @@
   let loadingMore = $state(false);
   let olderExpanded = $state(false);
   let loadError = $state<string | null>(null);
+  // Per-commit expand state + lazily-fetched file lists, mirroring the
+  // primary CommitsTimeline rows: the `git.commits` list payload is
+  // metadata-only (PROTOCOL §5.6), so files are fetched via
+  // `git.commitDetails` (gitRootId-scoped) on first expand. `null` marks an
+  // in-flight fetch; it is cleared on failure so a later expand retries.
+  let expandedCommits = $state<Set<string>>(new Set());
+  let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
   // Monotonic request epoch: only the most recent load may apply its results,
   // so an older in-flight response can't overwrite a newer refresh.
   let requestEpoch = 0;
@@ -121,8 +143,68 @@
     nextToken = undefined;
     olderExpanded = false;
     loadingMore = false;
+    expandedCommits = new Set();
+    commitFileCache = {};
     if (wsId && rootId) load(wsId, rootId);
   });
+
+  // Open the commit's changeset in the changes tab, scoped to this root.
+  function openCommitChangeset(commit: CommitInfo) {
+    appStore.dispatch(
+      openWorkspaceCommitChangeset(workspaceId, commit.hash, commit.message, { gitRootId }),
+    );
+  }
+
+  function toggleCommitExpanded(commit: CommitInfo) {
+    const newSet = new Set(expandedCommits);
+    if (newSet.has(commit.hash)) {
+      newSet.delete(commit.hash);
+    } else {
+      newSet.add(commit.hash);
+      fetchCommitFilesIfNeeded(commit);
+    }
+    expandedCommits = newSet;
+  }
+
+  function clearCommitFileMarker(hash: string) {
+    if (commitFileCache[hash] === null) {
+      const { [hash]: _, ...rest } = commitFileCache;
+      commitFileCache = rest;
+    }
+  }
+
+  // Lazy per-commit file fetch on first expand — `git.commitDetails`
+  // (PROTOCOL §5.6) scoped by gitRootId. `commitDetails` folds transport
+  // errors to `null`; the row simply shows no files on failure and a later
+  // expand retries (the in-flight marker is cleared on both failure paths).
+  async function fetchCommitFiles(wsId: string, rootId: string, hash: string) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- same read-only per-root browse as load()
+    const result = await appClient.git.commitDetails(wsId, hash, { gitRootId: rootId });
+    // The root/workspace switch $effect resets the cache; drop a stale
+    // response so it can't repopulate the new root's cache.
+    if (rootId !== gitRootId || wsId !== workspaceId) return;
+    if (!result) {
+      clearCommitFileMarker(hash);
+      return;
+    }
+    const files: CommitFile[] =
+      result.fileDetails.length > 0
+        ? result.fileDetails
+        : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
+    commitFileCache = { ...commitFileCache, [hash]: files };
+  }
+
+  function fetchCommitFilesIfNeeded(commit: CommitInfo) {
+    if (commitFileCache[commit.hash] !== undefined || !workspaceId || !gitRootId) return;
+    const wsId = workspaceId;
+    const rootId = gitRootId;
+    commitFileCache = { ...commitFileCache, [commit.hash]: null };
+    fetchCommitFiles(wsId, rootId, commit.hash).catch((error) => {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- log call, not a data fetch ('client-logger' trips the import-source heuristic)
+      logger.error('Failed to fetch commit details', { hash: commit.hash, error });
+      if (rootId === gitRootId && wsId === workspaceId) clearCommitFileMarker(commit.hash);
+    });
+  }
 
   // Split at the registration boundary: commits strictly newer than
   // `registeredCommitSha` render normally; the boundary commit and everything
@@ -314,14 +396,76 @@
   {/if}
 </div>
 
+<!-- Read-only commit row matching the primary CommitsTimeline rows: expand
+  chevron + line-changes badge, agent avatar / commit icon, clickable message
+  opening the gitRootId-scoped changeset, relative time. NO push/undo/amend
+  actions and no cloud/pushed indicators — secondary roots are read-only. -->
 {#snippet commitRow(commit: CommitInfo)}
-  <li class="flex items-center gap-1.5 py-0.5 min-w-0 text-xs">
-    <span class="shrink-0 font-mono text-ghost">{commit.sha || commit.hash.slice(0, 7)}</span>
-    <span class="truncate min-w-0 text-foreground" title={commit.message}
-      >{commit.message.split('\n')[0]}</span
-    >
-    <span class="shrink-0 ml-auto text-ghost">
-      <RelativeTime date={commit.date} compact />
-    </span>
+  {@const isExpanded = expandedCommits.has(commit.hash)}
+  {@const commitFiles = commitFileCache[commit.hash] ?? []}
+  {@const files = commitFiles.map((f) => ({
+    path: f.path,
+    additions: f.additions,
+    deletions: f.deletions,
+    staged: false,
+  })) as UIFileChange[]}
+  <li class="min-w-0">
+    <div class="relative flex items-center gap-1.5 py-0.5 group w-full rounded px-1 -mx-1">
+      <Button
+        variant="ghost-light"
+        size="icon-xs"
+        class="absolute left-0.75 bg-sidebar opacity-0 group-hover:opacity-100 hover:text-foreground! -ml-1"
+        onclick={(e: MouseEvent) => {
+          e.stopPropagation();
+          toggleCommitExpanded(commit);
+        }}
+        title={m.workspace_prSection_toggleFileList_tooltip()}
+        data-testid="secondary-root-commit-toggle"
+      >
+        <Fa
+          icon={faChevronDown}
+          size={12}
+          class="text-subtle shrink-0 transition-transform {isExpanded ? 'rotate-0' : '-rotate-90'}"
+        />
+        {#if commitFiles.length > 0}
+          <LineChangesBadge
+            additions={commitFiles.reduce((sum, f) => sum + (f.additions || 0), 0)}
+            deletions={commitFiles.reduce((sum, f) => sum + (f.deletions || 0), 0)}
+            size="xs"
+          />
+        {/if}
+      </Button>
+
+      <!-- Auggie avatar instead of commit icon when made by an agent - hides on hover to show chevron -->
+      {#if commit.agentId}
+        <span class="shrink-0 group-hover:opacity-0 transition-opacity pointer-events-none">
+          <AuggieAvatar agentId={commit.agentId} size={14} class="mr-[-2px]" />
+        </span>
+      {:else}
+        <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
+      {/if}
+      <button
+        type="button"
+        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+        onclick={() => openCommitChangeset(commit)}
+        data-testid="secondary-root-commit-open"
+      >
+        <span class="text-ui text-subtle truncate flex-1" title={commit.message}
+          >{commit.message.split('\n')[0]}</span
+        >
+      </button>
+      <span class="shrink-0 ml-auto text-ghost text-xs">
+        <RelativeTime date={commit.date} compact />
+      </span>
+    </div>
+
+    <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
+    {#if isExpanded}
+      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+        {#each files as file (file.path)}
+          <FileRow {file} muted={true} onFileClick={() => openCommitChangeset(commit)} />
+        {/each}
+      </div>
+    {/if}
   </li>
 {/snippet}
