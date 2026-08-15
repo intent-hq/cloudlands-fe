@@ -123,6 +123,7 @@
     resolveNewMessagesDividerAnchor,
     resolveLatchedDividerAnchor,
     dividerVisibleWhenScrolledToBottom,
+    dividerDefersToTurnBoundary,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import { toast } from 'svelte-sonner';
@@ -3687,8 +3688,11 @@
                   />
                 </div>
               {/if}
-              {#snippet newMessagesDividerAfter(messageId: string)}
-                {#if newMessagesDividerAnchorId === messageId}
+              <!-- Inline (mid-turn) divider placement; suppressed when the anchor
+                   is the turn's last rendered message and another turn follows —
+                   the divider then renders after the inter-turn spacer instead. -->
+              {#snippet newMessagesDividerAfter(messageId: string, deferToTurnBoundary: boolean)}
+                {#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}
                   <NewMessagesDivider />
                 {/if}
               {/snippet}
@@ -3705,6 +3709,16 @@
                   {@const turnMessageText = turn.userMessage
                     ? extractAllContent(turn.userMessage)
                     : ''}
+                  {@const turnLastRenderedMessageId =
+                    turn.assistantMessages[turn.assistantMessages.length - 1]?.id ??
+                    turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
+                    turn.userMessage?.id ??
+                    null}
+                  {@const dividerAtTurnBoundary = dividerDefersToTurnBoundary(
+                    newMessagesDividerAnchorId,
+                    turnLastRenderedMessageId,
+                    !isLastTurnInConversation,
+                  )}
                   <div class="conversation-turn">
                     <LazyTurn
                       {turnKey}
@@ -3757,7 +3771,7 @@
                               {workspace}
                             />
                           </div>
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/if}
                         <!-- User message (sticky within this turn) - skip for event notifications (already shown above) -->
                         <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
@@ -3797,7 +3811,7 @@
                               />
                             </div>
                           </div>
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/if}
 
                         <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
@@ -3810,7 +3824,7 @@
                                 fallbackText={extractAllContent(noticeMessage) || undefined}
                               />
                             </div>
-                            {@render newMessagesDividerAfter(noticeMessage.id)}
+                            {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
                           {/if}
                         {/each}
 
@@ -3912,7 +3926,7 @@
                               workspaceId={workspace.id}
                             />
                           {/if}
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/each}
                       {/snippet}
                     </LazyTurn>
@@ -3920,6 +3934,12 @@
                   <!-- Editorial rhythm between turns (not after the last one) -->
                   {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
                     <div class="h-8" aria-hidden="true"></div>
+                  {/if}
+                  <!-- Turn-boundary divider placement: the anchor is this turn's
+                       last rendered message and another turn follows, so the
+                       divider sits after the spacer, directly above the next turn. -->
+                  {#if dividerAtTurnBoundary}
+                    <NewMessagesDivider />
                   {/if}
                 {/each}
               {/each}

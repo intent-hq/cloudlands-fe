@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   resolveNewMessagesDividerAnchor,
   resolveLatchedDividerAnchor,
   dividerVisibleWhenScrolledToBottom,
+  dividerDefersToTurnBoundary,
 } from '../new-messages-divider';
 
 describe('resolveNewMessagesDividerAnchor', () => {
@@ -72,6 +75,57 @@ describe('resolveLatchedDividerAnchor', () => {
 
   it('returns null for an empty transcript', () => {
     expect(resolveLatchedDividerAnchor([], 'm2')).toBeNull();
+  });
+});
+
+describe('dividerDefersToTurnBoundary', () => {
+  it('defers when the anchor is the turn last rendered message and a turn follows', () => {
+    expect(dividerDefersToTurnBoundary('m2', 'm2', true)).toBe(true);
+  });
+
+  it('keeps inline placement at end of transcript (no following turn)', () => {
+    expect(dividerDefersToTurnBoundary('m2', 'm2', false)).toBe(false);
+  });
+
+  it('keeps inline placement for mid-turn anchors', () => {
+    expect(dividerDefersToTurnBoundary('user-1', 'assistant-2', true)).toBe(false);
+  });
+
+  it('never defers without an anchor', () => {
+    expect(dividerDefersToTurnBoundary(null, 'm2', true)).toBe(false);
+    expect(dividerDefersToTurnBoundary(null, null, true)).toBe(false);
+  });
+
+  it('never defers for a turn with no rendered messages', () => {
+    expect(dividerDefersToTurnBoundary('m2', null, true)).toBe(false);
+    expect(dividerDefersToTurnBoundary('m2', undefined, true)).toBe(false);
+  });
+});
+
+describe('turn-boundary divider placement (ChatPanel contract)', () => {
+  it('renders the turn-boundary divider immediately after the h-8 inter-turn spacer', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    ).replace(/<!--[\s\S]*?-->/g, '');
+    const normalized = panel.replace(/\s+/g, ' ');
+    expect(normalized).toContain(
+      '<div class="h-8" aria-hidden="true"></div> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
+    );
+  });
+
+  it('suppresses the inline render when the divider defers to the turn boundary', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    );
+    expect(panel).toContain(
+      '{#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}',
+    );
+    // Every inline render site passes the defer flag.
+    expect(panel.match(/@render newMessagesDividerAfter\(/g)?.length).toBe(
+      panel.match(/@render newMessagesDividerAfter\([^)]+, dividerAtTurnBoundary\)/g)?.length,
+    );
   });
 });
 
