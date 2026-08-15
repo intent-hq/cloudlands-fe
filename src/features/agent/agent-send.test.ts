@@ -44,6 +44,7 @@ import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queu
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 import {
   __resetAgentQueueReadServiceForTests,
+  hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
 } from './agent-queue-read-service';
 import {
@@ -247,6 +248,44 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toMatchObject({
       turnId: 'turn-superseded',
     });
+  }, 30000);
+
+  it('does not re-seed the queue when a hydrate-reconciled fold superseded the send (monorepo#2486)', async () => {
+    // Same race as monorepo#2481, but the drain's own agent:queue:updated
+    // event was missed and hydrateAgentQueue did the reconciliation instead:
+    // the hydrate fold lands while the sendMessage RPC response is still in
+    // flight. The fold must advance the same seq the seed guard captured, so
+    // the stale queued:true echo does not re-seed the drained row.
+    const queuedMessage: QueuedMessage = {
+      id: 'queued-msg-hydrate-superseded',
+      content: 'answered already',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-hydrate-superseded',
+    };
+    appStore.dispatch(replaceAgentQueue(AGENT, [queuedMessage]));
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      // The daemon has already drained the queue (§5.5 agent.getQueue shape).
+      if (method === 'agent.getQueue') return { success: true, queue: [] };
+      if (method === 'agent.sendMessage') {
+        // Runs the REAL hydrate service (agent.getQueue via the same mocked
+        // transport) inside the send RPC window.
+        await hydrateAgentQueue(AGENT);
+        return {
+          success: true,
+          queued: true,
+          queuedMessage,
+          turnId: 'turn-hydrate-superseded',
+        };
+      }
+      return {};
+    });
+
+    await sendMessage(AGENT, 'answered already', workspace(), {});
+
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages).toEqual([]);
   }, 30000);
 
   it('parks the retry record under the echoed queuedMessage id instead of lastAttemptedMessage (#1011)', async () => {
