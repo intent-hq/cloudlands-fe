@@ -16,8 +16,6 @@ export interface CachedChatScroll {
   scrollTop: number;
   /** Whether the viewport was following the bottom (auto-scroll on). */
   shouldFollowBottom: boolean;
-  /** Whether the user had manually unlocked auto-scroll while at bottom. */
-  isScrollUnlocked: boolean;
 }
 
 const cache = new Map<string, CachedChatScroll>();

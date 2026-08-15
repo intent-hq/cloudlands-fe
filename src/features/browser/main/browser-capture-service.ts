@@ -249,7 +249,7 @@ class BrowserCaptureService {
     const { tabId, workspaceId, name, reload, waitFor } = options;
 
     // Get tab info
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs[0];
 
     if (!tab) {
@@ -293,7 +293,7 @@ class BrowserCaptureService {
         await embeddedBrowserCdp.evaluate(tab.tabId, 'location.reload()');
 
         // Wait for conditions
-        await this.waitForConditions(tab.tabId, waitFor);
+        await this.waitForConditions(tab.tabId, waitFor, workspaceId);
       } finally {
         // Clean up listeners
         listeners.cleanup();
@@ -361,7 +361,7 @@ class BrowserCaptureService {
     const { tabId, workspaceId, name } = options;
 
     // Get tab info
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs[0];
 
     if (!tab) {
@@ -422,7 +422,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -454,7 +454,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (tab) {
@@ -495,13 +495,13 @@ class BrowserCaptureService {
       }
 
       await embeddedBrowserCdp.evaluate(session.tabId, 'location.reload()');
-      await this.waitForConditions(session.tabId, options.waitFor);
+      await this.waitForConditions(session.tabId, options.waitFor, workspaceId);
 
       if (!wasActive) {
         await this.endCapture(sessionId, workspaceId);
       }
     } else if (options?.waitFor) {
-      await this.waitForConditions(session.tabId, options.waitFor);
+      await this.waitForConditions(session.tabId, options.waitFor, workspaceId);
     }
 
     // Capture accessibility tree
@@ -516,7 +516,7 @@ class BrowserCaptureService {
     );
 
     // Write step metadata
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
     await fs.writeFile(
       path.join(stepDir, 'metadata.json'),
@@ -549,7 +549,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -612,7 +612,7 @@ class BrowserCaptureService {
     }
 
     // Get webContentsId for the tab
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     if (!tab || !tab.mounted) {
@@ -686,7 +686,7 @@ class BrowserCaptureService {
     await writeJsonl(networkPath, session.networkBuffer);
 
     // Get current tab info for metadata
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === session.tabId);
 
     // Write session metadata
@@ -757,8 +757,11 @@ class BrowserCaptureService {
    * Force reset a tab's CDP connection.
    * Use this to recover from stale sessions or failed captures.
    */
-  async resetTab(tabId?: string): Promise<{ reset: boolean; tabId: string; details: string[] }> {
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+  async resetTab(
+    tabId?: string,
+    workspaceId?: string,
+  ): Promise<{ reset: boolean; tabId: string; details: string[] }> {
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabId ? tabs.find((t) => t.tabId === tabId) : tabs.find((t) => t.mounted);
 
     if (!tab) {
@@ -943,7 +946,11 @@ class BrowserCaptureService {
   /**
    * Wait for specified conditions
    */
-  private async waitForConditions(tabId: string, waitFor?: WaitForOptions): Promise<void> {
+  private async waitForConditions(
+    tabId: string,
+    waitFor?: WaitForOptions,
+    workspaceId?: string,
+  ): Promise<void> {
     if (!waitFor) return;
 
     const timeout = waitFor.timeout || 30000;
@@ -951,14 +958,14 @@ class BrowserCaptureService {
 
     // Wait for console message
     if (waitFor.console) {
-      await this.waitForConsoleMessage(tabId, waitFor.console, timeout);
+      await this.waitForConsoleMessage(tabId, waitFor.console, timeout, workspaceId);
     }
 
     // Wait for network idle
     if (waitFor.networkIdle) {
       const remaining = timeout - (Date.now() - startTime);
       if (remaining > 0) {
-        await this.waitForNetworkIdle(tabId, waitFor.networkIdle, remaining);
+        await this.waitForNetworkIdle(tabId, waitFor.networkIdle, remaining, workspaceId);
       }
     }
 
@@ -978,8 +985,9 @@ class BrowserCaptureService {
     tabId: string,
     pattern: string | RegExp,
     timeout: number,
+    workspaceId?: string,
   ): Promise<void> {
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab || !tab.mounted) {
       throw new Error(`Tab ${tabId} is not mounted`);
@@ -1018,8 +1026,9 @@ class BrowserCaptureService {
     tabId: string,
     idleTime: number,
     timeout: number,
+    workspaceId?: string,
   ): Promise<void> {
-    const tabs = await embeddedBrowserCdp.listAllTabs();
+    const tabs = await embeddedBrowserCdp.listAllTabs(workspaceId);
     const tab = tabs.find((t) => t.tabId === tabId);
     if (!tab || !tab.mounted) {
       throw new Error(`Tab ${tabId} is not mounted`);
