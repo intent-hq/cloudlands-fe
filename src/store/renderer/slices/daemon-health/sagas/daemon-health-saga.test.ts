@@ -4,13 +4,14 @@ import { runSaga, stdChannel } from 'redux-saga';
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
   toastWarning: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
 }));
 vi.mock('$lib/components/ui/toast', () => ({
-  toast: { warning: mocks.toastWarning },
+  toast: { warning: mocks.toastWarning, error: mocks.toastError },
 }));
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -155,6 +156,110 @@ describe('daemonHealthSaga', () => {
     ]);
     expect(mocks.backendRequest).toHaveBeenCalledWith('system.status');
     expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('offers orphaned-sidecar restart once (with action) and suppresses the mismatch toast (#2444)', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: {
+            mode: 'external-uds',
+            versionMismatch: true,
+            daemonVersion: '1.0.0',
+            isOrphanedSidecar: true,
+          },
+        };
+      }
+      if (channel === BACKEND.RESTART_ORPHANED_SIDECAR) {
+        return { ok: true, spawned: true };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // One toast: the actionable orphan offer; the generic mismatch is suppressed.
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+    const [, options] = mocks.toastWarning.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(options.action.label).toBeTruthy();
+
+    // A repeat push with the same classification does not re-toast.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'external-uds', isOrphanedSidecar: true },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
+
+    // The action invokes the restart recovery channel.
+    options.action.onClick();
+    await settle();
+    expect(invoke).toHaveBeenCalledWith(BACKEND.RESTART_ORPHANED_SIDECAR);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('surfaces an error toast when the orphan restart fails (#2444)', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: { mode: 'external-uds', isOrphanedSidecar: true },
+        };
+      }
+      if (channel === BACKEND.RESTART_ORPHANED_SIDECAR) {
+        return { ok: false, spawned: false, reason: 'orphaned sidecar did not exit' };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    const [, options] = mocks.toastWarning.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    options.action.onClick();
+    await vi.advanceTimersByTimeAsync(0);
+    await settle();
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not surface an error toast when the user cancels the restart (#2444)', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) {
+        return {
+          status: 'connected',
+          transport: { mode: 'external-uds', isOrphanedSidecar: true },
+        };
+      }
+      if (channel === BACKEND.RESTART_ORPHANED_SIDECAR) {
+        return { ok: false, spawned: false, cancelled: true, reason: 'cancelled by user' };
+      }
+      return undefined;
+    });
+    const { task } = startHealthSaga();
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    const [, options] = mocks.toastWarning.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    options.action.onClick();
+    await settle();
+    await settle();
+    expect(mocks.toastError).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
   });

@@ -53,6 +53,13 @@ import {
   onSidecarStartupFailed,
   spawnSidecarOnDemand,
 } from './intentd-sidecar';
+import {
+  getOrphanedSidecarInfo,
+  setDaemonVersionInfo,
+  setOrphanedSidecarInfo,
+} from './connection-mode';
+import { detectOrphanedSidecar } from './intentd-orphan';
+import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
@@ -1196,6 +1203,65 @@ async function performSpawnSidecar(): Promise<{
 }
 
 /**
+ * Kill-and-restart recovery for an orphaned sidecar (#2444): the user accepted
+ * the renderer's offer to replace the adopted leftover daemon (executable
+ * inside our own bundle) with the bundled sidecar. Wires the real main-process
+ * collaborators into {@link restartOrphanedSidecar}: agent-safety via the live
+ * client's `isResponding` flags, a native confirmation dialog when agents
+ * would be interrupted, and the existing on-demand spawn path (which re-probes
+ * the socket and never runs two daemons side by side). On success the new
+ * transport posture is re-broadcast.
+ */
+async function performRestartOrphanedSidecar(): Promise<{
+  ok: boolean;
+  spawned: boolean;
+  cancelled?: boolean;
+  reason?: string;
+  error?: unknown;
+}> {
+  try {
+    const [{ dialog }, { listRespondingAgents }, { buildOrphanRestartDialogOptions }] =
+      await Promise.all([
+        import('electron'),
+        import('../../../main/running-agents'),
+        import('../../../main/orphan-restart-dialog'),
+      ]);
+    const result = await restartOrphanedSidecar({
+      getOrphanedSidecarInfo,
+      clearOrphanState: () => {
+        setOrphanedSidecarInfo(null);
+        setDaemonVersionInfo(null);
+      },
+      detectOrphan: () => detectOrphanedSidecar(process.env, process.resourcesPath),
+      listRespondingAgents: () => listRespondingAgents(getBackendClient()),
+      confirmInterrupt: async (agents) => {
+        const focused = BrowserWindow.getFocusedWindow();
+        const options = buildOrphanRestartDialogOptions(agents);
+        const outcome = focused
+          ? await dialog.showMessageBox(focused, options)
+          : await dialog.showMessageBox(options);
+        return outcome.response === 0;
+      },
+      kill: defaultKill,
+      spawnSidecar: () =>
+        spawnSidecarOnDemand(process.env, app.isPackaged, process.resourcesPath, process.cwd()),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    });
+    if (result.ok) {
+      const client = getBackendClient();
+      broadcast(BACKEND.STATUS, {
+        status: client.getStatus(),
+        transport: formatTransportInfo(client.getConfig(), getPinnedVersion()),
+        reconnectAttempts: client.getReconnectAttempts(),
+      });
+    }
+    return result;
+  } catch (error) {
+    return { ok: false, spawned: false, error: toErrorPayload(error) };
+  }
+}
+
+/**
  * Atomic "Start local intentd" recovery from external/remote mode (T22 review):
  * switch the active backend to local AND spawn the app-managed sidecar in a
  * SINGLE main-process action.
@@ -1324,6 +1390,9 @@ export function registerBackendHandlers(): void {
   });
 
   ipcMain.handle(BACKEND.SPAWN_SIDECAR, async () => performSpawnSidecar());
+
+  // Kill-and-restart recovery for an orphaned sidecar (#2444).
+  ipcMain.handle(BACKEND.RESTART_ORPHANED_SIDECAR, async () => performRestartOrphanedSidecar());
 
   // Atomic recovery: switch active → local AND spawn the sidecar in one main-side
   // action so it survives the initiating window's teardown during the switch.

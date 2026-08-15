@@ -10,8 +10,10 @@ import {
   __resetConnectionModeForTesting,
   getConnectionMode,
   getDaemonVersionInfo,
+  getOrphanedSidecarInfo,
   setConnectionMode,
   setDaemonVersionInfo,
+  setOrphanedSidecarInfo,
 } from '../connection-mode';
 import { formatTransportInfo } from '../transport-info';
 
@@ -41,6 +43,17 @@ describe('connection-mode', () => {
     });
     __resetConnectionModeForTesting();
     expect(getDaemonVersionInfo()).toBeNull();
+  });
+
+  it('round-trips orphaned-sidecar info and clears it on reset (#2444)', () => {
+    expect(getOrphanedSidecarInfo()).toBeNull();
+    setOrphanedSidecarInfo({ pid: 4242, executablePath: '/app/resources/intentd/intentd' });
+    expect(getOrphanedSidecarInfo()).toEqual({
+      pid: 4242,
+      executablePath: '/app/resources/intentd/intentd',
+    });
+    __resetConnectionModeForTesting();
+    expect(getOrphanedSidecarInfo()).toBeNull();
   });
 });
 
@@ -87,6 +100,26 @@ describe('formatTransportInfo', () => {
       target: '/tmp/i.sock',
       daemonVersion: '0.1.0',
       versionMismatch: false,
+    });
+  });
+
+  it('marks external UDS as orphaned sidecar when the classification is set (#2444)', () => {
+    setConnectionMode('external');
+    setOrphanedSidecarInfo({ pid: 4242, executablePath: '/app/resources/intentd/intentd' });
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
+      isOrphanedSidecar: true,
+    });
+  });
+
+  it('omits isOrphanedSidecar once the classification is cleared (#2444)', () => {
+    setConnectionMode('external');
+    setOrphanedSidecarInfo({ pid: 4242, executablePath: '/app/resources/intentd/intentd' });
+    setOrphanedSidecarInfo(null);
+    expect(formatTransportInfo({ transport: 'uds', socketPath: '/tmp/i.sock' })).toEqual({
+      mode: 'external-uds',
+      target: '/tmp/i.sock',
     });
   });
 

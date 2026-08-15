@@ -25,9 +25,10 @@ import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { isWindowsPipePath, toLocalEndpoint } from './intentd-pipe-name';
-import { setConnectionMode, setDaemonVersionInfo } from './connection-mode';
+import { setConnectionMode, setDaemonVersionInfo, setOrphanedSidecarInfo } from './connection-mode';
 import { compareToPinnedVersion } from '$shared/intentd-version-compare';
 import { readPinnedVersion } from './intentd-version-pin';
+import { detectOrphanedSidecar } from './intentd-orphan';
 // Re-export from the policy module so existing importers keep working; consumers
 // that only need the decision (e.g. `backend-connection.ts`) import it from
 // `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
@@ -966,14 +967,29 @@ export async function startIntentdSidecar(
       pinnedVersion,
       versionMismatch,
     });
+    // Orphan classification (#2444): a live adopted daemon whose executable
+    // resolves inside OUR OWN bundle is not a genuinely external daemon — it
+    // is a leftover sidecar from a crashed/force-quit prior session. Recorded
+    // so the renderer can offer kill-and-restart recovery. Detection fails
+    // safe (any doubt → null), and only packaged builds have a meaningful
+    // resourcesPath to compare against.
+    const orphan = isPackaged ? detectOrphanedSidecar(env, resourcesPath) : null;
+    setOrphanedSidecarInfo(orphan);
     const details = {
       socketPath,
       daemonVersion: probe.version ?? null,
       protocolVersion: probe.protocolVersion ?? null,
       pinnedVersion,
       comparison,
+      orphanedSidecar: orphan !== null,
     };
-    if (versionMismatch) {
+    if (orphan) {
+      logger.warn(
+        // i18n-ignore (developer log message)
+        'Adopted daemon is an ORPHANED SIDECAR (executable inside our bundle)',
+        { ...details, orphanPid: orphan.pid, orphanExecutablePath: orphan.executablePath },
+      );
+    } else if (versionMismatch) {
       logger.warn(
         // i18n-ignore (developer log message)
         'Adopted external intentd whose version differs from the pinned version',

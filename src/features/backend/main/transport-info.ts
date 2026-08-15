@@ -13,7 +13,7 @@
  * path carries no secrets). URLs are sanitized to strip userinfo and query
  * parameters (secrets/tokens).
  */
-import { getConnectionMode, getDaemonVersionInfo } from './connection-mode';
+import { getConnectionMode, getDaemonVersionInfo, getOrphanedSidecarInfo } from './connection-mode';
 
 /** Renderer-facing transport mode union. */
 export type TransportMode = 'sidecar-uds' | 'external-uds' | 'external-ws';
@@ -28,6 +28,13 @@ export interface TransportInfo {
   versionMismatch?: boolean;
   /** The bundled intentd.version pin, reported in every transport mode. */
   pinnedVersion?: string;
+  /**
+   * True when the adopted daemon was classified as an ORPHANED SIDECAR — a
+   * leftover from a crashed/force-quit prior app session whose executable
+   * lives inside this app's own bundle (#2444). The renderer offers a
+   * kill-and-restart recovery for it.
+   */
+  isOrphanedSidecar?: boolean;
 }
 
 /**
@@ -81,6 +88,7 @@ export function formatTransportInfo(
               versionMismatch: versionInfo.versionMismatch,
             }
           : {}),
+        ...(getOrphanedSidecarInfo() ? { isOrphanedSidecar: true } : {}),
         ...pin,
       };
     }

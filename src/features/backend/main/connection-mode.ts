@@ -31,8 +31,24 @@ export interface DaemonVersionInfo {
   versionMismatch: boolean;
 }
 
+/**
+ * Identity of an adopted daemon classified as an ORPHANED SIDECAR (#2444):
+ * a live daemon whose executable resolves inside the running app's own
+ * bundle — a leftover from a crashed/force-quit prior app session, not a
+ * genuinely external daemon. Recorded during `startIntentdSidecar` alongside
+ * the `external` mode; consumed by the transport payload (renderer offer)
+ * and the kill-and-restart recovery handler.
+ */
+export interface OrphanedSidecarState {
+  /** Pid from the daemon's pidfile (verified alive at detection time). */
+  pid: number;
+  /** The orphan's executable path (inside our resources). */
+  executablePath: string;
+}
+
 let connectionMode: ConnectionMode = 'unknown';
 let daemonVersionInfo: DaemonVersionInfo | null = null;
+let orphanedSidecarInfo: OrphanedSidecarState | null = null;
 
 /** Current connection mode (resolved during `startIntentdSidecar`). */
 export function getConnectionMode(): ConnectionMode {
@@ -54,6 +70,16 @@ export function setDaemonVersionInfo(info: DaemonVersionInfo | null): void {
   daemonVersionInfo = info;
 }
 
+/** Orphaned-sidecar classification for the adopted daemon, or null (#2444). */
+export function getOrphanedSidecarInfo(): OrphanedSidecarState | null {
+  return orphanedSidecarInfo;
+}
+
+/** Record (or clear) the orphaned-sidecar classification (sidecar manager / recovery). */
+export function setOrphanedSidecarInfo(info: OrphanedSidecarState | null): void {
+  orphanedSidecarInfo = info;
+}
+
 /**
  * Test seam: reset module state for testing.
  * @internal
@@ -61,4 +87,5 @@ export function setDaemonVersionInfo(info: DaemonVersionInfo | null): void {
 export function __resetConnectionModeForTesting(): void {
   connectionMode = 'unknown';
   daemonVersionInfo = null;
+  orphanedSidecarInfo = null;
 }

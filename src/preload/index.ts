@@ -520,6 +520,7 @@ const ALLOWED_CHANNELS = [
   "backend:spawn-sidecar",
   "backend:switch-local-and-spawn",
   "backend:get-sidecar-run-log",
+  "backend:restart-orphaned-sidecar",
   "connections:list",
   "connections:capture-fingerprint",
   "connections:add",

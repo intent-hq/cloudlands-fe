@@ -98,6 +98,51 @@ async function notifyVersionMismatch(transport: BackendTransportInfo): Promise<b
   }
 }
 
+async function invokeRestartOrphanedSidecar() {
+  if (!window.electronAPI) throw new Error('electronAPI is not available');
+  return (await window.electronAPI.invoke(BACKEND.RESTART_ORPHANED_SIDECAR)) as
+    | { ok: boolean; spawned: boolean; cancelled?: boolean; reason?: string }
+    | undefined;
+}
+
+/**
+ * Orphaned-sidecar recovery offer (#2444): the adopted daemon is a leftover
+ * from a crashed/force-quit prior app session (its executable lives inside
+ * this app's own bundle), so offer a restart with the bundled daemon. The
+ * action invokes the main-process recovery handler, which re-verifies the
+ * classification and confirms before interrupting responding agents.
+ */
+async function notifyOrphanedSidecar(transport: BackendTransportInfo): Promise<boolean> {
+  try {
+    const { toast } = await import('$lib/components/ui/toast');
+    const daemonVersion = transport.daemonVersion
+      ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
+      : '';
+    toast.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
+      duration: 30_000,
+      action: {
+        label: m.daemonStatus_orphanedSidecar_restart_action(),
+        onClick: () => {
+          void invokeRestartOrphanedSidecar()
+            .then(async (result) => {
+              if (result && !result.ok && !result.cancelled) {
+                const { toast: toastLib } = await import('$lib/components/ui/toast');
+                toastLib.error(m.daemonStatus_orphanRestartFailed_error());
+              }
+            })
+            .catch(async () => {
+              const { toast: toastLib } = await import('$lib/components/ui/toast');
+              toastLib.error(m.daemonStatus_orphanRestartFailed_error());
+            });
+        },
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
   return connectionStatusChanged(payload.status, payload.transport, {
     sidecarGaveUp: payload.sidecarGaveUp,
@@ -113,8 +158,20 @@ function* maybeNotifyVersionMismatch(
   transport: BackendTransportInfo | undefined,
   alreadyNotified: boolean,
 ) {
-  if (!transport?.versionMismatch || alreadyNotified) return alreadyNotified;
+  // An orphaned sidecar gets its own actionable toast (see
+  // maybeNotifyOrphanedSidecar); the generic mismatch warning would be
+  // redundant noise on the same daemon.
+  if (!transport?.versionMismatch || transport.isOrphanedSidecar || alreadyNotified)
+    return alreadyNotified;
   return yield* call(notifyVersionMismatch, transport);
+}
+
+function* maybeNotifyOrphanedSidecar(
+  transport: BackendTransportInfo | undefined,
+  alreadyNotified: boolean,
+) {
+  if (!transport?.isOrphanedSidecar || alreadyNotified) return alreadyNotified;
+  return yield* call(notifyOrphanedSidecar, transport);
 }
 
 export function* daemonStatusSaga() {
@@ -128,6 +185,7 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
+  let orphanedSidecarNotified = false;
   let initialStatus: BackendStatusPayload | null = null;
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
@@ -136,6 +194,11 @@ export function* daemonStatusSaga() {
       const snapshot = yield* call(invokeGetBackendStatus);
       yield* put(statusAction(snapshot, true));
       initialStatus = snapshot;
+      orphanedSidecarNotified = yield* call(
+        maybeNotifyOrphanedSidecar,
+        snapshot.transport,
+        orphanedSidecarNotified,
+      );
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -149,6 +212,11 @@ export function* daemonStatusSaga() {
       channel,
       function* handleStatusPayload(payload: BackendStatusPayload) {
         yield* put(statusAction(payload, false));
+        orphanedSidecarNotified = yield* call(
+          maybeNotifyOrphanedSidecar,
+          payload.transport,
+          orphanedSidecarNotified,
+        );
         versionMismatchNotified = yield* call(
           maybeNotifyVersionMismatch,
           payload.transport,
