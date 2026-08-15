@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.49.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.49.0...v2.49.1) (2026-08-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.1 ([#1272](https://github.com/intent-hq/cloudlands-fe/issues/1272)) ([e57521f](https://github.com/intent-hq/cloudlands-fe/commit/e57521f6f6ef51f7034195df2bbf6cfd8068dfc6))
+* restore workspace interaction and presentation contracts ([#1268](https://github.com/intent-hq/cloudlands-fe/issues/1268)) ([19cafec](https://github.com/intent-hq/cloudlands-fe/commit/19cafec14f6d7fb135e98d09ef3794fed7cfcc11))
+
 ## [2.49.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.48.1...v2.49.0) (2026-08-15)
 
 
