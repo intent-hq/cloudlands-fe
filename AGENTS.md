@@ -122,16 +122,20 @@ embedded tab renders on the client machine, and an unreachable daemon-loopback p
 automatically tunneled (`openTab`/`navigate` echo `tunneled: true` plus the client-local
 forward URL). In the remote case the page itself also dials the bridge from the client,
 so mint a forward for the bridge port first — open a tab to
-`http://daemon.localhost:51337/`, read the client-local port from the tunneled echo —
-and restart dev:web with `VITE_INTENTD_WS_URL=ws://127.0.0.1:<client-local-port>/ws`.
+`http://daemon.localhost:51337/`, read the client-local port from the tunneled echo (the
+tab shows the bridge's HTTP 400 "This is a WebSocket endpoint" body — that error page is
+the success signal, the forward is minted regardless) — and restart dev:web with
+`VITE_INTENTD_WS_URL=ws://127.0.0.1:<client-local-port>/ws`.
 Expect a slow cold load over the tunnel (dev mode serves ~250 module requests).
 
 ### Loop B — dev Electron FE + CDP (Electron shell work)
 
 When the change touches Electron main/preload/native/sidecar, Loop A cannot see it —
 run the dev Electron FE on the daemon machine with `pnpm run dev:cdp` (sets
-`ENABLE_CDP_DEBUG=true`; remote-debugging port 9223, where every webContents — app
-window and embedded tabs — is a target) and attach CDP locally. See
+`ENABLE_CDP_DEBUG=true`; remote-debugging port 9223 by default — the launcher picks the
+first free port from 9223, so read the actual value from its output, e.g.
+`CDP targets: http://127.0.0.1:<port>/json/list` — and every webContents — app window
+and embedded tabs — is a target) and attach CDP locally. See
 `../../docs/fe/CDP_MCP_TOOLS.md`.
 
 ### Caveats
