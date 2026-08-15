@@ -3813,7 +3813,6 @@
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
-<<<<<<< HEAD
                   {@const turnMessageText = turn.userMessage
                     ? extractAllContent(turn.userMessage)
                     : ''}
@@ -3833,10 +3832,7 @@
                     turnLastRenderedMessageId,
                     !isLastTurnInConversation,
                   )}
-                  <div class="conversation-turn">
-=======
                   <div class="conversation-turn" data-conversation-turn>
->>>>>>> 611878fe1 (fix: restore chat event spacing and pinned prompt motion)
                     <LazyTurn
                       {turnKey}
                       scrollRoot={scrollContainer}
@@ -3935,7 +3931,10 @@
                                 fallbackText={extractAllContent(noticeMessage) || undefined}
                               />
                             </div>
-                            {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                            {@render newMessagesDividerAfter(
+                              noticeMessage.id,
+                              dividerAtTurnBoundary,
+                            )}
                           {/if}
                         {/each}
 
@@ -4042,31 +4041,16 @@
                       {/snippet}
                     </LazyTurn>
                   </div>
-<<<<<<< HEAD
                   <!-- Editorial rhythm between turns (not after the last one).
                        Must stay the negation of dividerDefersToTurnBoundary's
                        hasFollowingTurn input so a deferred divider always follows
                        a spacer. -->
                   {#if !isLastTurnInConversation}
-                    <div
-                      class={nextTurnIsEventNotification
-                        ? 'h-0'
-                        : isEventNotification && turn.assistantMessages.length === 0
-                          ? 'h-12'
-                          : 'h-8'}
-                      data-testid="conversation-turn-gap"
-                      data-gap-before-wake={nextTurnIsEventNotification ? '' : undefined}
-                      aria-hidden="true"
-                    ></div>
-=======
-                  <!-- Editorial rhythm between turns (not after the last one) -->
-                  {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
                     <ConversationTurnGap
                       currentIsEventNotification={isEventNotification}
                       currentHasAssistantMessages={turn.assistantMessages.length > 0}
                       nextIsEventNotification={nextTurnIsEventNotification}
                     />
->>>>>>> 611878fe1 (fix: restore chat event spacing and pinned prompt motion)
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
                        last rendered message and another turn follows, so the
