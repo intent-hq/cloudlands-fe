@@ -63,7 +63,7 @@
   <Fa icon={faCodePullRequest} class="w-3 h-3 text-ghost" />
   <button
     type="button"
-    class="text-foreground min-w-0 truncate font-medium hover:underline cursor-pointer"
+    class="text-foreground font-medium hover:underline cursor-pointer"
     data-testid="pr-monitor-wake-chip"
     title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
     onclick={handleOpenPr}
