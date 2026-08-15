@@ -199,7 +199,7 @@ describe('MonitoredPrsRow', () => {
     expect(Array.from(label.classList).some((cls) => cls.startsWith('max-w-'))).toBe(false);
   });
 
-  it('caps every box between the row and the chip label so long labels ellipsize, not overflow', () => {
+  it('caps every box between the row and the chip label so long labels wrap, not overflow', () => {
     monitorsState.monitors = [
       makeMonitor({
         repo: 'intent-hq/cloudlands-releases',
@@ -210,10 +210,14 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const chip = screen.getByTestId('monitored-pr-chip');
-    // The chip clips overflow, caps its own width, and its label ellipsizes
+    // The chip clips overflow and caps its own width; its label wraps
+    // (break-words) instead of ellipsizing — never truncate.
     expect(chip.className).toContain('overflow-hidden');
     expect(chip.className).toContain('max-w-full');
-    expect(chip.querySelector('.truncate')).toBeTruthy();
+    expect(chip.querySelector('.truncate')).toBeNull();
+    const label = chip.querySelector('span') as HTMLElement;
+    expect(Array.from(label.classList)).toContain('break-words');
+    expect(Array.from(label.classList)).toContain('min-w-0');
     // The cap must propagate up the trigger chain: the Tooltip trigger span
     // and the DropdownMenu root div (the wrap-row's actual flex item) both
     // need max-w-full — otherwise the flex item's automatic minimum size
