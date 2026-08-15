@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.46.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.45.1...v2.46.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* align settings and new-workspace model pickers ([#1240](https://github.com/intent-hq/cloudlands-fe/issues/1240)) ([4e91cf9](https://github.com/intent-hq/cloudlands-fe/commit/4e91cf9fcf5c25fd55e45823734cbb23b04117b4))
+* run bulk attachment transfers on per-transfer connections ([#1241](https://github.com/intent-hq/cloudlands-fe/issues/1241)) ([352d144](https://github.com/intent-hq/cloudlands-fe/commit/352d144112950ab629973a382a2e37e28eb885cf))
+
+
+### 🐛 Bug Fixes
+
+* gate the setup-card-only branch on settled hydration ([#1239](https://github.com/intent-hq/cloudlands-fe/issues/1239)) ([e4f4f68](https://github.com/intent-hq/cloudlands-fe/commit/e4f4f68e9e8816aea1266510aa17218d8c198011))
+
 ## [2.45.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.45.0...v2.45.1) (2026-08-14)
 
 
