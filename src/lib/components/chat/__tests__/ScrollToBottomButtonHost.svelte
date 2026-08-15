@@ -1,5 +1,6 @@
 <script lang="ts">
   import ScrollToBottomButton from '../ScrollToBottomButton.svelte';
+  import MessageActions from '../MessageActions.svelte';
   import { followBottom, followToBottom } from '$lib/utils/smartScroll';
 
   interface Props {
@@ -24,6 +25,8 @@
   function mountSubscriptionLater() {
     setTimeout(() => (subscriptionMounted = true), 40);
   }
+
+  function noop() {}
 </script>
 
 <section
@@ -35,9 +38,22 @@
 >
   <button type="button" data-testid="focus-before" class="absolute left-2 top-2">Before</button>
   <div
-    data-testid="overlapping-chat-surface"
-    class="pointer-events-auto absolute bottom-2 right-2 z-40 size-10 bg-card"
-  ></div>
+    class="absolute bottom-2 h-9"
+    style:left="{width < 640 ? 16 : 24}px"
+    style:right="{width < 640 ? 16 : 24}px"
+    data-testid="assistant-message-row"
+  >
+    <MessageActions
+      role="assistant"
+      onRegenerate={noop}
+      onFork={noop}
+      onVote={noop}
+      onCopy={noop}
+      timestamp="2026-08-15T12:00:00.000Z"
+      showOnHover={false}
+      class="absolute bottom-0 right-0 z-10"
+    />
+  </div>
   <div
     bind:this={scrollContainer}
     use:followBottom={{ follow, onFollowChange: (next) => (follow = next) }}

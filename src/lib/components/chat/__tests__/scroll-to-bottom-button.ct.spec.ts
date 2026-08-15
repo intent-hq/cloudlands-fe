@@ -6,7 +6,7 @@ for (const theme of ['light', 'dark'] as const) {
     { width: 720, zoom: 1 },
     { width: 320, zoom: 2 },
   ]) {
-    test(`keeps the borderless arrow as the top hit target in ${theme} at ${config.width}px/${config.zoom}x`, async ({
+    test(`keeps the borderless arrow clear of message actions in ${theme} at ${config.width}px/${config.zoom}x`, async ({
       mount,
       page,
     }) => {
@@ -17,6 +17,9 @@ for (const theme of ['light', 'dark'] as const) {
       const style = await button.evaluate((node) => {
         const computed = getComputedStyle(node);
         const rect = node.getBoundingClientRect();
+        const actionsRect = document
+          .querySelector<HTMLElement>('[data-testid="message-actions"]')!
+          .getBoundingClientRect();
         const hit = document.elementFromPoint(
           rect.left + rect.width / 2,
           rect.top + rect.height / 2,
@@ -34,6 +37,11 @@ for (const theme of ['light', 'dark'] as const) {
           background: computed.backgroundColor,
           zIndex: computed.zIndex,
           topHit: hit === node || hit?.closest('button') === node,
+          overlapsActions:
+            rect.left < actionsRect.right &&
+            rect.right > actionsRect.left &&
+            rect.top < actionsRect.bottom &&
+            rect.bottom > actionsRect.top,
         };
       });
       expect(style.border).toEqual(['0px', '0px', '0px', '0px']);
@@ -43,6 +51,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(style.background).toBe('rgba(0, 0, 0, 0)');
       expect(Number(style.zIndex)).toBe(45);
       expect(style.topHit).toBe(true);
+      expect(style.overlapsActions).toBe(false);
 
       await button.hover();
       expect(await button.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(
@@ -50,7 +59,10 @@ for (const theme of ['light', 'dark'] as const) {
       );
 
       await component.getByTestId('focus-before').focus();
-      await page.keyboard.press('Tab');
+      for (let tabCount = 0; tabCount < 8; tabCount += 1) {
+        if (await button.evaluate((node) => document.activeElement === node)) break;
+        await page.keyboard.press('Tab');
+      }
       await expect(button).toBeFocused();
       expect(await button.getAttribute('aria-label')).toBeTruthy();
       const focused = await button.evaluate((node) => {
