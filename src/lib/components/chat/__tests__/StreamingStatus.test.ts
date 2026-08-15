@@ -44,14 +44,16 @@ describe('StreamingStatus rendered UI', () => {
     const spinner = screen.getByRole('status');
     const label = screen.getByTestId('streaming-status-thinking');
 
-    expect(row.className).toContain('py-1');
-    expect(row.className).toContain('pl-2');
+    expect(row.className).toContain('py-0');
+    expect(row.className).toContain('min-h-5');
+    expect(row.className).not.toContain('pl-2'); // removed to align with top-level content inset
+    expect(row.className).toContain('mt-2');
     expect(row.className).not.toContain('pr-3');
     expect(spinner.className).toContain('legacy-streaming-spinner');
-    expect(spinner.getAttribute('style')).toContain('--size: 5px');
+    expect(spinner.getAttribute('style')).toContain('--size: 3.5px');
     expect(label.textContent).toBe('Thinking');
-    expect(label.className).toContain('text-xs');
-    expect(label.className).toContain('font-medium');
+    expect(label.className).toContain('text-muted-foreground');
+    expect(label.className).toContain('font-normal');
   });
 
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
@@ -241,7 +243,7 @@ describe('StreamingStatus rendered UI', () => {
     });
 
     const errorTitle = screen.getByTestId('error-title');
-    expect(errorTitle.className).toContain('text-destructive-foreground');
+    expect(errorTitle.className).toContain('text-destructive');
     expect(errorTitle.className).not.toContain('text-xs');
   });
 

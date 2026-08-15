@@ -22,7 +22,7 @@
 </script>
 
 <div
-  class="turn-failure-notice flex items-start gap-2.5 px-3 py-2.5 rounded-md bg-destructive/10 border border-destructive/30 text-destructive-foreground {className}"
+  class="turn-failure-notice flex items-start gap-2.5 px-3 py-2.5 rounded-md bg-destructive/10 border border-destructive/30 text-destructive {className}"
   transition:safeSlide={{ axis: 'y', duration: 200 }}
   role="alert"
   aria-live="polite"

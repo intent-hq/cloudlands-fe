@@ -138,7 +138,12 @@
 
 {#if visible}
   {#if status === 'normal'}
-    <StreamingTypingIndicator visible message={statusMessage} {seed} class={className} />
+    <StreamingTypingIndicator
+      visible
+      message={statusMessage}
+      {seed}
+      class="mt-2 {className}"
+    />
   {:else}
     <div
       role={status === 'error' ? 'alert' : undefined}
@@ -165,7 +170,7 @@
             </span>
           {:else if status === 'error' && errorDisplay}
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="font-medium text-destructive-foreground" data-testid="error-title"
+              <span class="font-medium text-destructive" data-testid="error-title"
                 >{errorDisplay.title}{#if failedAt}
                   <span
                     class="type-caption ml-1.5 leading-4 font-normal text-muted-foreground"
