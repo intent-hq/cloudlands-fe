@@ -44,34 +44,46 @@
   );
 </script>
 
-<div class="min-h-full flex items-center justify-center p-6 bg-background">
-  <div class="w-full max-w-md" role="status">
-    <div class="flex flex-col items-center text-center space-y-6 p-8">
-      <span aria-hidden="true">
-        <Fa
-          icon={kind === 'not_found' ? faCircleQuestion : faTriangleExclamation}
-          size="2.5x"
-          class="text-subtle"
-        />
-      </span>
+<div class="h-full min-h-0 w-full overflow-auto bg-background" data-resource-not-found={kind}>
+  <div class="flex min-h-full w-full items-center justify-center p-2 sm:p-6">
+    <div class="w-full max-w-md" role="status">
+      <div class="flex flex-col items-center space-y-3 p-2 text-center sm:space-y-6 sm:p-8">
+        <span class="max-[479px]:hidden" aria-hidden="true">
+          <Fa
+            icon={kind === 'not_found' ? faCircleQuestion : faTriangleExclamation}
+            size="2.5x"
+            class="text-subtle"
+          />
+        </span>
 
-      <div class="space-y-3">
-        <svelte:element this={`h${headingLevel}`} class="text-2xl font-semibold text-foreground">
-          {title}
-        </svelte:element>
-        {#if resourceId}
-          <p class="text-sm text-subtle font-mono break-all">{resourceId}</p>
-        {/if}
-        {#if detail}
-          <p class="text-base text-subtle leading-relaxed max-w-sm mx-auto break-words">
-            {detail}
-          </p>
-        {/if}
+        <div class="w-full space-y-2 sm:space-y-3">
+          <svelte:element
+            this={`h${headingLevel}`}
+            class="break-words text-lg font-semibold text-foreground max-[479px]:text-base sm:text-2xl"
+          >
+            {title}
+          </svelte:element>
+          {#if resourceId}
+            <p class="break-all font-mono text-xs text-subtle max-[479px]:hidden sm:text-sm">
+              {resourceId}
+            </p>
+          {/if}
+          {#if detail}
+            <p
+              class="mx-auto max-w-sm break-words text-sm leading-relaxed text-subtle sm:text-base"
+            >
+              {detail}
+            </p>
+          {/if}
+        </div>
+
+        <Button
+          variant="default"
+          size="default"
+          class="h-auto max-w-full whitespace-normal break-words text-center max-[479px]:text-xs"
+          onclick={onNavigateAway}>{m.layout_sidebarNav_allWorkspaces_title()}</Button
+        >
       </div>
-
-      <Button variant="default" size="default" onclick={onNavigateAway}
-        >{m.layout_sidebarNav_allWorkspaces_title()}</Button
-      >
     </div>
   </div>
 </div>

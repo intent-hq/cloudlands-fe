@@ -63,10 +63,18 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: () => mocks.readable(mocks.allNotes),
   selectNotesVersion: () => mocks.readable(0),
-  selectNoteById: {
-    select: (_state: unknown, _wsId: string, noteId: string) =>
-      mocks.allNotes.find((n) => n.id === noteId),
-  },
+  selectNoteById: Object.assign(
+    (_workspaceId: unknown, noteIdStore: any) => {
+      let noteId = '';
+      const unsubscribe = noteIdStore.subscribe((value: string) => (noteId = value));
+      unsubscribe();
+      return mocks.readable(mocks.allNotes.find((note) => note.id === noteId));
+    },
+    {
+      select: (_state: unknown, _wsId: string, noteId: string) =>
+        mocks.allNotes.find((n) => n.id === noteId),
+    },
+  ),
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
@@ -308,7 +316,7 @@ describe('NoteMetadataBar relations section (monorepo#1974)', () => {
 
     expect(mocks.navigateToNote).toHaveBeenCalledWith(
       'dep-a',
-      expect.objectContaining({ openInAdjacentPanel: false }),
+      expect.objectContaining({ workspaceId: 'ws-1', openInAdjacentPanel: false }),
     );
   });
 

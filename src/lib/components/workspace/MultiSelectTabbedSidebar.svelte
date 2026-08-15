@@ -10,7 +10,9 @@
   import { loadChatTranscript } from '$features/agent/chat-read-service';
   import {
     selectActiveTab,
+    selectAllTabs,
     selectFocusedPanelId,
+    getPanelTabOpenState,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import AuggieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -32,7 +34,6 @@
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { cn } from '$lib/utils';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { scrollFade } from '$lib/actions/scroll-fade';
 
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
@@ -43,12 +44,10 @@
   import { selectPendingLocateInSidebar } from '$store/renderer/slices/app-layout/app-layout-selectors';
   import {
     faArrowUpRightFromSquare,
-    faCodePullRequest,
     faCompressAlt,
     faExpandAlt,
     faPencil,
     faPlus,
-    faTimes,
   } from '@fortawesome/free-solid-svg-icons';
 
   import { onMount, tick } from 'svelte';
@@ -56,20 +55,13 @@
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import type { TransitionConfig } from 'svelte/transition';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import ExpandableFileSearch from './sidebar/ExpandableFileSearch.svelte';
-  import {
-    FilesPanel,
-    SidebarChangesPanel,
-    getActivityChatTarget,
-    isChildNote,
-    isSpecNote,
-    shouldShowActivityPreviewEvent,
-  } from './sidebar';
-  import ActivityLogPreview from './sidebar/ActivityLogPreview.svelte';
+  import { FilesPanel, SidebarChangesPanel, isChildNote, isSpecNote } from './sidebar';
   import AddContextSection from './sidebar/AddContextSection.svelte';
   import ContextPanel from './sidebar/ContextPanel.svelte';
+  import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
+  import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -79,32 +71,16 @@
   import SidebarBrowserLauncher from './SidebarBrowserLauncher.svelte';
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import {
-    selectWorkspaceActivePullRequest,
-    selectWorkspaceById,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectAllNotes,
     selectNotesLoading,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { loadEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
-  import { selectWorkspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
-  import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
-  import type { WorkspaceEvent } from '$features/events/types';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectMultiSelectSidebarSelectedTabIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { openExternalUrl } from '$lib/utils/open-external';
-  import { getPRDisplayTitle } from '$lib/utils/pull-request-utils';
-  import {
-    constructPrUrl as constructPrUrlUtil,
-    mapWorkspacePRs,
-    mergeMonitoredPRs,
-    selectPrimaryPr,
-  } from './sidebar/sidebar-changes-utils';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
   import {
     deriveAgentLauncherItems,
@@ -119,11 +95,11 @@
     type LauncherTabId,
     type TabId,
   } from './multi-select-sidebar-tabs';
-  import { normalizeActivityFilePath } from './utils/activity-file-path';
   import { getFixedContainingBlockOffset } from './utils/fixed-containing-block';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
+  import OpenPanelIndicator from './sidebar/OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -144,6 +120,7 @@
   let {
     workspaceId,
     panelLayoutId = workspaceId,
+    availablePanelCanvasWidth = 0,
     onCreateNote,
     onCreateFile,
     onFileRenamed,
@@ -162,7 +139,7 @@
   const workspaceIdStore = writable(workspaceId);
   const LAUNCHER_ICON_LIMIT = 6;
   const LAUNCHER_ICON_STACK_CLASS =
-    'isolate flex h-7 min-w-0 max-w-full flex-nowrap items-start overflow-hidden text-muted-foreground';
+    'isolate grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
   const LAUNCHER_ICON_BUTTON_CLASS =
     'launcher-icon-button group/preview pointer-events-auto relative flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_GLYPH_CLASS =
@@ -175,8 +152,6 @@
     'launcher-overflow-button pointer-events-auto relative z-10 flex h-7 min-w-7 w-auto shrink-0 cursor-pointer items-center justify-start rounded-none! border-0! bg-transparent! p-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-transparent! hover:text-foreground focus-visible:z-30 focus-visible:bg-transparent! focus-visible:text-foreground focus-visible:underline';
   const LAUNCHER_OVERFLOW_STYLE =
     'line-height: 12px; font-weight: 500; background: transparent; border: 0; border-radius: 0; padding: 0; box-shadow: none;';
-  const EXPANDED_CARD_ACTION_CLASS =
-    'expanded-card-action flex size-8 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-foreground opacity-100 shadow-none outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground';
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -186,32 +161,6 @@
   const pendingLocateInSidebar$ = selectPendingLocateInSidebar();
 
   const workspace = selectWorkspaceById(workspaceIdStore);
-  const activePullRequest = selectWorkspaceActivePullRequest(workspaceId);
-  const prMonitors = selectPrMonitors(workspaceId);
-  const workspaceRepo = $derived(
-    $workspace?.repositoryOwner && $workspace?.repositoryName
-      ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
-      : undefined,
-  );
-  const monitoredPrs = $derived(
-    mergeMonitoredPRs(
-      mapWorkspacePRs(
-        $workspace?.pullRequests,
-        $activePullRequest,
-        (number, fallbackUrl) =>
-          constructPrUrlUtil(
-            number,
-            $workspace?.repositoryOwner,
-            $workspace?.repositoryName,
-            fallbackUrl,
-          ),
-        getPRDisplayTitle,
-      ),
-      $prMonitors,
-      workspaceRepo,
-    ),
-  );
-  const linkedPrimaryPr = $derived(selectPrimaryPr(monitoredPrs));
   const notes = selectAllNotes(workspaceIdStore);
   const launcherNoteState = $derived(
     deriveNoteLauncherItems(
@@ -261,18 +210,20 @@
   function isAgentLauncherTab(tabId: string): boolean {
     return tabId === 'agents';
   }
-  const launcherAgentNames = $derived.by(() =>
-    Object.fromEntries(
-      $allWorkspaceAgents.flatMap((agent) =>
-        agent.id && agent.name ? [[agent.id, agent.name]] : [],
-      ),
-    ),
-  );
-  const resolvableActivityAgentIds = $derived<Set<string>>(
-    new Set($allWorkspaceAgents.map((agent) => agent.id)),
-  );
+
+  function launcherItemCount(tabId: string): number {
+    if (tabId === 'agents') {
+      return launcherAgents.length + (launcherAgentOverflowCount > 0 ? 1 : 0);
+    }
+    if (tabId === 'context') {
+      return launcherNotes.length + (launcherNoteOverflowCount > 0 ? 1 : 0);
+    }
+    return 1;
+  }
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  let agentSearchQuery = $state('');
+  let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
     TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(({ id, label }) => ({
       id,
@@ -347,6 +298,8 @@
   function handleTabClick(tabId: TabId) {
     const previousTabId = [...selectedTabs][0] ?? 'overview';
     const nextTabId = previousTabId === tabId ? 'overview' : tabId;
+    if (previousTabId === 'agents' && nextTabId !== 'agents') agentSearchQuery = '';
+    if (previousTabId === 'context' && nextTabId !== 'context') contextSearchQuery = '';
     if (previousTabId === 'overview' && tabId !== 'overview') {
       const launcher = sidebarElement?.querySelector<HTMLElement>(
         `[data-sidebar-launcher="${tabId}"]`,
@@ -369,12 +322,6 @@
     appStore.dispatch(openTerminalOverlay(workspaceId));
   }
 
-  function openPrimaryPr(event: MouseEvent) {
-    event.stopPropagation();
-    if (!linkedPrimaryPr) return;
-    void openExternalUrl(linkedPrimaryPr.url);
-  }
-
   let pendingLauncherFocusTabId = $state<LauncherTabId | null>(null);
 
   function dismissExpandedCard(restoreLauncherFocus: boolean) {
@@ -394,12 +341,13 @@
     return selectedTabs.has(tabId);
   }
 
-  const ftStagedChanges$ = selectStagedWorkingChanges(workspaceIdStore);
-  const ftUnstagedChanges$ = selectUnstagedWorkingChanges(workspaceIdStore);
+  const stagedChanges$ = selectStagedWorkingChanges(workspaceIdStore);
+  const unstagedChanges$ = selectUnstagedWorkingChanges(workspaceIdStore);
   const panelLayoutManager = $derived(getPanelLayoutManager(panelLayoutId));
   const panelLayoutIdStore = writable(panelLayoutId);
   $effect(() => panelLayoutIdStore.set(panelLayoutId));
   const activeTab$ = selectActiveTab(panelLayoutIdStore);
+  const allPanelTabs$ = selectAllTabs(panelLayoutIdStore);
   const focusedContentType = $derived($activeTab$?.type ?? null);
   const focusedContentNoteId = $derived($activeTab$?.noteId ?? null);
   const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
@@ -408,31 +356,17 @@
   let lastInitializedNotesWorkspaceId: string | null = null;
 
   $effect(() => {
+    workspaceId;
+    agentSearchQuery = '';
+    contextSearchQuery = '';
+  });
+
+  $effect(() => {
     if (!workspaceId || lastInitializedNotesWorkspaceId === workspaceId) return;
     lastInitializedNotesWorkspaceId = workspaceId;
     const initialSelectedNoteId = focusedContentType === 'note' ? focusedContentNoteId : undefined;
     appStore.dispatch(initializeNotes(workspaceId, initialSelectedNoteId ?? undefined));
   });
-
-  // Recent activity preview (overview state): fetch the event stream once per
-  // workspace; live updates arrive via the daemon-events-bridge `eventReceived`
-  // dispatches into the same slice.
-  const workspaceEvents$ = selectWorkspaceEvents(workspaceIdStore);
-  const workspaceScripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
-  const scriptNames = $derived(
-    Object.fromEntries($workspaceScripts$.map((script) => [script.id, script.name])),
-  );
-  let lastLoadedEventsWorkspaceId: string | null = null;
-  $effect(() => {
-    if (!workspaceId || lastLoadedEventsWorkspaceId === workspaceId) return;
-    lastLoadedEventsWorkspaceId = workspaceId;
-    appStore.dispatch(loadEventsRequested(workspaceId));
-  });
-
-  // Slice buffer is oldest→newest; the preview wants newest-first.
-  const recentActivityEvents = $derived(
-    [...$workspaceEvents$].reverse().filter((event) => shouldShowActivityPreviewEvent(event)),
-  );
 
   const effectiveSelectedNoteId = $derived(
     focusedContentType === 'note' ? focusedContentNoteId : null,
@@ -443,35 +377,50 @@
   const effectiveSelectedFile = $derived(
     focusedContentType === 'file' ? focusedContentFilePath : null,
   );
-  const effectiveActiveFilePath = $derived.by(() => {
-    if (focusedContentType === 'diff' && focusedContentDiffPath) {
-      return focusedContentDiffPath;
-    }
-    return null;
-  });
+  const effectiveActiveFilePath = $derived(
+    focusedContentType === 'diff' ? focusedContentDiffPath : null,
+  );
   const effectiveActiveFileStaged = $derived.by(() => {
-    if (focusedContentType === 'diff' && focusedContentDiffPath) {
-      const diffPath = focusedContentDiffPath;
-      const isInStaged = stagedChanges.some(
-        (c) => c.file === diffPath || c.relativePath === diffPath,
-      );
-      if (isInStaged) return true;
-      const isInUnstaged = unstagedChanges.some(
-        (c) => c.file === diffPath || c.relativePath === diffPath,
-      );
-      if (isInUnstaged) return false;
-      return null;
+    if (!effectiveActiveFilePath) return null;
+    if (
+      $stagedChanges$.some(
+        (change) =>
+          change.file === effectiveActiveFilePath ||
+          change.relativePath === effectiveActiveFilePath,
+      )
+    ) {
+      return true;
+    }
+    if (
+      $unstagedChanges$.some(
+        (change) =>
+          change.file === effectiveActiveFilePath ||
+          change.relativePath === effectiveActiveFilePath,
+      )
+    ) {
+      return false;
     }
     return null;
   });
   const effectiveIsAllChangesViewActive = $derived(focusedContentType === 'local-changes');
+  function getAgentPanelState(agentId: string) {
+    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
+      type: 'agent',
+      agentId,
+      workspaceId,
+    });
+  }
 
-  function handleOpenAgentInPanel(
-    agentId: string,
-    event?: WorkspaceEvent,
-    _clickEvent?: MouseEvent,
-  ) {
-    if (!resolvableActivityAgentIds.has(agentId)) return;
+  function getNotePanelState(noteId: string) {
+    return getPanelTabOpenState($allPanelTabs$, $activeTab$, workspaceId, {
+      type: 'note',
+      noteId,
+      workspaceId,
+    });
+  }
+
+  function handleOpenAgentInPanel(agentId: string) {
+    if (!$allWorkspaceAgents.some((agent) => agent.id === agentId)) return;
     const sourcePanelId = selectFocusedPanelId.select(appStore.state, panelLayoutId) ?? undefined;
     appStore.dispatch(
       openAgentTabRequested(workspaceId, {
@@ -479,33 +428,16 @@
         sourcePanelId,
         panelLayoutId,
         openInNewColumn: true,
+        adaptiveFirstChat: true,
+        availablePanelCanvasWidth,
       }),
     );
-
-    if (!event) return;
-    const target = getActivityChatTarget(event);
-    if (!target.messageId && !target.toolCallId && target.turnNumber === undefined) return;
-
-    for (const delay of [100, 300, 600]) {
-      setTimeout(() => {
-        dispatchWindowEvent('agent:scroll-to-activity', { agentId, ...target });
-      }, delay);
-    }
-  }
-
-  function handleOpenFullActivity() {
-    panelLayoutManager.openTab({
-      type: 'activity',
-      title: m.workspace_nav_activityLog_label(),
-      closable: true,
-      workspaceId,
-    });
   }
 
   function handleOpenNoteInPanel(noteId: string) {
     const note = $notes.find((n) => n.id === noteId);
     const title = note?.title || m.workspace_addContext_note_label();
-    panelLayoutManager.openTab({
+    panelLayoutManager.openUserTab({
       type: 'note',
       title,
       closable: true,
@@ -528,18 +460,6 @@
     });
   }
 
-  // Compact activity rows represent the file itself, so open its scoped file
-  // tab rather than routing through the changes/diff surface.
-  function handleOpenActivityFileEvent(event: WorkspaceEvent) {
-    const data = event.data as Record<string, unknown> | undefined;
-    const eventPath = [data?.relativePath, data?.path, data?.filePath, data?.file].find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    );
-    if (!eventPath) return;
-    const filePath = normalizeActivityFilePath(eventPath, $workspace);
-    if (filePath) handleOpenFileInPanel(filePath);
-  }
-
   function handleOpenCodeReviewInPanel() {
     panelLayoutManager.openTab({
       type: 'code-review',
@@ -548,27 +468,6 @@
       workspaceId,
     });
   }
-
-  const stagedChanges = $derived($ftStagedChanges$ ?? []);
-  const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
-  const launcherChanges = $derived(
-    [...stagedChanges, ...unstagedChanges].slice(0, LAUNCHER_ICON_LIMIT),
-  );
-  const launcherChangeOverflowCount = $derived(
-    Math.max(0, stagedChanges.length + unstagedChanges.length - launcherChanges.length),
-  );
-  const launcherChangeOverflowLabel = $derived(
-    m.lib_commandPalette_showMoreChanges_label({
-      count: formatInteger(launcherChangeOverflowCount),
-    }),
-  );
-  const localChangesCount = $derived(
-    new Set(
-      [...stagedChanges, ...unstagedChanges]
-        .map((change) => change.relativePath || change.file)
-        .filter(Boolean),
-    ).size,
-  );
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleArchiveWorkspace() {
@@ -800,11 +699,7 @@
   class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}
 >
   <!-- Fixed Top Section: Progress Card -->
-  <div
-    class="shrink-0 px-6 pb-2 pt-5"
-    data-workspace-title-region
-    draggable={draggableTitleRegion}
-  >
+  <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region draggable={draggableTitleRegion}>
     <WorkspaceProgressCard
       {workspaceId}
       onOpenNote={handleOpenNoteInPanel}
@@ -823,48 +718,7 @@
     >
       <div class={isLauncherOverview ? 'min-h-0 overflow-hidden' : 'min-h-0 overflow-visible'}>
         {#if isLauncherOverview}
-          <!-- Latest activity sits above the launcher tiles in the overview state. -->
-          <div class="flex h-full min-h-0 flex-col px-2" data-testid="sidebar-activity-preview">
-            {#if localChangesCount > 0}
-              <div class="shrink-0 px-4 pb-3" data-sidebar-overview-summary>
-                <div class="flex flex-col gap-0.5">
-                  {#if localChangesCount > 0}
-                    <Button
-                      variant="plain"
-                      class="h-auto w-full justify-between rounded-md border-0! pl-0! pr-2! py-1.5! text-left text-muted-foreground transition-colors hover:text-foreground"
-                      onclick={() => handleTabClick('changes')}
-                      aria-label={localChangesCount === 1
-                        ? m.workspace_multiSelectSidebar_showLocalChanges_one()
-                        : m.workspace_multiSelectSidebar_showLocalChanges_many({
-                            count: formatInteger(localChangesCount),
-                          })}
-                      data-sidebar-local-changes-summary
-                    >
-                      <span class="type-body font-normal">
-                        {localChangesCount === 1
-                          ? m.workspace_multiSelectSidebar_localChanges_one()
-                          : m.workspace_multiSelectSidebar_localChanges_many({
-                              count: formatInteger(localChangesCount),
-                            })}
-                      </span>
-                      <Fa icon={faPencil} class="size-3 text-ghost" />
-                    </Button>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-            <ActivityLogPreview
-              events={recentActivityEvents}
-              {scriptNames}
-              agentNames={launcherAgentNames}
-              maxItems={1}
-              expandable={false}
-              onOpenFileEvent={handleOpenActivityFileEvent}
-              onShowAgent={handleOpenAgentInPanel}
-              onOpenNote={handleOpenNoteInPanel}
-              onViewAll={handleOpenFullActivity}
-            />
-          </div>
+          <div class="h-full min-h-0" aria-hidden="true"></div>
         {:else}
           <!-- One expanded tile fills the body beneath the workspace identity. -->
           {@html '<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->'}
@@ -901,50 +755,44 @@
                       >
                         {tab.label}
                         <span class="ml-auto flex items-center gap-1">
-                          {#if tabId === 'agents' && (onCreateAgent || onCreateAgentWithSpecialist)}
-                            <CreateAgentSection
-                              onCreate={onCreateAgent}
-                              onCreateWithSpecialist={onCreateAgentWithSpecialist}
-                              compact
+                          {#if tabId === 'agents'}
+                            <SidebarExpandableSearch
+                              bind:query={agentSearchQuery}
+                              scope="agents"
+                              placeholder={m.workspace_multiSelectSidebar_searchAgents_placeholder()}
                             />
+                            {#if onCreateAgent || onCreateAgentWithSpecialist}
+                              <CreateAgentSection
+                                onCreate={onCreateAgent}
+                                onCreateWithSpecialist={onCreateAgentWithSpecialist}
+                                compact
+                              />
+                            {/if}
                           {:else if tabId === 'context'}
+                            <SidebarExpandableSearch
+                              bind:query={contextSearchQuery}
+                              scope="context"
+                              placeholder={m.workspace_multiSelectSidebar_searchContext_placeholder()}
+                            />
                             <AddContextSection onAddNote={onCreateNote} compact />
                           {:else if tabId === 'browser'}
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.menu_new_browser()}
                               onclick={createBrowser}
-                              aria-label={m.menu_new_browser()}
-                              data-sidebar-browser-new
-                            >
-                              <Fa icon={faPlus} class="size-4!" />
-                            </Button>
+                            />
                           {:else if tabId === 'shell'}
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
+                            <SidebarHeaderAction
+                              icon="plus"
+                              label={m.menu_new_terminal()}
                               onclick={createTerminal}
-                              aria-label={m.menu_new_terminal()}
-                              data-sidebar-shell-new
-                            >
-                              <Fa icon={faPlus} class="size-4!" />
-                            </Button>
+                            />
                           {/if}
-                          <Tooltip
-                            content={m.ui_tab_close_ariaLabel()}
-                            side="top"
-                            delayDuration={300}
-                          >
-                            <Button
-                              variant="plain"
-                              class={EXPANDED_CARD_ACTION_CLASS}
-                              onclick={() => dismissExpandedCard(true)}
-                              aria-label={m.ui_tab_close_ariaLabel()}
-                              data-sidebar-close
-                            >
-                              <Fa icon={faTimes} class="size-4!" />
-                            </Button>
-                          </Tooltip>
+                          <SidebarHeaderAction
+                            icon="close"
+                            label={m.ui_tab_close_ariaLabel()}
+                            onclick={() => dismissExpandedCard(true)}
+                          />
                         </span>
                       </h6>
                       {#if tabId !== 'agents' && tabId !== 'shell'}
@@ -1023,8 +871,12 @@
                           <WorkspaceAgentsList
                             agents={$allWorkspaceAgents}
                             loading={$agentsLoading}
+                            searchQuery={agentSearchQuery}
                             runningAgentIds={runningLauncherAgents.map((agent) => agent.id)}
                             selectedAgentId={effectiveSelectedAgentId}
+                            {workspaceId}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
                             onSelect={({ agentId }) => handleOpenAgentInPanel(agentId)}
                           />
                         </div>
@@ -1038,11 +890,17 @@
                             onOpenAgent={handleOpenAgentInPanel}
                             {onCreateNote}
                             loading={$notesLoading$}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
+                            searchQuery={contextSearchQuery}
                             showAddSection={false}
                           />
                         </div>
                       {:else if tabId === 'changes'}
-                        <div class="flex h-full flex-1 flex-col px-4 transition-all duration-200">
+                        <div
+                          class="flex h-full flex-1 flex-col px-4 transition-all duration-200"
+                          data-sidebar-changes-panel
+                        >
                           <div class="w-full flex-1">
                             <SidebarChangesPanel
                               {workspaceId}
@@ -1060,6 +918,8 @@
                               onOpenFullPanel={onAcceptChanges}
                               onOpenNote={handleOpenNoteInPanel}
                               onOpenCodeReview={handleOpenCodeReviewInPanel}
+                              openPanelTabs={$allPanelTabs$}
+                              activePanelTab={$activeTab$}
                             />
                           </div>
                         </div>
@@ -1125,6 +985,8 @@
                             onSelectAgent={handleOpenAgentInPanel}
                             showOnlyChanged={showOnlyChangedFiles}
                             searchQuery={fileSearchQuery}
+                            openPanelTabs={$allPanelTabs$}
+                            activePanelTab={$activeTab$}
                           />
                         </div>
                       {:else if tabId === 'browser'}
@@ -1152,10 +1014,11 @@
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
             {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
               <div
-                class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground transition-colors"
+                class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-card p-2 text-foreground transition-colors"
                 data-sidebar-launcher={tab.id}
                 data-sidebar-card-surface
                 data-launcher-top-inset="8"
+                data-launcher-inline-inset="8"
               >
                 <Button
                   variant="plain"
@@ -1174,20 +1037,18 @@
                   class="pointer-events-none relative z-10 flex h-full min-h-0 w-full min-w-0 flex-col justify-between"
                 >
                   <div
-                    class={`${LAUNCHER_ICON_STACK_CLASS} ${tab.id === 'agents' ? '-ml-2.5' : 'launcher-icon-stack-offset'}`}
+                    class={LAUNCHER_ICON_STACK_CLASS}
+                    style={`grid-template-columns: repeat(${launcherItemCount(tab.id)}, minmax(0, 1fr));`}
                     data-sidebar-launcher-icons
-                    data-launcher-pack="tight-overlap"
+                    data-launcher-pack="bounded-distribution"
                     data-launcher-layout="horizontal"
-                    data-launcher-overlap="6"
-                    data-launcher-overlap-step={tab.id === 'agents' ? '16' : '12'}
-                    data-launcher-primary-gap="4"
-                    data-launcher-primary-step={tab.id === 'agents' ? '26' : '22'}
                     data-launcher-target-size="28"
                     data-launcher-visible-size={tab.id === 'agents' ? '22' : '18'}
                     data-launcher-visible-offset={tab.id === 'agents' ? '3' : '5'}
                   >
                     {#if tab.id === 'agents'}
                       {#each launcherAgents as { agent, isRunning, preview }, index (agent.id)}
+                        {@const panelState = getAgentPanelState(agent.id)}
                         <SidebarLauncherHoverCard
                           title={agent.name ||
                             `${m.workspace_fileChanges_agent_label()} ${agent.id.slice(0, 8)}`}
@@ -1204,6 +1065,11 @@
                           ]}
                           emptyText={m.layout_sidebarNav_noMessages_label()}
                           kind="agent"
+                          gridPosition={index === 0
+                            ? 'start'
+                            : index === launcherItemCount('agents') - 1
+                              ? 'end'
+                              : 'center'}
                           open={openLauncherHoverKey === `agent:${agent.id}`}
                           onOpenChange={(open) => {
                             handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
@@ -1213,7 +1079,7 @@
                         >
                           <Button
                             variant="plain"
-                            class={`${LAUNCHER_ICON_BUTTON_CLASS} ${index === 0 ? '' : index === 1 ? '-ml-0.5' : '-ml-3'}`}
+                            class={LAUNCHER_ICON_BUTTON_CLASS}
                             onclick={() => handleOpenAgentInPanel(agent.id)}
                             aria-label={agent.name || m.workspace_fileChanges_agent_label()}
                             data-sidebar-agent={agent.id}
@@ -1235,6 +1101,11 @@
                                 size={22}
                                 state={isRunning ? 'running' : 'idle'}
                               />
+                              <OpenPanelIndicator
+                                count={panelState.count}
+                                active={panelState.isActive}
+                                overlay
+                              />
                             </span>
                           </Button>
                         </SidebarLauncherHoverCard>
@@ -1243,7 +1114,9 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={LAUNCHER_OVERFLOW_STYLE}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: ${
+                            launcherItemCount('agents') === 1 ? 'start' : 'end'
+                          };`}
                           onpointerdown={(event) => event.stopPropagation()}
                           onclick={(event) => {
                             event.stopPropagation();
@@ -1258,18 +1131,24 @@
                       {/if}
                     {:else if tab.id === 'context'}
                       {#each launcherNotes as note, index (note.id)}
+                        {@const panelState = getNotePanelState(note.id as string)}
                         <SidebarLauncherHoverCard
                           title={note.title || m.chat_mentions_untitledNote_label()}
                           rows={[{ text: getNoteLauncherPreview(note) }]}
                           emptyText="Empty note"
                           kind="note"
+                          gridPosition={index === 0
+                            ? 'start'
+                            : index === launcherItemCount('context') - 1
+                              ? 'end'
+                              : 'center'}
                           open={openLauncherHoverKey === `note:${note.id}`}
                           onOpenChange={(open) =>
                             handleLauncherHoverOpenChange(`note:${note.id}`, open)}
                         >
                           <Button
                             variant="plain"
-                            class={`${LAUNCHER_ICON_BUTTON_CLASS} ${index === 0 ? '' : index === 1 ? '-ml-1.5' : '-ml-4'}`}
+                            class={LAUNCHER_ICON_BUTTON_CLASS}
                             onclick={() => handleOpenNoteInPanel(note.id as string)}
                             aria-label={note.title || m.chat_mentions_untitledNote_label()}
                             data-sidebar-context={note.id}
@@ -1278,6 +1157,11 @@
                           >
                             <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
                               <Fa icon={faNote} class="size-4.5!" />
+                              <OpenPanelIndicator
+                                count={panelState.count}
+                                active={panelState.isActive}
+                                overlay
+                              />
                             </span>
                           </Button>
                         </SidebarLauncherHoverCard>
@@ -1286,7 +1170,9 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={LAUNCHER_OVERFLOW_STYLE}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: ${
+                            launcherItemCount('context') === 1 ? 'start' : 'end'
+                          };`}
                           onclick={() => handleTabClick('context')}
                           aria-label={launcherNoteOverflowLabel}
                           data-sidebar-context-overflow={launcherNoteOverflowCount}
@@ -1295,48 +1181,10 @@
                           <span aria-hidden="true">+{launcherNoteOverflowCount}</span>
                         </Button>
                       {/if}
-                    {:else if tab.id === 'changes'}
-                      {#each launcherChanges as change, index (change.id)}
-                        {@const changePath = change.relativePath || change.file}
-                        <Tooltip content={changePath} side="top" delayDuration={200}>
-                          <Button
-                            variant="plain"
-                            class={`${LAUNCHER_ICON_BUTTON_CLASS} ${index === 0 ? '' : '-ml-4'} text-muted-foreground hover:text-foreground`}
-                            onclick={() => {
-                              appStore.dispatch(
-                                openWorkspaceDiff(workspaceId, change as never, {
-                                  filePath: changePath,
-                                  changeId: change.id,
-                                }),
-                              );
-                            }}
-                            aria-label={m.fileTracking_fileRow_openFile_label()}
-                            data-sidebar-change={changePath}
-                            data-launcher-preview-item
-                          >
-                            <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
-                              <Fa icon={faNote} class="size-4.5!" />
-                            </span>
-                          </Button>
-                        </Tooltip>
-                      {/each}
-                      {#if launcherChangeOverflowCount > 0}
-                        <Button
-                          variant="plain"
-                          class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={LAUNCHER_OVERFLOW_STYLE}
-                          onclick={() => handleTabClick('changes')}
-                          aria-label={launcherChangeOverflowLabel}
-                          data-sidebar-change-overflow={launcherChangeOverflowCount}
-                          data-launcher-preview-item
-                        >
-                          <span aria-hidden="true">+{launcherChangeOverflowCount}</span>
-                        </Button>
-                      {/if}
                     {/if}
                   </div>
                   <div
-                    class="flex min-w-0 items-center justify-between gap-2"
+                    class="flex h-7 min-w-0 items-center justify-between gap-2"
                     data-sidebar-label-row
                   >
                     <span
@@ -1349,20 +1197,7 @@
                         {launcherAgentCountLabel}
                       </span>
                     {/if}
-                    {#if tab.id === 'changes' && linkedPrimaryPr}
-                      <Button
-                        type="button"
-                        variant="plain"
-                        class="pointer-events-auto relative z-20 inline-flex h-7 cursor-pointer items-center gap-1 rounded px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onclick={openPrimaryPr}
-                        aria-label={m.workspace_progress_viewPr_tooltip()}
-                        title={m.workspace_progress_viewPr_tooltip()}
-                        data-sidebar-changes-pr={linkedPrimaryPr.number}
-                      >
-                        <Fa icon={faCodePullRequest} class="size-3!" />
-                        <span>#{linkedPrimaryPr.number}</span>
-                      </Button>
-                    {:else if tab.id === 'files' && $fileExplorerWorkspacePath}
+                    {#if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <span class="pointer-events-auto relative z-20 cursor-pointer">
                         <OpenComboButton
                           filePath={$fileExplorerWorkspacePath}
@@ -1426,10 +1261,6 @@
 </div>
 
 <style>
-  .launcher-icon-stack-offset {
-    margin-left: -5px;
-  }
-
   @media (forced-colors: active) {
     :global(.launcher-icon-button:focus-visible) {
       color: HighlightText;

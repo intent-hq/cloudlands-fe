@@ -2,10 +2,10 @@
  * Scripts selectors — workspace-scoped.
  */
 
-import { store } from "../../store";
+import { store } from '../../store';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
-import type { ScriptWithState } from './scripts-types';
+import type { ScriptOperationState, ScriptWithState } from './scripts-types';
 import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 
@@ -66,6 +66,10 @@ export const selectWorkspaceScriptEntries = store.createSelector(
     const ws = getWs(state, wsId);
     return Object.values(ws.scripts);
   },
+);
+
+export const selectWorkspaceScriptOperations = store.createSelector(
+  (state, wsId: string): Record<string, ScriptOperationState> => getWs(state, wsId).operations,
 );
 
 /** Get runtime for a script in a specific workspace (parameterized). */

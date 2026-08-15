@@ -1,16 +1,10 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -28,21 +22,33 @@ const mocks = vi.hoisted(() => {
       mergeWhenReady: false,
       pendingAutoAction: null,
       postMergeState: null,
-      gitOperations: { isPushing: false, isPulling: false, isForcePushing: false, isRebasing: false, isRefreshingPR: false },
+      gitOperations: {
+        isPushing: false,
+        isPulling: false,
+        isForcePushing: false,
+        isRebasing: false,
+        isRefreshingPR: false,
+      },
     },
     acceptChanges: { prTitle: '', prDescription: '' },
     executor: { pr: { isExecuting: false, agentId: null } },
     postMerge: { aheadOfTrunk: null, behindTrunk: 0, hasConflicts: false },
   };
   const selector = <T>(getter: () => T) => {
-    const fn = () => ({ subscribe(run: (v: T) => void) { run(getter()); return () => {}; } });
+    const fn = () => ({
+      subscribe(run: (v: T) => void) {
+        run(getter());
+        return () => {};
+      },
+    });
     return Object.assign(fn, { select: () => getter() });
   };
   return { dispatch, workspaceEntity, state, selector };
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => ({}),
@@ -60,30 +66,58 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
 
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAcceptChangesState: mocks.selector(() => mocks.state.acceptChanges),
-  selectSidebarCreatePRWhenReady: mocks.selector(() => mocks.state.sidebarChanges.createPRWhenReady),
+  selectSidebarCreatePRWhenReady: mocks.selector(
+    () => mocks.state.sidebarChanges.createPRWhenReady,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
-  refreshAcceptChangesStatus: vi.fn((...args: unknown[]) => ({ type: 'changes/refreshAcceptChangesStatus', payload: args })),
-  setSidebarCreatePRWhenReady: vi.fn((...args: unknown[]) => ({ type: 'changes/setSidebarCreatePRWhenReady', payload: args })),
-  refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: [wsId] })),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  refreshAcceptChangesStatus: vi.fn((...args: unknown[]) => ({
+    type: 'changes/refreshAcceptChangesStatus',
+    payload: args,
+  })),
+  setSidebarCreatePRWhenReady: vi.fn((...args: unknown[]) => ({
+    type: 'changes/setSidebarCreatePRWhenReady',
+    payload: args,
+  })),
+  refreshRequested: vi.fn((wsId: string) => ({
+    type: 'changes/refreshRequested',
+    payload: [wsId],
+  })),
+  clearOlderCommits: vi.fn((wsId: string) => ({
+    type: 'changes/clearOlderCommits',
+    payload: wsId,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: Object.assign(
-    () => ({ subscribe(run: (v: unknown) => void) { run(mocks.workspaceEntity); return () => {}; } }),
+    () => ({
+      subscribe(run: (v: unknown) => void) {
+        run(mocks.workspaceEntity);
+        return () => {};
+      },
+    }),
     { select: () => mocks.workspaceEntity },
   ),
 }));
 
-vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-selectors', () => ({
-  selectExecutorState: mocks.selector(() => mocks.state.executor),
-}));
+vi.mock(
+  '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
+  () => ({
+    selectExecutorState: mocks.selector(() => mocks.state.executor),
+  }),
+);
 
 vi.mock('$store/renderer/slices/background-agent-executor/background-agent-executor-slice', () => ({
-  executeBackgroundAgent: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/execute', payload: args })),
-  cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
+  executeBackgroundAgent: vi.fn((...args: unknown[]) => ({
+    type: 'backgroundAgentExecutor/execute',
+    payload: args,
+  })),
+  cancelExecution: vi.fn((...args: unknown[]) => ({
+    type: 'backgroundAgentExecutor/cancel',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
@@ -95,11 +129,17 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
-  setGitOperationFlag: vi.fn((...args: unknown[]) => ({ type: 'git/setGitOperationFlag', payload: args })),
+  setGitOperationFlag: vi.fn((...args: unknown[]) => ({
+    type: 'git/setGitOperationFlag',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
-  refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({ type: 'prStatus/refreshRequested', payload: args })),
+  refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({
+    type: 'prStatus/refreshRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
@@ -108,13 +148,19 @@ vi.mock('$store/renderer/slices/terminals/terminals-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity }), updateWorkspace: vi.fn().mockResolvedValue(undefined) },
+  workspaceClient: {
+    update: vi.fn().mockResolvedValue({ ok: true, data: mocks.workspaceEntity }),
+    updateWorkspace: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 const mockCreatePR = vi.fn().mockResolvedValue({ success: true });
 
 vi.mock('$features/accept-changes/background-git-actions.service', () => ({
-  backgroundGitActionsService: { createPR: mockCreatePR, commit: vi.fn().mockResolvedValue({ success: true }) },
+  backgroundGitActionsService: {
+    createPR: mockCreatePR,
+    commit: vi.fn().mockResolvedValue({ success: true }),
+  },
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -126,13 +172,19 @@ vi.mock('$features/git/git-cache', () => ({
 }));
 
 vi.mock('$features/git/git.client', () => ({
-  gitClient: { fetch: vi.fn().mockResolvedValue({ ok: true }), push: vi.fn().mockResolvedValue({ ok: true }), showFile: vi.fn().mockResolvedValue({ ok: true, data: '' }) },
+  gitClient: {
+    fetch: vi.fn().mockResolvedValue({ ok: true }),
+    push: vi.fn().mockResolvedValue({ ok: true }),
+    showFile: vi.fn().mockResolvedValue({ ok: true, data: '' }),
+  },
 }));
 
 // PROTOCOL §5.6 — lazy per-commit file fetch for the metadata-only list payload.
 const mockCommitDetails = vi.hoisted(() => vi.fn());
 vi.mock('$lib/client', () => ({
-  appClient: { git: { commitDetails: mockCommitDetails, pull: vi.fn().mockResolvedValue({ success: true }) } },
+  appClient: {
+    git: { commitDetails: mockCommitDetails, pull: vi.fn().mockResolvedValue({ success: true }) },
+  },
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -146,11 +198,19 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({ toast: { info: vi.fn(), error: vi.fn(), success: vi.fn(), warning: vi.fn(), custom: vi.fn() } }));
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { info: vi.fn(), error: vi.fn(), success: vi.fn(), warning: vi.fn(), custom: vi.fn() },
+}));
 
-vi.mock('$lib/components/GitHubAuthBanner.svelte', async () => ({ default: (await import('./mocks/MockSimple.svelte')).default }));
-vi.mock('$lib/components/workspace/initializer/BranchSelector.svelte', async () => ({ default: (await import('./mocks/MockBranchSelector.svelte')).default }));
-vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () => ({ default: (await import('./mocks/MockFileRow.svelte')).default }));
+vi.mock('$lib/components/GitHubAuthBanner.svelte', async () => ({
+  default: (await import('./mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/workspace/initializer/BranchSelector.svelte', async () => ({
+  default: (await import('./mocks/MockBranchSelector.svelte')).default,
+}));
+vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () => ({
+  default: (await import('./mocks/MockFileRow.svelte')).default,
+}));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
 
@@ -212,6 +272,27 @@ const testPR = {
   status: 'open',
 };
 
+const crossRepoPR = {
+  ...testPR,
+  crossRepo: 'acme/other',
+  crossRepoDisplay: 'other',
+  monitorSnapshot: {
+    state: 'open',
+    isDraft: false,
+    hasConflicts: false,
+    isBehind: false,
+    checks: { total: 2, passed: 1, failed: 1, pending: 0 },
+    approvals: {
+      decision: 'REVIEW_REQUIRED',
+      have: 0,
+      needed: 1,
+      changesRequested: 0,
+    },
+    threads: { unresolved: 0 },
+    rulesKnown: false,
+  },
+};
+
 function makePushedCommit(hash: string, overrides: Record<string, unknown> = {}) {
   return {
     hash,
@@ -243,11 +324,43 @@ describe('PRSection', () => {
     mocks.state.acceptChanges.prDescription = '';
   });
 
+  it('affirms the linked PR action in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = await renderPR({
+        hasPRs: true,
+        pullRequests: [crossRepoPR],
+      });
+      const target = await waitFor(() => view.container.querySelector<HTMLElement>('div[title]')!);
+      target.tabIndex = 0;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(view.container.textContent).toContain('other:');
+          expect(target.getAttribute('title')).toContain('Checks: 1 passed, 1 failed, 0 pending');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('triggerCreatePR calls backgroundGitActionsService.createPR with provided title and description when authenticated', async () => {
     const { component } = await renderPR();
-    await (component as unknown as {
-      triggerCreatePR: (o: { workspaceId?: string; targetBranch?: string; prTitle?: string; prDescription?: string }) => void;
-    }).triggerCreatePR({ workspaceId: 'ws-1', targetBranch: 'develop', prTitle: 'Add X', prDescription: 'Details' });
+    await (
+      component as unknown as {
+        triggerCreatePR: (o: {
+          workspaceId?: string;
+          targetBranch?: string;
+          prTitle?: string;
+          prDescription?: string;
+        }) => void;
+      }
+    ).triggerCreatePR({
+      workspaceId: 'ws-1',
+      targetBranch: 'develop',
+      prTitle: 'Add X',
+      prDescription: 'Details',
+    });
 
     await waitFor(() => expect(mockCreatePR).toHaveBeenCalled());
     expect(mockCreatePR).toHaveBeenCalledWith(
@@ -263,11 +376,15 @@ describe('PRSection', () => {
   it('triggerCreatePR dispatches initializeGitHubAuth when unauthenticated and does NOT call createPR', async () => {
     mocks.state.githubAuthed = false;
     const { component } = await renderPR();
-    await (component as unknown as {
-      triggerCreatePR: (o: { prTitle?: string; prDescription?: string }) => void;
-    }).triggerCreatePR({ prTitle: 'Add X', prDescription: 'd' });
+    await (
+      component as unknown as {
+        triggerCreatePR: (o: { prTitle?: string; prDescription?: string }) => void;
+      }
+    ).triggerCreatePR({ prTitle: 'Add X', prDescription: 'd' });
     await waitFor(() => {
-      expect(mocks.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'githubAuth/initialize' }));
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'githubAuth/initialize' }),
+      );
     });
     expect(mockCreatePR).not.toHaveBeenCalled();
   });

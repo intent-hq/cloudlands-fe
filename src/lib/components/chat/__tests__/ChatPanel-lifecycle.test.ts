@@ -81,6 +81,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatStreamingStartTime: mocks.selector(null),
   selectTranscriptHydration: mocks.selector('settled'),
   selectTranscriptHydratedOnce: mocks.selector(true),
+  selectTranscriptSnapshotMeta: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -119,6 +120,7 @@ vi.mock('../message-send-transition', () => ({
   captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
   createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
   animateMessageSend: mocks.animateMessageSend,
+  MESSAGE_SEND_MATCH_TIMEOUT_MS: 3000,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
@@ -369,7 +371,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
     expect(bubble.isConnected).toBe(true);
 
-    await vi.advanceTimersByTimeAsync(599);
+    await vi.advanceTimersByTimeAsync(2999);
     expect(bubble.isConnected).toBe(true);
     await vi.advanceTimersByTimeAsync(1);
     expect(bubble.isConnected).toBe(false);
@@ -563,7 +565,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('cancels deferred setup when destroyed before container resources bind', async () => {
+  it('tears down container-owned prompt tracking when destroyed immediately', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -574,8 +576,8 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
     flushFrame();
 
-    expect(mocks.resizeConstructor).not.toHaveBeenCalled();
-    expect(mocks.resizeObserve).not.toHaveBeenCalled();
+    expect(mocks.resizeConstructor).toHaveBeenCalledOnce();
+    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
     expect(frames).toHaveLength(0);
   });
 
@@ -610,7 +612,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const removeListener = vi.spyOn(scrollContainer, 'removeEventListener');
 
     flushFrame();
-    expect(addListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
+    expect(addListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1);
     expect(mocks.resizeObserve).toHaveBeenCalledWith(scrollContainer);
 
     scrollContainer.dispatchEvent(new Event('scroll'));
@@ -618,7 +620,7 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
 
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
-    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
+    expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
     expect(frames).toHaveLength(0);
   });
 });

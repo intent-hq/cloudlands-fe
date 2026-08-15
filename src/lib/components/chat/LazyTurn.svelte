@@ -25,18 +25,10 @@
    * ```
    */
 
-  import {
-  onMount,
-  tick,
-  type Snippet,
-} from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
 
-  import {
-    getTurnHeightCache,
-    readCachedHeight,
-    WIDTH_TOLERANCE_PX,
-    writeCachedHeight,
-  } from './lazy-turn-height-cache';
+  import { WIDTH_TOLERANCE_PX, type LazyTurnHeightCache } from './lazy-turn-height-cache';
+  import { observeLazyTurnVisibility } from './lazy-turn-observer';
   import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';
 
   // PERF: Default estimated height for turns that haven't been measured yet
@@ -50,19 +42,13 @@
     forceVisible?: boolean;
     /** The scroll container element (for IntersectionObserver root) */
     scrollRoot?: HTMLElement | null;
+    /** Panel-scoped, bounded, width-aware height cache. */
+    heightCache: LazyTurnHeightCache;
     /** The content to render */
     children: Snippet;
   }
 
-  let { turnKey, forceVisible = false, scrollRoot = null, children }: Props = $props();
-
-  // PERF: Module-level width-validated height cache using a plain Map (NOT
-  // SvelteMap! — O(n²) reactivity; see lazy-turn-height-cache.ts). Entries
-  // carry the wrap width they were measured at and reads validate it: stale
-  // widths are what fabricate phantom space at the bottom of the chat, and
-  // per-entry validation stays correct across panel remounts and multiple
-  // panels at different widths (a per-scroller clear stamp does not).
-  const heightCache = getTurnHeightCache();
+  let { turnKey, forceVisible = false, scrollRoot = null, heightCache, children }: Props = $props();
 
   let containerRef = $state<HTMLDivElement>();
 
@@ -75,19 +61,28 @@
   // The init-time read cannot know this instance's width yet (no DOM) —
   // onMount re-validates it against the real width before it can matter.
   // svelte-ignore state_referenced_locally -- intentional one-shot cache read for the initial turnKey.
-  const initialCachedHeight = readCachedHeight(heightCache, turnKey, null);
+  const initialCachedHeight = heightCache.get(turnKey, null);
   // svelte-ignore state_referenced_locally -- initial seed only; shouldRenderContent tracks forceVisible reactively.
   let isVisible = $state(forceVisible); // Only start visible if forceVisible
-  let hasBeenMeasured = $state(initialCachedHeight !== null);
+  let hasBeenMeasured = $state(initialCachedHeight !== undefined);
+  let isIntersecting = $state(true);
 
   // PERF: Local copy of cached height to avoid reactive dependency on Map
   // Updated manually when we measure or when we become visible
-  let localCachedHeight = $state<number | null>(initialCachedHeight);
+  let localCachedHeight = $state<number | null>(initialCachedHeight ?? null);
 
   // Should render content?
   // PERF: Only render if forceVisible OR isVisible (IntersectionObserver said we're in view)
   // Previously had fallbacks that caused all items to render initially
   let shouldRenderContent = $derived(forceVisible || isVisible);
+
+  // A turn can mount as force-visible and age out of that window without a
+  // new intersection notification. Use the last shared-observer state then.
+  $effect(() => {
+    if (!forceVisible && !isIntersecting && hasBeenMeasured && localCachedHeight !== null) {
+      setVisibleWithScrollCompensation(false);
+    }
+  });
 
   // Height ledger — scroll compensation for ALL height changes of this turn
   // while it sits above the reader's viewport (native scroll anchoring is off
@@ -114,45 +109,26 @@
 
   onMount(() => {
     if (!containerRef) return;
-
-    // Skip observers for force-visible turns
-    if (forceVisible) {
-      hasBeenMeasured = true;
-      return;
-    }
-
-    let intersectionObserver: IntersectionObserver | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialMeasureAnimationFrame: number | null = null;
+    let initialMeasureTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+    const mountedContainer = containerRef;
+    const mountedTurnKey = turnKey;
 
-    // Set up IntersectionObserver for visibility detection
-    // PERF: Use smaller rootMargin (50% = half viewport) to reduce rendered elements
-    // Previously 200% was causing too many elements to render at once
-    intersectionObserver = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-
-        if (entry.isIntersecting) {
-          // Refresh local cache in case it was updated by another instance
-          const cached = readCachedHeight(heightCache, turnKey, measuredWidth);
-          if (cached !== null && cached !== localCachedHeight) {
-            localCachedHeight = cached;
-          }
-          setVisibleWithScrollCompensation(true);
-        } else if (hasBeenMeasured && localCachedHeight !== null) {
-          // Only hide if we have a cached height to use for placeholder
-          setVisibleWithScrollCompensation(false);
-        }
-      },
-      {
-        root: scrollRoot,
-        rootMargin: '50% 0px', // PERF: Reduced from 200% - render half viewport above/below
-        threshold: 0,
-      },
-    );
-
-    intersectionObserver.observe(containerRef);
+    // Observer ownership is shared per scroll root, so a long transcript does
+    // not allocate one IntersectionObserver for every turn.
+    const stopObserving = observeLazyTurnVisibility(containerRef, scrollRoot, (next) => {
+      isIntersecting = next;
+      if (next) {
+        const cached = heightCache.get(turnKey, measuredWidth);
+        if (cached !== undefined && cached !== localCachedHeight) localCachedHeight = cached;
+        setVisibleWithScrollCompensation(true);
+      } else if (!forceVisible && hasBeenMeasured && localCachedHeight !== null) {
+        setVisibleWithScrollCompensation(false);
+      }
+    });
 
     // PERF: Set up ResizeObserver with debouncing to batch height updates
     // This prevents rapid-fire updates during streaming or animations
@@ -183,7 +159,7 @@
       ) {
         measuredWidth = observedWidth;
         if (!shouldRenderContent) {
-          const validated = readCachedHeight(heightCache, turnKey, observedWidth);
+          const validated = heightCache.get(turnKey, observedWidth) ?? null;
           if (validated !== localCachedHeight) {
             localCachedHeight = validated;
             hasBeenMeasured = validated !== null;
@@ -201,10 +177,11 @@
         }
         resizeDebounceTimer = setTimeout(() => {
           if (measuredWidth !== null) {
-            writeCachedHeight(heightCache, turnKey, height, measuredWidth);
+            heightCache.set(turnKey, height, measuredWidth);
           }
           localCachedHeight = height;
           hasBeenMeasured = true;
+          if (!forceVisible && !isIntersecting) setVisibleWithScrollCompensation(false);
           resizeDebounceTimer = null;
         }, 50); // 50ms debounce
       }
@@ -213,27 +190,38 @@
     resizeObserver.observe(containerRef);
 
     // Mark as measured after initial render (with debounce)
-    requestAnimationFrame(() => {
-      if (containerRef) {
-        const height = containerRef.offsetHeight;
-        const width = containerRef.offsetWidth;
+    initialMeasureAnimationFrame = requestAnimationFrame(() => {
+      initialMeasureAnimationFrame = null;
+      if (!disposed && containerRef === mountedContainer && turnKey === mountedTurnKey) {
+        const height = mountedContainer.offsetHeight;
+        const width = mountedContainer.offsetWidth;
         if (height > 0) {
           // Use timeout to batch with other measurements
-          setTimeout(() => {
+          initialMeasureTimer = setTimeout(() => {
+            initialMeasureTimer = null;
+            if (disposed || containerRef !== mountedContainer || turnKey !== mountedTurnKey) return;
             if (width > 0) {
               measuredWidth ??= width;
-              writeCachedHeight(heightCache, turnKey, height, width);
+              heightCache.set(mountedTurnKey, height, width);
             }
             localCachedHeight = height;
             hasBeenMeasured = true;
+            if (!forceVisible && !isIntersecting) setVisibleWithScrollCompensation(false);
           }, 0);
         }
       }
     });
 
     return () => {
-      intersectionObserver?.disconnect();
+      disposed = true;
+      stopObserving();
       resizeObserver?.disconnect();
+      if (initialMeasureAnimationFrame !== null) {
+        cancelAnimationFrame(initialMeasureAnimationFrame);
+      }
+      if (initialMeasureTimer !== null) {
+        clearTimeout(initialMeasureTimer);
+      }
       if (resizeDebounceTimer) {
         clearTimeout(resizeDebounceTimer);
       }

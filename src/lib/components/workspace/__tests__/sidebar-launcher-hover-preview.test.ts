@@ -135,8 +135,8 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
     expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');
     expect(sidebar).toContain(
-      'flex h-7 min-w-0 max-w-full flex-nowrap items-start overflow-hidden',
+      'isolate grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible',
     );
-    expect(sidebar).toContain('data-launcher-pack="tight-overlap"');
+    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
   });
 });

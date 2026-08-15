@@ -82,12 +82,15 @@ describe('workspace sidebar hierarchy presentation contract', () => {
 
   it('renders one task progress bar with status details in its hover surface', () => {
     const progress = source('../sidebar/FlameGraph.svelte');
+    const sharedProgress = source('../TaskStatusProgress.svelte');
 
-    expect(progress).toContain('role="progressbar"');
-    expect(progress).toContain('style:flex-grow={bar.count}');
-    expect(progress).toContain('TASK_STATUS_BAR_CLASSES[bar.status]');
+    expect(progress).toContain('<TaskStatusProgress');
+    expect(sharedProgress).toContain('role="progressbar"');
+    expect(sharedProgress).toContain('style:flex-grow={segment.count}');
+    expect(sharedProgress).toContain('TASK_PROGRESS_SEGMENT_CLASSES[');
+    expect(sharedProgress).toContain('segment.visualState');
     expect(progress).toContain('content={taskListTooltip}');
-    expect(progress).toContain('contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"');
+    expect(progress).toContain('bg-secondary!');
     expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 pt-2');
     expect(progress).toContain('onclick={() => specNoteId && onTaskClick?.(specNoteId)}');
     expect(progress).toContain('onclick={() => onTaskClick?.(task.note.id as string)}');
@@ -131,9 +134,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain(
-      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
-    );
+    expect(sidebar).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
     expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
@@ -153,11 +154,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('content={`${tab.label}: ${getTabDescription');
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(sidebar).toContain('data-sidebar-context={note.id}');
-    expect(sidebar).toContain('data-sidebar-change={changePath}');
+    expect(sidebar).not.toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain(
-      'flex h-7 min-w-0 max-w-full flex-nowrap items-start overflow-hidden',
-    );
+    expect(sidebar).toContain('grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible');
+    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
     expect(sidebar).toContain('deriveNoteLauncherItems(');

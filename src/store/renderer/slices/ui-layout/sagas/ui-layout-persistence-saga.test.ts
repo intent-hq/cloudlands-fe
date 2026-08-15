@@ -69,6 +69,7 @@ describe('uiLayoutPersistenceSaga', () => {
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       hydrateResizablePanelSize('size', 73),
+      hydrateResizablePanelSize('bad-size', undefined),
       hydrateResizablePanelGroupLayout('group', { sizes: [30, 70], collapsed: ['left'] }),
       hydrateCollapsiblePanelCollapsed('collapsed', false),
     ]);
@@ -88,17 +89,17 @@ describe('uiLayoutPersistenceSaga', () => {
       ['size', '42'],
       ['collapsed', 'true'],
     ]);
-    expect(storage.setJSON.mock.calls).toEqual([
-      ['group', { sizes: [25, 75], collapsed: [] }],
-    ]);
+    expect(storage.setJSON.mock.calls).toEqual([['group', { sizes: [25, 75], collapsed: [] }]]);
     task.cancel();
     await task.toPromise();
   });
 
   it('survives a storage failure, ignores malformed actions, and cancels cleanly', async () => {
-    storage.getItem.mockImplementationOnce(() => {
-      throw new Error('unavailable');
-    }).mockReturnValueOnce('12');
+    storage.getItem
+      .mockImplementationOnce(() => {
+        throw new Error('unavailable');
+      })
+      .mockReturnValueOnce('12');
     const channel = stdChannel();
     const dispatch = vi.fn();
     const task = runSaga({ channel, dispatch }, uiLayoutPersistenceSaga);
@@ -108,6 +109,7 @@ describe('uiLayoutPersistenceSaga', () => {
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      hydrateResizablePanelSize('first', undefined),
       hydrateResizablePanelSize('second', 12),
     ]);
     task.cancel();

@@ -13,3 +13,15 @@
   outline: none !important;
   backdrop-filter: none !important;
 }
+
+.titlebar-navigation-glyph {
+  transform: scale(1);
+}
+
+.titlebar-navigation-control:focus .titlebar-navigation-glyph {
+  transform: scale(1.125);
+}
+
+.titlebar-navigation-control:focus-visible .titlebar-navigation-glyph {
+  transform: scale(1.125);
+}

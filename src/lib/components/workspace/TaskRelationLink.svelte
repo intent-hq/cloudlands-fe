@@ -13,40 +13,26 @@
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import { navigateToNote, findSourcePanelId } from '$lib/utils/workspace-navigation';
   import type { NoteId } from '$shared/types';
-  import {
-    selectNoteById,
-    selectNotesVersion,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$store/renderer/store';
-  import { writable } from 'svelte/store';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { toStore } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   let {
+    workspaceId,
     noteId,
     variant = 'dependency',
     unmet = false,
   }: {
+    workspaceId: string;
     noteId: NoteId;
     variant?: 'dependency' | 'conflict';
     unmet?: boolean;
   } = $props();
 
-  // Redux state access - called at component init time for reactive subscriptions
-  const activeWorkspaceId = selectActiveWorkspaceId();
-  const wsIdStore = writable<string>('');
-  $effect(() => {
-    wsIdStore.set($activeWorkspaceId ?? '');
-  });
-  const notesVersion$ = selectNotesVersion(wsIdStore);
-
-  let relatedNote = $derived.by(() => {
-    // Track notesVersion so title/status refresh when the related note changes.
-    void $notesVersion$;
-    const wsId = $activeWorkspaceId;
-    if (!wsId) return null;
-    return selectNoteById.select(appStore.state, wsId, noteId) ?? null;
-  });
+  const workspaceId$ = toStore(() => workspaceId);
+  const noteId$ = toStore(() => noteId);
+  const relatedNote$ = selectNoteById(workspaceId$, noteId$);
+  let relatedNote = $derived($relatedNote$ ?? null);
 
   let title = $derived(
     relatedNote?.title ?? m.workspace_taskRelationLink_notFound_label({ id: noteId }),
@@ -57,6 +43,7 @@
     e.stopPropagation();
     e.preventDefault();
     void navigateToNote(noteId, {
+      workspaceId,
       openInAdjacentPanel: e.metaKey || e.ctrlKey,
       sourcePanelId: findSourcePanelId(e.target),
     });
@@ -66,7 +53,8 @@
 <button
   type="button"
   onclick={handleClick}
-  class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded px-2 py-0.5 text-left cursor-pointer transition-colors {variant === 'conflict'
+  class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded px-2 py-0.5 text-left cursor-pointer transition-colors {variant ===
+  'conflict'
     ? 'bg-warning/10 text-warning hover:bg-warning/20'
     : unmet
       ? 'bg-muted text-subtle hover:bg-muted/80'

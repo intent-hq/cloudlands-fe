@@ -11,6 +11,7 @@
   import {
     selectIsCollapsed,
     selectResizablePanelSize,
+    selectResizablePanelSizeHydrated,
     selectSidebarExpandedWidth,
     selectSidebarWidth,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
@@ -47,6 +48,8 @@
     animateOnMount = false,
     animationDuration = 300,
     disableWidthTransition = false,
+    notifyAutomaticWidthChanges = true,
+    clampStoredWidth = false,
     onWidthChange,
     onResizeStart,
     onResize,
@@ -56,6 +59,9 @@
 
     // For skipping resize (used by parent to control when we're in full-width mode)
     doSkipResize = false,
+
+    // Retain the stored fixed width when a temporary fill mode ends.
+    preserveFixedWidthAfterFill = false,
 
     // Allow a consumer's increasing default to grow an already-mounted panel.
     growWithDefaultWidth = false,
@@ -113,6 +119,10 @@
     animateOnMount?: boolean;
     animationDuration?: number;
     disableWidthTransition?: boolean;
+    /** Notify on mount and programmatic changes. Manual resize always notifies. */
+    notifyAutomaticWidthChanges?: boolean;
+    /** Clamp stale persisted widths to current bounds instead of rejecting them. */
+    clampStoredWidth?: boolean;
     onWidthChange?: (width: number) => void;
     onResizeStart?: () => void;
     onResize?: (previousWidth: number, nextWidth: number) => void;
@@ -123,6 +133,9 @@
 
     // For skipping resize (used by parent to control when we're in full-width mode)
     doSkipResize?: boolean;
+
+    // Keep the fixed width instead of measuring a parent that may have expanded meanwhile.
+    preserveFixedWidthAfterFill?: boolean;
 
     // Grow to a larger reactive default without shrinking manual widths.
     growWithDefaultWidth?: boolean;
@@ -157,6 +170,12 @@
   const storedPanelSize = selectResizablePanelSize(storageKey ?? '');
   // svelte-ignore state_referenced_locally
   const storedExpandedPanelSize = selectResizablePanelSize(expandedStorageKey ?? '');
+  // svelte-ignore state_referenced_locally
+  const storedPanelSizeHydrated = selectResizablePanelSizeHydrated(storageKey ?? '');
+  // svelte-ignore state_referenced_locally
+  const storedExpandedPanelSizeHydrated = selectResizablePanelSizeHydrated(
+    expandedStorageKey ?? '',
+  );
   // svelte-ignore state_referenced_locally
   const isWorkspaceLeftPanel = storageKey === 'workspace-left-panel-width';
   // svelte-ignore state_referenced_locally
@@ -202,6 +221,7 @@
     const pixels = weight > 0 ? percentToPixels(value, isWidth) : value;
     const min = isWidth ? minWidth : minHeight;
     const max = isWidth ? maxWidth : maxHeight;
+    if (clampStoredWidth && isWidth) return Math.max(min, Math.min(max, pixels));
     return pixels >= min && pixels <= max ? pixels : null;
   }
 
@@ -481,10 +501,10 @@
 
   // Check for collapse threshold on mount and set up resize listener
   onMount(() => {
-    if (restoreStoredWidth && storageKey && !isWorkspaceLeftPanel) {
+    if (restoreStoredWidth && storageKey && !isWorkspaceLeftPanel && !$storedPanelSizeHydrated) {
       appStore.dispatch(requestResizablePanelSize(storageKey));
     }
-    if (expandedStorageKey && !isWorkspaceExpandedPanel) {
+    if (expandedStorageKey && !isWorkspaceExpandedPanel && !$storedExpandedPanelSizeHydrated) {
       appStore.dispatch(requestResizablePanelSize(expandedStorageKey));
     }
 
@@ -561,6 +581,7 @@
       }
     }
     const nextRenderedWidth = isExpanded ? expandedWidth : panelWidth;
+    if (!notifyAutomaticWidthChanges) onWidthChange?.(nextRenderedWidth);
     onResize?.(lastResizeWidth, nextRenderedWidth);
     lastResizeWidth = nextRenderedWidth;
   }
@@ -659,6 +680,7 @@
         panelWidth = startWidth;
         widthPercent = pixelsToPercent(startWidth, true);
       }
+      if (!notifyAutomaticWidthChanges) onWidthChange?.(startWidth);
     } else {
       panelHeight = startHeight;
       heightPercent = pixelsToPercent(startHeight, false);
@@ -713,6 +735,7 @@
         if (expandedStorageKey) {
           persistPanelSize(expandedStorageKey, expandedWidth, true);
         }
+        if (!notifyAutomaticWidthChanges) onWidthChange?.(expandedWidth);
         onResizeEnd?.(previousWidth, expandedWidth);
       } else {
         const previousWidth = panelWidth;
@@ -724,6 +747,7 @@
         if (storageKey) {
           persistPanelSize(storageKey, panelWidth, true);
         }
+        if (!notifyAutomaticWidthChanges) onWidthChange?.(panelWidth);
         onResizeEnd?.(previousWidth, panelWidth);
       }
     } else {
@@ -768,6 +792,9 @@
             widthPercent = pixelsToPercent(newWidth, true);
           }
         }
+        const nextWidth = isExpanded ? expandedWidth : panelWidth;
+        if (!notifyAutomaticWidthChanges) onWidthChange?.(nextWidth);
+        persistPanelSize(isExpanded ? expandedStorageKey : storageKey, nextWidth, true);
       } else if (e.key === 'Enter') {
         // Enter resets to defaults (same as double-click)
         handleDoubleClick();
@@ -814,7 +841,7 @@
 
   $effect.pre(() => {
     const isSkippingResize = doSkipResize;
-    if (wasSkippingResize && !isSkippingResize) {
+    if (wasSkippingResize && !isSkippingResize && !preserveFixedWidthAfterFill) {
       const renderedWidth = panelElement?.getBoundingClientRect().width ?? 0;
       if (renderedWidth > 0) {
         panelWidth = Math.max(minWidth, Math.min(maxWidth, renderedWidth));
@@ -825,6 +852,7 @@
   });
 
   $effect(() => {
+    if (!notifyAutomaticWidthChanges) return;
     const width = actualWidth;
     untrack(() => onWidthChange?.(width));
   });

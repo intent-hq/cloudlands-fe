@@ -3,6 +3,7 @@ import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-mess
 export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
 export const MESSAGE_SEND_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 export const MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS = 600;
+export const MESSAGE_SEND_MATCH_TIMEOUT_MS = 3000;
 
 interface TargetTransitionOwner {
   cancel: () => void;
@@ -14,6 +15,7 @@ export interface MessageSendOrigin {
   left: number;
   top: number;
   width: number;
+  height: number;
   borderRadius: string;
 }
 
@@ -22,6 +24,7 @@ interface AnimateMessageSendOptions {
   target: HTMLElement;
   scrollContainer: HTMLElement;
   launchBubble?: HTMLElement | null;
+  followBottom?: boolean;
   reducedMotion?: boolean;
   signal?: AbortSignal;
 }
@@ -37,6 +40,7 @@ export function captureMessageSendOrigin(composer: HTMLElement): MessageSendOrig
     left: rect.left,
     top: rect.top,
     width: rect.width,
+    height: rect.height,
     borderRadius: getComputedStyle(source).borderRadius || '0px',
   };
 }
@@ -44,11 +48,13 @@ export function captureMessageSendOrigin(composer: HTMLElement): MessageSendOrig
 export function createMessageSendLaunchBubble(
   origin: MessageSendOrigin,
   text: string,
+  ownerId?: string,
 ): HTMLElement | null {
   if (prefersReducedMotion()) return null;
   const bubble = document.createElement('div');
   const body = document.createElement('div');
   bubble.dataset.messageSendTransition = 'true';
+  if (ownerId) bubble.dataset.messageSendOwner = ownerId;
   bubble.setAttribute('aria-hidden', 'true');
   bubble.className = USER_MESSAGE_SURFACE_CLASS;
   body.className = USER_MESSAGE_TEXT_CLASS;
@@ -64,6 +70,7 @@ export function createMessageSendLaunchBubble(
     boxSizing: 'border-box',
     overflowWrap: 'anywhere',
     whiteSpace: 'pre-wrap',
+    willChange: 'transform',
     zIndex: '70',
   });
   document.body.append(bubble);
@@ -75,6 +82,7 @@ export function animateMessageSend({
   target,
   scrollContainer,
   launchBubble,
+  followBottom = true,
   reducedMotion = prefersReducedMotion(),
   signal,
 }: AnimateMessageSendOptions): Promise<void> {
@@ -86,7 +94,7 @@ export function animateMessageSend({
   const finished = new Promise<void>((resolve) => {
     resolveFinished = resolve;
   });
-  let previousOpacity = target.style.opacity;
+  let previousVisibility = target.style.visibility;
   const owner: TargetTransitionOwner = { cancel: () => cleanup() };
   const handleAbort = () => cleanup();
   const handlePageHide = () => cleanup();
@@ -109,35 +117,37 @@ export function animateMessageSend({
     overlay?.remove();
     if (targetTransitionOwners.get(target) === owner) {
       targetTransitionOwners.delete(target);
-      if (target.style.opacity === '0') target.style.opacity = previousOpacity;
+      if (target.style.visibility === 'hidden') target.style.visibility = previousVisibility;
     }
     resolveFinished();
   }
 
   try {
-    const targetScrollTop = Math.max(
-      0,
-      scrollContainer.scrollHeight - scrollContainer.clientHeight,
-    );
-    const scrollDelta = targetScrollTop - scrollContainer.scrollTop;
-    scrollContainer.scrollTo({
-      top: targetScrollTop,
-      behavior: reducedMotion ? 'auto' : 'smooth',
-    });
+    if (followBottom) {
+      scrollContainer.scrollTop = Math.max(
+        0,
+        scrollContainer.scrollHeight - scrollContainer.clientHeight,
+      );
+    }
     if (reducedMotion || !target.isConnected || signal?.aborted || document.hidden) {
       cleanup();
       return finished;
     }
 
     targetTransitionOwners.get(target)?.cancel();
-    previousOpacity = target.style.opacity;
+    previousVisibility = target.style.visibility;
     targetTransitionOwners.set(target, owner);
+    const sourceRect = overlay?.getBoundingClientRect() ?? {
+      left: origin.left,
+      top: origin.top,
+      width: origin.width,
+      height: origin.height,
+    };
     const targetRect = target.getBoundingClientRect();
-    const finalTop = targetRect.top - scrollDelta;
     overlay ??= target.cloneNode(true) as HTMLElement;
     const targetRadius = getComputedStyle(target).borderRadius || origin.borderRadius;
-    const startScale =
-      targetRect.width > 0 ? Math.min(1.04, Math.max(0.82, origin.width / targetRect.width)) : 1;
+    const startScaleX = targetRect.width > 0 ? sourceRect.width / targetRect.width : 1;
+    const startScaleY = targetRect.height > 0 ? sourceRect.height / targetRect.height : 1;
 
     overlay.dataset.messageSendTransition = 'true';
     overlay.setAttribute('aria-hidden', 'true');
@@ -145,16 +155,18 @@ export function animateMessageSend({
       position: 'fixed',
       pointerEvents: 'none',
       left: `${targetRect.left}px`,
-      top: `${finalTop}px`,
+      top: `${targetRect.top}px`,
       width: `${targetRect.width}px`,
+      height: `${targetRect.height}px`,
       maxWidth: 'calc(100vw - 16px)',
       boxSizing: 'border-box',
       overflowWrap: 'anywhere',
       transformOrigin: 'top left',
-      willChange: 'transform, opacity, border-radius',
+      willChange: 'transform',
+      borderRadius: targetRadius,
       zIndex: '70',
     });
-    target.style.opacity = '0';
+    target.style.visibility = 'hidden';
     if (!overlay.isConnected) document.body.append(overlay);
     if (typeof overlay.animate !== 'function') {
       cleanup();
@@ -172,11 +184,9 @@ export function animateMessageSend({
     animation = overlay.animate(
       [
         {
-          transform: `translate(${origin.left - targetRect.left}px, ${origin.top - finalTop}px) scale(${startScale}, 0.96)`,
-          opacity: 0.78,
-          borderRadius: origin.borderRadius,
+          transform: `translate3d(${sourceRect.left - targetRect.left}px, ${sourceRect.top - targetRect.top}px, 0) scale(${startScaleX}, ${startScaleY})`,
         },
-        { transform: 'translate(0, 0) scale(1)', opacity: 1, borderRadius: targetRadius },
+        { transform: 'translate3d(0, 0, 0) scale(1)' },
       ],
       {
         duration: MESSAGE_SEND_TRANSITION_DURATION_MS,

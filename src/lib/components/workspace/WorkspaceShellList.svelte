@@ -1,8 +1,25 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
+  import Fa from 'svelte-fa';
+  import type { ScriptStatus } from '$features/scripts/types';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
-  import { selectWorkspaceScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
+  import {
+    faExclamationTriangle,
+    faPlay,
+    faRotateRight,
+    faSpinner,
+    faStop,
+  } from '$lib/icons/phosphor-icons';
+  import {
+    selectWorkspaceScriptEntries,
+    selectWorkspaceScriptOperations,
+  } from '$store/renderer/slices/scripts/scripts-selectors';
+  import {
+    restartScriptRequested,
+    startScriptRequested,
+    stopScriptRequested,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import {
     selectActiveTerminalIdForWorkspace,
     selectTerminalsForWorkspace,
@@ -15,11 +32,12 @@
   import { m } from '$shared/paraglide/messages.js';
 
   let { workspaceId }: { workspaceId: string } = $props();
-  const workspaceIdStore = writable(workspaceId);
+  const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   const terminals$ = selectTerminalsForWorkspace(workspaceIdStore);
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
+  const operations$ = selectWorkspaceScriptOperations(workspaceIdStore);
   const orderedScripts = $derived(
     $scripts$.toSorted(
       (left, right) =>
@@ -35,6 +53,30 @@
   function openScript(scriptId: string) {
     appStore.dispatch(selectScript(workspaceId, scriptId));
     appStore.dispatch(openTerminalOverlay(workspaceId));
+  }
+
+  function runScript(scriptId: string, action: 'start' | 'stop' | 'restart', event: MouseEvent) {
+    event.stopPropagation();
+    const operation =
+      action === 'start'
+        ? startScriptRequested(workspaceId, scriptId)
+        : action === 'stop'
+          ? stopScriptRequested(workspaceId, scriptId)
+          : restartScriptRequested(workspaceId, scriptId);
+    appStore.dispatch(operation);
+  }
+
+  function statusLabel(status: ScriptStatus) {
+    switch (status) {
+      case 'running':
+        return m.workspace_devScripts_running_label();
+      case 'restarting':
+        return m.workspace_devScripts_restarting_label();
+      case 'exited':
+        return m.workspace_devScripts_exited_label();
+      default:
+        return m.workspace_devScripts_idle_label();
+    }
   }
 </script>
 
@@ -77,6 +119,13 @@
     <div class="flex flex-col gap-1">
       {#each orderedScripts as script (script.id)}
         {@const live = isLiveScriptStatus(script.runtime.status)}
+        {@const operation = $operations$[script.id]}
+        {@const errorLabel = operation?.error
+          ? m.workspace_devScripts_actionFailed_error({
+              name: script.name,
+              error: operation.error,
+            })
+          : undefined}
         <div
           class="group/script flex min-w-0 items-center gap-2 rounded-md px-2 py-2 hover:bg-muted focus-within:bg-muted"
           data-sidebar-shell-script={script.id}
@@ -88,18 +137,96 @@
             onclick={() => openScript(script.id)}
           >
             <span
-              class="mt-1.5 size-1.5 shrink-0 rounded-full {live
+              class="size-1.5 shrink-0 rounded-full {live
                 ? 'bg-success'
                 : 'bg-muted-foreground/40'}"
               aria-hidden="true"
             ></span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium text-foreground">{script.name}</span>
-              <span class="block truncate text-xs text-muted-foreground" title={script.command}
-                >{script.command}</span
-              >
+            <span
+              class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+              title={script.name}
+            >
+              {script.name}
             </span>
+            <span
+              class="shrink-0 text-xs text-muted-foreground"
+              data-script-status={script.runtime.status}>{statusLabel(script.runtime.status)}</span
+            >
           </Button>
+          <span
+            class="flex size-4 shrink-0 items-center justify-center text-destructive"
+            role={errorLabel ? 'alert' : undefined}
+            aria-label={errorLabel}
+            title={errorLabel}
+            data-script-error-slot
+          >
+            {#if errorLabel}
+              <Fa icon={faExclamationTriangle} class="size-3" />
+            {/if}
+          </span>
+          {#if live}
+            {@const stopLabel = m.terminal_quakeOverlay_stop_label()}
+            {@const restartLabel = m.workspace_devScripts_restart_ariaLabel({ name: script.name })}
+            <Button
+              variant="plain"
+              size="icon-xs"
+              iconOnly
+              class="size-7 shrink-0"
+              disabled={operation?.pending ?? false}
+              aria-busy={operation?.pending && operation.action === 'stop' ? true : undefined}
+              aria-label={stopLabel}
+              tooltip={stopLabel}
+              tooltipSide="left"
+              onclick={(event) => runScript(script.id, 'stop', event)}
+              data-script-action="stop"
+            >
+              {#if operation?.pending && operation.action === 'stop'}
+                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+              {:else}
+                <Fa icon={faStop} class="size-3" />
+              {/if}
+            </Button>
+            <Button
+              variant="plain"
+              size="icon-xs"
+              iconOnly
+              class="size-7 shrink-0"
+              disabled={operation?.pending ?? false}
+              aria-busy={operation?.pending && operation.action === 'restart' ? true : undefined}
+              aria-label={restartLabel}
+              tooltip={restartLabel}
+              tooltipSide="left"
+              onclick={(event) => runScript(script.id, 'restart', event)}
+              data-script-action="restart"
+            >
+              {#if operation?.pending && operation.action === 'restart'}
+                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+              {:else}
+                <Fa icon={faRotateRight} class="size-3" />
+              {/if}
+            </Button>
+          {:else}
+            {@const startLabel = m.workspace_devScripts_start_ariaLabel({ name: script.name })}
+            <Button
+              variant="plain"
+              size="icon-xs"
+              iconOnly
+              class="size-7 shrink-0"
+              disabled={operation?.pending ?? false}
+              aria-busy={operation?.pending || undefined}
+              aria-label={startLabel}
+              tooltip={startLabel}
+              tooltipSide="left"
+              onclick={(event) => runScript(script.id, 'start', event)}
+              data-script-action="start"
+            >
+              {#if operation?.pending}
+                <Fa icon={faSpinner} class="size-3 animate-spin motion-reduce:animate-none" />
+              {:else}
+                <Fa icon={faPlay} class="size-3" />
+              {/if}
+            </Button>
+          {/if}
         </div>
       {:else}
         <p class="px-2 py-2 text-sm text-muted-foreground">

@@ -19,8 +19,6 @@
     localizeDaemonTerminalName,
     terminalDisplayName,
   } from '$lib/utils/terminal-display-name';
-  import { slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
   import {
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
@@ -150,6 +148,27 @@
   let editedScriptCommand = $state('');
 
   let isDetectingScripts = $state(false);
+  let terminalPanel: HTMLDivElement | undefined = $state();
+  let mountedPanelWorkspaceId: string | null = $state(null);
+  const panelIsVisible = $derived(
+    $isOpen && ($activeTerminalId !== null || selectedScriptId !== null),
+  );
+  const shouldMountPanel = $derived(mountedPanelWorkspaceId === workspaceId);
+
+  $effect(() => {
+    if (panelIsVisible && workspaceId) mountedPanelWorkspaceId = workspaceId;
+  });
+
+  $effect(() => {
+    if (
+      !panelIsVisible &&
+      terminalPanel &&
+      typeof document !== 'undefined' &&
+      terminalPanel.contains(document.activeElement)
+    ) {
+      overlayContainer?.focus({ preventScroll: true });
+    }
+  });
 
   function setSelectedScript(scriptId: string | null) {
     if (!workspaceId) return;
@@ -936,13 +955,23 @@
     tabindex="-1"
     class="terminal-overlay flex flex-col w-full outline-none"
   >
-    <!-- Expanded Terminal Panel -->
-    {#if $isOpen && ($activeTerminalId || selectedScriptId)}
+    <div
+      class="terminal-panel-spacer"
+      class:is-visible={panelIsVisible}
+      style="--terminal-panel-height: {$height}vh;"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Keep the expensive panel subtree mounted after its first reveal. -->
+    {#if shouldMountPanel}
       <div
+        bind:this={terminalPanel}
         class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
         class:is-resizing={isResizing}
+        class:is-visible={panelIsVisible}
         style="height: {$height}vh;"
-        transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+        aria-hidden={!panelIsVisible}
+        inert={!panelIsVisible}
       >
         <!-- Resize Handle - Sleek minimal design -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1165,6 +1194,25 @@
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->
           <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {#if $activeTerminalId}
+              <div
+                class="flex-1 overflow-hidden"
+                class:hidden={selectedScriptId !== null}
+                data-terminal-content
+                aria-hidden={selectedScriptId !== null}
+                inert={selectedScriptId !== null}
+              >
+                {#key terminalWorkspaceId + ':' + $activeTerminalId}
+                  <Terminal
+                    terminalId={$activeTerminalId}
+                    workspaceId={terminalWorkspaceId}
+                    visible={panelIsVisible && selectedScriptId === null}
+                    class="h-full w-full"
+                  />
+                {/key}
+              </div>
+            {/if}
+
             {#if selectedScriptId}
               {#key selectedScriptId}
                 <ScriptOutputViewer
@@ -1176,17 +1224,6 @@
                   }}
                 />
               {/key}
-            {:else if $activeTerminalId}
-              <!-- Terminal Content -->
-              <div class="flex-1 overflow-hidden">
-                {#key $activeTerminalId}
-                  <Terminal
-                    terminalId={$activeTerminalId}
-                    workspaceId={terminalWorkspaceId}
-                    class="h-full w-full"
-                  />
-                {/key}
-              </div>
             {/if}
 
             <!-- Setup Script Banner - horizontal bar at bottom -->
@@ -1197,15 +1234,17 @@
 
           <!-- Scripts Sidebar -->
           {#if isRealWorkspace}
-            <TerminalSidebar
-              {workspaceId}
-              {selectedScriptId}
-              onSelectScript={(id) => setSelectedScript(id)}
-              onSelectTerminal={(id) => {
-                if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
-              }}
-              onCreateTerminal={createNewTerminal}
-            />
+            {#key workspaceId}
+              <TerminalSidebar
+                {workspaceId}
+                {selectedScriptId}
+                onSelectScript={(id) => setSelectedScript(id)}
+                onSelectTerminal={(id) => {
+                  if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
+                }}
+                onCreateTerminal={createNewTerminal}
+              />
+            {/key}
           {/if}
         </div>
       </div>
@@ -1508,6 +1547,40 @@
 {/if}
 
 <style>
+  .terminal-overlay {
+    position: relative;
+  }
+
+  .terminal-panel-spacer {
+    height: 0;
+  }
+
+  .terminal-panel-spacer.is-visible {
+    height: var(--terminal-panel-height);
+  }
+
+  .terminal-panel {
+    position: absolute;
+    right: 0;
+    bottom: 36px;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate3d(0, 100%, 0);
+    transition:
+      transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
+      visibility 0s linear 160ms;
+  }
+
+  .terminal-panel.is-visible {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate3d(0, 0, 0);
+    transition:
+      transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
+      visibility 0s linear 0s;
+  }
+
   .terminal-panel.is-resizing {
     user-select: none;
     pointer-events: none;
@@ -1515,5 +1588,12 @@
 
   .terminal-panel.is-resizing :global(*) {
     pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .terminal-panel,
+    .terminal-panel.is-visible {
+      transition: none;
+    }
   }
 </style>

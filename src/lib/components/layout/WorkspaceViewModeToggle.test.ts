@@ -3,11 +3,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  setWorkspaceViewModeWithTransition: vi.fn(() => Promise.resolve()),
+}));
 const viewMode = writable<'single' | 'columns'>('single');
 const onboardingActive = writable(false);
 
-const readable = <T,>(value: T) => ({
+const readable = <T>(value: T) => ({
   subscribe(run: (value: T) => void) {
     run(value);
     return () => {};
@@ -15,6 +18,9 @@ const readable = <T,>(value: T) => ({
 });
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
+vi.mock('$features/workspace/workspace-view-mode-action', () => ({
+  setWorkspaceViewModeWithTransition: mocks.setWorkspaceViewModeWithTransition,
+}));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectWorkspaceViewMode: () => viewMode,
 }));
@@ -66,6 +72,7 @@ import WindowTitleBar from './WindowTitleBar.svelte';
 describe('WorkspaceViewModeToggle', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
+    mocks.setWorkspaceViewModeWithTransition.mockClear();
     viewMode.set('single');
   });
 
@@ -76,18 +83,12 @@ describe('WorkspaceViewModeToggle', () => {
     expect(toggle.querySelector('[data-navigation-icon="spaces"]')).toBeTruthy();
 
     await fireEvent.click(toggle);
-    expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'tabState/setWorkspaceViewMode',
-      payload: ['columns'],
-    });
+    expect(mocks.setWorkspaceViewModeWithTransition).toHaveBeenCalledWith('columns');
 
     viewMode.set('columns');
     await waitFor(() => expect(toggle.querySelector('[data-navigation-icon="tabs"]')).toBeTruthy());
     await fireEvent.click(toggle);
-    expect(mocks.dispatch).toHaveBeenLastCalledWith({
-      type: 'tabState/setWorkspaceViewMode',
-      payload: ['single'],
-    });
+    expect(mocks.setWorkspaceViewModeWithTransition).toHaveBeenLastCalledWith('single');
   });
 
   it('restores the destination glyph and keeps the pressed button transparent', () => {
@@ -96,9 +97,29 @@ describe('WorkspaceViewModeToggle', () => {
 
     const toggle = screen.getByRole('button', { name: 'Open spaces' });
     expect(toggle.querySelector('[data-navigation-icon="tabs"]')).toBeTruthy();
-    expect(toggle.title).toBe('Open spaces');
+    expect(toggle.hasAttribute('title')).toBe(false);
+    expect(toggle.textContent?.trim()).toBe('');
     expect(getComputedStyle(toggle).backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(toggle.className).toContain('text-foreground');
+  });
+
+  it('shows one accessible shortcut tooltip on keyboard focus without replacing pressed state', async () => {
+    render(WorkspaceViewModeToggle);
+    const toggle = screen.getByRole('button', { name: 'Open spaces in columns' });
+
+    toggle.focus();
+    await fireEvent.focus(toggle);
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    const shortcut = tooltip.querySelector<HTMLElement>('[data-tooltip-shortcut]');
+
+    expect(screen.getAllByRole('tooltip', { hidden: true })).toHaveLength(1);
+    expect(tooltip.textContent).toContain('Open spaces in columns');
+    expect(shortcut?.textContent).toBe('Ctrl+Shift+L');
+    expect(shortcut?.className).toContain('text-muted-foreground');
+    expect(tooltip.className).toContain('motion-reduce:animate-none');
+    expect(toggle.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(toggle.getAttribute('aria-label')).toBe('Open spaces in columns');
+    expect(toggle.getAttribute('data-state')).toBe('off');
   });
 
   it('tracks rapid mode changes without showing a stale destination glyph', async () => {

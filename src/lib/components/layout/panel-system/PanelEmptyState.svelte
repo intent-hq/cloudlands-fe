@@ -206,7 +206,9 @@
   ];
 </script>
 
-<div class="empty-state flex h-full items-center justify-center overflow-y-auto px-6 py-10">
+<div
+  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-sidebar-foreground"
+>
   <section
     class="empty-state-content w-full max-w-[36rem]"
     aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}

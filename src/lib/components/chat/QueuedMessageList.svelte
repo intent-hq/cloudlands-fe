@@ -13,7 +13,7 @@
     faCheck,
     faTimes,
     faListOl,
-    faPaperPlane,
+    faArrowRight,
     faRotateRight,
     faCircleQuestion,
     faFile,
@@ -28,6 +28,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+
+  const QUEUE_ACTION_CLUSTER_CLASS =
+    'pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
+  const QUEUE_THREE_ACTION_CONTENT_CLASS = 'box-border pr-24';
 
   interface Props {
     messages: QueuedMessage[];
@@ -325,9 +329,10 @@
     <div class="space-y-px">
       {#each messages as message (message.id)}
         <div
-          class="group type-body grid flex items-start gap-2 px-2.5 py-1 text-subtle {message.editing
+          class="group relative type-body flex items-start gap-2 px-2.5 py-1 text-subtle {message.editing
             ? 'opacity-60'
             : ''}"
+          data-testid="queued-message-row"
           transition:fly={{ y: 10, duration: 200 }}
           title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
         >
@@ -384,18 +389,19 @@
               {@render imageThumbnails(message)}
               {@render fileChips(message)}
               <button
-                class="flex-1 text-left truncate cursor-pointer"
+                class="flex-1 min-w-0 text-left cursor-pointer {QUEUE_THREE_ACTION_CONTENT_CLASS}"
+                data-testid="queued-message-content"
                 transition:safeSlide={{ axis: 'y', duration: 200 }}
                 onclick={() => startEdit(message)}
               >
-                {message.requeuedAfterFailure
-                  ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
-                  : ''}{message.content}
+                <span class="block truncate" data-testid="queued-message-text">
+                  {message.requeuedAfterFailure
+                    ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
+                    : ''}{message.content}
+                </span>
               </button>
               {#if !disabled}
-                <div
-                  class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
-                >
+                <div class={QUEUE_ACTION_CLUSTER_CLASS} data-testid="queued-message-actions">
                   <Button
                     variant="ghost-light"
                     size="icon-xs"
@@ -403,7 +409,7 @@
                     onclick={() => onsendnow?.(message.id)}
                     tooltip={m.chat_queuedMessages_sendNow_tooltip()}
                   >
-                    <Fa icon={faPaperPlane} class="w-3 h-3" />
+                    <Fa icon={faArrowRight} class="w-3 h-3" />
                   </Button>
                   <Button
                     variant="ghost-light"

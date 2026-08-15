@@ -22,6 +22,10 @@ import {
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectActiveCard } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import SidebarNavHoverCardHarness from './mocks/SidebarNavHoverCardHarness.svelte';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 vi.mock('$lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockHoverCardContent.svelte')).default,
@@ -59,6 +63,27 @@ describe('sidebar nav hover card dismissal', () => {
     while (appStore.state.sidebarNav.contextMenuOpenCount > 0) {
       appStore.dispatch(decrementContextMenuOpen());
     }
+  });
+
+  it('affirms hover-card placement and dismissal in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async () => {
+      const view = render(SidebarNavHoverCardHarness, {
+        props: { setup: () => appStore.dispatch(setHoveredItem('active')) },
+      });
+      const target = await waitFor(() =>
+        document.querySelector<HTMLElement>('.sidebar-hover-card')!,
+      );
+      target.tabIndex = 0;
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.isConnected).toBe(true);
+          expect(screen.getByTestId('nav-button')).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('closes on pointerdown outside the card and nav rail', async () => {

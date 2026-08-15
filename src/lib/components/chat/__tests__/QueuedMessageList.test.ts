@@ -41,6 +41,26 @@ describe('QueuedMessageList', () => {
     expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
   });
 
+  it('reserves the three-action lane before hover and keyboard focus', () => {
+    render(QueuedMessageList, {
+      props: { messages: [queued({ content: 'A long queued message that stays on one line' })] },
+    });
+
+    const content = screen.getByTestId('queued-message-content');
+    const text = screen.getByTestId('queued-message-text');
+    const actions = screen.getByTestId('queued-message-actions');
+    expect(actions.children).toHaveLength(3);
+    expect(actions.className).toContain('absolute');
+    expect(actions.className).toContain('pointer-events-none');
+    expect(actions.className).toContain('group-hover:pointer-events-auto');
+    expect(actions.className).toContain('group-focus-within:pointer-events-auto');
+    expect(content.className).toContain('pr-24');
+    expect(content.className).not.toContain('group-hover:pr-24');
+    expect(content.className).not.toContain('group-focus-within:pr-24');
+    expect(content.className).not.toContain('transition-[padding-right]');
+    expect(text.className).toContain('truncate');
+  });
+
   it('editLastMessage() starts editing the last queued message', async () => {
     const { component, container } = render(QueuedMessageList, {
       props: {

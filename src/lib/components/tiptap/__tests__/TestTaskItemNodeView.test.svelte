@@ -11,9 +11,10 @@
     node: ProseMirrorNode;
     editor: Editor;
     getPos: () => number | undefined;
+    workspaceId?: string;
   }
 
-  let { node, editor, getPos }: Props = $props();
+  let { node, editor, getPos, workspaceId }: Props = $props();
 
   // Set up context for drag handling (NodeViewWrapper uses this)
   setContext(NODE_VIEW_CONTEXT_KEY, {
@@ -35,7 +36,7 @@
     decorations: [],
     innerDecorations: null as any,
     view: editor.view,
-    extension: {} as any,
+    extension: { options: { workspaceId } } as any,
     HTMLAttributes: {},
     updateAttributes: (attrs: Record<string, unknown>) => {
       // Mock implementation - in tests, this would update the node

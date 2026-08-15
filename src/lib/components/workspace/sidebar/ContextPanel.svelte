@@ -16,7 +16,11 @@
   import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import {
+    selectActiveTab,
+    getPanelTabOpenState,
+  } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { handleLink } from '$features/navigation/link-handler';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -29,6 +33,9 @@
   import SkillsSection from './SkillsSection.svelte';
   import NotesPanel from './NotesPanel.svelte';
   import { ContextPickerModal } from './context-picker';
+  import { ListEmpty } from '$lib/components/ui/list';
+  import { filterContextItems, filterContextNotes } from './sidebar-search';
+  import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('ContextPanel');
 
@@ -43,6 +50,9 @@
     loading?: boolean;
     showAddSection?: boolean;
     class?: string;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
+    searchQuery?: string;
   }
 
   let {
@@ -56,6 +66,9 @@
     loading = false,
     showAddSection = true,
     class: className,
+    openPanelTabs = [],
+    activePanelTab,
+    searchQuery = '',
   }: Props = $props();
 
   // Picker modal state (legacy - for ContextPickerModal)
@@ -80,6 +93,10 @@
 
   // Get context items that aren't linked to any note
   const topLevelItems$ = selectTopLevelContextItems(workspaceIdStore);
+  const filteredNotes = $derived(filterContextNotes(notes, searchQuery));
+  const filteredTopLevelItems = $derived(filterContextItems($topLevelItems$, searchQuery));
+  const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
+  const hasSearchResults = $derived(filteredNotes.length > 0 || filteredTopLevelItems.length > 0);
 
   /**
    * Helper to create a fully-formed ContextItem with id + timestamps,
@@ -108,6 +125,22 @@
   function isItemActive(item: ContextItem): boolean {
     if (!focusedContextItemId) return false;
     return focusedContextItemId === item.id;
+  }
+
+  function getItemPanelState(item: ContextItem) {
+    if (item.type === 'note' && 'noteId' in item) {
+      return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+        type: 'note',
+        noteId: item.noteId,
+        workspaceId,
+      });
+    }
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'browser',
+      contextItemId: item.id,
+      browserUrl: item.url,
+      workspaceId,
+    });
   }
 
   // Handle opening URLs in external browser (explicit "Open in Browser" action)
@@ -288,7 +321,7 @@
   <!-- Notes Panel with context items integrated -->
   <div class="flex-1 min-h-0 overflow-auto">
     <NotesPanel
-      {notes}
+      notes={filteredNotes}
       {workspaceId}
       {selectedNoteId}
       {onOpenNote}
@@ -296,15 +329,19 @@
       {onReorderNotes}
       onCreateNote={undefined}
       {loading}
+      {openPanelTabs}
+      {activePanelTab}
       flush
     />
 
     <!-- Standalone context items (rendered in same list flow) -->
-    {#if $topLevelItems$.length > 0}
-      {#each $topLevelItems$ as item (item.id)}
+    {#if filteredTopLevelItems.length > 0}
+      {#each filteredTopLevelItems as item (item.id)}
+        {@const panelState = getItemPanelState(item)}
         <ContextItemRow
           {item}
-          isActive={isItemActive(item)}
+          isActive={panelState.isActive || isItemActive(item)}
+          openPanelCount={panelState.count}
           onClick={handleContextItemClick}
           onExternalOpen={handleExternalOpen}
           onDelete={(item) => appStore.dispatch(removeContextItem(workspaceId, item.id))}
@@ -312,10 +349,19 @@
       {/each}
     {/if}
 
-    <!-- MCP Servers Section -->
-    <McpServersSection {workspaceId} />
+    {#if hasActiveSearch && !loading && !hasSearchResults}
+      <ListEmpty
+        message={m.workspace_contextPanel_noSearchResults_label()}
+        class="min-h-14 py-3"
+        role="status"
+        aria-live="polite"
+      />
+    {:else if !hasActiveSearch}
+      <!-- MCP Servers Section -->
+      <McpServersSection {workspaceId} />
 
-    <!-- Skills Section -->
-    <SkillsSection {workspaceId} />
+      <!-- Skills Section -->
+      <SkillsSection {workspaceId} />
+    {/if}
   </div>
 </div>

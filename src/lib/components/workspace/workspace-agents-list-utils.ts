@@ -1,4 +1,5 @@
 import type { AgentSession } from '$shared/types';
+import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
 
 export interface FlatWorkspaceAgentRow {
   agent: AgentSession;
@@ -98,6 +99,43 @@ export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspace
   for (const agent of dedupedAgents.sort(sortAgents)) append(agent, 0);
 
   return rows;
+}
+
+/** Filters agents by visible metadata and keeps every ancestor of a matching descendant. */
+export function filterWorkspaceAgentRows(
+  rows: FlatWorkspaceAgentRow[],
+  query: string,
+): FlatWorkspaceAgentRow[] {
+  const normalizedQuery = normalizeSidebarSearchText(query).trim();
+  if (!normalizedQuery) return rows;
+
+  const visibleIds = new Set<string>();
+  const ancestors: FlatWorkspaceAgentRow[] = [];
+  for (const row of rows) {
+    while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= row.depth) {
+      ancestors.pop();
+    }
+    const { agent } = row;
+    const metadata = agent.metadata;
+    const agentMetadata = agent.agentMetadata;
+    if (
+      sidebarSearchMatches(normalizedQuery, [
+        agent.name,
+        agent.id,
+        metadata?.specialist,
+        agentMetadata?.specialist,
+        metadata?.agentType,
+        agentMetadata?.agentType,
+        metadata?.role,
+        agentMetadata?.role,
+      ])
+    ) {
+      visibleIds.add(agent.id);
+      for (const ancestor of ancestors) visibleIds.add(ancestor.agent.id);
+    }
+    ancestors.push(row);
+  }
+  return rows.filter((row) => visibleIds.has(row.agent.id));
 }
 
 /** Direct-child counts per agent id, derived from the flat depth-ordered rows. */

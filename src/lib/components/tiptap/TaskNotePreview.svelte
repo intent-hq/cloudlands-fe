@@ -8,28 +8,22 @@
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
   import type { NoteId } from '$shared/types';
 
-  import {
-  selectNoteById,
-  selectNotesVersion,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { store as appStore } from '$store/renderer/store';
+  import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { toStore } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
+    workspaceId: string;
     noteId: NoteId;
     class?: string;
   }
 
-  let { noteId, class: className = '' }: Props = $props();
+  let { workspaceId, noteId, class: className = '' }: Props = $props();
 
-  // Get the note from the store
-  const wsId = selectActiveWorkspaceId.select(appStore.state) ?? '';
-  const notesVersion$ = selectNotesVersion(wsId);
-  let note = $derived.by(() => {
-    void $notesVersion$;
-    return selectNoteById.select(appStore.state, wsId, noteId) ?? null;
-  });
+  const workspaceId$ = toStore(() => workspaceId);
+  const noteId$ = toStore(() => noteId);
+  const note$ = selectNoteById(workspaceId$, noteId$);
+  let note = $derived($note$ ?? null);
 
   // Extract first ~5 lines of content for preview
   let contentPreviewData = $derived.by(() => {

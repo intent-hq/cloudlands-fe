@@ -34,9 +34,7 @@ export function isSessionActivelyResponding(session: AgentSession | null): boole
     return false;
   }
 
-  return Boolean(
-    session?.isResponding,
-  );
+  return Boolean(session?.isResponding);
 }
 
 /**
@@ -49,12 +47,7 @@ export function isSessionActivelyResponding(session: AgentSession | null): boole
  * lives on separate sidebar/list surfaces.
  */
 export function shouldShowPendingAssistantStatus(state: PendingAssistantStatusState): boolean {
-  return Boolean(
-    state.isStreaming ||
-      state.isProcessing ||
-      state.error ||
-      state.modelUnavailable,
-  );
+  return Boolean(state.isStreaming || state.isProcessing || state.error || state.modelUnavailable);
 }
 
 /**
@@ -62,9 +55,7 @@ export function shouldShowPendingAssistantStatus(state: PendingAssistantStatusSt
  * the list while active flags are already true. Render one detached status row
  * only when the normal pending-turn or assistant-message row cannot host it.
  */
-export function shouldShowEndOfListStreamingStatus(
-  state: EndOfListStreamingStatusState,
-): boolean {
+export function shouldShowEndOfListStreamingStatus(state: EndOfListStreamingStatusState): boolean {
   if (!state.hasMessages || !shouldShowPendingAssistantStatus(state)) {
     return false;
   }
@@ -85,7 +76,6 @@ type TranscriptSkeletonState = {
   isFirstHydrationLoading: boolean;
   hasSession: boolean;
   hydrationSettled: boolean;
-  hasBackendSession: boolean;
   hasMessages: boolean;
   isStreaming: boolean;
   hasPendingInitialPrompt: boolean;
@@ -109,10 +99,26 @@ export function shouldShowTranscriptSkeleton(state: TranscriptSkeletonState): bo
   if (state.isFirstHydrationLoading) {
     return true;
   }
-  return (
-    (!state.hasSession || !state.hydrationSettled || state.hasBackendSession) &&
-    !state.hasMessages &&
-    !state.isStreaming
+  return (!state.hasSession || !state.hydrationSettled) && !state.hasMessages && !state.isStreaming;
+}
+
+/** Durable evidence that a session has been used before. */
+export function hasAuthoritativeConversationEvidence(
+  session: AgentSession | null,
+  snapshotTotalMessages = 0,
+): boolean {
+  if (!session) return false;
+  return Boolean(
+    session.backendSessionId ||
+    session.acpSessionId?.trim() ||
+    session.messages.length > 0 ||
+    (session.stats?.messageCount ?? 0) > 0 ||
+    snapshotTotalMessages > 0 ||
+    session.lastMessageId ||
+    session.lastMessageRole ||
+    session.lastUserMessage ||
+    session.lastAgentResponse ||
+    (session.currentTurnNumber ?? 0) > 0,
   );
 }
 

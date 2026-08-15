@@ -5,6 +5,8 @@ import { ThemeManager } from '$lib/utils/theme';
 import { themePresets } from '$lib/utils/theme-presets';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke, isElectron } from '$lib/electron-bridge';
+import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import { m } from '$shared/paraglide/messages.js';
 import {
   clearThemeCustomization,
@@ -83,11 +85,21 @@ function snapshotThemeManager(manager: ThemeManager): ThemeManagerSnapshot {
   };
 }
 
+function* syncWindowTheme(preference: ThemePreference) {
+  if (!isElectron()) return;
+  try {
+    yield* call(invoke, WINDOW_CHANNELS.SET_THEME, { theme: preference });
+  } catch (error) {
+    logger.warn('native window theme sync failed', error);
+  }
+}
+
 function* syncThemeManager(manager: ThemeManager) {
   const snapshot: ThemeManagerSnapshot = yield* call(snapshotThemeManager, manager);
   yield* put(setThemePreference(snapshot.preference));
   yield* put(setThemeName(snapshot.name));
   yield* put(setThemeCustomization(snapshot.customization));
+  yield* call(syncWindowTheme, snapshot.preference);
 }
 
 function withSuppressedListener(operation: () => void): void {

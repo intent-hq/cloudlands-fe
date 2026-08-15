@@ -22,30 +22,20 @@ describe('activity navigation contract', () => {
 
   it('passes the activity event through and targets its exact chat content', () => {
     const preview = source('src/lib/components/workspace/sidebar/ActivityLogPreview.svelte');
-    const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
     const chat = source('src/lib/components/chat/ChatPanel.svelte');
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
 
     expect(preview).toContain('onShowAgent?.(agentId, event)');
-    expect(sidebar).toContain("dispatchWindowEvent('agent:scroll-to-activity'");
     expect(chat).toContain("addEventListener('agent:scroll-to-activity'");
     expect(chat).toContain('[data-tool-call-id=');
     expect(toolCall).toContain('data-tool-call-id={toolUse.toolCallId || undefined}');
   });
 
-  it('opens compact file activity rows as scoped file tabs', () => {
+  it('keeps compact Activity rows out of the sidebar launcher overview', () => {
     const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('onOpenFileEvent={handleOpenActivityFileEvent}');
-    expect(sidebar).toContain('function handleOpenActivityFileEvent(event: WorkspaceEvent)');
-    expect(sidebar).toContain('normalizeActivityFilePath(eventPath, $workspace)');
-    expect(sidebar).toContain('handleOpenFileInPanel(filePath);');
-    expect(sidebar).not.toContain('appStore.dispatch(openWorkspaceDiff(workspaceId, change');
-  });
-
-  it('initially caps the sidebar activity preview at three rows', () => {
-    const sidebar = source('src/lib/components/workspace/MultiSelectTabbedSidebar.svelte');
-
-    expect(sidebar).toContain('maxItems={1}');
+    expect(sidebar).not.toContain('ActivityLogPreview');
+    expect(sidebar).not.toContain('onOpenFileEvent={handleOpenActivityFileEvent}');
+    expect(sidebar).not.toContain("dispatchWindowEvent('agent:scroll-to-activity'");
   });
 });

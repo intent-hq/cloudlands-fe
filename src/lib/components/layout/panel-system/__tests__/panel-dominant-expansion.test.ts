@@ -9,6 +9,10 @@ import {
   toggleExpandPanel,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectPanelCanvasWidth } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 vi.mock('../Panel.svelte', async () => ({
   default: (await import('./mocks/MockMountedPanel.svelte')).default,
@@ -122,6 +126,28 @@ afterEach(() => {
 });
 
 describe('mounted dominant panel expansion', () => {
+  it('affirms dominant-panel expand and restore in every required visual state', async () => {
+    const observed = await exerciseVisualStates(async ({ width }) => {
+      viewportWidth = width;
+      const { workspaceId, panelIds } = initialize(3, 1200, [392, 392, 400]);
+      const view = await mount(workspaceId);
+      const target = document.querySelector<HTMLButtonElement>('[data-panel-interaction]')!;
+      appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[1]));
+      await waitFor(() => expect(panelWidths()[1]).toBeGreaterThan(panelWidths()[0]));
+      appStore.dispatch(toggleExpandPanel(workspaceId, panelIds[1]));
+      await waitFor(() => expect(panelWidths()[0]).toBeCloseTo(392, 6));
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(3);
+          expect(selectPanelCanvasWidth.select(appStore.state, workspaceId)).toBe(1200);
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it.each([
     { widths: [350, 642], target: 0 },
     { widths: [320, 500, 364], target: 1 },

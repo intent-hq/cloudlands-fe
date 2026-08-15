@@ -5,7 +5,19 @@
  * case-insensitive owner comparison.
  */
 import { describe, expect, it } from 'vitest';
-import { getPrChipLabel } from './pr-chip-label';
+import { getPrChipLabel, getPrRepoLabel } from './pr-chip-label';
+
+describe('getPrRepoLabel', () => {
+  it('renders "repo" when the owner matches the workspace owner', () => {
+    expect(getPrRepoLabel('acme/widgets', 'acme/widgets')).toBe('widgets');
+    expect(getPrRepoLabel('acme/lib', 'acme/widgets')).toBe('lib');
+  });
+
+  it('renders "owner/repo" for a different owner or unknown workspace repo', () => {
+    expect(getPrRepoLabel('other/lib', 'acme/widgets')).toBe('other/lib');
+    expect(getPrRepoLabel('acme/widgets')).toBe('acme/widgets');
+  });
+});
 
 describe('getPrChipLabel', () => {
   it('renders "repo #N" when owner and repo match the workspace repo', () => {

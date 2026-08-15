@@ -154,6 +154,18 @@ describe('workspace-navigation', () => {
       expect(action.payload[0]).toBe('test-workspace-id');
     });
 
+    it('uses an explicit owner workspace instead of the route workspace', async () => {
+      await navigateToNote('note-456', { workspaceId: 'owner-workspace' });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        openWorkspaceNote('owner-workspace', 'note-456', {
+          openInAdjacentPanel: false,
+          openInNewAdjacentPanel: false,
+          sourcePanelId: undefined,
+        }),
+      );
+    });
+
     it('should handle spec note', async () => {
       await navigateToNote('spec');
 

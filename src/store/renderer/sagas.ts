@@ -64,6 +64,7 @@ import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
+import { scriptsOperationSaga } from './slices/scripts/sagas/scripts-operation-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
@@ -142,6 +143,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceImportSaga,
+  scriptsOperationSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
   modelSelectionSaga,

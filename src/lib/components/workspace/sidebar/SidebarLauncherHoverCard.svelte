@@ -15,6 +15,7 @@
     status?: string;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
+    gridPosition?: 'start' | 'center' | 'end';
     children?: Snippet;
   }
 
@@ -26,6 +27,7 @@
     status,
     open = false,
     onOpenChange,
+    gridPosition = 'center',
     children,
   }: Props = $props();
   const visibleRows = $derived(rows.filter(({ text }) => text.trim().length > 0));
@@ -67,6 +69,11 @@
   delayDuration={250}
   maxWidth="20rem"
   showArrow={false}
+  class={gridPosition === 'start'
+    ? 'justify-self-start'
+    : gridPosition === 'end'
+      ? 'justify-self-end'
+      : 'justify-self-center'}
   contentContainerClass="space-y-2"
   {open}
   {onOpenChange}

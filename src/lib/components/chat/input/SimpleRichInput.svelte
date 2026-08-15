@@ -1578,7 +1578,7 @@
       />
     </div>
 
-    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
+    <div class="flex items-center gap-1 min-w-0 shrink-0" data-chat-input-submit-actions>
       <div class="relative inline-block">
         <Menu.Root>
           <Menu.Trigger>
@@ -1698,7 +1698,7 @@
           <div class="absolute top-0.5 right-0.5">
             <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
               <Button variant="ghost-light" size="xs" onclick={() => oncancel?.()}>
-                <Fa icon={faXmark} class="mr-1" size="sm" />
+                <Fa icon={faXmark} size="sm" />
               </Button>
             </TooltipShortcut>
           </div>
@@ -1714,7 +1714,7 @@
               onclick={handleSubmit}
               disabled={disabled || inputLocked || !canSend || isEnhancing}
             >
-              <Fa icon={faArrowRight} class="mr-1" size="sm" />
+              <Fa icon={faArrowRight} size="sm" />
             </Button>
           </TooltipShortcut>
         </div>
