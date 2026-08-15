@@ -180,6 +180,36 @@ describe('closing a panel that collapses a split', () => {
     );
   });
 
+  it('keeps the bottom panel visible after closing the top panel final tab', async () => {
+    // Closing a panel's final tab removes the panel through the closeTab
+    // reducer (closePanelHelper), so it collapses the split exactly like a
+    // panel close and must survive the same exiting-gutter measurement.
+    const workspaceId = initialize(
+      {
+        type: 'split',
+        direction: 'vertical',
+        sizes: [50, 50],
+        children: [
+          { type: 'panel', panelId: 'p1' },
+          { type: 'panel', panelId: 'p2' },
+        ],
+      },
+      ['p1', 'p2'],
+      VIEWPORT_WIDTH,
+    );
+    await mount(workspaceId);
+
+    const tabCloseButton = document
+      .querySelector<HTMLElement>('[data-mounted-panel="p1"]')!
+      .querySelector<HTMLButtonElement>('[data-tab-close]')!;
+    await fireEvent.click(tabCloseButton);
+
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-mounted-panel]')).toHaveLength(1),
+    );
+    await waitFor(() => expect(flexBasis(survivorWrapper('p2'))).toBeCloseTo(VIEWPORT_WIDTH, 3));
+  });
+
   it('commits a close-button panel close without replaying layout motion', () => {
     // Mechanism guard for the sibling flicker: during the removed wrapper's
     // exit outro the survivor already carries its new (larger) pixel basis,
@@ -189,6 +219,16 @@ describe('closing a panel that collapses a split', () => {
     const layout = source('PanelLayout.svelte');
     expect(layout).toMatch(
       /function handleClosePanel\([\s\S]{0,400}?commitPanelMoveWithoutReplay\(/,
+    );
+  });
+
+  it('commits a final-tab close that collapses a split without replaying layout motion', () => {
+    // Same flicker mechanism via the tab-close route: closing the final tab
+    // removes the panel inside the closeTab reducer, so handleTabClose must
+    // route the collapsing case through the motion-suppressing helper too.
+    const layout = source('PanelLayout.svelte');
+    expect(layout).toMatch(
+      /function handleTabClose\([\s\S]{0,700}?commitPanelMoveWithoutReplay\(/,
     );
   });
 });
