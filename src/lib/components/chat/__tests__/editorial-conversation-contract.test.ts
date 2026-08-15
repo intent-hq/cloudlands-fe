@@ -15,9 +15,7 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain(
-      'class:pb-2={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && !isCompactMode}',
-    );
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain('conversation-composer relative z-20 w-full');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
@@ -26,26 +24,38 @@ describe('editorial conversation presentation contract', () => {
   it('pins one user prompt in an independent overlay without moving the source row', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const pinned = source('src/lib/components/chat/PinnedUserPrompt.svelte');
+    const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const surface = source('src/lib/components/chat/user-message-surface.ts');
 
     expect(panel).not.toContain('formatMessageForStickyHeader');
     expect(panel).not.toContain('h-0 overflow-visible');
     expect(panel).toContain("import PinnedUserPrompt from './PinnedUserPrompt.svelte';");
-    expect(panel).toContain('const pinnedPromptController = createPinnedPromptController();');
+    expect(panel).toContain('trackPinnedPrompt,');
+    expect(panel).toContain('use:trackPinnedPrompt={{');
     expect(panel).toContain('data-pinnable-user-prompt');
     expect(panel).toContain('data-pinned-prompt-id={message.id}');
+    expect(panel).toContain('data-conversation-turn');
     expect(panel).toContain('<PinnedUserPrompt');
-    expect(panel).toContain('message={pinnedPrompt.message}');
-    expect(panel).toContain('onClick={handlePinnedPromptClick}');
+    expect(panel).toContain('text={getPinnedPromptText(pinnedPrompt.message)}');
+    expect(panel).toContain('onActivate={handlePinnedPromptClick}');
     expect(panel).toMatch(
-      /data-message-role="user"[\s\S]{0,320}class="message-nav-target relative z-20 mb-4/,
+      /data-message-role="user"[\s\S]{0,600}class="message-nav-target relative z-20 mb-4/,
     );
-    expect(panel).toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain('class:bg-card={!isChiefWorkspace}');
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
     expect(pinned).toContain('data-testid="pinned-user-prompt"');
-    expect(pinned).toContain('white-space: nowrap;');
+    expect(pinned).toContain('USER_MESSAGE_SURFACE_CLASS');
+    expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
+    expect(pinned).toContain('truncate whitespace-nowrap');
+    expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
+    expect(surface).toContain('bg-primary');
+    expect(surface).toContain('text-primary-foreground');
+    expect(surface).toContain('selection:bg-primary-foreground selection:text-primary');
+    expect(surface).toContain('[&_a]:text-primary-foreground');
+    expect(surface).toContain('[&_code]:text-primary-foreground');
+    expect(surface).not.toContain('bg-secondary');
+    expect(surface).not.toContain('text-foreground/90');
   });
 
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
@@ -58,18 +68,16 @@ describe('editorial conversation presentation contract', () => {
 
     // The overlay is derived from source-row geometry, so compaction cannot
     // change the source row's height or restart pin detection.
-    expect(panel).toMatch(
-      /import \{[\s\S]{0,120}createPinnedPromptController,[\s\S]{0,120}\} from '\.\/pinned-prompt';/,
-    );
-    expect(panel).toContain(
-      'pinnedPromptController.update(boundContainer, containerHeight >= 400)',
-    );
+    expect(panel).toContain('enabled: containerHeight >= 400');
     const pinned = source('src/lib/components/chat/pinned-prompt.ts');
     expect(pinned).toContain(
       "const SELECTOR = '[data-pinnable-user-prompt][data-pinned-prompt-id]';",
     );
-    expect(pinned).toContain('element.getBoundingClientRect().top <= containerTop');
-    expect(pinned).toContain('return id && message ? { id, message } : null;');
+    expect(pinned).toContain("source.closest<HTMLElement>('[data-conversation-turn]')");
+    expect(pinned).toContain('candidate.sourceBottom <= containerTop - ENTER_OFFSET');
+    expect(pinned).toContain('candidate.turnBottom > containerTop + ENTER_OFFSET');
+    expect(pinned).toContain('const resizeObserver = new ResizeObserver(schedule);');
+    expect(pinned).toContain('const mutationObserver = new MutationObserver(() => {');
 
     // With native anchoring off, LazyTurn owns scroll compensation for ALL of
     // its height changes above the reader's viewport — placeholder <-> content
@@ -127,29 +135,29 @@ describe('editorial conversation presentation contract', () => {
 
   it('uses vertical rhythm instead of decorative separators between routine turns', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const gap = source('src/lib/components/chat/ConversationTurnGap.svelte');
 
     expect(panel).toContain('<!-- Editorial rhythm between turns');
-    expect(panel).toContain('data-testid="conversation-turn-gap"');
-    expect(panel).toContain(": 'h-8'");
+    expect(panel).toContain('<ConversationTurnGap');
+    expect(gap).toContain('data-testid="conversation-turn-gap"');
+    expect(gap).toContain(": 'h-8'");
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses the accepted distinct user prompt surface and semantic body typography', () => {
+  it('uses the canonical primary user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
     const surface = source('src/lib/components/chat/user-message-surface.ts');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
     expect(message).toContain(
-      "import { USER_MESSAGE_SURFACE_CLASS } from './user-message-surface'",
+      "import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface'",
     );
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(surface).toContain(
-      'relative overflow-hidden rounded-lg border border-border/50 bg-secondary px-3 py-2 shadow-sm',
+      'relative overflow-hidden rounded-lg border border-border/50 bg-primary px-3 py-2 text-primary-foreground shadow-sm',
     );
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
-    expect(message).toContain(
-      'class="type-body select-text font-medium! text-pretty text-foreground',
-    );
+    expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
     expect(message).toContain('<div class="type-body text-pretty text-foreground">');
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
@@ -294,17 +302,12 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
-    expect(panel).toContain(
-      'class:pb-3={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && isCompactMode}',
-    );
-    expect(panel).toContain(
-      'class:pb-2={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && !isCompactMode}',
-    );
+    expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
-    expect(panel).toContain('eventSubscriptionsVisible && !queuedMessagesVisibility.showQueue');
-    expect(panel).toContain('class:pb-8={eventSubscriptionsOwnEndGap && isCompactMode}');
-    expect(panel).toContain('class:pb-12={eventSubscriptionsOwnEndGap && !isCompactMode}');
+    expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
+    expect(panel).not.toContain('eventSubscriptionsVisible');
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
     expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');

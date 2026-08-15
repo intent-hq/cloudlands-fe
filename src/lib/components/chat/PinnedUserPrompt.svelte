@@ -1,49 +1,41 @@
 <script lang="ts">
-  import type { AgentMessage } from '$shared/types';
-  import { extractAllContent } from '$shared/types';
+  import type { Workspace } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
+  import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import { Button } from '$lib/components/ui/button';
 
   interface Props {
-    message: AgentMessage;
-    compact?: boolean;
-    onClick?: () => void;
+    text: string;
+    workspace?: Workspace | null;
+    onActivate: () => void;
   }
 
-  let { message, compact = false, onClick }: Props = $props();
-  const promptText = $derived(
-    extractAllContent(message).trim() || m.chat_shared_context_fallback(),
-  );
+  let { text, workspace: _workspace = null, onActivate }: Props = $props();
+  const descriptionId = $props.id();
 </script>
 
 <Button
-  variant="ghost"
-  class="pinned-prompt {compact ? 'compact' : ''}"
+  variant="plain"
+  type="button"
   data-testid="pinned-user-prompt"
-  aria-label={promptText}
-  onclick={onClick}
+  data-surface-role="pinned-user-prompt-bubble"
+  class="pointer-events-auto block h-auto min-h-0 w-full min-w-0 shrink whitespace-normal border-0 px-3! py-2! text-left font-normal {USER_MESSAGE_SURFACE_CLASS} focus-visible:ring-2"
+  style="transition: none"
+  onclick={onActivate}
+  onkeydown={(event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onActivate();
+  }}
+  aria-label={m.chat_stickyMessageHeader_scrollToPrevious_title()}
+  aria-describedby={descriptionId}
+  title={text}
 >
-  {promptText}
+  <span
+    data-testid="pinned-user-prompt-text"
+    class="block min-w-0 truncate whitespace-nowrap {USER_MESSAGE_TEXT_CLASS}"
+  >
+    {text}
+  </span>
+  <span id={descriptionId} class="sr-only">{text}</span>
 </Button>
-
-<style>
-  :global(.pinned-prompt) {
-    display: block;
-    width: 100%;
-    overflow: hidden;
-    padding: 0.7rem 0.9rem;
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    background: var(--background);
-    color: var(--foreground);
-    box-shadow: 0 4px 18px rgb(0 0 0 / 12%);
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-
-  :global(.pinned-prompt.compact) {
-    padding-block: 0.45rem;
-  }
-</style>

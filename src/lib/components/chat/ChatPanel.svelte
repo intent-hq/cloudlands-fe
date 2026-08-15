@@ -127,6 +127,7 @@
     dividerDefersToTurnBoundary,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
+  import ConversationTurnGap from './ConversationTurnGap.svelte';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
@@ -171,11 +172,12 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
     animateMessageSend,
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
-    MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+    MESSAGE_SEND_MATCH_TIMEOUT_MS,
     type MessageSendOrigin,
   } from './message-send-transition';
 
@@ -183,7 +185,7 @@
   import PinnedUserPrompt from './PinnedUserPrompt.svelte';
   import {
     attachPinnedPromptMessage,
-    createPinnedPromptController,
+    trackPinnedPrompt,
     type PinnedPromptState,
   } from './pinned-prompt';
   import {
@@ -424,17 +426,27 @@
   interface PendingSendTransition {
     origin: MessageSendOrigin;
     launchBubble: HTMLElement | null;
+    followBottom: boolean;
     expiry: ReturnType<typeof setTimeout>;
   }
 
   const pendingSendTransitions = new Map<string, PendingSendTransition>();
   const activeSendTransitions = new Map<string, AbortController>();
+  let pendingSendMessageIds = $state.raw<Set<string>>(new Set());
+
+  function setPendingSendMessage(key: string, pending: boolean): void {
+    const next = new Set(pendingSendMessageIds);
+    if (pending) next.add(key);
+    else next.delete(key);
+    pendingSendMessageIds = next;
+  }
 
   function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
     if (pendingSendTransitions.get(key) !== pending) return;
     clearTimeout(pending.expiry);
     pending.launchBubble?.remove();
     pendingSendTransitions.delete(key);
+    setPendingSendMessage(key, false);
   }
 
   function cancelAllSendTransitions(): void {
@@ -447,7 +459,7 @@
 
   function prepareMessageSendTransition(
     text: string,
-    options: { enabled: boolean; allowOverlap?: boolean },
+    options: { enabled: boolean; followBottom: boolean; allowOverlap?: boolean },
   ): string {
     const userAppMessageId = createAppMessageId();
     if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
@@ -457,16 +469,22 @@
     const origin = captureMessageSendOrigin(composerElement);
     if (origin.width <= 0) return userAppMessageId;
     const key = String(userAppMessageId);
-    const launchBubble = createMessageSendLaunchBubble(origin, text);
+    const launchBubble = createMessageSendLaunchBubble(
+      origin,
+      text,
+      `${workspace?.id ?? 'workspace'}:${agentId}:${instanceId}`,
+    );
     const pending: PendingSendTransition = {
       origin,
       launchBubble,
+      followBottom: options.followBottom,
       expiry: setTimeout(
         () => cancelPendingSendTransition(key, pending),
-        MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
+        MESSAGE_SEND_MATCH_TIMEOUT_MS,
       ),
     };
     pendingSendTransitions.set(key, pending);
+    if (launchBubble) setPendingSendMessage(key, true);
     return userAppMessageId;
   }
 
@@ -489,12 +507,14 @@
       activeSendTransitions.set(key, controller);
       const settle = () => {
         if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
+        setPendingSendMessage(key, false);
       };
       void animateMessageSend({
         origin: pending.origin,
         target,
         scrollContainer,
         launchBubble: pending.launchBubble,
+        followBottom: pending.followBottom,
         signal: controller.signal,
       }).then(settle, settle);
       started = true;
@@ -502,7 +522,6 @@
     return started;
   }
 
-  const pinnedPromptController = createPinnedPromptController();
   let pinnedPrompt = $state<PinnedPromptState | null>(null);
 
   // Onboarding context — reconstructed from workspace + agent session data.
@@ -537,7 +556,23 @@
     const source = scrollContainer.querySelector<HTMLElement>(
       `[data-pinned-prompt-id="${CSS.escape(pinnedPrompt.id)}"]`,
     );
-    if (source) smoothScrollTo(source, 'center');
+    const turn = source?.closest<HTMLElement>('[data-conversation-turn]');
+    setPinnedPrompt(null);
+    if (turn) smoothScrollTo(turn, 'start');
+  }
+
+  function getPinnedPromptText(message: AgentMessage): string {
+    const extracted = extractAllContent(message);
+    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
+    if (text.trim()) return text.trim();
+    const attachment = message.contentBlocks?.find(
+      (block) => block.type === 'image' || block.type === 'file',
+    );
+    if (attachment?.type === 'file' && attachment.fileName) return attachment.fileName;
+    if (attachment?.type === 'image') {
+      return m.chat_chatMessage_attachedImage_fallback({ number: '1' });
+    }
+    return m.chat_shared_context_fallback();
   }
 
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
@@ -655,10 +690,6 @@
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
     }),
-  );
-  let eventSubscriptionsVisible = $state(false);
-  const eventSubscriptionsOwnEndGap = $derived(
-    eventSubscriptionsVisible && !queuedMessagesVisibility.showQueue,
   );
 
   // Dismiss = persistent, unlike Ignore: the mutation middleware stamps
@@ -1570,29 +1601,35 @@
     // 1. New message added AND following is enabled, OR
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
+    const hasNewMessages = currentCount > previousMessageCount;
     const shouldScroll =
-      currentCount > previousMessageCount &&
-      (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
-    if (shouldScroll) {
+      hasNewMessages && (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
+    if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
       // disabled when the unseen tail is taller than the viewport; when it
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
-      if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+      if (
+        shouldScroll &&
+        isFirstMessage &&
+        !hasAppliedNewMessagesEntryScroll &&
+        newMessagesDividerAnchorId
+      ) {
         hasAppliedNewMessagesEntryScroll = true;
         void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
       } else {
         // New message added - scroll to bottom after DOM updates
         // Re-enable auto-follow when first message is added
-        if (isFirstMessage) {
+        if (shouldScroll && isFirstMessage) {
           shouldFollowBottom = true;
           isScrollUnlocked = false;
         }
         tick().then(() => {
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
-          if (scrollContainer && !startPendingSendTransitions()) {
+          const startedTransition = startPendingSendTransitions();
+          if (scrollContainer && shouldScroll && !startedTransition) {
             scrollToBottomUtil(scrollContainer);
           }
         });
@@ -1950,6 +1987,10 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      scrollContainer.scrollTop = targetScrollTop;
+      return;
+    }
     animateScrollTo(() => scrollContainer, targetScrollTop, duration);
   }
 
@@ -2412,7 +2453,7 @@
   });
 
   function setPinnedPrompt(next: PinnedPromptState | null) {
-    if (next?.id === pinnedPrompt?.id) return;
+    if (next?.id === pinnedPrompt?.id && next?.message === pinnedPrompt?.message) return;
     const previousTurnKey = pinnedPrompt ? messageIdToTurnKey.get(pinnedPrompt.id) : undefined;
     if (previousTurnKey) {
       temporaryTurnMaterialization = releaseMaterializedTurn(
@@ -2431,63 +2472,6 @@
       );
     }
   }
-
-  // Track the independent pinned overlay. Source transcript rows stay mounted
-  // in their original turn and never change height or ownership.
-  // Use onMount pattern to avoid effect loops - scrollContainer binding can cause
-  // effects to re-run when state changes trigger re-renders
-  onMount(() => {
-    let destroyed = false;
-    let readinessFrame: number | null = null;
-    let initialCalculationFrame: number | null = null;
-    let throttledScrollFrame: number | null = null;
-    let boundContainer: HTMLDivElement | null = null;
-
-    const handleScroll = () => {
-      if (!boundContainer) return;
-
-      setPinnedPrompt(pinnedPromptController.update(boundContainer, containerHeight >= 400));
-    };
-
-    // Throttle the scroll handler for performance
-    let ticking = false;
-    const throttledHandler = () => {
-      if (!ticking) {
-        throttledScrollFrame = requestAnimationFrame(() => {
-          throttledScrollFrame = null;
-          if (destroyed) return;
-          handleScroll();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    // Wait for scrollContainer to be bound, then set up
-    const setupWhenReady = () => {
-      readinessFrame = null;
-      if (destroyed) return;
-      if (!scrollContainer) {
-        readinessFrame = requestAnimationFrame(setupWhenReady);
-        return;
-      }
-      boundContainer = scrollContainer;
-      boundContainer.addEventListener('scroll', throttledHandler, { passive: true });
-      // Initial check (deferred to avoid effect loops)
-      initialCalculationFrame = requestAnimationFrame(handleScroll);
-    };
-    readinessFrame = requestAnimationFrame(setupWhenReady);
-
-    return () => {
-      destroyed = true;
-      if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
-      if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
-      if (throttledScrollFrame !== null) cancelAnimationFrame(throttledScrollFrame);
-      boundContainer?.removeEventListener('scroll', throttledHandler);
-      pinnedPromptController.reset();
-      setPinnedPrompt(null);
-    };
-  });
 
   // Track container height for compact mode using ResizeObserver
   onMount(() => {
@@ -2639,7 +2623,6 @@
       searchDebounceTimer = null;
     }
     if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
-    pinnedPromptController.reset();
     lazyTurnHeightCache.clear();
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
@@ -2901,8 +2884,11 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const followAfterSend =
+      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
     const userAppMessageId = prepareMessageSendTransition(text, {
-      enabled: !$agentIsResponding$,
+      enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
+      followBottom: followAfterSend,
     });
 
     // Dispatch all orchestration to the send-message saga
@@ -2924,7 +2910,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: true,
+      followBottom: followAfterSend,
       historyText: text,
     });
   }
@@ -3067,8 +3053,11 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const followAfterSend =
+      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
     const userAppMessageId = prepareMessageSendTransition(text, {
-      enabled: true,
+      enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
+      followBottom: followAfterSend,
       allowOverlap: true,
     });
 
@@ -3091,7 +3080,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: true,
+      followBottom: followAfterSend,
       historyText: text,
     });
   }
@@ -3340,20 +3329,31 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
-    {#if pinnedPrompt}
-      <div class="pointer-events-none absolute left-6 right-6 top-2 z-30">
-        <div class="pointer-events-auto">
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 z-40"
+      data-testid="pinned-prompt-overlay-host"
+      aria-live="off"
+    >
+      {#if pinnedPrompt}
+        <div
+          class={isChiefWorkspace ? 'px-1 sm:px-2' : 'px-4 sm:px-6'}
+          data-testid="pinned-prompt-overlay-lane"
+        >
           <PinnedUserPrompt
-            message={pinnedPrompt.message}
-            compact={isCompactMode}
-            onClick={handlePinnedPromptClick}
+            text={getPinnedPromptText(pinnedPrompt.message)}
+            {workspace}
+            onActivate={handlePinnedPromptClick}
           />
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
     <!-- followBottom and the LazyTurn height ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
+      use:trackPinnedPrompt={{
+        enabled: containerHeight >= 400,
+        onChange: setPinnedPrompt,
+      }}
       use:followBottom={{
         // While search is open we drive our own programmatic scrolls (to the
         // current match), so we drop `follow` to keep the mutation/resize
@@ -3379,10 +3379,8 @@
         class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-2 sm:px-6'}"
-        class:pb-8={eventSubscriptionsOwnEndGap && isCompactMode}
-        class:pb-12={eventSubscriptionsOwnEndGap && !isCompactMode}
-        class:pb-3={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && isCompactMode}
-        class:pb-2={!eventSubscriptionsOwnEndGap && !isChiefWorkspace && !isCompactMode}
+        class:pb-3={!isChiefWorkspace && isCompactMode}
+        class:pb-2={!isChiefWorkspace && !isCompactMode}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -3815,6 +3813,7 @@
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
+<<<<<<< HEAD
                   {@const turnMessageText = turn.userMessage
                     ? extractAllContent(turn.userMessage)
                     : ''}
@@ -3835,6 +3834,9 @@
                     !isLastTurnInConversation,
                   )}
                   <div class="conversation-turn">
+=======
+                  <div class="conversation-turn" data-conversation-turn>
+>>>>>>> 611878fe1 (fix: restore chat event spacing and pinned prompt motion)
                     <LazyTurn
                       {turnKey}
                       scrollRoot={scrollContainer}
@@ -3854,7 +3856,6 @@
                           <!-- Source wake-up row remains owned by this transcript turn. -->
                           <div
                             data-message-id={message.id}
-                            data-pinnable-user-prompt
                             data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
@@ -3891,11 +3892,16 @@
                           <div
                             data-message-id={message.id}
                             data-message-role="user"
-                            data-pinnable-user-prompt
+                            data-pinnable-user-prompt={!isAutomatedMessage(message)
+                              ? ''
+                              : undefined}
                             data-pinned-prompt-id={message.id}
                             data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20 mb-4"
+                            class:invisible={pendingSendMessageIds.has(
+                              String(message.appMessageId ?? ''),
+                            )}
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
                             use:attachPinnedPromptMessage={message}
@@ -4036,6 +4042,7 @@
                       {/snippet}
                     </LazyTurn>
                   </div>
+<<<<<<< HEAD
                   <!-- Editorial rhythm between turns (not after the last one).
                        Must stay the negation of dividerDefersToTurnBoundary's
                        hasFollowingTurn input so a deferred divider always follows
@@ -4051,6 +4058,15 @@
                       data-gap-before-wake={nextTurnIsEventNotification ? '' : undefined}
                       aria-hidden="true"
                     ></div>
+=======
+                  <!-- Editorial rhythm between turns (not after the last one) -->
+                  {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
+                    <ConversationTurnGap
+                      currentIsEventNotification={isEventNotification}
+                      currentHasAssistantMessages={turn.assistantMessages.length > 0}
+                      nextIsEventNotification={nextTurnIsEventNotification}
+                    />
+>>>>>>> 611878fe1 (fix: restore chat event spacing and pinned prompt motion)
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
                        last rendered message and another turn follows, so the
@@ -4140,7 +4156,6 @@
                 workspaceId={workspace.id}
                 {agentId}
                 compact={isCompactMode}
-                bind:visible={eventSubscriptionsVisible}
               />
             {/key}
           {/if}

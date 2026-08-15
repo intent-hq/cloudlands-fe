@@ -77,16 +77,16 @@ describe('EventWakeupBanner details disclosure', () => {
     expect(card.getAttribute('data-external-spacing-owner')).toBe('event-wakeup-card');
     const header = screen.getByTestId('event-wakeup-header');
     expect(header.className).toContain('items-center');
-    expect(header.className).toContain('px-1.5');
-    expect(header.className).toContain('py-1');
-    expect(header.className).not.toContain('min-h-9');
+    expect(header.className).toContain('px-3');
+    expect(header.className).toContain('py-2');
+    expect(header.className).toContain('min-h-9');
 
     await fireEvent.click(summary);
     const details = screen.getByTestId('event-wakeup-details');
     expect(details.className).toContain('border-t');
     expect(details.className).toContain('border-border/40');
-    expect(details.className).toContain('px-1.5');
-    expect(details.className).toContain('py-1.5');
+    expect(details.className).toContain('px-3');
+    expect(details.className).toContain('py-2');
     expect(details.className).not.toContain('border-l');
     expect(details.className).not.toContain('pl-5');
   });

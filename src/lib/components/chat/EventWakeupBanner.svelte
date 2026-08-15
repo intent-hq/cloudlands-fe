@@ -352,7 +352,7 @@
       <div class="relative w-full min-w-0 max-w-full overflow-hidden">
         {#if showSummary}
           <div
-            class="flex w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden px-1.5 py-1 text-sm font-medium text-muted-foreground"
+            class="flex min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 py-2 text-sm font-medium text-muted-foreground"
             data-testid="event-wakeup-header"
           >
             {#if showAgentCards && agentEvents.length > 0}
@@ -391,7 +391,7 @@
               data-testid="event-wakeup-summary"
             >
               <span class="min-w-0 flex-1 truncate">{friendlySummary}</span>
-              <span class="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+              <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center">
                 <Fa
                   icon={faChevronDown}
                   class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {detailsOpen
@@ -405,14 +405,14 @@
           {#if detailsOpen}
             <div
               id={detailsId}
-              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-1.5 py-1.5"
+              class="w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 px-3 py-2"
               role="region"
               aria-label={m.chat_eventWakeup_subscriptionWakeup_tooltip()}
               data-testid="event-wakeup-details"
               transition:safeSubscriptionSlide
             >
               {#if displayEventDetails.length > 0}
-                <ol class="min-w-0 space-y-1.5">
+                <ol class="min-w-0 space-y-2">
                   {#each displayEventDetails as event, index (index)}
                     <li class="min-w-0" data-testid="event-wakeup-detail">
                       {#if !usesHeaderAgentIdentity(event) || event.timestamp}

@@ -36,7 +36,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
-  import { USER_MESSAGE_SURFACE_CLASS } from './user-message-surface';
+  import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     isQuestionOnlyContent,
     resolveStoppedIndicatorLabel,
@@ -1258,7 +1258,10 @@
               {/if}
 
               <div
-                class="type-body select-text font-medium! text-pretty text-foreground {agentAttribution
+                class="type-body select-text text-pretty {agentAttribution ||
+                automatedWakePresentation
+                  ? 'font-medium! text-foreground'
+                  : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
                     ? 'line-clamp-2'
