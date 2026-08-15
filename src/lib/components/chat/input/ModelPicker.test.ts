@@ -489,6 +489,57 @@ describe('ModelPicker combined reasoning mode', () => {
     });
   });
 
+  it('uses controlled reasoning without requiring an agent session', async () => {
+    const onReasoningChange = vi.fn(async () => true);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: 'high',
+        onReasoningChange,
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    const triggerGauge = await waitFor(() => screen.getByTestId('effort-gauge'));
+    expect(screen.getByLabelText('GPT-5.6-Sol · High')).toBeTruthy();
+    expect(triggerGauge.dataset.gaugeValue).toBe('2');
+
+    await fireEvent.click(trigger);
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(toggle);
+    await fireEvent.change(screen.getByRole('slider'), { target: { value: '4' } });
+
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('max'));
+    expect(applyReasoningEffortMock).not.toHaveBeenCalled();
+  });
+
+  it('treats an unsupported controlled effort as unset', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5.6-sol',
+        showReasoning: true,
+        reasoningEffort: 'xhigh',
+        onReasoningChange: vi.fn(),
+        portal: false,
+      },
+    });
+
+    const trigger = screen.getByRole('button');
+    expect(screen.getByLabelText('GPT-5.6-Sol')).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    const toggle = screen.getByTestId('model-reasoning-toggle');
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(screen.queryByTestId('effort-gauge')).toBeNull();
+    expect(toggle.textContent?.trim()).toBe('Reasoning effort · Default');
+    await fireEvent.click(toggle);
+    expect(screen.getByRole('slider').getAttribute('aria-valuetext')).toBe('Default');
+  });
+
   it('expands by keyboard, lets Escape collapse first, and resets after reopening', async () => {
     render(ModelPicker, {
       props: {
