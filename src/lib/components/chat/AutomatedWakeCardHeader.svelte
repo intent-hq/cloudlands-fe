@@ -72,7 +72,7 @@
     <Button
       type="button"
       variant="plain"
-      class="min-w-0 flex-1 justify-start truncate text-left font-inherit text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      class="h-auto min-w-0 flex-1 justify-start whitespace-normal break-words text-left font-inherit text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="pr-monitor-wake-chip"
       title={m.chat_prMonitorWakeAttribution_openPr_tooltip()}
       onclick={openPr}

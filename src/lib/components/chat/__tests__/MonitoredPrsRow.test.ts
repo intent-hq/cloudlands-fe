@@ -1,10 +1,11 @@
 /**
  * @vitest-environment jsdom
  *
- * MonitoredPrsRow rendering (PROTOCOL §6.9): "Monitored PRs:" chip row for
- * the active agent's ACTIVE monitors, cross-repo label prefixing, hover-card
- * last-refresh details, and the click action menu (check and flush / open in
- * app / open in external browser / cancel) dispatch wiring.
+ * MonitoredPrsRow rendering (PROTOCOL §6.9): inline disclosure rows for the
+ * active agent's ACTIVE monitors, summary labels (repo shown as `repo #N`
+ * same-owner, `owner/repo #N` cross-owner or unknown workspace repo),
+ * expandable last-refresh details, and the kebab action menu (check and
+ * flush / open in app / open in external browser / cancel) dispatch wiring.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -151,6 +152,8 @@ async function openDetails() {
 }
 
 describe('MonitoredPrsRow', () => {
+  const defaultWorkspace = workspaceState.workspace;
+
   afterEach(() => {
     cleanup();
     setViewport(originalInnerWidth, originalDevicePixelRatio);
@@ -158,6 +161,7 @@ describe('MonitoredPrsRow', () => {
     handleLinkMock.mockClear();
     openInBrowserPanelMock.mockClear();
     resetAgentSubscriptionsViewStateForTests();
+    workspaceState.workspace = defaultWorkspace;
   });
 
   it('renders a normalized inline disclosure row per active monitor', () => {
@@ -167,7 +171,9 @@ describe('MonitoredPrsRow', () => {
     const summary = screen.getByTestId('monitored-pr-summary');
     const line = summary.closest('[data-monitor-state]')?.firstElementChild;
     expect(summary.textContent).toContain('Fix widget rendering');
-    expect(summary.textContent).toContain('#42');
+    // Same-owner label shows the repo name without the owner
+    expect(summary.textContent).toContain('widgets #42');
+    expect(summary.textContent).not.toContain('acme/');
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
     expect(line?.className).toContain('px-3');
@@ -227,11 +233,22 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const summary = screen.getByTestId('monitored-pr-summary');
-    expect(summary.textContent).toContain('#1182');
+    expect(summary.textContent).toContain('widgets #1182');
     expect(summary.textContent).not.toContain('1,182');
   });
 
-  it('prefixes the summary label with org/repo only for cross-repo monitors', () => {
+  it('labels a same-owner, different-repo monitor with the repo name only', () => {
+    monitorsState.monitors = [
+      makeMonitor({ repo: 'acme/lib', url: 'https://github.com/acme/lib/pull/42' }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const summary = screen.getByTestId('monitored-pr-summary');
+    expect(summary.textContent).toContain('lib #42');
+    expect(summary.textContent).not.toContain('acme/');
+  });
+
+  it('labels a different-owner monitor with owner/repo', () => {
     monitorsState.monitors = [
       makeMonitor({ repo: 'other/lib', url: 'https://github.com/other/lib/pull/42' }),
     ];
@@ -240,6 +257,14 @@ describe('MonitoredPrsRow', () => {
     expect(screen.getByTestId('monitored-pr-summary').textContent).toContain(
       'Monitoring PR other/lib #42: Fix widget rendering',
     );
+  });
+
+  it('labels with owner/repo when the workspace owner/repo is unknown', () => {
+    workspaceState.workspace = { id: 'ws-1' } as unknown;
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('acme/widgets #42');
   });
 
   it('caps the restored disclosure summary so long labels ellipsize, not overflow', () => {

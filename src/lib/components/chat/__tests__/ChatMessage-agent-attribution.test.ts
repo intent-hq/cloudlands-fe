@@ -816,9 +816,9 @@ describe('ChatMessage PR-monitor wake attribution', () => {
 
     const header = screen.getByTestId('automated-wake-header');
     expect(header).toBeTruthy();
-    // Workspace repo matches → plain #N chip
+    // Workspace repo unknown → owner/repo #N chip
     const chip = screen.getByTestId('pr-monitor-wake-chip');
-    expect(chip.textContent?.trim()).toBe('#42');
+    expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
     // Label sits flush left next to the PR icon (overrides the Button base justify-center)
     expect(chip.className).toContain('justify-start');
     expect(screen.getByText('woke the agent')).toBeTruthy();
@@ -836,7 +836,7 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(screen.queryByText(/\[PR monitor/)).toBeNull();
   });
 
-  it('prefixes the chip label for a cross-repo PR', () => {
+  it('labels a same-owner, different-repo PR with the repo name only', () => {
     render(ChatMessage, {
       props: {
         message: prMonitorWakeMessage({
@@ -851,9 +851,25 @@ describe('ChatMessage PR-monitor wake attribution', () => {
       },
     });
 
-    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe(
-      'intent-hq/intentd: #42',
-    );
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('intentd #42');
+  });
+
+  it('labels a different-owner PR with owner/repo', () => {
+    render(ChatMessage, {
+      props: {
+        message: prMonitorWakeMessage({
+          rowMetadata: true,
+          metadata: { ...prMonitorWakeMetadata, repo: 'other/lib' },
+        }),
+        workspace: {
+          id: 'ws-1',
+          repositoryOwner: 'intent-hq',
+          repositoryName: 'monorepo',
+        } as any,
+      },
+    });
+
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('other/lib #42');
   });
 
   it('opens the PR externally on chip click (metadata url preferred)', async () => {

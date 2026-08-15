@@ -46,7 +46,10 @@ const logger = createLogger('AgentQueueReadService');
 const hydrateInFlightByAgent = new Map<string, Promise<void>>();
 /** Agents whose in-flight fetch should be followed by exactly one re-fetch. */
 const hydrateFollowUpWantedByAgent = new Set<string>();
-/** Per-agent counter of live `agent:queue:updated` snapshots applied. */
+/**
+ * Per-agent counter of authoritative queue snapshots applied: live
+ * `agent:queue:updated` folds AND hydrate-reconciled folds (monorepo#2486).
+ */
 const eventSnapshotSeqByAgent = new Map<string, number>();
 
 /**
@@ -63,11 +66,12 @@ export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
 }
 
 /**
- * Current per-agent live-snapshot seq. Send paths capture this BEFORE their
+ * Current per-agent snapshot seq. Send paths capture this BEFORE their
  * wire call and skip the queued-response queue seed when it has advanced
- * (monorepo#2481): a live `agent:queue:updated` snapshot — including the
- * shrunk-after-drain one — is at least as fresh as the RPC echo, so seeding
- * from the stale echo would re-add a just-drained row.
+ * (monorepo#2481): an authoritative snapshot — a live `agent:queue:updated`
+ * fold (including the shrunk-after-drain one) or a hydrate-reconciled fold
+ * (monorepo#2486) — is at least as fresh as the RPC echo, so seeding from
+ * the stale echo would re-add a just-drained row.
  */
 export function getAgentQueueEventSnapshotSeq(agentId: string): number {
   return eventSnapshotSeqByAgent.get(agentId) ?? 0;
@@ -96,6 +100,17 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
       appStore.dispatch(setAgentQueueHydrating(agentId, false));
     } else if ((eventSnapshotSeqByAgent.get(agentId) ?? 0) === seqAtFetchStart) {
       appStore.dispatch(replaceAgentQueue(agentId, queue));
+      // A hydrate fold is an authoritative snapshot too: advance the seq so
+      // the send paths' queued-response seed guard (monorepo#2481) yields to
+      // it exactly like a live event fold — a stale `queued: true` echo
+      // resolving after this fold must not re-seed a drained row
+      // (monorepo#2486). Safe for the seqAtFetchStart discard above: the
+      // bump lands AFTER this fetch's own comparison, and hydrates are
+      // single-flighted per agent, so no other hydrate fetch can be in
+      // flight to observe it — mid-fetch seq advances still only ever come
+      // from live event snapshots. A trailing follow-up captures its
+      // seqAtFetchStart after this bump, so it is not spuriously discarded.
+      eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
     }
   } catch (error) {
     logger.error(`Failed to hydrate agent queue for ${agentId}`, error);

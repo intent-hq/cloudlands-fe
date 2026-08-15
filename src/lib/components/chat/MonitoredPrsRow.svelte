@@ -4,12 +4,13 @@
    *
    * Faint row above the chat input (rendered ABOVE the background-hooks row
    * when both exist) surfacing the active agent's monitored PRs (PROTOCOL
-   * §6.9): one small chip per active monitor. The chip label shows
-   * "#<number>", prefixed with "<org/repo>: " only when the PR's repo
-   * differs from the workspace repository. Hovering shows a last-refresh
-   * details card (title, state, checks/reviews/threads summary,
-   * mergeable/blocked reason, last-change time, pending-emit status);
-   * clicking opens a 4-item action menu — check and flush
+   * §6.9): one inline disclosure row per active monitor. The summary label
+   * shows "<repo> #<number>: <title>", including the owner
+   * ("<owner>/<repo> #<number>") when the PR's owner differs from the
+   * workspace repository's owner or the workspace repository is unknown.
+   * Expanding the row reveals last-refresh details (readiness,
+   * checks/approvals/threads summary, last-change time, pending-emit
+   * status); the kebab opens a 4-item action menu — check and flush
    * (`prMonitor.flush` with `check: true`, always enabled), open the PR in
    * the embedded browser panel, open it in the external browser, cancel
    * monitor (`prMonitor.cancel`).
@@ -35,6 +36,7 @@
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatTime } from '$lib/i18n/format';
+  import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
@@ -124,14 +126,16 @@
     );
   }
 
+  /**
+   * Summary label. The repo segment follows the shared PR-chip convention
+   * (`getPrRepoLabel`): `repo` same-owner, `owner/repo` cross-owner/unknown.
+   */
   function monitorLabel(monitor: PrMonitorRow): string {
-    const inputs = {
+    return m.chat_monitoredPrs_monitoring_label({
+      repo: getPrRepoLabel(monitor.repo, workspaceRepo),
       number: String(monitor.prNumber),
       title: monitorTitle(monitor),
-    };
-    return workspaceRepo && monitor.repo !== workspaceRepo
-      ? m.chat_monitoredPrs_monitoringCrossRepo_label({ ...inputs, repo: monitor.repo })
-      : m.chat_monitoredPrs_monitoring_label(inputs);
+    });
   }
 
   function handleCheckAndFlush(monitor: PrMonitorRow, close: () => void) {
