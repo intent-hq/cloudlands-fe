@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.50.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.49.1...v2.50.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* **browser:** dedupe model-opened tabs by exact URL on openTab ([#1276](https://github.com/intent-hq/cloudlands-fe/issues/1276)) ([92ab1a3](https://github.com/intent-hq/cloudlands-fe/commit/92ab1a3dbb0b2a3ec598d7653e0bbb2a467c493d))
+* make BackgroundHooksRow countdowns tick every second ([#1278](https://github.com/intent-hq/cloudlands-fe/issues/1278)) ([648d944](https://github.com/intent-hq/cloudlands-fe/commit/648d9442ac503ec1021713140f9305cb0e3faf6b))
+
+
+### 🐛 Bug Fixes
+
+* align pinned prompt overlay width with conversation bubbles ([#1283](https://github.com/intent-hq/cloudlands-fe/issues/1283)) ([b1055b1](https://github.com/intent-hq/cloudlands-fe/commit/b1055b1844f733d7f6148b911f44cb2407e909f6))
+* **browser:** make listTabs and closeTab agree on which tabs exist ([#1274](https://github.com/intent-hq/cloudlands-fe/issues/1274)) ([4d88ad8](https://github.com/intent-hq/cloudlands-fe/commit/4d88ad8dd5f5a9040cf98ea5aa87f8eabf5d7197))
+* guard view-PR action tooltip against teardown race in WorkspaceProgressCard ([#1280](https://github.com/intent-hq/cloudlands-fe/issues/1280)) ([392bfe0](https://github.com/intent-hq/cloudlands-fe/commit/392bfe084ddf516549220460bbf0d0493dd18b47))
+* make queued-notice chip legible on primary user-message surface ([#1281](https://github.com/intent-hq/cloudlands-fe/issues/1281)) ([94ef32b](https://github.com/intent-hq/cloudlands-fe/commit/94ef32bba36cb4a401af15b0780fa577561f0eb2))
+* remove horizontal scrollbar in monitored-PR kebab menu ([#1279](https://github.com/intent-hq/cloudlands-fe/issues/1279)) ([6d400ef](https://github.com/intent-hq/cloudlands-fe/commit/6d400ef405eb7c1b77d97100e876408b29f7c588))
+
 ## [2.49.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.49.0...v2.49.1) (2026-08-15)
 
 
