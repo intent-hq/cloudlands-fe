@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.1...v2.51.2) (2026-08-15)
+
+
+### 🐛 Bug Fixes
+
+* restore workspace UI session (panels, browser tabs, terminals) across app restarts ([#1286](https://github.com/intent-hq/cloudlands-fe/issues/1286)) ([ae02abd](https://github.com/intent-hq/cloudlands-fe/commit/ae02abd61195598e88a5263d5ea2e5c88dfcfa0e))
+
 ## [2.51.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.0...v2.51.1) (2026-08-15)
 
 
