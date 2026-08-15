@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.48.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.47.0...v2.48.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* embellish secondary-root commit rows to match the primary timeline ([#1260](https://github.com/intent-hq/cloudlands-fe/issues/1260)) ([77ee875](https://github.com/intent-hq/cloudlands-fe/commit/77ee8752226af598b0b7466511b5100806652429))
+
+
+### 🐛 Bug Fixes
+
+* keep surviving panels sized and steady when a close collapses a split ([#1264](https://github.com/intent-hq/cloudlands-fe/issues/1264)) ([7fa7e34](https://github.com/intent-hq/cloudlands-fe/commit/7fa7e344590459477bb575b6039332a764fdbe65))
+* replace fixed truncation caps with width-responsive truncation on hook/PR wake labels ([#1259](https://github.com/intent-hq/cloudlands-fe/issues/1259)) ([556c644](https://github.com/intent-hq/cloudlands-fe/commit/556c644dc8cdd208f647e976d422976191db697c))
+
 ## [2.47.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.46.0...v2.47.0) (2026-08-15)
 
 
