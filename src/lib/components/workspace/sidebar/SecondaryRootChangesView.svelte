@@ -444,16 +444,17 @@
       {:else}
         <Fa icon={faCodeCommit} size="xs" class="text-ghost shrink-0" />
       {/if}
-      <button
+      <Button
         type="button"
-        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+        variant="plain"
+        class="flex h-auto items-center gap-2 flex-1 min-w-0 cursor-pointer justify-start text-left font-inherit"
         onclick={() => openCommitChangeset(commit)}
         data-testid="secondary-root-commit-open"
       >
         <span class="text-ui text-subtle truncate flex-1" title={commit.message}
           >{commit.message.split('\n')[0]}</span
         >
-      </button>
+      </Button>
       <span class="shrink-0 ml-auto text-ghost text-xs">
         <RelativeTime date={commit.date} compact />
       </span>
