@@ -186,9 +186,11 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
       };
-      // Captured BEFORE the wire call: a live agent:queue:updated snapshot
-      // folded while the RPC is in flight advances this seq, and the
-      // queue-on-send seed below must then yield to it (monorepo#2481).
+      // Captured BEFORE the wire call: an authoritative snapshot folded while
+      // the RPC is in flight — a live agent:queue:updated fold
+      // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
+      // advances this seq, and the queue-on-send seed below must then yield
+      // to it.
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
       const result =
         Object.keys(queueOptions).length > 0

@@ -334,10 +334,12 @@ export async function sendMessage(
                   );
 
                   const wireModel = options.model ?? options.modelId ?? session.model ?? undefined;
-                  // Captured BEFORE the wire call: a live agent:queue:updated
-                  // snapshot folded while the RPC is in flight advances this
+                  // Captured BEFORE the wire call: an authoritative snapshot
+                  // folded while the RPC is in flight — a live
+                  // agent:queue:updated fold (monorepo#2481) or a
+                  // hydrate-reconciled fold (monorepo#2486) — advances this
                   // seq, and the queued-response queue seed below must then
-                  // yield to it (monorepo#2481).
+                  // yield to it.
                   const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
