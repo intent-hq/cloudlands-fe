@@ -23,7 +23,9 @@
     selectFocusedPanelTargetsByWorkspaceId,
     selectPanelCanvasWidthsByWorkspaceId,
     selectPanelColumnCountsByWorkspaceId,
+    selectPanelRevealRequestsByWorkspaceId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { consumePanelReveal } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     findAdjacentWorkspaceWithPanels,
     type PanelCycleBoundaryTarget,
@@ -47,15 +49,27 @@
     type TrackedColumnElement,
   } from './utils/column-visibility';
   import WorkspaceColumnPlaceholder from './WorkspaceColumnPlaceholder.svelte';
+  import { isFocusInEditableElement } from '$lib/utils/keyboardShortcuts';
   import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
   import { CONTAINED_PANEL_INLINE_CHROME } from '$shared/panel-layout-sizing';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    COLUMN_SIDEBAR_MAX_WIDTH,
+    requestResizablePanelSize,
+  } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+  import {
+    selectHydratedResizablePanelSizes,
+    selectResizablePanelSizes,
+  } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
 
   const currentWorkspaceId$ = selectCurrentWorkspaceTabId();
   const workspaceStacks$ = selectWorkspaceStacks();
   const panelCanvasWidthsByWorkspaceId$ = selectPanelCanvasWidthsByWorkspaceId();
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
   const focusedPanelTargetsByWorkspaceId$ = selectFocusedPanelTargetsByWorkspaceId();
+  const resizablePanelSizes$ = selectResizablePanelSizes();
+  const hydratedResizablePanelSizes$ = selectHydratedResizablePanelSizes();
+  const panelRevealRequestsByWorkspaceId$ = selectPanelRevealRequestsByWorkspaceId();
   const LAYOUT_WIDTH_SETTLE_MS = 340;
   let sidebarWidths = $state<Record<string, number>>({});
   let livePanelCanvasWidths = $state<Record<string, number>>({});
@@ -77,16 +91,65 @@
   let recentlyVisibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   const unmountHysteresisTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let previouslyVisibleWorkspaceIds: ReadonlySet<string> = new Set();
+  let materializingWorkspaceId = $state<string | null>(null);
+  const panelRevealFrames = new Map<string, number>();
+  const requestedSidebarWidthKeys = new Set<string>();
   const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
+  const openWorkspaceIds = $derived($workspaceStacks$.flat());
+  const sidebarWidthsReady = $derived(
+    openWorkspaceIds.every(
+      (workspaceId) =>
+        $hydratedResizablePanelSizes$[`workspace-left-panel-width:${workspaceId}`] === true &&
+        $hydratedResizablePanelSizes$[`workspace-left-panel-expanded-width:${workspaceId}`] ===
+          true,
+    ),
+  );
   const visibleWorkspaceIdsAttribute = $derived([...visibleWorkspaceIds].sort().join(','));
   const mountedWorkspaceIds = $derived.by(() => {
     const mounted = new Set(visibleWorkspaceIds);
     for (const workspaceId of recentlyVisibleWorkspaceIds) mounted.add(workspaceId);
     const currentWorkspaceId = $currentWorkspaceId$;
     if (currentWorkspaceId) mounted.add(currentWorkspaceId);
+    if (materializingWorkspaceId) mounted.add(materializingWorkspaceId);
     if (draggedWorkspaceId) mounted.add(draggedWorkspaceId);
     if (dragOverWorkspaceId) mounted.add(dragOverWorkspaceId);
     return mounted;
+  });
+
+  $effect(() => {
+    for (const workspaceId of openWorkspaceIds) {
+      for (const key of [
+        `workspace-left-panel-width:${workspaceId}`,
+        `workspace-left-panel-expanded-width:${workspaceId}`,
+      ]) {
+        if ($hydratedResizablePanelSizes$[key] !== true && !requestedSidebarWidthKeys.has(key)) {
+          requestedSidebarWidthKeys.add(key);
+          appStore.dispatch(requestResizablePanelSize(key));
+        }
+      }
+    }
+  });
+
+  $effect(() => {
+    const requests = $panelRevealRequestsByWorkspaceId$;
+    const scroller = columnsScroller;
+    if (!scroller) return;
+    for (const [workspaceId, request] of Object.entries(requests)) {
+      if (panelRevealFrames.has(request.requestId)) continue;
+      materializingWorkspaceId = workspaceId;
+      panelRevealFrames.set(request.requestId, -1);
+      void tick().then(() => {
+        const frame = requestAnimationFrame(() => {
+          panelRevealFrames.delete(request.requestId);
+          const latest = $panelRevealRequestsByWorkspaceId$[workspaceId];
+          if (latest?.requestId !== request.requestId || columnsScroller !== scroller) return;
+          scrollWorkspacePanelIntoView(scroller, workspaceId, request.panelId, 'smooth');
+          appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
+          if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
+        });
+        panelRevealFrames.set(request.requestId, frame);
+      });
+    }
   });
 
   onMount(() => {
@@ -104,6 +167,16 @@
         event.metaKey ||
         event.ctrlKey ||
         (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight')
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      const targetElement =
+        target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+      if (
+        (targetElement && isFocusInEditableElement(targetElement)) ||
+        isFocusInEditableElement()
       ) {
         return;
       }
@@ -184,7 +257,9 @@
   $effect(() => {
     const workspaceId = $currentWorkspaceId$;
     const scroller = columnsScroller;
-    if (!workspaceId || !scroller || workspaceId === lastScrolledWorkspaceId) return;
+    const columnsReady = sidebarWidthsReady;
+    if (!workspaceId || !scroller || !columnsReady || workspaceId === lastScrolledWorkspaceId)
+      return;
 
     if (!hasRevealedInitialWorkspace) {
       // The first reveal per mount jumps instantly — a smooth sweep would drag
@@ -251,14 +326,15 @@
     const stacks = $workspaceStacks$;
     const scroller = columnsScroller;
     const tracker = columnVisibilityTracker;
-    if (!scroller || !tracker) return;
+    const columnsReady = sidebarWidthsReady;
+    if (!scroller || !tracker || !columnsReady) return;
 
-    const openWorkspaceIds = new Set(stacks.flat());
+    const openIds = new Set(stacks.flat());
     const tracked: TrackedColumnElement[] = [];
     for (const element of scroller.querySelectorAll('[data-workspace-stack]')) {
       const workspaceIds = (element.getAttribute('data-workspace-stack') ?? '')
         .split(',')
-        .filter((workspaceId) => openWorkspaceIds.has(workspaceId));
+        .filter((workspaceId) => openIds.has(workspaceId));
       if (workspaceIds.length > 0) tracked.push({ element, workspaceIds });
     }
     tracker.setElements(tracked);
@@ -310,11 +386,22 @@
     cancelPendingReveal();
     for (const timer of unmountHysteresisTimers.values()) clearTimeout(timer);
     unmountHysteresisTimers.clear();
+    for (const frame of panelRevealFrames.values()) if (frame >= 0) cancelAnimationFrame(frame);
+    panelRevealFrames.clear();
   });
 
   function updateSidebarWidth(workspaceId: string, width: number) {
-    if (sidebarWidths[workspaceId] === width) return;
-    sidebarWidths[workspaceId] = width;
+    const clampedWidth = Math.max(280, Math.min(COLUMN_SIDEBAR_MAX_WIDTH, width));
+    if (sidebarWidths[workspaceId] === clampedWidth) return;
+    sidebarWidths = { ...sidebarWidths, [workspaceId]: clampedWidth };
+  }
+
+  function getSidebarWidth(workspaceId: string) {
+    const storedWidth = $resizablePanelSizes$[`workspace-left-panel-width:${workspaceId}`] ?? 360;
+    return Math.max(
+      280,
+      Math.min(COLUMN_SIDEBAR_MAX_WIDTH, sidebarWidths[workspaceId] ?? storedWidth),
+    );
   }
 
   function updatePanelPreviewWidthRatio(workspaceId: string, ratio: number) {
@@ -335,6 +422,7 @@
 
   function activateWorkspace(workspaceId: string) {
     if ($currentWorkspaceId$ === workspaceId) return;
+    materializingWorkspaceId = workspaceId;
     appStore.dispatch(openWorkspaceTab(workspaceId));
     void goto(`/workspace/${workspaceId}`);
   }
@@ -443,7 +531,7 @@
 
 {#snippet workspaceColumn(workspaceId: string)}
   <section
-    class="relative h-full min-h-0 w-full overflow-hidden rounded-md bg-sidebar shadow-md transition-[opacity,transform,box-shadow] duration-(--motion-fast) {draggedWorkspaceId ===
+    class="relative h-full min-h-0 w-full overflow-hidden rounded-lg bg-sidebar shadow-md transition-[opacity,transform,box-shadow] duration-(--motion-fast) {draggedWorkspaceId ===
     workspaceId
       ? 'scale-[0.99] opacity-50 shadow-none'
       : ''}"
@@ -478,6 +566,7 @@
         active={$currentWorkspaceId$ === workspaceId}
         manageTab={false}
         columnMode={true}
+        retainWorkspaceSessionOnUnmount={true}
         onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}
         onSidebarWidthChange={(width) => updateSidebarWidth(workspaceId, width)}
         onPanelMovePreviewWidthRatioChange={(ratio) =>
@@ -518,50 +607,54 @@
   aria-label={m.workspace_columns_openSpaces_ariaLabel()}
   data-workspace-columns
   data-visible-workspace-columns={visibleWorkspaceIdsAttribute}
+  data-sidebar-widths-ready={sidebarWidthsReady}
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
-    {#each $workspaceStacks$ as stack (stack[0])}
-      {@const stackWidth = Math.max(
-        ...stack.map((workspaceId) => {
-          const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
-          const panelCanvasWidth =
-            livePanelCanvasWidths[workspaceId] ??
-            $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
-            480;
-          return (
-            (sidebarWidths[workspaceId] ?? 360) +
-            (panelCount > 0
-              ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
-                CONTAINED_PANEL_INLINE_CHROME
-              : 0)
-          );
-        }),
-      )}
-      <div
-        class="h-full min-h-0 shrink-0"
-        style:width={`${stackWidth}px`}
-        data-workspace-stack={stack.join(',')}
-        animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
-        transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
-      >
-        {#if stack.length > 1}
-          <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
-            <ResizablePanelGroup
-              panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
-              orientation="vertical"
-              storageKey={`workspace-stack-heights:${stack.join(':')}`}
-              className="h-full min-h-0"
-            >
-              {#snippet children(panel, index)}
-                {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
-              {/snippet}
-            </ResizablePanelGroup>
-          </div>
-        {:else}
-          {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
-        {/if}
-      </div>
-    {/each}
+    {#if sidebarWidthsReady}
+      {#each $workspaceStacks$ as stack (stack[0])}
+        {@const stackWidth = Math.max(
+          ...stack.map((workspaceId) => {
+            const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
+            const panelCanvasWidth =
+              livePanelCanvasWidths[workspaceId] ??
+              $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
+              480;
+            return (
+              getSidebarWidth(workspaceId) +
+              (panelCount > 0
+                ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
+                  CONTAINED_PANEL_INLINE_CHROME
+                : 0)
+            );
+          }),
+        )}
+        <div
+          class="h-full min-h-0 shrink-0"
+          style:width={`${stackWidth}px`}
+          data-workspace-stack={stack.join(',')}
+          data-workspace-stack-key={stack[0]}
+          animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
+          transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+        >
+          {#if stack.length > 1}
+            <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
+              <ResizablePanelGroup
+                panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
+                orientation="vertical"
+                storageKey={`workspace-stack-heights:${stack.join(':')}`}
+                className="h-full min-h-0"
+              >
+                {#snippet children(panel, index)}
+                  {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
+                {/snippet}
+              </ResizablePanelGroup>
+            </div>
+          {:else}
+            {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
+          {/if}
+        </div>
+      {/each}
+    {/if}
     <aside
       class="flex h-full min-h-0 w-90 shrink-0 overflow-y-auto px-4 py-10"
       aria-label={m.layout_sidebarNav_allWorkspaces_title()}
@@ -595,6 +688,4 @@
   [data-workspace-column][data-dragging='true'] :global([data-workspace-title-region]) {
     cursor: grabbing;
   }
-
-
 </style>

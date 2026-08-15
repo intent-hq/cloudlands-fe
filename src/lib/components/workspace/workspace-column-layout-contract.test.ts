@@ -73,7 +73,7 @@ describe('workspace column layout contract', () => {
       'utf8',
     );
 
-    expect(columns).toContain('overflow-hidden rounded-md bg-sidebar');
+    expect(columns).toContain('overflow-hidden rounded-lg bg-sidebar');
     expect(columns).not.toContain(
       "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
     );
@@ -84,9 +84,12 @@ describe('workspace column layout contract', () => {
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
     expect(columns).toContain('livePanelCanvasWidths[workspaceId]');
     expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
-    expect(columns).not.toContain('$resizablePanelSizes$[`workspace-left-panel-width:');
+    expect(columns).toContain('selectResizablePanelSizes');
+    expect(columns).toContain('selectHydratedResizablePanelSizes');
+    expect(columns).toContain('data-sidebar-widths-ready={sidebarWidthsReady}');
     expect(columns).not.toContain('workspace-panel-columns-width:');
     expect(surface).toContain("canvasSizing={columnMode ? 'content' : 'viewport'}");
+    expect(surface).toContain('{columnMode}');
     expect(columns).not.toContain("{#key stack.join(':')}");
     expect(surface).toContain('onDestroy(() => {');
     expect(surface).not.toContain('onDestroy(async () => {');
@@ -103,11 +106,9 @@ describe('workspace column layout contract', () => {
     expect(sidebar).toContain('hideActionsMenu={!isLauncherOverview}');
     expect(sidebar).toContain('draggable={draggableTitleRegion}');
     expect(progress).toContain('data-workspace-header-actions');
-    expect(
-      progress.indexOf(
-        "aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId ?? '' })}",
-      ),
-    ).toBeGreaterThan(progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'));
+    expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
+      progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),
+    );
     expect(columns).not.toContain('w-[26rem]');
     expect(columns).not.toContain('class:ring-1');
     expect(surface).toContain('data-loading={!$workspace}');

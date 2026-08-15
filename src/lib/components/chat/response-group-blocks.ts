@@ -6,13 +6,18 @@ import {
 } from '$shared/utils/content-block-helpers';
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
+  // A tool owner id is not row identity. Prefer the protocol block id so
+  // sibling results owned by one tool call stay stable through finalization.
+  const idBackedKey = getIdBackedContentBlockKey(block);
+  if (idBackedKey) return idBackedKey;
+
   const toolUseKey = getToolUseContentBlockKey(block);
   if (toolUseKey) return `tool_use:${toolUseKey}`;
 
   const toolResultKey = getToolResultContentBlockKey(block);
   if (toolResultKey) return `tool_result:${toolResultKey}`;
 
-  return getIdBackedContentBlockKey(block) ?? `${block.type}:${index}`;
+  return `${block.type}:${index}`;
 }
 
 /**

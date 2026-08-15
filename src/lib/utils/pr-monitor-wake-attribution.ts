@@ -9,7 +9,7 @@
  * legacy fallback.
  */
 
-import { m } from '$shared/paraglide/messages.js';
+import { getPrChipLabel } from './pr-chip-label';
 
 export interface PrMonitorWakeAttribution {
   /** Monitor id (may be empty when the daemon omitted it). */
@@ -71,22 +71,16 @@ export function getPrMonitorWakeUrl(attribution: PrMonitorWakeAttribution): stri
 }
 
 /**
- * Chip label following the MonitoredPrsRow convention: `#N`, prefixed with
- * `org/repo: ` only when the PR's repo differs from the workspace repository
- * (or the workspace repository is unknown — then plain `#N`).
+ * Chip label following the shared PR-chip convention (`getPrChipLabel`, also
+ * used by MonitoredPrsRow): `repo #N` when the PR's owner matches the
+ * workspace repository's owner, otherwise (or when the workspace repository
+ * is unknown) `owner/repo #N`.
  */
 export function getPrMonitorWakeChipLabel(
   attribution: PrMonitorWakeAttribution,
   workspaceRepo?: string,
 ): string {
-  const number = `#${attribution.prNumber}`;
-  if (workspaceRepo && attribution.repo !== workspaceRepo) {
-    return m.chat_prMonitorWakeAttribution_crossRepoChip_label({
-      repo: attribution.repo,
-      number,
-    });
-  }
-  return number;
+  return getPrChipLabel(attribution.repo, attribution.prNumber, workspaceRepo);
 }
 
 /**

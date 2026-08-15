@@ -28,9 +28,11 @@
 
   let { children }: { children?: Snippet } = $props();
 
-  const disposeStore = startRootStoreLifecycle(appStore, {
-    startSagas: startAllAppSagas,
-  });
+  const disposeStore = startRootStoreLifecycle(
+    appStore,
+    { startSagas: startAllAppSagas },
+    import.meta.hot?.data,
+  );
   onDestroy(disposeStore);
 
   // The {#key} below remounts everything rendered by the app — product chrome,

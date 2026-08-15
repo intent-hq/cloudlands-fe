@@ -70,6 +70,7 @@
   function restoreForwardedAttributes(target: HTMLElement) {
     for (const attribute of forwardedAttributes) {
       const original = originalAttribute(target, attribute);
+      if (attribute === 'data-state' && original !== null) continue;
       if (original === null) target.removeAttribute(attribute);
       else target.setAttribute(attribute, original);
     }
@@ -78,6 +79,7 @@
   function syncForwardedAttributes(target: HTMLElement) {
     for (const attribute of forwardedAttributes) {
       const original = originalAttribute(target, attribute);
+      if (attribute === 'data-state' && original !== null) continue;
       const value = triggerProps[attribute];
       if (value === undefined || value === null || value === false) {
         if (original === null) target.removeAttribute(attribute);

@@ -10,7 +10,10 @@ import {
 } from 'typed-redux-saga';
 
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
-import { getAgentQueueEventSnapshotSeq } from '$features/agent/agent-queue-read-service';
+import {
+  getAgentQueueEventSnapshotSeq,
+  hydrateAgentQueue,
+} from '$features/agent/agent-queue-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -183,9 +186,11 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
       };
-      // Captured BEFORE the wire call: a live agent:queue:updated snapshot
-      // folded while the RPC is in flight advances this seq, and the
-      // queue-on-send seed below must then yield to it (monorepo#2481).
+      // Captured BEFORE the wire call: an authoritative snapshot folded while
+      // the RPC is in flight — a live agent:queue:updated fold
+      // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
+      // advances this seq, and the queue-on-send seed below must then yield
+      // to it.
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
       const result =
         Object.keys(queueOptions).length > 0
@@ -204,10 +209,11 @@ function* dispatchToLifecycle(
         if (typeof turnId === 'string') {
           yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
         }
-        // Seed only when no live agent:queue:updated snapshot was folded
-        // since the send started — a snapshot (including the
-        // shrunk-after-drain one) is at least as fresh as this echo, so
-        // seeding over it would re-add a just-drained row (monorepo#2481).
+        // Seed only when no authoritative snapshot — live agent:queue:updated
+        // fold or hydrate-reconciled fold — landed since the send started: a
+        // snapshot (including the shrunk-after-drain one) is at least as
+        // fresh as this echo, so seeding over it would re-add a just-drained
+        // row (monorepo#2481).
         if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
           const existing = yield* selectAgentQueueMessages.effect(agentId);
           if (!existing.some((message) => message.id === queuedMessage.id)) {
@@ -215,9 +221,19 @@ function* dispatchToLifecycle(
           }
         } else {
           logger.debug(
-            'skipping queue-on-send seed; superseded by a live agent:queue:updated snapshot',
+            'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
             { agentId, queuedMessageId: queuedMessage.id },
           );
+          // Client-side apply order cannot rank the superseding snapshot
+          // against this echo — a hydrate whose getQueue the daemon served
+          // BEFORE this send would wrongly suppress a still-queued row
+          // (monorepo#2486 review). By now the daemon has processed the
+          // enqueue, so one reconciling hydrate returns the true queue in
+          // both directions: the row if still queued, without it if drained.
+          // Swallowed on failure — the enqueue itself succeeded, so a hydrate
+          // error must not surface as chatSendFailed; the service leaves the
+          // prior mirror intact on error.
+          yield* call(() => hydrateAgentQueue(agentId).catch(() => undefined));
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {

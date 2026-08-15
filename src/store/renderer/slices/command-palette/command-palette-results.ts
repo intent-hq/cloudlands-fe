@@ -17,6 +17,8 @@ export interface PaletteCommand {
   pillLabel?: string;
   icon: any;
   shortcut?: string;
+  searchText?: string;
+  navigationIcon?: 'spaces' | 'tabs';
 }
 
 export interface WorkspaceItem {
@@ -107,7 +109,11 @@ export function computeResults(input: ComputeResultsInput): any[] {
     }
 
     const allItems = [
-      ...commands.filter((c) => c.id !== 'new-workspace' && (workspaceId || c.id !== 'new-file')),
+      ...commands.filter(
+        (c) =>
+          c.id !== 'new-workspace' &&
+          (workspaceId || (c.id !== 'new-file' && c.id !== 'workspace-view-mode')),
+      ),
       ...agents,
       ...notes,
       ...changes,
@@ -120,7 +126,7 @@ export function computeResults(input: ComputeResultsInput): any[] {
     const filtered = allItems
       .map((item: any) => ({
         ...item,
-        _score: fuzzyScore(`${item.label} ${item.description || ''}`, q),
+        _score: fuzzyScore(`${item.label} ${item.description || ''} ${item.searchText || ''}`, q),
       }))
       .filter((item: any) => item._score !== -Infinity)
       .sort((a: any, b: any) => (b._score as number) - (a._score as number))

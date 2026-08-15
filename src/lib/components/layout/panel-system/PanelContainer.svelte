@@ -17,12 +17,20 @@
   import PanelSplitHandle from './PanelSplitHandle.svelte';
   import PanelCornerHandle from './PanelCornerHandle.svelte';
   import PanelContainer from './PanelContainer.svelte';
-  import { getPanelFlexValue, getPanelReferenceSize, resizeAdjacentPanels } from './panel-resize';
+  import {
+    getElementContentBoxSize,
+    getPanelFlexValue,
+    getPanelReferenceSize,
+    resizeAdjacentPanels,
+  } from './panel-resize';
   import { translatePanel } from './panel-reorder-animation';
   import { getDraggedPanelId } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
-  import { getAcceptedIndependentPanelResizeWidth } from '$shared/panel-layout-sizing';
+  import {
+    getAcceptedIndependentPanelResizeWidth,
+    PANEL_SPLIT_GUTTER_WIDTH,
+  } from '$shared/panel-layout-sizing';
   import { getDominantPanelChildWidth } from './panel-dominant-flex';
 
   import type { DropZone } from './Panel.svelte';
@@ -298,25 +306,27 @@
   function measurePanelReferenceSize() {
     if (node.type !== 'split' || !containerRef) return;
 
-    const directChildren = Array.from(containerRef.children);
-    const gutterSize = directChildren
-      .filter((child) => child.classList.contains('panel-split-handle-wrapper'))
-      .reduce(
-        (total, gutter) =>
-          total +
-          (node.direction === 'horizontal'
-            ? (gutter as HTMLElement).offsetWidth
-            : (gutter as HTMLElement).offsetHeight),
-        0,
-      );
+    // Derive the gutter total from the node structure rather than the DOM:
+    // when a close collapses the split, exiting gutter wrappers are still in
+    // the DOM mid-outro (a leaving cross-axis gutter can measure at full
+    // container size), which would corrupt the reference size until an
+    // unrelated resize re-measures — leaving the surviving panel near zero.
+    const gutterCount = zoomedPanelId ? 0 : Math.max(0, node.children.length - 1);
+    const gutterSize = gutterCount * PANEL_SPLIT_GUTTER_WIDTH;
     const rootViewport = containerRef.closest<HTMLElement>('[data-testid="panel-workspace-inset"]');
     const resizeTarget = nodePath.length === 0 ? rootViewport : containerRef.parentElement;
+    // Measure the content box: split children live inside it, so a padded
+    // resize target's clientWidth/clientHeight would oversize the stack.
     const availableSize =
       node.direction === 'horizontal'
         ? nodePath.length === 0 && rootPanelReferenceSize !== null
           ? rootPanelReferenceSize
-          : (resizeTarget?.clientWidth ?? containerRef.clientWidth)
-        : (resizeTarget?.clientHeight ?? containerRef.clientHeight);
+          : resizeTarget
+            ? getElementContentBoxSize(resizeTarget, 'horizontal')
+            : containerRef.clientWidth
+        : resizeTarget
+          ? getElementContentBoxSize(resizeTarget, 'vertical')
+          : containerRef.clientHeight;
 
     panelReferenceSize = getPanelReferenceSize(availableSize, gutterSize);
     if (nodePath.length === 0) onRootReferenceSizeChange?.(panelReferenceSize);
@@ -656,8 +666,15 @@
 
 {#if node.type === 'panel'}
   {@const panel = panels[node.panelId]}
-  {#if panel}
-    <div class="h-full w-full min-h-0 min-w-0">
+  {@const isEmptySurface = !panel || (panel.pristine === true && panel.tabs.length === 0)}
+  <div
+    class={cn(
+      'h-full w-full min-h-0 min-w-0',
+      isEmptySurface && 'bg-sidebar text-sidebar-foreground',
+    )}
+    data-empty-panel-surface={isEmptySurface || undefined}
+  >
+    {#if panel}
       <Panel
         {panel}
         {workspaceId}
@@ -692,8 +709,8 @@
         onSplitHorizontal={() => onSplitPanel?.(node.panelId, 'horizontal')}
         onSplitVertical={() => onSplitPanel?.(node.panelId, 'vertical')}
       />
-    </div>
-  {/if}
+    {/if}
+  </div>
 {:else if node.type === 'split'}
   <div
     bind:this={containerRef}

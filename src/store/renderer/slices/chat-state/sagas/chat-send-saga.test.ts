@@ -5,6 +5,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   queue: vi.fn(),
+  hydrateQueue: vi.fn(async () => undefined),
   sendQueuedNow: vi.fn(),
   removeQueued: vi.fn(),
   stop: vi.fn(),
@@ -23,6 +24,14 @@ vi.mock('$lib/client', () => ({
       rename: mocks.rename,
     },
   },
+}));
+// Partial mock: the real seq counter drives the guard, but the reconciling
+// hydrate is stubbed — the service dispatches to the configured appStore,
+// which is not initialized under this runSaga harness. Its behavior is
+// covered in agent-queue-read-service.test.ts / agent-send.test.ts.
+vi.mock('$features/agent/agent-queue-read-service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/agent/agent-queue-read-service')>()),
+  hydrateAgentQueue: mocks.hydrateQueue,
 }));
 
 import type { AgentSession, QueuedMessage, Workspace } from '$shared/types';
@@ -449,6 +458,7 @@ describe('chatSendSaga', () => {
     );
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
     await settle();
+    await settle();
 
     // The turn-scoped retry record is still parked (cleaned by
     // agent:queue:processing) — only the queue seed is guarded.
@@ -458,6 +468,11 @@ describe('chatSendSaga', () => {
     expect(
       run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type),
     ).toBe(false);
+    // The guard trip must be followed by a reconciling hydrate: client-side
+    // apply order cannot rank the superseding snapshot against the echo, so
+    // the daemon's true queue is re-read instead of trusting either side
+    // (monorepo#2486 review).
+    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT);
     run.task.cancel();
     await run.task.toPromise();
   });

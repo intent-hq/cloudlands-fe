@@ -7,11 +7,9 @@
  *
  *  1. `transcriptHydrationStarted`, fetch the session shell (`agents.get`,
  *     counts only) and upsert it so the subscription's snapshot can apply.
- *  2. Wait for the standing subscription's snapshot — already recorded in
- *     chat-state (`transcriptSnapshot` meta) or the next
- *     `chatTranscriptSnapshotApplied` dispatch — with a timeout fallback to a
- *     direct newest-page `agent.getConversation` read (degraded path: the
- *     subscription failed to deliver, e.g. daemon hiccup mid-registration).
+ *  2. Race the standing subscription snapshot against a direct newest-page
+ *     `agent.getConversation` read. The first successful source paints; a
+ *     rejected direct read gives the subscription one bounded grace period.
  *  3. Settle (`transcriptHydrationSettled`) — first paint gates on this.
  *  4. OFF the critical path: when older history exists beyond the snapshot
  *     window (`truncated`), page it in the background via the §5.5
@@ -59,6 +57,7 @@ import {
   chatTranscriptSnapshotApplied,
   initializeChatRequested,
   refreshChatTranscriptRequested,
+  transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
@@ -66,8 +65,10 @@ import { selectTranscriptSnapshotMeta } from '../chat-state-selectors';
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
-/** Ceiling for the standing subscription's seq-0 snapshot before the direct-read fallback. */
-const SNAPSHOT_WAIT_MS = 10_000;
+/** Brief hedge that preserves the single-transfer fast path without delaying a missing snapshot. */
+const DIRECT_READ_HEDGE_MS = 50;
+/** Bounded grace for a late snapshot only after the prompt direct read rejects. */
+const SNAPSHOT_RECOVERY_WAIT_MS = 1_000;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
 const MAX_STORE_MESSAGES = 500;
 
@@ -75,10 +76,13 @@ type ChatRequest = { wsId: string; agentId: string };
 type HydrationTails = Map<string, Promise<void>>;
 type HydrateResult = {
   started: boolean;
+  succeeded: boolean;
   fetchOlder: boolean;
   /** Older-walk seek anchor: the authoritative window's oldest row id. */
   anchor?: string;
 };
+type NewestWindowResult =
+  { succeeded: true; fetchOlder: boolean; anchor?: string } | { succeeded: false; error: unknown };
 
 function identitySet(messages: AgentMessage[]): Set<string> {
   const ids = new Set<string>();
@@ -135,10 +139,32 @@ function* fallbackNewestPageRead(
   return { fetchOlder: page.nextToken !== null, anchor: oldestMessageId(page.messages) };
 }
 
+function* tryFallbackNewestPageRead(agentId: string): SagaGenerator<NewestWindowResult> {
+  try {
+    return { succeeded: true, ...(yield* call(fallbackNewestPageRead, agentId)) };
+  } catch (error) {
+    return { succeeded: false, error };
+  }
+}
+
+function snapshotResult(meta: {
+  truncated: boolean;
+  oldestMessageId?: string;
+}): NewestWindowResult {
+  return {
+    succeeded: true,
+    fetchOlder: meta.truncated === true,
+    anchor: meta.oldestMessageId,
+  };
+}
+
 function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<HydrateResult> {
   const { wsId, agentId } = request;
-  if (yield* call(isAgentDeletionPending, agentId)) return { started: false, fetchOlder: false };
+  if (yield* call(isAgentDeletionPending, agentId)) {
+    return { started: false, succeeded: false, fetchOlder: false };
+  }
   let started = false;
+  let succeeded = false;
   let fetchOlder = false;
   let anchor: string | undefined;
   try {
@@ -148,12 +174,16 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       [appClient.agents, appClient.agents.get],
       agentId,
     );
-    if (!session || String(session.workspaceId) !== wsId) return { started, fetchOlder };
+    if (!session || String(session.workspaceId) !== wsId) {
+      return { started, succeeded: true, fetchOlder };
+    }
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
     // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
     // window/client (or before an FE restart) is not in the local registry.
-    if (session.pendingDeleteAt) return { started, fetchOlder };
-    if (yield* call(isAgentDeletionPending, agentId)) return { started, fetchOlder };
+    if (session.pendingDeleteAt) return { started, succeeded: true, fetchOlder };
+    if (yield* call(isAgentDeletionPending, agentId)) {
+      return { started, succeeded: true, fetchOlder };
+    }
 
     // Register/refresh the session shell WITHOUT touching the transcript:
     // the standing subscription's snapshot (applyTranscript) needs a stored
@@ -164,9 +194,8 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
 
-    // SINGLE-TRANSFER WAIT: the standing subscription (opened by the
-    // chat-subscribe saga off the same trigger action) delivers the seq-0
-    // snapshot; its metadata in chat-state doubles as the arrived signal.
+    // HEDGED FIRST WINDOW: briefly prefer the standing subscription's seq-0
+    // snapshot, then race it against a direct newest-page read.
     // The channel is opened BEFORE the state read so a dispatch landing
     // between the two cannot be missed.
     const isSnapshotForAgent = (action: { type: string; payload?: unknown }) =>
@@ -175,22 +204,47 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
       action.payload[0] === agentId;
     const snapshotChannel = yield* actionChannel(isSnapshotForAgent);
     try {
-      let meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-      if (!meta) {
-        const { applied } = yield* race({
-          applied: take(snapshotChannel),
-          timedOut: delay(SNAPSHOT_WAIT_MS),
-        });
-        if (applied) meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
-      }
-      if (meta) {
-        fetchOlder = meta.truncated === true;
-        anchor = meta.oldestMessageId;
+      const meta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+      const visible: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
+      let source: NewestWindowResult | undefined;
+      if (meta && (meta.totalMessages === 0 || visible.length > 0)) {
+        source = snapshotResult(meta);
       } else {
-        // Snapshot never arrived (subscription rejected/looping): direct read
-        // so the panel still settles with the newest page.
-        ({ fetchOlder, anchor } = yield* call(fallbackNewestPageRead, agentId));
+        const early = yield* race({
+          applied: take(snapshotChannel),
+          hedgeElapsed: delay(DIRECT_READ_HEDGE_MS),
+        });
+        if (early.applied) {
+          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+          if (appliedMeta) source = snapshotResult(appliedMeta);
+        }
       }
+      if (!source) {
+        const first = yield* race({
+          applied: take(snapshotChannel),
+          direct: call(tryFallbackNewestPageRead, agentId),
+        });
+        if (first.applied) {
+          const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+          if (appliedMeta) source = snapshotResult(appliedMeta);
+        } else if (first.direct?.succeeded) {
+          source = first.direct;
+        } else {
+          const { applied } = yield* race({
+            applied: take(snapshotChannel),
+            timedOut: delay(SNAPSHOT_RECOVERY_WAIT_MS),
+          });
+          if (applied) {
+            const appliedMeta = yield* selectTranscriptSnapshotMeta.effect(agentId);
+            if (appliedMeta) source = snapshotResult(appliedMeta);
+          }
+          if (!source) throw first.direct?.error ?? new Error('No transcript source succeeded');
+        }
+      }
+      if (!source?.succeeded) throw source?.error ?? new Error('No transcript source succeeded');
+      succeeded = true;
+      fetchOlder = source.fetchOlder;
+      anchor = source.anchor;
     } finally {
       yield* flush(snapshotChannel);
       snapshotChannel.close();
@@ -198,7 +252,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   } catch (error) {
     logger.error('Failed to hydrate chat transcript', error);
   }
-  return { started, fetchOlder, anchor };
+  return { started, succeeded, fetchOlder, anchor };
 }
 
 /**
@@ -318,8 +372,12 @@ function* hydrateChatWorker(
       // Settle FIRST — first paint gates on this; the older-history fetch
       // runs after, still inside the per-agent tail (serialized against a
       // follow-up hydration) and raced against cleanup.
-      yield* put(transcriptHydrationSettled(request.agentId));
-      if (read.fetchOlder) {
+      yield* put(
+        read.succeeded
+          ? transcriptHydrationSettled(request.agentId)
+          : transcriptHydrationFailed(request.agentId),
+      );
+      if (read.succeeded && read.fetchOlder) {
         yield* race({
           fetch: call(fetchOlderHistorySaga, request, read.anchor),
           cleanup: take(matchesChatCleanup(request)),

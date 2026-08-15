@@ -67,20 +67,32 @@ describe('QuestionWizard', () => {
     expect(screen.queryByText('Selecting an option moves to the next question')).toBeNull();
   });
 
-  it('uses a transparent surface with quiet outlined choices and input', () => {
+  it('uses one semantic card with lightweight unboxed choices and an outlined input', () => {
     const { container } = setup([LAST]);
     const wizard = container.querySelector('[data-question-wizard]');
     const options = Array.from(container.querySelectorAll('[data-question-option]'));
     const input = screen.getByPlaceholderText('Or type your own answer…');
 
-    expect(wizard?.className).toContain('bg-transparent');
-    expect(wizard?.className).not.toContain('bg-muted');
+    expect(wizard?.className).toContain('bg-card');
+    expect(wizard?.className).toContain('border-border/70');
+    expect(wizard?.className).toContain('rounded-(--radius-large)');
     expect(options).toHaveLength(2);
-    expect(options.every((option) => option.className.includes('border-input'))).toBe(true);
+    expect(options.every((option) => option.className.includes('border-0'))).toBe(true);
+    expect(options.every((option) => option.className.includes('focus-visible:ring-inset'))).toBe(
+      true,
+    );
     expect(options.every((option) => !option.className.includes('shadow'))).toBe(true);
     expect(container.querySelectorAll('[data-option-indicator]')).toHaveLength(2);
     expect(input.parentElement?.className).toContain('focus-within:border-ring');
     expect(screen.getByRole('heading', { name: LAST.question })).toBeTruthy();
+  });
+
+  it('keeps the action footer compact and symmetrically inset', () => {
+    setup([LAST]);
+    const footer = screen.getByTestId('question-wizard-footer');
+
+    expect(footer.className).toContain('py-3');
+    expect(footer.className).not.toContain('pb-4');
   });
 
   it('single-question wizard hides the counter, progress segments, and Back button', () => {

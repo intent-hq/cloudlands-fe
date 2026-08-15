@@ -78,6 +78,20 @@ vi.mock('electron-updater', () => {
 
 let testUserDataPath: string;
 
+/**
+ * Deterministically drain async work that is already scheduled — promise
+ * continuations, queueMicrotask callbacks (the queued channel-switch recheck
+ * release), and fire-and-forget chains kicked off by an awaited IPC handler —
+ * without a wall-clock wait. Each setImmediate turn runs after the microtasks
+ * and IO callbacks queued before it, so a handful of turns exhausts every
+ * pending continuation regardless of machine load (intent-hq/monorepo#2509).
+ */
+async function drainAsyncWork(turns = 5): Promise<void> {
+  for (let i = 0; i < turns; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 /** Register IPC handlers, initialize the service, and return test seams. */
 async function setup({ initialize = true }: { initialize?: boolean } = {}) {
   const { ipcMain } = await import('electron');
@@ -102,7 +116,23 @@ async function setup({ initialize = true }: { initialize?: boolean } = {}) {
   };
   mockWindows = [mockWindow];
   if (initialize) {
-    await autoUpdateService.initialize();
+    // initialize() arms real-clock timers — the untracked 10s delayed startup
+    // check and the hourly periodic interval — that outlive the test:
+    // cleanup() cannot clear the startup timeout, afterEach's
+    // vi.clearAllTimers() is a no-op on real timers, and vi.resetModules()
+    // does not reset the mock registry, so ALL tests in this file share one
+    // checkForUpdates mock. Under CI load the file outlives 10s and a leaked
+    // startup timer from an earlier test fires mid-later-test, recording a
+    // stray call on the shared mock (intent-hq/monorepo#2509). Arm them on a
+    // scoped fake clock and discard them deterministically instead — no test
+    // exercises those timers.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      await autoUpdateService.initialize();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   }
 
   const checkMock = electronUpdater.autoUpdater.checkForUpdates as unknown as Mock;
@@ -130,6 +160,15 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  // Disarm the finished test's surviving real-clock timers — same leak class
+  // as the startup timer discarded in setup(): most tests end with their
+  // check pending forever, leaving the 30s watchdog (startCheckTimeout)
+  // armed; past 30s of file runtime it would fire on its stale instance and
+  // broadcast a stray error status to the CURRENT test's window via the
+  // shared electron mock. resetModules() runs in beforeEach, so this import
+  // still resolves the instance this test used.
+  const { autoUpdateService } = await import('../auto-update.service');
+  autoUpdateService.cleanup();
   const { __drainLocalPrefsWriteChainForTesting } = await import('../../../../main/local-prefs');
   await __drainLocalPrefsWriteChainForTesting();
   await fs.rm(testUserDataPath, { recursive: true, force: true });
@@ -165,8 +204,9 @@ describe('channel-switch immediate update check', () => {
     const { checkMock } = await setup();
 
     // initialize() re-points the feed via its internal setChannel call; the
-    // only startup check is the intentionally delayed one (10s timer).
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // only startup check is the intentionally delayed one (10s timer, armed
+    // on setup()'s scoped fake clock and discarded there).
+    await drainAsyncWork();
     expect(checkMock).not.toHaveBeenCalled();
   });
 
@@ -376,7 +416,7 @@ describe('channel-switch immediate update check', () => {
     // a handler, so no unhandled rejection reaches the process (vitest
     // fails the test on one).
     rejectDownloadPromise(new Error('cancelled'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await drainAsyncWork();
   });
 
   it("a token from a check that settled as 'downloaded' before its result landed is not re-stored", async () => {
@@ -460,7 +500,7 @@ describe('channel-switch immediate update check', () => {
     expect(result.success).toBe(true);
 
     // No new updater check while the old-feed request is still in flight.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await drainAsyncWork();
     expect(checkMock).not.toHaveBeenCalled();
 
     // The in-flight (old feed) check settles: no manual "up to date" toast for
@@ -484,7 +524,7 @@ describe('channel-switch immediate update check', () => {
       version: '2.0.0',
     });
     // Settled recheck does not re-queue itself.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await drainAsyncWork();
     expect(checkMock).toHaveBeenCalledTimes(1);
   });
 
@@ -560,7 +600,7 @@ describe('channel-switch immediate update check', () => {
     const result = await setChannelHandler({}, { channel: 'beta' });
     expect(result.success).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await drainAsyncWork();
     // No check → no not-initialized fail-fast error polluting GET_STATE...
     expect(checkMock).not.toHaveBeenCalled();
     expect(autoUpdateService.getState().error).toBeNull();

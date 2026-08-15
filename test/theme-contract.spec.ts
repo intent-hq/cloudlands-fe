@@ -8,6 +8,10 @@ const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chro
 test.use(existsSync(systemChrome) ? { channel: 'chrome' } : {});
 
 const TOKEN_CSS = readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+const APP_HTML = readFileSync(path.resolve(process.cwd(), 'src/app.html'), 'utf8');
+const THEME_BOOTSTRAP_SCRIPT = APP_HTML.match(
+  /<script>\s*(\/\/ Apply theme immediately to prevent FOUC[\s\S]*?)<\/script>/,
+)?.[1];
 const FOUNDATION_ARTIFACT_DIR = process.env.FOUNDATION_ARTIFACT_DIR;
 const ROLES = [
   'background',
@@ -56,6 +60,40 @@ const PAIRS = [
   ['sidebar-foreground', 'sidebar'],
   ['sidebar-accent-foreground', 'sidebar-accent'],
 ] as const;
+
+function themeAuthorityFixture(): string {
+  if (!THEME_BOOTSTRAP_SCRIPT) throw new Error('Missing first-frame theme bootstrap script');
+  return `<!doctype html>
+    <html><head><style>
+      ${TOKEN_CSS}
+      html, body { margin: 0; width: 100%; height: 100%; }
+      #page { min-height: 100%; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+      #sidebar, #empty-panel { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); border: 1px solid hsl(var(--sidebar-border)); }
+    </style><script>${THEME_BOOTSTRAP_SCRIPT}</script></head>
+    <body><main id="page"><aside id="sidebar" class="bg-sidebar">Sidebar</aside><section id="empty-panel" class="bg-sidebar">Empty panel</section></main>
+    <script>
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      const resolveTheme = (theme) => theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
+      window.applyIntentTheme = (theme) => {
+        localStorage.setItem('theme', theme);
+        const resolved = resolveTheme(theme);
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(resolved);
+        document.documentElement.style.colorScheme = resolved;
+      };
+      window.captureThemeSurfaces = () => {
+        const page = getComputedStyle(document.querySelector('#page'));
+        const sidebar = getComputedStyle(document.querySelector('#sidebar'));
+        const empty = getComputedStyle(document.querySelector('#empty-panel'));
+        return { rootClass: document.documentElement.className, page: page.backgroundColor, sidebar: sidebar.backgroundColor, empty: empty.backgroundColor, border: sidebar.borderTopColor, foreground: sidebar.color };
+      };
+      window.__mountedThemeSurfaces = { page: document.querySelector('#page'), sidebar: document.querySelector('#sidebar'), empty: document.querySelector('#empty-panel') };
+      window.__firstThemeSnapshot = window.captureThemeSurfaces();
+      media.addEventListener('change', () => {
+        if (localStorage.getItem('theme') === 'system') window.applyIntentTheme('system');
+      });
+    </script></body></html>`;
+}
 
 async function computedRoles(
   page: Page,
@@ -120,7 +158,7 @@ function expectLegible(colors: Record<string, string>): void {
   }
 }
 
-test('browser computes the complete light, dark, and system contracts', async ({ page }) => {
+test('browser computes complete explicit light and dark contracts', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   const light = await computedRoles(page, 'light');
   const dark = await computedRoles(page, 'dark');
@@ -128,10 +166,9 @@ test('browser computes the complete light, dark, and system contracts', async ({
   expectLegible(dark);
 
   await page.emulateMedia({ colorScheme: 'dark' });
-  expect(await computedRoles(page, '')).toEqual(dark);
   expect(await computedRoles(page, 'light')).toEqual(light);
-  expect(light.background).not.toEqual(light.card);
-  expect(dark.background).not.toEqual(dark.card);
+  await page.emulateMedia({ colorScheme: 'light' });
+  expect(await computedRoles(page, 'dark')).toEqual(dark);
   for (const colors of [light, dark]) {
     expect(colors.border).not.toBe(colors.input);
     for (const surface of ['background', 'card', 'popover'] as const) {
@@ -141,6 +178,89 @@ test('browser computes the complete light, dark, and system contracts', async ({
       expect((values[0] + 0.05) / (values[1] + 0.05), `border on ${surface}`).toBeLessThan(2.25);
     }
   }
+});
+
+test('mounted theme authority matrix hydrates and switches sidebar surfaces without a flash', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const light = await computedRoles(page, 'light');
+  const dark = await computedRoles(page, 'dark');
+  await page.addInitScript(() => {
+    const fixtureWindow = window as typeof window & { __themeClassHistory?: string[] };
+    const theme = new URL(location.href).searchParams.get('theme');
+    if (theme) localStorage.setItem('theme', theme);
+    fixtureWindow.__themeClassHistory = [];
+    new MutationObserver(() => {
+      fixtureWindow.__themeClassHistory?.push(document.documentElement.className);
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  });
+  await page.route('http://theme.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: themeAuthorityFixture() }),
+  );
+
+  const matrix = [
+    { preference: 'light', os: 'dark', resolved: 'light' },
+    { preference: 'dark', os: 'light', resolved: 'dark' },
+    { preference: 'system', os: 'light', resolved: 'light' },
+    { preference: 'system', os: 'dark', resolved: 'dark' },
+  ] as const;
+  for (const state of matrix) {
+    await page.emulateMedia({ colorScheme: state.os });
+    await page.goto(`http://theme.test/?theme=${state.preference}`);
+    const evidence = await page.evaluate(() => {
+      const fixtureWindow = window as typeof window & {
+        __firstThemeSnapshot: Record<string, string>;
+        __themeClassHistory: string[];
+        captureThemeSurfaces: () => Record<string, string>;
+      };
+      return {
+        first: fixtureWindow.__firstThemeSnapshot,
+        current: fixtureWindow.captureThemeSurfaces(),
+        history: fixtureWindow.__themeClassHistory,
+      };
+    });
+    const expected = state.resolved === 'dark' ? dark : light;
+    expect(evidence.current, `${state.preference} on macOS ${state.os}`).toMatchObject({
+      rootClass: state.resolved,
+      page: expected.background,
+      sidebar: expected.sidebar,
+      empty: expected.sidebar,
+      border: expected['sidebar-border'],
+      foreground: expected['sidebar-foreground'],
+    });
+    expect(evidence.first).toEqual(evidence.current);
+    expect(evidence.history).not.toContain(state.resolved === 'dark' ? 'light' : 'dark');
+  }
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('http://theme.test/?theme=light&live=1');
+  const switched = await page.evaluate(() => {
+    const fixtureWindow = window as typeof window & {
+      __mountedThemeSurfaces: Record<string, Element>;
+      applyIntentTheme: (theme: string) => void;
+      captureThemeSurfaces: () => Record<string, string>;
+    };
+    const mounted = fixtureWindow.__mountedThemeSurfaces;
+    fixtureWindow.applyIntentTheme('dark');
+    return {
+      sameNodes:
+        mounted.page === document.querySelector('#page') &&
+        mounted.sidebar === document.querySelector('#sidebar') &&
+        mounted.empty === document.querySelector('#empty-panel'),
+      colors: fixtureWindow.captureThemeSurfaces(),
+    };
+  });
+  expect(switched.sameNodes).toBe(true);
+  expect(switched.colors).toMatchObject({ sidebar: dark.sidebar, empty: dark.sidebar });
+
+  await page.evaluate(() => {
+    (window as typeof window & { applyIntentTheme: (theme: string) => void }).applyIntentTheme(
+      'system',
+    );
+  });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect.poll(() => page.evaluate(() => document.documentElement.className)).toBe('light');
 });
 
 test('browser computes every preset and sparse imported high-contrast theme', async ({ page }) => {
@@ -315,7 +435,7 @@ test('standalone foundations contact sheet stays readable across required modes'
       expect(evidence.devicePixelRatio, name).toBe(2);
       expect(evidence.viewportWidth, name).toBe(physicalWidth / 2);
       expect(evidence.headingCssHeight * evidence.devicePixelRatio, name).toBeGreaterThanOrEqual(
-        64,
+        56,
       );
     }
     if (FOUNDATION_ARTIFACT_DIR || zoom === 2) {

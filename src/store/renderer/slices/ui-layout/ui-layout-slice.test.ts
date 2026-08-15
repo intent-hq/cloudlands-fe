@@ -76,6 +76,7 @@ describe('uiLayoutReducer', () => {
     sidebarSide: 'left',
     bottomDock: { ...defaultBottomDockState },
     resizablePanelSizes: {},
+    hydratedResizablePanelSizes: {},
     resizablePanelGroupLayouts: {},
     collapsiblePanelCollapsed: {},
     workspaceSidebarPanelLayout: { ...defaultWorkspaceSidebarPanelLayout },
@@ -245,9 +246,18 @@ describe('uiLayoutReducer', () => {
     it('hydrates and sets resizable panel sizes by storage key', () => {
       const hydrated = uiLayoutReducer(initialState, hydrateResizablePanelSize('panel-width', 42));
       expect(hydrated.resizablePanelSizes['panel-width']).toBe(42);
+      expect(hydrated.hydratedResizablePanelSizes['panel-width']).toBe(true);
 
       const updated = uiLayoutReducer(hydrated, setResizablePanelSize('panel-width', 50));
       expect(updated.resizablePanelSizes['panel-width']).toBe(50);
+      expect(updated.hydratedResizablePanelSizes['panel-width']).toBe(true);
+    });
+
+    it('records completed panel-size hydration when persistence has no value', () => {
+      const hydrated = uiLayoutReducer(initialState, hydrateResizablePanelSize('missing'));
+
+      expect(hydrated.resizablePanelSizes.missing).toBeUndefined();
+      expect(hydrated.hydratedResizablePanelSizes.missing).toBe(true);
     });
 
     it('hydrates and sets resizable panel group layouts by storage key', () => {

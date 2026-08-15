@@ -33,5 +33,8 @@ describe('note editor navigation', () => {
       openInNewAdjacentPanel: true,
       event,
     });
+    expect(
+      config.extensions.find((extension) => extension.name === 'taskItem')?.options.workspaceId,
+    ).toBe('workspace-1');
   });
 });

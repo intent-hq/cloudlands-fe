@@ -11,12 +11,15 @@
 
   let {
     mode = 'contained',
+    direction = 'horizontal',
     sidebarWidth = 360,
     canvasWidth = 800,
     persistedCanvasWidth = 800,
     insetChrome = CONTAINED_PANEL_INLINE_CHROME,
   }: {
     mode?: 'contained' | 'uncontained';
+    /** Root split direction: horizontal columns or a vertical stack. */
+    direction?: 'horizontal' | 'vertical';
     sidebarWidth?: number;
     /** Content width the outer column reserves for the panel canvas. */
     canvasWidth?: number;
@@ -33,7 +36,7 @@
     initializeLayout(LAYOUT_ID, {
       root: {
         type: 'split',
-        direction: 'horizontal',
+        direction,
         sizes: [50, 50],
         children: [
           { type: 'panel', panelId: 'p1' },

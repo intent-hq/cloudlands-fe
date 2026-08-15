@@ -53,7 +53,7 @@
 </script>
 
 <div
-  class="relative flex min-w-0 w-full items-center cursor-pointer overflow-hidden rounded-lg border border-border bg-card px-3 py-2 text-foreground transition-colors"
+  class="relative flex h-11 min-w-0 w-full items-center cursor-pointer overflow-hidden rounded-lg border border-border bg-card px-3 text-foreground transition-colors"
   data-workspace-terminal-dock
   data-sidebar-card-surface
 >

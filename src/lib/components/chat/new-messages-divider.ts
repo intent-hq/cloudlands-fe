@@ -67,3 +67,19 @@ export function dividerVisibleWhenScrolledToBottom(
 ): boolean {
   return scrollHeight - dividerOffsetTop <= viewportHeight;
 }
+
+/**
+ * Turn-boundary placement: when the latched anchor is a turn's LAST rendered
+ * message and another turn follows, the divider renders after the inter-turn
+ * spacer (directly above the next turn) instead of inside the anchor's turn.
+ *
+ * Returns `false` (keep the inline after-the-message placement) for mid-turn
+ * anchors and for the end-of-transcript case (no following turn).
+ */
+export function dividerDefersToTurnBoundary(
+  anchorId: string | null,
+  turnLastRenderedMessageId: string | null | undefined,
+  hasFollowingTurn: boolean,
+): boolean {
+  return anchorId !== null && hasFollowingTurn && anchorId === turnLastRenderedMessageId;
+}

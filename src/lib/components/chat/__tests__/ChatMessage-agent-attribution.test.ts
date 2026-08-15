@@ -5,11 +5,16 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
   SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
 } from '../subscription-disclosure';
+import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
 
 const { dispatchMock, handleLinkMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
@@ -232,6 +237,31 @@ describe('ChatMessage user message text rendering', () => {
 describe('ChatMessage agent-to-agent sender attribution', () => {
   beforeEach(() => {
     dispatchMock.mockClear();
+  });
+
+  it('affirms attributed message hierarchy and density in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const attributed = render(ChatMessage, {
+        props: {
+          message: userMessage({
+            type: 'agent_message',
+            fromAgentId: 'agent-sender-visual',
+            fromAgentName: 'Builder',
+          }),
+        },
+      });
+      const target = attributed.getByTestId('agent-message-attribution');
+      return {
+        container: attributed.container,
+        target,
+        unmount: attributed.unmount,
+        assertCapability: () => {
+          expect(attributed.getByTestId('agent-message-attribution')).toBeTruthy();
+          expect(attributed.getByTestId('user-message-surface').className).toContain('min-w-0');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('renders the attribution header for an agent_message user row', () => {
@@ -476,8 +506,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(body).not.toBeNull();
     expect(body.className).toContain('line-clamp-6');
     expect(body.className).not.toContain('line-clamp-2');
-    expect(surface.className).toContain('bg-card');
-    expect(surface.className).not.toContain('bg-transparent');
+    for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(true);
+    }
+    expect(surface.className).not.toContain(SUBSCRIPTION_CARD_SURFACE_CLASS);
 
     await rerender({
       message: userMessage(),
@@ -488,7 +520,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     expect(body.className).toContain('line-clamp-2');
     expect(body.className).not.toContain('line-clamp-6');
-    expect(surface.className).toContain('bg-card');
+    for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
+      expect(surface.classList.contains(token)).toBe(true);
+    }
 
     await fireEvent.click(text);
 
@@ -527,6 +561,26 @@ describe('ChatMessage hook wake attribution', () => {
       ...(opts.rowMetadata ? { metadata } : {}),
     };
   }
+
+  it('affirms wake disclosure containment in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(ChatMessage, {
+        props: { message: hookWakeMessage({ rowMetadata: true }) },
+      });
+      const target = view.getByTestId('automated-wake-toggle');
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(
+            view.getByTestId('user-message-surface').hasAttribute('data-automated-wake-card'),
+          ).toBe(true);
+          expect(view.getByTestId('automated-wake-header')).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
 
   it('renders a collapsed hook wake card and strips the prefix when expanded', async () => {
     render(ChatMessage, { props: { message: hookWakeMessage({ rowMetadata: true }) } });
@@ -762,9 +816,9 @@ describe('ChatMessage PR-monitor wake attribution', () => {
 
     const header = screen.getByTestId('automated-wake-header');
     expect(header).toBeTruthy();
-    // Workspace repo matches → plain #N chip
+    // Workspace repo unknown → owner/repo #N chip
     const chip = screen.getByTestId('pr-monitor-wake-chip');
-    expect(chip.textContent?.trim()).toBe('#42');
+    expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
     // Label sits flush left next to the PR icon (overrides the Button base justify-center)
     expect(chip.className).toContain('justify-start');
     expect(screen.getByText('woke the agent')).toBeTruthy();
@@ -782,7 +836,7 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(screen.queryByText(/\[PR monitor/)).toBeNull();
   });
 
-  it('prefixes the chip label for a cross-repo PR', () => {
+  it('labels a same-owner, different-repo PR with the repo name only', () => {
     render(ChatMessage, {
       props: {
         message: prMonitorWakeMessage({
@@ -797,9 +851,25 @@ describe('ChatMessage PR-monitor wake attribution', () => {
       },
     });
 
-    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe(
-      'intent-hq/intentd: #42',
-    );
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('intentd #42');
+  });
+
+  it('labels a different-owner PR with owner/repo', () => {
+    render(ChatMessage, {
+      props: {
+        message: prMonitorWakeMessage({
+          rowMetadata: true,
+          metadata: { ...prMonitorWakeMetadata, repo: 'other/lib' },
+        }),
+        workspace: {
+          id: 'ws-1',
+          repositoryOwner: 'intent-hq',
+          repositoryName: 'monorepo',
+        } as any,
+      },
+    });
+
+    expect(screen.getByTestId('pr-monitor-wake-chip').textContent?.trim()).toBe('other/lib #42');
   });
 
   it('opens the PR externally on chip click (metadata url preferred)', async () => {

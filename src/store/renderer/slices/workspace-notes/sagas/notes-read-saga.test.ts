@@ -29,6 +29,14 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function note(id: string, overrides: Partial<Note> = {}): Note {
   return {
     id: NoteId(id),
@@ -91,24 +99,85 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('uses global leading hydration semantics across workspace payload keys', async () => {
-    let resolve!: (notes: Note[]) => void;
-    const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+  it('hydrates distinct mounted workspaces concurrently with workspace-scoped spec selection', async () => {
+    const secondWorkspaceId = 'ws-notes-read-second';
+    const first = deferred<Note[]>();
+    const second = deferred<Note[]>();
+    const firstSpec = note(SPEC_NOTE_ID);
+    const secondSpec = note(SPEC_NOTE_ID, { workspaceId: WorkspaceId(secondWorkspaceId) });
+    const list = vi
+      .spyOn(appClient.notes, 'list')
+      .mockImplementation((workspaceId) => (workspaceId === WS ? first.promise : second.promise));
+    const run = harness();
+
+    run.channel.put(workspaceMounted(WS));
+    run.channel.put(workspaceMounted(secondWorkspaceId));
+    await settle();
+
+    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId]]);
+    second.resolve([secondSpec]);
+    await settle();
+    first.resolve([firstSpec]);
+    await settle();
+    expect(run.actions).toEqual([
+      loadWorkspaceNotesSucceeded([secondWorkspaceId], { [secondWorkspaceId]: [secondSpec] }),
+      selectNote(secondWorkspaceId, SPEC_NOTE_ID),
+      loadWorkspaceNotesSucceeded([WS], { [WS]: [firstSpec] }),
+      selectNote(WS, SPEC_NOTE_ID),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces duplicate mounts for the same workspace while its read is in flight', async () => {
+    const pending = deferred<Note[]>();
+    const list = vi.spyOn(appClient.notes, 'list').mockReturnValue(pending.promise);
     const run = harness();
 
     run.channel.put(workspaceMounted(WS));
     run.channel.put(workspaceMounted(WS));
-    run.channel.put(workspaceMounted('ws-ignored'));
     await settle();
 
     expect(list.mock.calls).toEqual([[WS]]);
-    resolve([]);
+    pending.resolve([]);
     await settle();
     expect(run.actions).toEqual([loadWorkspaceNotesSucceeded([WS], { [WS]: [] })]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('isolates cleanup to one workspace, suppresses its stale result, and permits a retry', async () => {
+    const secondWorkspaceId = 'ws-notes-read-second';
+    const firstAttempt = deferred<Note[]>();
+    const retry = deferred<Note[]>();
+    const second = deferred<Note[]>();
+    let firstWorkspaceCalls = 0;
+    const list = vi.spyOn(appClient.notes, 'list').mockImplementation((workspaceId) => {
+      if (workspaceId === secondWorkspaceId) return second.promise;
+      firstWorkspaceCalls += 1;
+      return firstWorkspaceCalls === 1 ? firstAttempt.promise : retry.promise;
+    });
+    const run = harness();
+
+    run.channel.put(workspaceMounted(WS));
+    run.channel.put(workspaceMounted(secondWorkspaceId));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    run.channel.put(workspaceMounted(WS));
+    await settle();
+
+    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId], [WS]]);
+    second.resolve([note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
+    retry.resolve([note('retry-note')]);
+    firstAttempt.resolve([note('stale-note')]);
+    await settle();
+    expect(run.actions).toEqual([
+      loadWorkspaceNotesSucceeded([secondWorkspaceId], {
+        [secondWorkspaceId]: [note('second-note', { workspaceId: WorkspaceId(secondWorkspaceId) })],
+      }),
+      loadWorkspaceNotesSucceeded([WS], { [WS]: [note('retry-note')] }),
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -183,6 +252,29 @@ describe('notesReadSaga', () => {
     expect(run.actions).toEqual([]);
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('cancels every active workspace hydration and suppresses late results on root shutdown', async () => {
+    const secondWorkspaceId = 'ws-notes-read-second';
+    const first = deferred<Note[]>();
+    const second = deferred<Note[]>();
+    const list = vi
+      .spyOn(appClient.notes, 'list')
+      .mockImplementation((workspaceId) => (workspaceId === WS ? first.promise : second.promise));
+    const run = harness();
+
+    run.channel.put(workspaceMounted(WS));
+    run.channel.put(workspaceMounted(secondWorkspaceId));
+    await settle();
+    expect(list.mock.calls).toEqual([[WS], [secondWorkspaceId]]);
+
+    run.task.cancel();
+    await run.task.toPromise();
+    first.resolve([note('late-first')]);
+    second.resolve([note('late-second', { workspaceId: WorkspaceId(secondWorkspaceId) })]);
+    await settle();
+
+    expect(run.actions).toEqual([]);
   });
 
   it('applies a deleted event without fetching', async () => {

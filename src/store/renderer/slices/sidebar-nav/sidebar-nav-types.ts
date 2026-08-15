@@ -54,6 +54,8 @@ export type SidebarNavState = {
   draftPrompt: string;
   /** Persisted view mode for All Spaces card */
   allSpacesViewMode: AllSpacesViewMode;
+  /** Whether archived workspaces are included in the All Spaces list (persisted) */
+  showArchivedWorkspaces: boolean;
   /** Pinned workspace IDs (persisted to localStorage) */
   pinnedWorkspaceIds: string[];
   /** Global workspace sidebar tab order (persisted) */

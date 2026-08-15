@@ -13,7 +13,7 @@ import { m } from '$shared/paraglide/messages.js';
 export interface HookWakeAttribution {
   /** Hook id (may be empty when the daemon omitted it). */
   hookId: string;
-  /** Display name for the hook (localized fallback, truncated to ~20 chars). */
+  /** Display name for the hook: the trimmed name (or localized fallback), untruncated. */
   displayName: string;
   /**
    * Verbatim hook name from metadata (empty when absent) — untrimmed and
@@ -32,15 +32,11 @@ export interface HookWakeAttribution {
   hookStillActive?: boolean;
 }
 
-const MAX_NAME_LENGTH = 20;
-
 function buildHookWakeAttribution(
   rawName: string,
   fields: { hookId?: unknown; reason?: unknown; hookStillActive?: unknown } = {},
 ): HookWakeAttribution {
-  const name = rawName.trim() || m.chat_hookWakeAttribution_fallbackName_label();
-  const displayName =
-    name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
+  const displayName = rawName.trim() || m.chat_hookWakeAttribution_fallbackName_label();
   const attribution: HookWakeAttribution = {
     hookId: typeof fields.hookId === 'string' ? fields.hookId.trim() : '',
     displayName,

@@ -140,29 +140,31 @@
   }
 </script>
 
-<div class="rounded-(--radius-large) bg-transparent" data-question-wizard>
+<div
+  class="min-w-0 overflow-hidden rounded-(--radius-large) border border-border/70 bg-card shadow-sm"
+  data-question-wizard
+  data-testid="question-wizard-card"
+>
   {#if collapsed}
     <!-- Hide-collapsed banner: click to re-expand; Dismiss is a sibling
          button (not nested — invalid HTML) that opens the confirm dialog. -->
-    <div
-      class="flex w-full items-center rounded-(--radius-medium) border border-border bg-transparent"
-    >
+    <div class="flex min-w-0 w-full items-center">
       <button
         type="button"
-        class="flex flex-1 items-center gap-2 px-3 py-2 cursor-pointer rounded-l-(--radius-medium) bg-transparent border-none text-left font-[inherit] hover:bg-accent"
+        class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent px-3 py-2.5 text-left font-[inherit] cursor-pointer hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4"
         onclick={() => onToggleCollapsed?.(false)}
       >
         <span class="type-caption font-medium text-foreground">{m.chat_questionWizard_title()}</span
         >
         <span class="type-caption text-subtle">{questions.length}</span>
-        <span class="ml-auto type-caption text-subtle"
+        <span class="ml-auto min-w-0 truncate type-caption text-subtle"
           >{m.chat_questionWizard_clickToExpand_label()}</span
         >
       </button>
       {#if onDismiss}
         <button
           type="button"
-          class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-3 py-2 rounded-r-(--radius-medium) hover:bg-destructive"
+          class="shrink-0 border-none bg-transparent px-3 py-2.5 type-caption text-destructive-foreground cursor-pointer font-[inherit] hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           title={m.chat_questionWizard_dismiss_tooltip()}
           onclick={() => (confirmingDismiss = true)}
         >
@@ -171,7 +173,7 @@
       {/if}
     </div>
   {:else}
-    <div class="flex min-h-7 items-center px-4 pt-3">
+    <div class="flex min-h-7 items-center px-3 pt-3 sm:px-4">
       {#if multiStep}
         <span class="type-caption text-subtle"
           >{m.chat_questionWizard_stepCounter_label({
@@ -183,7 +185,7 @@
       <span class="ml-auto flex items-center gap-1">
         <button
           type="button"
-          class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:text-foreground"
+          class="border-none bg-transparent type-caption text-subtle cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={m.chat_questionWizard_hide_tooltip()}
           onclick={() => onToggleCollapsed?.(true)}
         >
@@ -192,7 +194,7 @@
         {#if onDismiss}
           <button
             type="button"
-            class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-destructive"
+            class="border-none bg-transparent type-caption text-destructive-foreground cursor-pointer font-[inherit] px-1.5 py-1 rounded-(--radius-small) hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title={m.chat_questionWizard_dismiss_tooltip()}
             onclick={() => (confirmingDismiss = true)}
           >
@@ -204,13 +206,13 @@
 
     {#key idx}
       <div in:fade={{ duration: stepDuration }}>
-        <div class="flex flex-col gap-4 px-4 pt-3 pb-3">
+        <div class="flex flex-col gap-4 px-3 pt-3 pb-3 sm:px-4">
           <div class="flex flex-col gap-1">
             <p class="type-caption text-subtle">{current.header}</p>
             <h2 class="type-title font-medium text-foreground">{current.question}</h2>
           </div>
 
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col divide-y divide-border/40">
             {#each current.options as option, oi (oi)}
               {@const selected = draft.sel.includes(oi)}
               <button
@@ -219,11 +221,11 @@
                 disabled={optionsLocked}
                 data-question-option
                 data-selected={selected}
-                class="flex items-start gap-3 rounded-(--radius-medium) border px-3 py-2.5 text-left font-[inherit] transition-colors {selected
-                  ? 'border-ring bg-accent cursor-pointer'
+                class="flex min-w-0 w-full items-start gap-2.5 border-0 bg-transparent px-2 py-2.5 text-left font-[inherit] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {selected
+                  ? 'bg-accent cursor-pointer'
                   : optionsLocked
-                    ? 'border-input bg-transparent opacity-50 cursor-default'
-                    : 'border-input bg-transparent cursor-pointer hover:border-ring hover:bg-accent/50'}"
+                    ? 'opacity-50 cursor-default'
+                    : 'cursor-pointer hover:bg-accent/50 active:bg-accent'}"
                 onclick={() => selectOption(oi)}
               >
                 <span
@@ -276,7 +278,7 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-2 px-4 pb-4">
+        <div class="flex items-center gap-2 px-3 py-3 sm:px-4" data-testid="question-wizard-footer">
           {#if multiStep}
             <button
               type="button"

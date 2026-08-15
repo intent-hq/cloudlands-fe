@@ -1,17 +1,19 @@
-import type { QueuedMessage } from "$shared/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import type { QueuedMessage } from '$shared/types';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
+  addItem,
   createCollection,
   getItem,
   getItems,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { AgentQueueEntryState, AgentQueueState } from "./agent-queue-types";
+  replaceItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { AgentQueueEntryState, AgentQueueState } from './agent-queue-types';
 
 const RECENTLY_REMOVED_MESSAGE_ID_LIMIT = 100;
 
 const createEmptyAgentQueueEntry = (): AgentQueueEntryState => ({
-  messages: createCollection<QueuedMessage, "id">("id"),
+  messages: createCollection<QueuedMessage, 'id'>('id'),
   recentlyRemovedMessageIds: [],
   isHydrating: false,
   error: null,
@@ -22,39 +24,38 @@ export const initialState: AgentQueueState = {
 };
 
 export const hydrateAgentQueueRequested = createAction<[agentId: string]>(
-  "agentQueue/hydrateRequested",
+  'agentQueue/hydrateRequested',
 );
 
-export const replaceAgentQueue = createAction<[agentId: string, messages: QueuedMessage[]]>(
-  "agentQueue/replaceQueue",
-);
+export const replaceAgentQueue =
+  createAction<[agentId: string, messages: QueuedMessage[]]>('agentQueue/replaceQueue');
 
-export const removeQueuedMessageFromAgentQueue = createAction<[
-  agentId: string,
-  messageId: string,
-]>("agentQueue/removeQueuedMessage");
+/** Fold one daemon-persisted mutation result into the queue without changing stable order. */
+export const upsertQueuedMessageInAgentQueue = createAction<
+  [agentId: string, message: QueuedMessage]
+>('agentQueue/upsertQueuedMessage');
+
+export const removeQueuedMessageFromAgentQueue = createAction<[agentId: string, messageId: string]>(
+  'agentQueue/removeQueuedMessage',
+);
 
 /** Saga trigger: optimistically remove a queued message and ask the backend to remove it. */
-export const removeQueuedMessageRequested = createAction<[
-  agentId: string,
-  messageId: string,
-]>("agentQueue/removeRequested");
+export const removeQueuedMessageRequested = createAction<[agentId: string, messageId: string]>(
+  'agentQueue/removeRequested',
+);
 
 /** Un-mark a recently-removed ID so a later hydration can bring the message back. */
-export const restoreRecentlyRemovedMessageId = createAction<[
-  agentId: string,
-  messageId: string,
-]>("agentQueue/restoreRecentlyRemovedMessageId");
-
-export const clearAgentQueue = createAction<[agentId: string]>("agentQueue/clearQueue");
-
-export const setAgentQueueHydrating = createAction<[agentId: string, isHydrating: boolean]>(
-  "agentQueue/setHydrating",
+export const restoreRecentlyRemovedMessageId = createAction<[agentId: string, messageId: string]>(
+  'agentQueue/restoreRecentlyRemovedMessageId',
 );
 
-export const setAgentQueueError = createAction<[agentId: string, error: string | null]>(
-  "agentQueue/setError",
-);
+export const clearAgentQueue = createAction<[agentId: string]>('agentQueue/clearQueue');
+
+export const setAgentQueueHydrating =
+  createAction<[agentId: string, isHydrating: boolean]>('agentQueue/setHydrating');
+
+export const setAgentQueueError =
+  createAction<[agentId: string, error: string | null]>('agentQueue/setError');
 
 function setAgentQueueEntry(
   state: AgentQueueState,
@@ -84,9 +85,7 @@ function suppressRecentlyRemovedMessages(
   recentlyRemovedMessageIds: string[],
 ): QueuedMessage[] {
   if (recentlyRemovedMessageIds.length === 0) return messages;
-  const filtered = messages.filter(
-    (message) => !recentlyRemovedMessageIds.includes(message.id),
-  );
+  const filtered = messages.filter((message) => !recentlyRemovedMessageIds.includes(message.id));
   return filtered.length === messages.length
     ? messages
     : filtered.map((message, position) => ({ ...message, position }));
@@ -115,6 +114,23 @@ agentQueueReducer.with(replaceAgentQueue, (state, { payload: [agentId, messages]
     error: null,
   });
 });
+agentQueueReducer.with(
+  upsertQueuedMessageInAgentQueue,
+  (state, { payload: [agentId, message] }) => {
+    const current = state.byAgentId[agentId] ?? createEmptyAgentQueueEntry();
+    const recentlyRemovedMessageIds = current.recentlyRemovedMessageIds ?? [];
+    if (recentlyRemovedMessageIds.includes(message.id)) return state;
+    const existing = getItem(current.messages, message.id);
+    const messages = existing
+      ? replaceItem(current.messages, message.id, message)
+      : addItem(current.messages, message);
+    return setAgentQueueEntry(state, agentId, {
+      ...current,
+      messages,
+      recentlyRemovedMessageIds,
+    });
+  },
+);
 agentQueueReducer.with(
   removeQueuedMessageFromAgentQueue,
   (state, { payload: [agentId, messageId] }) => {

@@ -81,6 +81,17 @@
      * `ChatChangesPanel`; single-diff callsites leave this unset.
      */
     virtualizer?: import('@pierre/diffs').Virtualizer;
+    /**
+     * Secondary git root scoping the committed-content fetches (multi git
+     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     */
+    gitRootId?: string;
+    /**
+     * The secondary root's canonical path. When set, absolute file paths are
+     * resolved relative to it instead of the workspace worktree so daemon
+     * reads scoped by `gitRootId` receive root-relative paths.
+     */
+    gitRootPath?: string;
   }
 
   let {
@@ -104,6 +115,8 @@
     annotations = [],
     renderAnnotation,
     virtualizer,
+    gitRootId = undefined,
+    gitRootPath = undefined,
   }: Props = $props();
 
   // Unique instance ID for debugging
@@ -169,7 +182,11 @@
 
   // Get workspace info
   const workspace = $derived($activeWorkspace);
-  const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
+  // When a secondary git root scopes this diff (v6.15), its path is the base
+  // for absolute↔relative path resolution instead of the workspace worktree.
+  const workspacePath = $derived(
+    gitRootPath || workspace?.worktreePath || workspace?.repositoryPath || '',
+  );
 
   // File info
   const fileName = $derived(change?.relativePath || change?.file || 'file');
@@ -448,6 +465,7 @@
         const chunks = await appClient.git.diffs(wsIdForCommit, {
           commitHash: change.commitHash,
           path: filePath,
+          ...(gitRootId ? { gitRootId } : {}),
         });
         const chunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
         if (chunk && chunk.chunks.length > 0) {

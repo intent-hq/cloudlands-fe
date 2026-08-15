@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getPanelFlexValue, getPanelReferenceSize, resizeAdjacentPanels } from '../panel-resize';
+import {
+  getElementContentBoxSize,
+  getPanelFlexValue,
+  getPanelReferenceSize,
+  resizeAdjacentPanels,
+} from '../panel-resize';
 
 describe('resizeAdjacentPanels', () => {
   it('resizes the two panels adjacent to a gutter without changing the total', () => {
@@ -27,6 +32,30 @@ describe('getPanelReferenceSize', () => {
 
   it('never returns a non-positive reference size', () => {
     expect(getPanelReferenceSize(8, 16)).toBe(1);
+  });
+});
+
+describe('getElementContentBoxSize', () => {
+  function makeElement(clientWidth: number, clientHeight: number, padding: string): HTMLElement {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'clientWidth', { value: clientWidth });
+    Object.defineProperty(element, 'clientHeight', { value: clientHeight });
+    element.style.padding = padding;
+    return element;
+  }
+
+  it('excludes padding from the measured axis (the padded inset viewport)', () => {
+    const element = makeElement(800, 384, '8px');
+
+    expect(getElementContentBoxSize(element, 'horizontal')).toBe(784);
+    expect(getElementContentBoxSize(element, 'vertical')).toBe(368);
+  });
+
+  it('returns the client size unchanged for unpadded elements', () => {
+    const element = makeElement(800, 384, '0px');
+
+    expect(getElementContentBoxSize(element, 'horizontal')).toBe(800);
+    expect(getElementContentBoxSize(element, 'vertical')).toBe(384);
   });
 });
 

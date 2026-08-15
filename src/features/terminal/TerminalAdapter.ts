@@ -99,6 +99,8 @@ export class TerminalAdapter {
   private resizeObserver: ResizeObserver | null = null;
   private visibilityObserver: IntersectionObserver | null = null;
   private wasVisible: boolean = true;
+  private isVisible: boolean = true;
+  private lastFittedSize: { width: number; height: number } | null = null;
   private resizeDebounceTimer: NodeJS.Timeout | null = null;
   private bufferSaveTimer: NodeJS.Timeout | null = null;
   private dataDisposable: IDisposable | null = null;
@@ -306,16 +308,10 @@ export class TerminalAdapter {
       this.themeManager.applyTheme(this.xterm);
 
       // Ensure container has dimensions before fitting
-      const containerRect = container.getBoundingClientRect();
-
-      if (containerRect.width > 0 && containerRect.height > 0) {
-        // Fit to container
-        this.fitAddon.fit();
-      } else {
+      if (!this.fitTerminalToContainer()) {
         logger.warn('Container has no dimensions, delaying fit');
-        // Try fitting after a delay
         setTimeout(() => {
-          this.fitAddon.fit();
+          this.fitTerminalToContainer();
         }, 100);
       }
 
@@ -398,7 +394,7 @@ export class TerminalAdapter {
 
       // Focus the terminal after initialization - use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => {
-        if (!this.isDisposed) {
+        if (!this.isDisposed && this.isVisible) {
           this.xterm.focus();
         }
       });
@@ -672,7 +668,7 @@ export class TerminalAdapter {
    * Setup resize observer with debouncing
    */
   private setupResizeObserver(): void {
-    if (!this.container) {
+    if (!this.container || !this.isVisible) {
       return;
     }
 
@@ -697,9 +693,7 @@ export class TerminalAdapter {
       }
 
       this.resizeDebounceTimer = setTimeout(() => {
-        if (!this.isDisposed && this.stateMachine?.canAcceptInput()) {
-          this.fitAddon.fit();
-        }
+        this.fitTerminalToContainer();
       }, 100);
     });
 
@@ -744,18 +738,14 @@ export class TerminalAdapter {
                 clearTimeout(this.resizeDebounceTimer);
               }
               this.resizeDebounceTimer = setTimeout(() => {
-                if (!this.isDisposed && this.stateMachine?.canAcceptInput()) {
-                  this.fitAddon.fit();
-                }
+                this.fitTerminalToContainer();
               }, 100);
             });
             this.resizeObserver.observe(container);
           }
 
           // Fit immediately to sync PTY dimensions
-          if (!this.isDisposed && this.stateMachine?.canAcceptInput()) {
-            this.fitAddon.fit();
-          }
+          this.fitTerminalToContainer();
         }
 
         this.wasVisible = isVisible;
@@ -1257,7 +1247,7 @@ export class TerminalAdapter {
    * Focus the terminal
    */
   focus(): void {
-    if (!this.isDisposed) {
+    if (!this.isDisposed && this.isVisible) {
       this.xterm.focus();
     }
   }
@@ -1268,6 +1258,40 @@ export class TerminalAdapter {
   blur(): void {
     if (!this.isDisposed) {
       this.xterm.blur();
+    }
+  }
+
+  setVisible(visible: boolean): void {
+    if (this.isDisposed || this.isVisible === visible) return;
+    this.isVisible = visible;
+    this.wasVisible = visible;
+    if (!visible) {
+      this.xterm.blur();
+      this.disconnectLayoutObservers();
+      return;
+    }
+    this.setupResizeObserver();
+    requestAnimationFrame(() => this.fitTerminalToContainer());
+  }
+
+  private fitTerminalToContainer(): boolean {
+    if (this.isDisposed || !this.isVisible || !this.container) return false;
+    const { width, height } = this.container.getBoundingClientRect();
+    if (width <= 0 || height <= 0) return false;
+    if (this.lastFittedSize?.width === width && this.lastFittedSize.height === height) return true;
+    this.fitAddon.fit();
+    this.lastFittedSize = { width, height };
+    return true;
+  }
+
+  private disconnectLayoutObservers(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.visibilityObserver?.disconnect();
+    this.visibilityObserver = null;
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
     }
   }
 
@@ -1380,7 +1404,7 @@ export class TerminalAdapter {
 
       // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => {
-        if (!this.isDisposed) {
+        if (!this.isDisposed && this.isVisible) {
           this.xterm.focus();
         }
       });
@@ -1449,7 +1473,7 @@ export class TerminalAdapter {
 
     // Focus the terminal - use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
-      if (!this.isDisposed) {
+      if (!this.isDisposed && this.isVisible) {
         this.xterm.focus();
       }
     });

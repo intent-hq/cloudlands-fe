@@ -12,6 +12,7 @@ import {
   getHorizontalPanelColumnDefaultWidthTiers,
   getHorizontalPanelColumnDefaultWidths,
 } from './panel-layout-tabless';
+import { panelTabsAreEquivalent } from './panel-tab-identity';
 import type { PanelDefaultWidthTier } from '../../../../shared/panel-layout-sizing';
 import type {
   WorkspacePanelLayoutState,
@@ -37,6 +38,62 @@ export const selectPanelLayoutWorkspace = store.createSelector<
   [wsId: string],
   WorkspacePanelLayoutState
 >((state, wsId) => state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState);
+
+export const selectPendingPanelReveal = store.createSelector((state, wsId: string) => {
+  const workspace = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  return workspace.pendingPanelReveal ?? null;
+});
+
+export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((state) =>
+  Object.fromEntries(
+    Object.entries(state.panelLayout.byWorkspaceId).flatMap(([workspaceId, layout]) =>
+      layout.pendingPanelReveal ? [[workspaceId, layout.pendingPanelReveal]] : [],
+    ),
+  ),
+);
+
+export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
+  Partial<Omit<PanelTab, 'id' | 'type'>>;
+
+export interface PanelTabOpenState {
+  count: number;
+  isOpen: boolean;
+  isActive: boolean;
+  isOpenElsewhere: boolean;
+}
+
+const closedPanelTabState: PanelTabOpenState = {
+  count: 0,
+  isOpen: false,
+  isActive: false,
+  isOpenElsewhere: false,
+};
+
+export function getPanelTabOpenState(
+  tabs: PanelTab[],
+  activeTab: PanelTab | null | undefined,
+  workspaceId: string,
+  requested: PanelTabIdentityRequest,
+): PanelTabOpenState {
+  if (requested.workspaceId && requested.workspaceId !== workspaceId) return closedPanelTabState;
+  const identity = requested as Omit<PanelTab, 'id'>;
+  const matches = tabs.filter(
+    (tab) =>
+      (!tab.workspaceId || tab.workspaceId === workspaceId) &&
+      panelTabsAreEquivalent(tab, identity),
+  );
+  if (matches.length === 0) return closedPanelTabState;
+  const isActive =
+    !!activeTab &&
+    (!activeTab.workspaceId || activeTab.workspaceId === workspaceId) &&
+    panelTabsAreEquivalent(activeTab, identity);
+  return {
+    count: matches.length,
+    isOpen: true,
+    isActive,
+    isOpenElsewhere: !isActive,
+  };
+}
 
 // ============================================================================
 // Layout Tree

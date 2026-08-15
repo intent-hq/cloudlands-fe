@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -122,6 +126,23 @@ describe('WorkspaceTabStrip', () => {
         disconnect() {}
       },
     );
+  });
+
+  it('affirms tab status and full-surface activation in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(WorkspaceTabStrip);
+      const target = view.getByRole('tab', { name: /Alpha/ });
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          expect(target.querySelector('[data-workspace-tab-status="running"]')).toBeTruthy();
+          expect(target.className).toContain('h-full w-full');
+          expect(target.querySelector('[data-workspace-tab-close-space]')).toBeTruthy();
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
   });
 
   it('renders persisted inactive tabs while their workspace metadata loads', () => {
@@ -484,6 +505,8 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     const alphaContainer = document.querySelector('[data-workspace-tab="ws-1"]')!;
     const gammaContainer = document.querySelector('[data-workspace-tab="ws-3"]')!;
+    expect(alphaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-1');
+    expect(gammaContainer.parentElement?.getAttribute('data-workspace-tab-motion')).toBe('ws-3');
     const dataTransfer = {
       effectAllowed: 'none',
       dropEffect: 'none',

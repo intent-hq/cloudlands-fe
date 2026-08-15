@@ -7,6 +7,26 @@ export function getPanelReferenceSize(availableSize: number, totalGutterSize: nu
   return Math.max(1, availableSize - totalGutterSize);
 }
 
+/**
+ * Content-box size of an element along an axis. clientWidth/clientHeight
+ * include padding, but split children are laid out inside the content box —
+ * e.g. the padded panel-workspace-inset viewport would otherwise oversize a
+ * root vertical stack and push the bottom panel past the visible edge.
+ */
+export function getElementContentBoxSize(
+  element: HTMLElement,
+  axis: 'horizontal' | 'vertical',
+): number {
+  const style = getComputedStyle(element);
+  return axis === 'horizontal'
+    ? element.clientWidth -
+        (Number.parseFloat(style.paddingLeft) || 0) -
+        (Number.parseFloat(style.paddingRight) || 0)
+    : element.clientHeight -
+        (Number.parseFloat(style.paddingTop) || 0) -
+        (Number.parseFloat(style.paddingBottom) || 0);
+}
+
 export function getPanelFlexValue(
   sizePercent: number,
   panelReferenceSize: number | null,

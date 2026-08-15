@@ -1,14 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * MonitoredPrsRow rendering (PROTOCOL §6.9): "Monitored PRs:" chip row for
- * the active agent's ACTIVE monitors, cross-repo label prefixing, hover-card
- * last-refresh details, and the click action menu (check and flush / open in
- * app / open in external browser / cancel) dispatch wiring.
+ * MonitoredPrsRow rendering (PROTOCOL §6.9): inline disclosure rows for the
+ * active agent's ACTIVE monitors, summary labels (repo shown as `repo #N`
+ * same-owner, `owner/repo #N` cross-owner or unknown workspace repo),
+ * expandable last-refresh details, and the kebab action menu (check and
+ * flush / open in app / open in external browser / cancel) dispatch wiring.
  */
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import { resetAgentSubscriptionsViewStateForTests } from '../agent-subscriptions-view-state';
 
 const { dispatchMock, monitorsState, workspaceState, handleLinkMock, openInBrowserPanelMock } =
   vi.hoisted(() => ({
@@ -63,6 +65,50 @@ import {
   flushPrMonitorRequested,
 } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
 
+const originalInnerWidth = window.innerWidth;
+const originalDevicePixelRatio = window.devicePixelRatio;
+
+function setViewport(width: number, devicePixelRatio = 1) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  Object.defineProperty(window, 'devicePixelRatio', {
+    configurable: true,
+    value: devicePixelRatio,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
+async function openMenu() {
+  await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
+  const menu = await waitFor(() => screen.getByTestId('monitored-pr-menu'));
+  const content = menu.closest<HTMLElement>('[data-slot="menu-content"]');
+  if (!content) throw new Error('Expected the monitored PR menu to render inside menu content');
+  return { menu, content };
+}
+
+function measureRenderedMenu(menu: HTMLElement) {
+  const viewportPadding = Number(menu.dataset.viewportPadding);
+  // JSDOM keeps a fixed CSS layout viewport when innerWidth changes. Resolve
+  // the production calc(100vw - 24px) against this test's rendered viewport.
+  menu.style.maxWidth = `${window.innerWidth - viewportPadding * 2}px`;
+  const style = getComputedStyle(menu);
+  const preferredWidth = Number.parseFloat(style.width);
+  const width = Math.min(preferredWidth, window.innerWidth - viewportPadding * 2);
+  const right = window.innerWidth - viewportPadding;
+  const rect = {
+    x: right - width,
+    y: 0,
+    left: right - width,
+    right,
+    top: 0,
+    bottom: 0,
+    width,
+    height: 0,
+    toJSON: () => ({}),
+  } as DOMRect;
+  menu.getBoundingClientRect = () => rect;
+  return menu.getBoundingClientRect();
+}
+
 function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   return {
     monitorId: 'mon-1',
@@ -100,39 +146,78 @@ function makeMonitor(overrides: Partial<PrMonitorRow> = {}): PrMonitorRow {
   };
 }
 
-async function openHoverCard() {
-  const trigger = document.querySelector('[data-tooltip-trigger]') as HTMLElement;
-  expect(trigger).toBeTruthy();
-  await fireEvent.pointerMove(trigger);
-  return waitFor(() => screen.getByTestId('monitored-pr-hover-card'));
+async function openDetails() {
+  await fireEvent.click(screen.getByTestId('monitored-pr-summary'));
+  return screen.getByTestId('monitored-pr-details');
 }
 
 describe('MonitoredPrsRow', () => {
+  const defaultWorkspace = workspaceState.workspace;
+
   afterEach(() => {
     cleanup();
+    setViewport(originalInnerWidth, originalDevicePixelRatio);
     dispatchMock.mockClear();
     handleLinkMock.mockClear();
     openInBrowserPanelMock.mockClear();
+    resetAgentSubscriptionsViewStateForTests();
+    workspaceState.workspace = defaultWorkspace;
   });
 
-  it('renders the "Monitored PRs:" label and a chip per active monitor', () => {
+  it('renders a normalized inline disclosure row per active monitor', () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    expect(screen.getByTestId('monitored-prs-row')).toBeTruthy();
-    expect(screen.getByText('Monitored PRs:')).toBeTruthy();
-    const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('#42');
-    // Same-repo chip carries no org/repo prefix
-    expect(chip.textContent).not.toContain('acme/widgets');
+    const summary = screen.getByTestId('monitored-pr-summary');
+    const line = summary.closest('[data-monitor-state]')?.firstElementChild;
+    expect(summary.textContent).toContain('Fix widget rendering');
+    // Same-owner label shows the repo name without the owner
+    expect(summary.textContent).toContain('widgets #42');
+    expect(summary.textContent).not.toContain('acme/');
+    expect(line?.className).toContain('min-h-9');
+    expect(line?.className).toContain('gap-2');
+    expect(line?.className).toContain('px-3');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy();
+    expect(screen.getByTestId('monitored-pr-summary')).toBeTruthy();
     expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('starts collapsed and supports summary and chevron expand/collapse transitions', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+    const summary = screen.getByTestId('monitored-pr-summary');
+    const disclosure = screen.getByTestId('monitored-pr-disclosure');
+
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('monitored-pr-details')).toBeNull();
+    await fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('monitored-pr-details')).toBeTruthy();
+    await fireEvent.click(disclosure);
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('monitored-pr-details')).toBeNull();
+  });
+
+  it('persists expanded PR details across remounts in the session', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    const first = render(MonitoredPrsRow, {
+      props: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    });
+    await fireEvent.click(screen.getByTestId('monitored-pr-summary'));
+    expect(screen.getByTestId('monitored-pr-details')).toBeTruthy();
+    first.unmount();
+
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('monitored-pr-summary').getAttribute('aria-expanded')).toBe('true'),
+    );
+    expect(screen.getByTestId('monitored-pr-details')).toBeTruthy();
   });
 
   it('renders nothing when the agent has only completed monitors', () => {
@@ -147,22 +232,65 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('#1182');
-    expect(chip.textContent).not.toContain('1,182');
+    const summary = screen.getByTestId('monitored-pr-summary');
+    expect(summary.textContent).toContain('widgets #1182');
+    expect(summary.textContent).not.toContain('1,182');
   });
 
-  it('prefixes the chip label with org/repo only for cross-repo monitors', () => {
+  it('labels a same-owner, different-repo monitor with the repo name only', () => {
+    monitorsState.monitors = [
+      makeMonitor({ repo: 'acme/lib', url: 'https://github.com/acme/lib/pull/42' }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const summary = screen.getByTestId('monitored-pr-summary');
+    expect(summary.textContent).toContain('lib #42');
+    expect(summary.textContent).not.toContain('acme/');
+  });
+
+  it('labels a different-owner monitor with owner/repo', () => {
     monitorsState.monitors = [
       makeMonitor({ repo: 'other/lib', url: 'https://github.com/other/lib/pull/42' }),
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const chip = screen.getByTestId('monitored-pr-chip');
-    expect(chip.textContent).toContain('other/lib: #42');
+    expect(screen.getByTestId('monitored-pr-summary').textContent).toContain(
+      'Monitoring PR other/lib #42: Fix widget rendering',
+    );
   });
 
-  it('hover card shows title, state, checks/reviews/threads, mergeable, and pending status', async () => {
+  it('labels with owner/repo when the workspace owner/repo is unknown', () => {
+    workspaceState.workspace = { id: 'ws-1' } as unknown;
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    expect(screen.getByTestId('monitored-pr-summary').textContent).toContain('acme/widgets #42');
+  });
+
+  it('caps the restored disclosure summary so long labels ellipsize, not overflow', () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        repo: 'intent-hq/cloudlands-releases',
+        prNumber: 1248,
+        url: 'https://github.com/intent-hq/cloudlands-releases/pull/1248',
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const row = screen.getByTestId('monitored-prs-row');
+    const summary = screen.getByTestId('monitored-pr-summary');
+    const label = summary.querySelector('.truncate') as HTMLElement;
+    expect(row.className).toContain('min-w-0');
+    expect(row.className).toContain('max-w-full');
+    expect(summary.className).toContain('min-w-0');
+    expect(summary.className).toContain('max-w-full');
+    expect(summary.className).toContain('overflow-hidden');
+    expect(label).toBeTruthy();
+    expect(label.className).toContain('min-w-0');
+    expect(label.className).toContain('flex-1');
+  });
+
+  it('inline details lead with human readiness and useful blocking facts', async () => {
     monitorsState.monitors = [
       makeMonitor({
         hasPendingChanges: true,
@@ -172,19 +300,22 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const card = await openHoverCard();
-    expect(card.textContent).toContain('Fix widget rendering');
-    expect(card.textContent).toContain('open');
+    const card = await openDetails();
+    expect(screen.getByTestId('monitored-pr-summary').textContent).toContain(
+      'Fix widget rendering',
+    );
+    expect(card.textContent).toContain('Open, but blocked by required checks still running.');
     expect(card.textContent).toContain('1 of 4 checks are still running.');
     expect(card.textContent).toContain('0 of 1 required approvals received.');
     expect(card.textContent).toContain('2 unresolved threads');
-    expect(card.textContent).toContain('Mergeable');
+    expect(card.textContent).not.toContain('Mergeable');
+    expect(card.textContent).not.toContain('REVIEW_REQUIRED');
     expect(screen.getByTestId('monitored-pr-pending').textContent).toContain(
       '2 changes pending emit',
     );
   });
 
-  it('hover card stacks one fact per line without dot separators', async () => {
+  it('inline details stack one fact per line without dot separators', async () => {
     monitorsState.monitors = [
       makeMonitor({
         hasPendingChanges: true,
@@ -194,41 +325,34 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const card = await openHoverCard();
+    const card = await openDetails();
     // Facts live in a flex-col block, one <span> per line — no inline
     // "·" separators that wrap mid-phrase.
     expect(card.textContent).not.toContain('·');
-    const facts = card.querySelector('.flex.flex-col.text-subtle') as HTMLElement;
-    expect(facts).toBeTruthy();
-    const lines = Array.from(facts.querySelectorAll(':scope > span')).map(
+    const lines = Array.from(card.querySelectorAll(':scope > span')).map(
       (line) => line.textContent,
     );
     expect(lines).toEqual([
-      'acme/widgets#42',
       '1 of 4 checks are still running.',
       '0 of 1 required approvals received.',
       '2 unresolved threads',
-      'Mergeable',
       expect.stringContaining('Last change'),
       '1 change pending emit',
     ]);
   });
 
-  it('hover card renders no pending line at all when nothing is pending', async () => {
+  it('inline details render no pending line at all when nothing is pending', async () => {
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const card = await openHoverCard();
+    const card = await openDetails();
     expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
     expect(card.textContent).not.toContain('No changes pending');
 
-    const tooltipContent = document.querySelector('[data-tooltip-content]') as HTMLElement;
-    expect(tooltipContent).toBeTruthy();
-    expect(tooltipContent.className).toContain('whitespace-normal');
-    expect(tooltipContent.className).not.toContain('whitespace-pre-wrap');
+    expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });
 
-  it('hover card prefers the merge-blocked reason over the mergeable line', async () => {
+  it('inline details prefer the merge-blocked reason over the mergeable line', async () => {
     monitorsState.monitors = [
       makeMonitor({
         lastSnapshot: {
@@ -240,9 +364,26 @@ describe('MonitoredPrsRow', () => {
     ];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const card = await openHoverCard();
-    expect(card.textContent).toContain('Merge blocked: required checks failing');
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open, but blocked by required checks failing.');
     expect(card.textContent).not.toContain('Not mergeable');
+  });
+
+  it('uses the custom kebab before the disclosure and keeps their actions isolated', async () => {
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const kebab = screen.getByTestId('monitored-pr-chip');
+    const disclosure = screen.getByTestId('monitored-pr-disclosure');
+    expect(kebab.querySelector('svg')?.getAttribute('data-icon')).toBeNull();
+    expect(
+      kebab.compareDocumentPosition(disclosure) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await fireEvent.click(kebab);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(disclosure);
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('chip menu shows exactly the four items in order: Check and Flush, Open in App, Open in External Browser, Cancel monitor', async () => {
@@ -261,18 +402,48 @@ describe('MonitoredPrsRow', () => {
     ]);
   });
 
-  it('chip menu container has no fixed width so wide labels are not cropped', async () => {
+  it('renders the portaled menu at a 260px preferred width with single-line regular labels', async () => {
+    setViewport(1280);
     monitorsState.monitors = [makeMonitor()];
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
-    await waitFor(() => screen.getByTestId('monitored-pr-menu'));
-    const menu = screen.getByTestId('monitored-pr-menu');
-    // A fixed width (w-48) cropped "Open in External Browser": Button applies
-    // whitespace-nowrap and Menu.Content's overflow-y-auto clips x-overflow.
-    // The menu must size to its widest item (Menu.Content provides min-w-40).
-    expect(Array.from(menu.classList)).not.toContain('w-48');
-    expect(Array.from(menu.classList).some((cls) => /^w-\d/.test(cls))).toBe(false);
+    const { menu, content } = await openMenu();
+    expect(content.className).toContain('monitored-pr-menu-content');
+    expect(menu.className).toContain('w-full');
+    const bounds = measureRenderedMenu(menu);
+    expect(getComputedStyle(menu).width).toBe('260px');
+    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
+    expect(bounds.width).toBe(260);
+    expect(bounds.left).toBeGreaterThanOrEqual(12);
+    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
+    for (const item of Array.from(menu.querySelectorAll('button'))) {
+      expect(item.className).toContain('min-[284px]:whitespace-nowrap');
+      expect(item.className).not.toContain('truncate');
+    }
+  });
+
+  it.each([
+    ['narrow viewport', 240, 1],
+    ['representative 200% zoom viewport', 240, 2],
+  ])('clamps and cleanly wraps labels at a %s', async (_label, width, devicePixelRatio) => {
+    setViewport(width, devicePixelRatio);
+    monitorsState.monitors = [makeMonitor()];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const { menu, content } = await openMenu();
+    expect(content.className).toContain('monitored-pr-menu-content');
+    expect(window.devicePixelRatio).toBe(devicePixelRatio);
+    const bounds = measureRenderedMenu(menu);
+    expect(getComputedStyle(menu).width).toBe('260px');
+    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
+    expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
+    expect(bounds.left).toBeGreaterThanOrEqual(12);
+    expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
+    for (const item of Array.from(menu.querySelectorAll('button'))) {
+      expect(item.className).toContain('h-auto');
+      expect(item.className).toContain('whitespace-normal');
+      expect(item.querySelector('span')?.className).toContain('break-words');
+    }
   });
 
   it('chip menu Check and Flush dispatches the flush trigger with check: true', async () => {
@@ -283,6 +454,7 @@ describe('MonitoredPrsRow', () => {
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     await fireEvent.click(flushItem);
 
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
   });
 
@@ -295,6 +467,7 @@ describe('MonitoredPrsRow', () => {
     expect((flushItem as HTMLButtonElement).disabled).toBe(false);
 
     await fireEvent.click(flushItem);
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(dispatchMock).toHaveBeenCalledWith(flushPrMonitorRequested('ws-1', 'mon-1', true));
   });
 
@@ -306,6 +479,7 @@ describe('MonitoredPrsRow', () => {
     const cancelItem = await waitFor(() => screen.getByTestId('monitored-pr-cancel-item'));
     await fireEvent.click(cancelItem);
 
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
     expect(dispatchMock).toHaveBeenCalledWith(cancelPrMonitorRequested('ws-1', 'mon-1'));
   });
 
@@ -317,6 +491,7 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
+    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
     expect(openInBrowserPanelMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',
@@ -332,6 +507,7 @@ describe('MonitoredPrsRow', () => {
     const openItem = await waitFor(() => screen.getByTestId('monitored-pr-open-external-item'));
     await fireEvent.click(openItem);
 
+    expect(handleLinkMock).toHaveBeenCalledTimes(1);
     expect(handleLinkMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       expect.objectContaining({ forceExternal: true }),
@@ -347,6 +523,7 @@ describe('MonitoredPrsRow', () => {
     const openInAppItem = await waitFor(() => screen.getByTestId('monitored-pr-open-in-app-item'));
     await fireEvent.click(openInAppItem);
 
+    expect(openInBrowserPanelMock).toHaveBeenCalledTimes(1);
     expect(openInBrowserPanelMock).toHaveBeenCalledWith(
       'https://github.com/acme/widgets/pull/42',
       'ws-1',

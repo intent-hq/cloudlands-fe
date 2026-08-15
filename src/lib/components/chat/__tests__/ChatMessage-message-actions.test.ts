@@ -4,6 +4,10 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -55,6 +59,28 @@ function message(
 }
 
 describe('ChatMessage action overlays', () => {
+  it('affirms message actions and timestamps in every required visual state', async () => {
+    const timestamp = new Date('2026-06-02T14:35:20.000Z');
+    const observed = await exerciseVisualStates(() => {
+      const view = render(ChatMessage, {
+        props: { message: message('user', timestamp), onScrollToPrevious: vi.fn() },
+      });
+      const surface = view.getByTestId('user-message-surface');
+      surface.tabIndex = 0;
+      return {
+        ...view,
+        target: surface,
+        assertCapability: () => {
+          expect(view.getByTestId('message-actions')).toBeTruthy();
+          expect(view.container.querySelector('time')?.getAttribute('datetime')).toBe(
+            timestamp.toISOString(),
+          );
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
   it('wires the canonical user timestamp into the shared top-right overlay', () => {
     const timestamp = new Date('2026-06-02T14:35:20.000Z');
     const createdAt = new Date('2025-01-01T01:02:03.000Z');

@@ -3,7 +3,14 @@ import {
   groupDoneCount,
   isGroupDeliveryPending,
   sortWorkingAgentsFirst,
+  uniqueAgentIds,
 } from './delegation-ordering';
+
+describe('uniqueAgentIds', () => {
+  it('deduplicates IDs while preserving first-seen order', () => {
+    expect(uniqueAgentIds(['a', 'b', 'a', 'c', 'b'])).toEqual(['a', 'b', 'c']);
+  });
+});
 
 describe('sortWorkingAgentsFirst', () => {
   it('sorts still-working agents before finished ones', () => {
@@ -12,10 +19,7 @@ describe('sortWorkingAgentsFirst', () => {
   });
 
   it('preserves relative order within each bucket (stable)', () => {
-    const result = sortWorkingAgentsFirst(
-      ['w1', 'f1', 'w2', 'f2', 'w3'],
-      new Set(['f1', 'f2']),
-    );
+    const result = sortWorkingAgentsFirst(['w1', 'f1', 'w2', 'f2', 'w3'], new Set(['f1', 'f2']));
     expect(result).toEqual(['w1', 'w2', 'w3', 'f1', 'f2']);
   });
 
@@ -36,6 +40,11 @@ describe('sortWorkingAgentsFirst', () => {
   it('ignores completed ids not present in the list', () => {
     const result = sortWorkingAgentsFirst(['a', 'b'], new Set(['z', 'b']));
     expect(result).toEqual(['a', 'b']);
+  });
+
+  it('returns each logical agent once', () => {
+    const result = sortWorkingAgentsFirst(['done', 'active', 'done', 'active'], new Set(['done']));
+    expect(result).toEqual(['active', 'done']);
   });
 });
 
@@ -66,6 +75,15 @@ describe('groupDoneCount', () => {
 
   it('returns 0 for a group with no finished agents', () => {
     expect(groupDoneCount(makeGroup({ expectedAgentIds: ['a', 'b'] }))).toBe(0);
+  });
+
+  it('counts each expected logical agent once and ignores unrelated finished ids', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a', 'a', 'b'],
+      completedAgentIds: ['a', 'a', 'outside'],
+      deletedAgentIds: ['a'],
+    });
+    expect(groupDoneCount(group)).toBe(1);
   });
 });
 
@@ -100,5 +118,14 @@ describe('isGroupDeliveryPending', () => {
 
   it('is false for an empty group (no expected agents)', () => {
     expect(isGroupDeliveryPending(makeGroup())).toBe(false);
+  });
+
+  it('uses unique expected and finished agents', () => {
+    const group = makeGroup({
+      expectedAgentIds: ['a', 'a', 'b'],
+      completedAgentIds: ['a', 'a'],
+      deletedAgentIds: ['b', 'b'],
+    });
+    expect(isGroupDeliveryPending(group)).toBe(true);
   });
 });

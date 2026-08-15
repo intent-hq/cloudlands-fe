@@ -1065,6 +1065,11 @@ export interface GitDiffsOptions {
   staged?: boolean;
   /** When set, returns the per-file hunks for `<commitHash>^..<commitHash>`. */
   commitHash?: string;
+  /**
+   * Scopes the read to a registered secondary git root (v6.15). Omitted →
+   * primary-worktree behavior, byte-identical to the pre-6.15 request.
+   */
+  gitRootId?: string;
 }
 
 export interface GitClient {
@@ -1095,8 +1100,14 @@ export interface GitClient {
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
    * commit. Returns `null` on transport failure so callers degrade gracefully.
+   * `opts.gitRootId` scopes the read to a registered secondary git root;
+   * omitted → primary-worktree behavior (byte-identical request).
    */
-  commitDetails(workspaceId: string, commitHash: string): Promise<CommitDetailsResult | null>;
+  commitDetails(
+    workspaceId: string,
+    commitHash: string,
+    opts?: { gitRootId?: string }
+  ): Promise<CommitDetailsResult | null>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,

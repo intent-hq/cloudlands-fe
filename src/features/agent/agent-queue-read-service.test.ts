@@ -33,6 +33,7 @@ import {
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import type { AgentQueueEntryState } from '$store/renderer/slices/agent-queue/agent-queue-types';
 import {
+  getAgentQueueEventSnapshotSeq,
   hydrateAgentQueue,
   noteAgentQueueEventSnapshotApplied,
   __resetAgentQueueReadServiceForTests,
@@ -207,5 +208,52 @@ describe('hydrateAgentQueue', () => {
     await hydrateAgentQueue(AGENT);
 
     expect(messagesOf(AGENT)).toEqual([]);
+    // The discarded response must NOT advance the seq — only the applied
+    // live event fold did.
+    expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(1);
+  });
+
+  it('advances the snapshot seq when the hydrate fold is applied (monorepo#2486)', async () => {
+    // A hydrate-reconciled fold is an authoritative snapshot: it must bump
+    // the same seq the send paths' queued-response seed guard captures, so
+    // a stale queued:true echo resolving after the fold cannot re-seed a
+    // drained row.
+    getQueueMock.mockResolvedValueOnce([]);
+    expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(0);
+
+    await hydrateAgentQueue(AGENT);
+
+    expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(1);
+  });
+
+  it('does not advance the snapshot seq when the fold is skipped for a pending deletion', async () => {
+    getQueueMock.mockImplementationOnce(async () => {
+      markDeletionPending(AGENT);
+      return [queued('m1', 0)];
+    });
+
+    await hydrateAgentQueue(AGENT);
+
+    expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(0);
+  });
+
+  it('folds the trailing follow-up despite the leading fold advancing the seq (monorepo#2486)', async () => {
+    // The leading fold's seq bump must not make the trailing coalesced
+    // follow-up discard its own response: the follow-up captures its
+    // seqAtFetchStart AFTER the bump.
+    let resolveFirst!: (queue: QueuedMessage[]) => void;
+    getQueueMock.mockImplementationOnce(
+      () => new Promise<QueuedMessage[]>((resolve) => (resolveFirst = resolve)),
+    );
+    getQueueMock.mockResolvedValueOnce([queued('follow-up', 0)]);
+
+    const first = hydrateAgentQueue(AGENT);
+    void hydrateAgentQueue(AGENT);
+    resolveFirst([]);
+    await first;
+
+    expect(messagesOf(AGENT).map((m) => m.id)).toEqual(['follow-up']);
+    // Both folds applied — one bump each.
+    expect(getAgentQueueEventSnapshotSeq(AGENT)).toBe(2);
   });
 });

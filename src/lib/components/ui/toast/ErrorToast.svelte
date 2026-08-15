@@ -54,7 +54,7 @@
 
 <!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
      the severity border tint is passed as a wrapper class by error-toast.ts. -->
-<div class="flex items-start gap-3 max-w-[500px]">
+<div class="flex w-full min-w-0 items-start gap-3">
   <!-- Icon -->
   <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
     <Fa icon={getIcon(error.type)} class="w-5 h-5" />
@@ -62,10 +62,10 @@
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground line-clamp-2">{error.message}</p>
+    <p class="text-sm font-medium text-foreground line-clamp-2 break-words">{error.message}</p>
 
     <!-- Action buttons -->
-    <div class="flex items-center gap-2 mt-3">
+    <div class="flex flex-wrap items-center gap-2 mt-3">
       <Button variant="outline" size="sm" onclick={onCopy}>{m.ui_errorToast_copy_label()}</Button>
       <Button variant="outline" size="sm" onclick={onDebug}>{m.ui_errorToast_debug_label()}</Button>
       {#if error.recoverable && onRetry}
@@ -79,7 +79,7 @@
   <!-- Close button -->
   <button
     type="button"
-    class="flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    class="-mr-1 -mt-1 flex-shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
     onclick={handleDismiss}
     aria-label={m.ui_errorToast_close_ariaLabel()}
   >

@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-
   let {
     workspaceId,
     active = true,
@@ -26,8 +24,6 @@
       direction: 'next' | 'prev',
     ) => { workspaceId: string; layoutId: string } | null;
   } = $props();
-
-  onMount(() => onSidebarWidthChange?.(360));
 </script>
 
 <div

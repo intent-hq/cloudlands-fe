@@ -24,6 +24,17 @@ describe('workspace creation auto-open contract', () => {
     expectHydrateOpenNavigateOrder(source('src/features/onboarding/OnboardingPage.svelte'));
   });
 
+  it('seeds the panel layout before attachment delivery and keeps legacy navigation empty', () => {
+    const initializer = source('src/lib/components/workspace/CompactWorkspaceInitializer.svelte');
+    const bootstrapIndex = initializer.indexOf('bootstrapNewWorkspaceLayout(');
+    const attachmentIndex = initializer.indexOf('await redeemStagedAttachments(');
+
+    expect(bootstrapIndex).toBeGreaterThan(-1);
+    expect(attachmentIndex).toBeGreaterThan(bootstrapIndex);
+    expect(initializer).toContain("mainPanel: { type: 'empty' }");
+    expect(initializer).toContain('drawer: { open: false, type: null, itemId: null }');
+  });
+
   it('reveals selected horizontal workspaces once after width expansion settles', () => {
     const columns = source('src/lib/components/workspace/WorkspaceColumnsView.svelte');
 

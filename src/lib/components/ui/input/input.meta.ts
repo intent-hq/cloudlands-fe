@@ -41,7 +41,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
-    'src/lib/components/workspace/sidebar/ExpandableFileSearch.svelte',
+    'src/lib/components/workspace/sidebar/SidebarExpandableSearch.svelte',
     'src/lib/components/workspace/sidebar/context-picker/BrowserUrlPicker.svelte',
     'src/lib/components/workspace/sidebar/context-picker/LinearPicker.svelte',
     'src/lib/components/workspace/sidebar/context-picker/SentryPicker.svelte',

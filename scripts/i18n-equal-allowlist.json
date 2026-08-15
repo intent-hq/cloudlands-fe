@@ -132,15 +132,6 @@
     "fr",
     "es"
   ],
-  "chat_monitoredPrs_crossRepoChip_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
   "chat_monitoredPrs_hover_untitled_label": [
     "zh-CN",
     "zh-TW",
@@ -152,15 +143,6 @@
   ],
   "chat_permissionParser_browser_action": [
     "de"
-  ],
-  "chat_prMonitorWakeAttribution_crossRepoChip_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
   ],
   "chat_previewToolLabel_tool_fallback": [
     "de"

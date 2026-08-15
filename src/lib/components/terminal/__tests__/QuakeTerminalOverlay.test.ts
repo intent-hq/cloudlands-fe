@@ -1,22 +1,25 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDispatch, mockUpdate, scriptEntries, terminalState, toast } = vi.hoisted(() => ({
-  mockDispatch: vi.fn(),
-  mockUpdate: vi.fn(),
-  scriptEntries: { value: [] as any[] },
-  terminalState: {
-    activeId: 'terminal-1' as string | null,
-    height: 50,
-    isOpen: true,
-    terminals: [{ id: 'terminal-1', name: 'Terminal 1' }] as any[],
-    byWorkspace: {} as Record<
-      string,
-      { activeId: string | null; isOpen: boolean; terminals: any[] }
-    >,
-  },
-  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
-}));
+const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalState, toast } =
+  vi.hoisted(() => ({
+    mockDispatch: vi.fn(),
+    mockUpdate: vi.fn(),
+    scriptEntries: { value: [] as any[] },
+    selectorSubscribers: new Set<() => void>(),
+    terminalState: {
+      activeId: 'terminal-1' as string | null,
+      height: 50,
+      isOpen: true,
+      terminals: [{ id: 'terminal-1', name: 'Terminal 1' }] as any[],
+      byWorkspace: {} as Record<
+        string,
+        { activeId: string | null; isOpen: boolean; terminals: any[] }
+      >,
+    },
+    toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
+  }));
 
 vi.mock('$store/renderer/store', () => ({
   store: { state: {}, dispatch: mockDispatch },
@@ -25,16 +28,29 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
   const readable = <T>(read: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
-      listener(read());
-      return () => {};
+      const emit = () => listener(read());
+      emit();
+      selectorSubscribers.add(emit);
+      return () => selectorSubscribers.delete(emit);
     },
   });
   const scopedReadable = <T>(
     workspaceIdStore: { subscribe: (listener: (workspaceId: string) => void) => () => void },
     read: (workspaceId: string) => T,
   ) => ({
-    subscribe: (listener: (value: T) => void) =>
-      workspaceIdStore.subscribe((workspaceId) => listener(read(workspaceId))),
+    subscribe: (listener: (value: T) => void) => {
+      let currentWorkspaceId = '';
+      const unsubscribeWorkspace = workspaceIdStore.subscribe((workspaceId) => {
+        currentWorkspaceId = workspaceId;
+        listener(read(workspaceId));
+      });
+      const emit = () => listener(read(currentWorkspaceId));
+      selectorSubscribers.add(emit);
+      return () => {
+        selectorSubscribers.delete(emit);
+        unsubscribeWorkspace();
+      };
+    },
   });
   const workspaceState = (workspaceId: string) =>
     terminalState.byWorkspace[workspaceId] ?? terminalState;
@@ -127,8 +143,7 @@ vi.mock('../ScriptOutputViewer.svelte', async () => {
   return { default: component };
 });
 vi.mock('../TerminalSidebar.svelte', async () => {
-  const component = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default;
+  const component = (await import('./mocks/MockTerminalSidebar.svelte')).default;
   return { default: component };
 });
 vi.mock('svelte-fa', async () => ({
@@ -157,6 +172,11 @@ const runningScript = {
 };
 
 describe('QuakeTerminalOverlay lifecycle', () => {
+  async function notifyTerminalState() {
+    for (const notify of selectorSubscribers) notify();
+    await tick();
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockUpdate.mockResolvedValue({ success: true });
@@ -166,6 +186,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     terminalState.isOpen = true;
     terminalState.terminals = [{ id: 'terminal-1', name: 'Terminal 1' }];
     terminalState.byWorkspace = {};
+    selectorSubscribers.clear();
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   });
@@ -271,6 +292,39 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       expect(openOverlay.container.querySelector('.terminal-panel')).toBeTruthy(),
     );
     expect(closedOverlay.container.querySelector('.terminal-panel')).toBeNull();
+  });
+
+  it('retains terminal and sidebar DOM identity while collapsed and inert', async () => {
+    const { container } = render(QuakeTerminalOverlay, {
+      props: { workspaceId: 'ws-1' as any, showDockWhenClosed: false },
+    });
+    await waitFor(() => expect(container.querySelector('.terminal-panel')).toBeTruthy());
+    const panel = container.querySelector<HTMLElement>('.terminal-panel')!;
+    const terminalNode = container.querySelector(
+      '[data-terminal-content] [data-testid="mock-component"]',
+    );
+    const sidebarButton = screen.getByRole('button', { name: 'Direct select ws-1' });
+    const sidebarState = screen.getByRole('textbox', { name: 'Sidebar state' }) as HTMLInputElement;
+    await fireEvent.input(sidebarState, { target: { value: 'kept state' } });
+    sidebarButton.focus();
+
+    terminalState.isOpen = false;
+    await notifyTerminalState();
+    expect(container.querySelector('.terminal-panel')).toBe(panel);
+    expect(container.querySelector('[data-terminal-content] [data-testid="mock-component"]')).toBe(
+      terminalNode,
+    );
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
+    expect((panel as HTMLElement & { inert: boolean }).inert).toBe(true);
+    expect(document.activeElement).not.toBe(sidebarButton);
+
+    terminalState.isOpen = true;
+    await notifyTerminalState();
+    expect(container.querySelector('.terminal-panel')).toBe(panel);
+    expect((screen.getByRole('textbox', { name: 'Sidebar state' }) as HTMLInputElement).value).toBe(
+      'kept state',
+    );
+    expect(panel.getAttribute('aria-hidden')).toBe('false');
   });
 
   it('releases active resize listeners and global body styles when destroyed', async () => {

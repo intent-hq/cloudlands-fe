@@ -5,7 +5,7 @@ import type {
   ChatStateSlice,
   StatusEvent,
   LastAttemptedMessage,
-	LiveStreamPhase,
+  LiveStreamPhase,
   ModelUnavailableInfo,
   QueuedRetryRecord,
   SendMessagePayload,
@@ -47,7 +47,7 @@ export const emptyChatAgentState: ChatAgentState = {
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
-	liveStreamPhase: null,
+  liveStreamPhase: null,
 };
 
 export const initialState: ChatStateSlice = {
@@ -127,10 +127,8 @@ function parkRetryRecord(
   turnId: string,
 ): Record<string, QueuedRetryRecord> {
   const seq =
-    Object.values(agent.queuedRetryRecords).reduce(
-      (max, parked) => Math.max(max, parked.seq),
-      0,
-    ) + 1;
+    Object.values(agent.queuedRetryRecords).reduce((max, parked) => Math.max(max, parked.seq), 0) +
+    1;
   const parked: QueuedRetryRecord = { seq, record, turnId };
   const next = { ...agent.queuedRetryRecords, [messageId]: parked };
   const ids = Object.keys(next);
@@ -569,9 +567,9 @@ export const chatSendFailed =
  * the events bridge (and chat-send-service's "Send now" success branch,
  * whose RPC response carries the turnId instead of the event, §5.5).
  */
-export const chatQueueProcessingReceived = createAction<
-  [agentId: string, turnId?: string]
->('chatState/queueProcessingReceived');
+export const chatQueueProcessingReceived = createAction<[agentId: string, turnId?: string]>(
+  'chatState/queueProcessingReceived',
+);
 
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
@@ -666,9 +664,14 @@ export const transcriptHydrationStarted = createAction<[agentId: string]>(
   'chatState/transcriptHydrationStarted',
 );
 
-/** Transcript load completed (success or error) for an agent */
+/** A newest-window source completed successfully for an agent. */
 export const transcriptHydrationSettled = createAction<[agentId: string]>(
   'chatState/transcriptHydrationSettled',
+);
+
+/** Every bounded newest-window source failed; the panel may offer a retry. */
+export const transcriptHydrationFailed = createAction<[agentId: string]>(
+  'chatState/transcriptHydrationFailed',
 );
 
 /**
@@ -684,7 +687,7 @@ export const chatTranscriptSnapshotApplied = createAction<
 
 /** Standing chat.subscribe lifecycle phase reported by the live client. */
 export const chatLiveStreamPhaseChanged = createAction<
-	[agentId: string, phase: LiveStreamPhase | null]
+  [agentId: string, phase: LiveStreamPhase | null]
 >('chatState/liveStreamPhaseChanged');
 
 // --- Initialize chat saga trigger (no reducer state change) ---
@@ -860,8 +863,10 @@ chatStateReducer.with(chatStreamingReconciled, (state, { payload: { agentId, tim
 chatStateReducer.with(agentStreamUpdateReceived, (state, { payload: [payload] }) =>
   reduceAgentStreamUpdate(state, payload),
 );
-chatStateReducer.with(streamActivityReceived, (state, { payload: [agentId, isStreamActivity, timestamp] }) =>
-  reduceChunkReceived(state, agentId, isStreamActivity, timestamp),
+chatStateReducer.with(
+  streamActivityReceived,
+  (state, { payload: [agentId, isStreamActivity, timestamp] }) =>
+    reduceChunkReceived(state, agentId, isStreamActivity, timestamp),
 );
 chatStateReducer.with(streamCompleted, (state, { payload: [agentId, data] }) =>
   updateAgent(state, agentId, {
@@ -914,6 +919,9 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
     transcriptHydratedOnce: true,
   }),
 );
+chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { agentId, transcriptHydration: 'error' }),
+);
 chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
   const agent = getAgent(state, agentId);
   return updateAgent(state, agentId, {
@@ -922,19 +930,19 @@ chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId
   });
 });
 chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, phase] }) => {
-	if (phase === null && !state.byAgentId[agentId]) return state;
-	// Phase null = subscription closed (teardown reset): the snapshot metadata
-	// belongs to that subscription, so drop it — a reopen's hydration must wait
-	// for the NEW subscription's snapshot, not settle on the stale one (whose
-	// truncated flag may no longer describe the conversation).
-	if (phase === null) {
-		return updateAgent(state, agentId, {
-			agentId,
-			liveStreamPhase: null,
-			transcriptSnapshot: undefined,
-		});
-	}
-	return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
+  if (phase === null && !state.byAgentId[agentId]) return state;
+  // Phase null = subscription closed (teardown reset): the snapshot metadata
+  // belongs to that subscription, so drop it — a reopen's hydration must wait
+  // for the NEW subscription's snapshot, not settle on the stale one (whose
+  // truncated flag may no longer describe the conversation).
+  if (phase === null) {
+    return updateAgent(state, agentId, {
+      agentId,
+      liveStreamPhase: null,
+      transcriptSnapshot: undefined,
+    });
+  }
+  return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
 });
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (event.type !== 'agent:idle') return state;

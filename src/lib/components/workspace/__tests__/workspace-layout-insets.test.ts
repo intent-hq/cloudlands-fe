@@ -20,7 +20,9 @@ describe('WorkspaceLayout panel insets', () => {
       /\{#if sidebarSide === 'left'\}([\s\S]*?)\{\/if\}/,
     )?.[1];
 
-    expect(rightBranch).toContain('main-content-area flex h-full min-w-0 z-10 pl-2 sm:pl-3');
+    expect(rightBranch).toContain(
+      "main-content-area flex h-full min-w-0 z-10 {columnMode ? '' : 'pl-2 sm:pl-3'}",
+    );
     expect(leftBranch).toContain('main-content-area flex h-full min-w-0 z-10');
     expect(leftBranch).not.toContain('pl-2 sm:pl-3');
   });
@@ -33,6 +35,9 @@ describe('WorkspaceLayout panel insets', () => {
     expect(workspaceSurface).toContain('disableSidebarWidthTransition={columnMode}');
     expect(workspaceLayout).toContain('doSkipResize={sidebarFillsAvailableWidth}');
     expect(workspaceLayout).toContain('disableWidthTransition={disableSidebarWidthTransition}');
+    expect(workspaceLayout).toContain('preserveFixedWidthAfterFill={columnMode}');
+    expect(workspaceLayout).toContain('notifyAutomaticWidthChanges={!columnMode}');
+    expect(workspaceLayout).toContain('clampStoredWidth={columnMode}');
     expect(workspaceLayout).toContain('onWidthChange={onSidebarWidthChange}');
   });
 });

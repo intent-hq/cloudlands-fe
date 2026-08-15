@@ -34,22 +34,26 @@ describe('Files panel scroll ownership', () => {
   it('keeps file search collapsed until requested or populated', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const search = source('../sidebar/ExpandableFileSearch.svelte');
+    const sharedSearch = source('../sidebar/SidebarExpandableSearch.svelte');
 
     expect(sidebar).toContain('<ExpandableFileSearch');
     expect(search).toContain("query = $bindable('')");
-    expect(search).toContain('let expanded = $state(Boolean(query))');
-    expect(search).toContain('{#if expanded}');
-    expect(search).toContain('data-file-search-toggle');
-    expect(search).toContain('if (!query) expanded = false');
+    expect(search).toContain('<SidebarExpandableSearch');
+    expect(sharedSearch).toContain('let expanded = $state(Boolean(query))');
+    expect(sharedSearch).toContain('{#if expanded}');
+    expect(sharedSearch).toContain('data-sidebar-search={scope}');
+    expect(sharedSearch).toContain('if (!query) void close(false)');
   });
 
   it('aligns the collapsed search icon with the top-level file tree gutter', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const search = source('../sidebar/ExpandableFileSearch.svelte');
+    const sharedSearch = source('../sidebar/SidebarExpandableSearch.svelte');
     const listItem = source('../../ui/list/ListItem.svelte');
 
     expect(sidebar).toContain('data-file-tree-toolbar');
-    expect(search).toContain('class="ml-0.5 shrink-0 text-subtle"');
+    expect(search).toContain('placement="toolbar"');
+    expect(sharedSearch).toContain("placement === 'toolbar'");
     expect(listItem).toContain("padding: 'min-h-7 px-2 py-0.5'");
   });
 });

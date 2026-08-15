@@ -35,6 +35,9 @@
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -68,6 +71,8 @@
     overscan?: number;
     /** Callback when external files are dropped onto the tree */
     onExternalFilesDrop?: (files: File[], targetPath: string | null) => void;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -84,6 +89,8 @@
     itemHeight = 25, // Match ListItem sm size
     overscan = 5,
     onExternalFilesDrop,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
@@ -989,6 +996,14 @@
     return false;
   }
 
+  function getFilePanelState(filePath: string) {
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'file',
+      filePath,
+      workspaceId,
+    });
+  }
+
   // Scroll state
   let scrollTop = $state(0);
   let scrollEl: HTMLDivElement | undefined = $state();
@@ -1156,6 +1171,8 @@
             {@const hasChanges =
               (flatNode.gitStatus?.additions ?? 0) > 0 || (flatNode.gitStatus?.deletions ?? 0) > 0}
             {@const isModified = isFileModified(node.path) && node.type === 'file'}
+            {@const panelState =
+              node.type === 'file' ? getFilePanelState(node.path) : { count: 0, isActive: false }}
             {@const isDropTarget =
               isExternalFileDragOver &&
               dropTargetPath !== null &&
@@ -1250,6 +1267,7 @@
                       {@html getFileTypeIconSvg(node.name)}
                     </span>
                   {/snippet}
+                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
               {/if}
               {#if hasChanges}

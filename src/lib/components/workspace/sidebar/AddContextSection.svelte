@@ -19,6 +19,7 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
+  import SidebarHeaderAction from './SidebarHeaderAction.svelte';
 
   interface Props {
     onAddNote?: () => void;
@@ -132,15 +133,11 @@
 </script>
 
 {#if compact}
-  <Button
-    variant="ghost-light"
-    size="icon-xs"
-    aria-label={m.workspace_addContext_addContext_label()}
-    class="size-6 p-0! rounded-md bg-background hover:bg-background shadow-none"
+  <SidebarHeaderAction
+    icon="plus"
+    label={m.workspace_addContext_addContext_label()}
     onclick={() => onAddNote?.()}
-  >
-    <Fa icon={faPlus} size="xs" />
-  </Button>
+  />
 {:else}
   <div class="w-full px-1 -mt-1">
     <!-- Toggle Button -->

@@ -85,10 +85,11 @@ export interface SendMessageOptions {
 export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 
 /**
- * Transcript hydration status: 'loading' when a transcript fetch is in flight,
- * 'settled' when it completes (success or error). Defaults to undefined (not yet started).
+ * Transcript hydration status: 'loading' while the newest window is unresolved,
+ * 'settled' after a successful source paints, and 'error' when all bounded
+ * first-window sources fail. Defaults to undefined (not yet started).
  */
-export type TranscriptHydrationStatus = 'loading' | 'settled';
+export type TranscriptHydrationStatus = 'loading' | 'settled' | 'error';
 
 /**
  * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
@@ -155,9 +156,8 @@ export interface ChatAgentState {
   lastChunkReceivedAt: number;
   /**
    * Transcript hydration status for this agent. Undefined means hydration has not
-   * started; 'loading' means a fetch is in flight; 'settled' means the fetch completed
-   * (success or error). Gates the welcome page: skeleton shows while loading, welcome
-   * shows only when settled with zero messages.
+   * started; 'loading' means the newest window is unresolved, 'settled' means a source
+   * succeeded, and 'error' exposes a retry instead of a false new-chat welcome.
    */
   transcriptHydration?: TranscriptHydrationStatus;
   /**

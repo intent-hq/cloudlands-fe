@@ -23,14 +23,18 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(workspace).toContain('workspace-sidebar-panel workspace-sidebar-{sidebarSide}');
     expect(workspace).toContain('@media (max-width: 639px)');
-    expect(workspace).toContain('.upper-area :global(.workspace-sidebar-panel)');
+    expect(workspace).toContain(
+      '.upper-area:not(.workspace-column-layout) :global(.workspace-sidebar-panel)',
+    );
     expect(workspace).toContain('position: absolute');
   });
 
   it('uses a clipped semantic card surface with a consistent light border', () => {
     const panel = source('../Panel.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50 bg-card');
+    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50');
+    expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
+    expect(panel).toContain(": 'bg-card text-card-foreground'");
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -113,6 +117,7 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses equal muted launchers with direct item actions that disappear when expanded', () => {
     const workspace = source('../../../workspace/WorkspaceLayout.svelte');
     const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
+    const headerAction = source('../../../workspace/sidebar/SidebarHeaderAction.svelte');
     const tabDefinitions = source('../../../workspace/multi-select-sidebar-tabs.ts');
     const launcherMarkup = sidebar.slice(sidebar.indexOf('<!-- Lightweight launchers'));
 
@@ -122,22 +127,20 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain(
-      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
-    );
+    expect(launcherMarkup).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
     expect(sidebar).toContain('<AuggieAvatar');
     expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-change={changePath}');
+    expect(launcherMarkup).not.toContain('data-sidebar-change');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
-    expect(sidebar).toContain('aria-label={m.ui_tab_close_ariaLabel()}');
-    expect(sidebar).toContain('data-sidebar-close');
-    expect(sidebar).toContain('hover:bg-muted/50 hover:text-foreground');
+    expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');
+    expect(headerAction).toContain('data-sidebar-close');
+    expect(headerAction).toContain('hover:bg-muted/50!');
     expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
     expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
@@ -249,7 +252,7 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-3 py-2');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');

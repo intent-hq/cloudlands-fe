@@ -1,10 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CustomTaskItem } from './CustomTaskItem';
 
 // Mock minimal DOM environment for TipTap
@@ -79,9 +73,11 @@ describe('CustomTaskItem', () => {
     it('should allow configuration', () => {
       const extension = CustomTaskItem.configure({
         nested: true,
+        workspaceId: 'workspace-1',
         HTMLAttributes: { class: 'custom-task' },
       });
       expect(extension.options.nested).toBe(true);
+      expect(extension.options.workspaceId).toBe('workspace-1');
       expect(extension.options.HTMLAttributes.class).toBe('custom-task');
     });
 
@@ -91,6 +87,7 @@ describe('CustomTaskItem', () => {
       expect(extension.options.nested).toBe(false); // Parent TaskItem default
       expect(extension.options.HTMLAttributes).toBeDefined(); // Parent may override our class
       expect(extension.options.taskListTypeName).toBe('taskList');
+      expect(extension.options.workspaceId).toBeUndefined();
     });
   });
 

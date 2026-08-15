@@ -4,6 +4,60 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.49.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.48.1...v2.49.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* show repo name in monitored-PR chip labels ([#1258](https://github.com/intent-hq/cloudlands-fe/issues/1258)) ([690ac34](https://github.com/intent-hq/cloudlands-fe/commit/690ac34ebcf4f4a93207715d0252a7ccd0c16db0))
+
+
+### 🐛 Bug Fixes
+
+* advance queue snapshot seq on hydrate-reconciled folds ([#1261](https://github.com/intent-hq/cloudlands-fe/issues/1261)) ([ba68b20](https://github.com/intent-hq/cloudlands-fe/commit/ba68b20c327ed026cea5d1afa1bb7ec6afcd5d13))
+* stop hidden scroll-lock button from flickering message actions on hover ([#1263](https://github.com/intent-hq/cloudlands-fe/issues/1263)) ([e22619c](https://github.com/intent-hq/cloudlands-fe/commit/e22619c638ace604a8bc2a29eadc126f0b66b7dd))
+
+## [2.48.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.48.0...v2.48.1) (2026-08-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.0 ([#1266](https://github.com/intent-hq/cloudlands-fe/issues/1266)) ([97efa9d](https://github.com/intent-hq/cloudlands-fe/commit/97efa9dd3250dac1ad14499652a8957dcbb12c84))
+
+## [2.48.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.47.0...v2.48.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* embellish secondary-root commit rows to match the primary timeline ([#1260](https://github.com/intent-hq/cloudlands-fe/issues/1260)) ([77ee875](https://github.com/intent-hq/cloudlands-fe/commit/77ee8752226af598b0b7466511b5100806652429))
+
+
+### 🐛 Bug Fixes
+
+* keep surviving panels sized and steady when a close collapses a split ([#1264](https://github.com/intent-hq/cloudlands-fe/issues/1264)) ([7fa7e34](https://github.com/intent-hq/cloudlands-fe/commit/7fa7e344590459477bb575b6039332a764fdbe65))
+* replace fixed truncation caps with width-responsive truncation on hook/PR wake labels ([#1259](https://github.com/intent-hq/cloudlands-fe/issues/1259)) ([556c644](https://github.com/intent-hq/cloudlands-fe/commit/556c644dc8cdd208f647e976d422976191db697c))
+
+## [2.47.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.46.0...v2.47.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* detect orphaned sidecar intentd and offer kill-and-restart recovery ([#1246](https://github.com/intent-hq/cloudlands-fe/issues/1246)) ([331cd8b](https://github.com/intent-hq/cloudlands-fe/commit/331cd8bcaafad4cbb9c0a5a9e917379affb66701))
+* download non-editor attachments on chip click ([#1250](https://github.com/intent-hq/cloudlands-fe/issues/1250)) ([c959ce2](https://github.com/intent-hq/cloudlands-fe/commit/c959ce21c71b11f73b64d6d19dc56252b19d6d6d))
+* gate release notifier on cross-repo fix completeness ([#1245](https://github.com/intent-hq/cloudlands-fe/issues/1245)) ([0995520](https://github.com/intent-hq/cloudlands-fe/commit/0995520edc859e6239ce20f800dba942e7f905ad))
+* thread gitRootId through the commit changeset view ([#1255](https://github.com/intent-hq/cloudlands-fe/issues/1255)) ([5ddcdb4](https://github.com/intent-hq/cloudlands-fe/commit/5ddcdb467cb19c5c466420adcc042eb4ce75807d))
+
+
+### 🐛 Bug Fixes
+
+* exclude inset padding from vertical panel reference size ([#1257](https://github.com/intent-hq/cloudlands-fe/issues/1257)) ([3f6c83c](https://github.com/intent-hq/cloudlands-fe/commit/3f6c83ce6064ddf5b9430dc9affd6efa4fafd5c4))
+* gate bottom-anchored ledger restore on the native clamp firing ([#1256](https://github.com/intent-hq/cloudlands-fe/issues/1256)) ([31eccf7](https://github.com/intent-hq/cloudlands-fe/commit/31eccf751346a284cfd5d3f6df9465b406727443))
+* guard queued-response queue seed against fresher live snapshots ([#1253](https://github.com/intent-hq/cloudlands-fe/issues/1253)) ([0567e6d](https://github.com/intent-hq/cloudlands-fe/commit/0567e6de34de46214cc728c2f833a3ae8c00746e))
+* make workspace title edit input match display-mode width ([#1244](https://github.com/intent-hq/cloudlands-fe/issues/1244)) ([68b2159](https://github.com/intent-hq/cloudlands-fe/commit/68b2159c0f5ac58b5904d8b94132cb1fa2a3912d))
+* render New messages divider after the inter-turn spacer ([#1254](https://github.com/intent-hq/cloudlands-fe/issues/1254)) ([ccd31ab](https://github.com/intent-hq/cloudlands-fe/commit/ccd31ab266f88b08f43edb67eda5ddb9eb56bf7d))
+* size content-header title edit input to its content ([#1251](https://github.com/intent-hq/cloudlands-fe/issues/1251)) ([532f34d](https://github.com/intent-hq/cloudlands-fe/commit/532f34d23afb5a3a6d1cef6dff68bb5ab3170050))
+* treat epoch-0 attribution timestamps as unknown in the command palette ([#1247](https://github.com/intent-hq/cloudlands-fe/issues/1247)) ([f2947b1](https://github.com/intent-hq/cloudlands-fe/commit/f2947b1388a10f7af70706f470188f808a010c7b))
+
 ## [2.46.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.45.1...v2.46.0) (2026-08-15)
 
 

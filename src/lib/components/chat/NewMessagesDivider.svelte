@@ -1,6 +1,4 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faEnvelope } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 </script>
 
@@ -13,11 +11,8 @@
   aria-label={m.chat_newMessagesDivider_label()}
 >
   <div class="h-px flex-1 bg-border"></div>
-  <div class="flex items-center gap-1.5 px-1">
-    <Fa icon={faEnvelope} size="xs" class="text-muted-foreground/70" />
-    <span class="whitespace-nowrap font-medium text-foreground first-letter:uppercase">
-      {m.chat_newMessagesDivider_label()}
-    </span>
-  </div>
+  <span class="whitespace-nowrap px-1 font-medium text-foreground first-letter:uppercase">
+    {m.chat_newMessagesDivider_label()}
+  </span>
   <div class="h-px flex-1 bg-border"></div>
 </div>

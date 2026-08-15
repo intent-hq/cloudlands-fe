@@ -13,6 +13,8 @@ import type { CommitInfo, GitStatus } from '$shared/types';
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getHistory: vi.fn(),
+  commitDetails: vi.fn(),
+  dispatch: vi.fn(),
   writeTextToClipboard: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -23,8 +25,33 @@ vi.mock('$features/git/git.client', () => ({
   gitClient: { getStatus: mocks.getStatus, getHistory: mocks.getHistory },
 }));
 
+// Lazy per-commit file fetch on expand (`git.commitDetails`, gitRootId-scoped).
+vi.mock('$lib/client', () => ({
+  appClient: { git: { commitDetails: mocks.commitDetails } },
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+  });
+});
+
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice', () => ({
+  openWorkspaceCommitChangeset: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceCommitChangeset',
+    payload: args,
+  })),
+}));
+
 vi.mock('$lib/utils/clipboard', () => ({
   writeTextToClipboard: mocks.writeTextToClipboard,
+}));
+
+vi.mock('$lib/utils/client-logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -32,6 +59,16 @@ vi.mock('svelte-sonner', () => ({
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
+
+// The avatar pulls agent-session/theme selectors (Svelte store context);
+// mock it to the marker div — the only 'mock-component' testid in this suite.
+vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+  default: (await import('./mocks/MockSimple.svelte')).default,
+}));
+
+vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () => ({
+  default: (await import('./mocks/MockFileRow.svelte')).default,
+}));
 
 function makeStatus(branch: string): GitStatus {
   return {
@@ -59,7 +96,11 @@ function makeEntry(
   } as WorkspaceGitRootEntry;
 }
 
-function makeCommit(hash: string, message: string): CommitInfo {
+function makeCommit(
+  hash: string,
+  message: string,
+  overrides: Partial<CommitInfo> = {},
+): CommitInfo {
   return {
     hash,
     sha: hash.slice(0, 7),
@@ -67,6 +108,7 @@ function makeCommit(hash: string, message: string): CommitInfo {
     email: 'dev@example.com',
     date: '2026-07-01T00:00:00Z',
     message,
+    ...overrides,
   } as CommitInfo;
 }
 
@@ -82,10 +124,13 @@ describe('SecondaryRootChangesView', () => {
   beforeEach(() => {
     mocks.getStatus.mockReset();
     mocks.getHistory.mockReset();
+    mocks.commitDetails.mockReset();
+    mocks.dispatch.mockReset();
     mocks.writeTextToClipboard.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
     mocks.getHistory.mockResolvedValue({ ok: true, data: { items: [] } });
+    mocks.commitDetails.mockResolvedValue(null);
     mocks.writeTextToClipboard.mockResolvedValue(undefined);
   });
 
@@ -369,5 +414,180 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).toContain('feat: one');
     const matches = container.textContent?.match(/fix: two/g) ?? [];
     expect(matches).toHaveLength(1);
+  });
+
+  it('renders the commit icon for human commits and the agent avatar for agent commits', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          makeCommit('aaaa111', 'feat: human commit'),
+          makeCommit('bbbb222', 'feat: agent commit', { agentId: 'agent-1' } as Partial<CommitInfo>),
+        ],
+      },
+    });
+    const { container, queryAllByTestId } = await renderView(makeEntry('main'));
+    await waitFor(() => expect(container.textContent).toContain('feat: human commit'));
+
+    // Exactly one AuggieAvatar (the agent commit); the human commit gets faCodeCommit.
+    expect(queryAllByTestId('mock-component')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-icon="code-commit"]')).toHaveLength(1);
+  });
+
+  it('opens the gitRootId-scoped commit changeset when the message is clicked', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: clickable')] },
+    });
+    const { getAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+    const open = await waitFor(() => getAllByTestId('secondary-root-commit-open')[0]);
+
+    await fireEvent.click(open);
+    // The dispatched action must carry the gitRootId so the changes tab scopes
+    // its commitDetails/diffs/showFile reads to this secondary root.
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'workspaceNavigation/openWorkspaceCommitChangeset',
+        payload: ['ws-1', 'aaaa111', 'feat: clickable', { gitRootId: 'root-9' }],
+      }),
+    );
+  });
+
+  it('lazily fetches the gitRootId-scoped file list on first expand and renders it', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: expandable')] },
+    });
+    mocks.commitDetails.mockResolvedValue({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: expandable',
+      files: ['src/a.ts', 'src/b.ts'],
+      fileDetails: [
+        { path: 'src/a.ts', additions: 3, deletions: 1 },
+        { path: 'src/b.ts', additions: 0, deletions: 2 },
+      ],
+    });
+    const { getAllByTestId, queryAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+    const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+    expect(queryAllByTestId('file-row')).toHaveLength(0);
+
+    await fireEvent.click(toggle);
+    // The details read is gitRootId-scoped (PROTOCOL §5.6).
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
+    );
+    const rows = await waitFor(() => {
+      const fileRows = queryAllByTestId('file-row');
+      expect(fileRows).toHaveLength(2);
+      return fileRows;
+    });
+    expect(rows[0].getAttribute('data-file-path')).toBe('src/a.ts');
+    expect(rows[1].getAttribute('data-file-path')).toBe('src/b.ts');
+
+    // Collapse hides the list; a second expand reuses the cache (no refetch).
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(0));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(2));
+    expect(mocks.commitDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries the file fetch on a later expand after a failed (null) details read', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: retryable')] },
+    });
+    // First read fails (folds to null) → row shows no files; the in-flight
+    // marker must be cleared so a later expand can retry.
+    mocks.commitDetails.mockResolvedValueOnce(null);
+    const { getAllByTestId, queryAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+    const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(1));
+    expect(queryAllByTestId('file-row')).toHaveLength(0);
+
+    mocks.commitDetails.mockResolvedValueOnce({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: retryable',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 1, deletions: 0 }],
+    });
+    await fireEvent.click(toggle); // collapse
+    await fireEvent.click(toggle); // expand again → retry
+    await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(1));
+  });
+
+  it('resets expand state on a root switch and drops a stale in-flight details response', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: shared commit')] },
+    });
+    // Old root's details read stays in flight across the root switch.
+    let resolveDetails!: (value: unknown) => void;
+    mocks.commitDetails.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDetails = resolve;
+      }),
+    );
+    const { getAllByTestId, queryAllByTestId, rerender } = await renderView(
+      makeEntry('main', 'root-9'),
+    );
+    const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
+    );
+
+    // Switch roots: the $effect resets expandedCommits + commitFileCache.
+    await rerender({ workspaceId: 'ws-1', entry: makeEntry('main', 'root-10') });
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2));
+
+    // The stale response resolves after the switch — it must be discarded, so
+    // the new root's row stays collapsed with an empty cache (no file rows).
+    resolveDetails({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: shared commit',
+      files: ['src/stale.ts'],
+      fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
+    });
+    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(0));
+
+    // Expanding on the new root fetches fresh, scoped to the new gitRootId.
+    mocks.commitDetails.mockResolvedValueOnce({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: shared commit',
+      files: ['src/fresh.ts'],
+      fileDetails: [{ path: 'src/fresh.ts', additions: 1, deletions: 0 }],
+    });
+    const newToggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+    await fireEvent.click(newToggle);
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-10' }),
+    );
+    const rows = await waitFor(() => {
+      const fileRows = queryAllByTestId('file-row');
+      expect(fileRows).toHaveLength(1);
+      return fileRows;
+    });
+    expect(rows[0].getAttribute('data-file-path')).toBe('src/fresh.ts');
   });
 });
