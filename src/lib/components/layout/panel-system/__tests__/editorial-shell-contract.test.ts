@@ -32,7 +32,9 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses a clipped semantic card surface with a consistent light border', () => {
     const panel = source('../Panel.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50 bg-card');
+    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50');
+    expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
+    expect(panel).toContain(": 'bg-card text-card-foreground'");
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -125,13 +127,11 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain(
-      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
-    );
+    expect(launcherMarkup).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
     expect(sidebar).toContain('<AuggieAvatar');
     expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-change={changePath}');
+    expect(launcherMarkup).not.toContain('data-sidebar-change');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
@@ -252,7 +252,7 @@ describe('editorial workspace shell presentation contract', () => {
     );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-3 py-2');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');

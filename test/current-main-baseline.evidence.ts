@@ -124,14 +124,14 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       'affirms the composer-to-bubble transition in every required visual state',
       [...visualStates],
     ),
-    selector(['success'], 'uses the emphasized 280ms composer-to-bubble animation'),
+    selector(['success'], 'uses one compositor transform and an instant bottom-follow adjustment'),
     selector(['failure'], 'settles rejected animations without leaking styles'),
     selector(['cancel'], 'aborts immediately and restores exact styles'),
   ],
   'CHAT-07': [
     selector(
       ['mounted', 'runtime-success', 'success'],
-      'uses the emphasized 280ms composer-to-bubble animation',
+      'uses one compositor transform and an instant bottom-follow adjustment',
     ),
     selector(['runtime-error', 'failure'], 'settles rejected animations without leaking styles'),
     selector(['keyboard'], 'settles immediately when the page becomes hidden', ['keyboard']),
@@ -267,14 +267,14 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       'affirms coordinator and Spec ordering in every required visual state',
       [...visualStates],
     ),
-    selector(['open'], 'opens each compact agent, note, and change exactly once'),
+    selector(['open'], 'opens each compact agent and note exactly once'),
   ],
   'WORKSPACE-21': [
-    selector(['reuse'], 'opens each compact agent, note, and change exactly once'),
+    selector(['reuse'], 'opens each compact agent and note exactly once'),
     selector(['new'], 'opens the isolated compact Files chooser'),
   ],
   'WORKSPACE-22': [
-    selector(['reuse'], 'opens each compact agent, note, and change exactly once'),
+    selector(['reuse'], 'opens each compact agent and note exactly once'),
     selector(['loading'], 'keeps the compact Agents launcher stable while sessions are loading'),
     selector(['error', 'empty'], 'renders +0 agents as six plus semantic overflow'),
   ],
@@ -457,7 +457,7 @@ export const semanticSelectors: Record<string, SemanticSelector[]> = {
       ['editor'],
       'opens the isolated compact Files chooser and routes the installed editor action',
     ),
-    selector(['other'], 'keeps plain +N text immediately after the contained icon stack'),
+    selector(['other'], 'keeps plain +N text as the last bounded icon-grid item'),
     selector(
       ['focus-restore'],
       'uses contained outline-free keyboard focus states for every preview target',

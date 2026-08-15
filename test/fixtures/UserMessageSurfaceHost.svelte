@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { USER_MESSAGE_SURFACE_CLASS } from '$lib/components/chat/user-message-surface';
+  import {
+    USER_MESSAGE_SURFACE_CLASS,
+    USER_MESSAGE_TEXT_CLASS,
+  } from '$lib/components/chat/user-message-surface';
 
   let {
     message = 'A short user prompt.',
@@ -18,7 +21,7 @@
       data-testid="user-message-surface"
       data-conversation-role="user"
     >
-      <div class="type-body select-text font-medium! text-pretty text-foreground">
+      <div class="type-body select-text text-pretty {USER_MESSAGE_TEXT_CLASS}">
         <span class="whitespace-pre-wrap">{message}</span>
       </div>
     </div>

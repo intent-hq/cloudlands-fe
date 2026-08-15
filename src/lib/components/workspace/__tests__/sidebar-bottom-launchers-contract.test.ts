@@ -36,8 +36,8 @@ describe('workspace sidebar bottom launchers', () => {
       '<SidebarExpandedTabStrip',
     );
     expect(bottomLaunchers.slice(expandedStart)).toContain('<SidebarExpandedTabStrip');
-    expect(browserLauncher).toContain('group/launcher relative flex min-w-0 w-full');
-    expect(terminalDock).toContain('flex min-w-0 w-full items-center');
+    expect(browserLauncher).toContain('group/launcher relative flex h-11 min-w-0 w-full');
+    expect(terminalDock).toContain('relative flex h-11 min-w-0 w-full items-center');
     expect(terminalDock).not.toContain('shrink-0 flex-1');
   });
 
@@ -85,11 +85,16 @@ describe('workspace sidebar bottom launchers', () => {
     expect(browserLauncher).toContain('data-sidebar-running-url={browserTarget.url}');
   });
 
-  it('keeps the linked PR Changes action and scoped Files action without Sync regression', () => {
+  it('keeps View PR under workspace status and the scoped Files action without Sync', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
+    const progress = source('../sidebar/WorkspaceProgressCard.svelte');
 
-    expect(sidebar).toContain('data-sidebar-changes-pr={linkedPrimaryPr.number}');
-    expect(sidebar).toContain('openExternalUrl(linkedPrimaryPr.url)');
+    expect(sidebar).not.toContain('data-sidebar-changes-pr');
+    expect(progress).toContain('data-workspace-view-pr');
+    expect(progress).toContain('handleLink(action.url, { workspaceId: WorkspaceId(workspaceId) })');
+    expect(progress.indexOf('{#if viewPullRequestAction}')).toBeGreaterThan(
+      progress.indexOf('{#if isEditingStatusMessage || currentStatusMessage}'),
+    );
     expect(sidebar).not.toContain('data-sidebar-changes-sync');
     expect(sidebar).toContain(
       'filePath={$fileExplorerWorkspacePath}\n                          {workspaceId}',

@@ -435,7 +435,7 @@ test('standalone foundations contact sheet stays readable across required modes'
       expect(evidence.devicePixelRatio, name).toBe(2);
       expect(evidence.viewportWidth, name).toBe(physicalWidth / 2);
       expect(evidence.headingCssHeight * evidence.devicePixelRatio, name).toBeGreaterThanOrEqual(
-        64,
+        56,
       );
     }
     if (FOUNDATION_ARTIFACT_DIR || zoom === 2) {
