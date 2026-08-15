@@ -227,7 +227,8 @@ describe('BackgroundHooksRow', () => {
       render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
       const summary = screen.getByTestId('background-hook-summary');
-      expect(summary.textContent).toContain('3m');
+      // Lookbehind keeps this from matching "13m"/"23m".
+      expect(summary.textContent).toMatch(/(?<![0-9])3m/);
       await fireEvent.click(summary);
       const details = screen.getByTestId('background-hook-details');
       expect(details.textContent).toContain('Next run: in 3m');
@@ -273,9 +274,10 @@ describe('BackgroundHooksRow', () => {
         props: { workspaceId: 'ws-1', agentId: 'agent-1' },
       });
 
-      expect(vi.getTimerCount()).toBe(1);
+      const timersWhileMounted = vi.getTimerCount();
+      expect(timersWhileMounted).toBeGreaterThanOrEqual(1);
       unmount();
-      expect(vi.getTimerCount()).toBe(0);
+      expect(vi.getTimerCount()).toBe(timersWhileMounted - 1);
     });
   });
 

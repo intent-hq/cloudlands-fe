@@ -161,13 +161,16 @@
     return () => clearInterval(interval);
   });
 
-  /** Relative timing shown beside localized absolute timestamps in the inline details. */
+  /**
+   * Relative timing shown beside localized absolute timestamps in the inline
+   * details. `formatCompactDuration` clamps negative durations to "0s".
+   */
   function nextRunIn(hook: BackgroundHook): string {
-    return formatCompactDuration(Math.max(0, new Date(hook.nextRunAt!).getTime() - now));
+    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - now);
   }
 
   function expiresIn(hook: BackgroundHook): string {
-    return formatCompactDuration(Math.max(0, new Date(hook.expiresAt!).getTime() - now));
+    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - now);
   }
 </script>
 
