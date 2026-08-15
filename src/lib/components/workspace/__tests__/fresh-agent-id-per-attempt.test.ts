@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
     goto: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    setReasoningEffort: vi.fn(),
+    compactFormState: null as { selectedReasoningEffort?: string } | null,
   };
 });
 
@@ -36,7 +38,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
+  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.compactFormState),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
@@ -86,6 +88,7 @@ vi.mock('$lib/config/debug', () => ({
 
 vi.mock('$lib/client', () => ({
   appClient: {
+    agents: { setReasoningEffort: mocks.setReasoningEffort },
     git: { pull: vi.fn(async () => ({ success: true })) },
     drafts: {
       get: vi.fn(async () => null),
@@ -187,6 +190,8 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    mocks.compactFormState = null;
+    mocks.setReasoningEffort.mockResolvedValue({ success: true });
   });
 
   afterEach(() => {
@@ -278,5 +283,38 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     ]);
     expect(dispatched[openIndex]?.payload).toEqual(['ws-created']);
     expect(openIndex).toBeGreaterThan(hydrateIndex);
+  });
+
+  it('applies a picked reasoning effort to the daemon-created initial agent', async () => {
+    mocks.compactFormState = { selectedReasoningEffort: 'high' };
+    mocks.create.mockResolvedValue({
+      ok: true,
+      data: {
+        workspace: {
+          id: 'ws-created',
+          title: 'Created workspace',
+          path: '/tmp/ws-created',
+          repositoryPath: '/tmp/test-repo',
+          worktreePath: '/tmp/ws-created',
+          status: 'Active',
+        },
+        initialAgent: { id: 'agent-created' },
+      },
+    });
+
+    seedAutoCreatePrefill();
+    const { component } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+
+    await waitFor(() =>
+      expect(mocks.setReasoningEffort).toHaveBeenCalledWith({
+        agentId: 'agent-created',
+        workspaceId: 'ws-created',
+        reasoningEffort: 'high',
+      }),
+    );
+    expect(mocks.create.mock.calls[0][0].initialAgent).not.toHaveProperty('reasoningEffort');
   });
 });

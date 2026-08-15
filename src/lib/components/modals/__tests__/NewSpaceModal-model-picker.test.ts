@@ -66,6 +66,10 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectModelEffortLevels: {
+    select: (_state: unknown, modelId: string | undefined) =>
+      mocks.models.find((model) => model.value === modelId)?.effortLevels,
+  },
   selectAgentModelEffortLevels: Object.assign(() => mocks.readable(undefined), {
     select: () => undefined,
     withStore: () => () => mocks.readable(undefined),
@@ -302,11 +306,25 @@ describe('NewSpaceModal model-picker composition', () => {
         isTeamMode: true,
       });
     });
+
+    await fireEvent.click(pickerTrigger(team));
+    const reasoningToggle = await within(dialog).findByTestId('model-reasoning-toggle');
+    await fireEvent.click(reasoningToggle);
+    await fireEvent.change(within(dialog).getByRole('slider'), { target: { value: '3' } });
+    await waitFor(() => {
+      expect(persistedStates().at(-1)).toMatchObject({ selectedReasoningEffort: 'high' });
+      expect(pickerTrigger(team).querySelector('[data-testid="effort-gauge"]')).toBeTruthy();
+    });
+    await fireEvent.click(pickerTrigger(team));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(team.getAttribute('aria-pressed')).toBe('true');
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(
       persistedStates().filter(
-        (state) => state.selectedModel === 'gpt5.6' && state.isTeamMode === true,
+        (state) =>
+          state.selectedModel === 'gpt5.6' &&
+          state.isTeamMode === true &&
+          state.selectedReasoningEffort === undefined,
       ),
     ).toHaveLength(1);
     expect(mocks.onClose).not.toHaveBeenCalled();

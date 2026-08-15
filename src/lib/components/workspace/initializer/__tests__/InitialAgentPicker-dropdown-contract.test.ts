@@ -23,6 +23,9 @@ describe('InitialAgentPicker specialist dropdown', () => {
       picker.match(/collisionBoundary="\[data-model-picker-collision-boundary\]"/g),
     ).toHaveLength(2);
     expect(picker.match(/portal=\{false\}/g)).toHaveLength(2);
+    expect(picker.match(/showReasoning/g)).toHaveLength(2);
+    expect(picker.match(/onReasoningChange=\{handleReasoningChange\}/g)).toHaveLength(2);
+    expect(picker).not.toContain('triggerClass=');
     expect(picker).not.toMatch(/:focus-visible\s*\{[^}]*box-shadow:/s);
     expect(picker).toContain('@media (forced-colors: active)');
   });

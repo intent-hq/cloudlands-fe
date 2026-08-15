@@ -486,6 +486,11 @@
       ? (savedState?.modelWasOverridden ?? lastSubmittedAgent?.modelWasOverridden ?? false)
       : false,
   );
+  let selectedReasoningEffort = $state<string | undefined>(
+    isModelForCurrentProvider
+      ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
+      : undefined,
+  );
   // Track if team mode is selected (spec-writer orchestrates)
   let isTeamMode = $state<boolean>(
     savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? true,
@@ -590,6 +595,7 @@
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    selectedReasoningEffort = settings.selectedReasoningEffort;
   }
 
   function applyCompactFormState(formState: CompactWorkspaceInitializerFormState) {
@@ -728,6 +734,7 @@
         selectedSpecialist,
         selectedModel,
         modelWasOverridden,
+        selectedReasoningEffort,
         isTeamMode,
         selectedProvider,
         skipIsolation,
@@ -745,8 +752,6 @@
     const currentProvider = untrack(() => selectedProvider);
     if (newProviderId && newProviderId !== currentProvider) {
       selectedProvider = newProviderId;
-      selectedModel = undefined;
-      modelWasOverridden = false;
     }
   });
 
@@ -2030,6 +2035,26 @@
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
 
+      // workspace.create does not accept reasoningEffort on initialAgent. Apply
+      // an explicit user pick to the daemon-minted session through agent.update;
+      // omitting this mutation preserves the daemon's normal resolution chain.
+      if (selectedReasoningEffort && initialAgentId) {
+        try {
+          const effortResult = await appClient.agents.setReasoningEffort({
+            agentId: initialAgentId,
+            workspaceId: workspace.id,
+            reasoningEffort: selectedReasoningEffort,
+          });
+          if (!effortResult.success) {
+            logger.warn('Failed to set reasoning effort on initial agent', {
+              error: effortResult.error,
+            });
+          }
+        } catch (effortError) {
+          logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
+        }
+      }
+
       // Redeem staged attachments now that the workspace exists: place each
       // from its sourcePath, then send the held-back first message with the
       // attachment-reference file blocks. A placement failure keeps the modal
@@ -2160,6 +2185,7 @@
           selectedSpecialist,
           selectedModel,
           modelWasOverridden,
+          selectedReasoningEffort,
           isTeamMode,
         }),
       );
@@ -2237,6 +2263,7 @@
       selectedSpecialist,
       selectedModel,
       modelWasOverridden,
+      selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
       skipIsolation,
@@ -3230,6 +3257,7 @@
             onModelChange={(model) => {
               selectedModel = model;
             }}
+            bind:selectedReasoningEffort
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider
