@@ -7,9 +7,10 @@
 
   interface Props {
     activeView?: { type: string; id?: string };
+    workspaceId?: string | null;
   }
 
-  let { activeView }: Props = $props();
+  let { activeView, workspaceId }: Props = $props();
   const context = getContext<SettingsStateFixtureContext>(SETTINGS_STATE_FIXTURE_CONTEXT);
   const { fixture, catalogSize, ownerSource } = context;
   let owner = $state(context.owner);
@@ -49,6 +50,16 @@
   {#if activeView}
     <p data-testid="ai-behavior-view">
       {activeView.type}{activeView.id ? `:${activeView.id}` : ''}
+    </p>
+    <p
+      data-testid="ai-behavior-workspace-id"
+      data-workspace-id-kind={workspaceId === null
+        ? 'null'
+        : workspaceId === undefined
+          ? 'undefined'
+          : 'value'}
+    >
+      {workspaceId ?? 'none'}
     </p>
   {/if}
 

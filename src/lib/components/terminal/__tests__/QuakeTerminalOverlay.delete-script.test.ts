@@ -21,7 +21,7 @@ vi.mock('$store/renderer/store', async () => {
   const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
   let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
-  let activeWorkspaceId: string | null = null;
+  let currentTabId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   const subscribers = new Set<() => void>();
   const isReadable = (
@@ -31,7 +31,7 @@ vi.mock('$store/renderer/store', async () => {
   const store: any = {
     get state() {
       return {
-        workspace: { activeWorkspaceId },
+        tabState: { currentTabId },
         scripts: scriptsState,
         terminals: terminalsState,
       };
@@ -78,13 +78,13 @@ vi.mock('$store/renderer/store', async () => {
       },
     }),
     __dispatched: dispatched,
-    __setActiveWorkspace: (id: string | null) => {
-      activeWorkspaceId = id;
+    __setCurrentTab: (id: string | null) => {
+      currentTabId = id;
     },
     __reset: () => {
       scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
       terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
-      activeWorkspaceId = null;
+      currentTabId = null;
       dispatched.length = 0;
       subscribers.clear();
     },
@@ -199,7 +199,7 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   });
 
   it('clears the raw store selection when the selected script is deleted', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     seedWorkspace(WS_A, ['script-1'], 'script-1');
     expect(rawSelectedScriptId(WS_A)).toBe('script-1');
 
@@ -213,7 +213,7 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
   });
 
   it('keeps the selection when a different script is deleted', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     seedWorkspace(WS_A, ['script-1', 'script-2'], 'script-1');
 
     const { component } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
@@ -231,7 +231,7 @@ describe('QuakeTerminalOverlay script selection (intent-hq/monorepo#2236 regress
   });
 
   it('dispatches terminals/selectScript when a running script tab is clicked', async () => {
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     const script: ScriptWithState = {
       ...makeScript('script-1', WS_A),
       runtime: { status: 'running', exitCode: null, restartCount: 0 },

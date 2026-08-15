@@ -21,7 +21,6 @@ vi.mock('$store/renderer/store', () => {
   const store: any = {
     get state() {
       return {
-        workspace: { activeWorkspaceId: null },
         terminals: { height: 30, workspaces: {} },
       };
     },

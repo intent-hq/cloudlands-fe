@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId, WorkspaceUIContext } from '../../../shared/types';
@@ -142,33 +135,33 @@ describe('WorkspaceService retention cleanup', () => {
   });
 
   it('evicts inactive metadata caches while retaining active metadata caches', async () => {
-    const activeWorkspaceId = 'retention-active' as WorkspaceId;
-    const inactiveWorkspaceId = 'retention-inactive' as WorkspaceId;
-    await repository.save(createWorkspace(activeWorkspaceId));
-    await repository.save(createWorkspace(inactiveWorkspaceId));
-    await service.getWorkspace(activeWorkspaceId);
-    await service.getWorkspace(inactiveWorkspaceId);
+    const retainedWorkspaceId = 'retention-active' as WorkspaceId;
+    const evictedWorkspaceId = 'retention-inactive' as WorkspaceId;
+    await repository.save(createWorkspace(retainedWorkspaceId));
+    await repository.save(createWorkspace(evictedWorkspaceId));
+    await service.getWorkspace(retainedWorkspaceId);
+    await service.getWorkspace(evictedWorkspaceId);
 
-    (service as any).lastContextCache.set(activeWorkspaceId, { path: '/active' });
-    (service as any).lastContextCache.set(inactiveWorkspaceId, { path: '/inactive' });
-    (service as any).contextCacheOrder = [activeWorkspaceId, inactiveWorkspaceId];
-    (service as any).dirtyBackgroundEnrichment.add(activeWorkspaceId);
-    (service as any).dirtyBackgroundEnrichment.add(inactiveWorkspaceId);
-    (service as any).pendingBackgroundEnrichment.add(activeWorkspaceId);
-    (service as any).pendingBackgroundEnrichment.add(inactiveWorkspaceId);
-    (service as any).backgroundEnrichmentQueue.push(activeWorkspaceId);
-    (service as any).backgroundEnrichmentQueue.push(inactiveWorkspaceId);
+    (service as any).lastContextCache.set(retainedWorkspaceId, { path: '/active' });
+    (service as any).lastContextCache.set(evictedWorkspaceId, { path: '/inactive' });
+    (service as any).contextCacheOrder = [retainedWorkspaceId, evictedWorkspaceId];
+    (service as any).dirtyBackgroundEnrichment.add(retainedWorkspaceId);
+    (service as any).dirtyBackgroundEnrichment.add(evictedWorkspaceId);
+    (service as any).pendingBackgroundEnrichment.add(retainedWorkspaceId);
+    (service as any).pendingBackgroundEnrichment.add(evictedWorkspaceId);
+    (service as any).backgroundEnrichmentQueue.push(retainedWorkspaceId);
+    (service as any).backgroundEnrichmentQueue.push(evictedWorkspaceId);
 
-    service.trimCachesToOpenWorkspaces([activeWorkspaceId]);
+    service.trimCachesToOpenWorkspaces([retainedWorkspaceId]);
 
-    expect((service as any).lastContextCache.has(activeWorkspaceId)).toBe(true);
-    expect((service as any).lastContextCache.has(inactiveWorkspaceId)).toBe(false);
-    expect((service as any).dirtyBackgroundEnrichment.has(activeWorkspaceId)).toBe(true);
-    expect((service as any).dirtyBackgroundEnrichment.has(inactiveWorkspaceId)).toBe(false);
-    expect((service as any).pendingBackgroundEnrichment.has(activeWorkspaceId)).toBe(true);
-    expect((service as any).pendingBackgroundEnrichment.has(inactiveWorkspaceId)).toBe(false);
-    expect((service as any).backgroundEnrichmentQueue).toContain(activeWorkspaceId);
-    expect((service as any).backgroundEnrichmentQueue).not.toContain(inactiveWorkspaceId);
+    expect((service as any).lastContextCache.has(retainedWorkspaceId)).toBe(true);
+    expect((service as any).lastContextCache.has(evictedWorkspaceId)).toBe(false);
+    expect((service as any).dirtyBackgroundEnrichment.has(retainedWorkspaceId)).toBe(true);
+    expect((service as any).dirtyBackgroundEnrichment.has(evictedWorkspaceId)).toBe(false);
+    expect((service as any).pendingBackgroundEnrichment.has(retainedWorkspaceId)).toBe(true);
+    expect((service as any).pendingBackgroundEnrichment.has(evictedWorkspaceId)).toBe(false);
+    expect((service as any).backgroundEnrichmentQueue).toContain(retainedWorkspaceId);
+    expect((service as any).backgroundEnrichmentQueue).not.toContain(evictedWorkspaceId);
   });
 
   it('bounds current context cache to 25 entries with LRU eviction', () => {

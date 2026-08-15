@@ -221,6 +221,26 @@ describe('MergePanel', () => {
     );
   });
 
+  it('refreshes Git status before broad Changes data after a successful merge', async () => {
+    const { component } = await renderMerge({ targetBranch: 'develop' });
+    mocks.dispatch.mockClear();
+
+    await (component as unknown as { triggerMerge: () => void }).triggerMerge();
+    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
+
+    expect(
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+        ),
+    ).toEqual([
+      { type: 'git/loadStatus', payload: ['ws-1', true] },
+      { type: 'changes/refreshRequested', payload: ['ws-1'] },
+    ]);
+  });
+
   it('getMergeOptions reflects viaPR and pushAfter defaults based on props', async () => {
     const { component } = await renderMerge({ hasOpenPR: true, hasRemote: true });
     await waitFor(() => {

@@ -24,8 +24,8 @@
   import Button from '../ui/button/button.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
@@ -63,6 +63,8 @@
     ondone,
   }: Props = $props();
 
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+
   // Track which message is being edited
   let editingId = $state<string | null>(null);
   let editContent = $state('');
@@ -90,12 +92,10 @@
   // Click on a queued attachment-reference file chip: the workspace-navigation
   // tab saga resolves the registry row by attachmentId (file.getAttachmentInfo,
   // PROTOCOL §5.9) and opens the stored path in a file tab; missing file →
-  // toast. The workspace id is read lazily at click time (not at component
-  // init) so the component renders fine without a live store (e.g. in tests).
+  // toast. The workspace id is captured from immutable route context at init.
   function openQueuedFileAttachment(block: NonNullable<QueuedMessage['fileBlocks']>[number]) {
-    const wsId = selectActiveWorkspaceId.select(appStore.state);
-    if (!wsId) return;
-    appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName));
+    if (!workspaceId) return;
+    appStore.dispatch(openWorkspaceAttachment(workspaceId, block.attachmentId, block.fileName));
   }
 
   // Auto-resize textarea to fit content

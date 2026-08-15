@@ -586,6 +586,25 @@ describe('settings tab route and focus behavior', () => {
     );
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain(expectedView);
   });
+
+  it.each([
+    ['/settings?tab=agents&workspaceId=query-owner', 'value', 'query-owner'],
+    ['/settings?tab=agents', 'null', 'none'],
+  ])(
+    'passes the expected workspace identity to AI behavior settings for %s',
+    async (url, kind, value) => {
+      renderSettings(url);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
+          'page',
+        ),
+      );
+      const workspaceId = screen.getByTestId('ai-behavior-workspace-id');
+      expect(workspaceId.dataset.workspaceIdKind).toBe(kind);
+      expect(workspaceId.textContent?.trim()).toBe(value);
+    },
+  );
 });
 
 describe('settings back and footer behavior', () => {

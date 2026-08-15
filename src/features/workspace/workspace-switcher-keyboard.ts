@@ -13,10 +13,10 @@
  */
 
 import { goto } from '$app/navigation';
+import { get, type Readable } from 'svelte/store';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import {
-  selectActiveWorkspaceId,
   selectWorkspaceItems,
   selectWorkspacesSortedByRecency,
 } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -55,9 +55,8 @@ export function buildSwitcherWorkspaceIds(
 }
 
 /** Open the switcher over active (non-archived) workspaces sorted by recency. */
-export function openWorkspaceSwitcher(): void {
+export function openWorkspaceSwitcher(activeWorkspaceId: string | null): void {
   const state = appStore.state;
-  const activeWorkspaceId = selectActiveWorkspaceId.select(state);
   const activeWorkspaces = selectWorkspaceItems
     .select(state)
     .filter((workspace) => workspace.status !== WorkspaceStatusEnum.Archived);
@@ -72,15 +71,14 @@ export function openWorkspaceSwitcher(): void {
 }
 
 /** Confirm the selection; navigate only when it differs from the active workspace. */
-export function confirmWorkspaceSwitcherSelection(): void {
+export function confirmWorkspaceSwitcherSelection(activeWorkspaceId: string | null): void {
   const state = appStore.state;
-  const workspaceIds = selectSwitcherWorkspaceIds.select(state);
+  const workspaceIds = selectSwitcherWorkspaceIds.select(state, activeWorkspaceId);
   if (workspaceIds.length === 0) {
     return;
   }
 
-  const selectedWorkspaceId = selectSelectedWorkspaceId.select(state);
-  const activeWorkspaceId = selectActiveWorkspaceId.select(state);
+  const selectedWorkspaceId = selectSelectedWorkspaceId.select(state, activeWorkspaceId);
   appStore.dispatch(confirmSelection());
 
   if (selectedWorkspaceId && selectedWorkspaceId !== activeWorkspaceId) {
@@ -89,10 +87,13 @@ export function confirmWorkspaceSwitcherSelection(): void {
   }
 }
 
-export function handleSwitcherKeydown(event: KeyboardEvent): void {
+export function handleSwitcherKeydown(
+  event: KeyboardEvent,
+  activeWorkspaceId: string | null,
+): void {
   const state = appStore.state;
   const switcher = selectSwitcherState.select(state);
-  const workspaceIds = selectSwitcherWorkspaceIds.select(state);
+  const workspaceIds = selectSwitcherWorkspaceIds.select(state, activeWorkspaceId);
   const workspaceCount = workspaceIds.length;
 
   if (event.ctrlKey && event.key === 'Tab') {
@@ -100,7 +101,7 @@ export function handleSwitcherKeydown(event: KeyboardEvent): void {
     event.stopPropagation();
 
     if (workspaceCount === 0) {
-      openWorkspaceSwitcher();
+      openWorkspaceSwitcher(activeWorkspaceId);
     } else if (event.shiftKey) {
       appStore.dispatch(cyclePrevious(workspaceCount));
     } else {
@@ -133,7 +134,7 @@ export function handleSwitcherKeydown(event: KeyboardEvent): void {
     }
     case 'Enter': {
       event.preventDefault();
-      confirmWorkspaceSwitcherSelection();
+      confirmWorkspaceSwitcherSelection(activeWorkspaceId);
       return;
     }
     case 'Home': {
@@ -164,34 +165,39 @@ export function handleSwitcherKeydown(event: KeyboardEvent): void {
 }
 
 /** Releasing the held modifier (Control or Meta) confirms the selection. */
-export function handleSwitcherKeyup(event: KeyboardEvent): void {
+export function handleSwitcherKeyup(event: KeyboardEvent, activeWorkspaceId: string | null): void {
   if (event.key !== 'Meta' && event.key !== 'Control') {
     return;
   }
 
-  const workspaceIds = selectSwitcherWorkspaceIds.select(appStore.state);
+  const workspaceIds = selectSwitcherWorkspaceIds.select(appStore.state, activeWorkspaceId);
   if (workspaceIds.length === 0) {
     return;
   }
 
   event.preventDefault();
-  confirmWorkspaceSwitcherSelection();
+  confirmWorkspaceSwitcherSelection(activeWorkspaceId);
 }
 
 /**
  * Attach the window-level keydown/keyup listeners. Returns a cleanup function
  * that removes them; SSR-safe (no-op when `window` is unavailable).
  */
-export function attachWorkspaceSwitcherKeyboard(): () => void {
+export function attachWorkspaceSwitcherKeyboard(
+  activeWorkspaceId: Readable<string | null>,
+): () => void {
   if (typeof window === 'undefined') {
     return () => {};
   }
 
-  window.addEventListener('keydown', handleSwitcherKeydown);
-  window.addEventListener('keyup', handleSwitcherKeyup);
+  const handleKeydown = (event: KeyboardEvent) =>
+    handleSwitcherKeydown(event, get(activeWorkspaceId));
+  const handleKeyup = (event: KeyboardEvent) => handleSwitcherKeyup(event, get(activeWorkspaceId));
+  window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('keyup', handleKeyup);
 
   return () => {
-    window.removeEventListener('keydown', handleSwitcherKeydown);
-    window.removeEventListener('keyup', handleSwitcherKeyup);
+    window.removeEventListener('keydown', handleKeydown);
+    window.removeEventListener('keyup', handleKeyup);
   };
 }

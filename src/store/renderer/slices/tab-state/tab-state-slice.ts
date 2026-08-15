@@ -301,6 +301,20 @@ export const workspaceTabsHydrated = createAction<[backendId: string]>(
   'tabState/workspaceTabsHydrated',
 );
 
+/** Actions whose reducer handlers may change the canonical current workspace tab. */
+export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
+  openWorkspaceTab,
+  closeWorkspaceTab,
+  reopenLastClosedWorkspaceTab,
+  clearCurrentWorkspaceTab,
+  cleanupInvalidWorkspaceTabs,
+  handleOptimisticWorkspaceTabTransition,
+  switchToNextWorkspaceTab,
+  switchToPreviousWorkspaceTab,
+  switchToWorkspaceTabByIndex,
+  loadWorkspaceTabsState,
+];
+
 export const tabStateReducer = createReducer<TabState>(initialState);
 tabStateReducer.with(workspaceTabsHydrated, (state, { payload: [backendId] }) => {
   if (state.hydratedBackendId === backendId) return state;

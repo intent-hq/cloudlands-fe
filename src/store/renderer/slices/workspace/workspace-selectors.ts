@@ -1,6 +1,6 @@
 import { store } from '../../store';
 import { type EnvironmentConfig, type PullRequestInfo, type Workspace } from '$shared/types';
-import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { type WorkspaceRecencyState } from './workspace-slice';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
@@ -20,10 +20,6 @@ import type {
 } from './workspace-types';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
-
-export const selectActiveWorkspaceId = store.createSelector((state) => {
-  return state.workspace.activeWorkspaceId as WorkspaceId | null;
-});
 
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
@@ -146,19 +142,6 @@ export const selectWorkspaceIsEmpty = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;
 });
 
-/**
- * Select the active workspace entity from Redux.
- * Resolves `activeWorkspaceId` against the stored workspace collection.
- * Returns undefined if no active workspace or if it hasn't been hydrated yet.
- */
-export const selectActiveWorkspace = store.createSelector<[], Workspace | undefined>((state) => {
-  const wsId = state.workspace.activeWorkspaceId;
-  if (!wsId) return undefined;
-  return getItem(state.workspace.workspaces, wsId as Workspace['id']);
-});
-
-export const selectCurrentWorkspace = selectActiveWorkspace;
-
 // ---------------------------------------------------------------------------
 // Sidebar-specific selectors (stable references for template props)
 // ---------------------------------------------------------------------------
@@ -186,8 +169,8 @@ export const selectIsNewWorkspaceSession = store.createSelector<
   boolean
 >((state, wsId, selectedNoteId) => {
   const isNewlyCreated = selectIsNewlyCreatedWorkspace.select(state, wsId);
-  const staged = selectCurrentStagedWorkingChanges.select(state);
-  const unstaged = selectCurrentUnstagedWorkingChanges.select(state);
+  const staged = selectCurrentStagedWorkingChanges.select(state, wsId);
+  const unstaged = selectCurrentUnstagedWorkingChanges.select(state, wsId);
   const commits = selectFileTrackingCommits.select(state, wsId) ?? [];
   const gitStatus = selectGitStatus.select(state, wsId);
   return !!(

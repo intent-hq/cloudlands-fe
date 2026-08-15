@@ -295,7 +295,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: createMockFtSelector(() => mockFileTrackingStore.currentWorkspaceId),
   selectWorkspaceById: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (resolvedWorkspaceId) =>
@@ -723,6 +722,33 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Rendering', () => {
+    it('refreshes Git status before broad Changes data with the explicit workspace ID', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      const { container } = await renderPanel();
+      const refresh = await waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          'button[title="Refresh git status"]',
+        );
+        expect(button).not.toBeNull();
+        return button!;
+      });
+      mockDispatch.mockClear();
+
+      await fireEvent.click(refresh);
+
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter(
+            (action) =>
+              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+          ),
+      ).toEqual([
+        { type: 'git/loadStatus', payload: ['ws-1', true] },
+        { type: 'changes/refreshRequested', payload: ['ws-1'] },
+      ]);
+    });
+
     it('shows skeleton loading state when store has not loaded', async () => {
       mockFileTrackingStore.loading = true;
       mockFileTrackingStore.currentWorkspaceId = null;
@@ -765,7 +791,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('hides stale changes while another workspace is globally active', async () => {
+    it('uses explicit workspace identity even when another workspace is globally active', async () => {
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
       mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/scoped.ts' })];
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -773,8 +799,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        expect(container.querySelector('.sidebar-changes-container')).toBeNull();
-        expect(container.querySelectorAll('[data-testid="file-row"]')).toHaveLength(0);
+        expect(container.querySelector('.sidebar-changes-container')).toBeTruthy();
+        expect(container.querySelectorAll('[data-testid="file-row"]')).toHaveLength(1);
       });
     });
 
@@ -1395,7 +1421,13 @@ describe('SidebarChangesPanel', () => {
 
   describe('State Management', () => {
     it('workspace switching resets state - re-renders with new workspace data', async () => {
-      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ branch: 'branch-1' }));
+      mockWorkspaceStore.findById.mockImplementation((workspaceId: string) =>
+        workspaceId === 'ws-1'
+          ? makeWorkspace({ branch: 'branch-1' })
+          : workspaceId === 'ws-2'
+            ? makeWorkspace({ id: 'ws-2', branch: 'branch-2' })
+            : undefined,
+      );
       const unstaged = [makeChange({ relativePath: 'src/old.ts' })];
       mockFileTrackingStore.unstagedChanges = unstaged;
       mockFileTrackingStore.stagedChanges = [];
@@ -1407,12 +1439,8 @@ describe('SidebarChangesPanel', () => {
       });
 
       // Switch workspace
-      mockWorkspaceStore.findById.mockReturnValue(
-        makeWorkspace({ id: 'ws-2', branch: 'branch-2' }),
-      );
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = [];
-      mockFileTrackingStore.currentWorkspaceId = 'ws-2';
       flushFtSelectors();
 
       await rerender({ workspaceId: 'ws-2' });
@@ -1674,10 +1702,17 @@ describe('SidebarChangesPanel', () => {
         expect(mockDispatch).toHaveBeenCalled();
       });
 
-      // Check that refreshRequested was dispatched
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/refreshRequested' }),
-      );
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter(
+            (action) =>
+              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+          ),
+      ).toEqual([
+        { type: 'git/loadStatus', payload: ['ws-1', true] },
+        { type: 'changes/refreshRequested', payload: ['ws-1'] },
+      ]);
     });
   });
 
@@ -1761,7 +1796,6 @@ describe('SidebarChangesPanel', () => {
       mockWorkspaceStore.findById.mockReturnValue(
         makeWorkspace({ id: 'ws-2', branch: 'feature/other' }),
       );
-      mockFileTrackingStore.currentWorkspaceId = 'ws-2';
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'def456', message: 'other push', isPushed: true }),
       ];
@@ -2191,9 +2225,7 @@ describe('SidebarChangesPanel', () => {
       await fireEvent.keyDown(trigger, { key: 'Enter' });
 
       await waitFor(() => {
-        expect(
-          container.querySelector('[data-testid="secondary-root-changes-view"]'),
-        ).toBeTruthy();
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
       });
 
       // Reads are scoped to the registered root
@@ -2291,9 +2323,7 @@ describe('SidebarChangesPanel', () => {
       await fireEvent.keyDown(trigger, { key: 'Enter' });
 
       await waitFor(() => {
-        expect(
-          container.querySelector('[data-testid="secondary-root-changes-view"]'),
-        ).toBeTruthy();
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
       });
 
       // PR sections stay visible while browsing the secondary root, and
@@ -2350,9 +2380,7 @@ describe('SidebarChangesPanel', () => {
       await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
       await fireEvent.keyDown(trigger, { key: 'Enter' });
       await waitFor(() => {
-        expect(
-          container.querySelector('[data-testid="secondary-root-changes-view"]'),
-        ).toBeTruthy();
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy();
       });
 
       // A pending auto-action arrives while browsing the secondary root
@@ -2379,9 +2407,7 @@ describe('SidebarChangesPanel', () => {
       await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
       await fireEvent.keyDown(trigger, { key: 'Enter' });
       await waitFor(() => {
-        expect(
-          container.querySelector('[data-testid="secondary-root-changes-view"]'),
-        ).toBeFalsy();
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
       });
 
       await waitFor(() => {

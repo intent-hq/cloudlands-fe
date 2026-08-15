@@ -317,6 +317,8 @@ export interface SettingsNavigationOptions {
   specialist?: string;
   /** View to open (e.g., 'create-specialist') */
   view?: string;
+  /** Workspace owner for project-scoped settings operations. */
+  workspaceId?: string;
 }
 
 /**
@@ -339,19 +341,24 @@ export async function navigateToSettings(options?: SettingsNavigationOptions): P
 
   // Build the target URL using the URL API for safe construction
   const targetUrl = new URL('/settings', window.location.origin);
+  const routeWorkspaceId = window.location.pathname.match(/^\/workspace\/([^/]+)/)?.[1];
+  const validRouteWorkspaceId = routeWorkspaceId === 'new' ? undefined : routeWorkspaceId;
+  const workspaceId = options?.workspaceId ?? validRouteWorkspaceId;
   if (options?.tab) targetUrl.searchParams.set('tab', options.tab);
   if (options?.specialist) targetUrl.searchParams.set('specialist', options.specialist);
   if (options?.view) targetUrl.searchParams.set('view', options.view);
+  if (workspaceId) targetUrl.searchParams.set('workspaceId', workspaceId);
   if (options?.hash) targetUrl.hash = options.hash;
 
   // If already on settings, update the URL in-place
   if (typeof window !== 'undefined' && window.location.pathname === '/settings') {
     // Update query params
-    if (options?.tab || options?.specialist || options?.view) {
+    if (options?.tab || options?.specialist || options?.view || options?.workspaceId) {
       const url = new URL(window.location.href);
       if (options?.tab) url.searchParams.set('tab', options.tab);
       if (options?.specialist) url.searchParams.set('specialist', options.specialist);
       if (options?.view) url.searchParams.set('view', options.view);
+      if (options?.workspaceId) url.searchParams.set('workspaceId', options.workspaceId);
       if (options?.hash) url.hash = options.hash;
       // Use goto to trigger SvelteKit reactivity for query param changes
       await goto(url.toString(), { replaceState: true });

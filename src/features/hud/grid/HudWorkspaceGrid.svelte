@@ -19,17 +19,20 @@
     selectHudGridFilter,
     selectHudWorkspaceCards,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import HudWorkspaceCard from './HudWorkspaceCard.svelte';
   import { applyHudGridFilter } from './hud-grid-filter';
   import { createCardVisibilityGate } from './hud-card-visibility';
   import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+
+  let {
+    workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
+  }: { workspaceId?: string } = $props();
 
   const cards$ = selectHudWorkspaceCards();
   const filter$ = selectHudGridFilter();
-  const activeWorkspaceId$ = selectActiveWorkspaceId();
 
   const reducedMotion = watchReducedMotion();
 
@@ -74,12 +77,11 @@
   $effect(() => cardVisibility.setRoot(gridEl ?? null));
   onDestroy(() => cardVisibility.destroy());
 
-  // The active workspace is exempt: its rollups feed the rest of the UI, so it
+  // The route workspace is exempt: its rollups feed the rest of the UI, so it
   // is read whether or not its card is scrolled into view (or rendered at all
   // under the current filter).
   $effect(() => {
-    const activeId = $activeWorkspaceId$;
-    if (activeId) requestRollups(activeId);
+    if (workspaceId) requestRollups(workspaceId);
   });
 </script>
 

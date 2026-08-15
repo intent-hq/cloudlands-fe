@@ -21,7 +21,6 @@
     selectMainPanelView as selectFtMainPanelView,
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     setMainPanelView as ftSetMainPanelView,
     unstageChangesRequested,
@@ -43,14 +42,14 @@
   import { Skeleton } from '../ui/skeleton';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
 
-  import { onMount } from 'svelte';
-  import { toStore } from 'svelte/store';
+  import { onMount, untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { Switch } from '../ui/switch';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     collapsed?: boolean;
@@ -58,15 +57,19 @@
     workspaceId?: string;
   }
 
-  let { collapsed = undefined, onCollapse = undefined, workspaceId = undefined }: Props = $props();
+  let {
+    collapsed = undefined,
+    onCollapse = undefined,
+    workspaceId: workspaceIdProp = undefined,
+  }: Props = $props();
 
-  const workspaceId$ = toStore(() => workspaceId ?? '');
-  const acceptChangesState = selectAcceptChangesState(workspaceId$);
-  const ftCurrentWsId$ = selectActiveWorkspaceId();
-  const ftStagedChanges$ = selectFtCurrentStagedChanges();
-  const ftUnstagedChanges$ = selectFtCurrentUnstagedChanges();
-  const ftCommits$ = selectFtCurrentCommits();
-  const ftLoading$ = selectFtCurrentLoading();
+  const workspaceId =
+    untrack(() => workspaceIdProp) ?? getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const acceptChangesState = selectAcceptChangesState(workspaceId ?? '');
+  const ftStagedChanges$ = selectFtCurrentStagedChanges(workspaceId);
+  const ftUnstagedChanges$ = selectFtCurrentUnstagedChanges(workspaceId);
+  const ftCommits$ = selectFtCurrentCommits(workspaceId);
+  const ftLoading$ = selectFtCurrentLoading(workspaceId);
   const ftMainPanelView$ = selectFtMainPanelView();
 
   function getBackgroundOperation() {
@@ -80,25 +83,20 @@
 
   // Combined loading state: local loading OR store loading OR workspace mismatch (switching)
   // This ensures skeleton shows during workspace transitions instead of showing empty state
-  const isLoading = $derived(
-    localIsLoading || $ftLoading$ || (workspaceId && $ftCurrentWsId$ !== workspaceId),
-  );
+  const isLoading = $derived(localIsLoading || $ftLoading$);
 
   // Collapsed state for sections
   let unstagedCollapsed = $state(false);
   let stagedCollapsed = $state(false);
 
   // Auto-commit settings from Redux
-  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId$);
+  const autoCommitEnabled = selectAutoCommitEnabled(workspaceId ?? '');
 
   // Get working changes from FileTrackingStore - the single source of truth
   // PERF: Use store arrays directly to avoid creating new array references on every update.
   // The store already provides stats, so we don't need to map/enhance.
-  // Only use empty arrays when the workspace doesn't match (edge case).
-  const stagedChanges = $derived($ftCurrentWsId$ !== workspaceId ? [] : ($ftStagedChanges$ ?? []));
-  const unstagedChanges = $derived(
-    $ftCurrentWsId$ !== workspaceId ? [] : ($ftUnstagedChanges$ ?? []),
-  );
+  const stagedChanges = $derived($ftStagedChanges$ ?? []);
+  const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
 
   // Track selected change from main panel view
   const selectedChange = $derived(

@@ -14,6 +14,7 @@ import { normalizeActionMappingsByModel } from '../actions/action-mapping';
 import { normalizeCycleScopeByFamily } from '../actions/cycle-scope';
 
 const mockState = {
+  tabState: { currentTabId: 'ws-other' as string | null },
   hardwareConsole: {
     isConsoleOwner: true,
     keyPins: [null, null, null, null, null, null] as (string | null)[],
@@ -25,7 +26,6 @@ const mockState = {
     promptPickerLimit: 8,
   },
   workspace: {
-    activeWorkspaceId: 'ws-other' as string | null,
     workspaces: createCollection('id', [
       { id: 'ws-1', lastActivity: '2026-08-10T12:00:00Z' } as never,
       { id: 'ws-2', lastActivity: '2026-08-09T12:00:00Z' } as never,
@@ -60,6 +60,9 @@ vi.mock('$store/renderer/store', () => ({
     dispatch: vi.fn((action: { type: string }) => {
       dispatched.push(action);
       return action;
+    }),
+    createSelector: (selector: (state: typeof mockState) => unknown) => ({
+      select: (state: typeof mockState) => selector(state),
     }),
   },
 }));
@@ -140,7 +143,7 @@ beforeEach(() => {
   mockState.hardwareConsole.isConsoleOwner = true;
   mockState.hardwareConsole.keyPins = [null, null, null, null, 'ws-1', null];
   mockState.hardwareConsole.encoderHudWorkspaceId = null;
-  mockState.workspace.activeWorkspaceId = 'ws-other';
+  mockState.tabState.currentTabId = 'ws-other';
   mockState.sidebarNav.panelItem = null;
   for (const teardown of teardowns.splice(0)) teardown();
   vi.clearAllMocks();
@@ -204,16 +207,20 @@ describe('encoder (two windows, one owner)', () => {
     const navigateB = vi.fn(() => Promise.resolve());
     const dispatchA = vi.fn();
     const dispatchB = vi.fn();
+    const getCurrentWorkspaceId = () => 'ws-2';
+    mockState.tabState.currentTabId = 'ws-1';
     teardowns.push(
       installHardwareConsoleEncoder(asManager(manager), {
         navigate: navigateA,
         dispatch: dispatchA,
         isOwner: isOwnerA,
+        getCurrentWorkspaceId,
       }),
       installHardwareConsoleEncoder(asManager(manager), {
         navigate: navigateB,
         dispatch: dispatchB,
         isOwner: isOwnerB,
+        getCurrentWorkspaceId,
       }),
     );
     dispatchA.mockClear();
@@ -221,6 +228,8 @@ describe('encoder (two windows, one owner)', () => {
 
     manager.detent('ENC_CW');
     expect(navigateA).toHaveBeenCalledTimes(1);
+    expect(navigateA).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(dispatchA).toHaveBeenCalledWith(expect.objectContaining({ payload: ['ws-1'] }));
     expect(navigateB).not.toHaveBeenCalled();
 
     manager.keyDown('ENC_CLK');

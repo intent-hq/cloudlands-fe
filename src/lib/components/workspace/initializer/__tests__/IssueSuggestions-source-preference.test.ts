@@ -47,10 +47,6 @@ vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => ({
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-slice', () => ({
   connectSentry: () => ({ type: 'sentry-auth/connect' }),
 }));
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: mocks.selector(null),
-}));
-
 const linearMocks = vi.hoisted(() => ({
   getAuthState: vi.fn(async () => ({ isAuthenticated: false })),
   fetchMyIssuesPage: vi.fn(async () => ({ issues: [], nextToken: null })),

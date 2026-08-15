@@ -5,10 +5,7 @@ import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix'
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { updateFileTabPath } from '../../panel-layout/panel-layout-slice';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   loadFileContentFailed,
   loadFileContentRequested,
@@ -73,7 +70,7 @@ function* loadFileContentWorker(workspaceId: string, path: string, absolutePath:
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
 }

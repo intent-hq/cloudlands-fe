@@ -122,7 +122,10 @@ class EmbeddedBrowserCdpService {
     // Send to workspace windows (falls back to all windows if no workspaceId).
     // The renderer echoes requestId back so the reply resolves this request
     // specifically, not whichever request happens to be pending.
-    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, { requestId });
+    sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, {
+      requestId,
+      ...(workspaceId ? { workspaceId } : {}),
+    });
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
     // Create per-request timeout promise. The fallback only consults the
@@ -320,6 +323,9 @@ class EmbeddedBrowserCdpService {
    *          tabs, or when the close could not be confirmed
    */
   async closeTab(tabId: string, workspaceId?: string): Promise<{ tabId: string }> {
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      throw new Error('workspaceId is required to close a browser tab');
+    }
     const panelTabs = await this.requestPanelBrowserTabs(workspaceId);
     const tab = panelTabs.find((t) => t.tabId === tabId);
     if (!tab) {

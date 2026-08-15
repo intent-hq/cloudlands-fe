@@ -1,3 +1,4 @@
+import { takeEveryFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -16,30 +17,11 @@ import {
   type AgentStreamUpdatePayload,
 } from '../../workspace-agents/workspace-agents-stream-slice';
 import {
-  applyPreset,
-  clearPanelLayout,
-  closeActiveTab,
-  closeAllOthersEverywhere,
-  closeAllTabs,
-  closeOtherTabs,
-  closePanel,
-  closeTab,
-  closeTabsByAgentId,
-  closeTabsByType,
-  closeTabsToRight,
-  createGridLayout,
-  goBack,
-  goForward,
-  initializeLayout,
-  moveTabToPanel,
-  moveTabToSplit,
-  moveTabToSplitLevel,
   openTab,
   openTabInAdjacentOrSplit,
-  reconcileStaleAgentTabs,
   reopenClosedTab,
-  resetLayout,
 } from '../../panel-layout/panel-layout-slice';
+import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
 import {
   closeAll as closeAllSidebar,
   closeHoverCards,
@@ -50,12 +32,12 @@ import {
   setHoveredItem,
   togglePanel as toggleSidebarPanel,
 } from '../../sidebar-nav/sidebar-nav-slice';
-import { clearActiveWorkspace, setActiveWorkspaceId } from '../../workspace/workspace-slice';
 import {
-  selectDividerBoundarySnapshot,
+  selectDividerBoundaryStateSnapshot,
   type DividerBoundarySnapshot,
 } from '../unread-tracking-selectors';
 import { endDividerSession, recordWatchedStreamingTail } from '../unread-tracking-slice';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 
 export type DividerSessionBoundary =
   | { kind: 'tab-close'; agentIds: string[] }
@@ -67,35 +49,12 @@ export type DividerSessionBoundary =
       nextWorkspaceId: string | null;
     };
 
-const TAB_REMOVAL_ACTIONS = [
-  initializeLayout,
-  applyPreset,
-  createGridLayout,
-  closeTab,
-  closeActiveTab,
-  closeTabsByType,
-  closeTabsByAgentId,
-  moveTabToPanel,
-  moveTabToSplit,
-  moveTabToSplitLevel,
-  closeOtherTabs,
-  closeTabsToRight,
-  closeAllTabs,
-  closeAllOthersEverywhere,
-  closePanel,
-  resetLayout,
-  goBack,
-  goForward,
-  reconcileStaleAgentTabs,
-  clearPanelLayout,
-];
 const TAB_BOUNDARY_ACTIONS = [
   ...TAB_REMOVAL_ACTIONS,
   openTab,
   openTabInAdjacentOrSplit,
   reopenClosedTab,
 ];
-const WORKSPACE_BOUNDARY_ACTIONS = [setActiveWorkspaceId, clearActiveWorkspace];
 const CHIEF_BOUNDARY_ACTIONS = [
   setHoveredItem,
   setExpandedItem,
@@ -108,7 +67,10 @@ const CHIEF_BOUNDARY_ACTIONS = [
 ];
 const TAB_REMOVAL_ACTION_TYPES = new Set(TAB_REMOVAL_ACTIONS.map((action) => action.type));
 
-type BoundarySnapshotTracker = { previous: DividerBoundarySnapshot };
+type BoundarySnapshotTracker = {
+  previous: DividerBoundarySnapshot;
+  hasWorkspaceContext: boolean;
+};
 
 function detectWorkspaceBoundary(
   previous: DividerBoundarySnapshot,
@@ -155,7 +117,7 @@ export function detectDividerSessionBoundary(
   current: DividerBoundarySnapshot,
   actionType: string,
 ): DividerSessionBoundary | null {
-  if (actionType === setActiveWorkspaceId.type || actionType === clearActiveWorkspace.type) {
+  if (previous.activeWorkspaceId !== current.activeWorkspaceId) {
     return detectWorkspaceBoundary(previous, current);
   }
   if (actionType.startsWith('sidebarNav/')) {
@@ -163,6 +125,13 @@ export function detectDividerSessionBoundary(
   }
   if (!TAB_REMOVAL_ACTION_TYPES.has(actionType)) return null;
   return detectTabBoundary(previous, current);
+}
+
+function* readDividerBoundarySnapshot(
+  activeWorkspaceId: string | null,
+): SagaGenerator<DividerBoundarySnapshot> {
+  const stateSnapshot = yield* selectDividerBoundaryStateSnapshot.effect();
+  return { ...stateSnapshot, activeWorkspaceId };
 }
 
 function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> {
@@ -180,32 +149,46 @@ function* finishBoundary(boundary: DividerSessionBoundary): SagaGenerator<void> 
 }
 
 function* handleTabBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
-  const current = yield* selectDividerBoundarySnapshot.effect();
+  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
   const boundary = detectTabBoundary(tracker.previous, current);
   tracker.previous = current;
   if (boundary) {
     yield* call(finishBoundary, boundary);
-    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
+    tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
   }
 }
 
-function* handleWorkspaceBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
-  const current = yield* selectDividerBoundarySnapshot.effect();
+function* handleWorkspaceBoundary(
+  tracker: BoundarySnapshotTracker,
+  { payload: activeWorkspaceId }: SelectorChannelPayload<string | null>,
+): SagaGenerator<void> {
+  const current = yield* call(readDividerBoundarySnapshot, activeWorkspaceId);
+  if (!tracker.hasWorkspaceContext) {
+    tracker.hasWorkspaceContext = true;
+    tracker.previous = current;
+    return;
+  }
   const boundary = detectWorkspaceBoundary(tracker.previous, current);
   tracker.previous = current;
   if (boundary) {
     yield* call(finishBoundary, boundary);
-    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
+    tracker.previous = yield* call(readDividerBoundarySnapshot, activeWorkspaceId);
   }
 }
 
+function* watchWorkspaceBoundaries(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
+  yield* takeEveryFromSelector(selectCurrentWorkspaceTabId, function* (change) {
+    yield* handleWorkspaceBoundary(tracker, change);
+  });
+}
+
 function* handleChiefBoundary(tracker: BoundarySnapshotTracker): SagaGenerator<void> {
-  const current = yield* selectDividerBoundarySnapshot.effect();
+  const current = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
   const boundary = detectChiefCardBoundary(tracker.previous, current);
   tracker.previous = current;
   if (boundary) {
     yield* call(finishBoundary, boundary);
-    tracker.previous = yield* selectDividerBoundarySnapshot.effect();
+    tracker.previous = yield* call(readDividerBoundarySnapshot, tracker.previous.activeWorkspaceId);
   }
 }
 
@@ -227,12 +210,14 @@ function* handleStreamUpdate(
 }
 
 export function* unreadTrackingSaga(): SagaGenerator<void> {
+  const initialWorkspaceId = yield* selectCurrentWorkspaceTabId.effect();
   const tracker: BoundarySnapshotTracker = {
-    previous: yield* selectDividerBoundarySnapshot.effect(),
+    previous: yield* call(readDividerBoundarySnapshot, initialWorkspaceId),
+    hasWorkspaceContext: initialWorkspaceId !== null,
   };
   yield* all([
     takeEvery(TAB_BOUNDARY_ACTIONS, handleTabBoundary, tracker),
-    takeEvery(WORKSPACE_BOUNDARY_ACTIONS, handleWorkspaceBoundary, tracker),
+    call(watchWorkspaceBoundaries, tracker),
     takeEvery(CHIEF_BOUNDARY_ACTIONS, handleChiefBoundary, tracker),
     takeEvery(sendMessage, handleSend),
     takeEvery(agentStreamUpdateReceived, handleStreamUpdate),

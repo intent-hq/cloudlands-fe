@@ -5,18 +5,8 @@
  * createAgent, createInitialAgent, and createContextualAgent into one unified interface.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  UnifiedAgentFactory,
-  type UnifiedAgentConfig,
-} from '../agent-factory';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { UnifiedAgentFactory, type UnifiedAgentConfig } from '../agent-factory';
 import type { Workspace } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 
@@ -30,7 +20,6 @@ const { mockStoreDispatch, backendRequestMock, mockStoreState } = vi.hoisted(() 
   mockStoreState: {
     current: {
       workspaceAgents: { byWorkspaceId: {} },
-      workspace: { activeWorkspaceId: 'test-ws' },
     } as Record<string, unknown>,
   },
 }));
@@ -51,7 +40,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 // Mock configured app Store
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => mockStoreState.current,
@@ -102,7 +92,6 @@ describe('UnifiedAgentFactory', () => {
     backendRequestMock.mockResolvedValue({ success: true, queued: false, messageId: 'm-1' });
     mockStoreState.current = {
       workspaceAgents: { byWorkspaceId: {} },
-      workspace: { activeWorkspaceId: 'test-ws' },
     };
     mockWorkspace = {
       id: 'workspace-123' as any,
@@ -378,7 +367,9 @@ describe('UnifiedAgentFactory', () => {
       // must share one logical id so the daemon-echoed canonical message
       // merges with the optimistic one instead of rendering twice.
       const [, sendParams] = sendMessageCall! as [string, Record<string, unknown>];
-      const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
+      const [addMessageAction] = addMessageCall! as [
+        { payload: [string, { appMessageId?: string }] },
+      ];
       expect(sendParams.userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
       expect(sendParams.userAppMessageId).toBeTruthy();
     });
@@ -401,7 +392,9 @@ describe('UnifiedAgentFactory', () => {
         ([action]) => action?.type === 'agentSessions/addMessage',
       );
       const [, sendParams] = findSendMessageCall()! as [string, Record<string, unknown>];
-      const [addMessageAction] = addMessageCall! as [{ payload: [string, { appMessageId?: string }] }];
+      const [addMessageAction] = addMessageCall! as [
+        { payload: [string, { appMessageId?: string }] },
+      ];
       expect(sendParams.userAppMessageId).toBe(appMessageId);
       expect(addMessageAction.payload[1].appMessageId).toBe(appMessageId);
     });

@@ -13,15 +13,15 @@
   import { fade } from 'svelte/transition';
   import type { ChatFileChange } from '$lib/utils/get-file-changes-from-messages';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectDiffSideBySide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import Fa from 'svelte-fa';
   import { faArrowPointer } from '@fortawesome/free-solid-svg-icons';
   import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import type { LocalFileChange } from './types';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   interface Props {
     change: ChatFileChange | LocalFileChange;
@@ -202,7 +202,6 @@
     };
   });
 
-  let workspaceId = $derived($activeWorkspaceId);
   const lineOffset = $derived.by(() => {
     if (change.isFullFileContent) return 1;
     const firstChunkLine = 'chunks' in change ? change.chunks?.[0]?.newStart : undefined;

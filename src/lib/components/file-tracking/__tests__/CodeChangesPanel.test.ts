@@ -101,10 +101,6 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: makeSelector(() => store.currentWsId),
-}));
-
 vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-selectors', () => ({
   selectAutoCommitEnabled: makeSelector(
     (workspaceId: string) => store.autoCommitByWorkspace[workspaceId] ?? false,
@@ -232,27 +228,30 @@ describe('CodeChangesPanel git-write-service routing', () => {
     );
   });
 
-  it('rebinds workspace-scoped state and mutations after an A-to-B rerender', async () => {
+  it('rebinds workspace-scoped state and mutations after an A-to-B remount', async () => {
     store.autoCommitByWorkspace = { 'ws-a': true, 'ws-b': false };
     store.acceptChangesStateByWorkspace = {
       'ws-a': { backgroundOperation: { type: 'commit', phase: 'syncing' } },
       'ws-b': { backgroundOperation: { type: 'create-pr', phase: 'generating' } },
     };
 
-    const { getByRole, container, rerender } = await renderPanel({ workspaceId: 'ws-a' });
+    const firstView = await renderPanel({ workspaceId: 'ws-a' });
+    const { getByRole, container } = firstView;
     const autoCommitSwitch = getByRole('switch');
     expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('true');
     expect(container.textContent).toContain('Committing');
 
-    await rerender({ workspaceId: 'ws-b' });
+    firstView.unmount();
+    const secondView = await renderPanel({ workspaceId: 'ws-b' });
+    const secondAutoCommitSwitch = secondView.getByRole('switch');
 
     await waitFor(() => {
-      expect(autoCommitSwitch.getAttribute('aria-checked')).toBe('false');
-      expect(container.textContent).toContain('Creating PR');
+      expect(secondAutoCommitSwitch.getAttribute('aria-checked')).toBe('false');
+      expect(secondView.container.textContent).toContain('Creating PR');
     });
-    expect(container.textContent).not.toContain('Committing');
+    expect(secondView.container.textContent).not.toContain('Committing');
 
-    await fireEvent.click(autoCommitSwitch);
+    await fireEvent.click(secondAutoCommitSwitch);
     expect(mockDispatch).toHaveBeenCalledWith({
       type: 'ws-settings/setAutoCommitEnabled',
       payload: ['ws-b', true],

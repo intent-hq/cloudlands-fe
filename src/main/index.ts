@@ -319,6 +319,7 @@ import { setMainLanguagePreference, getMainLanguagePreference } from './main-loc
 import { isCdpMcpBridgeEnabled } from './utils/cdp-debug';
 import { confirmQuitWithRunningAgents } from './quit-confirmation';
 import { m } from '../shared/paraglide/messages.js';
+import { sendWorkspaceCommand as sendWorkspaceMenuCommand } from './menu-workspace-command';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
@@ -754,10 +755,7 @@ app.whenReady().then(async () => {
         // so the terminal can intercept it when focused
         registerAccelerator: false,
         click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:new-agent');
-          }
+          sendWorkspaceCommand('menu:new-agent');
         },
       },
       {
@@ -765,10 +763,7 @@ app.whenReady().then(async () => {
         accelerator: 'CmdOrCtrl+Alt+N',
         enabled: inWorkspace,
         click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:new-note');
-          }
+          sendWorkspaceCommand('menu:new-note');
         },
       },
       {
@@ -776,10 +771,7 @@ app.whenReady().then(async () => {
         accelerator: 'CmdOrCtrl+Alt+T',
         enabled: inWorkspace,
         click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:new-terminal');
-          }
+          sendWorkspaceCommand('menu:new-terminal');
         },
       },
       {
@@ -787,10 +779,7 @@ app.whenReady().then(async () => {
         accelerator: 'CmdOrCtrl+Alt+B',
         enabled: inWorkspace,
         click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:new-browser');
-          }
+          sendWorkspaceCommand('menu:new-browser');
         },
       },
       { type: 'separator' },
@@ -834,10 +823,7 @@ app.whenReady().then(async () => {
         // Don't register accelerator - let renderer handle Cmd+W first for tabs
         registerAccelerator: false,
         click: () => {
-          const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:close-tab');
-          }
+          sendWorkspaceCommand('menu:close-tab');
         },
       },
       {
@@ -858,7 +844,7 @@ app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:reopen-closed-tab');
+            sendWorkspaceCommand('menu:reopen-closed-tab');
           }
         },
       },
@@ -879,6 +865,14 @@ app.whenReady().then(async () => {
     };
   };
 
+  const sendWorkspaceCommand = (channel: string): void => {
+    sendWorkspaceMenuCommand(
+      BrowserWindow.getFocusedWindow(),
+      channel,
+      getFocusedWindowWorkspaceId(),
+    );
+  };
+
   // Function to rebuild and set the application menu
   const rebuildMenu = async () => {
     // Check if focused window is in a workspace (for enabling/disabling tab menu items)
@@ -897,7 +891,7 @@ app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:select-previous-tab');
+            sendWorkspaceCommand('menu:select-previous-tab');
           }
         },
       },
@@ -908,7 +902,7 @@ app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:select-next-tab');
+            sendWorkspaceCommand('menu:select-next-tab');
           }
         },
       },
@@ -1307,7 +1301,7 @@ app.whenReady().then(async () => {
               if (!focusedWindow || focusedWindow.isDestroyed()) return;
               // Route zoom to main app or webview based on renderer-tracked panel focus
               if (isFocusedWindowBrowserActive()) {
-                focusedWindow.webContents.send('menu:reset-zoom');
+                sendWorkspaceCommand('menu:reset-zoom');
               } else {
                 focusedWindow.webContents.setZoomLevel(0);
               }
@@ -1320,7 +1314,7 @@ app.whenReady().then(async () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
               if (!focusedWindow || focusedWindow.isDestroyed()) return;
               if (isFocusedWindowBrowserActive()) {
-                focusedWindow.webContents.send('menu:zoom-in');
+                sendWorkspaceCommand('menu:zoom-in');
               } else {
                 focusedWindow.webContents.setZoomLevel(
                   focusedWindow.webContents.getZoomLevel() + 0.5,
@@ -1335,7 +1329,7 @@ app.whenReady().then(async () => {
               const focusedWindow = BrowserWindow.getFocusedWindow();
               if (!focusedWindow || focusedWindow.isDestroyed()) return;
               if (isFocusedWindowBrowserActive()) {
-                focusedWindow.webContents.send('menu:zoom-out');
+                sendWorkspaceCommand('menu:zoom-out');
               } else {
                 focusedWindow.webContents.setZoomLevel(
                   focusedWindow.webContents.getZoomLevel() - 0.5,

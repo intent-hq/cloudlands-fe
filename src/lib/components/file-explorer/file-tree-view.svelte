@@ -85,12 +85,12 @@
     activePanelTab,
   }: Props = $props();
 
-  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
-  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
-
   // Writable store for workspace ID, used as reactive arg for selectors
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const wsIdStore = writable(workspaceId);
+
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges(wsIdStore);
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges(wsIdStore);
 
   // Selector subscriptions at component init time
   const rootNode$ = selectFileExplorerRootNode(wsIdStore);

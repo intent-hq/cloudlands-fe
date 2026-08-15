@@ -1839,10 +1839,13 @@
               await import('$store/renderer/slices/scripts/scripts-selectors');
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
             const scriptId = mention.id;
+            const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
-            const outputLines = scriptOutputToLines(selectScriptOutput.select(state, scriptId));
-            const script = selectScriptById.select(state, scriptId);
-            const runtime = selectScriptRuntime.select(state, scriptId);
+            const outputLines = scriptOutputToLines(
+              selectScriptOutput.select(state, wsId, scriptId),
+            );
+            const script = selectScriptById.select(state, wsId, scriptId);
+            const runtime = selectScriptRuntime.select(state, wsId, scriptId);
 
             let content = `Script: ${script?.name || mention.label}\n`;
             content += `Command: ${script?.command || 'unknown'}\n`;

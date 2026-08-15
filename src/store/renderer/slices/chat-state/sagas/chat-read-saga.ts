@@ -49,10 +49,7 @@ import {
   upsertSession,
 } from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatTranscriptSnapshotApplied,
   initializeChatRequested,
@@ -333,16 +330,11 @@ function* fetchOlderHistorySaga(request: ChatRequest, windowAnchor?: string): Sa
   }
 }
 
-function matchesChatCleanup({ wsId, agentId }: ChatRequest) {
+function matchesChatCleanup({ wsId }: ChatRequest) {
   return (action: { type: string; payload?: unknown }) => {
-    if (action.type !== workspaceDeleted.type && action.type !== workspaceUnmounted.type)
-      return false;
+    if (action.type !== workspaceUnmounted.type) return false;
     if (!Array.isArray(action.payload)) return false;
-    const [cleanupWorkspaceId, deletedAgentIds = []] = action.payload;
-    return (
-      cleanupWorkspaceId === wsId ||
-      (Array.isArray(deletedAgentIds) && deletedAgentIds.includes(agentId))
-    );
+    return action.payload[0] === wsId;
   };
 }
 

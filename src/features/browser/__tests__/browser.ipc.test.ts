@@ -57,7 +57,7 @@ async function getInjectedTunnelProviderGetter(): Promise<() => unknown> {
   const handler = await registerAndGetHandler('browser:exec');
   const { executeActions } = await import('../main/browser-action-executor');
   (executeActions as Mock).mockResolvedValue({ success: true, results: [] });
-  await handler({}, { actions: [] });
+  await handler({}, { actions: [], workspaceId: 'workspace-test' });
   const call = (executeActions as Mock).mock.calls.at(-1);
   expect(call, 'executeActions should have been invoked').toBeDefined();
   return call![5] as () => unknown;

@@ -13,18 +13,6 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: Object.assign(
-    () => ({
-      subscribe: (run: (value: string | null) => void) => {
-        run(null);
-        return () => {};
-      },
-    }),
-    { select: () => null },
-  ),
-}));
-
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: Object.assign(
     () => ({

@@ -1,15 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-} from '@testing-library/svelte';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -37,7 +27,8 @@ const mocks = vi.hoisted(() => {
 
 const reduxDispatch = vi.fn();
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   const dispatch = (...args: any[]) => {
     mocks.dispatch(...args);
     return reduxDispatch(...args);
@@ -56,30 +47,56 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectGitOperationFlags: mocks.selector(() => mocks.gitOps),
   selectPostMergeState: Object.assign(
-    () => ({ subscribe: (run: (v: unknown) => void) => { run(mocks.postMerge); return () => {}; } }),
+    () => ({
+      subscribe: (run: (v: unknown) => void) => {
+        run(mocks.postMerge);
+        return () => {};
+      },
+    }),
     { select: () => mocks.postMerge },
   ),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
-  loadGitStatus: vi.fn((wsId: string, force: boolean) => ({ type: 'git/loadStatus', payload: [wsId, force] })),
-  setPostMergeState: vi.fn((wsId: string, state: unknown) => ({ type: 'git/setPostMergeState', payload: [wsId, state] })),
-  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({ type: 'git/setGitOperationFlag', payload: [wsId, flag, val] })),
+  loadGitStatus: vi.fn((wsId: string, force: boolean) => ({
+    type: 'git/loadStatus',
+    payload: [wsId, force],
+  })),
+  setPostMergeState: vi.fn((wsId: string, state: unknown) => ({
+    type: 'git/setPostMergeState',
+    payload: [wsId, state],
+  })),
+  setGitOperationFlag: vi.fn((wsId: string, flag: string, val: boolean) => ({
+    type: 'git/setGitOperationFlag',
+    payload: [wsId, flag, val],
+  })),
 }));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
-  refreshAcceptChangesStatus: vi.fn((wsId: string) => ({ type: 'changes/refreshAcceptChangesStatus', payload: wsId })),
-  clearOlderCommits: vi.fn((wsId: string) => ({ type: 'changes/clearOlderCommits', payload: wsId })),
+  refreshAcceptChangesStatus: vi.fn((wsId: string) => ({
+    type: 'changes/refreshAcceptChangesStatus',
+    payload: wsId,
+  })),
+  clearOlderCommits: vi.fn((wsId: string) => ({
+    type: 'changes/clearOlderCommits',
+    payload: wsId,
+  })),
   refreshRequested: vi.fn((wsId: string) => ({ type: 'changes/refreshRequested', payload: wsId })),
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  setWorkspaceEntity: vi.fn((entity: unknown) => ({ type: 'workspace/setWorkspaceEntity', payload: entity })),
+  setWorkspaceEntity: vi.fn((entity: unknown) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: entity,
+  })),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
 }));
 
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
-  setShowCreateModal: vi.fn((val: boolean) => ({ type: 'sidebarNav/setShowCreateModal', payload: val })),
+  setShowCreateModal: vi.fn((val: boolean) => ({
+    type: 'sidebarNav/setShowCreateModal',
+    payload: val,
+  })),
 }));
 
 const mockResetToTrunk = vi.fn();
@@ -186,29 +203,42 @@ describe('PostMergeActions', () => {
 
     // flag flipped on then off
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', true] }),
+      expect.objectContaining({
+        type: 'git/setGitOperationFlag',
+        payload: ['ws-1', 'isResettingToTrunk', true],
+      }),
     );
     await waitFor(() =>
       expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'git/setGitOperationFlag', payload: ['ws-1', 'isResettingToTrunk', false] }),
+        expect.objectContaining({
+          type: 'git/setGitOperationFlag',
+          payload: ['ws-1', 'isResettingToTrunk', false],
+        }),
       ),
     );
 
     // baseCommitSha persisted
     await waitFor(() =>
-      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(expect.objectContaining({ baseCommitSha: 'new-sha' })),
+      expect(mockWorkspaceUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ baseCommitSha: 'new-sha' }),
+      ),
     );
 
     // refresh dispatches
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'changes/clearOlderCommits', payload: 'ws-1' }),
     );
-    expect(reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'git/loadStatus' }),
-    );
-    expect(reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'changes/refreshRequested' }),
-    );
+    expect(
+      reduxDispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+        ),
+    ).toEqual([
+      { type: 'git/loadStatus', payload: ['ws-1', true] },
+      { type: 'changes/refreshRequested', payload: 'ws-1' },
+    ]);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'changes/refreshAcceptChangesStatus' }),
     );

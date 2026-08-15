@@ -84,7 +84,6 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: createMockSelector(() => mockReduxState.workspace),
-  selectActiveWorkspaceId: createMockSelector(() => mockReduxState.workspace.id),
   selectWorkspaceById: createMockSelector((wsId: unknown) =>
     wsId === mockReduxState.workspace.id ? mockReduxState.workspace : undefined,
   ),
@@ -343,6 +342,32 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       const openButton = await findOpenComboButton();
       expect(openButton.getAttribute('data-file-path')).toBe('\\\\server\\share\\repo\\src\\x.ts');
     });
+
+    it.each([
+      ['unstaged', 'stage-hunk'],
+      ['staged', 'unstage-hunk'],
+    ])(
+      'dispatches one broad refresh after a successful %s hunk mutation',
+      async (stage, testId) => {
+        mockReduxState.ftChanges = [makeTrackedChange('src/x.ts', stage)];
+        renderDiff('src/x.ts');
+
+        await fireEvent.click(await screen.findByTestId(testId));
+        await vi.waitFor(() => {
+          expect(
+            dispatchMock.mock.calls
+              .map(([action]) => action)
+              .filter(
+                (action: any) =>
+                  action.type === 'git/loadGitStatus' || action.type === 'changes/refreshRequested',
+              ),
+          ).toEqual([
+            { type: 'git/loadGitStatus', payload: ['ws-1', true] },
+            { type: 'changes/refreshRequested', payload: ['ws-1', true] },
+          ]);
+        });
+      },
+    );
   });
 
   describe('LocalChangesTabType', () => {

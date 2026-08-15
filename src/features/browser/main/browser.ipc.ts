@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
+import { workspaceCommandPayload } from '../../../shared/ipc/workspace-command-payloads';
 import { Logger } from '../../../shared/logger';
 import {
   executeActions,
@@ -30,8 +31,7 @@ const logger = new Logger('BrowserIPC');
 /**
  * Open a browser tab in the renderer.
  * Validates the URL protocol before sending to the renderer.
- * When workspaceId is provided, sends only to the window displaying that workspace.
- * Falls back to broadcasting to all windows if no workspaceId or no matching window found.
+ * Requires workspaceId and sends only to windows displaying that workspace.
  *
  * The tab id is generated here (main) and passed to the renderer so the
  * caller can lease the new tab immediately — the executor needs the id to
@@ -45,6 +45,11 @@ function openBrowserTab(
   workspaceId?: string,
   allowDuplicate?: boolean,
 ): { success: boolean; message: string; tabId?: string } {
+  const workspacePayload = workspaceCommandPayload(workspaceId);
+  if (!workspacePayload) {
+    return { success: false, message: 'workspaceId is required to open a browser tab' };
+  }
+
   // Validate URL before sending to renderer
   try {
     const parsed = new URL(url);
@@ -68,14 +73,14 @@ function openBrowserTab(
   // will create (same shape as the renderer's own generateTabId()).
   const tabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-  // Send to workspace windows (falls back to all windows if no workspaceId).
+  // Send only to windows displaying the requested workspace.
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
   // user happens to be viewing at the moment.
-  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, {
+  sendToWorkspaceWindows(workspacePayload.workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, {
     url,
     position,
-    workspaceId,
+    ...workspacePayload,
     tabId,
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
   });
@@ -97,6 +102,8 @@ const UnregisterTabSchema = z.object({
 const ExecSchema = z.object({
   actions: z.array(z.record(z.unknown())),
   tabId: z.string().optional(),
+  // i18n-ignore (agent-facing IPC validation message, not user-facing)
+  workspaceId: z.string().refine((value) => value.trim().length > 0, 'Workspace ID is required'),
 });
 
 const ResolveUrlSchema = z.object({
@@ -259,7 +266,7 @@ export function registerBrowserHandlers(): void {
       ExecSchema,
       async (_event, validated) =>
         // executeBrowserActions returns { success, results, error? } directly
-        executeBrowserActions(validated.actions, validated.tabId),
+        executeBrowserActions(validated.actions, validated.tabId, undefined, validated.workspaceId),
       IPC_CHANNELS.BROWSER.EXEC,
     ),
   );

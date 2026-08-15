@@ -12,7 +12,6 @@ import { flushSync } from 'svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   resetWorkspaceState,
-  setActiveWorkspaceId,
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { hudActivated } from '$store/renderer/slices/hud/hud-slice';
@@ -101,7 +100,9 @@ let dispatched: Array<{ type: string; payload: unknown[] }>;
 
 /** Workspace ids the grid asked to read, per read kind. */
 function readsOf(type: string): string[] {
-  return dispatched.filter((action) => action.type === type).map((action) => String(action.payload[0]));
+  return dispatched
+    .filter((action) => action.type === type)
+    .map((action) => String(action.payload[0]));
 }
 
 beforeAll(() => appStore.init());
@@ -187,8 +188,7 @@ describe('HudWorkspaceGrid per-workspace read gating', () => {
   });
 
   it('reads the active workspace even while its card is off-viewport', () => {
-    appStore.dispatch(setActiveWorkspaceId('ws-2'));
-    render(HudWorkspaceGrid);
+    render(HudWorkspaceGrid, { props: { workspaceId: 'ws-2' } });
     flushSync();
 
     expect(readsOf(TASKS_READ)).toEqual(['ws-2']);

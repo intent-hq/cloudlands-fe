@@ -161,6 +161,41 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     expect(mockedRequest.mock.calls.some(([method]) => method === 'file.read')).toBe(false);
   });
 
+  it('keeps every diff and file read on explicit workspace B when active workspace is A', async () => {
+    storeState.workspaces = [
+      { id: 'ws-a', worktreePath: '/workspace-a' },
+      { id: 'ws-b', worktreePath: '/workspace-b' },
+    ];
+    mockDaemon({
+      diffs: [{ path: 'b.ts', hunks: [HUNK] }],
+      showFiles: { ':0:b.ts': 'old b' },
+      files: { 'b.ts': 'new b' },
+    });
+
+    const promise = batchedGitDiff('ws-b', false, 'b.ts');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'b.ts',
+      chunks: [HUNK],
+      oldContent: 'old b',
+      newContent: 'new b',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-b',
+      paths: ['b.ts'],
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-b',
+      filePath: 'b.ts',
+      ref: ':0',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+      workspaceId: 'ws-b',
+      path: 'b.ts',
+    });
+  });
+
   it('resolves undefined for a path the daemon returned no diff entry for', async () => {
     mockDaemon({ diffs: [{ path: 'other.ts', hunks: [] }], files: { 'other.ts': 'x' } });
 
@@ -272,9 +307,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       oldContent: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
       newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n',
     });
-    expect(
-      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
-    ).toEqual([]);
+    expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([]);
   });
 
   it('gitlink metadata does not suppress content reads for other paths in the same batch', async () => {
@@ -322,8 +355,16 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       newStart: 1,
       newLines: 1,
       lines: [
-        { type: 'Deletion', content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n', oldNumber: 1 },
-        { type: 'Addition', content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n', newNumber: 1 },
+        {
+          type: 'Deletion',
+          content: 'Subproject commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+          oldNumber: 1,
+        },
+        {
+          type: 'Addition',
+          content: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
+          newNumber: 1,
+        },
       ],
     };
     mockDaemon({ diffs: [{ path: 'packages/intentd', hunks: [gitlinkHunk] }] });
@@ -339,9 +380,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     await expect(promise).resolves.toMatchObject({
       newContent: 'Subproject commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-dirty\n',
     });
-    expect(
-      mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs'),
-    ).toEqual([]);
+    expect(mockedRequest.mock.calls.filter(([method]) => method !== 'git.diffs')).toEqual([]);
   });
 
   it('does not classify a regular file with Subproject-commit-looking lines as a gitlink', async () => {

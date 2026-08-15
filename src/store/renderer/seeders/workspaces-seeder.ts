@@ -34,7 +34,6 @@ import { registerMockSeeder } from '../mock-bootstrap';
 import {
   loadRecencyData,
   replaceWorkspaceList,
-  setActiveWorkspaceId,
   setWorkspaceHasLoaded,
 } from '../slices/workspace/workspace-slice';
 import { openWorkspaceTab } from '../slices/tab-state/tab-state-slice';
@@ -245,7 +244,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
   }
 });
 
-registerMockSeeder('workspaces', async ({ store, client }) => {
+registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspaceId }) => {
   let workspaces: Workspace[] = [];
   let recentViews: Record<string, number> = {};
 
@@ -280,15 +279,14 @@ registerMockSeeder('workspaces', async ({ store, client }) => {
   const firstWorkspace =
     workspaces.find((w) => w.status !== WorkspaceStatus.Archived) ?? workspaces[0];
   if (firstWorkspace) {
-    // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
-    // are unset (fresh boot). If either is already set (e.g. by route loader on reload),
-    // skip auto-selection entirely to avoid clobbering route-driven state.
-    const { workspace, tabState } = store.state;
-    const hasActiveWorkspace = workspace.activeWorkspaceId !== null;
+    // Only auto-select the first workspace if both the explicit route context and
+    // current tab are unset (fresh boot). Re-read route context after deferred RPCs
+    // because the initial context may be a startup snapshot.
+    const { tabState } = store.state;
+    const hasActiveWorkspace = (getWorkspaceId?.() ?? workspaceId) !== null;
     const hasCurrentTab = tabState.currentTabId !== null;
 
     if (!hasActiveWorkspace && !hasCurrentTab) {
-      store.dispatch(setActiveWorkspaceId(firstWorkspace.id));
       store.dispatch(openWorkspaceTab(firstWorkspace.id));
     }
   }

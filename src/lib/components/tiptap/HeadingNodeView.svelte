@@ -1,9 +1,6 @@
 <script lang="ts">
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import Fa from 'svelte-fa';
   import { faPlay } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
@@ -12,16 +9,18 @@
   import { TASK_HREF_REGEX_FLEXIBLE } from '$shared/constants/intent-links';
 
   import {
-  selectNoteById,
-  selectNotesVersion,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+    selectNoteById,
+    selectNotesVersion,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   // Props from SvelteNodeViewRenderer
   let { node, editor }: NodeViewProps = $props();
+
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? '';
 
   // Derive heading level
   let level = $derived(node.attrs.level ?? 1);
@@ -103,8 +102,7 @@
 
         // If it's a linked task, check if the Task Note is incomplete
         if (linkedNoteId) {
-          const wsId = selectActiveWorkspaceId.select(appStore.state) ?? '';
-          const taskNote = selectNoteById.select(appStore.state, wsId, linkedNoteId);
+          const taskNote = selectNoteById.select(appStore.state, workspaceId, linkedNoteId);
           if (taskNote?.metadata?.task) {
             const status = taskNote.metadata.task.status;
             if (status !== 'complete' && status !== 'cancelled') {
@@ -146,7 +144,7 @@
   });
 
   // Also recalculate when notes version changes (Task Note status updates)
-  const notesVersion$ = selectNotesVersion(selectActiveWorkspaceId.select(appStore.state) ?? '');
+  const notesVersion$ = selectNotesVersion(workspaceId);
   $effect(() => {
     // Access notesVersion to track changes (void to suppress unused warning)
     void $notesVersion$;
@@ -179,12 +177,18 @@
         size="xs"
         class="px-1.5 gap-1"
         onclick={handleStartAllTasks}
-        title={m.tiptap_headingNodeView_startAllTasks_tooltip({ count: formatInteger(sectionTasks.incomplete) })}
+        title={m.tiptap_headingNodeView_startAllTasks_tooltip({
+          count: formatInteger(sectionTasks.incomplete),
+        })}
       >
         <Fa icon={faPlay} class="opacity-30" />
-        <span>{sectionTasks.incomplete === 1
+        <span
+          >{sectionTasks.incomplete === 1
             ? m.tiptap_headingNodeView_startTasks_one()
-            : m.tiptap_headingNodeView_startTasks_many({ count: formatInteger(sectionTasks.incomplete) })}</span>
+            : m.tiptap_headingNodeView_startTasks_many({
+                count: formatInteger(sectionTasks.incomplete),
+              })}</span
+        >
       </Button>
     </span>
   {/if}
