@@ -26,8 +26,10 @@
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
     selectEffectiveDefaultProviderId,
+    selectNormalizedProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectProviderModelsCacheEntry } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
@@ -98,9 +100,21 @@
 
   function reconcileReasoningEffort(model: string | undefined) {
     void $availableModels$;
-    if (!selectedReasoningEffort) return;
-    const levels = selectModelEffortLevels.select(appStore.state, model);
-    if (!levels?.includes(selectedReasoningEffort)) updateReasoningEffort(undefined);
+    if (!selectedReasoningEffort || !model) return;
+    let levels = selectModelEffortLevels.select(appStore.state, model);
+    if (levels === undefined) {
+      const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+      const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+      const cachedModels = selectProviderModelsCacheEntry.select(
+        appStore.state,
+        normalizedProviderId,
+      )?.models;
+      levels = cachedModels?.find(
+        (row) => row.value === model || row.value === modelId,
+      )?.effortLevels;
+    }
+    if (levels === undefined) return;
+    if (!levels.includes(selectedReasoningEffort)) updateReasoningEffort(undefined);
   }
 
   function handleReasoningChange(effort: string | null) {

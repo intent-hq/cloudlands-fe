@@ -50,6 +50,10 @@ const mocks = vi.hoisted(() => {
     ),
     getProviderAvailability: vi.fn(() => new Promise(() => {})),
     effortLevelsByModel: {} as Record<string, string[] | undefined>,
+    providerModelsByProviderId: {} as Record<
+      string,
+      { models: Array<{ value: string; effortLevels?: string[] }>; fetchedAt: string }
+    >,
   };
 });
 
@@ -73,6 +77,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       providerCatalog,
       providerSettings: { activeProviderId: 'auggie', enabledProviders: {} },
+      providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
     }),
   });
 });
@@ -158,6 +163,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     mocks.hydrated$.set(true);
     mocks.specialists$.set([]);
     mocks.effortLevelsByModel = {};
+    mocks.providerModelsByProviderId = {};
     mocks.specialistsList.mockImplementation(() =>
       Promise.resolve([
         { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
@@ -251,6 +257,36 @@ describe('InitialAgentPicker stale model override clearing', () => {
     });
 
     await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+
+    expect(onReasoningEffortChange).toHaveBeenCalledWith(undefined);
+    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('');
+  });
+
+  it('keeps effort when a cross-provider model is missing from every catalog', async () => {
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedReasoningEffort: 'high', onReasoningEffortChange },
+    });
+
+    await fireEvent.click(screen.getAllByTestId('pick-cross-provider-model')[0]);
+
+    expect(onReasoningEffortChange).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
+  });
+
+  it('clears effort when the provider cache knows the model lacks the selected level', async () => {
+    mocks.providerModelsByProviderId = {
+      codex: {
+        models: [{ value: 'codex:cross-provider-model', effortLevels: ['low'] }],
+        fetchedAt: '2026-08-15T00:00:00.000Z',
+      },
+    };
+    const onReasoningEffortChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedReasoningEffort: 'high', onReasoningEffortChange },
+    });
+
+    await fireEvent.click(screen.getAllByTestId('pick-cross-provider-model')[0]);
 
     expect(onReasoningEffortChange).toHaveBeenCalledWith(undefined);
     expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('');

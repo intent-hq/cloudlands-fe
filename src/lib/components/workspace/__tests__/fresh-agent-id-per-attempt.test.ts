@@ -17,6 +17,21 @@ const mocks = vi.hoisted(() => {
       return () => {};
     },
   });
+  function writable<T>(initial: T) {
+    let value = initial;
+    const subscribers = new Set<(value: T) => void>();
+    return {
+      subscribe(run: (value: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subscribers) run(next);
+      },
+    };
+  }
   return {
     readable,
     dispatch: vi.fn(),
@@ -24,7 +39,12 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(),
     update: vi.fn(),
     setReasoningEffort: vi.fn(),
-    compactFormState: null as { selectedReasoningEffort?: string } | null,
+    hydrated$: writable(false),
+    compactFormState$: writable<{
+      selectedModel?: string;
+      modelWasOverridden?: boolean;
+      selectedReasoningEffort?: string;
+    } | null>(null),
   };
 });
 
@@ -37,8 +57,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.compactFormState),
+  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+  selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
   selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
@@ -190,7 +210,8 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    mocks.compactFormState = null;
+    mocks.hydrated$.set(false);
+    mocks.compactFormState$.set(null);
     mocks.setReasoningEffort.mockResolvedValue({ success: true });
   });
 
@@ -286,7 +307,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   });
 
   it('applies a picked reasoning effort to the daemon-created initial agent', async () => {
-    mocks.compactFormState = { selectedReasoningEffort: 'high' };
+    mocks.compactFormState$.set({ selectedReasoningEffort: 'high' });
     mocks.create.mockResolvedValue({
       ok: true,
       data: {
@@ -316,5 +337,49 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
       }),
     );
     expect(mocks.create.mock.calls[0][0].initialAgent).not.toHaveProperty('reasoningEffort');
+  });
+
+  it('drops hydrated effort when the saved model belongs to another provider', async () => {
+    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    mocks.compactFormState$.set({
+      selectedModel: 'codex:gpt-5.3-codex',
+      modelWasOverridden: true,
+      selectedReasoningEffort: 'high',
+    });
+    mocks.hydrated$.set(true);
+
+    await waitFor(() => {
+      const persisted = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+        .at(-1)?.payload[0];
+      expect(persisted).toMatchObject({
+        selectedModel: undefined,
+        selectedReasoningEffort: undefined,
+      });
+    });
+  });
+
+  it('keeps hydrated effort when the saved model matches the active provider', async () => {
+    render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+
+    mocks.compactFormState$.set({
+      selectedModel: 'auggie:sonnet-4.6',
+      modelWasOverridden: true,
+      selectedReasoningEffort: 'high',
+    });
+    mocks.hydrated$.set(true);
+
+    await waitFor(() => {
+      const persisted = mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+        .at(-1)?.payload[0];
+      expect(persisted).toMatchObject({
+        selectedModel: 'auggie:sonnet-4.6',
+        selectedReasoningEffort: 'high',
+      });
+    });
   });
 });

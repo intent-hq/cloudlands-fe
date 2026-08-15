@@ -28,6 +28,13 @@
   >
     pick
   </button>
+  <button
+    type="button"
+    data-testid="pick-cross-provider-model"
+    onclick={() => onModelChange?.('codex:cross-provider-model')}
+  >
+    pick cross-provider model
+  </button>
   <button type="button" data-testid="pick-default" onclick={() => onModelChange?.('')}>
     pick default
   </button>

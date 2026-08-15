@@ -586,16 +586,17 @@
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     const model = settings.selectedModel;
-    if (
-      model &&
+    const savedModelAccepted =
+      !!model &&
       parseCompoundModelId(model, $defaultProviderId$).providerId ===
-        ($activeProviderId$ || $defaultProviderId$)
-    ) {
+        ($activeProviderId$ || $defaultProviderId$);
+    if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
-    selectedReasoningEffort = settings.selectedReasoningEffort;
+    selectedReasoningEffort =
+      !model || savedModelAccepted ? settings.selectedReasoningEffort : undefined;
   }
 
   function applyCompactFormState(formState: CompactWorkspaceInitializerFormState) {
