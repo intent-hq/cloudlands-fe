@@ -1,10 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   resolveNewMessagesDividerAnchor,
   resolveLatchedDividerAnchor,
   dividerVisibleWhenScrolledToBottom,
+  dividerDefersToTurnBoundary,
 } from '../new-messages-divider';
+import { indexConversationTurns } from '../conversation-turns';
+import type { AgentMessage } from '$shared/types';
 
 describe('resolveNewMessagesDividerAnchor', () => {
   const ids = ['m1', 'm2', 'm3', 'm4'];
@@ -72,6 +77,91 @@ describe('resolveLatchedDividerAnchor', () => {
 
   it('returns null for an empty transcript', () => {
     expect(resolveLatchedDividerAnchor([], 'm2')).toBeNull();
+  });
+});
+
+describe('dividerDefersToTurnBoundary', () => {
+  it('defers when the anchor is the turn last rendered message and a turn follows', () => {
+    expect(dividerDefersToTurnBoundary('m2', 'm2', true)).toBe(true);
+  });
+
+  it('keeps inline placement at end of transcript (no following turn)', () => {
+    expect(dividerDefersToTurnBoundary('m2', 'm2', false)).toBe(false);
+  });
+
+  it('keeps inline placement for mid-turn anchors', () => {
+    expect(dividerDefersToTurnBoundary('user-1', 'assistant-2', true)).toBe(false);
+  });
+
+  it('never defers without an anchor', () => {
+    expect(dividerDefersToTurnBoundary(null, 'm2', true)).toBe(false);
+    expect(dividerDefersToTurnBoundary(null, null, true)).toBe(false);
+  });
+
+  it('never defers for a turn with no rendered messages', () => {
+    expect(dividerDefersToTurnBoundary('m2', null, true)).toBe(false);
+    expect(dividerDefersToTurnBoundary('m2', undefined, true)).toBe(false);
+  });
+});
+
+describe('turn-boundary divider placement (ChatPanel contract)', () => {
+  it('does not defer when only skipped rows trail the last rendered turn', () => {
+    // A trailing date group holding only rows groupIntoTurns skips (ordinary
+    // system/error, non-model-change notices) renders no turn, so the last
+    // RENDERED turn must count as last — mirroring ChatPanel's
+    // `globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1`.
+    const message = (id: string, role: AgentMessage['role'], type?: string): AgentMessage =>
+      ({ id, role, contentBlocks: [], metadata: type ? { type } : undefined }) as AgentMessage;
+    const indexed = indexConversationTurns([
+      { messages: [message('user-1', 'user'), message('assistant-1', 'assistant')] },
+      { messages: [message('sys-1', 'system'), message('err-1', 'error')] },
+    ]);
+    expect(indexed.groups[1].turns).toHaveLength(0);
+    const turnKey = 'user-1';
+    const isLastTurnInConversation =
+      indexed.globalIndexByTurnKey.get(turnKey) === indexed.globalIndexByTurnKey.size - 1;
+    expect(isLastTurnInConversation).toBe(true);
+    expect(
+      dividerDefersToTurnBoundary('assistant-1', 'assistant-1', !isLastTurnInConversation),
+    ).toBe(false);
+  });
+
+  it('derives isLastTurnInConversation from rendered turns, not raw date groups', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    );
+    expect(panel).toContain(
+      'isLastTurnInConversation =\n                    globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1',
+    );
+  });
+
+  it('renders the turn-boundary divider immediately after the h-8 inter-turn spacer', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    ).replace(/<!--[\s\S]*?-->/g, '');
+    const normalized = panel.replace(/\s+/g, ' ');
+    expect(normalized).toContain(
+      '<div class="h-8" aria-hidden="true"></div> {/if} {#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
+    );
+  });
+
+  it('suppresses the inline render when the divider defers to the turn boundary', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    );
+    expect(panel).toContain(
+      '{#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}',
+    );
+    // Every inline render site (event banner, user row, notice, assistant)
+    // passes the defer flag — anchored to the concrete count so removed or
+    // non-matching sites fail rather than vacuously comparing undefined.
+    const allSites = panel.match(/@render newMessagesDividerAfter\(/g) ?? [];
+    const withFlag = panel.match(/@render newMessagesDividerAfter\([^)]+, dividerAtTurnBoundary\)/g) ?? [];
+    expect(allSites.length).toBe(4);
+    expect(withFlag.length).toBe(allSites.length);
   });
 });
 
