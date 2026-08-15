@@ -2,6 +2,10 @@
 
 Quick routing guide for AI agents. Start here, then open the smallest relevant doc.
 
+> **Merge permission**: never merge a PR or arm auto-merge without explicit permission
+> from a human — approved + green is not enough. See the monorepo root
+> [`AGENTS.md`](../../AGENTS.md) (resolves in a monorepo checkout) for the full rule.
+
 ## Tech stack
 
 - Electron + SvelteKit + TypeScript desktop app
@@ -222,19 +226,10 @@ above) before opening a PR.
 
 ## Filing issues
 
-When you encounter a bug or limitation while working on this codebase, file a GitHub
-issue on [intent-hq/monorepo](https://github.com/intent-hq/monorepo/issues) — the single
-tracker for all components. Do not track issues in markdown files.
-
-- **Labels**: apply the appropriate `component:*` label (`component:fe` for this repo)
-  plus `agent-filed`.
-- **Aggressive dedup**: search existing issues first
-  (`gh issue list --repo intent-hq/monorepo --search "<keywords>" --state all`) and
-  comment on / link the existing issue instead of filing a duplicate.
-- **Cross-reference**: reference the issue number in related commits/PRs (e.g.
-  `fix: correct panel focus (#123)`).
-- **Fix references**: when a PR fixes a monorepo issue, use the full cross-repo form
-  `Fixes intent-hq/monorepo#N` in the squash-commit message or PR body — it auto-closes
-  the issue on merge and lets the release notifier (`scripts/notify-fixed-issues.sh`)
-  comment on it once a release fully delivers the fix (every linked fix PR across
-  cloudlands-fe and intentd merged and contained in the released versions).
+File bugs on [intent-hq/monorepo](https://github.com/intent-hq/monorepo/issues) — the
+single tracker for all components; never track issues in markdown files. Label with
+`component:fe` + `agent-filed`. See the root [`AGENTS.md`](../../AGENTS.md) → Filing
+Issues for the full conventions (dedup, cross-referencing, `Fixes intent-hq/monorepo#N` —
+the release notifier `scripts/notify-fixed-issues.sh` comments on the issue once a
+release fully delivers the fix, i.e. every linked fix PR across cloudlands-fe and
+intentd is merged and contained in the released versions).
