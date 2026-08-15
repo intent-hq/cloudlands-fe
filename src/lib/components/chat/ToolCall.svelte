@@ -18,9 +18,11 @@
     COMPACT_TOOL_ROW_CLASS,
     COMPACT_TOOL_SENTENCE_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
+    OPERATIONAL_ICON_CLASS,
     OPERATIONAL_ROW_CONTAINER_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
+  import ToolStatusIcon from './ToolStatusIcon.svelte';
 
   /** MCP sources that have brand icons in McpIcon */
   const BRANDED_MCP_ICONS = new Set([
@@ -95,6 +97,30 @@
     }),
   );
 
+  // Check if tool event is truly empty: completed successfully with no meaningful
+  // content (whitespace-only, empty array/object, null/undefined) and no input params
+  const isEmptyEvent = $derived.by(() => {
+    if (toolState === 'error' || toolState === 'running') return false;
+    if (toolDisplay.hidden) return false; // Already handled by hidden flag
+    if (displayModel.isOkOnlyWorkspaceResult) return false; // ok-only mutations are intentionally content-free
+
+    // Check if result is empty
+    const resultIsEmpty =
+      result === null ||
+      result === undefined ||
+      (typeof result === 'string' && result.trim() === '') ||
+      (Array.isArray(result) && result.length === 0) ||
+      (typeof result === 'object' && !Array.isArray(result) && Object.keys(result).length === 0);
+
+    // Check if input has any non-internal params
+    const inputIsEmpty = !Object.keys(toolUse.input || {}).some((key) => !key.startsWith('_'));
+
+    return resultIsEmpty && inputIsEmpty && !displayModel.sentence;
+  });
+
+  // Should render: not hidden, not empty
+  const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
+
   let expanded = $state(false);
   const isExpandable = $derived(displayModel.hasDetails);
   const hasInlineFile = $derived(
@@ -134,7 +160,7 @@
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall {toolUse} {toolState} {result} />
-{:else if !toolDisplay.hidden}
+{:else if shouldRender}
   <div
     class={OPERATIONAL_ROW_CONTAINER_CLASS}
     data-tool-use-id={toolUse.id}
@@ -144,105 +170,137 @@
     <!-- Running state: animate-pulse on the icon indicates running state -->
     <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
       <!-- Category icon: show MCP brand logo for known MCPs, otherwise generic FA icon -->
-      {#if hasInlineFile && isExpandable}
+      {#if isExpandable}
+        <!-- Single disclosure button containing both icon and sentence -->
         <button
           type="button"
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running'
-            ? 'animate-pulse'
-            : ''} cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-none focus-visible:text-foreground"
-          data-tool-icon
+          class="col-span-2 flex w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
           data-testid="tool-call-disclosure"
-          aria-label={m.chat_toolCall_technicalDetails_label()}
+          aria-label={displayModel.accessibleSentence}
           aria-expanded={expanded}
           aria-controls={detailsId}
           title={m.chat_toolCall_technicalDetails_label()}
           onclick={toggleExpanded}
+          onkeydown={handleDisclosureKeydown}
         >
-          {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-            <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
+          <span
+            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+            data-tool-icon
+          >
+            {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
+              <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={18} />
+            {:else}
+              <Fa icon={toolDisplay.icon} size={18} class={OPERATIONAL_ICON_CLASS} />
+            {/if}
+          </span>
+          {#if hasInlineFile}
+            <span
+              class="{COMPACT_TOOL_SENTENCE_CLASS} flex flex-1 items-baseline"
+              data-testid="tool-call-summary"
+              data-tool-sentence
+            >
+              {#each displayModel.sentenceSegments as segment}
+                {#if segment.kind === 'file'}
+                  {#if workspaceId}
+                    <span
+                      role="button"
+                      tabindex="0"
+                      data-testid="tool-call-file-link"
+                      class="min-w-0 truncate whitespace-pre text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none cursor-pointer"
+                      aria-label={displayModel.accessibleSentence}
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        openFile(e);
+                      }}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openFile(e as any);
+                        }
+                      }}>{segment.text}</span
+                    >
+                  {:else}
+                    <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
+                      >{segment.text}</span
+                    >
+                  {/if}
+                {:else}
+                  <span class="shrink-0 whitespace-pre">{segment.text}</span>
+                {/if}
+              {/each}
+            </span>
           {:else}
-            <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
+            <span
+              class="{COMPACT_TOOL_SENTENCE_CLASS} flex-1"
+              data-testid="tool-call-summary"
+              data-tool-sentence
+            >
+              {displayModel.sentence}
+            </span>
           {/if}
         </button>
-      {:else if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
-        <div
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-          data-tool-icon
-        >
-          <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={15} />
-        </div>
       {:else}
-        <div
-          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-          data-tool-icon
-        >
-          <Fa icon={toolDisplay.icon} size={14} class="h-3.5! w-3.5!" />
-        </div>
-      {/if}
+        <!-- Non-expandable: icon and sentence as non-interactive elements -->
+        {#if toolDisplay.mcpSource && BRANDED_MCP_ICONS.has(toolDisplay.mcpSource)}
+          <div
+            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+            data-tool-icon
+          >
+            <McpIcon iconName={toolDisplay.mcpSource} label={toolDisplay.mcpSource} size={18} />
+          </div>
+        {:else}
+          <div
+            class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+            data-tool-icon
+          >
+            <Fa icon={toolDisplay.icon} size={18} class={OPERATIONAL_ICON_CLASS} />
+          </div>
+        {/if}
 
-      {#if hasInlineFile}
-        <span
-          class="{COMPACT_TOOL_SENTENCE_CLASS} flex items-baseline"
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          title={displayModel.accessibleSentence}
-        >
-          {#each displayModel.sentenceSegments as segment}
-            {#if segment.kind === 'file'}
-              {#if workspaceId}
-                <button
-                  type="button"
-                  data-testid="tool-call-file-link"
-                  class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
-                  aria-label={displayModel.accessibleSentence}
-                  onclick={openFile}>{segment.text}</button
-                >
+        {#if hasInlineFile}
+          <span
+            class="{COMPACT_TOOL_SENTENCE_CLASS} flex items-baseline"
+            data-testid="tool-call-summary"
+            data-tool-sentence
+            aria-label={displayModel.accessibleSentence}
+            title={displayModel.accessibleSentence}
+          >
+            {#each displayModel.sentenceSegments as segment}
+              {#if segment.kind === 'file'}
+                {#if workspaceId}
+                  <button
+                    type="button"
+                    data-testid="tool-call-file-link"
+                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                    aria-label={displayModel.accessibleSentence}
+                    onclick={openFile}>{segment.text}</button
+                  >
+                {:else}
+                  <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
+                    >{segment.text}</span
+                  >
+                {/if}
               {:else}
-                <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
-                  >{segment.text}</span
-                >
+                <span class="shrink-0 whitespace-pre">{segment.text}</span>
               {/if}
-            {:else}
-              <span class="shrink-0 whitespace-pre">{segment.text}</span>
-            {/if}
-          {/each}
-        </span>
-      {:else if isExpandable}
-        <button
-          type="button"
-          class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          title={m.chat_toolCall_technicalDetails_label()}
-          onclick={toggleExpanded}
-          onkeydown={handleDisclosureKeydown}>{displayModel.sentence}</button
-        >
-      {:else}
-        <span
-          class={COMPACT_TOOL_SENTENCE_CLASS}
-          data-testid="tool-call-summary"
-          data-tool-sentence
-          aria-label={displayModel.accessibleSentence}
-          title={displayModel.accessibleSentence}>{displayModel.sentence}</span
-        >
+            {/each}
+          </span>
+        {:else}
+          <span
+            class={COMPACT_TOOL_SENTENCE_CLASS}
+            data-testid="tool-call-summary"
+            data-tool-sentence
+            aria-label={displayModel.accessibleSentence}
+            title={displayModel.accessibleSentence}>{displayModel.sentence}</span
+          >
+        {/if}
       {/if}
 
       {#if displayModel.status === 'success'}
-        <span
-          class="{COMPACT_TOOL_TRAILING_CLASS} text-success"
-          data-testid="tool-call-status"
-          data-tool-status="success">{m.chat_toolCall_success_label()}</span
-        >
+        <ToolStatusIcon status="completed" />
       {:else if displayModel.status === 'error'}
-        <span
-          class="{COMPACT_TOOL_TRAILING_CLASS} text-destructive"
-          data-testid="tool-call-status"
-          data-tool-status="error">{m.chat_toolCall_failed_label()}</span
-        >
+        <ToolStatusIcon status="error" />
       {:else if toolDisplay.noteId}
         <a
           href={noteUrl(toolDisplay.noteId)}

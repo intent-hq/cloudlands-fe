@@ -17,10 +17,11 @@
     COMPACT_TOOL_ICON_BOX_CLASS,
     COMPACT_TOOL_ROW_CLASS,
     COMPACT_TOOL_SENTENCE_CLASS,
-    COMPACT_TOOL_TRAILING_CLASS,
+    OPERATIONAL_ICON_CLASS,
     OPERATIONAL_ROW_CONTAINER_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
+  import ToolStatusIcon from './ToolStatusIcon.svelte';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -224,29 +225,40 @@
 <div
   class={OPERATIONAL_ROW_CONTAINER_CLASS}
   data-testid="context-engine-tool-call"
+  data-tool-use-id={toolUse.id}
   data-conversation-layer="tool-activity"
 >
   <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
-    <div
-      class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
-      data-tool-icon
-    >
-      <Fa icon={faMagnifyingGlass} size={14} class="h-3.5! w-3.5!" />
-    </div>
     {#if isExpandable}
+      <!-- Single disclosure button containing both icon and sentence -->
       <button
         type="button"
-        class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
-        data-testid="context-engine-query"
-        data-tool-sentence
-        aria-label={displayModel.accessibleSentence}
+        class="col-span-2 flex w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
+        data-testid="context-engine-disclosure"
+        aria-label={m.chat_toolCall_technicalDetails_label()}
         aria-expanded={expanded}
         aria-controls={detailsId}
         title={m.chat_toolCall_technicalDetails_label()}
         onclick={toggleExpanded}
-        onkeydown={handleDisclosureKeydown}>{displayModel.sentence}</button
+        onkeydown={handleDisclosureKeydown}
       >
+        <span
+          class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+          data-tool-icon
+        >
+          <Fa icon={faMagnifyingGlass} size={18} class={OPERATIONAL_ICON_CLASS} />
+        </span>
+        <span class="{COMPACT_TOOL_SENTENCE_CLASS} flex-1" data-tool-sentence>
+          {displayModel.sentence}
+        </span>
+      </button>
     {:else}
+      <div
+        class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+        data-tool-icon
+      >
+        <Fa icon={faMagnifyingGlass} size={18} class={OPERATIONAL_ICON_CLASS} />
+      </div>
       <span
         class={COMPACT_TOOL_SENTENCE_CLASS}
         data-testid="context-engine-query"
@@ -255,11 +267,7 @@
         title={displayModel.accessibleSentence}>{displayModel.sentence}</span
       >
     {/if}
-    {#if toolState === 'error'}
-      <span class="{COMPACT_TOOL_TRAILING_CLASS} text-destructive" data-tool-status="error"
-        >{m.chat_toolCall_failed_label()}</span
-      >
-    {/if}
+    <ToolStatusIcon status={toolState} />
   </div>
 
   {#if expanded}

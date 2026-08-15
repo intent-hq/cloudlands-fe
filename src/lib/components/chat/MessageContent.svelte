@@ -41,6 +41,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import NavLink from './NavLink.svelte';
   import ProposalCard from './proposals/ProposalCard.svelte';
@@ -341,10 +342,12 @@
   }
 
   // Pre-compute block keys for stable iteration, ensuring uniqueness
-  const blockKeys = $derived(dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))));
+  const blockKeys = $derived(
+    dedupeKeys(groupedBlocks.map((block, index) => getBlockKey(block, index))),
+  );
 </script>
 
-{#snippet renderParsedContentBlock(parsedBlock: ParsedContent)}
+{#snippet renderParsedContentBlock(parsedBlock: ParsedContent, insetProse = false)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -409,13 +412,18 @@
       language={parsedBlock.metadata?.language || 'plaintext'}
     />
   {:else}
-    <MarkdownViewer
-      content={parsedBlock.content || ''}
-      {isStreaming}
-      {workspaceId}
-      taskBlockRenderMode="content"
-      onFileClick={(path, options) => handleOpenFile({ path, ...options })}
-    />
+    <div
+      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
+      data-assistant-prose={insetProse ? 'static-markdown' : undefined}
+    >
+      <MarkdownViewer
+        content={parsedBlock.content || ''}
+        {isStreaming}
+        {workspaceId}
+        taskBlockRenderMode="content"
+        onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+      />
+    </div>
   {/if}
 {/snippet}
 
@@ -424,7 +432,12 @@
   <Card {...card.props} />
 {/snippet}
 
-{#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
+{#snippet renderContentBlock(
+  block: ContentBlock,
+  parsedKey: string,
+  blockIndex: number,
+  nested = false,
+)}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
@@ -455,23 +468,35 @@
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       {#if isStreaming}
         <!-- During streaming, use simple text display to avoid expensive markdown processing -->
-        <div class="streaming-text whitespace-pre-wrap">{block.text}</div>
+        <div
+          class="streaming-text whitespace-pre-wrap {nested
+            ? ''
+            : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+          data-assistant-prose={nested ? undefined : 'static-streaming'}
+        >
+          {block.text}
+        </div>
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
         {#each parsedContent as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested)}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
         {@const cleanedText = parseSuggestedPrompts(block.text).cleanedContent}
         {#if cleanedText.trim()}
-          <MarkdownViewer
-            content={cleanedText}
-            {isStreaming}
-            {workspaceId}
-            taskBlockRenderMode="content"
-            onFileClick={(path, options) => handleOpenFile({ path, ...options })}
-          />
+          <div
+            class={nested ? undefined : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}
+            data-assistant-prose={nested ? undefined : 'static-fallback'}
+          >
+            <MarkdownViewer
+              content={cleanedText}
+              {isStreaming}
+              {workspaceId}
+              taskBlockRenderMode="content"
+              onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+            />
+          </div>
         {/if}
       {/if}
     </div>
@@ -553,7 +578,7 @@
   {/if}
 {/snippet}
 
-<div class="flex flex-col gap-1.5" style="contain: layout style paint;">
+<div class="flex flex-col gap-2.5" style="contain: layout style paint;">
   {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
@@ -566,7 +591,12 @@
         {#snippet children()}
           {@const childKeys = getResponseGroupBlockKeys(group.children)}
           {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-            {@render renderContentBlock(childBlock, `${blockIndex}-${childIndex}`, blockIndex)}
+            {@render renderContentBlock(
+              childBlock,
+              `${blockIndex}-${childIndex}`,
+              blockIndex,
+              true,
+            )}
           {/each}
         {/snippet}
       </ResponseGroup>

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,7 +64,7 @@ vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
 vi.mock('$lib/components/settings/mcp/McpIcon.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 
@@ -117,7 +117,9 @@ describe('shared operational disclosure-row contract', () => {
         return {
           view,
           host: view.container.firstElementChild!,
-          summary: screen.getByTestId('tool-call-summary'),
+          summary: screen
+            .getByTestId('tool-call-disclosure')
+            .querySelector('[data-tool-sentence]')!,
           compact: true,
         };
       },
@@ -128,7 +130,9 @@ describe('shared operational disclosure-row contract', () => {
         return {
           view,
           host: screen.getByTestId('context-engine-tool-call'),
-          summary: screen.getByTestId('context-engine-query'),
+          summary: screen
+            .getByTestId('context-engine-disclosure')
+            .querySelector('[data-tool-sentence]')!,
           compact: true,
         };
       },
@@ -168,10 +172,10 @@ describe('shared operational disclosure-row contract', () => {
   });
 
   it('keeps running icons readable and stateful without reintroducing decorative group icons', () => {
-    render(ToolCall, { props: { toolUse: genericTool, toolState: 'running' } });
-    const toolIcon = screen
-      .getByTestId('tool-call-summary')
-      .parentElement!.querySelector('[data-tool-icon]')!;
+    const { container } = render(ToolCall, {
+      props: { toolUse: genericTool, toolState: 'running' },
+    });
+    const toolIcon = container.querySelector('[data-tool-icon]')!;
     expectClasses(toolIcon, COMPACT_TOOL_ICON_BOX_CLASS);
     expect(toolIcon.className).toContain('animate-pulse');
     cleanup();
@@ -182,6 +186,10 @@ describe('shared operational disclosure-row contract', () => {
       .querySelector('[data-tool-icon]')!;
     expectClasses(searchIcon, COMPACT_TOOL_ICON_BOX_CLASS);
     expect(searchIcon.className).toContain('animate-pulse');
+    const runningStatus = screen.getByTestId('tool-call-status');
+    expect(runningStatus.getAttribute('data-tool-status')).toBe('running');
+    expect(runningStatus.getAttribute('aria-label')).toBe('Running');
+    expect(runningStatus.querySelector('[data-icon="spinner"]')).toBeTruthy();
     cleanup();
 
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });
@@ -200,7 +208,7 @@ describe('shared operational disclosure-row contract', () => {
 
   it('uses the shared expanded-content header gap for reasoning and response groups', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
-    await fireEvent.click(screen.getByRole('button', { name: /Reasoning/ }));
+    await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
     expectClasses(
       reasoning.container.querySelector('[data-operational-expanded-content]')!,
       OPERATIONAL_EXPANDED_CONTENT_CLASS,
@@ -219,7 +227,7 @@ describe('shared operational disclosure-row contract', () => {
     render(ToolCall, {
       props: { toolUse: genericTool, toolState: 'error', result: 'Command failed' },
     });
-    const genericDisclosure = screen.getByRole('button', { name: /Run operational task/ });
+    const genericDisclosure = screen.getByTestId('tool-call-disclosure');
     expect(genericDisclosure.getAttribute('aria-controls')).toBe('tool-details-tool-generic');
     await fireEvent.keyDown(genericDisclosure, { key: 'Enter' });
     expect(document.querySelector('#tool-details-tool-generic')).toBeTruthy();
@@ -228,7 +236,10 @@ describe('shared operational disclosure-row contract', () => {
     render(ContextEngineToolCall, {
       props: { toolUse: contextTool, toolState: 'error', result: 'Search failed' },
     });
-    const contextDisclosure = screen.getByRole('button', { name: /Search codebase/ });
+    const failedStatus = screen.getByTestId('tool-call-status');
+    expect(failedStatus.getAttribute('aria-label')).toBe('Failed');
+    expect(failedStatus.querySelector('[data-icon="circle-xmark"]')).toBeTruthy();
+    const contextDisclosure = screen.getByTestId('context-engine-disclosure');
     expect(contextDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(contextDisclosure.getAttribute('aria-controls')).toBe(
       'context-engine-details-tool-context',
@@ -259,22 +270,21 @@ describe('shared operational disclosure-row contract', () => {
     render(ToolCall, {
       props: { toolUse: genericTool, toolState: 'completed', result: 'passed' },
     });
-    const summary = screen.getByTestId('tool-call-summary');
+    const disclosure = screen.getByTestId('tool-call-disclosure');
+    const summary = disclosure.querySelector('[data-tool-sentence]')!;
     expectClasses(summary, COMPACT_TOOL_SENTENCE_CLASS);
-    expectClasses(
-      summary.parentElement!.querySelector('[data-tool-icon]')!,
-      OPERATIONAL_SECONDARY_CLASS,
-    );
-    expect(summary.className).toContain('focus-visible:text-foreground');
+    expectClasses(disclosure.querySelector('[data-tool-icon]')!, OPERATIONAL_SECONDARY_CLASS);
+    expect(disclosure.tagName).toBe('BUTTON');
     cleanup();
 
     render(ContextEngineToolCall, {
       props: { toolUse: contextTool, toolState: 'completed', result: 'Retrieved result' },
     });
-    const query = screen.getByTestId('context-engine-query');
+    const contextDisclosure = screen.getByTestId('context-engine-disclosure');
+    const query = contextDisclosure.querySelector('[data-tool-sentence]')!;
     expectClasses(query, COMPACT_TOOL_SENTENCE_CLASS);
     expectClasses(
-      query.parentElement!.querySelector('[data-tool-icon]')!,
+      contextDisclosure.querySelector('[data-tool-icon]')!,
       OPERATIONAL_SECONDARY_CLASS,
     );
   });
@@ -294,8 +304,9 @@ describe('shared operational disclosure-row contract', () => {
         },
       });
       const row = container.querySelector('[data-operational-disclosure-row]')!;
-      const sentence = row.querySelector('[data-tool-sentence]')!;
-      const action = screen.getByTestId(testId);
+      const disclosure = container.querySelector('[data-testid="tool-call-disclosure"]')!;
+      const sentence = disclosure.querySelector('[data-tool-sentence]')!;
+      const action = container.querySelector(`[data-testid="${testId}"]`)!;
       expectClasses(sentence, COMPACT_TOOL_SENTENCE_CLASS);
       if (isInline) {
         expect(sentence.contains(action)).toBe(true);
@@ -328,7 +339,8 @@ describe('shared operational disclosure-row contract', () => {
       const row = view.container.querySelector('[data-operational-disclosure-row]')!;
       expect(row.className).not.toContain('justify-between');
       expect(row.querySelector('.ml-auto')).toBeNull();
-      expect(row.querySelector('[class*="flex-1"]')).toBeNull();
+      // flex-1 is allowed inside the button's sentence, just not on the row itself or as separate layout spacers
+      expect(row.className).not.toContain('flex-1');
       cleanup();
     }
 
@@ -340,5 +352,162 @@ describe('shared operational disclosure-row contract', () => {
       .querySelector('[data-operational-disclosure-row]')!;
     expect(contextRow.querySelector('.ml-auto')).toBeNull();
     expect(contextRow.className).not.toContain('justify-between');
+  });
+
+  describe('expandable disclosure button behavior', () => {
+    type DisclosureCase = {
+      name: string;
+      renderRow: () => HTMLElement;
+      accessibleName: RegExp;
+      iconSelector: string;
+      labelSelector: string;
+      detailsSelector: string;
+    };
+
+    const disclosureCases: DisclosureCase[] = [
+      {
+        name: 'ToolCall',
+        renderRow: () => {
+          const { container } = render(ToolCall, {
+            props: { toolUse: genericTool, toolState: 'error', result: 'Command failed' },
+          });
+          return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+        },
+        accessibleName: /Run operational task/i,
+        iconSelector: '[data-tool-icon]',
+        labelSelector: '[data-tool-sentence]',
+        detailsSelector: '#tool-details-tool-generic',
+      },
+      {
+        name: 'ContextEngineToolCall',
+        renderRow: () => {
+          const { container } = render(ContextEngineToolCall, {
+            props: { toolUse: contextTool, toolState: 'error', result: 'Search failed' },
+          });
+          return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+        },
+        accessibleName: /Technical details/i,
+        iconSelector: '[data-tool-icon]',
+        labelSelector: '[data-tool-sentence]',
+        detailsSelector: '#context-engine-details-tool-context',
+      },
+      {
+        name: 'ThinkingBlock',
+        renderRow: () => {
+          const { container } = render(ThinkingBlock, {
+            props: { content: 'Analyzing requirements' },
+          });
+          return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+        },
+        accessibleName: /Reasoning: Analyzing requirements/i,
+        iconSelector: '[data-operational-icon-box]',
+        labelSelector: '[data-testid="reasoning-summary"]',
+        detailsSelector: '[data-operational-expanded-content]',
+      },
+    ];
+
+    it.each(disclosureCases)(
+      'gives $name one named pointer disclosure for its icon and label regions',
+      ({ renderRow, accessibleName, iconSelector, labelSelector }) => {
+        const row = renderRow();
+        const disclosure = within(row).getByRole('button', { name: accessibleName });
+
+        expect(within(row).getAllByRole('button')).toHaveLength(1);
+        expect(disclosure.className).toContain('cursor-pointer');
+        expect(disclosure.getAttribute('aria-label')).toMatch(accessibleName);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+        expect(disclosure.querySelector(iconSelector)).toBeTruthy();
+        expect(disclosure.querySelector(labelSelector)).toBeTruthy();
+      },
+    );
+
+    it.each(disclosureCases)(
+      'toggles $name exactly once from icon and label clicks',
+      async ({ renderRow, accessibleName, iconSelector, labelSelector, detailsSelector }) => {
+        const row = renderRow();
+        const disclosure = within(row).getByRole('button', { name: accessibleName });
+        const iconRegion = disclosure.querySelector(iconSelector)!;
+        const labelRegion = disclosure.querySelector(labelSelector)!;
+
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+        expect(document.querySelector(detailsSelector)).toBeNull();
+        await fireEvent.click(labelRegion);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+        expect(document.querySelector(detailsSelector)).toBeTruthy();
+        await fireEvent.click(iconRegion);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+        expect(document.querySelector(detailsSelector)).toBeNull();
+      },
+    );
+
+    it.each(disclosureCases)(
+      'supports Enter and Space on the $name disclosure',
+      async ({ renderRow, accessibleName, detailsSelector }) => {
+        const row = renderRow();
+        const disclosure = within(row).getByRole('button', { name: accessibleName });
+
+        await fireEvent.keyDown(disclosure, { key: 'Enter' });
+        expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+        expect(document.querySelector(detailsSelector)).toBeTruthy();
+        await fireEvent.keyDown(disclosure, { key: ' ' });
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+        expect(document.querySelector(detailsSelector)).toBeNull();
+      },
+    );
+
+    it('keeps an inline file action independent from its ToolCall disclosure', async () => {
+      const { container } = render(ToolCall, {
+        props: {
+          toolUse: { id: 'tool-file', name: 'file-tool', input: {} } as any,
+          toolState: 'completed',
+          result: 'done',
+          workspaceId: 'ws-1',
+        },
+      });
+      const row = container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+      const namedControls = within(row).getAllByRole('button', {
+        name: /Read src\/QuestionWizard\.svelte/i,
+      });
+      const disclosure = namedControls.find((control) => control.tagName === 'BUTTON')!;
+      const fileAction = namedControls.find((control) => control !== disclosure)!;
+
+      expect(namedControls).toHaveLength(2);
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(fileAction);
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.keyDown(fileAction, { key: 'Enter' });
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.keyDown(fileAction, { key: ' ' });
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it.each([
+      {
+        name: 'ToolCall',
+        renderRow: () => {
+          const { container } = render(ToolCall, {
+            props: { toolUse: genericTool, toolState: 'running' },
+          });
+          return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+        },
+      },
+      {
+        name: 'ContextEngineToolCall',
+        renderRow: () => {
+          const { container } = render(ContextEngineToolCall, {
+            props: { toolUse: contextTool, toolState: 'running' },
+          });
+          return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
+        },
+      },
+    ])('keeps non-expandable $name icons animated and non-interactive', ({ renderRow }) => {
+      const row = renderRow();
+      const icon = row.querySelector('[data-tool-icon]')!;
+
+      expect(within(row).queryByRole('button')).toBeNull();
+      expect(icon.tagName).toBe('DIV');
+      expect(icon.className).toContain('animate-pulse');
+      expect(icon.className).not.toContain('cursor-pointer');
+    });
   });
 });

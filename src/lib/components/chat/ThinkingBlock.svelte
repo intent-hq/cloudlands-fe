@@ -68,9 +68,7 @@
   <div class={OPERATIONAL_ROW_LINE_CLASS} data-operational-disclosure-row>
     <button
       type="button"
-      class="flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left focus-visible:outline-none {isStreaming
-        ? 'pt-2.5'
-        : ''}"
+      class="flex w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
       onclick={toggle}
       onkeydown={handleDisclosureKeydown}
       aria-expanded={isExpanded}
@@ -82,7 +80,7 @@
       <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box>
         <Fa
           icon={faBrain}
-          size={14}
+          size={18}
           class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
         />
       </span>

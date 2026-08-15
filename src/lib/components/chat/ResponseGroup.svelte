@@ -211,7 +211,7 @@
     aria-controls={detailsId}
   >
     <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
-      <Fa icon={faArrowsInLineVertical} size={14} class={OPERATIONAL_ICON_CLASS} />
+      <Fa icon={faArrowsInLineVertical} size={18} class={OPERATIONAL_ICON_CLASS} />
     </span>
     <!-- Name and snippet share one line box so their text baselines coincide;
          a flex sibling with `truncate` (overflow: hidden) would synthesize its

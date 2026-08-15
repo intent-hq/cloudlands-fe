@@ -8,8 +8,7 @@
    */
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
-  import { Button } from '$lib/components/ui/button';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import type { AgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -18,7 +17,7 @@
   import {
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
-    SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -69,12 +68,12 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS} {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-medium text-muted-foreground {className}"
   data-testid="agent-message-disclosure-header"
 >
   <button
     type="button"
-    class="flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded border-none bg-transparent p-0 text-left font-inherit transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    class="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     style="max-width: 40%;"
     onclick={handleClick}
     ondblclick={(event) => event.stopPropagation()}
@@ -82,16 +81,15 @@
     data-testid="agent-message-attribution"
   >
     <span class="shrink-0" data-testid="agent-message-avatar-column">
-      <AuggieAvatar agentId={attribution.fromAgentId} size={14} />
+      <AgentAvatar agentId={attribution.fromAgentId} size={20} />
     </span>
     <span class="min-w-0 truncate font-medium text-foreground" title={attribution.displayName}>
       {attribution.displayName}
     </span>
   </button>
-  <Button
+  <button
     type="button"
-    variant="plain"
-    class="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 overflow-hidden rounded border-none bg-transparent p-0 text-left font-inherit text-subtle transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 overflow-hidden rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     onclick={handleToggle}
     ondblclick={(event) => event.stopPropagation()}
     aria-expanded={expanded}
@@ -114,7 +112,7 @@
       <span class="min-w-0 flex-1"></span>
     {/if}
     <span
-      class="inline-flex h-5 w-5 shrink-0 items-center justify-center"
+      class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
       data-testid="agent-message-chevron-column"
     >
       <Fa
@@ -124,5 +122,5 @@
           : 'rotate-90'}"
       />
     </span>
-  </Button>
+  </button>
 </div>

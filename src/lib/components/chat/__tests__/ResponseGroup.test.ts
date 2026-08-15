@@ -245,7 +245,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(btn.className).toContain('text-muted-foreground');
     expect(btn.className).not.toContain('text-base');
     expect(btn.className).not.toContain('px-1');
-    expect(queryByText('Collapsed preview text')).not.toBeNull();
+    await waitFor(() => expect(queryByText('Collapsed preview text')).not.toBeNull());
 
     await fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
@@ -254,6 +254,22 @@ describe('ResponseGroup - collapse state model', () => {
       'font-medium',
     );
     expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
+  });
+
+  it('renders the collapsed text preview as inert inline Markdown', async () => {
+    const blocks = [
+      { type: 'text', text: '**Reviewed** _layout_ with [`details`](https://example.com)' },
+    ] as ContentBlock[];
+    const { container } = render(ResponseGroup, {
+      props: { name: 'Group title', blocks, children },
+    });
+
+    const snippet = container.querySelector('[data-testid="response-group-snippet"]')!;
+    await waitFor(() => expect(snippet.querySelector('strong')?.textContent).toBe('Reviewed'));
+    expect(snippet.querySelector('em')?.textContent).toBe('layout');
+    expect(snippet.querySelector('code')?.textContent).toBe('details');
+    expect(snippet.querySelector('a, button, [tabindex]')).toBeNull();
+    expect(header(container).querySelectorAll('button')).toHaveLength(0);
   });
 
   it('keeps one aligned operational icon and a spaced expanded guide', async () => {
@@ -566,7 +582,7 @@ describe('dedupeKeys', () => {
   });
 });
 
-describe('MessageContent - outer key dedup', () => {
+describe('MessageContent - top-level response rows', () => {
   it('renders duplicate top-level tool_results without each_key_duplicate', async () => {
     const MessageContent = (await import('../MessageContent.svelte')).default;
     const content = [
@@ -576,5 +592,26 @@ describe('MessageContent - outer key dedup', () => {
 
     const { container } = render(MessageContent, { props: { content } });
     expect(container.querySelectorAll('.border.border-border').length).toBe(2);
+  });
+
+  it('uses a 10px top-level stack without changing the 6px group internals', async () => {
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    const content = [
+      {
+        type: 'content_group',
+        name: 'Plan',
+        children: [{ type: 'text', text: 'Grouped detail' }],
+        isStreaming: false,
+      },
+      { type: 'text', text: 'Following prose' },
+    ] as unknown as ContentBlock[];
+
+    const { container } = render(MessageContent, { props: { content } });
+    const button = container.querySelector('button')!;
+    const group = button.parentElement;
+    expect(container.firstElementChild?.className).toContain('gap-2.5');
+    expect(group?.className).not.toContain('mb-1.5');
+    await fireEvent.click(button);
+    await waitFor(() => expect(group?.querySelector('[class~="gap-1.5"]')).toBeTruthy());
   });
 });

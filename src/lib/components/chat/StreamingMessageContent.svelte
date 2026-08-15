@@ -55,6 +55,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from './operational-disclosure-row';
   import { dedupeKeys, getResponseGroupBlockKeys } from './response-group-blocks';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
@@ -555,7 +556,11 @@
   );
 </script>
 
-{#snippet renderParsedContentBlock(parsedBlock: ParsedContent, blockIndex: number)}
+{#snippet renderParsedContentBlock(
+  parsedBlock: ParsedContent,
+  blockIndex: number,
+  insetProse = false,
+)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -621,21 +626,31 @@
       language={parsedBlock.metadata?.language || 'plaintext'}
     />
   {:else if parsedBlock.type === 'text'}
-    <MarkdownViewer
-      content={parsedBlock.content || ''}
-      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-      {workspaceId}
-      taskBlockRenderMode="content"
-      onFileClick={(path, options) => handleOpenFile({ path, ...options })}
-    />
+    <div
+      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
+      data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}
+    >
+      <MarkdownViewer
+        content={parsedBlock.content || ''}
+        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        {workspaceId}
+        taskBlockRenderMode="content"
+        onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+      />
+    </div>
   {:else}
-    <MarkdownViewer
-      content={parsedBlock.content || ''}
-      isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-      {workspaceId}
-      taskBlockRenderMode="content"
-      onFileClick={(path, options) => handleOpenFile({ path, ...options })}
-    />
+    <div
+      class={insetProse ? OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS : undefined}
+      data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}
+    >
+      <MarkdownViewer
+        content={parsedBlock.content || ''}
+        isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+        {workspaceId}
+        taskBlockRenderMode="content"
+        onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+      />
+    </div>
   {/if}
 {/snippet}
 
@@ -644,7 +659,12 @@
   <Card {...card.props} />
 {/snippet}
 
-{#snippet renderContentBlock(block: ContentBlock, parsedKey: string, blockIndex: number)}
+{#snippet renderContentBlock(
+  block: ContentBlock,
+  parsedKey: string,
+  blockIndex: number,
+  nested = false,
+)}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
       <NavLink target={block.target} label={block.label} {workspaceId} />
@@ -688,20 +708,25 @@
       {/if}
       {#if parsedResult.blocks.length > 0}
         {#each parsedResult.blocks as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, blockIndex, !nested)}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
         <!-- (suggested prompts are rendered separately; empty blocks should be hidden) -->
         {@const cleanedText = parseSuggestedPrompts(textContent).cleanedContent}
         {#if cleanedText.trim()}
-          <MarkdownViewer
-            content={cleanedText}
-            isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
-            {workspaceId}
-            taskBlockRenderMode="content"
-            onFileClick={(path, options) => handleOpenFile({ path, ...options })}
-          />
+          <div
+            class={nested ? undefined : OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}
+            data-assistant-prose={nested ? undefined : 'streaming-plain'}
+          >
+            <MarkdownViewer
+              content={cleanedText}
+              isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
+              {workspaceId}
+              taskBlockRenderMode="content"
+              onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+            />
+          </div>
         {/if}
       {/if}
     </div>
@@ -745,7 +770,7 @@
 {/snippet}
 
 <div
-  class="flex flex-col gap-1.5 relative"
+  class="flex flex-col gap-2.5 relative"
   class:streaming={isStreaming}
   style="contain: layout style paint;"
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
@@ -772,6 +797,7 @@
                     childBlock,
                     `${blockIndex}-${childIndex}`,
                     blockIndex,
+                    true,
                   )}
                 </div>
               {/if}
@@ -797,7 +823,10 @@
 
   <!-- Show streaming cursor if streaming but no content yet -->
   {#if isStreaming && groupedBlocks.length === 0}
-    <div class="w-full">
+    <div
+      class="w-full {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+      data-assistant-prose="streaming-empty"
+    >
       <MarkdownViewer content="" isStreaming={true} {workspaceId} taskBlockRenderMode="content" />
     </div>
   {/if}

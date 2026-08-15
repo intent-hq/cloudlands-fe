@@ -69,7 +69,7 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
+  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
     selectIsWorkspaceHostLocal,
@@ -77,15 +77,16 @@
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
+    selectAgentAttentionRequest,
+    selectAgentIsBlockedWaiting,
     selectAgentIsResponding,
-    selectAgentIsWaiting,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
     getAvatarState,
-  } from '$features/agent/components/auggie-avatar/avatar-state';
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import { stripWorkspacePrefix } from '$lib/utils/file-utils';
@@ -191,6 +192,11 @@
 
   const isDragging = selectIsDragging();
   const allPermissionRequests = selectPermissionRequests();
+  const activeAgentIdStore = writable<string>('');
+  const activeAgentSession$ = selectAgentSession(activeAgentIdStore);
+  const activeAgentIsResponding$ = selectAgentIsResponding(activeAgentIdStore);
+  const activeAgentIsBlockedWaiting$ = selectAgentIsBlockedWaiting(activeAgentIdStore);
+  const activeAgentAttentionRequest$ = selectAgentAttentionRequest(activeAgentIdStore);
 
   // Context menu state
   let contextMenuTab = $state<{
@@ -302,18 +308,15 @@
    */
   function getAgentAvatarState(tab: PanelTab): AvatarState {
     if (tab.type !== 'agent' || !tab.agentId) return 'idle';
+    if (tab.agentId === activeTab?.agentId) return activeAgentAvatarState;
     const agent = $workspaceAgents$.find((a) => a.id === tab.agentId);
     if (!agent) return 'idle';
-
-    const state = appStore.state;
-    const isWaiting = selectAgentIsWaiting.select(state, tab.agentId);
-    const isResponding = selectAgentIsResponding.select(state, tab.agentId);
-
-    // Use centralized getAvatarState for consistent state determination
     return getAvatarState(
       {
-        isStreaming: isResponding && !isWaiting,
-        status: isWaiting ? 'waiting' : agent.status,
+        isStreaming: agent.isStreaming,
+        isProcessing: agent.isProcessing,
+        isResponding: agent.isResponding,
+        status: agent.status,
       },
       {
         hasPermissionRequest: $allPermissionRequests.some((r) => r.sessionId === tab.agentId),
@@ -1026,6 +1029,34 @@
 
   // Get the currently active tab
   const activeTab = $derived(tabs.find((t) => t.id === activeTabId) || tabs[0] || null);
+  $effect(() => {
+    activeAgentIdStore.set(
+      activeTab?.type === 'agent' && activeTab.agentId ? activeTab.agentId : '',
+    );
+  });
+  const activeAgentAvatarState = $derived.by((): AvatarState => {
+    const agentId = activeTab?.type === 'agent' ? activeTab.agentId : null;
+    const session = $activeAgentSession$;
+    if (!agentId || !session || session.id !== agentId) return 'idle';
+
+    const isBlockedWaiting = $activeAgentIsBlockedWaiting$;
+    const isResponding = $activeAgentIsResponding$;
+    const hasFailed = session.status === 'error';
+    return getAvatarState(
+      {
+        isStreaming: !isBlockedWaiting && (isResponding || session.isStreaming),
+        isProcessing: !isBlockedWaiting && session.isProcessing,
+        isResponding: !isBlockedWaiting && isResponding,
+        status: isBlockedWaiting && !hasFailed ? 'waiting' : session.status,
+      },
+      {
+        hasPermissionRequest: $allPermissionRequests.some(
+          (request) => request.sessionId === agentId,
+        ),
+        attentionKind: $activeAgentAttentionRequest$?.kind ?? null,
+      },
+    );
+  });
 
   /**
    * "Delegated by" parent-agent attribution for the active agent tab.
@@ -1326,7 +1357,7 @@
               class={cn('flex items-center gap-1.5 pl-2.5 pr-2 py-1 h-9 text-ui whitespace-nowrap')}
             >
               {#if tab.type === 'agent' && tab.agentId}
-                <AugieAvatarWithState
+                <AgentAvatarWithState
                   agentId={tab.agentId}
                   size={16}
                   state={getAgentAvatarState(tab)}
@@ -1456,7 +1487,7 @@
                       close();
                     }}
                   >
-                    <AuggieAvatar seed="blank" size={16} />
+                    <AgentAvatar agentId="blank" size={16} />
                     <span>{m.layout_panelTabBar_blankAgent_label()}</span>
                   </button>
                   <!-- Specialist options -->
@@ -1468,7 +1499,7 @@
                         close();
                       }}
                     >
-                      <AuggieAvatar seed="blank" size={16} specialist={specialist.id} />
+                      <AgentAvatar agentId="blank" size={16} specialist={specialist.id} />
                       <span>{specialist.name}</span>
                     </button>
                   {/each}
@@ -1569,17 +1600,21 @@
     >
       <!-- Left: one content title + optional context (changes tabs provide their own header). -->
       {#if !hidesBreadcrumb}
-        <div class="flex min-w-0 flex-1 items-baseline gap-2">
+        <div class="flex min-w-0 flex-1 items-center gap-2">
           <!-- Type icon / agent avatar for the active content. -->
           {#if activeTab.type === 'agent' && activeTab.agentId}
-            <AugieAvatarWithState
-              agentId={activeTab.agentId}
-              size={16}
-              state={getAgentAvatarState(activeTab)}
-              specialist={getAgentSpecialistType(activeTab) as
-                import('$lib/constants/specialists').BuiltinSpecialistId | null}
-              class="shrink-0 self-center"
-            />
+            <span
+              class="flex size-5 shrink-0 items-center justify-center self-center"
+              data-testid="panel-header-agent-avatar-slot"
+            >
+              <AgentAvatarWithState
+                agentId={activeTab.agentId}
+                size={20}
+                state={activeAgentAvatarState}
+                specialist={getAgentSpecialistType(activeTab) as
+                  import('$lib/constants/specialists').BuiltinSpecialistId | null}
+              />
+            </span>
           {:else if activeTab.faviconUrl}
             <img
               src={activeTab.faviconUrl}
