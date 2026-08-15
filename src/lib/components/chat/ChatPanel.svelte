@@ -3813,9 +3813,6 @@
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
-                  {@const turnMessageText = turn.userMessage
-                    ? extractAllContent(turn.userMessage)
-                    : ''}
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
                        no eventTypes (and no [WORKSPACE EVENTS] prefix) renders neither
