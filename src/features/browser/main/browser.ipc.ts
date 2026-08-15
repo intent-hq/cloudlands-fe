@@ -21,6 +21,7 @@ import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
 import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
 import { resolveBrowserUrl, type ResolvedBrowserUrl } from './loopback-url-resolver';
 import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
+import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
@@ -31,12 +32,19 @@ const logger = new Logger('BrowserIPC');
  * Validates the URL protocol before sending to the renderer.
  * When workspaceId is provided, sends only to the window displaying that workspace.
  * Falls back to broadcasting to all windows if no workspaceId or no matching window found.
+ *
+ * The tab id is generated here (main) and passed to the renderer so the
+ * caller can lease the new tab immediately — the executor needs the id to
+ * mark agent-opened tabs for exact-URL dedupe (intent-hq/monorepo#2541).
+ * `allowDuplicate` is forwarded so the renderer's own equivalent-tab dedupe
+ * doesn't override an explicit request for a genuinely new tab.
  */
 function openBrowserTab(
   url: string,
   position: 'adjacent' | 'replace' | 'same' = 'adjacent',
   workspaceId?: string,
-): { success: boolean; message: string } {
+  allowDuplicate?: boolean,
+): { success: boolean; message: string; tabId?: string } {
   // Validate URL before sending to renderer
   try {
     const parsed = new URL(url);
@@ -56,6 +64,10 @@ function openBrowserTab(
     return { success: false, message: msg };
   }
 
+  // Pre-generate the tab id so main knows the id of the tab the renderer
+  // will create (same shape as the renderer's own generateTabId()).
+  const tabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
   // Send to workspace windows (falls back to all windows if no workspaceId).
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
@@ -64,10 +76,12 @@ function openBrowserTab(
     url,
     position,
     workspaceId,
+    tabId,
+    ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
   });
-  logger.info('Sent browser:open-tab', { url, position, workspaceId });
+  logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate });
   // i18n-ignore (agent-facing protocol message, not user-facing)
-  return { success: true, message: `Opening browser tab with URL: ${url}` };
+  return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };
 }
 
 // Schemas for IPC validation
@@ -110,31 +124,58 @@ function getDaemonLoopbackContext(): LoopbackRewriteContext {
 }
 
 /**
- * Lazy singleton TunnelManager backing the executor's probe-failure fallback:
- * when a rewritten remote origin is unreachable, the port is forwarded over
- * the daemon's `/tunnel` WebSocket and the embedded browser loads the local
- * forward instead (intent-hq/monorepo#2323). Reset on backend switch (see
- * `registerBrowserHandlers`) so forwards never outlive the connection they
- * were opened against.
+ * Lazy singleton tunnel backends behind the executor's provider seam
+ * (intent-hq/monorepo#2323, #2537). Remote daemons (ws/wss transports)
+ * forward ports over the daemon's `/tunnel` WebSocket mux (TunnelManager);
+ * local daemons (UDS / loopback ws / tcp) get a direct FE-side loopback
+ * relay instead (DirectRelay) — routing locally through the daemon would be
+ * a pointless double hop, and `/tunnel` does not exist for UDS transports.
+ * Both are reset on backend switch (see `registerBrowserHandlers`) so
+ * forwards never outlive the connection they were opened against.
  */
 let tunnelManager: TunnelManager | null = null;
+let directRelay: DirectRelay | null = null;
 
-function getBrowserTunnelProvider(): TunnelManager {
-  if (!tunnelManager) {
-    tunnelManager = new TunnelManager({
-      getConfig: () => {
-        try {
-          return getBackendClient().getConfig();
-        } catch (err) {
-          logger.warn('Could not resolve backend config for the browser tunnel', {
-            error: (err as Error).message,
-          });
-          return null;
-        }
-      },
-    });
+function getBrowserTunnelProvider(): TunnelManager | DirectRelay {
+  // Unlike `getDaemonLoopbackContext()`'s assume-local fallback (benign for
+  // URL rewriting), the backend choice decides WHICH MACHINE a forward lands
+  // on: assuming local here would silently relay to the CLIENT's loopback and
+  // report success on a misdirected forward. Unknown locality must fail the
+  // tunnel action instead (the resolver's probe-fallback paths catch getter
+  // throws and degrade to their explanatory error).
+  let daemonIsRemote: boolean;
+  try {
+    daemonIsRemote = loopbackContextFromTransport(
+      isSameHostBackendActive(),
+      getBackendClient().getConfig(),
+    ).daemonIsRemote;
+  } catch (err) {
+    throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `Cannot select a tunnel backend: the backend connection state is unreadable (${(err as Error).message}).`,
+    );
   }
-  return tunnelManager;
+  if (daemonIsRemote) {
+    if (!tunnelManager) {
+      tunnelManager = new TunnelManager({
+        getConfig: () => {
+          try {
+            return getBackendClient().getConfig();
+          } catch (err) {
+            logger.warn('Could not resolve backend config for the browser tunnel', {
+              error: (err as Error).message,
+            });
+            return null;
+          }
+        },
+      });
+    }
+    return tunnelManager;
+  }
+  if (!directRelay) {
+    directRelay = new DirectRelay();
+  }
+  return directRelay;
 }
 
 /**
@@ -153,7 +194,7 @@ export async function executeBrowserActions(
 ): Promise<ExecutionResult> {
   return executeActions(
     { actions, tabId },
-    (url, position) => openBrowserTab(url, position, workspaceId),
+    (url, position, allowDuplicate) => openBrowserTab(url, position, workspaceId, allowDuplicate),
     agentId,
     workspaceId,
     getDaemonLoopbackContext,
@@ -171,13 +212,17 @@ export function registerBrowserHandlers(): void {
   logger.info('Registering browser IPC handlers');
 
   // A backend switch invalidates every tunnel forward (they target the old
-  // daemon's loopback); dispose the manager so the next fallback rebuilds it
+  // daemon's loopback); dispose both backends so the next use rebuilds them
   // against the new connection. Cast: 'backend-connection-changed' is a
   // custom app event (emitted by backend.ipc.ts), not in Electron's App type.
   (app as NodeJS.EventEmitter).on('backend-connection-changed', () => {
     if (tunnelManager) {
       tunnelManager.dispose();
       tunnelManager = null;
+    }
+    if (directRelay) {
+      directRelay.dispose();
+      directRelay = null;
     }
   });
 

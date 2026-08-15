@@ -127,8 +127,16 @@ const GetSummaryActionSchema = z
 
 const OpenTabActionSchema = z.object({
   action: z.literal('openTab'),
+  // `position` only applies when a genuinely new tab is opened — when an
+  // existing tab is reused (exact-URL dedupe or idle-tab reuse) it is
+  // ignored and the reused tab is focused in place.
   url: z.string(),
   position: z.enum(['adjacent', 'replace', 'same']).optional(),
+  // Opt out of tab reuse (exact-URL dedupe and idle-tab reuse) and always
+  // open a genuinely new tab (intent-hq/monorepo#2541). Also forwarded to
+  // the renderer so its own equivalent-tab dedupe doesn't coalesce the
+  // requested duplicate.
+  allowDuplicate: z.boolean().optional(),
 });
 
 const NavigateActionSchema = z.object({
@@ -144,6 +152,32 @@ const CloseTabActionSchema = z.object({
   action: z.literal('closeTab'),
   tabId: z.string(),
 });
+
+const TunnelPortSchema = z.number().int().min(1).max(65535);
+
+// Programmatic tunnel actions (intent-hq/monorepo#2537): explicit, tab-free
+// control of daemon-port forwards. Uniform semantics regardless of transport
+// — remote ws/wss forwards ride the daemon /tunnel mux ("tunnel" backend),
+// local UDS/TCP get a direct FE-side loopback relay ("direct" backend).
+const OpenTunnelActionSchema = z
+  .object({
+    action: z.literal('openTunnel'),
+    remotePort: TunnelPortSchema,
+  })
+  .strict();
+
+const ListTunnelsActionSchema = z
+  .object({
+    action: z.literal('listTunnels'),
+  })
+  .strict();
+
+const CloseTunnelActionSchema = z
+  .object({
+    action: z.literal('closeTunnel'),
+    remotePort: TunnelPortSchema,
+  })
+  .strict();
 
 // Union of all action schemas
 const BrowserActionSchema = z.discriminatedUnion('action', [
@@ -165,6 +199,9 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   OpenTabActionSchema,
   NavigateActionSchema,
   CloseTabActionSchema,
+  OpenTunnelActionSchema,
+  ListTunnelsActionSchema,
+  CloseTunnelActionSchema,
 ]);
 
 export type BrowserAction = z.infer<typeof BrowserActionSchema>;
@@ -253,7 +290,8 @@ async function executeAction(
   openTabFn?: (
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
-  ) => { success: boolean; message: string },
+    allowDuplicate?: boolean,
+  ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
@@ -409,8 +447,39 @@ async function executeAction(
         const finalRewrite = openTabTarget.rewrite;
         const echo = rewriteEcho(finalRewrite, openTabTarget.tunneled);
 
+        // When called by an agent, reuse an existing model-opened tab whose
+        // current URL exactly matches instead of opening a duplicate
+        // (intent-hq/monorepo#2541). User-opened tabs are never considered.
+        if (agentId && !action.allowDuplicate) {
+          const duplicateTabId = await embeddedBrowserCdp.findModelTabByExactUrl(
+            finalRewrite.url,
+            agentId,
+            workspaceId,
+          );
+          if (duplicateTabId) {
+            logger.info('Reusing existing model-opened tab with matching URL', {
+              tabId: duplicateTabId,
+              url: finalRewrite.url,
+              requestedUrl: action.url,
+              agentId,
+            });
+            const focused = embeddedBrowserCdp.focusTab(duplicateTabId, workspaceId);
+            return {
+              action: 'openTab',
+              success: true,
+              result: {
+                reused: true,
+                focused,
+                tabId: duplicateTabId,
+                url: finalRewrite.url,
+                ...echo,
+              },
+            };
+          }
+        }
+
         // When called by an agent, try to reuse an idle browser tab instead of opening a new one
-        if (agentId) {
+        if (agentId && !action.allowDuplicate) {
           const idleTabId = embeddedBrowserCdp.findIdleTab(agentId);
           if (idleTabId) {
             logger.info('Reusing idle browser tab instead of opening new one', {
@@ -447,7 +516,21 @@ async function executeAction(
             error: 'openTab not available in this context',
           };
         }
-        const result = openTabFn(finalRewrite.url, action.position);
+        // For agent-driven opens the executor is the dedupe authority — it
+        // already checked model-opened tabs above — so the renderer must
+        // create a genuinely new tab rather than coalesce onto an equivalent
+        // one (which could silently hand the agent a user-opened tab).
+        const result = openTabFn(
+          finalRewrite.url,
+          action.position,
+          agentId ? true : action.allowDuplicate,
+        );
+        // Lease the new tab to the requesting agent right away so a repeat
+        // openTab for the same URL dedupes onto it (intent-hq/monorepo#2541)
+        // instead of treating it as an untouchable user-opened tab.
+        if (agentId && result.success && result.tabId) {
+          embeddedBrowserCdp.touchLease(result.tabId, agentId);
+        }
         return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
       }
 
@@ -505,6 +588,69 @@ async function executeAction(
         };
       }
 
+      case 'openTunnel': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel) {
+          return {
+            action: 'openTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: 'Tunneling is not available in this context (no tunnel provider).',
+          };
+        }
+        const backend = tunnel.backend ?? 'tunnel';
+        // Best-effort echo: true when a READY forward for the port already
+        // existed when the action ran. Concurrent openTunnel calls racing
+        // forward creation share one forward (the providers dedupe pending
+        // creates) but may each report reused: false, and a provider without
+        // activeForwards always reports false — don't branch on this flag
+        // for correctness, only for diagnostics.
+        const reused =
+          tunnel.activeForwards?.().some((f) => f.remotePort === action.remotePort) ?? false;
+        const localPort = await tunnel.forwardPort(action.remotePort);
+        return {
+          action: 'openTunnel',
+          success: true,
+          result: { remotePort: action.remotePort, localPort, backend, reused },
+        };
+      }
+
+      case 'listTunnels': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel) {
+          return { action: 'listTunnels', success: true, result: { tunnels: [] } };
+        }
+        const backend = tunnel.backend ?? 'tunnel';
+        const tunnels = (tunnel.activeForwards?.() ?? []).map((f) => ({ ...f, backend }));
+        return { action: 'listTunnels', success: true, result: { tunnels } };
+      }
+
+      case 'closeTunnel': {
+        const tunnel = getTunnelProvider?.() ?? null;
+        if (!tunnel?.closeForward) {
+          return {
+            action: 'closeTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: 'Tunneling is not available in this context (no tunnel provider).',
+          };
+        }
+        const closed = tunnel.closeForward(action.remotePort);
+        if (!closed) {
+          return {
+            action: 'closeTunnel',
+            success: false,
+            // i18n-ignore (agent-facing protocol error, not user-facing)
+            error: `No active tunnel forward for remote port ${action.remotePort}. Use { action: "listTunnels" } to see active forwards.`,
+          };
+        }
+        return {
+          action: 'closeTunnel',
+          success: true,
+          result: { remotePort: action.remotePort, closed: true },
+        };
+      }
+
       default: {
         // TypeScript exhaustiveness check
         const _exhaustive: never = action;
@@ -547,7 +693,8 @@ export async function executeActions(
   openTabFn?: (
     url: string,
     position?: 'adjacent' | 'replace' | 'same',
-  ) => { success: boolean; message: string },
+    allowDuplicate?: boolean,
+  ) => { success: boolean; message: string; tabId?: string },
   agentId?: string,
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,

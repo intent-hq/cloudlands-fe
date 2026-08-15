@@ -81,6 +81,88 @@ describe('file-bridge-seeder', () => {
         error: { code: 'FILE_READ_FAILED', message: 'Access denied: path outside workspace' },
       });
     });
+
+    it('prefers the structured data.detail over a bare -32603 "Internal error" message', async () => {
+      // BackendError shape (PROTOCOL §1.4): a -32603's message is the opaque
+      // "Internal error"; the actionable reason rides in `data.detail`.
+      const daemonError = Object.assign(new Error('Internal error'), {
+        code: 'INTERNAL_ERROR',
+        data: { code: 'INTERNAL_ERROR', detail: 'Access denied: path outside workspace' },
+        rpcCode: -32603,
+      });
+      mockedRequest.mockRejectedValueOnce(daemonError);
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ, {
+        path: '/etc/passwd',
+        workspaceId: 'ws-1',
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: { code: 'FILE_READ_FAILED', message: 'Access denied: path outside workspace' },
+      });
+    });
+  });
+
+  describe('file:read base64 → real preload bridge (remote attachment host read, monorepo#2495)', () => {
+    const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI;
+
+    afterEach(() => {
+      (window as { electronAPI?: unknown }).electronAPI = originalElectronAPI;
+    });
+
+    it('forwards an encoding:base64 read verbatim to the preload bridge, never the daemon', async () => {
+      // Regression (monorepo#2495): the remote-attachment data arm reads the
+      // dragged file's bytes off the FE HOST via `file:read` with
+      // `encoding: 'base64'`. Routing that to the daemon `file.read` fails
+      // every ≤25MB remote attachment: the host path is outside the workspace
+      // root, so the daemon answers -32603 "Internal error" (detail: "Access
+      // denied: path outside workspace") — folded into the generic toast.
+      const response = { success: true, data: { content: 'aGVsbG8=', isBinary: false } };
+      const invokeSpy = vi.fn(async () => response);
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const request = {
+        path: '/host/Downloads/notes.md',
+        encoding: 'base64',
+        maxSize: 25 * 1024 * 1024,
+        truncateIfLarge: false,
+      };
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ, request);
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.READ, request);
+      expect(result).toEqual(response);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects a base64 read loudly on web (no native bridge)', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(
+        mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/host/notes.md', encoding: 'base64' }),
+      ).rejects.toThrow(/requires the native Electron bridge/);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('keeps utf8 (default-encoding) reads on the daemon file.read', async () => {
+      const invokeSpy = vi.fn();
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+      mockedRequest.mockResolvedValueOnce('text body');
+
+      await mockInvoke(IPC_CHANNELS.FILE.READ, { path: '/ws/src/x.ts', workspaceId: 'ws-1' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('file.read', {
+        workspaceId: 'ws-1',
+        path: '/ws/src/x.ts',
+      });
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('file:write → file.write (§5.9)', () => {

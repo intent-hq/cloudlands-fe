@@ -16,6 +16,7 @@ import { BROWSER_PROTOCOLS } from '../../../shared/constants';
 vi.mock('../main/embedded-browser-cdp-service', () => ({
   embeddedBrowserCdp: {
     findIdleTab: vi.fn().mockReturnValue(null),
+    findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
     focusTab: vi.fn(),
@@ -63,7 +64,7 @@ describe('browser-action-executor', () => {
         mockOpenTabFn,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000', undefined, undefined);
     });
 
     it('should allow https:// URLs', async () => {
@@ -80,7 +81,11 @@ describe('browser-action-executor', () => {
         mockOpenTabFn,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('file:///Users/me/index.html', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'file:///Users/me/index.html',
+        undefined,
+        undefined,
+      );
     });
 
     it('should reject javascript: URLs', async () => {
@@ -371,7 +376,11 @@ describe('browser-action-executor', () => {
         remoteContext,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/x?q=1', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/x?q=1',
+        undefined,
+        undefined,
+      );
       expect(result.results[0]?.result).toMatchObject({
         requestedUrl: 'http://127.0.0.1:3000/x?q=1',
         finalUrl: 'http://10.0.0.5:3000/x?q=1',
@@ -391,7 +400,7 @@ describe('browser-action-executor', () => {
         undefined,
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
       expect(payload.warning).toBeUndefined();
@@ -405,7 +414,7 @@ describe('browser-action-executor', () => {
         undefined,
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:5173/', undefined, undefined);
       const payload = result.results[0]?.result as Record<string, unknown>;
       expect(payload.rewritten).toBe(true);
       expect(payload.warning).toBeUndefined();
@@ -497,7 +506,7 @@ describe('browser-action-executor', () => {
           undefined,
           localContext,
         );
-        expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+        expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
         expect(result.results[0]?.result).toMatchObject({
           requestedUrl: url,
           finalUrl: 'http://127.0.0.1:3000/',
@@ -511,7 +520,7 @@ describe('browser-action-executor', () => {
         { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
         mockOpenTabFn,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/', undefined, undefined);
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
 
@@ -523,7 +532,7 @@ describe('browser-action-executor', () => {
         undefined,
         remoteContext,
       );
-      expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('https://example.com/x', undefined, undefined);
       expect(result.results[0]?.result).toEqual({ success: true, message: 'opened' });
     });
   });
@@ -618,7 +627,11 @@ describe('browser-action-executor', () => {
       expect(fetchMock).toHaveBeenCalledWith('http://10.0.0.5:3000', {
         signal: expect.any(AbortSignal),
       });
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/x?q=1', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://10.0.0.5:3000/x?q=1',
+        undefined,
+        undefined,
+      );
     });
 
     it('treats any HTTP response as reachable, including error statuses', async () => {
@@ -632,7 +645,7 @@ describe('browser-action-executor', () => {
         remoteContext,
       );
       expect(result.success).toBe(true);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
     });
 
     it('never probes non-rewritten URLs in remote mode', async () => {
@@ -657,7 +670,7 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
     });
 
     it('never probes client.localhost rewrites in remote mode (target is this machine)', async () => {
@@ -717,7 +730,11 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(forwardPort).toHaveBeenCalledWith(3000);
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:45678/x?q=1', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://127.0.0.1:45678/x?q=1',
+        undefined,
+        undefined,
+      );
       expect(result.results[0]?.result).toMatchObject({
         tunneled: true,
         requestedUrl: 'http://127.0.0.1:3000/x?q=1',
@@ -798,7 +815,7 @@ describe('browser-action-executor', () => {
       );
       expect(result.success).toBe(true);
       expect(forwardPort).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://10.0.0.5:3000/', undefined, undefined);
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
 
@@ -814,7 +831,7 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(forwardPort).not.toHaveBeenCalled();
-      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined);
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://127.0.0.1:3000/', undefined, undefined);
       expect(result.results[0]?.result).not.toHaveProperty('tunneled');
     });
 
@@ -832,6 +849,397 @@ describe('browser-action-executor', () => {
       expect(result.success).toBe(false);
       expect(result.results[0]?.error).toContain('0.0.0.0');
       expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Programmatic tunnel actions (intent-hq/monorepo#2537)
+  // =========================================================================
+  describe('tunnel actions (openTunnel / listTunnels / closeTunnel)', () => {
+    let forwardPort: ReturnType<typeof vi.fn>;
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let closeForward: ReturnType<typeof vi.fn>;
+    let provider: {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+      closeForward: (port: number) => boolean;
+      backend?: 'tunnel' | 'direct';
+    };
+
+    beforeEach(() => {
+      forwardPort = vi.fn().mockResolvedValue(45678);
+      activeForwards = vi.fn().mockReturnValue([]);
+      closeForward = vi.fn().mockReturnValue(true);
+      provider = { forwardPort, activeForwards, closeForward, backend: 'tunnel' };
+    });
+
+    it('openTunnel forwards the port and echoes { remotePort, localPort, backend, reused: false }', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).toHaveBeenCalledWith(3000);
+      expect(result.results[0]).toEqual({
+        action: 'openTunnel',
+        success: true,
+        result: { remotePort: 3000, localPort: 45678, backend: 'tunnel', reused: false },
+      });
+    });
+
+    it('openTunnel reports reused: true when a forward for the remote port already exists', async () => {
+      activeForwards.mockReturnValue([{ remotePort: 3000, localPort: 45678 }]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        remotePort: 3000,
+        localPort: 45678,
+        backend: 'tunnel',
+        reused: true,
+      });
+    });
+
+    it('openTunnel echoes the direct backend for local-transport providers', async () => {
+      provider.backend = 'direct';
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 8080 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toMatchObject({ backend: 'direct', reused: false });
+    });
+
+    it('openTunnel surfaces forward failures as action errors, not throws', async () => {
+      forwardPort.mockRejectedValue(new Error('tunnel connect timed out after 10000ms'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('timed out');
+    });
+
+    it('openTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
+    });
+
+    it('openTunnel surfaces a throwing provider getter as an action error (unreadable backend state)', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => {
+          throw new Error(
+            'Cannot select a tunnel backend: the backend connection state is unreadable.',
+          );
+        },
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('Cannot select a tunnel backend');
+    });
+
+    it('openTunnel rejects out-of-range and non-integer ports via schema validation', async () => {
+      for (const remotePort of [0, 65536, 1.5, -1]) {
+        const result = await executeActions(
+          { actions: [{ action: 'openTunnel', remotePort }] },
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          () => provider,
+        );
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid action sequence');
+      }
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('listTunnels returns active forwards tagged with the backend', async () => {
+      activeForwards.mockReturnValue([
+        { remotePort: 3000, localPort: 45678 },
+        { remotePort: 8080, localPort: 50123 },
+      ]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        tunnels: [
+          { remotePort: 3000, localPort: 45678, backend: 'tunnel' },
+          { remotePort: 8080, localPort: 50123, backend: 'tunnel' },
+        ],
+      });
+    });
+
+    it('listTunnels returns an empty list when no provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({ tunnels: [] });
+    });
+
+    it('closeTunnel closes an existing forward', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(closeForward).toHaveBeenCalledWith(3000);
+      expect(result.results[0]?.result).toEqual({ remotePort: 3000, closed: true });
+    });
+
+    it('closeTunnel fails with a clear error when no such forward exists', async () => {
+      closeForward.mockReturnValue(false);
+
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 9999 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('No active tunnel forward for remote port 9999');
+    });
+
+    it('closeTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
+    });
+  });
+
+  // =========================================================================
+  // openTab exact-URL dedupe of model-opened tabs (#2541)
+  // =========================================================================
+  describe('openTab exact-URL dedupe of model-opened tabs (#2541)', () => {
+    beforeEach(async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue(undefined);
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue(null as never);
+    });
+
+    it('reuses and focuses an existing model-opened tab with the same URL', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        'agent-1',
+        'ws-1',
+      );
+      expect(embeddedBrowserCdp.focusTab).toHaveBeenCalledWith('tab-dup', 'ws-1');
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+      // No navigation needed — the tab is already on the exact URL
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+      expect(result.results[0]?.result).toMatchObject({
+        reused: true,
+        tabId: 'tab-dup',
+        url: 'http://localhost:3000/board',
+      });
+    });
+
+    it('takes precedence over idle-tab reuse (no navigation of an idle tab)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-dup' });
+      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('allowDuplicate: true bypasses reuse entirely and opens a new tab', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+      vi.mocked(embeddedBrowserCdp.findIdleTab).mockReturnValue('tab-idle');
+
+      const result = await executeActions(
+        {
+          actions: [
+            { action: 'openTab', url: 'http://localhost:3000/board', allowDuplicate: true },
+          ],
+        },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
+      expect(embeddedBrowserCdp.findIdleTab).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined, true);
+    });
+
+    it('does not dedupe when no agentId is provided (non-agent opens)', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+      );
+
+      expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.findModelTabByExactUrl).not.toHaveBeenCalled();
+      expect(mockOpenTabFn).toHaveBeenCalledWith(
+        'http://localhost:3000/board',
+        undefined,
+        undefined,
+      );
+    });
+
+    it('dedupes against the rewritten URL in remote mode and echoes the rewrite', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-dup');
+      const remoteContext = () => ({ daemonIsRemote: true, daemonHost: '10.0.0.5' });
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      try {
+        const result = await executeActions(
+          { actions: [{ action: 'openTab', url: 'http://localhost:3000/' }] },
+          mockOpenTabFn,
+          'agent-1',
+          'ws-1',
+          remoteContext,
+        );
+
+        expect(result.success).toBe(true);
+        expect(embeddedBrowserCdp.findModelTabByExactUrl).toHaveBeenCalledWith(
+          'http://10.0.0.5:3000/',
+          'agent-1',
+          'ws-1',
+        );
+        expect(result.results[0]?.result).toMatchObject({
+          reused: true,
+          tabId: 'tab-dup',
+          url: 'http://10.0.0.5:3000/',
+          requestedUrl: 'http://localhost:3000/',
+          finalUrl: 'http://10.0.0.5:3000/',
+          rewritten: true,
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('leases a newly opened agent tab so a repeat openTab dedupes onto it', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-new' });
+
+      const first = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(first.success).toBe(true);
+      // Agent opens force a genuinely new tab in the renderer — the executor
+      // is the dedupe authority.
+      expect(mockOpenTabFn).toHaveBeenCalledWith('http://localhost:3000/board', undefined, true);
+      // The new tab is leased at open time so it counts as model-opened.
+      expect(embeddedBrowserCdp.touchLease).toHaveBeenCalledWith('tab-new', 'agent-1');
+
+      // Second openTab for the same URL now finds the leased tab and reuses it.
+      vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValue('tab-new');
+      mockOpenTabFn.mockClear();
+      const second = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(second.results[0]?.result).toMatchObject({ reused: true, tabId: 'tab-new' });
+      expect(mockOpenTabFn).not.toHaveBeenCalled();
+    });
+
+    it('does not lease when openTabFn reports failure or returns no tabId', async () => {
+      const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+      vi.mocked(embeddedBrowserCdp.touchLease).mockClear();
+      mockOpenTabFn.mockReturnValueOnce({ success: true, message: 'opened' });
+
+      await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://localhost:3000/board' }] },
+        mockOpenTabFn,
+        'agent-1',
+        'ws-1',
+      );
+
+      expect(embeddedBrowserCdp.touchLease).not.toHaveBeenCalled();
     });
   });
 });

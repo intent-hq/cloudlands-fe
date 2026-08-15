@@ -18,6 +18,10 @@ type BrowserOpenTabEvent = {
   url: string;
   position?: 'adjacent' | 'replace' | 'same';
   workspaceId?: string;
+  /** Main-generated id for the new tab so main can lease it immediately (monorepo#2541). */
+  tabId?: string;
+  /** Skip the panel layout's equivalent-tab dedupe and always create a new tab. */
+  allowDuplicate?: boolean;
 };
 
 type BrowserCloseTabEvent = {
@@ -37,6 +41,13 @@ function* openBrowser(data: BrowserOpenTabEvent | null): SagaGenerator<void> {
   const workspaceId = data.workspaceId || activeWorkspaceId;
   if (typeof workspaceId !== 'string' || workspaceId.length === 0) return;
 
+  // Main pre-generates the tab id so it can lease agent-opened tabs for
+  // exact-URL dedupe (monorepo#2541); fall back to renderer generation for
+  // payloads without one. allowDuplicate mirrors the agent's explicit opt-out
+  // of dedupe so the panel layout's equivalent-tab reuse doesn't override it.
+  const newTabId = typeof data.tabId === 'string' && data.tabId.length > 0 ? data.tabId : undefined;
+  const allowDuplicate = data.allowDuplicate === true ? true : undefined;
+
   const position = data.position ?? 'adjacent';
   if (position === 'replace') {
     const tabs = yield* selectAllTabs.effect(workspaceId);
@@ -46,14 +57,39 @@ function* openBrowser(data: BrowserOpenTabEvent | null): SagaGenerator<void> {
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
-    yield* put(openTab(workspaceId, browserTab(data.url)));
+    yield* put(
+      openTab(
+        workspaceId,
+        browserTab(data.url),
+        undefined,
+        newTabId,
+        undefined,
+        undefined,
+        allowDuplicate,
+      ),
+    );
     return;
   }
   if (position === 'adjacent') {
-    yield* put(openTabInAdjacentOrSplit(workspaceId, browserTab(data.url)));
+    yield* put(
+      openTabInAdjacentOrSplit(workspaceId, browserTab(data.url), undefined, {
+        newTabId,
+        allowDuplicate,
+      }),
+    );
     return;
   }
-  yield* put(openTab(workspaceId, browserTab(data.url)));
+  yield* put(
+    openTab(
+      workspaceId,
+      browserTab(data.url),
+      undefined,
+      newTabId,
+      undefined,
+      undefined,
+      allowDuplicate,
+    ),
+  );
 }
 
 function* closeBrowser(data: BrowserCloseTabEvent | null): SagaGenerator<void> {
