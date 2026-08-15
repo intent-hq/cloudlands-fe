@@ -479,7 +479,11 @@ jobs:
           # NSIS installer only — the .exe.blockmap exists solely for the
           # auto-updater feed, which manual builds never publish (no
           # latest.yml leaves this workflow), so it is dead weight here.
-          path: dist-electron/*.exe
+          # *Setup*.exe, not *.exe: electron-builder.yml also declares the
+          # portable:x64 win target, whose exe would otherwise match too —
+          # only the NSIS installer (default artifactName contains "Setup")
+          # belongs in this artifact.
+          path: dist-electron/*Setup*.exe
           retention-days: 7
           if-no-files-found: error
 
@@ -500,7 +504,7 @@ jobs:
             fi
             echo ""
             echo "Artifacts (manual-windows-exe):"
-            find dist-electron -maxdepth 1 -type f -name "*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            find dist-electron -maxdepth 1 -type f -name "*Setup*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Copied from release-beta.yml build-linux. Linux packages are unsigned in
