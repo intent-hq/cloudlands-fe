@@ -1202,6 +1202,21 @@ async function performSpawnSidecar(): Promise<{
   }
 }
 
+interface RestartOrphanedSidecarIpcResult {
+  ok: boolean;
+  spawned: boolean;
+  cancelled?: boolean;
+  reason?: string;
+  error?: unknown;
+}
+
+/**
+ * In-flight orphan recovery; concurrent invocations (toast double-click, a
+ * second window) share the same promise so the verify/confirm/kill sequence
+ * runs at most once at a time (mirrors `spawnOnDemandInFlight`).
+ */
+let restartOrphanInFlight: Promise<RestartOrphanedSidecarIpcResult> | null = null;
+
 /**
  * Kill-and-restart recovery for an orphaned sidecar (#2444): the user accepted
  * the renderer's offer to replace the adopted leftover daemon (executable
@@ -1212,13 +1227,15 @@ async function performSpawnSidecar(): Promise<{
  * the socket and never runs two daemons side by side). On success the new
  * transport posture is re-broadcast.
  */
-async function performRestartOrphanedSidecar(): Promise<{
-  ok: boolean;
-  spawned: boolean;
-  cancelled?: boolean;
-  reason?: string;
-  error?: unknown;
-}> {
+function performRestartOrphanedSidecar(): Promise<RestartOrphanedSidecarIpcResult> {
+  if (restartOrphanInFlight) return restartOrphanInFlight;
+  restartOrphanInFlight = doPerformRestartOrphanedSidecar().finally(() => {
+    restartOrphanInFlight = null;
+  });
+  return restartOrphanInFlight;
+}
+
+async function doPerformRestartOrphanedSidecar(): Promise<RestartOrphanedSidecarIpcResult> {
   try {
     const [{ dialog }, { listRespondingAgents }, { buildOrphanRestartDialogOptions }] =
       await Promise.all([

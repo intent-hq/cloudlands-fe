@@ -6,7 +6,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { OrphanedSidecarState } from './connection-mode';
-import { restartOrphanedSidecar, type OrphanRecoveryDeps } from './orphan-recovery';
+import {
+  restartOrphanedSidecar,
+  type KillOutcome,
+  type OrphanRecoveryDeps,
+} from './orphan-recovery';
 import type { RespondingAgent } from '../../../main/running-agents';
 
 const ORPHAN: OrphanedSidecarState = { pid: 4242, executablePath: '/app/resources/intentd/intentd' };
@@ -21,10 +25,10 @@ function makeDeps(overrides: Partial<OrphanRecoveryDeps> = {}) {
     detectOrphan: vi.fn(() => (alive ? ORPHAN : null)),
     listRespondingAgents: vi.fn(async () => [] as RespondingAgent[]),
     confirmInterrupt: vi.fn(async () => true),
-    kill: vi.fn((_pid: number, signal: NodeJS.Signals | 0) => {
-      if (!alive) return false;
+    kill: vi.fn((_pid: number, signal: NodeJS.Signals | 0): KillOutcome => {
+      if (!alive) return 'gone';
       if (signal === 'SIGTERM' || signal === 'SIGKILL') alive = false;
-      return true;
+      return 'ok';
     }),
     spawnSidecar: vi.fn(async () => ({ ok: true, spawned: true, reason: 'sidecar spawned' })),
     sleep: vi.fn(async () => {}),
@@ -91,10 +95,10 @@ describe('restartOrphanedSidecar', () => {
 
   it('escalates to SIGKILL when SIGTERM does not stop the orphan', async () => {
     let alive = true;
-    const kill = vi.fn((_pid: number, signal: NodeJS.Signals | 0) => {
-      if (!alive) return false;
+    const kill = vi.fn((_pid: number, signal: NodeJS.Signals | 0): KillOutcome => {
+      if (!alive) return 'gone';
       if (signal === 'SIGKILL') alive = false;
-      return true; // SIGTERM sent but ignored; signal-0 keeps reporting alive
+      return 'ok'; // SIGTERM sent but ignored; signal-0 keeps reporting alive
     });
     const deps = makeDeps({ kill });
     const result = await restartOrphanedSidecar(deps);
@@ -104,7 +108,7 @@ describe('restartOrphanedSidecar', () => {
   });
 
   it('fails without spawning when the orphan never exits', async () => {
-    const kill = vi.fn(() => true); // every signal "sent", process never dies
+    const kill = vi.fn((): KillOutcome => 'ok'); // every signal "sent", process never dies
     const deps = makeDeps({ kill });
     const result = await restartOrphanedSidecar(deps);
     expect(result.ok).toBe(false);
@@ -114,11 +118,35 @@ describe('restartOrphanedSidecar', () => {
   });
 
   it('proceeds to spawn when the orphan is already gone at kill time', async () => {
-    const kill = vi.fn(() => false); // ESRCH on every signal
+    const kill = vi.fn((): KillOutcome => 'gone'); // ESRCH on every signal
     const deps = makeDeps({ kill, detectOrphan: vi.fn(() => ORPHAN) });
     const result = await restartOrphanedSidecar(deps);
     expect(result.ok).toBe(true);
     expect(deps.spawnSidecar).toHaveBeenCalled();
+  });
+
+  it('aborts on a non-ESRCH kill failure instead of treating it as exited', async () => {
+    // EPERM (or any non-ESRCH error) on SIGTERM: the process may still be
+    // alive — never proceed to clear state and spawn a second daemon.
+    const kill = vi.fn((): KillOutcome => 'error');
+    const deps = makeDeps({ kill });
+    const result = await restartOrphanedSidecar(deps);
+    expect(result.ok).toBe(false);
+    expect(deps.spawnSidecar).not.toHaveBeenCalled();
+    expect(deps.clearOrphanState).not.toHaveBeenCalled();
+  });
+
+  it('does not read a signal-0 probe error as exited while waiting', async () => {
+    // SIGTERM is delivered, but the liveness probe then errors (e.g. EPERM
+    // after a privilege change): waitForExit must not report "exited".
+    const kill = vi.fn((_pid: number, signal: NodeJS.Signals | 0): KillOutcome => {
+      return signal === 0 ? 'error' : 'ok';
+    });
+    const deps = makeDeps({ kill });
+    const result = await restartOrphanedSidecar(deps);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('did not exit');
+    expect(deps.spawnSidecar).not.toHaveBeenCalled();
   });
 
   it('refuses SIGTERM when the pid was recycled during the confirmation dialog', async () => {
@@ -128,7 +156,7 @@ describe('restartOrphanedSidecar', () => {
       .fn<() => OrphanedSidecarState | null>()
       .mockReturnValueOnce(ORPHAN)
       .mockReturnValue(null);
-    const kill = vi.fn(() => true); // pid alive (signal-0 succeeds)
+    const kill = vi.fn((): KillOutcome => 'ok'); // pid alive (signal-0 succeeds)
     const deps = makeDeps({
       detectOrphan,
       kill,
@@ -150,7 +178,7 @@ describe('restartOrphanedSidecar', () => {
       .mockReturnValueOnce(ORPHAN) // click-time re-verification
       .mockReturnValueOnce(ORPHAN) // SIGTERM identity check
       .mockReturnValue(null); // SIGKILL identity check fails
-    const kill = vi.fn(() => true); // alive throughout; SIGTERM ignored
+    const kill = vi.fn((): KillOutcome => 'ok'); // alive throughout; SIGTERM ignored
     const deps = makeDeps({ detectOrphan, kill });
     const result = await restartOrphanedSidecar(deps);
     expect(result.ok).toBe(false);
@@ -167,7 +195,7 @@ describe('restartOrphanedSidecar', () => {
       .fn<() => OrphanedSidecarState | null>()
       .mockReturnValueOnce(ORPHAN)
       .mockReturnValue(null);
-    const kill = vi.fn(() => false); // ESRCH: process gone
+    const kill = vi.fn((): KillOutcome => 'gone'); // ESRCH: process gone
     const deps = makeDeps({ detectOrphan, kill });
     const result = await restartOrphanedSidecar(deps);
     expect(result.ok).toBe(true);

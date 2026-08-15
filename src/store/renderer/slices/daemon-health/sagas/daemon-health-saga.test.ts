@@ -232,6 +232,16 @@ describe('daemonHealthSaga', () => {
     await vi.advanceTimersByTimeAsync(0);
     await settle();
     expect(mocks.toastError).toHaveBeenCalledTimes(1);
+
+    // The failure resets the once-per-session gate: a later status push that
+    // still carries the classification re-offers the restart.
+    statusHandler!({
+      status: 'connected',
+      transport: { mode: 'external-uds', isOrphanedSidecar: true },
+    });
+    await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.toastWarning).toHaveBeenCalledTimes(2);
     task.cancel();
     await task.toPromise();
   });

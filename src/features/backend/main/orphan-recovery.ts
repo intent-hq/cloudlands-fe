@@ -45,6 +45,14 @@ export interface RestartOrphanResult {
   reason?: string;
 }
 
+/**
+ * Outcome of a `process.kill` attempt. Only ESRCH means the process is gone;
+ * any other failure (EPERM, ...) is 'error' — the process may still be alive,
+ * so it must never be read as "exited" (mirrors `isProcessAlive` treating
+ * EPERM as alive).
+ */
+export type KillOutcome = 'ok' | 'gone' | 'error';
+
 /** Injectable collaborators (defaults wired in backend.ipc.ts). */
 export interface OrphanRecoveryDeps {
   /** Current orphan classification from startup (or null). */
@@ -57,26 +65,28 @@ export interface OrphanRecoveryDeps {
   listRespondingAgents(): Promise<RespondingAgent[]>;
   /** Ask the user to confirm interrupting `agents`; resolves true to proceed. */
   confirmInterrupt(agents: RespondingAgent[]): Promise<boolean>;
-  /** Send `signal` to `pid`; returns false when the process is already gone. */
-  kill(pid: number, signal: NodeJS.Signals | 0): boolean;
+  /** Send `signal` to `pid`; see {@link KillOutcome}. */
+  kill(pid: number, signal: NodeJS.Signals | 0): KillOutcome;
   /** Spawn the bundled sidecar (existing on-demand spawn path). */
   spawnSidecar(): Promise<SpawnSidecarOnDemandResult>;
   sleep(ms: number): Promise<void>;
 }
 
-function defaultKill(pid: number, signal: NodeJS.Signals | 0): boolean {
+function defaultKill(pid: number, signal: NodeJS.Signals | 0): KillOutcome {
   try {
     process.kill(pid, signal);
-    return true;
-  } catch {
-    return false;
+    return 'ok';
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'gone' : 'error';
   }
 }
 
 /**
- * Poll until `pid` is gone or the budget elapses; true when the process
- * exited. Attempt-counted (budget / poll interval) rather than wall-clock so
- * an injected test `sleep` fully controls the pacing.
+ * Poll until `pid` is gone or the budget elapses; true only when the process
+ * verifiably exited (signal-0 → ESRCH). A probe error (EPERM, ...) means the
+ * process may still be alive and counts as NOT exited. Attempt-counted
+ * (budget / poll interval) rather than wall-clock so an injected test `sleep`
+ * fully controls the pacing.
  */
 async function waitForExit(
   deps: OrphanRecoveryDeps,
@@ -85,10 +95,10 @@ async function waitForExit(
 ): Promise<boolean> {
   const attempts = Math.max(1, Math.ceil(budgetMs / EXIT_POLL_INTERVAL_MS));
   for (let i = 0; i < attempts; i++) {
-    if (!deps.kill(pid, 0)) return true;
+    if (deps.kill(pid, 0) === 'gone') return true;
     await deps.sleep(EXIT_POLL_INTERVAL_MS);
   }
-  return !deps.kill(pid, 0);
+  return deps.kill(pid, 0) === 'gone';
 }
 
 /**
@@ -99,9 +109,9 @@ async function waitForExit(
  * the pid could have been recycled by an unrelated process in the meantime.
  *
  * - 'sent'    — identity confirmed, signal delivered.
- * - 'gone'    — the process already exited (nothing to signal; proceed).
- * - 'refused' — the pid is alive but no longer verifies as the orphan
- *   (pid reuse / detection failure); NOTHING was signalled.
+ * - 'gone'    — the process verifiably exited (nothing to signal; proceed).
+ * - 'refused' — the pid no longer verifies as the orphan (pid reuse /
+ *   detection failure) or signalling failed; NOTHING harmful was done.
  */
 function verifiedSignal(
   deps: OrphanRecoveryDeps,
@@ -110,7 +120,7 @@ function verifiedSignal(
 ): 'sent' | 'gone' | 'refused' {
   const current = deps.detectOrphan();
   if (!current || current.pid !== pid) {
-    if (!deps.kill(pid, 0)) return 'gone';
+    if (deps.kill(pid, 0) === 'gone') return 'gone';
     logger.warn('Orphan identity re-check failed at signal time; refusing to signal', {
       pid,
       signal,
@@ -118,7 +128,12 @@ function verifiedSignal(
     });
     return 'refused';
   }
-  return deps.kill(pid, signal) ? 'sent' : 'gone';
+  const outcome = deps.kill(pid, signal);
+  if (outcome === 'error') {
+    logger.warn('Signalling the orphaned sidecar failed', { pid, signal });
+    return 'refused';
+  }
+  return outcome === 'ok' ? 'sent' : 'gone';
 }
 
 /**

@@ -70,7 +70,8 @@ describe('getProcessExecutablePath', () => {
     if (platform !== 'linux' && platform !== 'darwin') return;
     const exe = getProcessExecutablePath(process.pid, platform);
     expect(exe).toBeTruthy();
-    expect(path.isAbsolute(exe!)).toBe(true);
+    expect(path.isAbsolute(exe!.path)).toBe(true);
+    expect(exe!.deleted).toBe(false);
   });
 
   it('returns null on unsupported platforms', () => {
@@ -80,30 +81,58 @@ describe('getProcessExecutablePath', () => {
   it('returns null for a dead pid', () => {
     expect(getProcessExecutablePath(2 ** 30, process.platform)).toBeNull();
   });
+
+  it('strips the " (deleted)" suffix and flags a deleted executable (linux)', () => {
+    if (process.platform !== 'linux') return;
+    // Run a copied binary, then delete it while the process is alive: the
+    // kernel reports `<path> (deleted)` in /proc/<pid>/exe.
+    const exePath = path.join(tmpDir, 'deleted-me');
+    fs.copyFileSync('/bin/sleep', exePath);
+    fs.chmodSync(exePath, 0o755);
+    const child = spawn(exePath, ['30'], { stdio: 'ignore' });
+    try {
+      fs.rmSync(exePath);
+      const exe = getProcessExecutablePath(child.pid!, 'linux');
+      expect(exe).not.toBeNull();
+      expect(exe!.path).toBe(fs.realpathSync(tmpDir) + '/deleted-me');
+      expect(exe!.path.endsWith(' (deleted)')).toBe(false);
+      expect(exe!.deleted).toBe(true);
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
 });
 
 describe('isExecutableInsideResources', () => {
+  const exe = (p: string, deleted = false) => ({ path: p, deleted });
+
   it('accepts an executable inside resources', () => {
     const resources = path.join(tmpDir, 'resources');
-    const exe = path.join(resources, 'intentd', 'intentd');
-    fs.mkdirSync(path.dirname(exe), { recursive: true });
-    fs.writeFileSync(exe, '');
-    expect(isExecutableInsideResources(exe, resources)).toBe(true);
+    const exePath = path.join(resources, 'intentd', 'intentd');
+    fs.mkdirSync(path.dirname(exePath), { recursive: true });
+    fs.writeFileSync(exePath, '');
+    expect(isExecutableInsideResources(exe(exePath), resources)).toBe(true);
   });
 
   it('rejects an executable outside resources', () => {
     const resources = path.join(tmpDir, 'resources');
     fs.mkdirSync(resources, { recursive: true });
-    const exe = path.join(tmpDir, 'elsewhere', 'intentd');
-    fs.mkdirSync(path.dirname(exe), { recursive: true });
-    fs.writeFileSync(exe, '');
-    expect(isExecutableInsideResources(exe, resources)).toBe(false);
+    const exePath = path.join(tmpDir, 'elsewhere', 'intentd');
+    fs.mkdirSync(path.dirname(exePath), { recursive: true });
+    fs.writeFileSync(exePath, '');
+    expect(isExecutableInsideResources(exe(exePath), resources)).toBe(false);
   });
 
   it('rejects the resources path itself', () => {
     const resources = path.join(tmpDir, 'resources');
     fs.mkdirSync(resources, { recursive: true });
-    expect(isExecutableInsideResources(resources, resources)).toBe(false);
+    expect(isExecutableInsideResources(exe(resources), resources)).toBe(false);
+  });
+
+  it('rejects a relative executable path', () => {
+    const resources = path.join(tmpDir, 'resources');
+    fs.mkdirSync(resources, { recursive: true });
+    expect(isExecutableInsideResources(exe('intentd/intentd'), resources)).toBe(false);
   });
 
   it('resolves symlinked executables into resources', () => {
@@ -113,18 +142,27 @@ describe('isExecutableInsideResources', () => {
     fs.writeFileSync(real, '');
     const link = path.join(tmpDir, 'link-to-intentd');
     fs.symlinkSync(real, link);
-    expect(isExecutableInsideResources(link, resources)).toBe(true);
+    expect(isExecutableInsideResources(exe(link), resources)).toBe(true);
   });
 
-  it('handles a deleted executable via literal path fallback', () => {
+  it('allows the literal-path fallback only for a kernel-flagged deleted executable', () => {
     const resources = path.join(tmpDir, 'resources');
     fs.mkdirSync(resources, { recursive: true });
     const gone = path.join(resources, 'intentd', 'intentd');
-    expect(isExecutableInsideResources(gone, resources)).toBe(true);
+    expect(isExecutableInsideResources(exe(gone, true), resources)).toBe(true);
+  });
+
+  it('fails containment for an unresolvable path NOT flagged deleted', () => {
+    // An unverified (e.g. macOS) path claiming to live inside resources but
+    // not realpath-resolvable must not classify as ours.
+    const resources = path.join(tmpDir, 'resources');
+    fs.mkdirSync(resources, { recursive: true });
+    const gone = path.join(resources, 'intentd', 'intentd');
+    expect(isExecutableInsideResources(exe(gone, false), resources)).toBe(false);
   });
 
   it('returns false when resources path does not exist', () => {
-    expect(isExecutableInsideResources('/bin/ls', path.join(tmpDir, 'missing'))).toBe(false);
+    expect(isExecutableInsideResources(exe('/bin/ls'), path.join(tmpDir, 'missing'))).toBe(false);
   });
 });
 

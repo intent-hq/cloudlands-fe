@@ -33,6 +33,18 @@ export interface OrphanedSidecarInfo {
   executablePath: string;
 }
 
+/** A live process's executable as resolved from kernel-maintained state. */
+export interface ProcessExecutable {
+  /** Absolute executable path. */
+  path: string;
+  /**
+   * True when the kernel reported the executable's file as deleted
+   * (Linux `/proc/<pid>/exe` ` (deleted)` suffix — the binary was replaced
+   * on disk, e.g. by an app upgrade, while the process kept running).
+   */
+  deleted: boolean;
+}
+
 /** Read the daemon's pid from `<data dir>/intentd.pid`; null when absent/invalid. */
 export function readDaemonPidFromPidfile(
   env: NodeJS.ProcessEnv = process.env,
@@ -60,25 +72,29 @@ export function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Resolve the executable path of a live process from kernel-maintained state
- * the process itself cannot forge.
+ * Resolve the executable of a live process from kernel-maintained state the
+ * process itself cannot forge. Non-absolute results are rejected (an argv-
+ * derived relative path would otherwise resolve against OUR cwd downstream).
  *
- * - linux  → `readlink /proc/<pid>/exe` (a deleted binary — replaced during an
- *   app upgrade — reports `<path> (deleted)`; the suffix is stripped).
+ * - linux  → `readlink /proc/<pid>/exe`; a deleted binary — replaced during an
+ *   app upgrade — reports `<path> (deleted)`: the suffix is stripped and the
+ *   result flagged `deleted` (the only case allowed to skip realpath below).
  * - darwin → first `txt` entry from `lsof -p <pid> -d txt` — the process's
  *   executable image in the kernel's open-file table. (NOT `ps -o comm=`:
- *   that reports argv[0], which a process can set to any string, so an
- *   external daemon could masquerade as ours.)
+ *   that reports argv[0], which a process can set to any string — spoofable
+ *   and possibly relative.)
  * - win32/other → null (unsupported; detection then never classifies an orphan).
  */
 export function getProcessExecutablePath(
   pid: number,
   platform: NodeJS.Platform = process.platform,
-): string | null {
+): ProcessExecutable | null {
   try {
     if (platform === 'linux') {
       const target = fs.readlinkSync(`/proc/${pid}/exe`);
-      return target.replace(/ \(deleted\)$/, '');
+      const stripped = target.replace(/ \(deleted\)$/, '');
+      if (!path.isAbsolute(stripped)) return null;
+      return { path: stripped, deleted: stripped !== target };
     }
     if (platform === 'darwin') {
       const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], {
@@ -90,7 +106,8 @@ export function getProcessExecutablePath(
       for (const line of out.split('\n')) {
         if (line.startsWith('n')) {
           const name = line.slice(1).trim();
-          return name.length > 0 ? name : null;
+          if (name.length === 0 || !path.isAbsolute(name)) return null;
+          return { path: name, deleted: false };
         }
       }
       return null;
@@ -102,14 +119,18 @@ export function getProcessExecutablePath(
 }
 
 /**
- * True when `executablePath` resolves inside `resourcesPath`. Both sides are
- * realpath'd (symlinked install locations); a deleted executable (upgrade
- * replaced the bundle) falls back to its normalized literal path.
+ * True when the executable resolves inside `resourcesPath`. Both sides are
+ * realpath'd (symlinked install locations). When the executable cannot be
+ * realpath'd, only the kernel-verified Linux deleted-exe case (`deleted`
+ * flag) falls back to the normalized literal path — the binary was replaced
+ * on disk by an upgrade. Any other realpath failure fails containment: an
+ * unresolvable path merely *claiming* to live inside resources is not proof.
  */
 export function isExecutableInsideResources(
-  executablePath: string,
+  executable: ProcessExecutable,
   resourcesPath: string,
 ): boolean {
+  if (!path.isAbsolute(executable.path)) return false;
   let resolvedResources: string;
   try {
     resolvedResources = fs.realpathSync(resourcesPath);
@@ -118,9 +139,10 @@ export function isExecutableInsideResources(
   }
   let resolvedExe: string;
   try {
-    resolvedExe = fs.realpathSync(executablePath);
+    resolvedExe = fs.realpathSync(executable.path);
   } catch {
-    resolvedExe = path.normalize(executablePath);
+    if (!executable.deleted) return false;
+    resolvedExe = path.normalize(executable.path);
   }
   const relative = path.relative(resolvedResources, resolvedExe);
   return relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -141,8 +163,8 @@ export function detectOrphanedSidecar(
   const pid = readDaemonPidFromPidfile(env, platform);
   if (pid === null || pid === process.pid) return null;
   if (!isProcessAlive(pid)) return null;
-  const executablePath = getProcessExecutablePath(pid, platform);
-  if (!executablePath) return null;
-  if (!isExecutableInsideResources(executablePath, resourcesPath)) return null;
-  return { pid, executablePath };
+  const executable = getProcessExecutablePath(pid, platform);
+  if (!executable) return null;
+  if (!isExecutableInsideResources(executable, resourcesPath)) return null;
+  return { pid, executablePath: executable.path };
 }

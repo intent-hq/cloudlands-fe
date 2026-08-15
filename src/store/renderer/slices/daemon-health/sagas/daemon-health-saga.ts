@@ -106,18 +106,36 @@ async function invokeRestartOrphanedSidecar() {
 }
 
 /**
+ * Tracks whether the orphan offer was surfaced this session. A mutable ref
+ * (not a plain boolean) so the async restart-failure handler can reset it —
+ * a later status push (which still carries `isOrphanedSidecar`) then
+ * re-offers instead of leaving the user with no path back.
+ */
+interface OrphanNotifyState {
+  notified: boolean;
+}
+
+/**
  * Orphaned-sidecar recovery offer (#2444): the adopted daemon is a leftover
  * from a crashed/force-quit prior app session (its executable lives inside
  * this app's own bundle), so offer a restart with the bundled daemon. The
  * action invokes the main-process recovery handler, which re-verifies the
  * classification and confirms before interrupting responding agents.
  */
-async function notifyOrphanedSidecar(transport: BackendTransportInfo): Promise<boolean> {
+async function notifyOrphanedSidecar(
+  transport: BackendTransportInfo,
+  notifyState: OrphanNotifyState,
+): Promise<boolean> {
   try {
     const { toast } = await import('$lib/components/ui/toast');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
+    const onRestartFailed = async () => {
+      notifyState.notified = false;
+      const { toast: toastLib } = await import('$lib/components/ui/toast');
+      toastLib.error(m.daemonStatus_orphanRestartFailed_error());
+    };
     toast.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
       duration: 30_000,
       action: {
@@ -125,15 +143,9 @@ async function notifyOrphanedSidecar(transport: BackendTransportInfo): Promise<b
         onClick: () => {
           void invokeRestartOrphanedSidecar()
             .then(async (result) => {
-              if (result && !result.ok && !result.cancelled) {
-                const { toast: toastLib } = await import('$lib/components/ui/toast');
-                toastLib.error(m.daemonStatus_orphanRestartFailed_error());
-              }
+              if (result && !result.ok && !result.cancelled) await onRestartFailed();
             })
-            .catch(async () => {
-              const { toast: toastLib } = await import('$lib/components/ui/toast');
-              toastLib.error(m.daemonStatus_orphanRestartFailed_error());
-            });
+            .catch(onRestartFailed);
         },
       },
     });
@@ -168,10 +180,10 @@ function* maybeNotifyVersionMismatch(
 
 function* maybeNotifyOrphanedSidecar(
   transport: BackendTransportInfo | undefined,
-  alreadyNotified: boolean,
+  notifyState: OrphanNotifyState,
 ) {
-  if (!transport?.isOrphanedSidecar || alreadyNotified) return alreadyNotified;
-  return yield* call(notifyOrphanedSidecar, transport);
+  if (!transport?.isOrphanedSidecar || notifyState.notified) return;
+  notifyState.notified = yield* call(notifyOrphanedSidecar, transport, notifyState);
 }
 
 export function* daemonStatusSaga() {
@@ -185,7 +197,7 @@ export function* daemonStatusSaga() {
     },
   );
   let versionMismatchNotified = false;
-  let orphanedSidecarNotified = false;
+  const orphanNotifyState: OrphanNotifyState = { notified: false };
   let initialStatus: BackendStatusPayload | null = null;
   try {
     // The channel is installed before GET_STATUS so a push racing the snapshot
@@ -194,11 +206,7 @@ export function* daemonStatusSaga() {
       const snapshot = yield* call(invokeGetBackendStatus);
       yield* put(statusAction(snapshot, true));
       initialStatus = snapshot;
-      orphanedSidecarNotified = yield* call(
-        maybeNotifyOrphanedSidecar,
-        snapshot.transport,
-        orphanedSidecarNotified,
-      );
+      yield* call(maybeNotifyOrphanedSidecar, snapshot.transport, orphanNotifyState);
       versionMismatchNotified = yield* call(
         maybeNotifyVersionMismatch,
         snapshot.transport,
@@ -212,11 +220,7 @@ export function* daemonStatusSaga() {
       channel,
       function* handleStatusPayload(payload: BackendStatusPayload) {
         yield* put(statusAction(payload, false));
-        orphanedSidecarNotified = yield* call(
-          maybeNotifyOrphanedSidecar,
-          payload.transport,
-          orphanedSidecarNotified,
-        );
+        yield* call(maybeNotifyOrphanedSidecar, payload.transport, orphanNotifyState);
         versionMismatchNotified = yield* call(
           maybeNotifyVersionMismatch,
           payload.transport,
