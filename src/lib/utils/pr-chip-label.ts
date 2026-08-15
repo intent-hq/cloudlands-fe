@@ -6,7 +6,8 @@
  *   repo) → `repo #N` (e.g. `monorepo #1234`, `cloudlands-fe #4567`)
  * - different owner, or workspace repository unknown → `owner/repo #N`
  *
- * `repo` is an `owner/name` string, split on the first `/`. The label is an
+ * `repo` is an `owner/name` string, split on the first `/`; owners compare
+ * case-insensitively (GitHub logins are case-insensitive). The label is an
  * `org/repo #number` identifier, not user-facing prose.
  */
 
@@ -18,7 +19,7 @@ export function getPrChipLabel(repo: string, prNumber: number, workspaceRepo?: s
   const workspaceSlash = workspaceRepo?.indexOf('/') ?? -1;
   const workspaceOwner =
     workspaceRepo && workspaceSlash !== -1 ? workspaceRepo.slice(0, workspaceSlash) : undefined;
-  if (owner && workspaceOwner && owner === workspaceOwner) {
+  if (owner && workspaceOwner && owner.toLowerCase() === workspaceOwner.toLowerCase()) {
     return `${name} #${prNumber}`;
   }
   return `${repo} #${prNumber}`;
