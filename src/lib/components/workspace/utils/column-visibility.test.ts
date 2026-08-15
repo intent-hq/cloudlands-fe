@@ -124,6 +124,51 @@ describe('createColumnVisibilityTracker', () => {
     expect(MockIntersectionObserver.instances[0]?.disconnected).toBe(true);
   });
 
+  it('seeds visibility synchronously from layout until the observer reports', () => {
+    const rect = (left: number, right: number) =>
+      ({ left, right, top: 0, bottom: 100, width: right - left, height: 100 }) as DOMRect;
+    const root = element();
+    root.getBoundingClientRect = () => rect(0, 800);
+    const onChange = vi.fn();
+    const tracker = createColumnVisibilityTracker(root, onChange);
+    const near = element();
+    near.getBoundingClientRect = () => rect(100, 500);
+    const far = element();
+    far.getBoundingClientRect = () => rect(2000, 2400);
+
+    tracker.setElements([
+      { element: near, workspaceIds: ['ws-near'] },
+      { element: far, workspaceIds: ['ws-far'] },
+    ]);
+
+    // Within root + 100% horizontal overscan (-800..1600): near only.
+    expect(onChange).toHaveBeenLastCalledWith(new Set(['ws-near']));
+
+    // Observer data supersedes the estimate once entries arrive.
+    const observer = MockIntersectionObserver.instances[0]!;
+    observer.fire([
+      { target: near, isIntersecting: false },
+      { target: far, isIntersecting: true },
+    ]);
+    expect(onChange).toHaveBeenLastCalledWith(new Set(['ws-far']));
+
+    // Later setElements calls no longer re-seed from layout.
+    tracker.setElements([
+      { element: near, workspaceIds: ['ws-near'] },
+      { element: far, workspaceIds: ['ws-far'] },
+    ]);
+    expect(onChange).toHaveBeenLastCalledWith(new Set(['ws-far']));
+  });
+
+  it('does not seed from layout when the root has no size', () => {
+    const onChange = vi.fn();
+    const tracker = createColumnVisibilityTracker(element(), onChange);
+
+    tracker.setElements([{ element: element(), workspaceIds: ['ws-1'] }]);
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('reports every tracked column visible when IntersectionObserver is undefined', () => {
     vi.stubGlobal('IntersectionObserver', undefined);
     const onChange = vi.fn();

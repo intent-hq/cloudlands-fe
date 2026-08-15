@@ -650,6 +650,37 @@ describe('WorkspaceColumnsView', () => {
     }
   });
 
+  it('mounts columns inside the layout-seeded window before the observer fires', async () => {
+    stubIntersectionObserver();
+    try {
+      render(WorkspaceColumnsView);
+      await tick();
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      const rect = (left: number, right: number) =>
+        ({ left, right, top: 0, bottom: 600, width: right - left, height: 600 }) as DOMRect;
+      scroller.getBoundingClientRect = () => rect(0, 800);
+      document.querySelector('[data-workspace-stack="ws-1"]')!.getBoundingClientRect = () =>
+        rect(0, 360);
+      document.querySelector('[data-workspace-stack="ws-2"]')!.getBoundingClientRect = () =>
+        rect(360, 720);
+      document.querySelector('[data-workspace-stack="ws-3"]')!.getBoundingClientRect = () =>
+        rect(3000, 3360);
+
+      // Re-running element tracking (stacks change) re-seeds from layout —
+      // no MockIntersectionObserver entries have been fired.
+      workspaceStacks.set([['ws-1'], ['ws-2'], ['ws-3']]);
+      await tick();
+
+      expect(scroller.getAttribute('data-visible-workspace-columns')).toBe('ws-1,ws-2');
+      expect(surfaceFor('ws-1')).toBeTruthy();
+      expect(surfaceFor('ws-2')).toBeTruthy();
+      expect(placeholderFor('ws-3')).toBeTruthy();
+      expect(surfaceFor('ws-3')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('treats every column as visible when IntersectionObserver is unavailable', async () => {
     render(WorkspaceColumnsView);
     await tick();
