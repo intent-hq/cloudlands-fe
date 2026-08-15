@@ -1151,38 +1151,59 @@ export function setupFileIPC() {
             return { success: false, canceled: true };
           }
 
+          // Atomic write: stage into a temp file so a mid-transfer failure
+          // never truncates or partially overwrites the chosen destination.
+          const randomSuffix = Math.random().toString(36).substring(2, 8);
+          const tempPath = `${filePath}.${Date.now()}-${randomSuffix}.tmp`;
           const client = getBackendClient();
-          if (shouldUseTransferConnection('file.readChunk', client.getConfig())) {
-            await withTransferConnection(client.getConfig(), async (connection) => {
-              const handle = await fs.open(filePath, 'w');
-              try {
-                let offset = 0;
-                for (;;) {
-                  const chunk = await connection.request<FileIpc.ReadChunkResponse>(
-                    'file.readChunk',
-                    { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
-                  );
-                  if (chunk.bytesRead > 0) {
-                    await handle.write(Buffer.from(chunk.content, 'base64'));
-                    offset += chunk.bytesRead;
+          try {
+            if (shouldUseTransferConnection('file.readChunk', client.getConfig())) {
+              await withTransferConnection(client.getConfig(), async (connection) => {
+                const handle = await fs.open(tempPath, 'w');
+                try {
+                  let offset = 0;
+                  for (;;) {
+                    const chunk = await connection.request<FileIpc.ReadChunkResponse>(
+                      'file.readChunk',
+                      { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
+                    );
+                    if (chunk.bytesRead > 0) {
+                      // FileHandle.write() may complete a short write; loop
+                      // until the whole chunk is on disk.
+                      const buffer = Buffer.from(chunk.content, 'base64');
+                      let written = 0;
+                      while (written < buffer.length) {
+                        const { bytesWritten } = await handle.write(buffer, written);
+                        written += bytesWritten;
+                      }
+                      offset += chunk.bytesRead;
+                    }
+                    if (chunk.bytesRead < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
                   }
-                  if (chunk.bytesRead < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
+                } finally {
+                  await handle.close();
                 }
-              } finally {
-                await handle.close();
+              });
+            } else {
+              // Same root resolution the daemon's file ops use: the worktree
+              // when one exists, else the workspace path.
+              const response = await client.request<{
+                workspace?: { path?: string; worktreePath?: string };
+              }>('workspace.get', { workspaceId });
+              const workspacePath = response?.workspace?.worktreePath ?? response?.workspace?.path;
+              if (!workspacePath) {
+                throw new Error(`workspace ${workspaceId} has no path`);
               }
-            });
-          } else {
-            // Same root resolution the daemon's file ops use: the worktree
-            // when one exists, else the workspace path.
-            const response = await client.request<{
-              workspace?: { path?: string; worktreePath?: string };
-            }>('workspace.get', { workspaceId });
-            const workspacePath = response?.workspace?.worktreePath ?? response?.workspace?.path;
-            if (!workspacePath) {
-              throw new Error(`workspace ${workspaceId} has no path`);
+              await fs.copyFile(path.join(workspacePath, sourcePath), tempPath);
             }
-            await fs.copyFile(path.join(workspacePath, sourcePath), filePath);
+            await renameWithRetry(tempPath, filePath);
+          } catch (error) {
+            try {
+              await fs.unlink(tempPath);
+            } catch {
+              // Ignore cleanup errors
+            }
+            throw error;
           }
 
           logger.info('Attachment downloaded', { workspaceId, source: sourcePath, filePath });

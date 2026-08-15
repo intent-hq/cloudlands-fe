@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   stat: vi.fn(),
   copyFile: vi.fn(),
   open: vi.fn(),
+  unlink: vi.fn(),
+  renameWithRetry: vi.fn(),
   createZipFromPaths: vi.fn(),
   backendRequest: vi.fn(),
   getConfig: vi.fn(),
@@ -36,12 +38,14 @@ vi.mock('fs', () => ({
       stat: mocks.stat,
       copyFile: mocks.copyFile,
       open: mocks.open,
+      unlink: mocks.unlink,
     },
   },
   promises: {
     stat: mocks.stat,
     copyFile: mocks.copyFile,
     open: mocks.open,
+    unlink: mocks.unlink,
   },
 }));
 
@@ -62,7 +66,7 @@ vi.mock('../../../system/main/system.ipc', () => ({
 }));
 
 vi.mock('../../../../shared/main/file-sync-utils', () => ({
-  renameWithRetry: vi.fn(),
+  renameWithRetry: mocks.renameWithRetry,
 }));
 
 vi.mock('../../../debug-export/main/zip-utils', () => ({
@@ -173,11 +177,14 @@ function getDownloadAttachmentHandler(): Function {
 
 describe('file:download-attachment IPC handler', () => {
   const request = { workspaceId: 'ws-1', path: '.intent/attachments/photo.png', fileName: 'photo.png' };
+  const TEMP_PATH_RE = /^\/dest\/photo\.png\.\d+-[a-z0-9]+\.tmp$/;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.copyFile.mockResolvedValue(undefined);
+    mocks.unlink.mockResolvedValue(undefined);
+    mocks.renameWithRetry.mockResolvedValue(undefined);
     mocks.getConfig.mockReturnValue({ transport: 'uds', socketPath: '/tmp/i.sock' });
     mocks.shouldUseTransferConnection.mockReturnValue(false);
   });
@@ -194,8 +201,10 @@ describe('file:download-attachment IPC handler', () => {
     expect(mocks.backendRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
     expect(mocks.copyFile).toHaveBeenCalledWith(
       '/home/u/proj/.intent/attachments/photo.png',
-      '/dest/photo.png',
+      expect.stringMatching(TEMP_PATH_RE),
     );
+    const stagedPath = mocks.copyFile.mock.calls[0]?.[1];
+    expect(mocks.renameWithRetry).toHaveBeenCalledWith(stagedPath, '/dest/photo.png');
     expect(result).toEqual({ success: true, data: { filePath: '/dest/photo.png' } });
     expect(mocks.withTransferConnection).not.toHaveBeenCalled();
   });
@@ -210,7 +219,7 @@ describe('file:download-attachment IPC handler', () => {
 
     expect(mocks.copyFile).toHaveBeenCalledWith(
       '/home/u/worktrees/ws-1/.intent/attachments/photo.png',
-      '/dest/photo.png',
+      expect.stringMatching(TEMP_PATH_RE),
     );
   });
 
@@ -230,12 +239,17 @@ describe('file:download-attachment IPC handler', () => {
     mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
       fn({ request: connectionRequest, release: vi.fn() }),
     );
-    const write = vi.fn().mockResolvedValue(undefined);
+    const write = vi
+      .fn()
+      .mockImplementation(async (buffer: Buffer, offset: number) => ({
+        bytesWritten: buffer.length - offset,
+      }));
     const close = vi.fn().mockResolvedValue(undefined);
     mocks.open.mockResolvedValue({ write, close });
 
     const result = await getDownloadAttachmentHandler()({}, request);
 
+    expect(mocks.open).toHaveBeenCalledWith(expect.stringMatching(TEMP_PATH_RE), 'w');
     expect(connectionRequest).toHaveBeenNthCalledWith(1, 'file.readChunk', {
       workspaceId: 'ws-1',
       path: '.intent/attachments/photo.png',
@@ -249,11 +263,66 @@ describe('file:download-attachment IPC handler', () => {
       length: CHUNK,
     });
     expect(connectionRequest).toHaveBeenCalledTimes(2);
-    expect(write).toHaveBeenNthCalledWith(1, first);
-    expect(write).toHaveBeenNthCalledWith(2, second);
+    expect(write).toHaveBeenNthCalledWith(1, first, 0);
+    expect(write).toHaveBeenNthCalledWith(2, second, 0);
     expect(close).toHaveBeenCalled();
+    const stagedPath = mocks.open.mock.calls[0]?.[0];
+    expect(mocks.renameWithRetry).toHaveBeenCalledWith(stagedPath, '/dest/photo.png');
     expect(result).toEqual({ success: true, data: { filePath: '/dest/photo.png' } });
     expect(mocks.copyFile).not.toHaveBeenCalled();
+  });
+
+  it('remote backend: retries short writes until the whole chunk is on disk', async () => {
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+    mocks.getConfig.mockReturnValue({ transport: 'wss', url: 'wss://daemon.example' });
+    mocks.shouldUseTransferConnection.mockReturnValue(true);
+
+    const content = Buffer.from('0123456789');
+    const connectionRequest = vi
+      .fn()
+      .mockResolvedValue({ content: content.toString('base64'), bytesRead: 10, size: 10 });
+    mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
+      fn({ request: connectionRequest, release: vi.fn() }),
+    );
+    const write = vi
+      .fn()
+      .mockResolvedValueOnce({ bytesWritten: 4 })
+      .mockResolvedValueOnce({ bytesWritten: 6 });
+    const close = vi.fn().mockResolvedValue(undefined);
+    mocks.open.mockResolvedValue({ write, close });
+
+    const result = await getDownloadAttachmentHandler()({}, request);
+
+    expect(write).toHaveBeenNthCalledWith(1, content, 0);
+    expect(write).toHaveBeenNthCalledWith(2, content, 4);
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ success: true, data: { filePath: '/dest/photo.png' } });
+  });
+
+  it('leaves the chosen destination untouched and removes the temp file when the transfer fails', async () => {
+    mocks.showSaveDialog.mockResolvedValue({ filePath: '/dest/photo.png', canceled: false });
+    mocks.getConfig.mockReturnValue({ transport: 'wss', url: 'wss://daemon.example' });
+    mocks.shouldUseTransferConnection.mockReturnValue(true);
+
+    const connectionRequest = vi.fn().mockRejectedValue(new Error('connection dropped'));
+    mocks.withTransferConnection.mockImplementation(async (_config, fn) =>
+      fn({ request: connectionRequest, release: vi.fn() }),
+    );
+    const write = vi.fn();
+    const close = vi.fn().mockResolvedValue(undefined);
+    mocks.open.mockResolvedValue({ write, close });
+
+    const result = await getDownloadAttachmentHandler()({}, request);
+
+    expect(mocks.open).toHaveBeenCalledWith(expect.stringMatching(TEMP_PATH_RE), 'w');
+    expect(close).toHaveBeenCalled();
+    expect(mocks.renameWithRetry).not.toHaveBeenCalled();
+    const stagedPath = mocks.open.mock.calls[0]?.[0];
+    expect(mocks.unlink).toHaveBeenCalledWith(stagedPath);
+    expect(result).toEqual({
+      success: false,
+      error: { code: 'DOWNLOAD_FAILED', message: expect.stringContaining('photo.png') },
+    });
   });
 
   it('remote backend: an empty file writes nothing and still succeeds', async () => {
