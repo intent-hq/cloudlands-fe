@@ -937,6 +937,23 @@ describe('browser-action-executor', () => {
       expect(result.results[0]?.error).toContain('no tunnel provider');
     });
 
+    it('openTunnel surfaces a throwing provider getter as an action error (unreadable backend state)', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => {
+          throw new Error(
+            'Cannot select a tunnel backend: the backend connection state is unreadable.',
+          );
+        },
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('Cannot select a tunnel backend');
+    });
+
     it('openTunnel rejects out-of-range and non-integer ports via schema validation', async () => {
       for (const remotePort of [0, 65536, 1.5, -1]) {
         const result = await executeActions(

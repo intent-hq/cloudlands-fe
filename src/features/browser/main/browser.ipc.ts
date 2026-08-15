@@ -124,7 +124,25 @@ let tunnelManager: TunnelManager | null = null;
 let directRelay: DirectRelay | null = null;
 
 function getBrowserTunnelProvider(): TunnelManager | DirectRelay {
-  if (getDaemonLoopbackContext().daemonIsRemote) {
+  // Unlike `getDaemonLoopbackContext()`'s assume-local fallback (benign for
+  // URL rewriting), the backend choice decides WHICH MACHINE a forward lands
+  // on: assuming local here would silently relay to the CLIENT's loopback and
+  // report success on a misdirected forward. Unknown locality must fail the
+  // tunnel action instead (the resolver's probe-fallback paths catch getter
+  // throws and degrade to their explanatory error).
+  let daemonIsRemote: boolean;
+  try {
+    daemonIsRemote = loopbackContextFromTransport(
+      isSameHostBackendActive(),
+      getBackendClient().getConfig(),
+    ).daemonIsRemote;
+  } catch (err) {
+    throw new Error(
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      `Cannot select a tunnel backend: the backend connection state is unreadable (${(err as Error).message}).`,
+    );
+  }
+  if (daemonIsRemote) {
     if (!tunnelManager) {
       tunnelManager = new TunnelManager({
         getConfig: () => {

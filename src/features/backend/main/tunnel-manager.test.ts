@@ -110,15 +110,17 @@ const WSS_CONFIG: BackendConnectionConfig = {
 };
 
 /** Manager + fake-socket harness with per-test option overrides. */
-function makeManager(options: {
-  idleTimeoutMs?: number;
-  idleCheckIntervalMs?: number;
-  backpressureHighWaterMark?: number;
-  openTimeoutMs?: number;
-  connectTimeoutMs?: number;
-  daemon?: boolean;
-  config?: BackendConnectionConfig | null;
-} = {}): { manager: TunnelManager; created: FakeTunnelSocket[] } {
+function makeManager(
+  options: {
+    idleTimeoutMs?: number;
+    idleCheckIntervalMs?: number;
+    backpressureHighWaterMark?: number;
+    openTimeoutMs?: number;
+    connectTimeoutMs?: number;
+    daemon?: boolean;
+    config?: BackendConnectionConfig | null;
+  } = {},
+): { manager: TunnelManager; created: FakeTunnelSocket[] } {
   const created: FakeTunnelSocket[] = [];
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
@@ -224,14 +226,20 @@ describe('isConnectionRefusedOpenErr', () => {
   });
 
   it('does not match timeouts or other transient errors', () => {
-    expect(
-      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: timed out after 10s'),
-    ).toBe(false);
+    expect(isConnectionRefusedOpenErr('connect 127.0.0.1:8080: timed out after 10s')).toBe(false);
     expect(isConnectionRefusedOpenErr('too many streams')).toBe(false);
     expect(
       isConnectionRefusedOpenErr('connect 127.0.0.1:8080: Network unreachable (os error 101)'),
     ).toBe(false);
     expect(isConnectionRefusedOpenErr('')).toBe(false);
+  });
+
+  it('only matches ambiguous numeric codes inside the connect format (61 is ENODATA on Linux)', () => {
+    expect(isConnectionRefusedOpenErr('(os error 61)')).toBe(false);
+    expect(isConnectionRefusedOpenErr('stream reset (os error 61)')).toBe(false);
+    expect(isConnectionRefusedOpenErr('read 127.0.0.1:8080: No data available (os error 61)')).toBe(
+      false,
+    );
   });
 });
 
@@ -293,9 +301,7 @@ describe('TunnelManager', () => {
     onCleanup(() => manager.dispose());
 
     const localPort = await manager.forwardPort(port);
-    const clients = await Promise.all(
-      Array.from({ length: 5 }, () => connectClient(localPort)),
-    );
+    const clients = await Promise.all(Array.from({ length: 5 }, () => connectClient(localPort)));
     onCleanup(() => clients.forEach((c) => c.destroy()));
 
     await Promise.all(
@@ -438,9 +444,7 @@ describe('TunnelManager', () => {
     onCleanup(() => revived.close());
 
     const freshLocal = await manager.forwardPort(deadPort);
-    expect(manager.activeForwards()).toEqual([
-      { remotePort: deadPort, localPort: freshLocal },
-    ]);
+    expect(manager.activeForwards()).toEqual([{ remotePort: deadPort, localPort: freshLocal }]);
     const client = await connectClient(freshLocal);
     onCleanup(() => client.destroy());
     const payload = Buffer.from('recreated');
@@ -599,9 +603,9 @@ describe('TunnelManager', () => {
     await waitFor(() => ws.sent.length > sentWhilePaused);
     const last = ws.sent[ws.sent.length - 1];
     expect(last.type).toBe('data');
-    expect(
-      (last as Extract<TunnelFrame, { type: 'data' }>).payload.toString('utf8'),
-    ).toContain('held back');
+    expect((last as Extract<TunnelFrame, { type: 'data' }>).payload.toString('utf8')).toContain(
+      'held back',
+    );
   });
 
   it('shares one in-flight connect across concurrent forwardPort calls', async () => {

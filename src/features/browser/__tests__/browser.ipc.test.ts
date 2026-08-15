@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   forwardPort: vi.fn(),
   activeForwards: vi.fn(),
   TunnelManager: vi.fn(),
+  DirectRelay: vi.fn(),
   getBackendClient: vi.fn(),
   isSameHostBackendActive: vi.fn(),
 }));
@@ -30,18 +31,36 @@ vi.mock('../../backend/main/backend.ipc', () => ({
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
 }));
+vi.mock('../../backend/main/direct-relay', () => ({
+  DirectRelay: mocks.DirectRelay,
+}));
 
 type IpcHandler = (event: unknown, data: unknown) => Promise<any>;
 
-/** Fresh module registry per test so the lazy TunnelManager singleton resets. */
-async function registerAndGetHandler(): Promise<IpcHandler> {
+/** Fresh module registry per test so the lazy tunnel-backend singletons reset. */
+async function registerAndGetHandler(channel = 'browser:resolve-url'): Promise<IpcHandler> {
   const { ipcMain } = await import('electron');
   (ipcMain.handle as Mock).mockClear();
   const { registerBrowserHandlers } = await import('../main/browser.ipc');
   registerBrowserHandlers();
-  const call = (ipcMain.handle as Mock).mock.calls.find(([ch]) => ch === 'browser:resolve-url');
-  expect(call, 'browser:resolve-url handler should be registered').toBeDefined();
+  const call = (ipcMain.handle as Mock).mock.calls.find(([ch]) => ch === channel);
+  expect(call, `${channel} handler should be registered`).toBeDefined();
   return call![1] as IpcHandler;
+}
+
+/**
+ * Reach the lazy tunnel-provider seam: run the (mocked) executeActions via
+ * the `browser:exec` handler and pull the injected `getTunnelProvider`
+ * getter out of the call (arg index 5 of `executeActions`).
+ */
+async function getInjectedTunnelProviderGetter(): Promise<() => unknown> {
+  const handler = await registerAndGetHandler('browser:exec');
+  const { executeActions } = await import('../main/browser-action-executor');
+  (executeActions as Mock).mockResolvedValue({ success: true, results: [] });
+  await handler({}, { actions: [] });
+  const call = (executeActions as Mock).mock.calls.at(-1);
+  expect(call, 'executeActions should have been invoked').toBeDefined();
+  return call![5] as () => unknown;
 }
 
 describe('browser:resolve-url IPC handler', () => {
@@ -58,8 +77,15 @@ describe('browser:resolve-url IPC handler', () => {
     mocks.forwardPort.mockResolvedValue(45678);
     mocks.activeForwards.mockReturnValue([]);
     mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
+      this.backend = 'tunnel';
       this.forwardPort = mocks.forwardPort;
       this.activeForwards = mocks.activeForwards;
+      this.dispose = vi.fn();
+    });
+    mocks.DirectRelay.mockImplementation(function (this: Record<string, unknown>) {
+      this.backend = 'direct';
+      this.forwardPort = vi.fn();
+      this.activeForwards = vi.fn().mockReturnValue([]);
       this.dispose = vi.fn();
     });
   });
@@ -204,5 +230,78 @@ describe('browser:resolve-url IPC handler', () => {
     const result = await handler({}, { url: 'http://localhost:3000/', mode: 'probe-hard' });
     expect(result.success).toBe(false);
     expect(result.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('browser tunnel-backend selection seam', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mocks.isSameHostBackendActive.mockReturnValue(false);
+    mocks.getBackendClient.mockReturnValue({
+      getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
+    });
+    mocks.TunnelManager.mockImplementation(function (this: Record<string, unknown>) {
+      this.backend = 'tunnel';
+      this.dispose = vi.fn();
+    });
+    mocks.DirectRelay.mockImplementation(function (this: Record<string, unknown>) {
+      this.backend = 'direct';
+      this.dispose = vi.fn();
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('selects the /tunnel mux (TunnelManager) for a remote daemon, as a lazy singleton', async () => {
+    const getProvider = await getInjectedTunnelProviderGetter();
+    const provider = getProvider() as { backend: string };
+    expect(provider.backend).toBe('tunnel');
+    expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
+    expect(mocks.DirectRelay).not.toHaveBeenCalled();
+    expect(getProvider()).toBe(provider);
+    expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects the direct relay (DirectRelay) for a local daemon, as a lazy singleton', async () => {
+    mocks.isSameHostBackendActive.mockReturnValue(true);
+    const getProvider = await getInjectedTunnelProviderGetter();
+    const provider = getProvider() as { backend: string };
+    expect(provider.backend).toBe('direct');
+    expect(mocks.DirectRelay).toHaveBeenCalledTimes(1);
+    expect(mocks.TunnelManager).not.toHaveBeenCalled();
+    expect(getProvider()).toBe(provider);
+    expect(mocks.DirectRelay).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws instead of picking a backend when the connection state is unreadable', async () => {
+    mocks.getBackendClient.mockImplementation(() => {
+      throw new Error('no backend client');
+    });
+    const getProvider = await getInjectedTunnelProviderGetter();
+    expect(() => getProvider()).toThrow(/Cannot select a tunnel backend/);
+    expect(mocks.TunnelManager).not.toHaveBeenCalled();
+    expect(mocks.DirectRelay).not.toHaveBeenCalled();
+  });
+
+  it('disposes both backends on backend-connection-changed and rebuilds on next use', async () => {
+    const { app } = await import('electron');
+    const getProvider = await getInjectedTunnelProviderGetter();
+    const remote = getProvider() as { backend: string; dispose: Mock };
+    expect(remote.backend).toBe('tunnel');
+
+    const listener = (app.on as Mock).mock.calls.find(
+      ([event]) => event === 'backend-connection-changed',
+    )?.[1] as () => void;
+    expect(listener, 'backend-connection-changed listener should be registered').toBeDefined();
+
+    mocks.isSameHostBackendActive.mockReturnValue(true);
+    listener();
+    expect(remote.dispose).toHaveBeenCalledTimes(1);
+
+    const local = getProvider() as { backend: string; dispose: Mock };
+    expect(local.backend).toBe('direct');
+    expect(local).not.toBe(remote);
   });
 });

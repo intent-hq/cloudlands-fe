@@ -171,13 +171,18 @@ export function decodeFrame(bytes: Buffer): TunnelFrame {
  * (`intent-transport/src/tunnel.rs`), where the io error renders as
  * `Connection refused (os error 111)` on Linux / `(os error 61)` on macOS /
  * `(os error 10061)` on Windows — the text may be OS-localized, the code is
- * not. Deliberately conservative: timeouts (`timed out after …`) and every
- * other transient error do NOT match and stay per-stream.
+ * not. The numeric fallback (for localized text) only matches inside that
+ * `connect …` format: errno values are per-OS (61 is ECONNREFUSED on
+ * macOS/BSD but ENODATA on Linux) and we don't know the daemon's OS, but in
+ * a `connect(2)` failure context the ambiguous codes can only mean refused —
+ * connect never fails with ENODATA. Deliberately conservative: timeouts
+ * (`timed out after …`) and every other transient error do NOT match and
+ * stay per-stream.
  */
 export function isConnectionRefusedOpenErr(message: string): boolean {
   return (
     /connection refused|econnrefused/i.test(message) ||
-    /\(os error (?:111|61|10061)\)/.test(message)
+    /^connect .*\(os error (?:111|61|10061)\)/.test(message)
   );
 }
 

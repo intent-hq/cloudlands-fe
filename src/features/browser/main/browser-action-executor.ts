@@ -545,6 +545,12 @@ async function executeAction(
           };
         }
         const backend = tunnel.backend ?? 'tunnel';
+        // Best-effort echo: true when a READY forward for the port already
+        // existed when the action ran. Concurrent openTunnel calls racing
+        // forward creation share one forward (the providers dedupe pending
+        // creates) but may each report reused: false, and a provider without
+        // activeForwards always reports false — don't branch on this flag
+        // for correctness, only for diagnostics.
         const reused =
           tunnel.activeForwards?.().some((f) => f.remotePort === action.remotePort) ?? false;
         const localPort = await tunnel.forwardPort(action.remotePort);
