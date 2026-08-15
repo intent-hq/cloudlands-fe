@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     setItem: vi.fn(),
+    invoke: vi.fn().mockResolvedValue({ success: true }),
     manager,
     mediaRemove,
     systemThemeListener,
@@ -31,6 +32,10 @@ vi.mock('$lib/utils/theme', () => ({
   },
 }));
 vi.mock('$lib/utils/safe-storage', () => ({ safeLocalStorage: { setItem: mocks.setItem } }));
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: mocks.invoke,
+  isElectron: () => true,
+}));
 vi.mock('$lib/utils/theme-presets', () => ({
   themePresets: [{ id: 'night', dark: { name: 'Night' }, light: { name: 'Day' } }],
 }));
@@ -65,13 +70,17 @@ describe('themeSaga', () => {
     mocks.manager.setPresetTheme.mockImplementation(() => undefined);
     mocks.manager.setCustomTheme.mockImplementation(() => undefined);
     mocks.manager.clearCustomTheme.mockImplementation(() => undefined);
-    mocks.manager.dispose.mockImplementation(() => mocks.mediaRemove('change', mocks.systemThemeListener));
+    mocks.manager.dispose.mockImplementation(() =>
+      mocks.mediaRemove('change', mocks.systemThemeListener),
+    );
     mocks.resetInstance.mockImplementation(() => mocks.manager.dispose());
   });
   afterEach(() => document.documentElement.classList.remove('dark', 'light'));
 
   it('hydrates an exact manager snapshot, applies preference, and suppresses its synchronous echo', async () => {
-    mocks.manager.setTheme.mockImplementation(() => {
+    mocks.manager.setTheme.mockImplementation((theme: string) => {
+      mocks.manager.getTheme.mockReturnValue(theme);
+      mocks.manager.isDark.mockReturnValue(theme === 'dark');
       window.dispatchEvent(
         new CustomEvent('theme-changed', { detail: { theme: 'light', isDark: false } }),
       );
@@ -85,15 +94,17 @@ describe('themeSaga', () => {
       setThemeName('dark'),
       setThemeCustomization({ hasCustomTheme: false, customThemeName: null, activePresetId: null }),
     ]);
+    expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: 'dark' });
 
     dispatch.mockClear();
     channel.put(requestThemePreferenceChange('light'));
     await settle();
     expect(mocks.setItem).toHaveBeenCalledWith('theme', 'light');
     expect(mocks.manager.setTheme).toHaveBeenCalledWith('light', { persist: false });
+    expect(mocks.invoke).toHaveBeenLastCalledWith('window:set-theme', { theme: 'light' });
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      setThemePreference('dark'),
-      setThemeName('dark'),
+      setThemePreference('light'),
+      setThemeName('light'),
       setThemeCustomization({ hasCustomTheme: false, customThemeName: null, activePresetId: null }),
       setThemeError(null),
     ]);
@@ -167,11 +178,19 @@ describe('themeSaga', () => {
     channel.put(selectThemePreset('night'));
     await settle();
 
-    expect(mocks.manager.setPresetTheme).toHaveBeenCalledWith('night', { name: 'Night' }, { name: 'Day' });
+    expect(mocks.manager.setPresetTheme).toHaveBeenCalledWith(
+      'night',
+      { name: 'Night' },
+      { name: 'Day' },
+    );
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       setThemePreference('dark'),
       setThemeName('dark'),
-      setThemeCustomization({ hasCustomTheme: true, customThemeName: 'Night', activePresetId: 'night' }),
+      setThemeCustomization({
+        hasCustomTheme: true,
+        customThemeName: 'Night',
+        activePresetId: 'night',
+      }),
       setThemeError(null),
     ]);
     task.cancel();
@@ -202,7 +221,11 @@ describe('themeSaga', () => {
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       setThemePreference('dark'),
       setThemeName('dark'),
-      setThemeCustomization({ hasCustomTheme: true, customThemeName: 'Imported', activePresetId: null }),
+      setThemeCustomization({
+        hasCustomTheme: true,
+        customThemeName: 'Imported',
+        activePresetId: null,
+      }),
       setThemeError(null),
     ]);
 

@@ -154,6 +154,7 @@ describe('theme color contract', () => {
     expect(css).toMatch(/:root\s*{[^}]*color-scheme:\s*light dark/s);
     expect(css).toMatch(/\.light\s*{[^}]*color-scheme:\s*light/s);
     expect(css).toMatch(/\.dark\s*{[^}]*color-scheme:\s*dark/s);
+    expect(css).not.toContain('@media (prefers-color-scheme: dark)');
     for (const role of COLOR_ROLES) {
       expect(css.match(new RegExp(`--${role}:`, 'g'))).toHaveLength(1);
       expect(css).toContain(`--color-${role}: hsl(var(--${role}))`);
