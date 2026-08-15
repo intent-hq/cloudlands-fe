@@ -154,7 +154,7 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-0 max-w-full"
+            class="text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
             style="field-sizing: content;"
           />
         {:else}

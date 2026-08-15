@@ -30,7 +30,7 @@ describe('ContentHeader title editing', () => {
     const classes = input.className.split(/\s+/);
     expect(classes).toContain('text-sm');
     expect(classes).toContain('font-medium');
-    expect(classes).toContain('min-w-0');
+    expect(classes).toContain('min-w-[4ch]');
     expect(classes).toContain('max-w-full');
   });
 
@@ -41,5 +41,16 @@ describe('ContentHeader title editing', () => {
     await fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onTitleChange).toHaveBeenCalledWith('Renamed Title');
+  });
+
+  it('cancels editing on Escape without saving', async () => {
+    const { input, onTitleChange } = await startEditing();
+
+    await fireEvent.input(input, { target: { value: 'Discarded Title' } });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(onTitleChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'My Note Title' })).toBeTruthy();
   });
 });
