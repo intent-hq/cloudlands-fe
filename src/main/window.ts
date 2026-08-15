@@ -115,6 +115,19 @@ function buildWindowOptions(opts: {
   };
 }
 
+function createAppWindow(opts: {
+  bounds: { x: number; y: number; width: number; height: number };
+  iconPath?: string;
+}): BrowserWindowType {
+  const window = new BrowserWindow(buildWindowOptions({ ...opts, title: resolveAppTitle() }));
+
+  if (process.env.NODE_ENV === 'development') {
+    window.on('page-title-updated', (event) => event.preventDefault());
+  }
+
+  return window;
+}
+
 // Bounds for the renderer-console forwarder: per-message size cap and
 // consecutive-duplicate suppression keep console-output.log bounded even
 // under tight-loop console spam.
@@ -414,9 +427,7 @@ export function createWindowForSession(session: WindowSession, setAsMain: boolea
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = validateBounds(session.bounds, workArea);
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createAppWindow({ bounds, iconPath });
   forwardRendererConsoleToMainLog(window);
 
   if (setAsMain) {
@@ -567,9 +578,7 @@ export function createWindow() {
     logger.warn('Failed to load saved window bounds:', err);
   }
 
-  const window = new BrowserWindow(
-    buildWindowOptions({ bounds: windowBounds, title: resolveAppTitle(), iconPath }),
-  );
+  const window = createAppWindow({ bounds: windowBounds, iconPath });
   forwardRendererConsoleToMainLog(window);
 
   setMainWindow(window);
@@ -674,7 +683,7 @@ export async function createWindowForDeepLink(
   const { workArea } = screen.getPrimaryDisplay();
   const bounds = { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height };
 
-  const newWindow = new BrowserWindow(buildWindowOptions({ bounds, title: resolveAppTitle() }));
+  const newWindow = createAppWindow({ bounds });
   forwardRendererConsoleToMainLog(newWindow);
 
   const encodedAction = encodeURIComponent(JSON.stringify(action));

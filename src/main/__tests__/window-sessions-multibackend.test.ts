@@ -24,6 +24,7 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     static instances: FakeBrowserWindow[] = [];
     destroyed = false;
     bounds: { x: number; y: number; width: number; height: number };
+    handlers = new Map<string, (...args: unknown[]) => void>();
     private url = 'about:blank';
     webContents = {
       on: vi.fn(),
@@ -57,7 +58,8 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     setURLForTest(url: string) {
       this.url = url;
     }
-    on() {
+    on(event: string, handler: (...args: unknown[]) => void) {
+      this.handlers.set(event, handler);
       return this;
     }
     once() {
@@ -68,6 +70,9 @@ const { FakeBrowserWindow } = vi.hoisted(() => {
     }
     isFullScreen() {
       return false;
+    }
+    emit(event: string, ...args: unknown[]) {
+      this.handlers.get(event)?.(...args);
     }
   }
   return { FakeBrowserWindow };
@@ -271,6 +276,23 @@ describe('multi-backend window sessions', () => {
       const live = FakeBrowserWindow.getAllWindows();
       expect(live).toHaveLength(1);
       expect(live[0].isDestroyed()).toBe(false);
+    });
+
+    it('keeps the shared app title when a development page supplies its own title', () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+
+      try {
+        restoreWindowsForBackend('remote-empty');
+        const event = { preventDefault: vi.fn() };
+
+        FakeBrowserWindow.getAllWindows()[0].emit('page-title-updated', event, 'Workspace title');
+
+        expect(event.preventDefault).toHaveBeenCalledOnce();
+      } finally {
+        if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = previousNodeEnv;
+      }
     });
   });
 
