@@ -1247,17 +1247,24 @@
     {#if viewPullRequestAction}
       {@const action = viewPullRequestAction}
       <div class="flex-1 w-full" data-workspace-view-pr>
-        <Tooltip content={action.tooltip} side="bottom" align="start" disabled={!action.tooltip}>
-          <Button
-            variant="ghost-light"
-            size="xs"
-            class="w-full text-left justify-start px-0!"
-            onclick={() => runProgressAction(action)}
+        {#if action}
+          <Tooltip
+            content={action?.tooltip}
+            side="bottom"
+            align="start"
+            disabled={!action?.tooltip}
           >
-            <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
-            <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
-          </Button>
-        </Tooltip>
+            <Button
+              variant="ghost-light"
+              size="xs"
+              class="w-full text-left justify-start px-0!"
+              onclick={() => runProgressAction(action)}
+            >
+              <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+              <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+            </Button>
+          </Tooltip>
+        {/if}
       </div>
     {/if}
 
