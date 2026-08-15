@@ -3701,8 +3701,12 @@
                 {@const turns = indexedGroup.turns}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}
+                  <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
+                       turns groupIntoTurns produced), not the last raw date group — a
+                       trailing group holding only skipped rows (system/error, non-model-
+                       change notices) renders no turn and must not count as a follower. -->
                   {@const isLastTurnInConversation =
-                    groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
+                    globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->

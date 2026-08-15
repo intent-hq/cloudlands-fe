@@ -8,6 +8,8 @@ import {
   dividerVisibleWhenScrolledToBottom,
   dividerDefersToTurnBoundary,
 } from '../new-messages-divider';
+import { indexConversationTurns } from '../conversation-turns';
+import type { AgentMessage } from '$shared/types';
 
 describe('resolveNewMessagesDividerAnchor', () => {
   const ids = ['m1', 'm2', 'm3', 'm4'];
@@ -103,6 +105,37 @@ describe('dividerDefersToTurnBoundary', () => {
 });
 
 describe('turn-boundary divider placement (ChatPanel contract)', () => {
+  it('does not defer when only skipped rows trail the last rendered turn', () => {
+    // A trailing date group holding only rows groupIntoTurns skips (ordinary
+    // system/error, non-model-change notices) renders no turn, so the last
+    // RENDERED turn must count as last — mirroring ChatPanel's
+    // `globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1`.
+    const message = (id: string, role: AgentMessage['role'], type?: string): AgentMessage =>
+      ({ id, role, contentBlocks: [], metadata: type ? { type } : undefined }) as AgentMessage;
+    const indexed = indexConversationTurns([
+      { messages: [message('user-1', 'user'), message('assistant-1', 'assistant')] },
+      { messages: [message('sys-1', 'system'), message('err-1', 'error')] },
+    ]);
+    expect(indexed.groups[1].turns).toHaveLength(0);
+    const turnKey = 'user-1';
+    const isLastTurnInConversation =
+      indexed.globalIndexByTurnKey.get(turnKey) === indexed.globalIndexByTurnKey.size - 1;
+    expect(isLastTurnInConversation).toBe(true);
+    expect(
+      dividerDefersToTurnBoundary('assistant-1', 'assistant-1', !isLastTurnInConversation),
+    ).toBe(false);
+  });
+
+  it('derives isLastTurnInConversation from rendered turns, not raw date groups', () => {
+    const panel = readFileSync(
+      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
+      'utf8',
+    );
+    expect(panel).toContain(
+      'isLastTurnInConversation =\n                    globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1',
+    );
+  });
+
   it('renders the turn-boundary divider immediately after the h-8 inter-turn spacer', () => {
     const panel = readFileSync(
       resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
