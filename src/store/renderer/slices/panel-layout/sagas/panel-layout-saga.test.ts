@@ -634,6 +634,21 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  it('keeps persisting a parked (restored then unmounted) workspace', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    await settle();
+    channel.put(workspaceUnmounted(WS_1));
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
+    await cancelSaga(task);
+  });
+
   it('survives a local-storage failure and processes the next mutation', async () => {
     mocks.getJSON.mockReturnValue(undefined);
     mocks.setJSON.mockImplementationOnce(() => {
@@ -1002,6 +1017,9 @@ describe('panelLayoutSaga', () => {
       channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
       await settle();
 
+      // WS_1-before-WS_2 relies on Set insertion order (retroactiveRestore
+      // adds WS_1 at saga start, workspaceMounted adds WS_2 later), which is
+      // guaranteed in JS — a reordering here means the switch loop changed.
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
