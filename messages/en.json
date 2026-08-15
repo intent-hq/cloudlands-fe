@@ -2038,8 +2038,6 @@
   "chat_chatPanel_assignedTask_fallback": "Assigned task",
   "chat_chatPanel_selection_fallback": "Selection",
   "chat_chatPanel_yourProject_fallback": "your project",
-  "chat_chatPanel_autoScrollLocked_tooltip": "Auto-scroll locked (click to unlock)",
-  "chat_chatPanel_autoScrollUnlocked_tooltip": "Auto-scroll unlocked (click to lock)",
   "chat_chatPanel_scrollToBottom_tooltip": "Scroll to bottom",
   "chat_newMessagesDivider_label": "New messages",
   "chat_previewToolLabel_tool_fallback": "Tool",

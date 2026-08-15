@@ -2037,8 +2037,6 @@
   "chat_chatPanel_assignedTask_fallback": "Zugewiesene Aufgabe",
   "chat_chatPanel_selection_fallback": "Auswahl",
   "chat_chatPanel_yourProject_fallback": "Ihr Projekt",
-  "chat_chatPanel_autoScrollLocked_tooltip": "Auto-Scroll gesperrt (zum Entsperren klicken)",
-  "chat_chatPanel_autoScrollUnlocked_tooltip": "Auto-Scroll entsperrt (zum Sperren klicken)",
   "chat_chatPanel_scrollToBottom_tooltip": "Nach unten scrollen",
   "chat_newMessagesDivider_label": "Neue Nachrichten",
   "chat_previewToolLabel_tool_fallback": "Tool",

@@ -148,13 +148,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import {
-    faArrowDown,
-    faSquareCheck,
-    faLock,
-    faLockOpen,
-    faPaperclip,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowDown, faSquareCheck, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -381,7 +375,6 @@
   let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
-  let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
 
   interface PendingSendTransition {
@@ -1523,8 +1516,7 @@
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
     const shouldScroll =
-      currentCount > previousMessageCount &&
-      (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
+      currentCount > previousMessageCount && (isFirstMessage || shouldFollowBottom);
     if (shouldScroll) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -1539,7 +1531,6 @@
         // Re-enable auto-follow when first message is added
         if (isFirstMessage) {
           shouldFollowBottom = true;
-          isScrollUnlocked = false;
         }
         tick().then(() => {
           // Guard against component destruction during tick
@@ -2180,7 +2171,6 @@
       )
     ) {
       shouldFollowBottom = true;
-      isScrollUnlocked = false;
       scrollToBottomUtil(scrollContainer);
       return;
     }
@@ -2775,7 +2765,6 @@
 
     if (options.followBottom) {
       shouldFollowBottom = true;
-      isScrollUnlocked = false;
       if (scrollContainer) scrollToBottomUtil(scrollContainer);
     }
   }
@@ -3270,15 +3259,10 @@
         // observers from yanking the viewport to the bottom when a LazyTurn
         // placeholder expands between us computing and applying the match's
         // scroll target.
-        follow:
-          shouldFollowBottom && !isScrollUnlocked && !showSearch && $agentMessages$.length > 0,
+        follow: shouldFollowBottom && !showSearch && $agentMessages$.length > 0,
         threshold: 100,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
-          // When user scrolls up, clear unlocked state
-          if (!f) {
-            isScrollUnlocked = false;
-          }
         },
       }}
       class="flex-1 overflow-y-auto"
@@ -4042,39 +4026,20 @@
         <div class="min-h-px min-w-6 shrink-0"></div>
       </div>
     </div>
-    <!-- Scroll Lock/Unlock Button -->
-    {#if $agentMessages$.length > 0}
-      {@const isAtBottom = distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD}
-      {@const showLock = isAtBottom && !isScrollUnlocked}
-      {@const showUnlock = isAtBottom && isScrollUnlocked}
-      {@const showArrow = !isAtBottom}
+    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
+         invisible control overlaps the message actions bar or lingers in the
+         tab order while at the bottom. Auto-follow re-locks on click or on
+         scrolling back to the bottom; scrolling up unlocks it. -->
+    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_THRESHOLD}
       <Button
         variant="outline"
         size="icon-xs"
-        data-testid="chat-scroll-lock-button"
-        onclick={() => {
-          if (showArrow) {
-            // Scrolled up - click to scroll to bottom and re-lock
-            isScrollUnlocked = false;
-            scrollToBottom();
-          } else if (showLock) {
-            // At bottom and locked - click to unlock (stop auto-scroll)
-            isScrollUnlocked = true;
-          } else if (showUnlock) {
-            // At bottom and unlocked - click to re-lock (resume auto-scroll)
-            isScrollUnlocked = false;
-          }
-        }}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
-          ? 'opacity-0! pointer-events-none'
-          : ''}"
-        title={showLock
-          ? m.chat_chatPanel_autoScrollLocked_tooltip()
-          : showUnlock
-            ? m.chat_chatPanel_autoScrollUnlocked_tooltip()
-            : m.chat_chatPanel_scrollToBottom_tooltip()}
+        data-testid="chat-scroll-to-bottom-button"
+        onclick={() => scrollToBottom()}
+        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95"
+        title={m.chat_chatPanel_scrollToBottom_tooltip()}
       >
-        <Fa icon={showArrow ? faArrowDown : showLock ? faLock : faLockOpen} class="w-3! h-3!" />
+        <Fa icon={faArrowDown} class="w-3! h-3!" />
       </Button>
     {/if}
   </div>

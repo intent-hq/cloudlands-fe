@@ -2037,8 +2037,6 @@
   "chat_chatPanel_assignedTask_fallback": "已指派的任務",
   "chat_chatPanel_selection_fallback": "選區",
   "chat_chatPanel_yourProject_fallback": "你的專案",
-  "chat_chatPanel_autoScrollLocked_tooltip": "自動捲動已鎖定（點選解鎖）",
-  "chat_chatPanel_autoScrollUnlocked_tooltip": "自動捲動已解鎖（點選鎖定）",
   "chat_chatPanel_scrollToBottom_tooltip": "捲動到底部",
   "chat_newMessagesDivider_label": "新訊息",
   "chat_previewToolLabel_tool_fallback": "工具",
