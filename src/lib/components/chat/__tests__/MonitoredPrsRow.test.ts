@@ -85,14 +85,16 @@ async function openMenu() {
   return { menu, content };
 }
 
+// Mirrors the .monitored-pr-menu-content rule in MonitoredPrsRow.svelte
+// (width: 260px; max-width: calc(100vw - 24px)).
+const MENU_PREFERRED_WIDTH = 260;
+
 function measureRenderedMenu(menu: HTMLElement) {
   const viewportPadding = Number(menu.dataset.viewportPadding);
-  // JSDOM keeps a fixed CSS layout viewport when innerWidth changes. Resolve
-  // the production calc(100vw - 24px) against this test's rendered viewport.
-  menu.style.maxWidth = `${window.innerWidth - viewportPadding * 2}px`;
-  const style = getComputedStyle(menu);
-  const preferredWidth = Number.parseFloat(style.width);
-  const width = Math.min(preferredWidth, window.innerWidth - viewportPadding * 2);
+  // JSDOM does not apply component stylesheets and keeps a fixed CSS layout
+  // viewport when innerWidth changes. Model the production sizing against
+  // this test's rendered viewport.
+  const width = Math.min(MENU_PREFERRED_WIDTH, window.innerWidth - viewportPadding * 2);
   const right = window.innerWidth - viewportPadding;
   const rect = {
     x: right - width,
@@ -410,9 +412,9 @@ describe('MonitoredPrsRow', () => {
     const { menu, content } = await openMenu();
     expect(content.className).toContain('monitored-pr-menu-content');
     expect(menu.className).toContain('w-full');
+    expect(menu.className).toContain('min-w-0');
+    expect(menu.getAttribute('style')).toBeNull();
     const bounds = measureRenderedMenu(menu);
-    expect(getComputedStyle(menu).width).toBe('260px');
-    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
     expect(bounds.width).toBe(260);
     expect(bounds.left).toBeGreaterThanOrEqual(12);
     expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
@@ -433,9 +435,8 @@ describe('MonitoredPrsRow', () => {
     const { menu, content } = await openMenu();
     expect(content.className).toContain('monitored-pr-menu-content');
     expect(window.devicePixelRatio).toBe(devicePixelRatio);
+    expect(menu.getAttribute('style')).toBeNull();
     const bounds = measureRenderedMenu(menu);
-    expect(getComputedStyle(menu).width).toBe('260px');
-    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
     expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
     expect(bounds.left).toBeGreaterThanOrEqual(12);
     expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
