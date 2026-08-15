@@ -68,6 +68,7 @@ describe('LazyTurn lifecycle', () => {
   afterEach(() => {
     cleanup();
     expect(inspectLazyTurnObserverOwnership()).toEqual({ rootCount: 0, targetCount: 0 });
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -95,5 +96,57 @@ describe('LazyTurn lifecycle', () => {
       '320px',
     );
     expect(heightCache.get('turn-1', 800)).toBe(320);
+  });
+
+  it('cancels the pending initial animation frame on unmount', () => {
+    const cancelAnimationFrame = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', () => 41);
+    vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrame);
+    const view = render(LazyTurn, {
+      props: {
+        turnKey: 'turn-unmount',
+        heightCache: createLazyTurnHeightCache('unmount'),
+        children,
+      },
+    });
+
+    view.unmount();
+
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(41);
+  });
+
+  it('cancels the nested measurement timer on unmount', () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(640);
+    const heightCache = createLazyTurnHeightCache('timer-unmount');
+    const view = render(LazyTurn, {
+      props: { turnKey: 'turn-unmount', heightCache, children },
+    });
+
+    expect(vi.getTimerCount()).toBe(1);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.runAllTimers();
+
+    expect(heightCache.get('turn-unmount', 640)).toBeUndefined();
+  });
+
+  it('rejects a pending initial measurement after turn-key reuse', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(640);
+    const heightCache = createLazyTurnHeightCache('key-reuse');
+    const view = render(LazyTurn, {
+      props: { turnKey: 'turn-before', heightCache, children },
+    });
+
+    await view.rerender({ turnKey: 'turn-after', heightCache, children });
+    vi.runAllTimers();
+
+    expect(heightCache.get('turn-before', 640)).toBeUndefined();
+    expect(heightCache.get('turn-after', 640)).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    view.unmount();
   });
 });

@@ -50,6 +50,9 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectCurrentWorkspaceTabId: Object.assign(() => readable(null), { select: () => null }),
+}));
 vi.mock('$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors', () => ({
   selectAgentSubscriptions: () =>
     readable([

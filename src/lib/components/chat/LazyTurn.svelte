@@ -111,6 +111,11 @@
     if (!containerRef) return;
     let resizeObserver: ResizeObserver | null = null;
     let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialMeasureAnimationFrame: number | null = null;
+    let initialMeasureTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+    const mountedContainer = containerRef;
+    const mountedTurnKey = turnKey;
 
     // Observer ownership is shared per scroll root, so a long transcript does
     // not allocate one IntersectionObserver for every turn.
@@ -185,16 +190,19 @@
     resizeObserver.observe(containerRef);
 
     // Mark as measured after initial render (with debounce)
-    requestAnimationFrame(() => {
-      if (containerRef) {
-        const height = containerRef.offsetHeight;
-        const width = containerRef.offsetWidth;
+    initialMeasureAnimationFrame = requestAnimationFrame(() => {
+      initialMeasureAnimationFrame = null;
+      if (!disposed && containerRef === mountedContainer && turnKey === mountedTurnKey) {
+        const height = mountedContainer.offsetHeight;
+        const width = mountedContainer.offsetWidth;
         if (height > 0) {
           // Use timeout to batch with other measurements
-          setTimeout(() => {
+          initialMeasureTimer = setTimeout(() => {
+            initialMeasureTimer = null;
+            if (disposed || containerRef !== mountedContainer || turnKey !== mountedTurnKey) return;
             if (width > 0) {
               measuredWidth ??= width;
-              heightCache.set(turnKey, height, width);
+              heightCache.set(mountedTurnKey, height, width);
             }
             localCachedHeight = height;
             hasBeenMeasured = true;
@@ -205,8 +213,15 @@
     });
 
     return () => {
+      disposed = true;
       stopObserving();
       resizeObserver?.disconnect();
+      if (initialMeasureAnimationFrame !== null) {
+        cancelAnimationFrame(initialMeasureAnimationFrame);
+      }
+      if (initialMeasureTimer !== null) {
+        clearTimeout(initialMeasureTimer);
+      }
       if (resizeDebounceTimer) {
         clearTimeout(resizeDebounceTimer);
       }

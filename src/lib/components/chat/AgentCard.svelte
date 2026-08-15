@@ -100,7 +100,7 @@
      * provider icon before the session loads (e.g. delegate-task results).
      */
     provider?: string;
-    /** Optional actions rendered in the header row, before the relative timestamp */
+    /** Optional actions rendered beside, never inside, the row activation button. */
     headerActions?: Snippet;
     openPanelCount?: number;
     activeInPanel?: boolean;
@@ -624,7 +624,7 @@
         ? 'type-body items-center rounded-md px-1.5 py-1'
         : 'px-1.75 pt-1.25 pb-1.5'} {selected || showBorder
         ? `bg-background border-border ${glowClass} shadow-xs`
-        : 'border-transparent'} {typographyClass}"
+        : 'border-transparent'} {headerActions ? 'pr-14' : ''} {typographyClass}"
       onclick={handleClick}
       onkeydown={handleCardKeydown}
       oncontextmenu={handleContextMenu}
@@ -712,9 +712,6 @@
                 size="xs"
               />
             {/if}
-            {#if headerActions}
-              {@render headerActions()}
-            {/if}
             {#if updatedAt}
               <RelativeTime date={updatedAt} compact class="text-ui text-subtle" />
             {/if}
@@ -779,6 +776,11 @@
         {/if}
       </div>
     </button>
+    {#if headerActions}
+      <div class="absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1">
+        {@render headerActions()}
+      </div>
+    {/if}
   </div>
 {/snippet}
 

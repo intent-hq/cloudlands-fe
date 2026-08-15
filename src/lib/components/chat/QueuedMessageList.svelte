@@ -31,8 +31,7 @@
 
   const QUEUE_ACTION_CLUSTER_CLASS =
     'pointer-events-none absolute top-1/2 right-2.5 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[var(--motion-fast)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 motion-reduce:transition-none';
-  const QUEUE_THREE_ACTION_CONTENT_CLASS =
-    'box-border pr-0 transition-[padding-right] duration-[var(--motion-fast)] group-hover:pr-24 group-focus-within:pr-24 motion-reduce:transition-none';
+  const QUEUE_THREE_ACTION_CONTENT_CLASS = 'box-border pr-24';
 
   interface Props {
     messages: QueuedMessage[];
@@ -333,6 +332,7 @@
           class="group relative type-body flex items-start gap-2 px-2.5 py-1 text-subtle {message.editing
             ? 'opacity-60'
             : ''}"
+          data-testid="queued-message-row"
           transition:fly={{ y: 10, duration: 200 }}
           title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
         >

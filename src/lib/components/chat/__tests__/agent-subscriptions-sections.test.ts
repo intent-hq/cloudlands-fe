@@ -1,6 +1,7 @@
 /** Rendered contracts for the unified waiting-agent subscription disclosure. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const { backendRequestSpy, navigateToRouteSpy, sessionState } = vi.hoisted(() => ({
   backendRequestSpy: vi.fn(),
@@ -660,6 +661,34 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(navigateToRouteSpy).toHaveBeenCalledWith(`/workspace/${wsId}`);
   });
 
+  it('cancels delayed focus when navigation makes the watched workspace stale', async () => {
+    const wsId = 'ws-agent-panel-stale-focus';
+    seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-target', wsId, ['agent-target'])]),
+    );
+    seedWorkspace(wsId);
+    seedPanelLayout(wsId, { parent: { id: 'parent', tabs: [], activeTabId: null } }, 'parent');
+    await expandWaitingAgents();
+    const focusEvents: CustomEvent[] = [];
+    const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
+    window.addEventListener('panel:focus-content', onFocus);
+    vi.useFakeTimers();
+    try {
+      await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+      appStore.dispatch(openWorkspaceTab('ws-other'));
+      await tick();
+      vi.advanceTimersByTime(600);
+
+      expect(focusEvents).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      window.removeEventListener('panel:focus-content', onFocus);
+    }
+  });
+
   it('persists finished disclosure state across component remounts in the session', async () => {
     const wsId = 'ws-finished-persistence';
     seedSession('agent-a', '2026-01-02T00:00:00.000Z');
@@ -768,6 +797,15 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const wsId = 'ws-waiting-actions-shot';
     await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-a', wsId, ['agent-a'])]));
     await expandWaitingAgents();
+    const row = agentRow('agent-a');
+    const rowButton = within(row).getAllByRole('button')[0];
+    const stopButton = within(row).getByTestId('one-shot-stop');
+    const cancelButton = within(row).getByTestId('one-shot-cancel');
+    expect(stopButton.tagName).toBe('BUTTON');
+    expect(cancelButton.tagName).toBe('BUTTON');
+    expect(rowButton.contains(stopButton)).toBe(false);
+    expect(rowButton.contains(cancelButton)).toBe(false);
+    expect(row.querySelector('span[role="button"]')).toBeNull();
     backendRequestSpy.mockClear();
     await fireEvent.click(within(agentRow('agent-a')).getByTestId('one-shot-stop'));
     await flush();

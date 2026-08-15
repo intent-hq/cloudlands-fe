@@ -41,7 +41,7 @@ describe('QueuedMessageList', () => {
     expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
   });
 
-  it('reserves the three-action lane on hover and keyboard focus without changing row height', () => {
+  it('reserves the three-action lane before hover and keyboard focus', () => {
     render(QueuedMessageList, {
       props: { messages: [queued({ content: 'A long queued message that stays on one line' })] },
     });
@@ -54,9 +54,10 @@ describe('QueuedMessageList', () => {
     expect(actions.className).toContain('pointer-events-none');
     expect(actions.className).toContain('group-hover:pointer-events-auto');
     expect(actions.className).toContain('group-focus-within:pointer-events-auto');
-    expect(content.className).toContain('pr-0');
-    expect(content.className).toContain('group-hover:pr-24');
-    expect(content.className).toContain('group-focus-within:pr-24');
+    expect(content.className).toContain('pr-24');
+    expect(content.className).not.toContain('group-hover:pr-24');
+    expect(content.className).not.toContain('group-focus-within:pr-24');
+    expect(content.className).not.toContain('transition-[padding-right]');
     expect(text.className).toContain('truncate');
   });
 

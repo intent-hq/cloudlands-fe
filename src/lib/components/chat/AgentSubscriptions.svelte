@@ -7,8 +7,8 @@
    * followed by a brief "Woken up" indicator when a subscription fires.
    *
    * All subscription data comes from Redux selectors (populated by the
-   * agent-subscription-ui read saga). No IPC listeners, polling, or
-   * timers in this component.
+   * agent-subscription-ui read saga). No IPC listeners or polling live in
+   * this component; short panel-focus retries are owned and cancelled here.
    */
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
@@ -24,7 +24,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
@@ -109,6 +109,7 @@
   // when workspaceId or agentId changes.
   const workspaceIdStore = createPropStore(() => workspaceId);
   const agentIdStore = createPropStore(() => agentId);
+  const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -321,25 +322,68 @@
     }
   }
 
-  function handleActionKeydown(e: KeyboardEvent, action: () => void) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      e.stopPropagation();
-      action();
-    }
+  function handleActionKeydown(event: KeyboardEvent, action: () => void) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    action();
+  }
+
+  const watchedAgentFocusTimers = new Set<ReturnType<typeof setTimeout>>();
+  let watchedAgentFocusOwner: {
+    workspaceId: string;
+    parentAgentId: string;
+    watchedAgentId: string;
+  } | null = null;
+
+  function clearWatchedAgentFocusTimers() {
+    for (const timer of watchedAgentFocusTimers) clearTimeout(timer);
+    watchedAgentFocusTimers.clear();
+    watchedAgentFocusOwner = null;
   }
 
   function focusWatchedAgentPanel(watchedAgentId: string) {
+    clearWatchedAgentFocusTimers();
+    const owner = { workspaceId, parentAgentId: agentId, watchedAgentId };
+    watchedAgentFocusOwner = owner;
     for (const delay of [150, 600]) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        watchedAgentFocusTimers.delete(timer);
+        if (
+          watchedAgentFocusOwner !== owner ||
+          workspaceId !== owner.workspaceId ||
+          agentId !== owner.parentAgentId ||
+          selectCurrentWorkspaceTabId.select(appStore.state) !== owner.workspaceId
+        ) {
+          return;
+        }
         dispatchWindowEvent('panel:focus-content', {
           tabType: 'agent',
-          agentId: watchedAgentId,
-          workspaceId,
+          agentId: owner.watchedAgentId,
+          workspaceId: owner.workspaceId,
         });
+        if (watchedAgentFocusTimers.size === 0) watchedAgentFocusOwner = null;
       }, delay);
+      watchedAgentFocusTimers.add(timer);
     }
   }
+
+  $effect(() => {
+    const activeWorkspaceId = $currentWorkspaceTabId$;
+    const currentWorkspaceId = workspaceId;
+    const currentParentAgentId = agentId;
+    if (
+      watchedAgentFocusOwner &&
+      (activeWorkspaceId !== watchedAgentFocusOwner.workspaceId ||
+        currentWorkspaceId !== watchedAgentFocusOwner.workspaceId ||
+        currentParentAgentId !== watchedAgentFocusOwner.parentAgentId)
+    ) {
+      clearWatchedAgentFocusTimers();
+    }
+  });
+
+  onDestroy(() => {
+    clearWatchedAgentFocusTimers();
+  });
 
   function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (!workspaceId) return;
@@ -370,11 +414,8 @@
     {#snippet oneShotActions()}
       {#if !isCompleted}
         {#if !finished}
-          <!-- span[role=button]: AgentCard's row is itself a <button>, so
-           nested real buttons would be invalid HTML -->
-          <span
-            role="button"
-            tabindex="0"
+          <button
+            type="button"
             aria-label={m.chat_agentSubscriptions_stopAgent_tooltip()}
             title={m.chat_agentSubscriptions_stopAgent_tooltip()}
             class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
@@ -383,14 +424,12 @@
               e.stopPropagation();
               void stopWatchedAgent(watchedAgentId);
             }}
-            onkeydown={(e) => handleActionKeydown(e, () => void stopWatchedAgent(watchedAgentId))}
           >
             <Fa icon={faStop} class="h-3.5! w-3.5!" />
-          </span>
+          </button>
         {/if}
-        <span
-          role="button"
-          tabindex="0"
+        <button
+          type="button"
           aria-label={m.chat_agentSubscriptions_cancelWatch_tooltip()}
           title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
           class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
@@ -399,10 +438,9 @@
             e.stopPropagation();
             void cancelWatch(row);
           }}
-          onkeydown={(e) => handleActionKeydown(e, () => void cancelWatch(row))}
         >
           <Fa icon={faXmark} class="h-3.5! w-3.5!" />
-        </span>
+        </button>
       {/if}
     {/snippet}
     <AgentCard
