@@ -13,6 +13,7 @@ import {
   isSessionActivelyResponding,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
+  shouldShowSetupCardOnly,
   shouldShowTranscriptSkeleton,
   shouldStopChatBeforeSending,
 } from '../chat-panel-visibility';
@@ -298,6 +299,65 @@ describe('shouldShowTranscriptSkeleton', () => {
         hasBackendSession: false,
         hasPendingInitialPrompt: true,
       }),
+    ).toBe(false);
+  });
+});
+
+describe('shouldShowSetupCardOnly', () => {
+  // Reopened workspace: initialPrompt is not persisted, so the reconstructed
+  // onboarding prompt is always empty — only the hydration gate separates
+  // "still loading" from "genuinely never used".
+  const settledEmptyInitialAgent = {
+    isInitialWorkspaceAgent: true,
+    hasOnboardingContext: true,
+    hasOnboardingPrompt: false,
+    hasMessages: false,
+    isStreaming: false,
+    hasPendingInitialPrompt: false,
+    hydrationSettled: true,
+  };
+
+  it('does NOT match while the first hydration is in flight — the skeleton branch must win', () => {
+    // Regression (PR #1031): reopening an existing conversation showed the
+    // "Workspace ready to go!" setup card instead of the loading skeleton for
+    // the whole duration of the load.
+    const loadingState = { ...settledEmptyInitialAgent, hydrationSettled: false };
+    expect(shouldShowSetupCardOnly(loadingState)).toBe(false);
+    // ...and the transcript-skeleton gate matches that same loading state.
+    expect(
+      shouldShowTranscriptSkeleton({
+        isFirstHydrationLoading: true,
+        hasSession: true,
+        hydrationSettled: false,
+        hasBackendSession: true,
+        hasMessages: false,
+        isStreaming: false,
+        hasPendingInitialPrompt: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('matches once hydration settles with an empty, idle transcript', () => {
+    expect(shouldShowSetupCardOnly(settledEmptyInitialAgent)).toBe(true);
+  });
+
+  it('never matches for non-initial-workspace agents or without onboarding context', () => {
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, isInitialWorkspaceAgent: false }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingContext: false }),
+    ).toBe(false);
+  });
+
+  it('defers to the transcript once messages, streaming, or a pending/onboarding prompt exist', () => {
+    expect(shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasMessages: true })).toBe(false);
+    expect(shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, isStreaming: true })).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasPendingInitialPrompt: true }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingPrompt: true }),
     ).toBe(false);
   });
 });
