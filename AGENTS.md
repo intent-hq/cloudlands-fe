@@ -89,6 +89,17 @@ pnpm run test:unit     # Vitest suite
 pnpm run test:playwright
 ```
 
+## PR test builds
+
+`.github/workflows/manual-signed-build.yml` ("Manual Signed Build") is dispatch-only and
+builds any branch/ref — e.g. a PR branch — into platform-specific installers for testing:
+`gh workflow run manual-signed-build.yml --ref <pr-branch> -f build_macos=true` (also
+`build_windows` / `build_linux`; `sign` defaults to true — macOS Developer ID +
+notarization, Windows DigiCert). Output is installers + blockmaps only, uploaded as
+short-lived workflow artifacts (7-day retention), version-suffixed `-manual.<run_number>`.
+Nothing publishes to intent-hq/cloudlands-releases and no auto-updater manifest is
+produced — manual install/testing only.
+
 ## Verification
 
 After any structural change (moving files, changing imports, extracting modules):
