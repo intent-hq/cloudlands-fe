@@ -527,6 +527,7 @@ describe('panelLayoutSaga', () => {
   });
 
   it('persists explicit width provenance with the exact user width', async () => {
+    mocks.getJSON.mockReturnValue(undefined);
     const state = storeState();
     state.panelLayout.byWorkspaceId[WS_1] = {
       ...workspaceState(),
@@ -606,6 +607,30 @@ describe('panelLayoutSaga', () => {
     await settle();
 
     expect(mocks.setJSON.mock.calls).toEqual([]);
+    await cancelSaga(task);
+  });
+
+  it('protects a non-empty stored layout from any pre-restore write, even with in-memory tabs', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([]);
+    await cancelSaga(task);
+  });
+
+  it('persists normally once the workspace has been restored', async () => {
+    mocks.getJSON.mockReturnValue(layout);
+    const { channel, task } = startSaga();
+    await settle();
+    channel.put(workspaceMounted(WS_1));
+    await settle();
+    channel.put({ type: focusPanel.type, payload: [WS_1, 'panel-1'] });
+    await settle();
+
+    expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
     await cancelSaga(task);
   });
 
@@ -941,6 +966,67 @@ describe('panelLayoutSaga', () => {
         { channel, dispatch, getState: () => storeState(WS_1, backendId) },
         panelLayoutSaga,
       );
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_1, 'pending'),
+        initializeLayout(WS_1, layout),
+        setRestoreStatus(WS_1, 'restored'),
+      ]);
+      await cancelSaga(task);
+    });
+
+    it('re-restores every mounted workspace from the incoming backend namespace on switch', async () => {
+      const remoteKey2 = `backend:${REMOTE_ID}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_2}`;
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === REMOTE_STORAGE_KEY_1 || key === remoteKey2 ? layout : undefined,
+      );
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+      );
+      await settle();
+      channel.put(workspaceMounted(WS_2));
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_1, 'pending'),
+        initializeLayout(WS_1, layout),
+        setRestoreStatus(WS_1, 'restored'),
+        setRestoreStatus(WS_2, 'pending'),
+        initializeLayout(WS_2, layout),
+        setRestoreStatus(WS_2, 'restored'),
+      ]);
+      await cancelSaga(task);
+    });
+
+    it('skips unmounted workspaces when re-restoring on switch', async () => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key.startsWith(`backend:${REMOTE_ID}:`) ? layout : undefined,
+      );
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+      );
+      await settle();
+      channel.put(workspaceMounted(WS_2));
+      channel.put(workspaceUnmounted(WS_2));
       await settle();
       dispatch.mockClear();
 
