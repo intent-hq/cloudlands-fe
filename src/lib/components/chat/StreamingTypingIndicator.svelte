@@ -2,12 +2,12 @@
   StreamingTypingIndicator.svelte
 
   A polished, animated typing indicator for streaming messages.
-  Features animated squares using the AuggieAvatar color scheme.
+  Features animated squares using the seeded agent color scheme.
 -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { getRandomColorsWithSeed } from '$features/agent/components/auggie-avatar/avatar-constants';
+  import { getAgentColorsWithSeed } from '$lib/utils/agent-colors';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -28,18 +28,18 @@
     seed = 'default',
   }: Props = $props();
 
-  let [color1, color2] = $derived(getRandomColorsWithSeed(seed));
+  let [color1, color2] = $derived(getAgentColorsWithSeed(seed));
 </script>
 
 {#if visible}
   <div
-    class="flex items-center gap-2 text-subtle py-1 pl-2 {className}"
+    class="flex min-h-5 items-center gap-1.5 py-0 text-muted-foreground type-body {className}"
     in:fade={{ duration: 200, easing: cubicOut }}
     out:fade={{ duration: 150, easing: cubicOut }}
   >
     <div
-      class="legacy-streaming-spinner inline-flex items-center"
-      style="--size: 5px; --gap: 0px; --color1: {color1}; --color2: {color2};"
+      class="legacy-streaming-spinner inline-flex h-5 w-4 min-w-4 shrink-0 items-center justify-center"
+      style="--size: 3.5px; --gap: 1px; --color1: {color1}; --color2: {color2};"
       role="status"
       aria-label={m.ui_spinner_loading_ariaLabel()}
     >
@@ -52,7 +52,7 @@
 
     <!-- Message text -->
     {#if !compact && message}
-      <span class="text-xs text-subtle font-medium" data-testid="streaming-status-thinking"
+      <span class="font-normal text-muted-foreground" data-testid="streaming-status-thinking"
         >{message}</span
       >
     {/if}

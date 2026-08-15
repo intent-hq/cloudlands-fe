@@ -8,6 +8,7 @@
   import Fa from 'svelte-fa';
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
+  import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
     OPERATIONAL_DISCLOSURE_CLASS,
@@ -54,38 +55,51 @@
     isExpanded = !isExpanded;
   }
 
-  // Generate a brief summary from the content
-  const summary = $derived.by(() => {
-    if (!content) return m.chat_shared_processing_fallback();
-    // Take first 100 chars, clean up
-    const cleaned = content.replace(/\n+/g, ' ').trim();
-    if (cleaned.length <= 80) return cleaned;
-    return cleaned.substring(0, 80).trim() + '...';
-  });
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggle();
+  }
+
+  const summaryContent = $derived(content || m.chat_shared_processing_fallback());
 </script>
 
 <div class="{OPERATIONAL_ROW_CONTAINER_CLASS} {className}" data-testid="reasoning-tool-call">
   <div class={OPERATIONAL_ROW_LINE_CLASS} data-operational-disclosure-row>
-    <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
-      <Fa
-        icon={faBrain}
-        size={14}
-        class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
-      />
-    </span>
     <button
-      class="{OPERATIONAL_DISCLOSURE_CLASS} cursor-pointer"
+      type="button"
+      class="flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left focus-visible:outline-none {isStreaming
+        ? 'pt-2.5'
+        : ''}"
       onclick={toggle}
+      onkeydown={handleDisclosureKeydown}
       aria-expanded={isExpanded}
+      aria-label={isStreaming
+        ? m.chat_thinkingBlock_thinking_label()
+        : `${m.chat_thinkingBlock_reasoning_label()}: ${summaryContent.slice(0, 100)}`}
+      data-testid="reasoning-disclosure"
     >
-      <span class="shrink-0 whitespace-nowrap {OPERATIONAL_PRIMARY_CLASS}">
-        {isStreaming
-          ? m.chat_thinkingBlock_thinking_label()
-          : m.chat_thinkingBlock_reasoning_label()}
+      <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box>
+        <Fa
+          icon={faBrain}
+          size={14}
+          class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
+        />
       </span>
-      {#if !isExpanded}
-        <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="reasoning-summary">{summary}</span>
-      {/if}
+      <span class="flex min-w-0 flex-1 items-baseline gap-1">
+        {#if isStreaming}
+          <span class="shrink-0 whitespace-nowrap {OPERATIONAL_PRIMARY_CLASS}">
+            {m.chat_thinkingBlock_thinking_label()}
+          </span>
+        {/if}
+        {#if !isExpanded}
+          <InlineMarkdownSnippet
+            content={summaryContent}
+            class={OPERATIONAL_SUMMARY_CLASS}
+            testId="reasoning-summary"
+          />
+        {/if}
+      </span>
     </button>
   </div>
 

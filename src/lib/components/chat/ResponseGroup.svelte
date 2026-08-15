@@ -15,6 +15,7 @@
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import CylinderScroller from './CylinderScroller.svelte';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
+  import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
   import { getResponseGroupPreviewBlock } from './response-group-blocks';
   import { faArrowsInLineVertical } from '$lib/icons/phosphor-icons';
   import {
@@ -186,19 +187,12 @@
     };
   }
 
-  // Extract snippet from first text block for collapsed preview
+  // Extract source Markdown from the first text block for the collapsed inline preview.
   const textSnippet = $derived.by(() => {
     if (!blocks) return '';
     const firstText = blocks.find((b) => b.type === 'text' && (b.text || b.content));
     if (!firstText) return '';
-    const raw = (firstText.text || firstText.content || '').trim();
-    // Strip any HTML/XML-like tags (group tags, markdown artifacts)
-    const cleaned = raw.replace(/<[^>]+>/g, '').trim();
-    // Take first ~80 chars, break at word boundary
-    if (cleaned.length <= 80) return cleaned;
-    const truncated = cleaned.substring(0, 200);
-    const lastSpace = truncated.lastIndexOf(' ');
-    return (lastSpace > 40 ? truncated.substring(0, lastSpace) : truncated) + '…';
+    return (firstText.text || firstText.content || '').trim();
   });
 
   // Keep collapsed groups lightweight: render one inert, current summary
@@ -225,10 +219,11 @@
     <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="response-group-summary">
       <span class="font-medium {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
         >{name}</span
-      >{#if textSnippet && !isExpanded}<span
+      >{#if textSnippet && !isExpanded}<InlineMarkdownSnippet
+          content={textSnippet}
           class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
-          data-testid="response-group-snippet">{textSnippet}</span
-        >{/if}
+          testId="response-group-snippet"
+        />{/if}
     </span>
   </button>
 
@@ -245,15 +240,12 @@
           {#if isExpanded}
             {@render children()}
           {:else if previewBlock?.type === 'tool_use'}
-            <div
-              class="type-caption min-w-0 py-0.5 text-muted-foreground"
-              data-response-group-preview
-            >
+            <div class="type-body min-w-0 py-0.5 text-ghost" data-response-group-preview>
               <AgentPreviewToolLabel toolUse={previewBlock as ToolUseBlock} animate={isStreaming} />
             </div>
           {:else if previewText}
             <div
-              class="type-caption whitespace-pre-wrap py-0.5 text-muted-foreground"
+              class="type-body whitespace-pre-wrap py-0.5 text-ghost"
               data-response-group-preview
               aria-live={isStreaming ? 'polite' : undefined}
             >
