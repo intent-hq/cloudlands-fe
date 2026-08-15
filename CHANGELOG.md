@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.0...v2.51.1) (2026-08-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.3 ([#1289](https://github.com/intent-hq/cloudlands-fe/issues/1289)) ([ac8c793](https://github.com/intent-hq/cloudlands-fe/commit/ac8c7932135584eee4abde32500a6b59e74115dc))
+* read remote-attachment bytes off the FE host instead of the daemon ([#1287](https://github.com/intent-hq/cloudlands-fe/issues/1287)) ([c18719f](https://github.com/intent-hq/cloudlands-fe/commit/c18719fec90ee2bd909abf1b1440c46767ebc66e))
+
 ## [2.51.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.50.0...v2.51.0) (2026-08-15)
 
 
