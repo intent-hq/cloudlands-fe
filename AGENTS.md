@@ -89,6 +89,63 @@ pnpm run test:unit     # Vitest suite
 pnpm run test:playwright
 ```
 
+## Dogfooding a dev FE against the production daemon (UDS→WS bridge)
+
+The monorepo ships a source-only dev shim — `scripts/uds-ws-bridge.mjs`, run as
+`make uds-to-unauthed-wss-bridge` from a monorepo checkout (not shipped in any package) —
+that exposes the installed production intentd's UDS socket as an **UNAUTHENTICATED**
+plain `ws://` endpoint on `127.0.0.1:51337/ws` (`BRIDGE_PORT` / `INTENTD_SOCKET`
+override the defaults). It lets a dev FE debug against the real daemon without touching
+the daemon's auth posture (UDS + authed WSS for iOS stay as-is). Loopback-only is by
+design — the bridge refuses non-loopback binds, and while it runs the full
+unauthenticated daemon API is on that port — never expose it beyond localhost.
+
+### Loop A — web build in an embedded tab (primary; renderer/UI work)
+
+Live-proven flow (zero FE changes needed):
+
+1. From the monorepo root: `make uds-to-unauthed-wss-bridge` → bridge on
+   `ws://127.0.0.1:51337/ws`.
+2. `VITE_INTENTD_WS_URL=ws://127.0.0.1:51337/ws pnpm dev:web` — with no Electron preload
+   the renderer selects the browser WebSocket transport and speaks JSON-RPC directly
+   over the bridge (plain `ws://` is accepted for loopback hosts only; anything else
+   needs `wss://`).
+3. Open the vite dev URL in an embedded tab of the running packaged app via
+   `browser.exec` (`openTab` / `navigate`) using an `http://daemon.localhost:<port>`
+   URL, then drive the tab with `screenshot` / `evaluate` / `getAccessibilityTree`.
+   Humans can eyeball the same tab. REV-1 first-client stickiness is a feature here:
+   the reverse call lands on the packaged app, which hosts the tab.
+
+Always give `browser.exec` `http://daemon.localhost:<port>` URLs and let the client
+resolve them: same-machine setups rewrite to `127.0.0.1`; with a **remote daemon** the
+embedded tab renders on the client machine, and an unreachable daemon-loopback port is
+automatically tunneled (`openTab`/`navigate` echo `tunneled: true` plus the client-local
+forward URL). In the remote case the page itself also dials the bridge from the client,
+so mint a forward for the bridge port first — open a tab to
+`http://daemon.localhost:51337/`, read the client-local port from the tunneled echo (the
+tab shows the bridge's HTTP 400 "This is a WebSocket endpoint" body — that error page is
+the success signal, the forward is minted regardless) — and restart dev:web with
+`VITE_INTENTD_WS_URL=ws://127.0.0.1:<client-local-port>/ws`.
+Expect a slow cold load over the tunnel (dev mode serves ~250 module requests).
+
+### Loop B — dev Electron FE + CDP (Electron shell work)
+
+When the change touches Electron main/preload/native/sidecar, Loop A cannot see it —
+run the dev Electron FE on the daemon machine with `pnpm run dev:cdp` (sets
+`ENABLE_CDP_DEBUG=true`; remote-debugging port 9223 by default — the launcher picks the
+first free port from 9223, so read the actual value from its output, e.g.
+`CDP targets: http://127.0.0.1:<port>/json/list` — and every webContents — app window
+and embedded tabs — is a target) and attach CDP locally. See
+`../../docs/fe/CDP_MCP_TOOLS.md`.
+
+### Caveats
+
+- The web build has no Electron preload: daemon RPCs work over the WS transport, but
+  Electron-only capabilities (native dialogs, window management, some IPC-bridged
+  channels) are absent or mocked — Loop A covers renderer/UI work only.
+- `browser.exec` reaches embedded tabs only, never the app's own chrome — inspecting
+  the Electron shell itself is always Loop B/CDP.
+
 ## PR test builds
 
 `.github/workflows/manual-signed-build.yml` ("Manual Signed Build") is dispatch-only and

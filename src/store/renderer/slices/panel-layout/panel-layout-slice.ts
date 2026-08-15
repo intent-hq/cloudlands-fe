@@ -212,7 +212,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId: string,
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
-    options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
+    options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean; newTabId?: string },
     timestamp?: number,
   ) => ({
     wsId,
@@ -221,7 +221,7 @@ export const openTabInAdjacentOrSplit = createAction(
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
-    newTabId: generateTabId(),
+    newTabId: options?.newTabId ?? generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
 );

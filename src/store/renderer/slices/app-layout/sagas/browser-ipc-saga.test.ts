@@ -177,6 +177,61 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it('uses the main-provided tabId and forwards allowDuplicate on every position branch (monorepo#2541)', async () => {
+    const actions: unknown[] = [];
+    const task = start((action) => actions.push(action));
+
+    await emit({ url: 'https://one.test', tabId: 'tab-main-1', allowDuplicate: true });
+    await emit({
+      url: 'https://two.test',
+      position: 'same',
+      tabId: 'tab-main-2',
+      allowDuplicate: true,
+    });
+    await emit({ url: 'https://three.test', position: 'replace', tabId: 'tab-main-3' });
+
+    expect(actions).toEqual([
+      {
+        type: 'panelLayout/openTabInAdjacentOrSplit',
+        payload: {
+          wsId: 'ws-1',
+          tab: TAB('https://one.test'),
+          sourcePanelId: undefined,
+          animated: false,
+          force: false,
+          allowDuplicate: true,
+          newTabId: 'tab-main-1',
+          timestamp: NOW,
+        },
+      },
+      {
+        type: 'panelLayout/openTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: TAB('https://two.test'),
+          panelId: undefined,
+          newTabId: 'tab-main-2',
+          force: false,
+          timestamp: NOW,
+          allowDuplicate: true,
+        },
+      },
+      {
+        type: 'panelLayout/openTab',
+        payload: {
+          wsId: 'ws-1',
+          tab: TAB('https://three.test'),
+          panelId: undefined,
+          newTabId: 'tab-main-3',
+          force: false,
+          timestamp: NOW,
+        },
+      },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('no-ops for invalid payloads and when neither workspace source is available', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));

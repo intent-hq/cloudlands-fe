@@ -31,9 +31,12 @@
  * `forwardPort(remotePort)` resolves with the ephemeral local port of a
  * `net.createServer` on `127.0.0.1`. Each accepted connection allocates a
  * streamId, sends `OPEN`, and relays bytes both ways once `OPEN_OK` arrives
- * (`OPEN_ERR` destroys the local socket). Backpressure pauses local sockets
- * against `ws.bufferedAmount`; forwards idle for ~10 minutes are closed; a
- * tunnel drop tears down every forward, and the next use reconnects lazily.
+ * (`OPEN_ERR` destroys the local socket; a definitively connection-refused
+ * `OPEN_ERR` additionally drops the whole forward — the daemon-side server is
+ * gone — so the next `forwardPort()` recreates it fresh). Backpressure pauses
+ * local sockets against `ws.bufferedAmount`; forwards idle for ~10 minutes are
+ * closed; a tunnel drop tears down every forward, and the next use reconnects
+ * lazily.
  */
 import net from 'node:net';
 import { createRequire } from 'node:module';
@@ -159,6 +162,28 @@ export function decodeFrame(bytes: Buffer): TunnelFrame {
     default:
       throw new FrameDecodeError(`unknown opcode 0x${opcode.toString(16).padStart(2, '0')}`);
   }
+}
+
+/**
+ * True when an `OPEN_ERR` message definitively reports a refused connect —
+ * i.e. nothing is listening on the daemon-side port anymore. The daemon
+ * formats the payload as `connect 127.0.0.1:<port>: <io error>`
+ * (`intent-transport/src/tunnel.rs`), where the io error renders as
+ * `Connection refused (os error 111)` on Linux / `(os error 61)` on macOS /
+ * `(os error 10061)` on Windows — the text may be OS-localized, the code is
+ * not. The numeric fallback (for localized text) only matches inside that
+ * `connect …` format: errno values are per-OS (61 is ECONNREFUSED on
+ * macOS/BSD but ENODATA on Linux) and we don't know the daemon's OS, but in
+ * a `connect(2)` failure context the ambiguous codes can only mean refused —
+ * connect never fails with ENODATA. Deliberately conservative: timeouts
+ * (`timed out after …`) and every other transient error do NOT match and
+ * stay per-stream.
+ */
+export function isConnectionRefusedOpenErr(message: string): boolean {
+  return (
+    /connection refused|econnrefused/i.test(message) ||
+    /^connect .*\(os error (?:111|61|10061)\)/.test(message)
+  );
 }
 
 /** `ws.WebSocket.OPEN` without importing the class into the type surface. */
@@ -297,6 +322,9 @@ export function createTunnelSocket(config: BackendConnectionConfig): TunnelSocke
  * `net.Server` per forwarded remote port, one mux stream per accepted socket.
  */
 export class TunnelManager {
+  /** Backend discriminator echoed in tunnel action results. */
+  readonly backend = 'tunnel' as const;
+
   private readonly getConfig: () => BackendConnectionConfig | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
@@ -477,6 +505,17 @@ export class TunnelManager {
     }));
   }
 
+  /**
+   * Close the forward for `remotePort` on request (its local listener and any
+   * remaining streams). Returns true when a forward existed, false otherwise.
+   */
+  closeForward(remotePort: number): boolean {
+    const forward = this.forwards.get(remotePort);
+    if (!forward) return false;
+    this.dropForward(forward, 'closed on request');
+    return true;
+  }
+
   /** Tear down every forward and the tunnel socket. The manager is unusable after. */
   dispose(): void {
     if (this.disposed) return;
@@ -624,16 +663,26 @@ export class TunnelManager {
           stream.socket.resume();
         }
         break;
-      case 'openErr':
+      case 'openErr': {
         // Terminal for a stream that never opened — no CLOSE follows.
         logger.warn('remote open failed', {
           streamId: frame.streamId,
           remotePort: stream.forward.remotePort,
           message: frame.message,
         });
+        const forward = stream.forward;
         stream.remoteClosed = true;
         this.endStream(stream, { sendClose: false });
+        // A definitively refused connect means the daemon-side server is
+        // gone: drop the whole forward so it leaves activeForwards() now
+        // (instead of lingering until the idle sweep) and the next
+        // forwardPort() recreates it fresh. Timeouts and other transient
+        // errors stay per-stream.
+        if (isConnectionRefusedOpenErr(frame.message)) {
+          this.dropForward(forward, 'daemon-side port refused the connect');
+        }
         break;
+      }
       case 'data':
         // `write()`'s return value is deliberately ignored: the frozen frame
         // contract has no per-stream flow-control window and pausing the
@@ -655,6 +704,27 @@ export class TunnelManager {
         });
         break;
     }
+  }
+
+  /**
+   * Close a forward's local listener and remaining streams and deregister it,
+   * so the next `forwardPort(remotePort)` recreates it fresh. Used when a
+   * refused `OPEN` shows the daemon-side port is closed (the idle sweep stays
+   * as the backstop for forwards that never see another `OPEN`) and by the
+   * explicit [[closeForward]].
+   */
+  private dropForward(forward: ForwardState, reason: string): void {
+    if (this.forwards.get(forward.remotePort) !== forward) return;
+    this.forwards.delete(forward.remotePort);
+    forward.server.close();
+    for (const stream of [...forward.streams]) {
+      this.endStream(stream, { sendClose: !stream.remoteClosed });
+    }
+    logger.info('forward dropped', {
+      reason,
+      remotePort: forward.remotePort,
+      localPort: forward.localPort,
+    });
   }
 
   /** Deregister a stream and destroy its socket (optionally telling the daemon). */
