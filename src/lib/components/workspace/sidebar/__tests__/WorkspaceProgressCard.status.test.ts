@@ -58,8 +58,20 @@ const mocks = vi.hoisted(() => {
       return () => {};
     },
   });
+  const selectorSubscribers = new Set<() => void>();
   const selector = <T>(getter: () => T) =>
-    Object.assign(() => readable(getter()), { select: getter });
+    Object.assign(
+      () => ({
+        subscribe(run: (v: T) => void) {
+          const notify = () => run(getter());
+          notify();
+          selectorSubscribers.add(notify);
+          return () => selectorSubscribers.delete(notify);
+        },
+      }),
+      { select: getter },
+    );
+  const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
   return {
     dispatch,
     update,
@@ -73,6 +85,7 @@ const mocks = vi.hoisted(() => {
     workspaceEntity,
     readable,
     selector,
+    notifySelectors,
     storeState,
   };
 });
@@ -477,6 +490,42 @@ describe('WorkspaceProgressCard status message', () => {
 
     mocks.workspaceEntity.statusMessage = undefined;
     expect(screen.queryByRole('button', { name: 'Add workspace status' })).toBeNull();
+  });
+
+  it('survives the View PR action flipping to undefined mid-render (monorepo#2543)', async () => {
+    type TooltipProps = { content: unknown; disabled: unknown };
+    const tooltipProps: TooltipProps[] = [];
+    const withRegistry = globalThis as { __mockTooltipProps?: TooltipProps[] };
+    withRegistry.__mockTooltipProps = tooltipProps;
+    try {
+      mocks.progressActions.push({
+        id: 'view-pr',
+        label: 'View PR',
+        iconKey: 'code-branch',
+        tooltip: 'Open the pull request.',
+        url: 'https://github.com/intent-hq/monorepo/pull/42',
+      });
+      const { container } = await renderProgressCard();
+      expect(container.querySelectorAll('[data-workspace-view-pr]')).toHaveLength(1);
+
+      const viewPrTooltip = tooltipProps.find((p) => p.content === 'Open the pull request.');
+      expect(viewPrTooltip).toBeDefined();
+      expect(viewPrTooltip!.disabled).toBe(false);
+
+      mocks.progressActions.length = 0;
+      mocks.notifySelectors();
+
+      // The teardown race: the Tooltip's lazy prop getters re-evaluate after
+      // the action flipped to undefined but before the {#if} block tears down.
+      expect(viewPrTooltip!.disabled).toBe(true);
+      expect(viewPrTooltip!.content).toBeUndefined();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-workspace-view-pr]')).toBeNull();
+      });
+    } finally {
+      delete withRegistry.__mockTooltipProps;
+    }
   });
 
   it('hides empty task progress after canonical tasks finish loading', async () => {
