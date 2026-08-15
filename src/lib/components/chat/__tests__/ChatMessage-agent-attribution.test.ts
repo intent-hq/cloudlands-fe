@@ -696,6 +696,9 @@ describe('ChatMessage hook wake attribution', () => {
     await expandAutomatedWake();
     const timing = screen.getByTestId('queued-message-notice');
     expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(true);
+    // Automated-wake cards render on the subscription-card surface → muted tone.
+    expect(timing.className).toContain('text-subtle');
+    expect(timing.className).not.toContain('text-primary-foreground/80');
     expect(timing.textContent).toContain('waited');
     expect(screen.getByText('CI is red')).toBeTruthy();
     expect(screen.queryByText(/SYSTEM NOTE/)).toBeNull();
