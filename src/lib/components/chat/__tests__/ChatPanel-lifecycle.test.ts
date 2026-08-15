@@ -113,6 +113,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => ({ getPanelIds: () => [], getPanel: () => null }),
 }));
 vi.mock('$lib/utils/smartScroll', () => ({
+  followToBottom: vi.fn(),
   followBottom: () => ({ update: () => {}, destroy: () => {} }),
   scrollToBottom: vi.fn(),
 }));
@@ -158,7 +159,6 @@ vi.mock('svelte-fa', async () => ({
 
 import ChatPanel from '../ChatPanel.svelte';
 import { clearDraftCacheForTests } from '../chat-draft-cache';
-import { scrollToBottom as scrollToBottomUtil } from '$lib/utils/smartScroll';
 
 type Frame = { id: number; callback: FrameRequestCallback };
 let frames: Frame[];
@@ -612,7 +612,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
     flushFrame(); // bind the distance-from-bottom scroll tracker
 
-    // Scrolled up beyond the 30px at-bottom threshold → arrow appears.
+    // Any hidden tail beyond the one-pixel geometry tolerance keeps the arrow visible.
     Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
     Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
     scrollContainer.scrollTop = 100; // 500px from the bottom
@@ -623,12 +623,24 @@ describe('ChatPanel mounted lifecycle', () => {
     );
     expect(arrowButton).not.toBeNull();
     expect(arrowButton!.classList.contains('pointer-events-none')).toBe(false);
+    expect(arrowButton!.classList.contains('border-0')).toBe(true);
+    expect(arrowButton!.classList.contains('bg-transparent')).toBe(true);
+    expect(arrowButton!.classList.contains('z-[45]')).toBe(true);
+    expect(arrowButton!.getAttribute('aria-label')).toBeTruthy();
 
     // Click scrolls to the bottom and re-enables auto-follow.
     await fireEvent.click(arrowButton!);
-    expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+    const { followToBottom } = await import('$lib/utils/smartScroll');
+    expect(vi.mocked(followToBottom)).toHaveBeenCalledWith(scrollContainer);
 
-    // Back at the bottom → the button unmounts again.
+    scrollContainer.scrollTop = 598; // two pixels remain hidden
+    await fireEvent.scroll(scrollContainer);
+    await tick();
+    expect(
+      view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]'),
+    ).not.toBeNull();
+
+    // Within one device pixel of the real bottom → the button unmounts again.
     scrollContainer.scrollTop = 600;
     await fireEvent.scroll(scrollContainer);
     await tick();

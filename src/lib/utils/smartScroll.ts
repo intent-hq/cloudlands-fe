@@ -21,6 +21,12 @@ export interface FollowBottomOptions {
   onFollowChange?: (follow: boolean) => void;
 }
 
+interface BottomFollower {
+  followAndScroll: () => void;
+}
+
+const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
+
 /**
  * Svelte action that follows the bottom of a scrollable container.
  *
@@ -44,6 +50,37 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let settleFrame: number | null = null;
+  let confirmationFrame: number | null = null;
+
+  function cancelSettle() {
+    if (settleFrame !== null) cancelAnimationFrame(settleFrame);
+    if (confirmationFrame !== null) cancelAnimationFrame(confirmationFrame);
+    settleFrame = null;
+    confirmationFrame = null;
+  }
+
+  function setExactBottom() {
+    container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+  }
+
+  function scheduleBottomSettle() {
+    if (settleFrame !== null || !isAtBottom || isUserScrolling) return;
+    isProgrammaticScroll = true;
+    settleFrame = requestAnimationFrame(() => {
+      settleFrame = null;
+      if (!isAtBottom || isUserScrolling) {
+        isProgrammaticScroll = false;
+        return;
+      }
+      setExactBottom();
+      confirmationFrame = requestAnimationFrame(() => {
+        confirmationFrame = null;
+        if (isAtBottom && !isUserScrolling) setExactBottom();
+        isProgrammaticScroll = false;
+      });
+    });
+  }
 
   function checkIfAtBottom(): boolean {
     const { scrollTop, scrollHeight, clientHeight } = container;
@@ -64,20 +101,19 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     // Note: We check isAtBottom (the "following" state), not the actual scroll position.
     // This is important because when content first becomes scrollable, the actual position
     // might not be at bottom, but we still want to scroll if we were following.
-    if (isAtBottom && !isUserScrolling) {
-      isProgrammaticScroll = true;
-      requestAnimationFrame(() => {
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: 'instant',
-        });
-        // Reset flag after scroll completes
-        requestAnimationFrame(() => {
-          isProgrammaticScroll = false;
-        });
-      });
-    }
+    if (isAtBottom && !isUserScrolling) scheduleBottomSettle();
   }
+
+  const follower: BottomFollower = {
+    followAndScroll() {
+      isUserScrolling = false;
+      setIsAtBottom(true);
+      isProgrammaticScroll = true;
+      setExactBottom();
+      scheduleBottomSettle();
+    },
+  };
+  bottomFollowers.set(container, follower);
 
   // Handle wheel events - user is scrolling with mouse/trackpad
   function handleWheel(e: WheelEvent) {
@@ -225,10 +261,14 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
         isAtBottom = true;
       } else if (!newOptions.follow && isAtBottom) {
         isAtBottom = false;
+        cancelSettle();
+        isProgrammaticScroll = false;
       }
     },
 
     destroy() {
+      cancelSettle();
+      if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
       teardownObservers();
       container.removeEventListener('scroll', handleScroll);
       container.removeEventListener('wheel', handleWheel);
@@ -264,6 +304,19 @@ export function scrollToBottom(element: HTMLElement, smooth = false): void {
     top: element.scrollHeight,
     behavior: smooth ? 'smooth' : 'auto',
   });
+}
+
+/**
+ * Enable the active follow action and settle at the exact maximum scroll position.
+ * Observer callbacks retain the lock while immediate nested content mounts or resizes.
+ */
+export function followToBottom(element: HTMLElement): void {
+  const follower = bottomFollowers.get(element);
+  if (follower) {
+    follower.followAndScroll();
+    return;
+  }
+  scrollToBottom(element);
 }
 
 /**

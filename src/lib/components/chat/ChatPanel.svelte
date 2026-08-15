@@ -144,18 +144,14 @@
   import { groupMessagesByDate } from '$lib/utils/timeFormatting';
   import {
     animateScrollTo,
+    followToBottom,
     followBottom,
     scrollToBottom as scrollToBottomUtil,
   } from '$lib/utils/smartScroll';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import {
-    faArrowDown,
-    faLock,
-    faSquareCheck,
-    faPaperclip,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faLock, faSquareCheck, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -170,6 +166,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
+  import ScrollToBottomButton from './ScrollToBottomButton.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
   import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
   import {
@@ -250,6 +247,7 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
+  const SCROLL_BOTTOM_BUTTON_EPSILON = 1;
 
   interface Props {
     workspace: Workspace;
@@ -3209,7 +3207,7 @@
   export function scrollToBottom() {
     if (scrollContainer) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(scrollContainer);
     }
   }
 
@@ -4207,17 +4205,8 @@
          invisible control overlaps the message actions bar or lingers in the
          tab order while at the bottom. Auto-follow re-locks on click or on
          scrolling back to the bottom; scrolling up unlocks it. -->
-    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_THRESHOLD}
-      <Button
-        variant="outline"
-        size="icon-xs"
-        data-testid="chat-scroll-to-bottom-button"
-        onclick={() => scrollToBottom()}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
-        title={m.chat_chatPanel_scrollToBottom_tooltip()}
-      >
-        <Fa icon={faArrowDown} class="w-3! h-3!" />
-      </Button>
+    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_BUTTON_EPSILON}
+      <ScrollToBottomButton onclick={() => scrollToBottom()} />
     {:else if showLockConfirmation}
       <!-- Transient re-lock confirmation: purely decorative feedback that
            auto-follow re-engaged on reaching the bottom. Never interactive:

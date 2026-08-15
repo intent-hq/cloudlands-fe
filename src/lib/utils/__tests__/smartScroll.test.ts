@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { animateScrollTo } from '../smartScroll';
+import { animateScrollTo, followBottom, followToBottom } from '../smartScroll';
 
 describe('animateScrollTo', () => {
   let rafCallbacks: FrameRequestCallback[];
@@ -75,5 +75,34 @@ describe('animateScrollTo', () => {
     runFrames(75);
 
     expect(rafCallbacks).toHaveLength(0);
+  });
+});
+
+describe('followToBottom', () => {
+  it('synchronously enables an attached follower before settling at the exact maximum', () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const container = document.createElement('div');
+    Object.defineProperties(container, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 300 },
+    });
+    const changes: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => changes.push(follow),
+    });
+
+    followToBottom(container);
+
+    expect(container.scrollTop).toBe(600);
+    expect(changes).toEqual([true]);
+    action.destroy();
+    vi.unstubAllGlobals();
   });
 });
