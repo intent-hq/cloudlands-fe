@@ -162,6 +162,34 @@ describe('MonitoredPrsRow', () => {
     expect(chip.textContent).toContain('other/lib: #42');
   });
 
+  it('caps every box between the row and the chip label so long labels ellipsize, not overflow', () => {
+    monitorsState.monitors = [
+      makeMonitor({
+        repo: 'intent-hq/cloudlands-releases',
+        prNumber: 1248,
+        url: 'https://github.com/intent-hq/cloudlands-releases/pull/1248',
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('monitored-pr-chip');
+    // The chip clips overflow, caps its own width, and its label ellipsizes
+    expect(chip.className).toContain('overflow-hidden');
+    expect(chip.className).toContain('max-w-full');
+    expect(chip.querySelector('.truncate')).toBeTruthy();
+    // The cap must propagate up the trigger chain: the Tooltip trigger span
+    // and the DropdownMenu root div (the wrap-row's actual flex item) both
+    // need max-w-full — otherwise the flex item's automatic minimum size
+    // floors at the full nowrap label width and a cross-repo label overflows
+    // a narrow row instead of ellipsizing.
+    const tooltipTrigger = chip.closest('span.inline-flex') as HTMLElement;
+    expect(tooltipTrigger).toBeTruthy();
+    expect(tooltipTrigger.className).toContain('max-w-full');
+    const dropdownRoot = chip.closest('div.relative.inline-block') as HTMLElement;
+    expect(dropdownRoot).toBeTruthy();
+    expect(dropdownRoot.className).toContain('max-w-full');
+  });
+
   it('hover card shows title, state, checks/reviews/threads, mergeable, and pending status', async () => {
     monitorsState.monitors = [
       makeMonitor({

@@ -89,6 +89,28 @@ describe('BackgroundHooksRow', () => {
     expect(chip.className).toContain('cursor-pointer');
   });
 
+  it('caps every box between the row and the chip label so long names ellipsize, not overflow', () => {
+    hooksState.hooks = [makeHook({ name: 'a-very-long-hook-name-that-would-overflow-a-narrow-row' })];
+    render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const chip = screen.getByTestId('background-hook-chip');
+    // The chip clips overflow, caps its own width, and its label ellipsizes
+    expect(chip.className).toContain('overflow-hidden');
+    expect(chip.className).toContain('max-w-full');
+    expect(chip.querySelector('.truncate')).toBeTruthy();
+    // The cap must propagate up the trigger chain: the Tooltip trigger span
+    // and the DropdownMenu root div (the wrap-row's actual flex item) both
+    // need max-w-full — otherwise the flex item's automatic minimum size
+    // floors at the full nowrap label width and the chip pokes out of a
+    // narrow row instead of ellipsizing.
+    const tooltipTrigger = chip.closest('span.inline-flex') as HTMLElement;
+    expect(tooltipTrigger).toBeTruthy();
+    expect(tooltipTrigger.className).toContain('max-w-full');
+    const dropdownRoot = chip.closest('div.relative.inline-block') as HTMLElement;
+    expect(dropdownRoot).toBeTruthy();
+    expect(dropdownRoot.className).toContain('max-w-full');
+  });
+
   it('renders nothing when the agent has no active hooks', () => {
     hooksState.hooks = [makeHook({ state: 'dispatched' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });

@@ -146,11 +146,12 @@
       >{m.chat_backgroundHooks_runningHooks_label()}</span
     >
     {#each agentHooks as hook (hook.hookId)}
-      <DropdownMenu side="top" align="start">
+      <DropdownMenu side="top" align="start" class="max-w-full">
         {#snippet trigger({ toggle }: { toggle: () => void })}
           <Tooltip
             side="top"
             align="start"
+            class="max-w-full"
             delayDuration={300}
             disableHoverableContent={false}
             contentClass="max-w-sm"
@@ -206,11 +207,11 @@
               type="button"
               onclick={toggle}
               onfocus={() => (focusedHookId = hook.hookId)}
-              class="group/chip relative flex flex-col rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors overflow-hidden cursor-pointer"
+              class="group/chip relative flex max-w-full flex-col rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors overflow-hidden cursor-pointer"
               data-testid="background-hook-chip"
               data-hook-state={hook.state}
             >
-              <span class="flex items-center gap-1 max-w-32">
+              <span class="flex items-center gap-1 max-w-full">
                 <span class="truncate">{hook.name}</span>
                 {#if hook.state === 'running'}
                   <Fa icon={faSpinner} class="w-2 h-2 animate-spin shrink-0" />
