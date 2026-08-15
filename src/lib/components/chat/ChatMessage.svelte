@@ -1254,7 +1254,12 @@
             >
               <!-- Queued-delivery notice for messages drained from the pending queue -->
               {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
+                <QueuedMessageNoticeHeader
+                  {queueInfo}
+                  {isSticky}
+                  onPrimarySurface={!agentAttribution && !automatedWakePresentation}
+                  class="mb-1.5"
+                />
               {/if}
 
               <div
