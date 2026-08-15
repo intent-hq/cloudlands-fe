@@ -187,6 +187,7 @@
     trackPinnedPrompt,
     type PinnedPromptState,
   } from './pinned-prompt';
+  import { measureScrollbarGutterWidth } from './scrollbar-gutter';
   import {
     createLazyTurnCacheScope,
     createLazyTurnHeightCache,
@@ -602,6 +603,11 @@
   const COMPACT_HEIGHT_ENTER = 600; // Enter compact mode below this
   const COMPACT_HEIGHT_EXIT = 640; // Exit compact mode above this
   let isCompactMode = $state(false);
+
+  // Width the scroll container reserves for its vertical scrollbar gutter.
+  // The pinned-prompt overlay host subtracts it so the overlay lane occupies
+  // the same horizontal box as the conversation column.
+  let scrollbarGutterWidth = $state(0);
 
   $effect(() => {
     if (containerHeight > 0) {
@@ -2518,6 +2524,12 @@
             containerHeight = newHeight;
           }
         }
+        if (scrollContainer) {
+          const gutterWidth = measureScrollbarGutterWidth(scrollContainer);
+          if (gutterWidth !== scrollbarGutterWidth) {
+            scrollbarGutterWidth = gutterWidth;
+          }
+        }
       });
       observer.observe(scrollContainer);
     };
@@ -3351,21 +3363,29 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+    <!-- Inline-end padding compensates the scroll container's scrollbar gutter
+         so the lane's box matches the conversation column's box. -->
     <div
       class="pointer-events-none absolute inset-x-0 top-0 z-40"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="pinned-prompt-overlay-host"
       aria-live="off"
     >
       {#if pinnedPrompt}
+        <!-- Mirror the conversation column's horizontal padding plus the chief
+             variant's user-row inset so the pinned bubble aligns with
+             in-conversation user bubbles. -->
         <div
-          class={isChiefWorkspace ? 'px-1 sm:px-2' : 'px-4 sm:px-6'}
+          class={isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <PinnedUserPrompt
-            text={getPinnedPromptText(pinnedPrompt.message)}
-            {workspace}
-            onActivate={handlePinnedPromptClick}
-          />
+          <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+            <PinnedUserPrompt
+              text={getPinnedPromptText(pinnedPrompt.message)}
+              {workspace}
+              onActivate={handlePinnedPromptClick}
+            />
+          </div>
         </div>
       {/if}
     </div>

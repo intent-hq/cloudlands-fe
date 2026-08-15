@@ -135,6 +135,39 @@ for (const theme of ['light', 'dark'] as const) {
   });
 }
 
+for (const chiefVariant of [false, true]) {
+  test(`aligns the pinned bubble with in-conversation bubbles across the scrollbar gutter (chiefVariant=${chiefVariant})`, async ({
+    mount,
+  }) => {
+    const component = await mount(ChatEventGeometryHost, {
+      props: { panelId: `align-${chiefVariant}`, chiefVariant },
+    });
+    await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
+    await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
+
+    const geometry = await component.evaluate((root) => {
+      const rect = (selector: string) => {
+        const { left, right, width } = root.querySelector(selector)!.getBoundingClientRect();
+        return { left, right, width };
+      };
+      const scroll = root.querySelector('[data-testid="sticky-scroll"]') as HTMLElement;
+      return {
+        gutter: scroll.offsetWidth - scroll.clientWidth,
+        lane: rect('[data-testid="pinned-prompt-overlay-lane"]'),
+        column: rect('[data-testid="conversation-column"]'),
+        pinned: rect('[data-testid="pinned-user-prompt"]'),
+        bubble: rect('[data-testid="in-conversation-user-bubble"]'),
+      };
+    });
+
+    expect(geometry.gutter).toBeGreaterThan(0);
+    expect(geometry.lane.left).toBeCloseTo(geometry.column.left, 1);
+    expect(geometry.lane.width).toBeCloseTo(geometry.column.width, 1);
+    expect(geometry.pinned.left).toBeCloseTo(geometry.bubble.left, 1);
+    expect(geometry.pinned.right).toBeCloseTo(geometry.bubble.right, 1);
+  });
+}
+
 test('tracks sticky entry, streaming, pagination, and per-panel ownership', async ({
   mount,
   page,
