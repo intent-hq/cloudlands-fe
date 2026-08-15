@@ -122,10 +122,13 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
     expect(panel).toContain(
       '{#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}',
     );
-    // Every inline render site passes the defer flag.
-    expect(panel.match(/@render newMessagesDividerAfter\(/g)?.length).toBe(
-      panel.match(/@render newMessagesDividerAfter\([^)]+, dividerAtTurnBoundary\)/g)?.length,
-    );
+    // Every inline render site (event banner, user row, notice, assistant)
+    // passes the defer flag — anchored to the concrete count so removed or
+    // non-matching sites fail rather than vacuously comparing undefined.
+    const allSites = panel.match(/@render newMessagesDividerAfter\(/g) ?? [];
+    const withFlag = panel.match(/@render newMessagesDividerAfter\([^)]+, dividerAtTurnBoundary\)/g) ?? [];
+    expect(allSites.length).toBe(4);
+    expect(withFlag.length).toBe(allSites.length);
   });
 });
 

@@ -3709,6 +3709,12 @@
                   {@const turnMessageText = turn.userMessage
                     ? extractAllContent(turn.userMessage)
                     : ''}
+                  <!-- Fallback chain mirrors the row render order below. Edge case:
+                       a user message with metadata.type === 'event_notification' but
+                       no eventTypes (and no [WORKSPACE EVENTS] prefix) renders neither
+                       the banner nor the user row, yet still counts as "last rendered"
+                       here — if it is the anchor, the divider renders at the turn
+                       boundary (previously it rendered nowhere). -->
                   {@const turnLastRenderedMessageId =
                     turn.assistantMessages[turn.assistantMessages.length - 1]?.id ??
                     turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
@@ -3931,8 +3937,11 @@
                       {/snippet}
                     </LazyTurn>
                   </div>
-                  <!-- Editorial rhythm between turns (not after the last one) -->
-                  {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
+                  <!-- Editorial rhythm between turns (not after the last one).
+                       Must stay the negation of dividerDefersToTurnBoundary's
+                       hasFollowingTurn input so a deferred divider always follows
+                       a spacer. -->
+                  {#if !isLastTurnInConversation}
                     <div class="h-8" aria-hidden="true"></div>
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
