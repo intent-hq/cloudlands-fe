@@ -188,11 +188,12 @@
       >{m.chat_monitoredPrs_monitoredPrs_label()}</span
     >
     {#each activeMonitors as monitor (monitor.monitorId)}
-      <DropdownMenu side="top" align="start">
+      <DropdownMenu side="top" align="start" class="max-w-full">
         {#snippet trigger({ toggle }: { toggle: () => void })}
           <Tooltip
             side="top"
             align="start"
+            class="max-w-full"
             delayDuration={300}
             disableHoverableContent={false}
             contentClass="max-w-sm whitespace-normal"
@@ -249,7 +250,7 @@
             <button
               type="button"
               onclick={toggle}
-              class="group/chip relative flex items-center gap-1 rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+              class="group/chip relative flex max-w-full items-center gap-1 rounded border border-border/40 bg-muted/20 px-1.5 py-0.5 text-xs leading-tight text-subtle hover:text-foreground hover:bg-muted/40 transition-colors overflow-hidden cursor-pointer"
               data-testid="monitored-pr-chip"
               data-monitor-state={monitor.state}
               data-pending={monitor.hasPendingChanges}

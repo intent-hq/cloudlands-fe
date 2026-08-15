@@ -43,7 +43,10 @@
   data-testid="hook-wake-attribution"
 >
   <Fa icon={faBolt} class="w-3 h-3 text-ghost" />
-  <span class="text-foreground min-w-0 truncate font-medium" title={attribution.rawName}>
+  <span
+    class="text-foreground min-w-0 truncate font-medium"
+    title={attribution.rawName || attribution.displayName}
+  >
     {attribution.displayName}
   </span>
   <span class="text-subtle">{stateLabel}</span>
