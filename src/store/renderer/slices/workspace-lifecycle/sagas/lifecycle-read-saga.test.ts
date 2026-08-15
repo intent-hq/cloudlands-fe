@@ -52,6 +52,7 @@ import {
 import { initContextForWorkspace } from '../../context/context-slice';
 import { refreshPRStatusRequested } from '../../pr-status/pr-status-slice';
 import { refreshScripts } from '../../scripts/scripts-slice';
+import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
 import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
@@ -67,6 +68,7 @@ import {
 } from '../../workspace-tasks/workspace-tasks-slice';
 import { loadWorkspacesRequested } from '../../workspace/workspace-slice';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
@@ -80,11 +82,12 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state(activeWorkspaceId: string | null = null) {
+function state(currentTabId: string | null = null) {
   return {
+    tabState: { currentTabId },
     workspaceTasks: { byWorkspaceId: {} },
     changes: { agentStats: {}, agentLineStatsRequests: {} },
-    workspace: { workspaces: createCollection('id', []), activeWorkspaceId },
+    workspace: { workspaces: createCollection('id', []) },
     agentSessions: { byAgentId: {} },
     workspaceAgents: { byWorkspaceId: {} },
     prStatus: { byWorkspaceId: {} },
@@ -97,6 +100,7 @@ function start(current = state()) {
   const task = runSaga(
     { channel, dispatch: (action) => actions.push(action), getState: () => current },
     lifecycleReadSaga,
+    { activeWorkspaceId: current.tabState.currentTabId },
   );
   return { channel, actions, task };
 }
@@ -874,6 +878,25 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('feeds both owners from a combined refresh while the live client coalesces their status read', async () => {
+    const run = start();
+    const gitTask = runSaga(
+      { channel: run.channel, dispatch: (action) => run.actions.push(action) },
+      gitReadSaga,
+    );
+
+    run.channel.put(loadGitStatus(WS, true));
+    run.channel.put(refreshRequested(WS, true));
+    await settle();
+
+    expect(run.actions.filter((action: any) => action.type === 'git/setStatus')).toHaveLength(1);
+    expect(run.actions.filter((action: any) => action.type === 'changes/setChangesData')).toHaveLength(
+      1,
+    );
+    await stop(gitTask);
+    await stop(run.task);
+  });
+
   it('accepts an empty tracked-change result but preserves state on a folded read failure', async () => {
     mocks.git.status.mockResolvedValue({
       branch: 'main',
@@ -955,6 +978,44 @@ describe('lifecycleReadSaga', () => {
       type: 'changes/setHasLoadedInitialData',
       payload: [WS, true],
     });
+    await stop(run.task);
+  });
+
+  it('cancels a matching unmounted workspace changes refresh without affecting another workspace', async () => {
+    const resolves = new Map<
+      string,
+      (value: Awaited<ReturnType<typeof mocks.git.status>>) => void
+    >();
+    mocks.git.status.mockImplementation(
+      (workspaceId) =>
+        new Promise((resolve) => {
+          resolves.set(workspaceId, resolve);
+        }),
+    );
+    const run = start();
+    const otherWorkspaceId = 'ws-other';
+
+    run.channel.put(refreshRequested(WS));
+    run.channel.put(refreshRequested(otherWorkspaceId));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    resolves.get(otherWorkspaceId)!({
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    await settle();
+
+    expect(mocks.git.status).toHaveBeenCalledTimes(2);
+    expect(
+      run.actions
+        .filter((action: any) => action.type === 'changes/setChangesData')
+        .map((action: any) => action.payload.wsId),
+    ).toEqual([otherWorkspaceId]);
     await stop(run.task);
   });
 
@@ -1267,7 +1328,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('cancels workspace reads on delete and suppresses late results', async () => {
+  it('does not cancel workspace reads on deletion before tab removal', async () => {
     let resolve!: (value: unknown[]) => void;
     mocks.events.list.mockReturnValue(
       new Promise((done) => {
@@ -1283,7 +1344,9 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.events.list.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceEvents/eventsLoaded', payload: [WS, [{ id: 'late' }]] },
+    ]);
     await stop(run.task);
   });
 
@@ -1377,7 +1440,7 @@ describe('lifecycleReadSaga', () => {
     // Cleanup ownership is split: coalesced domains (tasks) are cancelled by
     // their context watcher, non-coalesced ones (events) by the cleanup race in
     // runWorkspaceRead. Both must hand the slot back.
-    it('frees the slot held by a coalesced read cancelled by workspace deletion', async () => {
+    it('keeps a coalesced read slot until deletion is followed by tab removal', async () => {
       const pending = parkTaskReads();
       const run = start();
 
@@ -1390,6 +1453,10 @@ describe('lifecycleReadSaga', () => {
 
       run.channel.put(workspaceDeleted('ws-0', []));
       await settle();
+      expect(pending).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
+
+      run.channel.put(workspaceUnmounted('ws-0'));
+      await settle();
 
       expect(pending[MAX_CONCURRENT_WORKSPACE_READS].workspaceId).toBe('ws-queued');
       for (const entry of pending) entry.resolve();
@@ -1397,7 +1464,7 @@ describe('lifecycleReadSaga', () => {
       await stop(run.task);
     });
 
-    it('frees the slot held by a raced read cancelled by workspace deletion', async () => {
+    it('frees the slot held by a raced read cancelled by workspace unmount', async () => {
       const pending: Array<{ workspaceId: string; resolve: () => void }> = [];
       mocks.events.list.mockImplementation(
         (workspaceId: string) =>

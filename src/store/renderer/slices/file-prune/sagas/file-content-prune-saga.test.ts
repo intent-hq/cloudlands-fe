@@ -1,8 +1,32 @@
-import { describe, expect, it, vi } from 'vitest';
-import { runSaga } from 'redux-saga';
+import { describe, expect, it } from 'vitest';
+import { runSaga, stdChannel } from 'redux-saga';
 
 import type { StoreState } from '../../../types';
-import { cleanupClosedFileContentEntries, fileContentPruneSaga } from './file-content-prune-saga';
+import { TAB_REMOVAL_ACTIONS } from '../../panel-layout/panel-layout-action-utils';
+import {
+  applyPreset,
+  clearPanelLayout,
+  closeActiveTab,
+  closeAllOthersEverywhere,
+  closeAllTabs,
+  closeOtherTabs,
+  closePanel,
+  closeTab,
+  closeTabsByAgentId,
+  closeTabsByType,
+  closeTabsToRight,
+  createGridLayout,
+  focusPanel,
+  goBack,
+  goForward,
+  initializeLayout,
+  moveTabToPanel,
+  moveTabToSplit,
+  moveTabToSplitLevel,
+  reconcileStaleAgentTabs,
+  resetLayout,
+} from '../../panel-layout/panel-layout-slice';
+import { fileContentPruneSaga } from './file-content-prune-saga';
 
 const settle = async () => {
   await Promise.resolve();
@@ -10,89 +34,83 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state(
-  workspaceId: string | null,
-  openPaths: string[],
-  contentPaths: string[],
+function stateForWorkspaces(
+  currentTabId: string | null,
+  workspaces: Record<string, { openPathsByPanel?: string[][]; contentPaths: string[] }>,
 ): StoreState {
+  const panelLayouts: Record<string, unknown> = {};
+  const files: Record<string, unknown> = {};
+  for (const [workspaceId, fixture] of Object.entries(workspaces)) {
+    if (fixture.openPathsByPanel) {
+      panelLayouts[workspaceId] = {
+        panels: Object.fromEntries(
+          fixture.openPathsByPanel.map((paths, panelIndex) => [
+            `panel-${panelIndex}`,
+            {
+              id: `panel-${panelIndex}`,
+              tabs: paths.map((path, tabIndex) => ({
+                id: `tab-${panelIndex}-${tabIndex}`,
+                type: 'file',
+                title: path,
+                closable: true,
+                filePath: path,
+              })),
+              activeTabId: null,
+            },
+          ]),
+        ),
+      };
+    }
+    files[workspaceId] = {
+      files: {
+        ids: fixture.contentPaths,
+        byId: Object.fromEntries(
+          fixture.contentPaths.map((path) => [path, { absolutePath: path }]),
+        ),
+      },
+    };
+  }
   return {
-    workspace: { activeWorkspaceId: workspaceId },
-    panelLayout: {
-      byWorkspaceId: workspaceId
-        ? {
-            [workspaceId]: {
-              panels: {
-                panel: {
-                  id: 'panel',
-                  tabs: openPaths.map((path, index) => ({
-                    id: `tab-${index}`,
-                    type: 'file',
-                    title: path,
-                    closable: true,
-                    filePath: path,
-                  })),
-                  activeTabId: null,
-                },
-              },
-            },
-          }
-        : {},
-    },
-    files: {
-      byWorkspaceId: workspaceId
-        ? {
-            [workspaceId]: {
-              files: {
-                ids: contentPaths,
-                byId: Object.fromEntries(
-                  contentPaths.map((path) => [path, { absolutePath: path }]),
-                ),
-              },
-            },
-          }
-        : {},
-    },
+    tabState: { currentTabId },
+    panelLayout: { byWorkspaceId: panelLayouts },
+    files: { byWorkspaceId: files },
   } as unknown as StoreState;
 }
 
 function createHarness(initialState: StoreState) {
   let currentState = initialState;
-  const listeners = new Set<() => void>();
   const actions: unknown[] = [];
-  const unsubscribe = vi.fn();
-  const reduxStore = {
-    getState: () => currentState,
-    subscribe: (listener: () => void) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-        unsubscribe();
-      };
-    },
-  };
+  const channel = stdChannel();
   const dispatch = (action: unknown) => {
     actions.push(action);
     const typed = action as { type?: string; payload?: [string, string] };
     if (typed.type === 'files/removeFileContentEntry' && typed.payload) {
       const [workspaceId, path] = typed.payload;
-      const files = currentState.files.byWorkspaceId[workspaceId]?.files;
-      if (files) {
-        currentState = state(
-          currentState.workspace.activeWorkspaceId,
-          Object.values(currentState.panelLayout.byWorkspaceId[workspaceId]?.panels ?? {})
-            .flatMap((panel) => panel.tabs)
-            .filter((tab) => tab.type === 'file')
-            .map((tab) => tab.filePath),
-          files.ids.filter((id) => id !== path),
-        );
+      const workspaceFiles = currentState.files.byWorkspaceId[workspaceId];
+      if (workspaceFiles) {
+        currentState = {
+          ...currentState,
+          files: {
+            ...currentState.files,
+            byWorkspaceId: {
+              ...currentState.files.byWorkspaceId,
+              [workspaceId]: {
+                ...workspaceFiles,
+                files: {
+                  ...workspaceFiles.files,
+                  ids: workspaceFiles.files.ids.filter((id) => id !== path),
+                },
+              },
+            },
+          },
+        };
       }
     }
-    for (const listener of [...listeners]) listener();
     return action;
   };
   const task = runSaga(
     {
-      context: { reduxStore },
+      channel,
       dispatch,
       getState: () => currentState,
     },
@@ -100,128 +118,250 @@ function createHarness(initialState: StoreState) {
   );
   return {
     actions,
-    notify: () => {
-      for (const listener of [...listeners]) listener();
-    },
-    replaceState: (next: StoreState) => {
+    put: (action: unknown) => channel.put(action),
+    putAfterState: (action: unknown, next: StoreState) => {
       currentState = next;
+      channel.put(action);
     },
     task,
-    unsubscribe,
   };
 }
 
+const WS_1 = 'ws-1';
+const WS_2 = 'ws-2';
+const NOW = 1;
+const emptyLayout = {
+  root: { type: 'panel' as const, panelId: 'panel' },
+  panels: { panel: { id: 'panel', tabs: [], activeTabId: null } },
+  focusedPanelId: 'panel',
+};
+
+const tabRemovalActionCases = [
+  initializeLayout(WS_2, emptyLayout),
+  applyPreset(WS_2, 'single', NOW),
+  createGridLayout(WS_2, 1, NOW),
+  closeTab(WS_2, 'tab', 'panel', NOW),
+  closeActiveTab(WS_2, 'panel', NOW),
+  closeTabsByType(WS_2, 'file', undefined, undefined, NOW),
+  closeTabsByAgentId(WS_2, 'agent', NOW),
+  moveTabToPanel(WS_2, 'tab', 'from', 'to', 0, NOW),
+  moveTabToSplit(WS_2, 'tab', 'from', 'target', 'left', NOW),
+  moveTabToSplitLevel(WS_2, 'tab', 'from', [], 'before', 'horizontal', NOW),
+  closeOtherTabs(WS_2, 'tab', 'panel', NOW),
+  closeTabsToRight(WS_2, 'tab', 'panel', NOW),
+  closeAllTabs(WS_2, 'panel', NOW),
+  closeAllOthersEverywhere(WS_2, 'tab', 'panel', NOW),
+  closePanel(WS_2, 'panel', NOW),
+  resetLayout(WS_2),
+  goBack(WS_2, NOW),
+  goForward(WS_2),
+  reconcileStaleAgentTabs(WS_2, [], 'replacement', 'Replacement'),
+  clearPanelLayout(WS_2),
+];
+
 describe('fileContentPruneSaga', () => {
-  it('removes every stale path in sorted selector order', async () => {
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => state('ws-1', [], ['src/b.ts', 'src/a.ts']) },
-      cleanupClosedFileContentEntries,
-      { payload: ['src/a.ts', 'src/b.ts'], prevPayload: [] },
-    ).toPromise();
-
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/b.ts'] },
-    ]);
+  it('uses the complete established tab-removal action family', () => {
+    expect(tabRemovalActionCases.map((action) => action.type)).toEqual(
+      TAB_REMOVAL_ACTIONS.map((action) => action.type),
+    );
   });
 
-  it('does nothing for empty payloads or invalid active workspaces', async () => {
-    const dispatch = vi.fn();
-    await runSaga(
-      { dispatch, getState: () => state('ws-1', [], []) },
-      cleanupClosedFileContentEntries,
-      { payload: [], prevPayload: null },
-    ).toPromise();
-    for (const workspaceId of [null, 'new', 'optimistic-1', 'undefined']) {
-      await runSaga(
-        { dispatch, getState: () => state(workspaceId, [], ['src/a.ts']) },
-        cleanupClosedFileContentEntries,
-        { payload: ['src/a.ts'], prevPayload: [] },
-      ).toPromise();
-    }
-
-    expect(dispatch.mock.calls).toEqual([]);
-  });
-
-  it('performs the initial retroactive prune without self-trigger duplicates', async () => {
-    const harness = createHarness(state('ws-1', [], ['src/b.ts', 'src/a.ts']));
-    await settle();
-
-    expect(harness.actions).toEqual([
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/b.ts'] },
-    ]);
-    harness.task.cancel();
-    await harness.task.toPromise();
-  });
-
-  it('deduplicates unchanged selector values but prunes a re-created stale path', async () => {
-    const harness = createHarness(state('ws-1', ['src/a.ts'], ['src/a.ts']));
-    await settle();
-    harness.notify();
-    expect(harness.actions).toEqual([]);
-
-    harness.replaceState(state('ws-1', [], ['src/a.ts']));
-    harness.notify();
-    await settle();
-    harness.notify();
-    expect(harness.actions).toEqual([
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-    ]);
-
-    harness.replaceState(state('ws-1', [], ['src/a.ts']));
-    harness.notify();
-    await settle();
-    expect(harness.actions).toEqual([
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-    ]);
-    harness.task.cancel();
-    await harness.task.toPromise();
-  });
-
-  it('suppresses selector re-entry while pruning multiple stale paths', async () => {
+  it.each(tabRemovalActionCases)('prunes after $type', async (action) => {
     const harness = createHarness(
-      state('ws-1', ['src/a.ts', 'src/b.ts'], ['src/a.ts', 'src/b.ts']),
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: [] },
+        [WS_2]: { openPathsByPanel: [['src/stale.ts']], contentPaths: ['src/stale.ts'] },
+      }),
     );
     await settle();
-    harness.replaceState(state('ws-1', [], ['src/a.ts', 'src/b.ts']));
-    harness.notify();
+    harness.putAfterState(
+      action,
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: [] },
+        [WS_2]: {
+          openPathsByPanel: action.type === clearPanelLayout.type ? undefined : [[]],
+          contentPaths: ['src/stale.ts'],
+        },
+      }),
+    );
     await settle();
 
     expect(harness.actions).toEqual([
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/a.ts'] },
-      { type: 'files/removeFileContentEntry', payload: ['ws-1', 'src/b.ts'] },
+      { type: 'files/removeFileContentEntry', payload: [WS_2, 'src/stale.ts'] },
     ]);
     harness.task.cancel();
     await harness.task.toPromise();
   });
 
-  it('tolerates missing layout/files state and keeps duplicate open paths live', async () => {
-    const missing = createHarness(state('ws-1', [], []));
+  it('does not perform a startup or retroactive prune', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/stale.ts'] },
+      }),
+    );
     await settle();
-    expect(missing.actions).toEqual([]);
-    missing.task.cancel();
-    await missing.task.toPromise();
 
-    const duplicate = createHarness(state('ws-1', ['src/a.ts', 'src/a.ts'], ['src/a.ts']));
-    await settle();
-    expect(duplicate.actions).toEqual([]);
-    duplicate.task.cancel();
-    await duplicate.task.toPromise();
-  });
-
-  it('unsubscribes the selector channel on cancellation and ignores later changes', async () => {
-    const harness = createHarness(state('ws-1', ['src/a.ts'], ['src/a.ts']));
-    await settle();
+    expect(harness.actions).toEqual([]);
     harness.task.cancel();
     await harness.task.toPromise();
-    harness.replaceState(state('ws-1', [], ['src/a.ts']));
-    harness.notify();
+  });
+
+  it.each([
+    closeTab(WS_1, 'missing-tab', 'panel-0', NOW),
+    closePanel(WS_1, 'missing-panel', NOW),
+    reconcileStaleAgentTabs(WS_1, ['existing-agent'], 'replacement', 'Replacement'),
+  ])('does not prune a stale cache after a no-op $type target', async (action) => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/stale.ts'] },
+      }),
+    );
+    await settle();
+    harness.putAfterState(
+      action,
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/stale.ts'] },
+      }),
+    );
     await settle();
 
-    expect(harness.unsubscribe.mock.calls).toEqual([[]]);
     expect(harness.actions).toEqual([]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('retains no-op identity after an intervening panel-layout action', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[], []], contentPaths: ['src/stale.ts'] },
+      }),
+    );
+    await settle();
+    const focusedState = stateForWorkspaces(WS_1, {
+      [WS_1]: { openPathsByPanel: [[], []], contentPaths: ['src/stale.ts'] },
+    });
+    harness.putAfterState(focusPanel(WS_1, 'panel-1'), focusedState);
+    await settle();
+    harness.put(closeTab(WS_1, 'missing-tab', 'panel-0', NOW));
+    await settle();
+
+    expect(harness.actions).toEqual([]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('ignores unrelated actions', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/stale.ts'] },
+      }),
+    );
+    await settle();
+    harness.put({ type: 'unrelated/action', payload: { wsId: WS_1 } });
+    await settle();
+
+    expect(harness.actions).toEqual([]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('removes multiple stale paths once each and keeps a path open in another panel', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: {
+          openPathsByPanel: [
+            ['src/a.ts', 'src/b.ts'],
+            ['src/keep.ts', 'src/keep.ts'],
+          ],
+          contentPaths: ['src/b.ts', 'src/keep.ts', 'src/a.ts'],
+        },
+      }),
+    );
+    await settle();
+    harness.putAfterState(
+      closeAllTabs(WS_1, 'panel-0', NOW),
+      stateForWorkspaces(WS_1, {
+        [WS_1]: {
+          openPathsByPanel: [[], ['src/keep.ts', 'src/keep.ts']],
+          contentPaths: ['src/b.ts', 'src/keep.ts', 'src/a.ts'],
+        },
+      }),
+    );
+    await settle();
+
+    expect(harness.actions).toEqual([
+      { type: 'files/removeFileContentEntry', payload: [WS_1, 'src/a.ts'] },
+      { type: 'files/removeFileContentEntry', payload: [WS_1, 'src/b.ts'] },
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('prunes only the inactive workspace named by the action', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/active-stale.ts'] },
+        [WS_2]: {
+          openPathsByPanel: [['src/inactive-stale.ts']],
+          contentPaths: ['src/inactive-stale.ts'],
+        },
+      }),
+    );
+    await settle();
+    harness.putAfterState(
+      closeTab(WS_2, 'tab-0-0', 'panel-0', NOW),
+      stateForWorkspaces(WS_1, {
+        [WS_1]: { openPathsByPanel: [[]], contentPaths: ['src/active-stale.ts'] },
+        [WS_2]: { openPathsByPanel: [[]], contentPaths: ['src/inactive-stale.ts'] },
+      }),
+    );
+    await settle();
+
+    expect(harness.actions).toEqual([
+      { type: 'files/removeFileContentEntry', payload: [WS_2, 'src/inactive-stale.ts'] },
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('prunes all cached paths after the workspace layout is cleared', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_2]: {
+          openPathsByPanel: [['src/b.ts', 'src/a.ts']],
+          contentPaths: ['src/b.ts', 'src/a.ts'],
+        },
+      }),
+    );
+    await settle();
+    harness.putAfterState(
+      clearPanelLayout(WS_2),
+      stateForWorkspaces(WS_1, {
+        [WS_2]: { contentPaths: ['src/b.ts', 'src/a.ts'] },
+      }),
+    );
+    await settle();
+
+    expect(harness.actions).toEqual([
+      { type: 'files/removeFileContentEntry', payload: [WS_2, 'src/a.ts'] },
+      { type: 'files/removeFileContentEntry', payload: [WS_2, 'src/b.ts'] },
+    ]);
+    harness.task.cancel();
+    await harness.task.toPromise();
+  });
+
+  it('does not prune for a removal action when the layout is missing', async () => {
+    const harness = createHarness(
+      stateForWorkspaces(WS_1, {
+        [WS_2]: { contentPaths: ['src/stale.ts'] },
+      }),
+    );
+    await settle();
+    harness.put(closeTab(WS_2, 'missing-tab', 'missing-panel', NOW));
+    await settle();
+
+    expect(harness.actions).toEqual([]);
+    harness.task.cancel();
+    await harness.task.toPromise();
   });
 });

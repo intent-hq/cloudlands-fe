@@ -35,18 +35,13 @@ import {
 import { selectProposalLifecycleEntry } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
 import {
   bulkUpdateWorkspaceEntities,
-  clearActiveWorkspace,
   clearWorkspacePendingDeletion,
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   setWorkspaceEntity,
   updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
-import {
-  selectActiveWorkspaceId,
-  selectWorkspaceById,
-  selectWorkspaceItems,
-} from '../../workspace/workspace-selectors';
+import { selectWorkspaceById, selectWorkspaceItems } from '../../workspace/workspace-selectors';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
   applyWorkspaceProposal,
@@ -175,10 +170,8 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
   const undo = createUndoChannel();
   let settled = false;
   try {
-    const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
     yield* put(removeWorkspaceEntity(workspace.id));
     yield* put(markWorkspacePendingDeletion(workspace.id));
-    if (activeWorkspaceId === workspace.id) yield* put(clearActiveWorkspace());
 
     const toast = yield* call(getToast);
     try {

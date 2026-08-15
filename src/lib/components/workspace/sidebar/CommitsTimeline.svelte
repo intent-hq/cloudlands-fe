@@ -15,13 +15,13 @@
     type CommitInfo,
     type TrackedChange,
   } from '$features/file-tracking/types';
+  import { appClient } from '$lib/client';
   import {
     selectFileTrackingCommits as selectFtCommits,
     selectFileTrackingBoundarySha as selectFtBoundarySha,
     selectFileTrackingOlderCommits as selectFtOlderCommits,
     selectFileTrackingLoadingOlderCommits as selectFtLoadingOlderCommits,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { appClient } from '$lib/client';
   import {
     clearOlderCommits as ftClearOlderCommits,
     refreshRequested,
@@ -125,16 +125,6 @@
 
   // Local component state
   let expandedCommits = $state<Set<string>>(new Set());
-  let commitEdit = $state<{
-    hash: string | null;
-    value: string;
-    inputRef: HTMLInputElement | null;
-  }>({ hash: null, value: '', inputRef: null });
-  let undoState = $state<{ commitHash: string | null; undoing: boolean; undoingCommit: boolean }>({
-    commitHash: null,
-    undoing: false,
-    undoingCommit: false,
-  });
   // Lazily-fetched per-file data keyed by commit hash: the list payload is
   // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
   // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
@@ -190,6 +180,16 @@
       clearCommitFileMarker(commit.hash);
     });
   }
+  let commitEdit = $state<{
+    hash: string | null;
+    value: string;
+    inputRef: HTMLInputElement | null;
+  }>({ hash: null, value: '', inputRef: null });
+  let undoState = $state<{ commitHash: string | null; undoing: boolean; undoingCommit: boolean }>({
+    commitHash: null,
+    undoing: false,
+    undoingCommit: false,
+  });
   let commitContextMenu: { x: number; y: number; commitHash: string } | null = $state(null);
 
   // Utility to persist workspace changes
@@ -630,7 +630,7 @@
               }),
         );
         gitCache.invalidate(`git-status-${workspaceId}`);
-        Promise.all([
+        await Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
@@ -694,7 +694,7 @@
               }),
         );
         gitCache.invalidate(`git-status-${workspaceId}`);
-        Promise.all([
+        await Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);

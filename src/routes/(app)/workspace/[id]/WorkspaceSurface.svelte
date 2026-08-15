@@ -35,7 +35,6 @@
   import { isBootRouteLoad } from '$lib/utils/boot-route-gate';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
-    selectActiveWorkspaceId,
     selectWorkspaceById,
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
@@ -45,9 +44,7 @@
     selectSidebarSide,
   } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
-    clearActiveWorkspace,
     loadWorkspacesRequested,
-    setActiveWorkspaceId,
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
@@ -64,6 +61,7 @@
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
   import WorkspaceModals from '$lib/components/workspace/WorkspaceModals.svelte';
+  import WorkspaceRouteContextProvider from '$lib/components/workspace/WorkspaceRouteContextProvider.svelte';
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
   import ResourceNotFound from '$lib/components/common/ResourceNotFound.svelte';
@@ -128,6 +126,9 @@
     onPanelCanvasWidthChange,
     onCyclePanelBoundary,
   }: Props = $props();
+  const surfaceWorkspaceId = $derived(
+    workspaceId && workspaceId !== 'new' ? WorkspaceId(workspaceId) : null,
+  );
   const panelLayoutId = $derived(workspaceId);
   const panelLayoutIdStore = writable(workspaceId);
   $effect(() => panelLayoutIdStore.set(workspaceId));
@@ -243,8 +244,8 @@
     (workspaceId === 'new' && !bootGateHolding) || onboardingHoldActive,
   );
 
-  // Reactive writable store that mirrors workspaceId so the Redux selector
-  // re-evaluates whenever the route param changes.
+  // Reactive writable store that carries the route-provided workspaceId so the
+  // Redux selector re-evaluates whenever the route param changes.
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
   $effect(() => {
@@ -319,23 +320,11 @@
   });
 
   $effect(() => {
-    if (!active) return;
-    if (workspaceId === 'new') {
-      appStore.dispatch(clearActiveWorkspace());
-    } else if (workspaceId) {
-      // Guard: only dispatch when the active workspace ID differs to prevent
-      // redundant dispatches that cascade through Redux middleware/sagas and
-      // trigger Svelte's effect_update_depth_exceeded error.
-      untrack(() => {
-        if (selectActiveWorkspaceId.select(appStore.state) !== workspaceId) {
-          appStore.dispatch(setActiveWorkspaceId(workspaceId));
-        }
-      });
-      // Viewing a workspace clears its unread attention on the daemon
-      // (fire-and-forget `workspace.markSeen`, PROTOCOL §5.1); the
-      // `workspace:attention-changed` event drives the UI clear.
-      markWorkspaceSeen(workspaceId);
-    }
+    if (!active || !workspaceId || workspaceId === 'new') return;
+    // Viewing a workspace clears its unread attention on the daemon
+    // (fire-and-forget `workspace.markSeen`, PROTOCOL §5.1); the
+    // `workspace:attention-changed` event drives the UI clear.
+    markWorkspaceSeen(workspaceId);
   });
 
   // Load workspace store on mount
@@ -472,15 +461,6 @@
     // Key insight: Create new state BEFORE disposing old one to avoid blank state during transition
     const previousState = workspaceState;
     if (previousState && !stateDisposing) {
-      // Dispatch workspaceUnmounted for the old workspace so sagas can clean up
-      // (cancel agent loading, terminal loading, IPC listeners, etc.).
-      // SvelteKit reuses the same component instance for same-route navigation
-      // (/workspace/A → /workspace/B), so onDestroy does NOT fire — we must
-      // dispatch the unmount action here during the workspace switch.
-      if (previousWorkspaceId && previousWorkspaceId !== currentWorkspaceId) {
-        appStore.dispatch(workspaceUnmounted(previousWorkspaceId));
-      }
-
       // Clear any in-flight load from the previous workspace so the loader's
       // deduplication guards don't block the new workspace from loading.
       // (The optimistic transition path already does this at line 238.)
@@ -605,9 +585,6 @@
     },
     get previousWorkspaceId() {
       return previousWorkspaceId;
-    },
-    get activateWorkspace() {
-      return active;
     },
   });
 
@@ -1034,36 +1011,40 @@
 {/snippet}
 
 <!-- Always render WorkspaceLayout — sidebar starts collapsed during onboarding -->
-<div
-  bind:this={surfaceElement}
-  class="h-full min-h-0 w-full overflow-hidden"
-  data-workspace-surface={workspaceId}
-  data-active={active}
-  data-loading={!$workspace}
->
-  <WorkspaceSurfaceLoadBoundary
-    loadError={isCreatingWorkspace ? null : workspaceLoader.loadError}
-    resourceLabel={m.workspace_page_workspaceResource_label()}
-    resourceId={workspaceId}
-    onNavigateAway={() => void navigateToFirstWorkspace()}
-  >
-    {#snippet children()}
-      <WorkspaceLayout
-        sidebar={sidebarContent}
-        content={mainContent}
-        terminalOverlay={terminalOverlayContent}
-        modals={modalsContent}
-        sidebarSide={$sidebarSide$}
-        sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
-        sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-        {sidebarFillsAvailableWidth}
-        disableSidebarWidthTransition={columnMode}
-        {onSidebarWidthChange}
-        startCollapsed={isOnboarding}
-      />
-    {/snippet}
-  </WorkspaceSurfaceLoadBoundary>
-</div>
+{#key surfaceWorkspaceId}
+  <WorkspaceRouteContextProvider workspaceId={surfaceWorkspaceId}>
+    <div
+      bind:this={surfaceElement}
+      class="h-full min-h-0 w-full overflow-hidden"
+      data-workspace-surface={workspaceId}
+      data-active={active}
+      data-loading={!$workspace}
+    >
+      <WorkspaceSurfaceLoadBoundary
+        loadError={isCreatingWorkspace ? null : workspaceLoader.loadError}
+        resourceLabel={m.workspace_page_workspaceResource_label()}
+        resourceId={workspaceId}
+        onNavigateAway={() => void navigateToFirstWorkspace()}
+      >
+        {#snippet children()}
+          <WorkspaceLayout
+            sidebar={sidebarContent}
+            content={mainContent}
+            terminalOverlay={terminalOverlayContent}
+            modals={modalsContent}
+            sidebarSide={$sidebarSide$}
+            sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
+            sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
+            {sidebarFillsAvailableWidth}
+            disableSidebarWidthTransition={columnMode}
+            {onSidebarWidthChange}
+            startCollapsed={isOnboarding}
+          />
+        {/snippet}
+      </WorkspaceSurfaceLoadBoundary>
+    </div>
+  </WorkspaceRouteContextProvider>
+{/key}
 
 <style>
   :global {

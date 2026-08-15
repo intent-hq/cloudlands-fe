@@ -2502,8 +2502,8 @@ function handleTerminalExitEvent(event: WorkspaceEvent, workspaceId: string): vo
  * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
  *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
  *   envelope (§5.4 TS-parity payload) already has exactly that shape.
- * - `changes:git-status` (§5.18) → `git:status-changed { workspaceId }` —
- *   the listener only gates on workspaceId before a debounced reload.
+ * - git/status-changing events → `git:status-changed { workspaceId }` — the
+ *   listener only gates on workspaceId before a debounced reload.
  * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
  *   { workspaceId }` — same debounced-reload gate.
  * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
@@ -2531,10 +2531,13 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
     case 'task:ready-tasks-changed':
       emitMockIpcEvent('task:ready-tasks-changed', event);
       return;
+    case 'git:commit':
+    case 'git:pull':
     case 'changes:git-status':
       emitMockIpcEvent('git:status-changed', { workspaceId });
       return;
     case 'changes:tracked':
+      emitMockIpcEvent('git:status-changed', { workspaceId });
       emitMockIpcEvent('file-tracking:changes-updated', { workspaceId });
       return;
     case 'line-attribution:updated':
@@ -3380,14 +3383,14 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'app:workspace-open',
 ] as const;
 
-export async function refreshDaemonEventsAfterReconnect(): Promise<void> {
+export async function refreshDaemonEventsAfterReconnect(
+  activeWorkspaceId: string | null,
+): Promise<void> {
   const state = appStore.state as {
-    workspace?: { activeWorkspaceId?: string | null };
     workspaceAgents?: {
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
     };
   };
-  const activeWorkspaceId = state.workspace?.activeWorkspaceId ?? null;
   if (activeWorkspaceId) {
     appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));
     const activeAgentId =

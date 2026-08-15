@@ -33,7 +33,6 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import {
   resolveCanonicalInitialAgent,
   selectAllWorkspaceAgents,
@@ -590,8 +589,7 @@ function* handleNewWorkspaceBootstrap(
   yield* call(reconcileDeferredSpec, wsId);
 }
 
-function* retroactiveRestore(): SagaGenerator<void> {
-  const activeWsId = yield* selectActiveWorkspaceId.effect();
+function* retroactiveRestore(activeWsId: string | null): SagaGenerator<void> {
   if (isValidWorkspaceId(activeWsId)) {
     yield* call(handleWorkspaceMountedRestore, workspaceMounted(activeWsId));
   }
@@ -603,8 +601,7 @@ function* retroactiveRestore(): SagaGenerator<void> {
  * with nothing saved must be reset rather than left showing (and later
  * persisting) the previous backend's layout.
  */
-function* restoreAfterBackendSwitch(): SagaGenerator<void> {
-  const wsId = yield* selectActiveWorkspaceId.effect();
+function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
   if (!isValidWorkspaceId(wsId)) return;
   restoredWorkspaceIds.add(wsId);
   yield* put(setRestoreStatus(wsId, 'pending'));
@@ -624,16 +621,22 @@ function* restoreAfterBackendSwitch(): SagaGenerator<void> {
  * the window reloads): re-restore the active workspace's layout from the
  * incoming backend's namespace.
  */
-function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> {
+function* handleBackendSwitch(
+  lastBackend: { id: string },
+  workspaceId: string | null,
+): SagaGenerator<void> {
   const backendId = yield* selectActiveBackendId();
   if (backendId === lastBackend.id) return;
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
-  yield* call(restoreAfterBackendSwitch);
+  yield* call(restoreAfterBackendSwitch, workspaceId);
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* panelLayoutSaga(): SagaGenerator<void> {
+export function* panelLayoutSaga(options?: {
+  activeWorkspaceId?: string | null;
+}): SagaGenerator<void> {
+  let workspaceIdContext = options?.activeWorkspaceId ?? null;
   const historyMailboxes = new Map<string, HistoryMailbox>();
   function* queueHistorySaveForAction(action: {
     type: string;
@@ -646,6 +649,16 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
   ): SagaGenerator<void> {
     yield* handleWorkspaceUnmounted(historyMailboxes, action);
   }
+  function* handleWorkspaceMountedAction(
+    action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
+  ): SagaGenerator<void> {
+    const [workspaceId] = action.payload;
+    workspaceIdContext = workspaceId;
+    yield* handleWorkspaceMountedRestore(action);
+  }
+  function* handleBackendSwitchAction(lastBackend: { id: string }): SagaGenerator<void> {
+    yield* handleBackendSwitch(lastBackend, workspaceIdContext);
+  }
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
     yield* takeEvery(setAgents, resolveInitialAgentFromSnapshot);
@@ -657,15 +670,15 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     yield* takeEvery(clearPanelLayout, clearPersistedLayout);
     const historyWatcher = yield* takeEvery(HISTORY_ACTIONS, queueHistorySaveForAction);
     yield* takeLatest(initializeLayout, loadHistoryForWorkspace);
-    yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
+    yield* takeLeading(connectionsListReceived, handleBackendSwitchAction, {
       id: yield* selectActiveBackendId(),
     });
-    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedRestore);
+    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedAction);
     yield* takeEvery(
       [workspaceUnmounted, panelLayoutScopeUnmounted],
       handleWorkspaceUnmountedAction,
     );
-    yield* call(retroactiveRestore);
+    yield* call(retroactiveRestore, workspaceIdContext);
     yield* join(historyWatcher);
   } finally {
     const flushHistory = yield* cancelled();

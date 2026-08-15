@@ -13,6 +13,7 @@ import {
   clearMainContent,
   navigateAfterWorkspaceRemoval,
   navigateToFirstWorkspace,
+  navigateToSettings,
 } from './workspace-navigation';
 
 const { mockDispatch, mockWorkspaceItems } = vi.hoisted(() => ({
@@ -75,7 +76,18 @@ describe('workspace-navigation', () => {
       value: {
         get href() {
           const params = mockPage.url.searchParams.toString();
-          return `http://localhost:3000/workspace/test-workspace-id${params ? `?${params}` : ''}`;
+          return `http://localhost:3000${mockPage.url.pathname}${params ? `?${params}` : ''}${
+            mockPage.url.hash ?? ''
+          }`;
+        },
+        get origin() {
+          return 'http://localhost:3000';
+        },
+        get pathname() {
+          return mockPage.url.pathname;
+        },
+        get hash() {
+          return mockPage.url.hash ?? '';
         },
       },
       writable: true,
@@ -389,6 +401,31 @@ describe('workspace-navigation', () => {
       await navigateAfterWorkspaceRemoval('removed-workspace');
 
       expect(goto).toHaveBeenCalledWith('/workspace/new');
+    });
+  });
+
+  describe('settings navigation', () => {
+    it('preserves the workspace owner and all settings URL options', async () => {
+      await navigateToSettings({
+        tab: 'agents',
+        specialist: 'reviewer & co',
+        view: 'create-specialist',
+        hash: 'specialists',
+      });
+
+      expect(goto).toHaveBeenCalledWith(
+        '/settings?tab=agents&specialist=reviewer+%26+co&view=create-specialist&workspaceId=test-workspace-id#specialists',
+      );
+    });
+
+    it('uses an explicit owner and does not treat workspace creation as an owner', async () => {
+      mockPage.url.pathname = '/workspace/new';
+      await navigateToSettings({ workspaceId: 'explicit-owner' });
+      expect(goto).toHaveBeenCalledWith('/settings?workspaceId=explicit-owner');
+
+      vi.clearAllMocks();
+      await navigateToSettings({ tab: 'general' });
+      expect(goto).toHaveBeenCalledWith('/settings?tab=general');
     });
   });
 });

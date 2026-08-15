@@ -11,13 +11,14 @@ vi.mock('$app/navigation', () => ({
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
+import { writable } from 'svelte/store';
 import {
   loadRecencyData,
   openWorkspaceRequested,
   replaceWorkspaceList,
   resetWorkspaceState,
-  setActiveWorkspaceId,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import {
   selectSelectedWorkspaceId,
   selectSwitcherState,
@@ -27,9 +28,23 @@ import { store as appStore } from '$store/renderer/store';
 import {
   attachWorkspaceSwitcherKeyboard,
   buildSwitcherWorkspaceIds,
-  handleSwitcherKeydown,
-  handleSwitcherKeyup,
+  handleSwitcherKeydown as handleSwitcherKeydownWithWorkspace,
+  handleSwitcherKeyup as handleSwitcherKeyupWithWorkspace,
 } from './workspace-switcher-keyboard';
+
+let selectedWorkspaceContextId: string | null = null;
+
+function selectedWorkspaceId(): string | null {
+  return selectedWorkspaceContextId;
+}
+
+function handleSwitcherKeydown(event: KeyboardEvent): void {
+  handleSwitcherKeydownWithWorkspace(event, selectedWorkspaceId());
+}
+
+function handleSwitcherKeyup(event: KeyboardEvent): void {
+  handleSwitcherKeyupWithWorkspace(event, selectedWorkspaceId());
+}
 
 function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspace {
   return {
@@ -72,16 +87,17 @@ function seedWorkspaces({
     makeWorkspace({ id: 'ws-3' }),
     makeWorkspace({ id: 'ws-archived', status: WorkspaceStatusEnum.Archived }),
   ],
-  activeWorkspaceId = 'ws-2',
+  currentWorkspaceId = 'ws-2',
   lastViewedAt = { 'ws-3': 30, 'ws-2': 20, 'ws-1': 10 },
 }: {
   workspaces?: Workspace[];
-  activeWorkspaceId?: string | null;
+  currentWorkspaceId?: string | null;
   lastViewedAt?: Record<string, number>;
 } = {}): void {
+  selectedWorkspaceContextId = currentWorkspaceId;
   appStore.dispatch(replaceWorkspaceList(workspaces));
-  if (activeWorkspaceId) {
-    appStore.dispatch(setActiveWorkspaceId(activeWorkspaceId));
+  if (currentWorkspaceId) {
+    appStore.dispatch(openWorkspaceTab(currentWorkspaceId));
   }
   appStore.dispatch(loadRecencyData({ lastViewedAt }));
 }
@@ -95,7 +111,7 @@ function switcherState() {
 }
 
 function switcherIds() {
-  return selectSwitcherWorkspaceIds.select(appStore.state);
+  return selectSwitcherWorkspaceIds.select(appStore.state, selectedWorkspaceId());
 }
 
 beforeAll(() => {
@@ -103,6 +119,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  selectedWorkspaceContextId = null;
   appStore.dispatch(resetWorkspaceState());
 });
 
@@ -144,13 +161,13 @@ describe('handleSwitcherKeydown — Ctrl+Tab', () => {
     expect(event.stopPropagation).toHaveBeenCalled();
     expect(switcherIds()).toEqual(['ws-2', 'ws-3', 'ws-1']);
     expect(switcherState()).toEqual({ selectedIndex: 1, selectionHandled: false });
-    expect(selectSelectedWorkspaceId.select(appStore.state)).toBe('ws-3');
+    expect(selectSelectedWorkspaceId.select(appStore.state, selectedWorkspaceId())).toBe('ws-3');
   });
 
   it('does not open when there are no other workspaces', () => {
     seedWorkspaces({
       workspaces: [makeWorkspace({ id: 'ws-1' })],
-      activeWorkspaceId: 'ws-1',
+      currentWorkspaceId: 'ws-1',
       lastViewedAt: { 'ws-1': 10 },
     });
     const event = makeKeyboardEvent({ key: 'Tab', ctrlKey: true });
@@ -168,7 +185,7 @@ describe('handleSwitcherKeydown — Ctrl+Tab', () => {
         makeWorkspace({ id: 'ws-1' }),
         makeWorkspace({ id: 'ws-archived', status: WorkspaceStatusEnum.Archived }),
       ],
-      activeWorkspaceId: 'ws-1',
+      currentWorkspaceId: 'ws-1',
       lastViewedAt: { 'ws-1': 10 },
     });
 
@@ -264,7 +281,7 @@ describe('handleSwitcherKeydown — while open', () => {
 
   it('does not navigate when the selection is the active workspace', () => {
     handleSwitcherKeydown(makeKeyboardEvent({ key: 'ArrowUp' }));
-    expect(selectSelectedWorkspaceId.select(appStore.state)).toBe('ws-2');
+    expect(selectSelectedWorkspaceId.select(appStore.state, selectedWorkspaceId())).toBe('ws-2');
 
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     handleSwitcherKeydown(makeKeyboardEvent({ key: 'Enter' }));
@@ -339,7 +356,7 @@ describe('handleSwitcherKeyup', () => {
 describe('attachWorkspaceSwitcherKeyboard', () => {
   it('drives the switcher from real window events and detaches on cleanup', () => {
     seedWorkspaces();
-    const cleanup = attachWorkspaceSwitcherKeyboard();
+    const cleanup = attachWorkspaceSwitcherKeyboard(writable(selectedWorkspaceId()));
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true }));
     expect(switcherState()).toEqual({ selectedIndex: 1, selectionHandled: false });

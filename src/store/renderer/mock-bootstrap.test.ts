@@ -57,6 +57,7 @@ describe('mock-bootstrap', () => {
     it('runs every registered seeder with the store and client', async () => {
       const store = createStoreStub();
       const client = createClientStub();
+      const workspaceId = 'ws-1';
       const seen: MockSeederContext[] = [];
 
       registerMockSeeder('one', (ctx) => {
@@ -66,11 +67,31 @@ describe('mock-bootstrap', () => {
         seen.push(ctx);
       });
 
-      await seedMockStore(store, client);
+      await seedMockStore(store, client, workspaceId);
 
       expect(seen).toHaveLength(2);
-      expect(seen[0]).toEqual({ store, client });
-      expect(seen[1]).toEqual({ store, client });
+      expect(seen[0]).toEqual({ store, client, workspaceId });
+      expect(seen[1]).toEqual({ store, client, workspaceId });
+    });
+
+    it('exposes a live UI-context provider while preserving the initial snapshot', async () => {
+      const store = createStoreStub();
+      const client = createClientStub();
+      let currentWorkspaceId: string | null = null;
+      const getWorkspaceId = vi.fn(() => currentWorkspaceId);
+      const seen: Array<string | null> = [];
+
+      registerMockSeeder('provider', async ({ workspaceId, getWorkspaceId: readWorkspaceId }) => {
+        seen.push(workspaceId);
+        await Promise.resolve();
+        currentWorkspaceId = 'ws-2';
+        seen.push(readWorkspaceId?.() ?? null);
+      });
+
+      await seedMockStore(store, client, getWorkspaceId);
+
+      expect(seen).toEqual([null, 'ws-2']);
+      expect(getWorkspaceId).toHaveBeenCalledTimes(2);
     });
 
     it('runs seeders sequentially in registration order', async () => {

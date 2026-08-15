@@ -13,7 +13,7 @@ import {
   setPromptPickerLimit,
 } from './slices/hardware-console/hardware-console-slice';
 import { sendMessage } from './slices/chat-state/chat-state-slice';
-import { setActiveWorkspaceId } from './slices/workspace/workspace-slice';
+import { openWorkspaceTab } from './slices/tab-state/tab-state-slice';
 
 const hardware = vi.hoisted(() => {
   const statusListeners = new Set<(status: string) => void>();
@@ -110,6 +110,7 @@ const settingsUpdate = vi.spyOn(appClient.settings, 'update');
 let dispose: (() => void) | undefined;
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/workspace/ws-1');
   hardware.reset();
   settingsGet.mockResolvedValue({ path: 'hardwareConsole.state', value: settingsBag } as never);
   settingsUpdate.mockResolvedValue([]);
@@ -205,7 +206,8 @@ describe('hardware-console production composition', () => {
     const invoke = (window as unknown as { electronAPI: { invoke: ReturnType<typeof vi.fn> } })
       .electronAPI.invoke;
     await new Promise((resolve) => setTimeout(resolve, 0));
-    appStore.dispatch(setActiveWorkspaceId('ws-1'));
+    window.history.replaceState({}, '', '/workspace/ws-2');
+    appStore.dispatch(openWorkspaceTab('ws-1'));
     appStore.dispatch(
       pttRecordingFinished({
         blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),

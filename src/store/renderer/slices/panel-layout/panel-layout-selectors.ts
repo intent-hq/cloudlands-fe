@@ -95,6 +95,11 @@ export function getPanelTabOpenState(
   };
 }
 
+/** Select workspace layouts by ID for post-reducer reference checks. */
+export const selectPanelLayoutWorkspaces = store.createSelector(
+  (state) => state.panelLayout.byWorkspaceId,
+);
+
 // ============================================================================
 // Layout Tree
 // ============================================================================
@@ -278,16 +283,22 @@ export const selectPanelRestoreStatusesByWorkspaceId = store.createSelector((sta
 });
 
 /** Select active-workspace file-content paths no longer represented by any open file tab. */
-export const selectFileContentPrunePayload = store.createSelector((state): string[] => {
-  const activeWsId = state.workspace.activeWorkspaceId;
+export const selectFileContentPrunePayload = store.createSelector<
+  [activeWsId: string | null, clearLayout?: boolean],
+  string[]
+>((state, activeWsId, clearLayout = false) => {
   if (!isValidActiveWorkspaceId(activeWsId)) {
     return emptyFileContentPrunePaths;
   }
 
   const ws = state.panelLayout.byWorkspaceId[activeWsId];
   const filesWorkspace = state.files.byWorkspaceId[activeWsId];
-  if (!ws || !filesWorkspace) {
+  if (!filesWorkspace) {
     return emptyFileContentPrunePaths;
+  }
+  if (!ws) {
+    if (!clearLayout) return emptyFileContentPrunePaths;
+    return [...filesWorkspace.files.ids].sort((left, right) => left.localeCompare(right));
   }
 
   const openPaths = new Set<string>();

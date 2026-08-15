@@ -18,9 +18,9 @@
   import type { ContextProvider } from '$features/context/types';
 
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     message: AgentMessage;
@@ -29,6 +29,8 @@
   }
 
   let { message, onScrollToPrevious }: Props = $props();
+
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? '';
 
   // Pill type used for both context pills and metadata pills
   interface Pill {
@@ -163,8 +165,7 @@
         });
       } else if (captured.startsWith('note/')) {
         const noteId = captured.slice(5);
-        const wsId = selectActiveWorkspaceId.select(appStore.state) ?? '';
-        const allNotes = selectAllNotes.select(appStore.state, wsId);
+        const allNotes = selectAllNotes.select(appStore.state, workspaceId);
         const n = allNotes.find((n) => n.id === noteId) ?? null;
         segments.push({
           type: 'mention',

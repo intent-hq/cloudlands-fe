@@ -103,14 +103,26 @@ function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
   };
 }
 
-async function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
-  try {
-    const result = await backendRequest<unknown>("git.status", { workspaceId });
-    if (!result || typeof result !== "object") return null;
-    return normalizeGitStatus(result as Record<string, unknown>);
-  } catch {
-    return null;
-  }
+/** Concurrent readers for one workspace share one fresh wire snapshot. */
+const statusReadsInFlight = new Map<string, Promise<GitStatus | null>>();
+
+function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
+  const existing = statusReadsInFlight.get(workspaceId);
+  if (existing) return existing;
+
+  const request = backendRequest<unknown>("git.status", { workspaceId })
+    .then((result) => {
+      if (!result || typeof result !== "object") return null;
+      return normalizeGitStatus(result as Record<string, unknown>);
+    })
+    .catch(() => null);
+  statusReadsInFlight.set(workspaceId, request);
+  void request.then(() => {
+    if (statusReadsInFlight.get(workspaceId) === request) {
+      statusReadsInFlight.delete(workspaceId);
+    }
+  });
+  return request;
 }
 
 /**

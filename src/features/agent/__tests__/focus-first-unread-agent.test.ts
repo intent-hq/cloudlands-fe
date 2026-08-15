@@ -13,7 +13,7 @@ interface MockSession {
 }
 
 const mockState = {
-  workspace: { activeWorkspaceId: null as string | null },
+  tabState: { currentTabId: null as string | null },
   workspaceAgents: {
     byWorkspaceId: {} as Record<
       string,
@@ -35,6 +35,9 @@ vi.mock('$store/renderer/store', () => ({
       return action;
     }),
     getReadableState: () => ({ subscribe: () => () => {} }),
+    createSelector: (selector: (state: typeof mockState) => unknown) => ({
+      select: (state: typeof mockState) => selector(state),
+    }),
   },
 }));
 
@@ -90,7 +93,7 @@ function dispatchedTypes(): string[] {
 
 beforeEach(() => {
   dispatched.length = 0;
-  mockState.workspace.activeWorkspaceId = WS;
+  mockState.tabState.currentTabId = WS;
   mockState.workspaceAgents.byWorkspaceId = {};
   mockState.agentSessions.byAgentId = {};
 });
@@ -373,7 +376,7 @@ describe('focusFirstUnreadAgent', () => {
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.workspace.activeWorkspaceId = 'ws-other';
+    mockState.tabState.currentTabId = 'ws-other';
     seedAgents(['agent-a'], true);
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
@@ -382,11 +385,11 @@ describe('focusFirstUnreadAgent', () => {
     expect(seam.unsubscribeCalls()).toBe(1);
   });
 
-  it('tolerates arming before the navigation sets activeWorkspaceId', () => {
+  it('tolerates arming before navigation updates the current tab', () => {
     // The watch arms right after `goto()` is invoked, so the store still
     // reports the previous workspace: emissions in that gap must not read as a
     // navigation away.
-    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    mockState.tabState.currentTabId = 'ws-previous';
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
@@ -396,7 +399,7 @@ describe('focusFirstUnreadAgent', () => {
     expect(seam.unsubscribeCalls()).toBe(0);
 
     // Navigation lands, then hydration completes.
-    mockState.workspace.activeWorkspaceId = WS;
+    mockState.tabState.currentTabId = WS;
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
 
@@ -411,11 +414,11 @@ describe('focusFirstUnreadAgent', () => {
     // never latches, so the guard must key off "no longer on the workspace we
     // departed from" or the watch would survive to mutate A's tab in the
     // background once A's agents hydrate.
-    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    mockState.tabState.currentTabId = 'ws-previous';
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.workspace.activeWorkspaceId = 'ws-other';
+    mockState.tabState.currentTabId = 'ws-other';
     seedAgents(['agent-a'], true);
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
@@ -425,17 +428,17 @@ describe('focusFirstUnreadAgent', () => {
   });
 
   it('abandons the watch when the user leaves after the navigation landed', () => {
-    mockState.workspace.activeWorkspaceId = 'ws-previous';
+    mockState.tabState.currentTabId = 'ws-previous';
     const seam = createSubscribeSeam();
     focusFirstUnreadAgent(WS, true, seam);
 
-    mockState.workspace.activeWorkspaceId = WS;
+    mockState.tabState.currentTabId = WS;
     seedAgents(['agent-a'], true);
     seam.notify();
     expect(seam.unsubscribeCalls()).toBe(0);
 
     // User navigates away before hydration finished.
-    mockState.workspace.activeWorkspaceId = 'ws-other';
+    mockState.tabState.currentTabId = 'ws-other';
     seedSessions({ 'agent-a': { lastMessageRole: 'assistant' } });
     seam.notify();
 

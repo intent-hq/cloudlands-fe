@@ -31,7 +31,6 @@ const testState = vi.hoisted(() => {
     dedupedShowFileMock: vi.fn(),
     originalContentStore: createReadable<string | null>(null),
     activeWorkspaceStore: createReadable({ id: 'ws-1', worktreePath: '/repo' }),
-    activeWorkspaceIdStore: createReadable('ws-1'),
   };
 });
 
@@ -47,7 +46,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspace: () => testState.activeWorkspaceStore,
-  selectActiveWorkspaceId: () => testState.activeWorkspaceIdStore,
+  selectWorkspaceById: () => testState.activeWorkspaceStore,
 }));
 
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({

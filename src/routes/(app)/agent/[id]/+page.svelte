@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentSession,
+    selectAgentSessionWorkspaceId,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { logger } from '$shared/logger';
 
   import { page } from '$app/state';
@@ -10,7 +13,7 @@
   import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
   import { subscribeToAgent } from '$features/agent/browser';
   import { followBottom, scrollToBottom } from '$lib/utils/smartScroll';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -18,8 +21,6 @@
   import { formatTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-
-  const activeWorkspace = selectActiveWorkspace();
 
   let agentId: string = $state('');
   let agent: any = $state(null);
@@ -36,6 +37,22 @@
     agent = session;
     messages = session.messages || [];
     isStreaming = !!session.isStreaming;
+  }
+
+  function getOwningWorkspaceId(requestedAgentId = agentId) {
+    const currentSession =
+      agent?.id === requestedAgentId
+        ? agent
+        : selectAgentSession.select(appStore.state, requestedAgentId);
+    return (
+      currentSession?.workspaceId ??
+      selectAgentSessionWorkspaceId.select(appStore.state, requestedAgentId)
+    );
+  }
+
+  function getOwningWorkspace(requestedAgentId = agentId) {
+    const workspaceId = getOwningWorkspaceId(requestedAgentId);
+    return workspaceId ? selectWorkspaceById.select(appStore.state, workspaceId) : undefined;
   }
 
   // Watch for page param changes using $effect
@@ -64,7 +81,7 @@
         if (agentId !== subscribedAgentId || !session) return;
         applyAgentSession(session);
       },
-      $activeWorkspace?.id,
+      getOwningWorkspaceId(subscribedAgentId),
     );
 
     return () => {
@@ -88,7 +105,7 @@
 
       // If not in memory, try to restore from disk
       if (!session) {
-        const workspace = $activeWorkspace;
+        const workspace = getOwningWorkspace(requestedAgentId);
         if (workspace) {
           logger.info('Session not in memory, restoring from disk', {
             agentId: requestedAgentId,
@@ -154,8 +171,8 @@
     isStreaming = true;
 
     try {
-      const workspace = $activeWorkspace;
-      if (!workspace) throw new Error('No active workspace');
+      const workspace = getOwningWorkspace(targetAgentId);
+      if (!workspace) throw new Error('No owning workspace');
 
       await sendAgentMessage(targetAgentId, trimmedMessage, workspace);
     } catch (err) {
@@ -230,11 +247,7 @@
               <MessageContent
                 content={message.contentBlocks || []}
                 isStreaming={!!message.isStreaming}
-                workspaceId={agent?.workspaceId
-                  ? String(agent.workspaceId)
-                  : $activeWorkspace?.id
-                    ? String($activeWorkspace.id)
-                    : undefined}
+                workspaceId={agent?.workspaceId ? String(agent.workspaceId) : undefined}
               />
             </div>
           </div>

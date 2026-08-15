@@ -5,7 +5,8 @@ const {
   dispatchMock,
   generateReportMock,
   appStoreFactoryMock,
-  selectCurrentWorkspaceMock,
+  selectWorkspaceByIdMock,
+  selectCurrentWorkspaceTabIdMock,
   selectSelectedModelMock,
   toastCustomMock,
 } = vi.hoisted(() => ({
@@ -13,7 +14,8 @@ const {
   dispatchMock: vi.fn(),
   generateReportMock: vi.fn(),
   appStoreFactoryMock: vi.fn(),
-  selectCurrentWorkspaceMock: vi.fn(),
+  selectWorkspaceByIdMock: vi.fn(),
+  selectCurrentWorkspaceTabIdMock: vi.fn(),
   selectSelectedModelMock: vi.fn(),
   toastCustomMock: vi.fn(),
 }));
@@ -45,7 +47,11 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectCurrentWorkspace: { select: selectCurrentWorkspaceMock },
+  selectWorkspaceById: { select: selectWorkspaceByIdMock },
+}));
+
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectCurrentWorkspaceTabId: { select: selectCurrentWorkspaceTabIdMock },
 }));
 
 vi.mock('$lib/utils/error-handler.svelte', () => ({
@@ -72,7 +78,8 @@ describe('showErrorToast', () => {
     vi.clearAllMocks();
     generateReportMock.mockReturnValue({ agentPrompt: 'diagnostic context' });
     appStoreFactoryMock.mockReturnValue({ getState: () => legacyState, dispatch: dispatchMock });
-    selectCurrentWorkspaceMock.mockReturnValue({ id: 'ws-1' });
+    selectWorkspaceByIdMock.mockReturnValue({ id: 'ws-1' });
+    selectCurrentWorkspaceTabIdMock.mockReturnValue('ws-1');
     selectSelectedModelMock.mockReturnValue('selector-global-model');
   });
 

@@ -11,7 +11,8 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 
 interface MockVoiceState {
-  workspace: { activeWorkspaceId: string | null; workspaces: ReturnType<typeof createCollection> };
+  tabState: { currentTabId: string | null };
+  workspace: { workspaces: ReturnType<typeof createCollection> };
   workspaceAgents: {
     byWorkspaceId: Record<string, { foregroundAgentIds: string[]; activeAgentId: string | null }>;
   };
@@ -28,8 +29,8 @@ interface MockVoiceState {
 
 function baseState(): MockVoiceState {
   return {
+    tabState: { currentTabId: 'ws-1' },
     workspace: {
-      activeWorkspaceId: 'ws-1',
       workspaces: createCollection('id', [
         { id: 'ws-1', title: 'Feature add', branch: 'feature-add' } as never,
       ]),
@@ -56,6 +57,9 @@ vi.mock('$store/renderer/store', () => ({
     dispatch: vi.fn((action: { type: string }) => {
       dispatched.push(action);
       return action;
+    }),
+    createSelector: (selector: (state: MockVoiceState) => unknown) => ({
+      select: (state: MockVoiceState) => selector(state),
     }),
   },
 }));
@@ -148,7 +152,7 @@ function focusEditableInDialog(): HTMLTextAreaElement {
 
 describe('gatherTranscriptionContext', () => {
   it('composes keyterms from workspace title, branch, and visible agent names', () => {
-    const context = gatherTranscriptionContext(mockState as never);
+    const context = gatherTranscriptionContext(mockState as never, 'ws-1');
     expect(context).toEqual({
       keyterms: ['Feature add', 'feature-add', 'Coordinator', 'PTT hold action'],
       prompt: 'Dictation in the "Feature add" workspace on branch feature-add.',
@@ -160,13 +164,13 @@ describe('gatherTranscriptionContext', () => {
       'agent-a': { name: 'FEATURE ADD' },
       'agent-b': { name: '  ' },
     };
-    const context = gatherTranscriptionContext(mockState as never);
+    const context = gatherTranscriptionContext(mockState as never, 'ws-1');
     expect(context?.keyterms).toEqual(['Feature add', 'feature-add']);
   });
 
   it('returns undefined without an active workspace (context omitted per §5.41)', () => {
-    mockState.workspace.activeWorkspaceId = null;
-    expect(gatherTranscriptionContext(mockState as never)).toBeUndefined();
+    mockState.tabState.currentTabId = null;
+    expect(gatherTranscriptionContext(mockState as never, null)).toBeUndefined();
   });
 });
 
@@ -197,16 +201,53 @@ describe('mergeOsContextualStrings', () => {
 
 describe('resolveTargetAgentId', () => {
   it('resolves the active workspace active agent', () => {
-    expect(resolveTargetAgentId(mockState as never)).toBe('agent-a');
+    expect(resolveTargetAgentId(mockState as never, 'ws-1')).toBe('agent-a');
   });
 
   it('is null without an active workspace', () => {
-    mockState.workspace.activeWorkspaceId = null;
-    expect(resolveTargetAgentId(mockState as never)).toBeNull();
+    mockState.tabState.currentTabId = null;
+    expect(resolveTargetAgentId(mockState as never, null)).toBeNull();
   });
 });
 
 describe('handleFinishedRecording', () => {
+  it('uses the route workspace for transcription when Redux active workspace is stale', async () => {
+    mockState.tabState.currentTabId = 'ws-a';
+    mockState.workspace.workspaces = createCollection('id', [
+      { id: 'ws-a', title: 'Redux workspace', branch: 'redux-a' } as never,
+      { id: 'ws-b', title: 'Route workspace', branch: 'route-b' } as never,
+    ]);
+    mockState.workspaceAgents.byWorkspaceId = {
+      'ws-a': { foregroundAgentIds: ['agent-a'], activeAgentId: 'agent-a' },
+      'ws-b': { foregroundAgentIds: ['agent-b'], activeAgentId: 'agent-b' },
+    };
+    mockState.agentSessions.byAgentId = {
+      'agent-a': { name: 'Redux agent' },
+      'agent-b': { name: 'Route agent' },
+    };
+    const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
+    const focusComposer = vi.fn();
+    const insertText = vi.fn().mockReturnValue(true);
+
+    await handleFinishedRecording(RECORDING, {
+      transcribe,
+      focusComposer,
+      insertText,
+      getCurrentWorkspaceId: () => 'ws-b',
+    });
+
+    expect(transcribe).toHaveBeenCalledWith(
+      RECORDING.blob,
+      RECORDING.mimeType,
+      {
+        keyterms: ['Route workspace', 'route-b', 'Route agent'],
+        prompt: 'Dictation in the "Route workspace" workspace on branch route-b.',
+      },
+      'ws-b',
+    );
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
+  });
+
   it('sends the exact §5.41 wire request through the AppClient seam and inserts the transcript', async () => {
     // Real LiveVoiceClient path: stub the electron bridge under the transport.
     const mockInvoke = vi.fn().mockResolvedValue({ ok: true, result: TRANSCRIBE_RESULT });
@@ -362,7 +403,7 @@ describe('handleFinishedRecording', () => {
   });
 
   it('skips the workspace vocabulary fetch without an active workspace', async () => {
-    mockState.workspace.activeWorkspaceId = null;
+    mockState.tabState.currentTabId = null;
     mockState.voiceSettings = { engine: 'os', vocabulary: ['intentd'] };
     transcribeWithOsMock.mockResolvedValue({ text: 'local transcript', durationMs: 900 });
     vi.stubGlobal('window', { electronAPI: { invoke: vi.fn(), on: vi.fn(), offById: vi.fn() } });
@@ -489,7 +530,7 @@ describe('handleFinishedRecording', () => {
     // transcription (e.g. insertion machinery) must still reset the state.
     // No active workspace → the insertion runs synchronously, so its throw
     // propagates into the flow instead of a timer callback.
-    mockState.workspace.activeWorkspaceId = null;
+    mockState.tabState.currentTabId = null;
     const transcribe = vi.fn().mockResolvedValue(TRANSCRIBE_RESULT);
     const insertText = vi.fn(() => {
       throw new Error('boom');

@@ -25,10 +25,7 @@ import {
   markNoteRead,
 } from '../../note-read-tracking/note-read-tracking-slice';
 import { openTab } from '../../panel-layout/panel-layout-slice';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
@@ -63,8 +60,7 @@ type MetadataCommand = {
 type DeleteCommand = { kind: 'delete'; workspaceId: string; noteId: string; snapshot?: Note };
 type MutationCommand = ContentCommand | MetadataCommand | DeleteCommand;
 type MutationEnvelope = { command: MutationCommand; completion?: Channel<boolean> };
-type WorkspaceCleanupAction =
-  ReturnType<typeof workspaceDeleted> | ReturnType<typeof workspaceUnmounted>;
+type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 const pendingContent = new Map<string, PendingContent>();
@@ -76,7 +72,7 @@ function noteKey(workspaceId: string, noteId: string): string {
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId
   );
@@ -491,7 +487,7 @@ export function* notesWriteSaga() {
     yield* takeEvery(deleteNote, handleDeleteAction, queue);
     yield* takeEvery(createNote, handleCreateAction);
     yield* takeEvery(createNoteRequested, handleCreateRequested);
-    yield* takeEvery([workspaceDeleted, workspaceUnmounted], cleanupWorkspace, queue);
+    yield* takeEvery(workspaceUnmounted, cleanupWorkspace, queue);
     yield* call(consumeMutations, queue);
   } finally {
     const queued = yield* flush(queue);

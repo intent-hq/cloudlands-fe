@@ -4,6 +4,7 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -32,15 +33,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: Object.assign(
-    () => ({
-      subscribe: (run: (value: string | null) => void) => {
-        run('ws-1');
-        return () => {};
-      },
-    }),
-    { select: () => 'ws-1' },
-  ),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe: (run: (value: unknown) => void) => {
@@ -91,6 +83,7 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import ChatMessageRouteContextHarness from './ChatMessageRouteContextHarness.test.svelte';
 
 async function expandAutomatedWake() {
   const toggle = screen.getByTestId('automated-wake-toggle');
@@ -401,8 +394,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
   });
 
   it('dispatches openAgentTabRequested with the sender agent id on click', async () => {
-    render(ChatMessage, {
+    render(ChatMessageRouteContextHarness, {
       props: {
+        workspaceId: WorkspaceId('ws-1'),
         message: userMessage({
           type: 'agent_message',
           fromAgentId: 'agent-sender-1',
@@ -840,8 +834,9 @@ describe('ChatMessage PR-monitor wake attribution', () => {
   });
 
   it('labels a same-owner, different-repo PR with the repo name only', () => {
-    render(ChatMessage, {
+    render(ChatMessageRouteContextHarness, {
       props: {
+        workspaceId: WorkspaceId('ws-1'),
         message: prMonitorWakeMessage({
           rowMetadata: true,
           metadata: { ...prMonitorWakeMetadata, repo: 'intent-hq/intentd' },

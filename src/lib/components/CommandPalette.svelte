@@ -121,7 +121,7 @@
   const workspaceItems = selectWorkspaceItems();
   const workspaceViewMode$ = selectWorkspaceViewMode();
   let commands = $derived(COMMAND_PALETTE_COMMANDS($workspaceViewMode$));
-  const currentChanges$ = selectCurrentChanges();
+  const currentChanges$ = selectCurrentChanges(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
   const browserRecentUrls$ = selectBrowserRecentUrls(workspaceIdStore);

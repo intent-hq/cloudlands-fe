@@ -6,8 +6,7 @@ import {
   type Channel,
   type EventChannel,
 } from 'redux-saga';
-import { call, cancel, fork, put, race, take } from 'typed-redux-saga';
-import { createChannelFromSelector } from '@augmentcode/themis/saga';
+import { actionChannel, call, cancel, flush, fork, join, put, race, take } from 'typed-redux-saga';
 
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import type { BackendNotification } from '$lib/client/live/backend-transport';
@@ -25,7 +24,8 @@ import {
 } from '$features/events/daemon-events-bridge.client';
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
+import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
+import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 
 const logger = createLogger('DaemonEventsSaga');
 
@@ -130,9 +130,13 @@ function unsubscribeAllLeases(leases: DaemonEventLeases): Promise<void> {
   );
 }
 
-/** Reconnect signal to the scoped-lease manager; `ack` is put once the lease has converged. */
+/** Reconnect signal to the scoped-lease manager; `ack` carries the converged workspace. */
 interface ScopedLeaseReconnectSignal {
-  ack: Channel<true>;
+  ack: Channel<ScopedLeaseReconnectResult>;
+}
+
+interface ScopedLeaseReconnectResult {
+  workspaceId: string | null;
 }
 
 /** The workspace id the manager last issued a scoped subscribe (or clear) for. */
@@ -141,57 +145,63 @@ interface ScopedLeaseTracking {
 }
 
 /**
- * Drive the scoped `file:*` lease to match `selectActiveWorkspaceId`,
- * re-reading the selector after every settled wire call so a switch that
- * lands while a subscribe is in flight converges instead of stranding the
- * lease on a stale workspace. On a switch the §6.1 `replaceGroup` atomically
+ * Drive the scoped `file:*` lease to match the saga-local desired workspace.
+ * On a switch the §6.1 `replaceGroup` atomically
  * replaces the daemon-side subscription, so the only local bookkeeping is the
  * lease swap (a subscribe still in flight unsubscribes its own late-arriving
  * id); on a clear there is no replacing subscribe, so the lease must be
  * explicitly unsubscribed.
  */
-function* convergeScopedFileLease(leases: DaemonEventLeases, tracking: ScopedLeaseTracking) {
-  while (true) {
-    const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
-    const desired = activeWorkspaceId ? String(activeWorkspaceId) : null;
-    if (desired === tracking.workspaceId) return;
-    tracking.workspaceId = desired;
-    if (desired === null) {
-      const lease = leases.scopedFile;
-      leases.scopedFile = { cancelled: false };
-      yield* call(unsubscribeLease, lease);
-    } else {
-      leases.scopedFile.cancelled = true;
-      leases.scopedFile = { cancelled: false };
-      yield* call(subscribeScopedFileEvents, leases.scopedFile, desired);
-    }
+function* convergeScopedFileLease(
+  leases: DaemonEventLeases,
+  tracking: ScopedLeaseTracking,
+  desiredWorkspaceId: string | null,
+) {
+  if (desiredWorkspaceId === tracking.workspaceId) return;
+  tracking.workspaceId = desiredWorkspaceId;
+  if (desiredWorkspaceId === null) {
+    const lease = leases.scopedFile;
+    leases.scopedFile = { cancelled: false };
+    yield* call(unsubscribeLease, lease);
+  } else {
+    leases.scopedFile.cancelled = true;
+    leases.scopedFile = { cancelled: false };
+    yield* call(subscribeScopedFileEvents, leases.scopedFile, desiredWorkspaceId);
   }
 }
 
 /**
  * Single writer for `leases.scopedFile`: workspace selection changes, the
  * startup selection, and reconnect replays are all serialized through this
- * one task so two subscribes can never race on the same lease. The selector
- * channel (store convention: react to selector changes, not raw actions)
- * wakes the loop on ANY reducer that moves `activeWorkspaceId` — switch,
- * clear, terminal-overlay open, workspace deletion, state reset. Emissions
- * that land while a wire call is in flight are absorbed by re-reading the
- * selector inside `convergeScopedFileLease` after every settled call, so a
- * selection can converge late but can never be dropped.
+ * one task so two subscribes can never race on the same lease. An expanding
+ * action channel retains every canonical tab-selection transition that lands
+ * during a wire call; buffered transitions are coalesced through a selector
+ * read before the next convergence.
  */
 function* manageScopedFileLease(
   leases: DaemonEventLeases,
   reconnectSignals: Channel<ScopedLeaseReconnectSignal>,
+  start: Channel<true>,
 ) {
-  const selectionChannel = yield* createChannelFromSelector(selectActiveWorkspaceId);
+  const workspaceChanges = yield* actionChannel(
+    CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS,
+    buffers.expanding(),
+  );
   const tracking: ScopedLeaseTracking = { workspaceId: null };
+  let desiredWorkspaceId: string | null = null;
   try {
-    yield* call(convergeScopedFileLease, leases, tracking);
+    yield* take(start);
+    desiredWorkspaceId = (yield* selectCurrentWorkspaceTabId.effect()) || null;
+    yield* call(convergeScopedFileLease, leases, tracking, desiredWorkspaceId);
     while (true) {
-      const { reconnect } = yield* race({
-        selection: take(selectionChannel),
+      const { workspaceChange, reconnect } = yield* race({
+        workspaceChange: take(workspaceChanges),
         reconnect: take(reconnectSignals),
       });
+      if (workspaceChange) {
+        yield* flush(workspaceChanges);
+        desiredWorkspaceId = (yield* selectCurrentWorkspaceTabId.effect()) || null;
+      }
       if (reconnect) {
         // The daemon dropped the subscription with the connection; retire the
         // stale lease and force a fresh subscribe for the current workspace.
@@ -200,11 +210,12 @@ function* manageScopedFileLease(
         tracking.workspaceId = null;
         yield* call(unsubscribeLease, staleLease);
       }
-      yield* call(convergeScopedFileLease, leases, tracking);
-      if (reconnect) yield* put(reconnect.ack, true);
+      yield* call(convergeScopedFileLease, leases, tracking, desiredWorkspaceId);
+      if (reconnect) yield* put(reconnect.ack, { workspaceId: desiredWorkspaceId });
     }
   } finally {
-    selectionChannel.close();
+    workspaceChanges.close();
+    start.close();
   }
 }
 
@@ -215,16 +226,21 @@ export function* daemonEventsSaga() {
     scopedFile: { cancelled: false },
   };
   const reconnectSignals = sagaChannel<ScopedLeaseReconnectSignal>();
+  const startScopedLease = sagaChannel<true>();
   let managerTask;
   try {
     // The scoped-lease manager forks BEFORE the awaited firehose subscribe:
-    // its selector channel and converge loop observe selections from fork
-    // time, closing the startup window where a selection dispatched during
-    // the initial subscribe round-trip was lost.
-    managerTask = yield* fork(manageScopedFileLease, leases, reconnectSignals);
+    // its transition channel observes reducer-owned selection actions from
+    // fork time, closing the startup window where a selection dispatched
+    // during the initial subscribe round-trip was lost.
+    managerTask = yield* fork(manageScopedFileLease, leases, reconnectSignals, startScopedLease);
+    // Start the firehose request before releasing the scoped manager so wire
+    // ordering stays deterministic while both leases may resolve concurrently.
+    const firehoseTask = yield* fork(subscribeFirehose, leases.firehose);
+    yield* put(startScopedLease, true);
     // Listener-first closes the subscribe/fetch race; the expanding channel
     // retains every notification until the server-assigned id is available.
-    yield* call(subscribeFirehose, leases.firehose);
+    yield* join(firehoseTask);
     while (true) {
       const message: DaemonChannelMessage = yield* take(channel);
       if (message === (END as unknown as DaemonChannelMessage)) break;
@@ -250,11 +266,11 @@ export function* daemonEventsSaga() {
       // after the manager acks — converge snapshots.
       yield* call(unsubscribeLease, leases.firehose);
       leases.firehose = { cancelled: false };
-      const ack = sagaChannel<true>();
+      const ack = sagaChannel<ScopedLeaseReconnectResult>();
       yield* put(reconnectSignals, { ack });
       yield* call(subscribeFirehose, leases.firehose);
-      yield* take(ack);
-      yield* call(refreshDaemonEventsAfterReconnect);
+      const { workspaceId } = yield* take(ack);
+      yield* call(refreshDaemonEventsAfterReconnect, workspaceId);
     }
   } finally {
     channel.close();

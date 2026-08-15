@@ -140,7 +140,7 @@ function storeState(
         [WS_2]: workspaceState([{ ...snapshot, timestamp: 20 }]),
       },
     },
-    workspace: { activeWorkspaceId },
+    tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId },
   };
 }
@@ -152,10 +152,12 @@ async function settle() {
   await Promise.resolve();
 }
 
-function startSaga(state = storeState()) {
+function startSaga(state = storeState(), activeWorkspaceId: string | null = null) {
   const channel = stdChannel();
   const dispatch = vi.fn();
-  const task = runSaga({ channel, dispatch, getState: () => state }, panelLayoutSaga);
+  const task = runSaga({ channel, dispatch, getState: () => state }, panelLayoutSaga, {
+    activeWorkspaceId: activeWorkspaceId ?? state.tabState.currentTabId,
+  });
   return { channel, dispatch, task };
 }
 
@@ -415,7 +417,7 @@ describe('panelLayoutSaga', () => {
 
   it('retroactively restores the active workspace with exact status transitions', async () => {
     mocks.getJSON.mockReturnValue(layout);
-    const { dispatch, task } = startSaga(storeState(WS_1));
+    const { dispatch, task } = startSaga(storeState(WS_2), WS_1);
     await settle();
 
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
@@ -940,6 +942,7 @@ describe('panelLayoutSaga', () => {
       const task = runSaga(
         { channel, dispatch, getState: () => storeState(WS_1, backendId) },
         panelLayoutSaga,
+        { activeWorkspaceId: WS_1 },
       );
       await settle();
       dispatch.mockClear();
@@ -964,6 +967,7 @@ describe('panelLayoutSaga', () => {
       const task = runSaga(
         { channel, dispatch, getState: () => storeState(WS_1, backendId) },
         panelLayoutSaga,
+        { activeWorkspaceId: WS_1 },
       );
       await settle();
       dispatch.mockClear();
@@ -983,6 +987,38 @@ describe('panelLayoutSaga', () => {
       expect(dispatched[1].payload.wsId).toBe(WS_1);
       expect(dispatched[2]).toEqual(loadLayoutHistory(WS_1, [], 0));
       expect(dispatched[3]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      await cancelSaga(task);
+    });
+
+    it('restores the lifecycle-mounted workspace after an in-flight workspace switch', async () => {
+      const remoteStorageKey2 = `backend:${REMOTE_ID}:${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WS_2}`;
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === remoteStorageKey2 ? layout : undefined,
+      );
+      let backendId = LOCAL_CONNECTION_ID;
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => storeState(WS_1, backendId) },
+        panelLayoutSaga,
+        { activeWorkspaceId: WS_1 },
+      );
+      await settle();
+
+      channel.put(workspaceUnmounted(WS_1));
+      channel.put(workspaceMounted(WS_2));
+      await settle();
+      dispatch.mockClear();
+
+      backendId = REMOTE_ID;
+      channel.put(connectionsListReceived({ connections: [], activeId: REMOTE_ID }));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        setRestoreStatus(WS_2, 'pending'),
+        initializeLayout(WS_2, layout),
+        setRestoreStatus(WS_2, 'restored'),
+      ]);
       await cancelSaga(task);
     });
   });

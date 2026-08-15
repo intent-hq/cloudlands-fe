@@ -116,7 +116,7 @@
   // Handle file rename via IPC
   async function handleRenameFile(oldPath: string, newPath: string) {
     try {
-      const response = (await invoke('file:move', { oldPath, newPath })) as {
+      const response = (await invoke('file:move', { oldPath, newPath, workspaceId })) as {
         success: boolean;
         error?: string;
       };
@@ -248,6 +248,7 @@
           response = (await invoke('file:copy', {
             sourcePath,
             destinationPath,
+            workspaceId,
           })) as { success: boolean; error?: string; data?: { isDirectory?: boolean } };
         } else {
           // Files without path property (from Finder/OS file manager) - read content and use file:write
@@ -270,6 +271,7 @@
             path: destinationPath,
             content: base64Content,
             encoding: 'base64',
+            workspaceId,
           })) as { success: boolean; error?: string; data?: { isDirectory?: boolean } };
         }
 

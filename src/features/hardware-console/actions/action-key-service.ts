@@ -44,6 +44,7 @@ import { cancelPttRecording } from '../voice/ptt-controller';
 import { isConsoleOwner } from '../owner-gate';
 import { getActionKeyDefinition, type ActionKeyContext } from './action-key-registry';
 import { ENCODER_HUD_HIDE_MS } from '../encoder/encoder-service';
+import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
@@ -81,6 +82,8 @@ export interface ActionKeyDeps {
   focusComposer?: (agentId: string) => void;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
+  /** Current workspace-tab seam. */
+  getCurrentWorkspaceId?: () => string | null;
 }
 
 /**
@@ -130,6 +133,9 @@ async function showUnavailableToast(message: string): Promise<void> {
 function buildContext(deps: ActionKeyDeps): ActionKeyContext {
   return {
     state: appStore.state,
+    workspaceId: (
+      deps.getCurrentWorkspaceId ?? (() => selectCurrentWorkspaceTabId.select(appStore.state))
+    )(),
     dispatch: (action) => appStore.dispatch(action as { type: string }),
     navigate: deps.navigate ?? navigateToRoute,
     focusComposer: deps.focusComposer ?? focusAgentComposer,

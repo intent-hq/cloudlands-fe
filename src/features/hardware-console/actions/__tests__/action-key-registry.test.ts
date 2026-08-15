@@ -64,7 +64,7 @@ function makeSession(
 }
 
 interface StateOptions {
-  activeWorkspaceId?: string | null;
+  currentWorkspaceId?: string | null;
   workspaces?: string[];
   agentsByWorkspace?: Record<
     string,
@@ -79,7 +79,9 @@ interface StateOptions {
   voiceSettings?: Partial<ActionKeyState['voiceSettings']>;
 }
 
-function makeState(options: StateOptions = {}): ActionKeyState {
+type TestActionKeyState = ActionKeyState & { currentWorkspaceId: string | null };
+
+function makeState(options: StateOptions = {}): TestActionKeyState {
   const workspaceIds = options.workspaces ?? ['ws-1'];
   const byWorkspaceId: ActionKeyState['workspaceAgents']['byWorkspaceId'] = {};
   const byAgentId: ActionKeyState['agentSessions']['byAgentId'] = {};
@@ -99,9 +101,9 @@ function makeState(options: StateOptions = {}): ActionKeyState {
     }
   }
   return {
+    currentWorkspaceId:
+      options.currentWorkspaceId === undefined ? 'ws-1' : options.currentWorkspaceId,
     workspace: {
-      activeWorkspaceId:
-        options.activeWorkspaceId === undefined ? 'ws-1' : options.activeWorkspaceId,
       workspaces: createCollection(
         'id',
         workspaceIds.map((id) =>
@@ -153,12 +155,19 @@ function questionMessage(messageId: string) {
   } as never;
 }
 
-function makeContext(state: ActionKeyState) {
+function makeContext(state: TestActionKeyState) {
   const dispatch = vi.fn();
   const navigate = vi.fn(() => Promise.resolve());
   const focusComposer = vi.fn();
   const showHint = vi.fn();
-  const context: ActionKeyContext = { state, dispatch, navigate, focusComposer, showHint };
+  const context: ActionKeyContext = {
+    state,
+    workspaceId: state.currentWorkspaceId,
+    dispatch,
+    navigate,
+    focusComposer,
+    showHint,
+  };
   return { context, dispatch, navigate, focusComposer, showHint };
 }
 
@@ -190,7 +199,7 @@ describe('ACTION_KEY_REGISTRY', () => {
 
 describe('availability', () => {
   it('workspace-scoped actions are unavailable without an active workspace', () => {
-    const { context } = makeContext(makeState({ activeWorkspaceId: null }));
+    const { context } = makeContext(makeState({ currentWorkspaceId: null }));
     for (const id of [
       'stop-agent',
       'see-spec',
@@ -879,7 +888,7 @@ describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', 
 
   it('shows the single-candidate hint when the only stop is the active agent-less workspace', () => {
     const state = makeState({
-      activeWorkspaceId: 'ws-2',
+      currentWorkspaceId: 'ws-2',
       workspaces: ['ws-1', 'ws-2'],
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-2'],
@@ -1104,7 +1113,7 @@ describe('round-robin across presses', () => {
 
   it('cycle-workspace-agents works without an active workspace (global)', () => {
     const state = makeState({
-      activeWorkspaceId: null,
+      currentWorkspaceId: null,
       workspaces: ['ws-1'],
       agentsByWorkspace: { 'ws-1': { ids: ['a-1'] } },
     });
@@ -1277,7 +1286,7 @@ describe('execute dispatch', () => {
   });
 
   it('new-workspace opens the create-workspace modal when it is closed', () => {
-    const state = makeState({ activeWorkspaceId: null });
+    const state = makeState({ currentWorkspaceId: null });
     const { context, dispatch } = makeContext(state);
     expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);
@@ -1287,7 +1296,7 @@ describe('execute dispatch', () => {
   });
 
   it('new-workspace closes the create-workspace modal when it is already open', () => {
-    const state = makeState({ activeWorkspaceId: null, showCreateModal: true });
+    const state = makeState({ currentWorkspaceId: null, showCreateModal: true });
     const { context, dispatch } = makeContext(state);
     expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
     getActionKeyDefinition('new-workspace').execute(context);

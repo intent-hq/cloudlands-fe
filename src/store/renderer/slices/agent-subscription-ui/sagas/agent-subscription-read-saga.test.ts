@@ -368,7 +368,7 @@ describe('agentSubscriptionReadSaga', () => {
     await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
 
     expect(mocks.request).toHaveBeenCalledTimes(1);
-    expect(run.state().entries[makeKey(WS, AGENT)]?.waitingState).toBe('completed');
+    expect(run.state().entries[makeKey(WS, AGENT)]).toBeUndefined();
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -396,12 +396,12 @@ describe('agentSubscriptionReadSaga', () => {
     await settle();
 
     expect(mocks.request).toHaveBeenCalledTimes(1);
-    expect(run.state()).toEqual(seeded);
+    expect(run.state()).toEqual(initialState);
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('cancels late reads and deletes tracked entries on workspace deletion', async () => {
+  it('retains deletion state until tab removal cancels reads and deletes tracked entries', async () => {
     let resolve!: (value: ReturnType<typeof active>) => void;
     mocks.request.mockReturnValue(
       new Promise((done) => {
@@ -423,6 +423,10 @@ describe('agentSubscriptionReadSaga', () => {
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     run.channel.put(requestSubscriptionFetch(WS, AGENT));
     run.channel.put(workspaceDeleted(WS, [AGENT]));
+    await settle();
+    expect(run.state()).toEqual(seeded);
+
+    run.channel.put(workspaceUnmounted(WS));
     await settle();
     resolve(active());
     await settle();

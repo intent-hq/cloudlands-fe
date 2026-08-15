@@ -19,34 +19,22 @@
  * removing the live font `$effect` (lines 208–213) still passes every
  * adapter-only test but fails here.
  */
-import { render } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SYSTEM_DEFAULT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
 
-const { xtermMock, fontReadableRef, scriptState } = vi.hoisted(() => ({
-  xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
-  fontReadableRef: { value: null as any },
-  scriptState: {
-    script: {
-      id: 's-1',
-      workspaceId: 'ws-1',
-      name: 'dev',
-      command: 'pnpm dev',
-      mode: 'service',
-      source: 'user',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      runtime: { status: 'running', pid: 123, exitCode: null, restartCount: 0 },
-    },
-    runtime: { status: 'running', pid: 123, exitCode: null, restartCount: 0 },
-    output: {
-      chunks: [{ text: 'hello\n', timestamp: '2026-01-01T00:00:00.000Z' }],
-      dropped: 0,
-    },
-  },
-}));
+const { xtermMock, fontReadableRef, scriptState, scriptSelectorArgs, mockScriptStart } = vi.hoisted(
+  () => ({
+    xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
+    fontReadableRef: { value: null as any },
+    scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
+    scriptSelectorArgs: [] as unknown[][],
+    mockScriptStart: vi.fn(),
+  }),
+);
 
 function createControllableReadable<T>(initial: T) {
   let current = initial;
@@ -108,32 +96,67 @@ vi.mock('$features/terminal/terminal-theme-manager', () => ({
 }));
 
 vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: { start: vi.fn(), remove: vi.fn() },
+  scriptsClient: { start: mockScriptStart, remove: vi.fn() },
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
-  const makeSel = <T,>(getter: () => T) =>
+  const makeSel = <T>(getter: (workspaceId: string, scriptId: string) => T) =>
     Object.assign(
-      (_id?: string) => ({
-        subscribe: (fn: (v: T) => void) => {
-          fn(getter());
-          return () => {};
-        },
-      }),
-      { select: (_state?: any, _id?: string) => getter() },
+      (workspaceArg: any, scriptArg: any) => {
+        scriptSelectorArgs.push([workspaceArg, scriptArg]);
+        return {
+          subscribe: (fn: (v: T) => void) => {
+            let workspaceId: string | undefined;
+            let scriptId: string | undefined;
+            const emit = () => {
+              if (workspaceId !== undefined && scriptId !== undefined) {
+                fn(getter(workspaceId, scriptId));
+              }
+            };
+            const unsubscribeWorkspace = workspaceArg.subscribe((value: string) => {
+              workspaceId = value;
+              emit();
+            });
+            const unsubscribeScript = scriptArg.subscribe((value: string) => {
+              scriptId = value;
+              emit();
+            });
+            return () => {
+              unsubscribeWorkspace();
+              unsubscribeScript();
+            };
+          },
+        };
+      },
+      {
+        select: (_state: any, workspaceId: string, scriptId: string) =>
+          getter(workspaceId, scriptId),
+      },
     );
+  const getScript = (workspaceId: string, scriptId: string) =>
+    scriptState.byWorkspaceId[workspaceId]?.[scriptId] ?? null;
   return {
-    selectScriptById: makeSel(() => scriptState.script),
-    selectScriptRuntime: makeSel(() => scriptState.runtime),
-    selectScriptOutput: makeSel(() => scriptState.output),
+    selectScriptById: makeSel(getScript),
+    selectScriptRuntime: makeSel(
+      (workspaceId, scriptId) =>
+        getScript(workspaceId, scriptId)?.runtime ?? {
+          status: 'idle',
+          pid: null,
+          exitCode: null,
+          restartCount: 0,
+        },
+    ),
+    selectScriptOutput: makeSel(
+      (workspaceId, scriptId) =>
+        getScript(workspaceId, scriptId)?.output ?? { chunks: [], dropped: 0 },
+    ),
   };
 });
 
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
-  selectCodeFontFamilyCSS: Object.assign(
-    () => fontReadableRef.value,
-    { select: () => fontReadableRef.value.value },
-  ),
+  selectCodeFontFamilyCSS: Object.assign(() => fontReadableRef.value, {
+    select: () => fontReadableRef.value.value,
+  }),
 }));
 
 vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
@@ -175,6 +198,38 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     vi.clearAllMocks();
     xtermMock.instances.length = 0;
     xtermMock.constructorOptions.length = 0;
+    scriptSelectorArgs.length = 0;
+    scriptState.byWorkspaceId = {
+      'ws-1': {
+        's-1': {
+          id: 's-1',
+          workspaceId: 'ws-1',
+          name: 'dev',
+          command: 'pnpm dev',
+          mode: 'service',
+          source: 'user',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          runtime: { status: 'running', pid: 123, exitCode: null, restartCount: 0 },
+          output: {
+            chunks: [{ text: 'hello\n', timestamp: '2026-01-01T00:00:00.000Z' }],
+            dropped: 0,
+          },
+        },
+      },
+      'ws-2': {
+        's-1': {
+          id: 's-1',
+          workspaceId: 'ws-2',
+          name: 'build',
+          command: 'pnpm build',
+          mode: 'command',
+          source: 'user',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          runtime: { status: 'idle', pid: null, exitCode: null, restartCount: 0 },
+          output: { chunks: [], dropped: 0 },
+        },
+      },
+    };
     fontReadableRef.value = createControllableReadable(SYSTEM_DEFAULT);
     (globalThis as any).ResizeObserver = class {
       observe = vi.fn();
@@ -215,5 +270,28 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
 
     // No output replay: font-only update MUST NOT trigger any extra writes.
     expect(xterm.write.mock.calls.length).toBe(writesBefore);
+  });
+
+  it('renders and starts the script from the rerendered workspace', async () => {
+    const { rerender } = render(ScriptOutputViewer, {
+      props: { scriptId: 's-1', workspaceId: 'ws-1' },
+    });
+    await waitForXTermInit();
+
+    await rerender({ scriptId: 's-1', workspaceId: 'ws-2' });
+
+    await waitFor(() => expect(screen.getByText('pnpm build')).toBeTruthy());
+    expect(screen.queryByText('pnpm dev')).toBeNull();
+    expect(scriptSelectorArgs).toHaveLength(3);
+    expect(
+      scriptSelectorArgs.every(
+        ([workspaceArg, scriptArg]: any[]) =>
+          typeof workspaceArg?.subscribe === 'function' &&
+          typeof scriptArg?.subscribe === 'function',
+      ),
+    ).toBe(true);
+
+    await fireEvent.click(screen.getByText('Run'));
+    expect(mockScriptStart).toHaveBeenCalledWith('ws-2', 's-1');
   });
 });

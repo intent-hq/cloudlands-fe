@@ -10,7 +10,12 @@ const {
   mockScriptRemove,
   backgroundAgentOptions,
   scriptEntries,
+  terminalEntries,
+  activeTerminalIds,
   activeWorkspaceState,
+  selectorWorkspaceArgs,
+  executorState,
+  mockGetNavigationContext,
   toast,
 } = vi.hoisted(() => {
   const mockDetect = vi.fn();
@@ -28,10 +33,21 @@ const {
     },
     scriptEntries: {
       value: [] as any[],
+      byWorkspaceId: {} as Record<string, any[]>,
+    },
+    terminalEntries: {
+      byWorkspaceId: {} as Record<string, any[]>,
+    },
+    activeTerminalIds: {
+      byWorkspaceId: {} as Record<string, string | null>,
     },
     activeWorkspaceState: {
       value: { id: 'ws-1', path: '/repo' } as any,
+      byWorkspaceId: {} as Record<string, any>,
     },
+    executorState: { isRunning: false, agentId: null as string | null },
+    mockGetNavigationContext: vi.fn(),
+    selectorWorkspaceArgs: [] as unknown[],
     toast: {
       success: vi.fn(),
       info: vi.fn(),
@@ -56,13 +72,21 @@ vi.mock('$features/scripts/scripts.client', () => ({
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectScriptEntries: Object.assign(
-    () => ({
-      subscribe: (fn: (value: any) => void) => {
-        fn(scriptEntries.value);
-        return () => {};
-      },
-    }),
-    { select: () => scriptEntries.value },
+    (workspaceArg: any) => {
+      selectorWorkspaceArgs.push(workspaceArg);
+      return {
+        subscribe: (fn: (value: any) => void) =>
+          typeof workspaceArg === 'string'
+            ? (fn(scriptEntries.byWorkspaceId[workspaceArg] ?? scriptEntries.value), () => {})
+            : workspaceArg.subscribe((workspaceId: string) =>
+                fn(scriptEntries.byWorkspaceId[workspaceId] ?? scriptEntries.value),
+              ),
+      };
+    },
+    {
+      select: (_state: unknown, workspaceId: string) =>
+        scriptEntries.byWorkspaceId[workspaceId] ?? scriptEntries.value,
+    },
   ),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) => ({
@@ -87,18 +111,23 @@ vi.mock('$store/renderer/store', async () => {
           },
         },
       },
-      workspace: { activeWorkspaceId: 'ws-1' },
     }),
     dispatch: mockDispatch,
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspace: () => ({
-    subscribe: (fn: (value: any) => void) => {
-      fn(activeWorkspaceState.value);
-      return () => {};
-    },
-  }),
+  selectWorkspaceById: (workspaceArg: any) => {
+    selectorWorkspaceArgs.push(workspaceArg);
+    return {
+      subscribe: (fn: (value: any) => void) =>
+        typeof workspaceArg === 'string'
+          ? (fn(activeWorkspaceState.byWorkspaceId[workspaceArg] ?? activeWorkspaceState.value),
+            () => {})
+          : workspaceArg.subscribe((workspaceId: string) =>
+              fn(activeWorkspaceState.byWorkspaceId[workspaceId] ?? activeWorkspaceState.value),
+            ),
+    };
+  },
 }));
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
@@ -122,44 +151,47 @@ vi.mock(
   '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
   () => ({
     selectExecutorIsRunning: Object.assign(
-      () => ({
-        subscribe: (fn: any) => {
-          fn(false);
-          return () => {};
-        },
-      }),
-      { select: () => false },
+      (workspaceArg: any) => {
+        selectorWorkspaceArgs.push(workspaceArg);
+        return {
+          subscribe: (fn: any) => workspaceArg.subscribe(() => fn(executorState.isRunning)),
+        };
+      },
+      { select: () => executorState.isRunning },
     ),
     selectExecutorAgentId: Object.assign(
-      () => ({
-        subscribe: (fn: any) => {
-          fn(null);
-          return () => {};
-        },
-      }),
-      { select: () => null },
+      (workspaceArg: any) => {
+        selectorWorkspaceArgs.push(workspaceArg);
+        return {
+          subscribe: (fn: any) => workspaceArg.subscribe(() => fn(executorState.agentId)),
+        };
+      },
+      { select: () => executorState.agentId },
     ),
   }),
 );
+vi.mock('$lib/components/layout/panel-system/panel-context', () => ({
+  getNavigationContext: mockGetNavigationContext,
+}));
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
-  selectTerminals: () => ({
-    subscribe: (fn: any) => {
-      fn([]);
-      return () => {};
-    },
-  }),
-  selectUserTerminals: () => ({
-    subscribe: (fn: any) => {
-      fn([]);
-      return () => {};
-    },
-  }),
-  selectActiveTerminalId: () => ({
-    subscribe: (fn: any) => {
-      fn(null);
-      return () => {};
-    },
-  }),
+  selectUserTerminals: (workspaceArg: any) => {
+    selectorWorkspaceArgs.push(workspaceArg);
+    return {
+      subscribe: (fn: any) =>
+        workspaceArg.subscribe((workspaceId: string) =>
+          fn(terminalEntries.byWorkspaceId[workspaceId] ?? []),
+        ),
+    };
+  },
+  selectActiveTerminalId: (workspaceArg: any) => {
+    selectorWorkspaceArgs.push(workspaceArg);
+    return {
+      subscribe: (fn: any) =>
+        workspaceArg.subscribe((workspaceId: string) =>
+          fn(activeTerminalIds.byWorkspaceId[workspaceId] ?? null),
+        ),
+    };
+  },
 }));
 vi.mock('$store/renderer/slices/terminals/terminals-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/terminals/terminals-slice')>()),
@@ -171,6 +203,11 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa, Fa: MockFa };
 });
 
+vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatarWithState.svelte', async () => {
+  const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default;
+  return { default: MockSimple };
+});
 vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => {
   const MockSimple = (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default;
@@ -196,6 +233,18 @@ import { warmImport } from '../../../../test/warm-import';
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
 warmImport(() => import('./mocks/MockButton.svelte'));
+
+beforeEach(() => {
+  Element.prototype.getAnimations = () => [];
+  scriptEntries.byWorkspaceId = {};
+  terminalEntries.byWorkspaceId = {};
+  activeTerminalIds.byWorkspaceId = {};
+  activeWorkspaceState.byWorkspaceId = {};
+  executorState.isRunning = false;
+  executorState.agentId = null;
+  mockGetNavigationContext.mockReset();
+  selectorWorkspaceArgs.length = 0;
+});
 
 describe('TerminalSidebar detection flow', () => {
   beforeEach(() => {
@@ -302,6 +351,67 @@ describe('TerminalSidebar detection flow', () => {
         activeWorkspaceState.value,
         expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
       );
+    });
+  });
+});
+
+describe('TerminalSidebar workspace prop changes', () => {
+  it('renders and mutates the rerendered workspace instead of the initial workspace', async () => {
+    scriptEntries.byWorkspaceId = {
+      'ws-a': [
+        {
+          id: 'script-a',
+          name: 'Script A',
+          command: 'pnpm a',
+          mode: 'command',
+          source: 'user',
+          runtime: { status: 'idle', exitCode: null },
+        },
+      ],
+      'ws-b': [
+        {
+          id: 'script-b',
+          name: 'Script B',
+          command: 'pnpm b',
+          mode: 'command',
+          source: 'user',
+          runtime: { status: 'idle', exitCode: null },
+        },
+      ],
+    };
+    terminalEntries.byWorkspaceId = {
+      'ws-a': [{ id: 'terminal-a', name: 'Terminal A' }],
+      'ws-b': [{ id: 'terminal-b', name: 'Terminal B' }],
+    };
+    activeWorkspaceState.byWorkspaceId = {
+      'ws-a': { id: 'ws-a', path: '/repo/a' },
+      'ws-b': { id: 'ws-b', path: '/repo/b' },
+    };
+
+    const { rerender } = render(TerminalSidebar, { props: { workspaceId: 'ws-a' } });
+    expect(screen.getByText('Script A')).toBeTruthy();
+    expect(screen.getByText('Terminal A')).toBeTruthy();
+
+    await rerender({ workspaceId: 'ws-b' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Script B')).toBeTruthy();
+      expect(screen.getByText('Terminal B')).toBeTruthy();
+    });
+    expect(screen.queryByText('Script A')).toBeNull();
+    expect(screen.queryByText('Terminal A')).toBeNull();
+    expect(selectorWorkspaceArgs).toHaveLength(6);
+    expect(selectorWorkspaceArgs.every((arg: any) => typeof arg?.subscribe === 'function')).toBe(
+      true,
+    );
+
+    await fireEvent.contextMenu(screen.getByText('Script B'));
+    await fireEvent.click(screen.getByText('Delete'));
+
+    await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'scripts/removeScript',
+      payload: ['ws-b', 'script-b'],
     });
   });
 });
@@ -424,5 +534,62 @@ describe('TerminalSidebar context menu Escape handling', () => {
     const event = pressEscape();
 
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('TerminalSidebar agent navigation context', () => {
+  it('forwards the click navigation context when opening the detection agent', async () => {
+    executorState.isRunning = true;
+    executorState.agentId = 'agent-detect';
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+    mockGetNavigationContext.mockReturnValue({
+      sourcePanelId: 'panel-1',
+      openInAdjacentPanel: true,
+    });
+
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    const detectionAgentButton = await screen.findByTitle('View detection agent');
+    await fireEvent.click(detectionAgentButton);
+
+    expect(mockGetNavigationContext).toHaveBeenCalledWith(expect.any(MouseEvent));
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'appLayout/openAgentTabRequested',
+      payload: [
+        'ws-1',
+        {
+          agentId: 'agent-detect',
+          sourcePanelId: 'panel-1',
+          openInAdjacentPanel: true,
+        },
+      ],
+    });
+  });
+});
+
+describe('TerminalSidebar section title spacing', () => {
+  it('keeps both section titles flush with their content', () => {
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    expect(screen.getByText('Scripts').parentElement?.classList.contains('pb-0!')).toBe(true);
+    expect(screen.getByText('Terminals').parentElement?.classList.contains('pb-0!')).toBe(true);
+  });
+});
+
+describe('TerminalSidebar resize handle', () => {
+  it('uses the shared horizontal resize contract and reports drag state', async () => {
+    const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+    const handle = container.querySelector('.app-resize-handle');
+
+    expect(handle).not.toBeNull();
+    expect(handle?.getAttribute('data-resize-axis')).toBe('x');
+    expect(handle?.getAttribute('data-resizing')).toBe('false');
+    expect(handle?.classList).toContain('w-4');
+
+    await fireEvent.mouseDown(handle!);
+    expect(handle?.getAttribute('data-resizing')).toBe('true');
+
+    await fireEvent.mouseUp(document);
+    expect(handle?.getAttribute('data-resizing')).toBe('false');
   });
 });

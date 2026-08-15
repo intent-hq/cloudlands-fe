@@ -25,10 +25,13 @@
   import { invoke } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { resetWorkspaceState } from '$store/renderer/slices/workspace/workspace-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId;
 
   let flags: DebugFlags = $state(debugConfig.getAll());
   let isOpen = $state(false);
@@ -221,7 +224,9 @@
 
   // Load available agents from the unified state store
   function loadAvailableAgents() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = routeWorkspaceId
+      ? selectWorkspaceById.select(appStore.state, routeWorkspaceId)
+      : undefined;
     if (!workspace?.id) {
       availableAgents = [];
       return;
@@ -248,7 +253,9 @@
 
   // Trigger backend-initiated resume
   async function triggerBackendResume() {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    const workspace = routeWorkspaceId
+      ? selectWorkspaceById.select(appStore.state, routeWorkspaceId)
+      : undefined;
     if (!workspace?.id || !selectedAgentId) {
       backendResumeError = 'No space or agent selected'; // i18n-ignore (dev-only debug UI)
       backendResumeStatus = 'error';

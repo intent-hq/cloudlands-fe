@@ -24,17 +24,20 @@ const scriptSelectorState = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
+  const { get } = await import('svelte/store');
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
   const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
   let terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
-  let activeWorkspaceId: string | null = null;
+  let currentTabId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
   const subscribers = new Set<() => void>();
+  const resolveSelectorArg = (arg: any) =>
+    arg && typeof arg.subscribe === 'function' ? get(arg) : arg;
   const store: any = {
     get state() {
       return {
-        workspace: { activeWorkspaceId },
+        tabState: { currentTabId },
         scripts: scriptsState,
         terminals: terminalsState,
       };
@@ -50,7 +53,7 @@ vi.mock('$store/renderer/store', async () => {
       Object.assign(
         (...args: any[]) => ({
           subscribe: (listener: (v: any) => void) => {
-            const notify = () => listener(fn(store.state, ...args));
+            const notify = () => listener(fn(store.state, ...args.map(resolveSelectorArg)));
             notify();
             subscribers.add(notify);
             return () => subscribers.delete(notify);
@@ -67,13 +70,13 @@ vi.mock('$store/renderer/store', async () => {
       },
     }),
     __dispatched: dispatched,
-    __setActiveWorkspace: (id: string | null) => {
-      activeWorkspaceId = id;
+    __setCurrentTab: (id: string | null) => {
+      currentTabId = id;
     },
     __reset: () => {
       scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
       terminalsState = terminalsReducer(undefined, { type: '@@INIT' });
-      activeWorkspaceId = null;
+      currentTabId = null;
       dispatched.length = 0;
       subscribers.clear();
     },
@@ -199,7 +202,7 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (appStore as any).__reset();
-    (appStore as any).__setActiveWorkspace(WS_A);
+    (appStore as any).__setCurrentTab(WS_A);
     scriptSelectorState.scripts = [];
     scriptSelectorState.initialized = false;
     scriptSelectorState.subscribers.clear();

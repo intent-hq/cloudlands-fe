@@ -34,11 +34,9 @@
  *    Electron-only; on web attachments arrive as in-memory `File` bytes and
  *    never take the host-path read path.
  *
- * Daemon `file.*` methods require a `workspaceId` and enforce within-workspace
- * path containment. Call sites pass absolute paths inside the workspace root
- * (the explorer CRUD is documented as absolute-path legacy IPC); when a call
- * site omits `workspaceId`, the active workspace is resolved from the store
- * (lazily imported to avoid a seeder↔store import cycle).
+ * Daemon `file.*` methods require an explicit `workspaceId` and enforce
+ * within-workspace path containment. Call sites pass absolute paths inside the
+ * workspace root (the explorer CRUD is documented as absolute-path legacy IPC).
  *
  * Every handler preserves the legacy envelope its call sites already consume
  * (`file:read`/`file:write` used `IpcResponse` object errors; the rest used
@@ -74,25 +72,8 @@ function readString(record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/**
- * Resolve the workspace the daemon should scope the operation to: the explicit
- * `workspaceId` argument when the call site provides one, else the active
- * workspace from the store. The store and selector are imported lazily because
- * the seeder barrel loads during store bootstrap.
- */
-async function resolveWorkspaceId(record: Record<string, unknown>): Promise<string | null> {
-  const explicit = readString(record, 'workspaceId');
-  if (explicit) return explicit;
-  try {
-    const [{ store }, { selectActiveWorkspaceId }] = await Promise.all([
-      import('$store/renderer/store'),
-      import('$store/renderer/slices/workspace/workspace-selectors'),
-    ]);
-    const active = selectActiveWorkspaceId.select(store.state);
-    return typeof active === 'string' && active ? active : null;
-  } catch {
-    return null;
-  }
+function readWorkspaceId(record: Record<string, unknown>): string | undefined {
+  return readString(record, 'workspaceId');
 }
 
 /** Daemon `file.read` (bare string result). */
@@ -120,7 +101,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.READ, async (arg) => {
     // main-process fs handler, exactly like file:read-chunk / file:hash.
     return forwardToPreloadBridge(IPC_CHANNELS.FILE.READ, arg, 'main-process host-file read');
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) {
     return {
       success: false,
@@ -160,7 +141,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.WRITE, async (arg) => {
       },
     };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) {
     return {
       success: false,
@@ -181,7 +162,7 @@ registerMockIpcHandler('file:open', async (arg) => {
   const request = asRecord(arg);
   const path = readString(request, 'path');
   if (!path) return { success: false, error: 'path is required' };
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.read' };
   try {
     const content = await daemonRead(workspaceId, path);
@@ -198,7 +179,7 @@ registerMockIpcHandler('file:save', async (arg) => {
   if (!path || content === undefined) {
     return { success: false, error: 'filePath and content are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.write' };
   try {
     await daemonWrite(workspaceId, path, content);
@@ -231,7 +212,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.DELETE, async (arg) => {
   const request = asRecord(arg);
   const path = readString(request, 'path');
   if (!path) return { success: false, error: 'path is required' };
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.delete' };
   try {
     await backendRequest('file.delete', { workspaceId, path });
@@ -250,7 +231,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.MOVE, async (arg) => {
   if (!oldPath || !newPath) {
     return { success: false, error: 'oldPath and newPath are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.rename' };
   try {
     await backendRequest('file.rename', { workspaceId, oldPath, newPath });
@@ -269,7 +250,7 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.COPY, async (arg) => {
   if (!sourcePath || !destinationPath) {
     return { success: false, error: 'sourcePath and destinationPath are required' };
   }
-  const workspaceId = await resolveWorkspaceId(request);
+  const workspaceId = readWorkspaceId(request);
   if (!workspaceId) return { success: false, error: 'No workspace available for file.read/write' };
   try {
     // Compose read+write: the daemon has no copy RPC. Directory sources fail

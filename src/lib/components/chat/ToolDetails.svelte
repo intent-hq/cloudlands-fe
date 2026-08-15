@@ -17,10 +17,7 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
 
-  import {
-    selectActiveWorkspaceId,
-    selectWorkspaceById,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
@@ -55,9 +52,9 @@
     suppressOkOnlyResult = false,
   }: Props = $props();
 
-  // This tool result's workspace (resolved from the workspaceId prop, not the
-  // globally active workspace — the result may render outside the active
-  // workspace) — passed to AgentCard so it can dispatch
+  // This tool result is scoped by the workspaceId prop rather than ambient UI
+  // state; it may render outside the route workspace. Pass the ID to AgentCard
+  // so it can dispatch
   // ensureAgentSessionLoaded and resolve the delegated agent.
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const toolWorkspaceIdStore = writable(workspaceId ?? '');
@@ -734,7 +731,7 @@
             <!-- Agent message - show "Sent message to [agent]" with clickable link, then the message -->
             {@const agentId = parsedResult.toAgentId}
             {@const toolState = appStore.state}
-            {@const toolWsId = selectActiveWorkspaceId.select(toolState)}
+            {@const toolWsId = workspaceId}
             {@const session =
               agentId && toolWsId ? selectAgentSession.select(toolState, agentId) : null}
             {@const agentName =
