@@ -63,7 +63,7 @@
       {/if}
       {#if panelTabCount > 0}
         <span
-          class="shrink-0 text-[10px] tabular-nums text-muted-foreground"
+          class="shrink-0 text-xs tabular-nums text-muted-foreground"
           data-workspace-placeholder-panel-count={panelTabCount}
           aria-hidden="true">{formatInteger(panelTabCount)}</span
         >

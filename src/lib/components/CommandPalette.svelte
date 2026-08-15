@@ -1047,7 +1047,7 @@
                   <IntentNavigationIcon
                     name={item.navigationIcon}
                     size={16}
-                    class="text-foreground/25 flex-none mt-0.5"
+                    class="text-ghost flex-none mt-0.5"
                   />
                 {:else}
                   <Fa icon={item.icon} class="text-[15px] text-foreground/25 flex-none mt-0.5" />

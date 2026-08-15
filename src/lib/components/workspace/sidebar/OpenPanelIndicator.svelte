@@ -26,9 +26,9 @@
 {#if count > 0}
   <span
     class={cn(
-      'panel-open-marker pointer-events-none flex size-3.5 shrink-0 items-center justify-center rounded-sm bg-card/95 text-muted-foreground/75',
+      'panel-open-marker pointer-events-none flex size-3.5 shrink-0 items-center justify-center rounded-sm bg-card/95 text-muted-foreground',
       overlay ? 'absolute -right-0.5 -bottom-0.5 z-20' : 'ml-auto',
-      active && 'text-foreground/85',
+      active && 'text-foreground',
       className,
     )}
     data-panel-open-marker
