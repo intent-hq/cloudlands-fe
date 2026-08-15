@@ -271,6 +271,18 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.DOWNLOAD, async (arg) => {
   return forwardToPreloadBridge(IPC_CHANNELS.FILE.DOWNLOAD, arg, 'main-process save dialog');
 });
 
+registerMockIpcHandler(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, async (arg) => {
+  // Attachment-chip download (monorepo#2458): the main process owns the
+  // native save dialog and fetches the bytes (local fs copy or a remote
+  // file.readChunk loop). Same native-dialog-bridge idiom as file:download —
+  // no daemon arm, reject loudly on web.
+  return forwardToPreloadBridge(
+    IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT,
+    arg,
+    'main-process save dialog',
+  );
+});
+
 // ── file:read-chunk / file:hash ──
 
 registerMockIpcHandler(IPC_CHANNELS.FILE.READ_CHUNK, async (arg) => {

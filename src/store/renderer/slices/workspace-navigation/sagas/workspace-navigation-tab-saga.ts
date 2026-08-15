@@ -2,10 +2,12 @@ import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import type { TrackedChange } from '$features/file-tracking/types';
 import {
+  downloadAttachment,
   getAttachmentInfo,
   type AttachmentInfo,
 } from '$lib/components/chat/input/context-api';
 import { createLogger } from '$lib/utils/client-logger';
+import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { m } from '$shared/paraglide/messages.js';
 import { selectPanel } from '../../panel-layout/panel-layout-selectors';
 import { openTab, openTabInAdjacentOrSplit } from '../../panel-layout/panel-layout-slice';
@@ -234,7 +236,9 @@ function* openCodeReview(action: ReturnType<typeof openWorkspaceCodeReview>): Sa
 
 // Attachment-reference chip click: resolve the registry row by attachmentId
 // (`file.getAttachmentInfo`, PROTOCOL §5.9) and open the stored
-// workspace-relative path in a file tab. A missing file (deleted from disk
+// workspace-relative path in a file tab — except binary/non-editor types
+// (zip, images, archives…), which prompt a native save dialog instead of a
+// broken editor tab (monorepo#2458). A missing file (deleted from disk
 // out-of-band) or a failed lookup surfaces a toast — never a crash.
 function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): SagaGenerator<void> {
   const [workspaceId, attachmentId, fileName] = action.payload;
@@ -244,6 +248,32 @@ function* openAttachment(action: ReturnType<typeof openWorkspaceAttachment>): Sa
     if (!info.exists) {
       const { toast } = yield* call(() => import('svelte-sonner'));
       toast.error(m.chat_chatMessage_attachmentMissing_error({ name: info.fileName }));
+      return;
+    }
+    if (isBinaryExtension(info.fileName) || isBinaryExtension(info.path)) {
+      // Own the error surface here so a thrown IPC/bridge failure shows the
+      // download-failed toast, not the outer "failed to open" one.
+      try {
+        const result = yield* call(downloadAttachment, workspaceId, info.path, info.fileName);
+        const { toast } = yield* call(() => import('svelte-sonner'));
+        if (result.success && result.data?.filePath) {
+          toast.success(
+            m.chat_chatMessage_attachmentDownloaded_toast({
+              name: info.fileName,
+              filePath: result.data.filePath,
+            }),
+          );
+        } else if (!result.canceled) {
+          toast.error(
+            result.error?.message ||
+              m.chat_chatMessage_attachmentDownloadFailed_error({ name: info.fileName }),
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to download attachment', { attachmentId, error });
+        const { toast } = yield* call(() => import('svelte-sonner'));
+        toast.error(m.chat_chatMessage_attachmentDownloadFailed_error({ name: info.fileName }));
+      }
       return;
     }
     yield* put(openWorkspaceFile(workspaceId, info.path));

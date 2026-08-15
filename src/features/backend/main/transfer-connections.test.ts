@@ -98,13 +98,14 @@ afterEach(() => {
 });
 
 describe('isTransferMethod', () => {
-  it('matches exactly the attachment placement + chunked upload calls', () => {
+  it('matches exactly the attachment placement + chunked upload/download calls', () => {
     for (const method of [
       'file.placeAttachment',
       'file.attachmentUpload.begin',
       'file.attachmentUpload.chunk',
       'file.attachmentUpload.commit',
       'file.attachmentUpload.abort',
+      'file.readChunk',
     ]) {
       expect(isTransferMethod(method)).toBe(true);
     }

@@ -31,8 +31,17 @@
  * a pre-flush ScrollerSnapshot so account() can preserve the reader's
  * distance-from-bottom through the clamp when they are near the bottom
  * (within one viewport of the max — where the tail, not the turn above, is
- * the visual anchor). Off the clamp the bottom-anchored target is identical
- * to the classic viewport-preserving shift, so behavior is unchanged there.
+ * the visual anchor). The bottom-anchored ABSOLUTE write is gated on the
+ * clamp actually having fired (clampShift < 0): for a stationary reader it
+ * would equal the classic shift off the clamp too, but during streaming
+ * scrollTop routinely moves between the snapshot and account() (user
+ * wheel-down chasing the bottom, the followBottom pin) and other content in
+ * the same flush changes scrollHeight (the growing tail), and the absolute
+ * restore discards both — rewinding the user's scroll just as they reach
+ * the bottom (the streaming scroll bounce) or dragging a detached reader
+ * toward the new bottom. Off the clamp the classic RELATIVE shift applies
+ * instead: it composes with concurrent movement and compensates only this
+ * turn's own delta.
  * The ResizeObserver path has no pre-flush snapshot; there, a shrink that
  * left scrollTop pinned at the new max is ambiguous: the reader was either
  * inside the phantom range (the clamp already bottom-anchored them — the
@@ -153,16 +162,26 @@ export function createHeightLedger(
       if (bottomBeforeChange > scrollerTop) return;
 
       if (delta < 0) {
-        if (preChange) {
+        if (preChange && clampShift < 0) {
           const preMaxScrollTop = Math.max(0, preChange.scrollHeight - preChange.clientHeight);
           const preDistanceFromBottom = Math.max(0, preMaxScrollTop - preChange.scrollTop);
           if (preDistanceFromBottom <= preChange.clientHeight) {
-            // Near the bottom: anchor to the tail. Equals the classic shift
-            // when the clamp didn't fire; absorbs it exactly when it did.
+            // Near the bottom AND the native clamp fired: anchor to the
+            // tail — the absolute target absorbs the clamp exactly, and
+            // same-flush bulk shrinks converge on it idempotently. Gated on
+            // clampShift < 0 because the absolute write is only SAFE when
+            // the clamp pinned the scroller: off the clamp it equals the
+            // classic shift ONLY for a stationary reader, and rewinds any
+            // scrollTop movement that landed between the snapshot and this
+            // account() — during streaming the user's wheel-down (or the
+            // follow pin) lands in that window constantly, so the restore
+            // yanked the viewport back up as they reached the bottom (the
+            // scroll bounce). The classic relative shift below composes
+            // with concurrent movement instead of overwriting it.
             scroller.scrollTop = Math.max(0, maxScrollTop - preDistanceFromBottom);
             return;
           }
-        } else if (scroller.scrollTop >= maxScrollTop - 1) {
+        } else if (!preChange && scroller.scrollTop >= maxScrollTop - 1) {
           // No pre-flush snapshot (ResizeObserver path) and the shrink left
           // the scroller pinned at its new max: the native clamp already
           // bottom-anchored this change — re-applying the delta would yank

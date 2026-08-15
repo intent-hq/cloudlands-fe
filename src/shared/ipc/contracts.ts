@@ -302,6 +302,24 @@ export namespace FileIpc {
   export interface DownloadResponse {
     filePath: string;
   }
+
+  /**
+   * Save an attachment to a user-chosen location (monorepo#2458). `path` is
+   * the daemon-side workspace-relative attachment path; the main process
+   * owns the save dialog and fetches the bytes (local fs copy, or a
+   * `file.readChunk` loop over a per-transfer connection on remote
+   * backends).
+   */
+  export interface DownloadAttachmentRequest {
+    workspaceId: WorkspaceId;
+    path: string;
+    /** Original attachment file name — the save dialog's default name. */
+    fileName: string;
+  }
+
+  export interface DownloadAttachmentResponse {
+    filePath: string;
+  }
 }
 
 // ============================================================================
@@ -344,6 +362,10 @@ export interface IpcContractMap {
   'workspace:get': [WorkspaceIpc.GetRequest, WorkspaceIpc.GetResponse];
   'file:read': [FileIpc.ReadRequest, FileIpc.ReadResponse];
   'file:read-chunk': [FileIpc.ReadChunkRequest, FileIpc.ReadChunkResponse];
+  'file:download-attachment': [
+    FileIpc.DownloadAttachmentRequest,
+    FileIpc.DownloadAttachmentResponse,
+  ];
   'file:hash': [FileIpc.HashRequest, FileIpc.HashResponse];
   'file:write': [FileIpc.WriteRequest, FileIpc.WriteResponse];
   'terminal:create': [TerminalIpc.CreateRequest, TerminalIpc.CreateResponse];
