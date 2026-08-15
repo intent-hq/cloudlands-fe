@@ -18,6 +18,7 @@ import {
   encodeFrame,
   FrameDecodeError,
   HEADER_LEN,
+  isConnectionRefusedOpenErr,
   MAX_DATA_PAYLOAD_BYTES,
   OP_DATA,
   TunnelManager,
@@ -206,6 +207,34 @@ describe('tunnel frame codec', () => {
   });
 });
 
+describe('isConnectionRefusedOpenErr', () => {
+  it('matches definitive connection-refused messages (daemon and node shapes)', () => {
+    // The daemon's `connect 127.0.0.1:<port>: <io error>` per platform.
+    expect(
+      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: Connection refused (os error 111)'),
+    ).toBe(true);
+    expect(
+      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: Connection refused (os error 61)'),
+    ).toBe(true);
+    // Windows: the text may be OS-localized but the code is stable.
+    expect(
+      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: Verbindung verweigert (os error 10061)'),
+    ).toBe(true);
+    expect(isConnectionRefusedOpenErr('connect ECONNREFUSED 127.0.0.1:8080')).toBe(true);
+  });
+
+  it('does not match timeouts or other transient errors', () => {
+    expect(
+      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: timed out after 10s'),
+    ).toBe(false);
+    expect(isConnectionRefusedOpenErr('too many streams')).toBe(false);
+    expect(
+      isConnectionRefusedOpenErr('connect 127.0.0.1:8080: Network unreachable (os error 101)'),
+    ).toBe(false);
+    expect(isConnectionRefusedOpenErr('')).toBe(false);
+  });
+});
+
 describe('TunnelManager', () => {
   const cleanups: Array<() => void | Promise<void>> = [];
   afterEach(async () => {
@@ -352,6 +381,96 @@ describe('TunnelManager', () => {
     const client = await connectClient(localPort);
     await waitForClose(client);
     expect(client.destroyed).toBe(true);
+  });
+
+  it('drops the whole forward on a refused OPEN, leaving other forwards intact (#2537)', async () => {
+    const healthy = await startEchoServer();
+    onCleanup(() => healthy.server.close());
+    // A port with nothing listening: grab an ephemeral port then release it.
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const { manager } = makeManager();
+    onCleanup(() => manager.dispose());
+    const healthyLocal = await manager.forwardPort(healthy.port);
+    const healthyClient = await connectClient(healthyLocal);
+    onCleanup(() => healthyClient.destroy());
+
+    const deadLocal = await manager.forwardPort(deadPort);
+    expect(manager.activeForwards().length).toBe(2);
+    const refused = await connectClient(deadLocal);
+    await waitForClose(refused);
+
+    // The refused forward is gone without waiting for the idle sweep …
+    await waitFor(() => manager.activeForwards().length === 1);
+    expect(manager.activeForwards()).toEqual([
+      { remotePort: healthy.port, localPort: healthyLocal },
+    ]);
+    // … its local listener is closed …
+    await expect(connectClient(deadLocal)).rejects.toThrow();
+    // … and the healthy forward's in-flight stream still relays.
+    const payload = Buffer.from('unaffected');
+    const received = collectUntil(healthyClient, payload.length);
+    healthyClient.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('a later forwardPort recreates a forward dropped by a refused OPEN', async () => {
+    const probe = await startEchoServer();
+    const deadPort = probe.port;
+    await new Promise<void>((resolve) => probe.server.close(() => resolve()));
+
+    const { manager } = makeManager();
+    onCleanup(() => manager.dispose());
+    const staleLocal = await manager.forwardPort(deadPort);
+    const refused = await connectClient(staleLocal);
+    await waitForClose(refused);
+    await waitFor(() => manager.activeForwards().length === 0);
+
+    // The server comes back on the same remote port; the next forwardPort
+    // builds a fresh forward instead of returning the dropped one.
+    const revived = net.createServer((socket) => socket.pipe(socket));
+    await new Promise<void>((resolve, reject) => {
+      revived.once('error', reject);
+      revived.listen(deadPort, '127.0.0.1', () => resolve());
+    });
+    onCleanup(() => revived.close());
+
+    const freshLocal = await manager.forwardPort(deadPort);
+    expect(manager.activeForwards()).toEqual([
+      { remotePort: deadPort, localPort: freshLocal },
+    ]);
+    const client = await connectClient(freshLocal);
+    onCleanup(() => client.destroy());
+    const payload = Buffer.from('recreated');
+    const received = collectUntil(client, payload.length);
+    client.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
+  it('a transient OPEN_ERR (timeout) ends only that stream, keeping the forward', async () => {
+    const { manager, created } = makeManager({ daemon: false });
+    onCleanup(() => manager.dispose());
+    const localPort = await manager.forwardPort(4242);
+    const ws = created[0];
+    // Scripted daemon: every OPEN fails with the daemon's connect-timeout
+    // message — transient, so the forward must survive.
+    ws.onFrame = (frame) => {
+      if (frame.type === 'open') {
+        ws.deliver({
+          type: 'openErr',
+          streamId: frame.streamId,
+          message: 'connect 127.0.0.1:4242: timed out after 10s',
+        });
+      }
+    };
+    const client = await connectClient(localPort);
+    await waitForClose(client);
+    expect(manager.activeForwards()).toEqual([{ remotePort: 4242, localPort }]);
+    // The local listener still accepts new connections.
+    const again = await connectClient(localPort);
+    onCleanup(() => again.destroy());
   });
 
   it('tears down local servers and sockets when the tunnel drops', async () => {
