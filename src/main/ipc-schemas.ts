@@ -450,6 +450,15 @@ export const FileDownloadSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });
 
+// Attachment-chip download (monorepo#2458): save a workspace-relative
+// attachment to a user-chosen location. `path` is daemon-side
+// workspace-relative (`.intent/attachments/…`), never a host path.
+export const FileDownloadAttachmentSchema = z.object({
+  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  path: z.string().min(1, 'Path is required'),
+  fileName: z.string().min(1, 'File name is required'),
+});
+
 export const FileReadDirWithStatsSchema = z.object({
   path: z.string().min(1, 'Path is required'),
 });

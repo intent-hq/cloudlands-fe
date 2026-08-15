@@ -41,10 +41,15 @@ import {
   FileGetTreeWithSizesSchema,
   FileGetDirectoryStatusSchema,
   FileDownloadSchema,
+  FileDownloadAttachmentSchema,
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 import { renameWithRetry } from '../../../shared/main/file-sync-utils';
 import { createZipFromPaths } from '../../debug-export/main/zip-utils';
+import {
+  shouldUseTransferConnection,
+  withTransferConnection,
+} from '../../backend/main/transfer-connections';
 
 const logger = new Logger('FileIPC');
 
@@ -53,6 +58,13 @@ const logger = new Logger('FileIPC');
  * Files larger than this will be rejected to prevent memory issues
  */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Bytes requested per `file.readChunk` call in the attachment download loop
+ * — the daemon's per-call cap (READ_CHUNK_MAX_BYTES, PROTOCOL §5.9), so big
+ * attachments take the fewest round trips without ever tripping -32602.
+ */
+const DOWNLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
 
 /**
  * Maximum file size for preview/mention context (1MB)
@@ -1112,6 +1124,85 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.DOWNLOAD,
+    ),
+  );
+
+  // Save an attachment to a user-chosen location (monorepo#2458). Unlike
+  // `file:download` (host-local absolute paths), the source path here is
+  // daemon-side workspace-relative, so the bytes are fetched through the
+  // backend: a remote backend streams `file.readChunk` slices over a
+  // per-transfer connection (no whole-file buffering, and the ~21 MiB
+  // base64 frames never head-of-line-block the main channel); the local
+  // UDS backend copies straight from the workspace path on disk.
+  ipcMain.handle(
+    FILE_CHANNELS.DOWNLOAD_ATTACHMENT,
+    createSafeValidatedHandler(
+      FileDownloadAttachmentSchema,
+      async (
+        _,
+        validated,
+      ): Promise<IpcResponse<FileIpc.DownloadAttachmentResponse> & { canceled?: boolean }> => {
+        const { workspaceId, path: sourcePath, fileName } = validated;
+        try {
+          const { filePath, canceled } = await dialog.showSaveDialog({
+            defaultPath: fileName,
+          });
+          if (canceled || !filePath) {
+            return { success: false, canceled: true };
+          }
+
+          const client = getBackendClient();
+          if (shouldUseTransferConnection('file.readChunk', client.getConfig())) {
+            await withTransferConnection(client.getConfig(), async (connection) => {
+              const handle = await fs.open(filePath, 'w');
+              try {
+                let offset = 0;
+                for (;;) {
+                  const chunk = await connection.request<FileIpc.ReadChunkResponse>(
+                    'file.readChunk',
+                    { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
+                  );
+                  if (chunk.bytesRead > 0) {
+                    await handle.write(Buffer.from(chunk.content, 'base64'));
+                    offset += chunk.bytesRead;
+                  }
+                  if (chunk.bytesRead < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
+                }
+              } finally {
+                await handle.close();
+              }
+            });
+          } else {
+            // Same root resolution the daemon's file ops use: the worktree
+            // when one exists, else the workspace path.
+            const response = await client.request<{
+              workspace?: { path?: string; worktreePath?: string };
+            }>('workspace.get', { workspaceId });
+            const workspacePath = response?.workspace?.worktreePath ?? response?.workspace?.path;
+            if (!workspacePath) {
+              throw new Error(`workspace ${workspaceId} has no path`);
+            }
+            await fs.copyFile(path.join(workspacePath, sourcePath), filePath);
+          }
+
+          logger.info('Attachment downloaded', { workspaceId, source: sourcePath, filePath });
+          return { success: true, data: { filePath } };
+        } catch (error) {
+          logger.error('Failed to download attachment', error as Error, {
+            workspaceId,
+            path: sourcePath,
+            errorMsg: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            success: false,
+            error: {
+              code: 'DOWNLOAD_FAILED',
+              message: m.file_ipc_downloadFailed_error({ path: fileName }),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.DOWNLOAD_ATTACHMENT,
     ),
   );
 }

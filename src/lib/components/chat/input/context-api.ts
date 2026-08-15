@@ -264,6 +264,33 @@ export async function getAttachmentInfo(attachmentId: string): Promise<Attachmen
   return await backendRequest<AttachmentInfo>('file.getAttachmentInfo', { attachmentId });
 }
 
+/** `file:download-attachment` result: `canceled` means the user dismissed the save dialog. */
+export interface DownloadAttachmentResult {
+  success: boolean;
+  canceled?: boolean;
+  data?: { filePath: string };
+  error?: { code: string; message: string };
+}
+
+/**
+ * Save a non-editor attachment to a user-chosen location (monorepo#2458).
+ * The main process owns the native save dialog (default name = `fileName`)
+ * and fetches the bytes: a local backend copies from the workspace path on
+ * disk; a remote backend loops `file.readChunk` over a per-transfer
+ * connection and streams chunks to the chosen path.
+ */
+export async function downloadAttachment(
+  workspaceId: string,
+  path: string,
+  fileName: string,
+): Promise<DownloadAttachmentResult> {
+  return await invoke<DownloadAttachmentResult>('file:download-attachment', {
+    workspaceId,
+    path,
+    fileName,
+  });
+}
+
 /** Maximum file size for context (1MB) - prevents crashes with large files */
 const MAX_CONTEXT_FILE_SIZE = 1 * 1024 * 1024;
 

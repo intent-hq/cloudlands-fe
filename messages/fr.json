@@ -1925,6 +1925,8 @@
   "chat_chatMessage_attachedImage_alt": "Image jointe {number}",
   "chat_chatMessage_attachedImage_fallback": "Image jointe {number}",
   "chat_chatMessage_attachmentMissing_error": "{name} n'est plus disponible — le fichier a été supprimé de l'espace de travail",
+  "chat_chatMessage_attachmentDownloaded_toast": "{fileName} enregistré dans {filePath}",
+  "chat_chatMessage_attachmentDownloadFailed_error": "Impossible de télécharger {name}",
   "chat_chatMessage_attachmentOpenFailed_error": "Impossible d'ouvrir {name}",
   "chat_chatMessage_download_title": "Télécharger {name}",
   "chat_chatMessage_openAttachment_title": "Ouvrir {name}",

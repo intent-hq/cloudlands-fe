@@ -265,6 +265,7 @@ export const IPC_CHANNELS = {
     GET_TREE_WITH_SIZES: 'file:getTreeWithSizes',
     GET_DIRECTORY_STATUS: 'file:getDirectoryStatus',
     DOWNLOAD: 'file:download',
+    DOWNLOAD_ATTACHMENT: 'file:download-attachment',
   },
 
   // Notes Primitives (ws-block rendering)

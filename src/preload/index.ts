@@ -226,6 +226,7 @@ const ALLOWED_CHANNELS = [
   "file:getTreeWithSizes",
   "file:getDirectoryStatus",
   "file:download",
+  "file:download-attachment",
   "codebase:search",
   "terminal:runCommand",
   "terminal:killProcess",

@@ -277,6 +277,33 @@ describe('file-bridge-seeder', () => {
         /requires the native Electron bridge/,
       );
     });
+
+    it('forwards file:download-attachment verbatim to the preload bridge', async () => {
+      const invokeSpy = vi.fn(async () => ({ success: true, data: { filePath: '/dl/a.zip' } }));
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+      const arg = { workspaceId: 'ws-1', path: '.intent/attachments/a.zip', fileName: 'a.zip' };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, arg);
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, arg);
+      expect(result).toEqual({ success: true, data: { filePath: '/dl/a.zip' } });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects file:download-attachment loudly on web (no native bridge)', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(
+        mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, {
+          workspaceId: 'ws-1',
+          path: '.intent/attachments/a.zip',
+          fileName: 'a.zip',
+        }),
+      ).rejects.toThrow(/requires the native Electron bridge/);
+    });
   });
 
   describe('file:read-chunk / file:hash → real preload bridge (chunked upload host reads)', () => {
