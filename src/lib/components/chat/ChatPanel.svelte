@@ -4036,7 +4036,7 @@
         size="icon-xs"
         data-testid="chat-scroll-to-bottom-button"
         onclick={() => scrollToBottom()}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95"
+        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
         title={m.chat_chatPanel_scrollToBottom_tooltip()}
       >
         <Fa icon={faArrowDown} class="w-3! h-3!" />
