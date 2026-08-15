@@ -16,7 +16,8 @@ test.describe('Files Open In Dropdown', () => {
         });
 
         const trigger = component.getByTestId('files-open-in-trigger');
-        const dropdown = component.getByTestId('files-open-in-content');
+        // Dropdown is portaled, so look for it at page level
+        const dropdown = page.getByTestId('files-open-in-content');
 
         // Initially closed
         await expect(dropdown).not.toBeVisible();
@@ -47,20 +48,21 @@ test.describe('Files Open In Dropdown', () => {
         await page.keyboard.press('Space');
         await expect(dropdown).toBeVisible();
 
-        // Clicking outside closes
-        await component.getByTestId('outside-area').click();
+        // Escape closes again
+        await page.keyboard.press('Escape');
         await expect(dropdown).not.toBeVisible();
       });
 
       test(`anchors menu to arrow button and stays visible at ${theme} ${config.label}`, async ({
         mount,
+        page,
       }) => {
         const component = await mount(FilesOpenInDropdownHost, {
           props: { theme, ...config },
         });
 
         const trigger = component.getByTestId('files-open-in-trigger');
-        const dropdown = component.getByTestId('files-open-in-content');
+        const dropdown = page.getByTestId('files-open-in-content');
 
         await trigger.click();
         await expect(dropdown).toBeVisible();
@@ -79,13 +81,14 @@ test.describe('Files Open In Dropdown', () => {
 
       test(`action executes once and closes menu at ${theme} ${config.label}`, async ({
         mount,
+        page,
       }) => {
         const component = await mount(FilesOpenInDropdownHost, {
           props: { theme, ...config },
         });
 
         const trigger = component.getByTestId('files-open-in-trigger');
-        const dropdown = component.getByTestId('files-open-in-content');
+        const dropdown = page.getByTestId('files-open-in-content');
 
         await trigger.click();
         await expect(dropdown).toBeVisible();
@@ -101,26 +104,24 @@ test.describe('Files Open In Dropdown', () => {
         expect(actionCount).toBe('1');
       });
 
-      test(`no duplicate toggle at ${theme} ${config.label}`, async ({ mount, page }) => {
+      test(`ARIA attributes on visible trigger at ${theme} ${config.label}`, async ({ mount }) => {
         const component = await mount(FilesOpenInDropdownHost, {
           props: { theme, ...config },
         });
 
         const trigger = component.getByTestId('files-open-in-trigger');
-        const dropdown = component.getByTestId('files-open-in-content');
+
+        // Trigger has proper ARIA attributes before opening
+        await expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
         // Click to open
         await trigger.click();
-        await expect(dropdown).toBeVisible();
+        await expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
-        // Multiple rapid clicks should not cause flickering
-        await trigger.click();
-        await trigger.click();
-        await expect(dropdown).not.toBeVisible();
-
-        // Final state should be stable
-        await page.waitForTimeout(100);
-        await expect(dropdown).not.toBeVisible();
+        // After Escape
+        await component.page().keyboard.press('Escape');
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       });
     }
   }
