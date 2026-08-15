@@ -216,6 +216,14 @@ class EmbeddedBrowserCdpService {
    * Get all browser tabs including unmounted ones from panel layout.
    * This is the preferred method for agents as it shows all tabs the user has open.
    *
+   * The panel layout is the single source of truth for which tabs exist —
+   * the same source closeTab() validates against — so every listed tab is a
+   * valid closeTab target. Live webviews whose tabId is not in the panel
+   * list (e.g. a tab closed in the UI whose webContents hasn't been torn
+   * down yet, or a webview belonging to another workspace's layout) are NOT
+   * listed: appending them used to resurrect UI-closed tabs as
+   * `mounted: true` entries that closeTab then rejected as not found.
+   *
    * Returns tabs with:
    * - webContentsId: number if mounted (can run CDP commands)
    * - webContentsId: -1 if unmounted (need to focusTab first)
@@ -227,40 +235,28 @@ class EmbeddedBrowserCdpService {
     // Get mounted webviews
     const mountedTabs = this.listTabs();
 
+    const orphaned = mountedTabs.filter((t) => !panelTabs.some((p) => p.tabId === t.tabId));
+    if (orphaned.length > 0) {
+      logger.debug('Ignoring live webviews not present in panel layout', {
+        tabIds: orphaned.map((t) => t.tabId),
+        workspaceId,
+      });
+    }
 
-    // Build combined list
-    const result: (TabInfo & { mounted: boolean })[] = [];
-
-    // Add all panel tabs, marking whether they're mounted
-    for (const panelTab of panelTabs) {
+    // Panel tabs only, marking whether each is backed by a live webview
+    return panelTabs.map((panelTab) => {
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        result.push({
-          ...mounted,
-          mounted: true,
-        });
-      } else {
-        result.push({
-          tabId: panelTab.tabId,
-          webContentsId: -1, // Not mounted
-          url: panelTab.url,
-          title: panelTab.title,
-          mounted: false,
-        });
+        return { ...mounted, mounted: true };
       }
-    }
-
-    // Add any mounted tabs not in panel layout (shouldn't happen, but be safe)
-    for (const mounted of mountedTabs) {
-      if (!panelTabs.some((p) => p.tabId === mounted.tabId)) {
-        result.push({
-          ...mounted,
-          mounted: true,
-        });
-      }
-    }
-
-    return result;
+      return {
+        tabId: panelTab.tabId,
+        webContentsId: -1, // Not mounted
+        url: panelTab.url,
+        title: panelTab.title,
+        mounted: false,
+      };
+    });
   }
 
   /**

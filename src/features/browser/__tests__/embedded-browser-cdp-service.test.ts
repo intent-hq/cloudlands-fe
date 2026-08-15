@@ -1,0 +1,149 @@
+/**
+ * Regression tests for the listTabs/closeTab registry disagreement
+ * (intent-hq/monorepo#2536).
+ *
+ * listAllTabs() used to append any live webview missing from the panel
+ * layout as a `mounted: true` entry ("shouldn't happen, but be safe").
+ * A tab closed in the UI keeps its webview alive briefly (panel cache /
+ * teardown timing), so it kept being listed while closeTab() — which
+ * validates against the panel layout — rejected it as not found.
+ * The panel layout is now the single source of truth for listing.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  sendToWorkspaceWindows: vi.fn(),
+  getAllWebContents: vi.fn(() => [] as unknown[]),
+  fromId: vi.fn(() => undefined),
+  handlers: new Map<string, (event: unknown, data: unknown) => unknown>(),
+}));
+
+vi.mock('electron', () => ({
+  __esModule: true,
+  ipcMain: {
+    handle: vi.fn((channel: string, handler: (event: unknown, data: unknown) => unknown) => {
+      mocks.handlers.set(channel, handler);
+    }),
+    on: vi.fn(),
+    removeHandler: vi.fn(),
+  },
+  webContents: {
+    getAllWebContents: mocks.getAllWebContents,
+    fromId: mocks.fromId,
+  },
+  default: {},
+}));
+
+vi.mock('../../system/main/system.ipc', () => ({
+  sendToWorkspaceWindows: mocks.sendToWorkspaceWindows,
+}));
+
+type PanelTab = { tabId: string; url: string; title: string; closable?: boolean };
+
+/** Fake live webview backing a mounted tab. */
+function fakeWebview(id: number, url: string) {
+  return {
+    id,
+    getType: () => 'webview',
+    isDestroyed: () => false,
+    getURL: () => url,
+    getTitle: () => `title-${id}`,
+    once: vi.fn(),
+  };
+}
+
+/**
+ * Wire the renderer side: whenever the service broadcasts LIST_TABS_REQUEST,
+ * reply through the captured LIST_TABS_RESPONSE handler with the current
+ * panel layout; CLOSE_TAB removes the tab from the layout (UI close path).
+ */
+function wireRenderer(panelTabs: PanelTab[]) {
+  mocks.sendToWorkspaceWindows.mockImplementation(
+    (_workspaceId: string | undefined, channel: string, payload: { requestId?: string; tabId?: string }) => {
+      if (channel === 'browser:list-tabs-request') {
+        const respond = mocks.handlers.get('browser:list-tabs-response');
+        respond?.({}, { tabs: [...panelTabs], requestId: payload.requestId });
+      } else if (channel === 'browser:close-tab' && payload.tabId) {
+        const idx = panelTabs.findIndex((t) => t.tabId === payload.tabId);
+        if (idx >= 0 && panelTabs[idx].closable !== false) panelTabs.splice(idx, 1);
+      }
+    },
+  );
+}
+
+async function loadService() {
+  const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+  return embeddedBrowserCdp;
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  mocks.handlers.clear();
+  mocks.getAllWebContents.mockReturnValue([]);
+  mocks.fromId.mockReturnValue(undefined);
+});
+
+describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
+  it('excludes a UI-closed tab whose webview is still alive', async () => {
+    const service = await loadService();
+    // tab-closed was closed in the UI: gone from the panel layout, but its
+    // webview has not been torn down yet.
+    wireRenderer([{ tabId: 'tab-open', url: 'http://a/', title: 'A' }]);
+    mocks.getAllWebContents.mockReturnValue([
+      fakeWebview(11, 'http://a/'),
+      fakeWebview(12, 'http://stale/'),
+    ]);
+    service.registerTab('tab-open', 11);
+    service.registerTab('tab-closed', 12);
+
+    const tabs = await service.listAllTabs('ws-1');
+
+    expect(tabs.map((t) => t.tabId)).toEqual(['tab-open']);
+    expect(tabs[0]).toMatchObject({ tabId: 'tab-open', webContentsId: 11, mounted: true });
+  });
+
+  it('flags panel tabs without a live webview as unmounted', async () => {
+    const service = await loadService();
+    wireRenderer([
+      { tabId: 'tab-mounted', url: 'http://a/', title: 'A' },
+      { tabId: 'tab-unmounted', url: 'http://b/', title: 'B' },
+    ]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(21, 'http://a/')]);
+    service.registerTab('tab-mounted', 21);
+
+    const tabs = await service.listAllTabs('ws-1');
+
+    expect(tabs).toHaveLength(2);
+    expect(tabs.find((t) => t.tabId === 'tab-mounted')).toMatchObject({ mounted: true });
+    expect(tabs.find((t) => t.tabId === 'tab-unmounted')).toMatchObject({
+      mounted: false,
+      webContentsId: -1,
+    });
+  });
+
+  it('never reports "not found" when closing every listed tab', async () => {
+    const service = await loadService();
+    const panel: PanelTab[] = [
+      { tabId: 'tab-1', url: 'http://a/', title: 'A' },
+      { tabId: 'tab-2', url: 'http://b/', title: 'B' },
+    ];
+    wireRenderer(panel);
+    // tab-ghost: UI-closed tab with a lingering webview — must not be listed.
+    mocks.getAllWebContents.mockReturnValue([
+      fakeWebview(31, 'http://a/'),
+      fakeWebview(33, 'http://ghost/'),
+    ]);
+    service.registerTab('tab-1', 31);
+    service.registerTab('tab-ghost', 33);
+
+    const listed = await service.listAllTabs('ws-1');
+    expect(listed.map((t) => t.tabId).sort()).toEqual(['tab-1', 'tab-2']);
+
+    for (const tab of listed) {
+      await expect(service.closeTab(tab.tabId, 'ws-1')).resolves.toEqual({ tabId: tab.tabId });
+    }
+    expect(await service.listAllTabs('ws-1')).toEqual([]);
+  });
+});
