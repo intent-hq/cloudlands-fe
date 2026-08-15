@@ -255,6 +255,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     document.documentElement.classList.remove('light', 'dark');
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
     vi.clearAllMocks();
@@ -561,18 +562,21 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     const focusEvents: CustomEvent[] = [];
     const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
     window.addEventListener('panel:focus-content', onFocus);
+    vi.useFakeTimers();
+    try {
+      await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+      await vi.advanceTimersByTimeAsync(600);
 
-    await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
-    await flush();
-    await flush();
-    await new Promise((resolve) => setTimeout(resolve, 650));
-
-    const layout = appStore.state.panelLayout.byWorkspaceId[wsId];
-    expect(Object.values(layout.panels).flatMap((panel) => panel.tabs)).toHaveLength(3);
-    expect(layout.focusedPanelId).toBe('target');
-    expect(layout.panels.target.activeTabId).toBe('target-tab');
-    expect(focusEvents.some((event) => event.detail.agentId === 'agent-target')).toBe(true);
-    window.removeEventListener('panel:focus-content', onFocus);
+      const layout = appStore.state.panelLayout.byWorkspaceId[wsId];
+      expect(Object.values(layout.panels).flatMap((panel) => panel.tabs)).toHaveLength(3);
+      expect(layout.focusedPanelId).toBe('target');
+      expect(layout.panels.target.activeTabId).toBe('target-tab');
+      expect(focusEvents.some((event) => event.detail.agentId === 'agent-target')).toBe(true);
+    } finally {
+      window.removeEventListener('panel:focus-content', onFocus);
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it.each(['Enter', ' '])('uses the same panel reuse path for the %s key', async (key) => {

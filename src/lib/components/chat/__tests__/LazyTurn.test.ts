@@ -73,29 +73,36 @@ describe('LazyTurn lifecycle', () => {
   });
 
   it('hands an aged force-visible turn to its mounted observer after measurement', async () => {
+    vi.useFakeTimers();
     const scrollRoot = document.createElement('div');
     const heightCache = createLazyTurnHeightCache('large-transcript');
     const view = render(LazyTurn, {
       props: { turnKey: 'turn-1', heightCache, scrollRoot, forceVisible: true, children },
     });
-    await tick();
-    MockIntersectionObserver.instances[0].fire(false);
-    await view.rerender({
-      turnKey: 'turn-1',
-      heightCache,
-      scrollRoot,
-      forceVisible: false,
-      children,
-    });
-    MockResizeObserver.instances[0].fire(320, 800);
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    await tick();
+    try {
+      await tick();
+      MockIntersectionObserver.instances[0].fire(false);
+      await view.rerender({
+        turnKey: 'turn-1',
+        heightCache,
+        scrollRoot,
+        forceVisible: false,
+        children,
+      });
+      MockResizeObserver.instances[0].fire(320, 800);
+      await vi.advanceTimersByTimeAsync(60);
+      await tick();
 
-    expect(view.queryByTestId('turn-content')).toBeNull();
-    expect(view.container.querySelector<HTMLElement>('.lazy-turn-placeholder')?.style.height).toBe(
-      '320px',
-    );
-    expect(heightCache.get('turn-1', 800)).toBe(320);
+      expect(view.queryByTestId('turn-content')).toBeNull();
+      expect(
+        view.container.querySelector<HTMLElement>('.lazy-turn-placeholder')?.style.height,
+      ).toBe('320px');
+      expect(heightCache.get('turn-1', 800)).toBe(320);
+    } finally {
+      view.unmount();
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('cancels the pending initial animation frame on unmount', () => {
