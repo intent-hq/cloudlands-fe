@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -26,6 +27,19 @@
     'aria-haspopup': 'menu' as const,
     'data-state': open ? 'open' : 'closed',
   };
+
+  // Handle Escape key to close dropdown (like bits-ui does)
+  onMount(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && open) {
+        close();
+        event.preventDefault();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 </script>
 
 <div class="dropdown-menu" data-open={open}>
