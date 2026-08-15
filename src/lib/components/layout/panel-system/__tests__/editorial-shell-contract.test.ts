@@ -227,16 +227,22 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebarPanel).toContain("transition:slide={{ axis: 'x', duration: 200 }}");
   });
 
-  it('keeps the renderer fully transparent above the native window tint', () => {
+  it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
     const appCss = source('../../../../../app.css');
+    const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
+    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
-    expect(appCss).toContain('background-color: transparent');
+    expect(appCss).toContain('background-color: hsl(var(--background))');
+    expect(appHtml).toMatch(/html,\s*body\s*{\s*background:\s*#ffffff;/s);
+    expect(appHtml).toMatch(/html\.dark,\s*html\.dark body\s*{\s*background:\s*#0a0a0a;/s);
+    expect(appHtml).toMatch(/#splash\s*{[^}]*background:\s*inherit;/s);
+    expect(appLayout).toContain('overflow-hidden bg-background text-foreground');
     expect(appLayout).not.toContain('background-color: hsl(var(--background) /');
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(appLayout).toContain("'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(appLayout).toContain("'rounded-xl bg-background border border-border shadow-sm'");
+    expect(sidebarPanel).toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');
-    expect(appLayout).not.toContain('flex flex-col bg-background"');
   });
 
   it('moves collapsed terminal controls into the workspace sidebar', () => {

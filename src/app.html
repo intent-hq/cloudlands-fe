@@ -14,7 +14,12 @@
     <style>
       html,
       body {
-        background: transparent;
+        background: #ffffff;
+      }
+
+      html.dark,
+      html.dark body {
+        background: #0a0a0a;
       }
 
       /* Splash screen to prevent blank flash during SvelteKit SPA initialization (~1s).
@@ -27,7 +32,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: transparent;
+        background: inherit;
       }
       #splash-art {
         display: block;

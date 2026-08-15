@@ -13,6 +13,6 @@ describe('workspace frame outer inset', () => {
 
   it('keeps the single-workspace surface rounded while columns remain transparent', () => {
     expect(appLayout).toContain("showWorkspaceColumns\n              ? ''");
-    expect(appLayout).toContain(": 'rounded-xl bg-sidebar border border-border shadow-sm'");
+    expect(appLayout).toContain(": 'rounded-xl bg-background border border-border shadow-sm'");
   });
 });

@@ -83,6 +83,20 @@ const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
+let nativeThemeBackgroundSyncInstalled = false;
+
+function refreshNativeWindowBackgrounds(): void {
+  const backgroundColor = getWindowBackgroundColor(nativeTheme.shouldUseDarkColors);
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.setBackgroundColor(backgroundColor);
+  }
+}
+
+function installNativeThemeBackgroundSync(): void {
+  if (nativeThemeBackgroundSyncInstalled || typeof nativeTheme.on !== 'function') return;
+  nativeTheme.on('updated', refreshNativeWindowBackgrounds);
+  nativeThemeBackgroundSyncInstalled = true;
+}
 
 const CONTENT_BEARING_WORKSPACE_CHANNELS = new Set([
   'file:content-changed',
@@ -516,6 +530,8 @@ export async function autoRepairCliSymlink(): Promise<void> {
 // ============================================================================
 
 export function setupSystemIPC() {
+  installNativeThemeBackgroundSync();
+
   // App info
   ipcMain.handle(
     APP_CHANNELS.VERSION,

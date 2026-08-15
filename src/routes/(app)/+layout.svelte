@@ -971,7 +971,7 @@
 <TooltipProvider>
   <!-- Main Layout with Title Bar -->
   <div
-    class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col"
+    class="panel-layout-container relative h-screen w-screen overflow-hidden bg-background text-foreground flex flex-col"
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
@@ -1000,7 +1000,7 @@
           <main
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
               ? ''
-              : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
+              : 'rounded-xl bg-background border border-border shadow-sm'}"
             aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div

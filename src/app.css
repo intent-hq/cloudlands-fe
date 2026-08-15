@@ -174,7 +174,7 @@ html.workspace-view-transition::view-transition-group(workspace-view-sidebar-geo
 
 html,
 body {
-  background-color: transparent;
+  background-color: hsl(var(--background));
   color: hsl(var(--foreground));
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;

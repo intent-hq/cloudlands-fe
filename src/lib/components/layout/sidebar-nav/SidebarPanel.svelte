@@ -238,7 +238,7 @@
     transition:slide={{ axis: 'x', duration: 200 }}
   >
     <div
-      class="sidebar-panel h-full flex flex-col relative"
+      class="sidebar-panel h-full flex flex-col relative bg-sidebar text-sidebar-foreground"
       style="width: {liveWidth}px;"
       aria-label={m.layout_sidebarPanel_ariaLabel()}
     >

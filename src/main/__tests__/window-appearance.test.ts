@@ -2,20 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   getWindowAppearanceOptions,
   getWindowBackgroundColor,
-  MACOS_WINDOW_BACKGROUND,
 } from '../../shared/main/window-appearance';
 
 describe('window appearance', () => {
-  it('uses a fully transparent native background with glass on macOS', () => {
-    expect(MACOS_WINDOW_BACKGROUND).toBe('#00000000');
-    expect(getWindowAppearanceOptions(false, 'darwin')).toEqual({
-      backgroundColor: MACOS_WINDOW_BACKGROUND,
-      transparent: true,
-      vibrancy: 'under-window',
-      visualEffectState: 'active',
-    });
-    expect(getWindowBackgroundColor(false, 'darwin')).toBe(MACOS_WINDOW_BACKGROUND);
-    expect(getWindowBackgroundColor(true, 'darwin')).toBe(MACOS_WINDOW_BACKGROUND);
+  it('uses opaque light and dark native backgrounds on macOS', () => {
+    expect(getWindowAppearanceOptions(false, 'darwin')).toEqual({ backgroundColor: '#ffffff' });
+    expect(getWindowAppearanceOptions(true, 'darwin')).toEqual({ backgroundColor: '#0a0a0a' });
+    expect(getWindowBackgroundColor(false, 'darwin')).toBe('#ffffff');
+    expect(getWindowBackgroundColor(true, 'darwin')).toBe('#0a0a0a');
   });
 
   it('keeps opaque theme fallbacks on other platforms', () => {

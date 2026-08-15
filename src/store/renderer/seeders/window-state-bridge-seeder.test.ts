@@ -24,6 +24,7 @@ import {
   registerWindowFullScreenBridge,
   registerWindowFullScreenEventRelay,
   registerWindowStateBridge,
+  registerWindowThemeBridge,
 } from './window-state-bridge-seeder';
 
 const INVOKE_CHANNELS = [
@@ -89,6 +90,17 @@ describe('window-state-bridge-seeder', () => {
       await expect(mockInvoke(channel, { probe: channel })).resolves.toBeUndefined();
     }
   });
+
+  it('forwards only the window theme channel and its exact payload to preload', async () => {
+    const invokeSpy = vi.fn(async () => ({ success: true }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerWindowThemeBridge();
+
+    await mockInvoke(IPC_CHANNELS.WINDOW.SET_THEME, { theme: 'dark' });
+
+    expect(invokeSpy).toHaveBeenCalledOnce();
+    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.SET_THEME, { theme: 'dark' });
+  });
 });
 
 describe('window full-screen bridge (HUD)', () => {
@@ -102,7 +114,11 @@ describe('window full-screen bridge (HUD)', () => {
   });
 
   it('forwards set/get full-screen to window.electronAPI.invoke when bridged', async () => {
-    const invokeSpy = vi.fn(async (channel: string) => ({ success: true, fullScreen: true, forwarded: channel }));
+    const invokeSpy = vi.fn(async (channel: string) => ({
+      success: true,
+      fullScreen: true,
+      forwarded: channel,
+    }));
     (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
     registerWindowFullScreenBridge();
 
