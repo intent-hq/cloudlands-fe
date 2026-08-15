@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.51.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.50.0...v2.51.0) (2026-08-15)
+
+
+### 🚀 Features
+
+* **browser:** programmatic tunnel actions (openTunnel/listTunnels/closeTunnel) ([#1277](https://github.com/intent-hq/cloudlands-fe/issues/1277)) ([1cf60a9](https://github.com/intent-hq/cloudlands-fe/commit/1cf60a939dfa7f141ed83b04c1bea6d91c8f61c4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.2 ([#1284](https://github.com/intent-hq/cloudlands-fe/issues/1284)) ([cca7ce8](https://github.com/intent-hq/cloudlands-fe/commit/cca7ce8dec2514a6a83379df845f9219c08defc4))
+
 ## [2.50.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.49.1...v2.50.0) (2026-08-15)
 
 
