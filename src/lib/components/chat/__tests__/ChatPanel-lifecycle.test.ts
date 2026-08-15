@@ -593,7 +593,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
 
     // distanceFromBottom starts at 0 → at bottom and locked → showLock state.
-    const lockButton = view.container.querySelector('button.absolute.bottom-2.right-2');
+    const lockButton = view.container.querySelector('[data-testid="chat-scroll-lock-button"]');
     expect(lockButton).not.toBeNull();
     expect(lockButton!.classList.contains('opacity-0!')).toBe(true);
     expect(lockButton!.classList.contains('pointer-events-none')).toBe(true);

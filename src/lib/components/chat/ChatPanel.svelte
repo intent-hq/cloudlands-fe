@@ -4018,6 +4018,7 @@
       <Button
         variant="outline"
         size="icon-xs"
+        data-testid="chat-scroll-lock-button"
         onclick={() => {
           if (showArrow) {
             // Scrolled up - click to scroll to bottom and re-lock
