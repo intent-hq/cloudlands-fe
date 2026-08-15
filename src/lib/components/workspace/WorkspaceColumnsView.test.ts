@@ -21,6 +21,7 @@ const resizablePanelSizes = writable<Record<string, number>>({});
 const hydratedResizablePanelSizes = writable<Record<string, true>>({});
 const panelTabCounts = writable<Record<string, number>>({});
 const panelRevealRequests = writable<Record<string, never>>({});
+const panelRestoreStatuses = writable<Record<string, string>>({});
 const workspaceItems = writable<Array<{ id: string; title: string }>>([]);
 const workspaceStatuses = writable<Record<string, never>>({});
 const focusedPanelTargets = writable<
@@ -53,6 +54,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectPanelColumnCountsByWorkspaceId: () => panelCounts,
   selectPanelTabCountsByWorkspaceId: () => panelTabCounts,
   selectPanelRevealRequestsByWorkspaceId: () => panelRevealRequests,
+  selectPanelRestoreStatusesByWorkspaceId: () => panelRestoreStatuses,
   selectFocusedPanelTargetsByWorkspaceId: () => focusedPanelTargets,
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
@@ -138,6 +140,7 @@ describe('WorkspaceColumnsView', () => {
     );
     panelTabCounts.set({});
     panelRevealRequests.set({});
+    panelRestoreStatuses.set({ 'ws-1': 'restored', 'ws-2': 'restored', 'ws-3': 'restored' });
     workspaceItems.set([]);
     workspaceStatuses.set({});
     focusedPanelTargets.set({});
@@ -209,6 +212,11 @@ describe('WorkspaceColumnsView', () => {
             [`workspace-left-panel-width:${workspaceId}`, true],
             [`workspace-left-panel-expanded-width:${workspaceId}`, true],
           ]),
+        ),
+      );
+      panelRestoreStatuses.set(
+        Object.fromEntries(
+          ['ws-1', 'ws-2', 'ws-3', 'ws-4', 'ws-5'].map((workspaceId) => [workspaceId, 'restored']),
         ),
       );
       workspaceItems.set(
@@ -288,7 +296,7 @@ describe('WorkspaceColumnsView', () => {
     ).toBe('1456px');
   });
 
-  it('waits for per-workspace width hydration and renders stable clamped widths', async () => {
+  it('renders fallback-width columns during width hydration and settles to clamped widths', async () => {
     resizablePanelSizes.set({
       'workspace-left-panel-width:ws-1': 390,
       'workspace-left-panel-width:ws-2': 720,
@@ -299,7 +307,13 @@ describe('WorkspaceColumnsView', () => {
     const scroller = screen.getByLabelText('Open spaces in columns');
     scroller.scrollLeft = 140;
 
-    expect(screen.queryAllByTestId('mock-workspace-surface')).toHaveLength(0);
+    // Columns render immediately at the fallback width — no empty-scroller flash.
+    expect(document.querySelectorAll('[data-workspace-stack]')).toHaveLength(3);
+    expect(
+      [...document.querySelectorAll<HTMLElement>('[data-workspace-stack]')].every(
+        (stack) => stack.style.width === '360px',
+      ),
+    ).toBe(true);
     expect(scroller.dataset.sidebarWidthsReady).toBe('false');
     expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual(
       ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
@@ -344,6 +358,30 @@ describe('WorkspaceColumnsView', () => {
       document.querySelector<HTMLElement>('[data-workspace-stack="ws-2,ws-3"]')?.style.width,
     ).toBe('400px');
     expect(scroller.scrollLeft).toBe(140);
+  });
+
+  it('pre-restores panel layouts for open workspaces that have not restored yet', async () => {
+    panelRestoreStatuses.set({ 'ws-2': 'restored' });
+    render(WorkspaceColumnsView);
+    await tick();
+
+    const scopeMounts = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'panelLayout/scopeMounted');
+    expect(scopeMounts).toEqual([
+      { type: 'panelLayout/scopeMounted', payload: ['ws-1'] },
+      { type: 'panelLayout/scopeMounted', payload: ['ws-3'] },
+    ]);
+
+    // A status change does not re-dispatch for already-requested workspaces.
+    mocks.dispatch.mockClear();
+    panelRestoreStatuses.set({ 'ws-1': 'pending', 'ws-2': 'restored', 'ws-3': 'empty' });
+    await tick();
+    expect(
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'panelLayout/scopeMounted'),
+    ).toEqual([]);
   });
 
   it('sizes a vertical stack to its widest workspace', () => {
@@ -799,21 +837,61 @@ describe('WorkspaceColumnsView', () => {
     expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-3');
   });
 
-  it('jumps instantly to the current workspace on initial mount', async () => {
+  it('jumps instantly to the current workspace on initial mount with left-edge alignment', async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      currentWorkspaceId.set('ws-3');
+      hydratedResizablePanelSizes.set({});
+      render(WorkspaceColumnsView);
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      const scrollTo = vi.fn();
+      scroller.scrollTo = scrollTo as never;
+      // ws-3 partially visible: inline 'nearest' would silently skip this jump.
+      scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
+      screen.getByLabelText('Workspace column ws-3').getBoundingClientRect = vi.fn(
+        () => ({ left: 600, right: 960 }) as DOMRect,
+      );
+
+      hydratedResizablePanelSizes.set(
+        Object.fromEntries(
+          ['ws-1', 'ws-2', 'ws-3'].flatMap((workspaceId) => [
+            [`workspace-left-panel-width:${workspaceId}`, true],
+            [`workspace-left-panel-expanded-width:${workspaceId}`, true],
+          ]),
+        ),
+      );
+      await tick();
+
+      expect(scrollTo).toHaveBeenCalledWith({ left: 600, behavior: 'auto' });
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
+  it('does not re-reveal after width changes once the initial jump has run', async () => {
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
     try {
       currentWorkspaceId.set('ws-3');
       render(WorkspaceColumnsView);
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      const scrollTo = vi.fn();
+      scroller.scrollTo = scrollTo as never;
       await tick();
 
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        behavior: 'auto',
-        block: 'nearest',
-        inline: 'nearest',
-      });
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      panelCounts.set({ 'ws-3': 2 });
+      panelCanvasWidths.set({ 'ws-3': 960 });
+      resizablePanelSizes.set({ 'workspace-left-panel-width:ws-3': 390 });
+      await tick();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       Element.prototype.scrollIntoView = originalScrollIntoView;
     }

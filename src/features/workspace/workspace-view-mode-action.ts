@@ -135,6 +135,10 @@ function restoreScroll(
   workspaceId: string | null,
   sourceLeft: number | null,
 ): void {
+  // Columns mode owns its own scroll position: WorkspaceColumnsView jumps to
+  // the current workspace on mount, and a stale saved scrollLeft here would
+  // clobber that jump. Only restore scroll when entering single mode.
+  if (nextMode === 'columns') return;
   const destination = getScroller(documentRef, nextMode);
   if (!destination) return;
 

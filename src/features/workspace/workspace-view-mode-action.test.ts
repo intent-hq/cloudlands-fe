@@ -196,12 +196,12 @@ describe('workspace view-mode transition orchestration', () => {
   });
 
   it.each([
-    { name: 'offscreen', targetLeft: 900, expected: 900 },
-    { name: 'partially visible', targetLeft: 500, expected: 500 },
-    { name: 'fully visible', targetLeft: 200, expected: 0 },
+    { name: 'offscreen', targetLeft: 900 },
+    { name: 'partially visible', targetLeft: 500 },
+    { name: 'fully visible', targetLeft: 200 },
   ])(
-    'restores the active $name destination with an instant nearest-edge scroll',
-    async ({ targetLeft, expected }) => {
+    'leaves the columns scroll position alone for an $name destination (columns mode owns its scroll)',
+    async ({ targetLeft }) => {
       const state = createStore('single');
       renderMode('single', ['ws-1', 'ws-2', 'ws-3'], 'ws-2', { single: { 'ws-2': 250 } });
       installViewTransition();
@@ -214,11 +214,30 @@ describe('workspace view-mode transition orchestration', () => {
           }),
       });
 
-      expect(document.querySelector<HTMLElement>('[data-workspace-columns]')!.scrollLeft).toBe(
-        expected,
-      );
+      // WorkspaceColumnsView jumps to the current workspace on mount; a
+      // restore here would clobber that jump with a stale scrollLeft.
+      expect(document.querySelector<HTMLElement>('[data-workspace-columns]')!.scrollLeft).toBe(0);
     },
   );
+
+  it('still restores the tab-strip scroll when entering single mode', async () => {
+    const state = createStore('single');
+    renderMode('single', ['ws-1', 'ws-2', 'ws-3'], 'ws-2');
+    installViewTransition();
+    const toColumns = document.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
+    toColumns.scrollLeft = 120;
+
+    await setWorkspaceViewModeWithTransition('columns', {
+      store: state.store,
+      afterUpdate: async () => void renderMode('columns', ['ws-1', 'ws-2', 'ws-3'], 'ws-2'),
+    });
+    await setWorkspaceViewModeWithTransition('single', {
+      store: state.store,
+      afterUpdate: async () => void renderMode('single', ['ws-1', 'ws-2', 'ws-3'], 'ws-2'),
+    });
+
+    expect(document.querySelector<HTMLElement>('[data-workspace-tab-strip]')!.scrollLeft).toBe(120);
+  });
 
   it('restores a safe active destination when workspace focus is remounted', async () => {
     const state = createStore('single');

@@ -49,7 +49,11 @@ export function scrollWorkspaceColumnIntoView(
       animateHorizontalScroll(container, targetLeft);
     } else {
       cancelHorizontalScroll(container);
-      container.scrollTo({ left: targetLeft, behavior });
+      if (typeof container.scrollTo === 'function') {
+        container.scrollTo({ left: targetLeft, behavior });
+      } else {
+        container.scrollLeft = targetLeft;
+      }
     }
     return true;
   }

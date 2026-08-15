@@ -23,9 +23,13 @@
     selectFocusedPanelTargetsByWorkspaceId,
     selectPanelCanvasWidthsByWorkspaceId,
     selectPanelColumnCountsByWorkspaceId,
+    selectPanelRestoreStatusesByWorkspaceId,
     selectPanelRevealRequestsByWorkspaceId,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { consumePanelReveal } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import {
+    consumePanelReveal,
+    panelLayoutScopeMounted,
+  } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     findAdjacentWorkspaceWithPanels,
     type PanelCycleBoundaryTarget,
@@ -70,7 +74,12 @@
   const resizablePanelSizes$ = selectResizablePanelSizes();
   const hydratedResizablePanelSizes$ = selectHydratedResizablePanelSizes();
   const panelRevealRequestsByWorkspaceId$ = selectPanelRevealRequestsByWorkspaceId();
+  const panelRestoreStatusesByWorkspaceId$ = selectPanelRestoreStatusesByWorkspaceId();
   const LAYOUT_WIDTH_SETTLE_MS = 340;
+  // Interim stack width while sidebar widths / panel layouts hydrate: columns
+  // render immediately at the default sidebar width instead of flashing an
+  // empty scroller, then settle to their measured widths.
+  const FALLBACK_STACK_WIDTH = 360;
   let sidebarWidths = $state<Record<string, number>>({});
   let livePanelCanvasWidths = $state<Record<string, number>>({});
   let columnsScroller = $state<HTMLDivElement | null>(null);
@@ -94,6 +103,7 @@
   let materializingWorkspaceId = $state<string | null>(null);
   const panelRevealFrames = new Map<string, number>();
   const requestedSidebarWidthKeys = new Set<string>();
+  const requestedLayoutRestoreIds = new Set<string>();
   const layoutMotionDuration = $derived(lifecycleMotionReady ? 180 : 0);
   const openWorkspaceIds = $derived($workspaceStacks$.flat());
   const sidebarWidthsReady = $derived(
@@ -104,6 +114,13 @@
           true,
     ),
   );
+  const panelLayoutsSettled = $derived(
+    openWorkspaceIds.every((workspaceId) => {
+      const status = $panelRestoreStatusesByWorkspaceId$[workspaceId];
+      return status === 'restored' || status === 'empty' || status === 'invalid';
+    }),
+  );
+  const columnsReady = $derived(sidebarWidthsReady && panelLayoutsSettled);
   const visibleWorkspaceIdsAttribute = $derived([...visibleWorkspaceIds].sort().join(','));
   const mountedWorkspaceIds = $derived.by(() => {
     const mounted = new Set(visibleWorkspaceIds);
@@ -127,6 +144,21 @@
           appStore.dispatch(requestResizablePanelSize(key));
         }
       }
+    }
+  });
+
+  // Pre-restore persisted panel layouts for every open workspace: placeholder
+  // columns never mount a PanelLayout scope, so without this their panel
+  // widths only hydrate once scrolled into view — shifting column offsets
+  // after the initial jump. Restoring up front makes stack widths final
+  // before the reveal effect measures them.
+  $effect(() => {
+    const statuses = $panelRestoreStatusesByWorkspaceId$;
+    for (const workspaceId of openWorkspaceIds) {
+      if (requestedLayoutRestoreIds.has(workspaceId)) continue;
+      if ((statuses[workspaceId] ?? 'idle') !== 'idle') continue;
+      requestedLayoutRestoreIds.add(workspaceId);
+      appStore.dispatch(panelLayoutScopeMounted(workspaceId));
     }
   });
 
@@ -257,9 +289,8 @@
   $effect(() => {
     const workspaceId = $currentWorkspaceId$;
     const scroller = columnsScroller;
-    const columnsReady = sidebarWidthsReady;
-    if (!workspaceId || !scroller || !columnsReady || workspaceId === lastScrolledWorkspaceId)
-      return;
+    const ready = columnsReady;
+    if (!workspaceId || !scroller || !ready || workspaceId === lastScrolledWorkspaceId) return;
 
     if (!hasRevealedInitialWorkspace) {
       // The first reveal per mount jumps instantly — a smooth sweep would drag
@@ -268,9 +299,11 @@
       // (this effect runs before the visibility-tracker effects below) also
       // makes the layout seed read the post-jump scroll position, so the
       // landing window mounts immediately without a placeholder flash.
+      // `inline: 'start'` (not 'nearest') so a partially visible target is
+      // still aligned instead of silently skipped.
       hasRevealedInitialWorkspace = true;
       lastScrolledWorkspaceId = workspaceId;
-      scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto');
+      scrollWorkspaceColumnIntoView(scroller, workspaceId, 'auto', 'start');
       return;
     }
 
@@ -326,8 +359,8 @@
     const stacks = $workspaceStacks$;
     const scroller = columnsScroller;
     const tracker = columnVisibilityTracker;
-    const columnsReady = sidebarWidthsReady;
-    if (!scroller || !tracker || !columnsReady) return;
+    const ready = columnsReady;
+    if (!scroller || !tracker || !ready) return;
 
     const openIds = new Set(stacks.flat());
     const tracked: TrackedColumnElement[] = [];
@@ -610,51 +643,51 @@
   data-sidebar-widths-ready={sidebarWidthsReady}
 >
   <div class="flex h-full min-h-0 w-max min-w-full gap-2 pl-2 pr-2 pt-2">
-    {#if sidebarWidthsReady}
-      {#each $workspaceStacks$ as stack (stack[0])}
-        {@const stackWidth = Math.max(
-          ...stack.map((workspaceId) => {
-            const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
-            const panelCanvasWidth =
-              livePanelCanvasWidths[workspaceId] ??
-              $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
-              480;
-            return (
-              getSidebarWidth(workspaceId) +
-              (panelCount > 0
-                ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
-                  CONTAINED_PANEL_INLINE_CHROME
-                : 0)
-            );
-          }),
-        )}
-        <div
-          class="h-full min-h-0 shrink-0"
-          style:width={`${stackWidth}px`}
-          data-workspace-stack={stack.join(',')}
-          data-workspace-stack-key={stack[0]}
-          animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
-          transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
-        >
-          {#if stack.length > 1}
-            <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
-              <ResizablePanelGroup
-                panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
-                orientation="vertical"
-                storageKey={`workspace-stack-heights:${stack.join(':')}`}
-                className="h-full min-h-0"
-              >
-                {#snippet children(panel, index)}
-                  {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
-                {/snippet}
-              </ResizablePanelGroup>
-            </div>
-          {:else}
-            {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
-          {/if}
-        </div>
-      {/each}
-    {/if}
+    {#each $workspaceStacks$ as stack (stack[0])}
+      {@const stackWidth = columnsReady
+        ? Math.max(
+            ...stack.map((workspaceId) => {
+              const panelCount = $panelColumnCountsByWorkspaceId$[workspaceId] ?? 0;
+              const panelCanvasWidth =
+                livePanelCanvasWidths[workspaceId] ??
+                $panelCanvasWidthsByWorkspaceId$[workspaceId] ??
+                480;
+              return (
+                getSidebarWidth(workspaceId) +
+                (panelCount > 0
+                  ? panelCanvasWidth * (panelPreviewWidthRatios[workspaceId] ?? 1) +
+                    CONTAINED_PANEL_INLINE_CHROME
+                  : 0)
+              );
+            }),
+          )
+        : FALLBACK_STACK_WIDTH}
+      <div
+        class="h-full min-h-0 shrink-0"
+        style:width={`${stackWidth}px`}
+        data-workspace-stack={stack.join(',')}
+        data-workspace-stack-key={stack[0]}
+        animate:flip={{ duration: layoutMotionDuration, easing: cubicOut }}
+        transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+      >
+        {#if stack.length > 1}
+          <div class="h-full min-h-0 w-full" data-workspace-stack-resize-group>
+            <ResizablePanelGroup
+              panels={stack.map((workspaceId) => ({ id: workspaceId, minSize: 180 }))}
+              orientation="vertical"
+              storageKey={`workspace-stack-heights:${stack.join(':')}`}
+              className="h-full min-h-0"
+            >
+              {#snippet children(panel, index)}
+                {@render resizableWorkspaceStackItem(panel.id, index, stack.length)}
+              {/snippet}
+            </ResizablePanelGroup>
+          </div>
+        {:else}
+          {@render resizableWorkspaceStackItem(stack[0], 0, 1)}
+        {/if}
+      </div>
+    {/each}
     <aside
       class="flex h-full min-h-0 w-90 shrink-0 overflow-y-auto px-4 py-10"
       aria-label={m.layout_sidebarNav_allWorkspaces_title()}
