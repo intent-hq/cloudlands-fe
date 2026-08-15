@@ -11,7 +11,10 @@
  *   2. Checks the daemon for actively responding agents and asks for explicit
  *      confirmation before interrupting them (quit-flow pattern).
  *   3. Stops the orphan gracefully: SIGTERM → grace wait → SIGKILL, polling
- *      for actual process exit.
+ *      for actual process exit. Immediately before EACH signal the pid's
+ *      identity is re-checked (its executable must still resolve inside our
+ *      bundle), so a pid recycled during the unbounded confirmation dialog or
+ *      the SIGTERM grace window is never signalled either.
  *   4. Spawns the bundled sidecar via the existing on-demand spawn path
  *      (which re-probes the socket and never runs two daemons side by side).
  *
@@ -89,6 +92,36 @@ async function waitForExit(
 }
 
 /**
+ * Send `signal` to `pid` only after re-verifying, at this instant, that the
+ * pid still names the orphan (live process, executable inside our bundle).
+ * The check runs immediately before EVERY signal because arbitrary time can
+ * pass beforehand (unbounded confirmation dialog, SIGTERM grace window) and
+ * the pid could have been recycled by an unrelated process in the meantime.
+ *
+ * - 'sent'    — identity confirmed, signal delivered.
+ * - 'gone'    — the process already exited (nothing to signal; proceed).
+ * - 'refused' — the pid is alive but no longer verifies as the orphan
+ *   (pid reuse / detection failure); NOTHING was signalled.
+ */
+function verifiedSignal(
+  deps: OrphanRecoveryDeps,
+  pid: number,
+  signal: NodeJS.Signals,
+): 'sent' | 'gone' | 'refused' {
+  const current = deps.detectOrphan();
+  if (!current || current.pid !== pid) {
+    if (!deps.kill(pid, 0)) return 'gone';
+    logger.warn('Orphan identity re-check failed at signal time; refusing to signal', {
+      pid,
+      signal,
+      currentPid: current?.pid ?? null,
+    });
+    return 'refused';
+  }
+  return deps.kill(pid, signal) ? 'sent' : 'gone';
+}
+
+/**
  * Stop the orphaned sidecar and start the bundled daemon. See module docs for
  * the sequence; every verification failure returns `{ ok: false }` without
  * signalling anything.
@@ -102,8 +135,8 @@ export async function restartOrphanedSidecar(
   }
 
   // Action-time re-verification: the pid must STILL name a live process whose
-  // executable resolves inside our bundle. Guards against pid reuse and state
-  // that went stale since startup detection.
+  // executable resolves inside our bundle. Guards against state that went
+  // stale since startup detection (each signal below re-checks again).
   const current = deps.detectOrphan();
   if (!current || current.pid !== recorded.pid) {
     logger.warn('Orphan re-verification failed; refusing to signal', {
@@ -123,13 +156,20 @@ export async function restartOrphanedSidecar(
   }
 
   logger.info('Stopping orphaned sidecar', { pid: current.pid });
-  if (deps.kill(current.pid, 'SIGTERM')) {
+  const term = verifiedSignal(deps, current.pid, 'SIGTERM');
+  if (term === 'refused') {
+    return { ok: false, spawned: false, reason: 'orphaned sidecar re-verification failed' };
+  }
+  if (term === 'sent') {
     if (!(await waitForExit(deps, current.pid, SIGTERM_GRACE_MS))) {
       logger.warn('Orphaned sidecar did not exit after SIGTERM; sending SIGKILL', {
         pid: current.pid,
       });
-      deps.kill(current.pid, 'SIGKILL');
-      if (!(await waitForExit(deps, current.pid, SIGKILL_WAIT_MS))) {
+      const kill9 = verifiedSignal(deps, current.pid, 'SIGKILL');
+      if (kill9 === 'refused') {
+        return { ok: false, spawned: false, reason: 'orphaned sidecar re-verification failed' };
+      }
+      if (kill9 === 'sent' && !(await waitForExit(deps, current.pid, SIGKILL_WAIT_MS))) {
         return { ok: false, spawned: false, reason: 'orphaned sidecar did not exit' };
       }
     }

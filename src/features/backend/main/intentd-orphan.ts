@@ -60,11 +60,15 @@ export function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Resolve the executable path of a live process.
+ * Resolve the executable path of a live process from kernel-maintained state
+ * the process itself cannot forge.
  *
  * - linux  → `readlink /proc/<pid>/exe` (a deleted binary — replaced during an
  *   app upgrade — reports `<path> (deleted)`; the suffix is stripped).
- * - darwin → `ps -o comm= -p <pid>` (comm is the full executable path on macOS).
+ * - darwin → first `txt` entry from `lsof -p <pid> -d txt` — the process's
+ *   executable image in the kernel's open-file table. (NOT `ps -o comm=`:
+ *   that reports argv[0], which a process can set to any string, so an
+ *   external daemon could masquerade as ours.)
  * - win32/other → null (unsupported; detection then never classifies an orphan).
  */
 export function getProcessExecutablePath(
@@ -77,11 +81,19 @@ export function getProcessExecutablePath(
       return target.replace(/ \(deleted\)$/, '');
     }
     if (platform === 'darwin') {
-      const out = execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], {
+      const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], {
         encoding: 'utf8',
-        timeout: 2000,
-      }).trim();
-      return out.length > 0 ? out : null;
+        timeout: 5000,
+      });
+      // -Fn output: `p<pid>`, then per-file `f<fd>` / `n<name>` lines; the
+      // first txt entry is the executable image itself.
+      for (const line of out.split('\n')) {
+        if (line.startsWith('n')) {
+          const name = line.slice(1).trim();
+          return name.length > 0 ? name : null;
+        }
+      }
+      return null;
     }
     return null;
   } catch {

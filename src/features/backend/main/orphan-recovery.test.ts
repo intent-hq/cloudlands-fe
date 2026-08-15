@@ -120,4 +120,58 @@ describe('restartOrphanedSidecar', () => {
     expect(result.ok).toBe(true);
     expect(deps.spawnSidecar).toHaveBeenCalled();
   });
+
+  it('refuses SIGTERM when the pid was recycled during the confirmation dialog', async () => {
+    // detectOrphan verifies at click time, then fails at signal time while the
+    // pid is still alive — a recycled pid must never be signalled.
+    const detectOrphan = vi
+      .fn<() => OrphanedSidecarState | null>()
+      .mockReturnValueOnce(ORPHAN)
+      .mockReturnValue(null);
+    const kill = vi.fn(() => true); // pid alive (signal-0 succeeds)
+    const deps = makeDeps({
+      detectOrphan,
+      kill,
+      listRespondingAgents: vi.fn(async () => [AGENT]),
+    });
+    const result = await restartOrphanedSidecar(deps);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('re-verification');
+    expect(kill).not.toHaveBeenCalledWith(4242, 'SIGTERM');
+    expect(kill).not.toHaveBeenCalledWith(4242, 'SIGKILL');
+    expect(deps.spawnSidecar).not.toHaveBeenCalled();
+  });
+
+  it('refuses SIGKILL when the pid no longer verifies at escalation time', async () => {
+    // SIGTERM is verified and sent but ignored; by SIGKILL time the pidfile
+    // identity no longer matches while the pid is alive → refuse escalation.
+    const detectOrphan = vi
+      .fn<() => OrphanedSidecarState | null>()
+      .mockReturnValueOnce(ORPHAN) // click-time re-verification
+      .mockReturnValueOnce(ORPHAN) // SIGTERM identity check
+      .mockReturnValue(null); // SIGKILL identity check fails
+    const kill = vi.fn(() => true); // alive throughout; SIGTERM ignored
+    const deps = makeDeps({ detectOrphan, kill });
+    const result = await restartOrphanedSidecar(deps);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('re-verification');
+    expect(kill).toHaveBeenCalledWith(4242, 'SIGTERM');
+    expect(kill).not.toHaveBeenCalledWith(4242, 'SIGKILL');
+    expect(deps.spawnSidecar).not.toHaveBeenCalled();
+  });
+
+  it('treats identity-check failure on an already-dead pid as gone and spawns', async () => {
+    // The orphan exited between confirmation and signalling: detectOrphan
+    // fails but signal-0 shows the pid gone → nothing to stop, proceed.
+    const detectOrphan = vi
+      .fn<() => OrphanedSidecarState | null>()
+      .mockReturnValueOnce(ORPHAN)
+      .mockReturnValue(null);
+    const kill = vi.fn(() => false); // ESRCH: process gone
+    const deps = makeDeps({ detectOrphan, kill });
+    const result = await restartOrphanedSidecar(deps);
+    expect(result.ok).toBe(true);
+    expect(deps.spawnSidecar).toHaveBeenCalled();
+    expect(kill).not.toHaveBeenCalledWith(4242, 'SIGTERM');
+  });
 });
