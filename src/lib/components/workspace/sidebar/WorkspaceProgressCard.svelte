@@ -893,13 +893,9 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            oninput={(e) => {
-              const target = e.currentTarget;
-              target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
-            }}
             class="text-xl font-semibold text-foreground bg-none
                py-0.5 rounded
-               outline-none min-w-20 w-full leading-normal
+               outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
             placeholder={m.workspace_links_untitled_label()}
