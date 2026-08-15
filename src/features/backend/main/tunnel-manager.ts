@@ -317,6 +317,9 @@ export function createTunnelSocket(config: BackendConnectionConfig): TunnelSocke
  * `net.Server` per forwarded remote port, one mux stream per accepted socket.
  */
 export class TunnelManager {
+  /** Backend discriminator echoed in tunnel action results. */
+  readonly backend = 'tunnel' as const;
+
   private readonly getConfig: () => BackendConnectionConfig | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
@@ -497,6 +500,17 @@ export class TunnelManager {
     }));
   }
 
+  /**
+   * Close the forward for `remotePort` on request (its local listener and any
+   * remaining streams). Returns true when a forward existed, false otherwise.
+   */
+  closeForward(remotePort: number): boolean {
+    const forward = this.forwards.get(remotePort);
+    if (!forward) return false;
+    this.dropForward(forward, 'closed on request');
+    return true;
+  }
+
   /** Tear down every forward and the tunnel socket. The manager is unusable after. */
   dispose(): void {
     if (this.disposed) return;
@@ -659,7 +673,9 @@ export class TunnelManager {
         // (instead of lingering until the idle sweep) and the next
         // forwardPort() recreates it fresh. Timeouts and other transient
         // errors stay per-stream.
-        if (isConnectionRefusedOpenErr(frame.message)) this.dropForward(forward);
+        if (isConnectionRefusedOpenErr(frame.message)) {
+          this.dropForward(forward, 'daemon-side port refused the connect');
+        }
         break;
       }
       case 'data':
@@ -688,17 +704,19 @@ export class TunnelManager {
   /**
    * Close a forward's local listener and remaining streams and deregister it,
    * so the next `forwardPort(remotePort)` recreates it fresh. Used when a
-   * refused `OPEN` shows the daemon-side port is closed; the idle sweep stays
-   * as the backstop for forwards that never see another `OPEN`.
+   * refused `OPEN` shows the daemon-side port is closed (the idle sweep stays
+   * as the backstop for forwards that never see another `OPEN`) and by the
+   * explicit [[closeForward]].
    */
-  private dropForward(forward: ForwardState): void {
+  private dropForward(forward: ForwardState, reason: string): void {
     if (this.forwards.get(forward.remotePort) !== forward) return;
     this.forwards.delete(forward.remotePort);
     forward.server.close();
     for (const stream of [...forward.streams]) {
       this.endStream(stream, { sendClose: !stream.remoteClosed });
     }
-    logger.info('forward dropped: daemon-side port refused the connect', {
+    logger.info('forward dropped', {
+      reason,
       remotePort: forward.remotePort,
       localPort: forward.localPort,
     });

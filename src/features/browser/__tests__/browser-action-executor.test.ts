@@ -834,6 +834,203 @@ describe('browser-action-executor', () => {
       expect(mockOpenTabFn).not.toHaveBeenCalled();
     });
   });
+
+  // =========================================================================
+  // Programmatic tunnel actions (intent-hq/monorepo#2537)
+  // =========================================================================
+  describe('tunnel actions (openTunnel / listTunnels / closeTunnel)', () => {
+    let forwardPort: ReturnType<typeof vi.fn>;
+    let activeForwards: ReturnType<typeof vi.fn>;
+    let closeForward: ReturnType<typeof vi.fn>;
+    let provider: {
+      forwardPort: (port: number) => Promise<number>;
+      activeForwards: () => Array<{ remotePort: number; localPort: number }>;
+      closeForward: (port: number) => boolean;
+      backend?: 'tunnel' | 'direct';
+    };
+
+    beforeEach(() => {
+      forwardPort = vi.fn().mockResolvedValue(45678);
+      activeForwards = vi.fn().mockReturnValue([]);
+      closeForward = vi.fn().mockReturnValue(true);
+      provider = { forwardPort, activeForwards, closeForward, backend: 'tunnel' };
+    });
+
+    it('openTunnel forwards the port and echoes { remotePort, localPort, backend, reused: false }', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(forwardPort).toHaveBeenCalledWith(3000);
+      expect(result.results[0]).toEqual({
+        action: 'openTunnel',
+        success: true,
+        result: { remotePort: 3000, localPort: 45678, backend: 'tunnel', reused: false },
+      });
+    });
+
+    it('openTunnel reports reused: true when a forward for the remote port already exists', async () => {
+      activeForwards.mockReturnValue([{ remotePort: 3000, localPort: 45678 }]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        remotePort: 3000,
+        localPort: 45678,
+        backend: 'tunnel',
+        reused: true,
+      });
+    });
+
+    it('openTunnel echoes the direct backend for local-transport providers', async () => {
+      provider.backend = 'direct';
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 8080 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toMatchObject({ backend: 'direct', reused: false });
+    });
+
+    it('openTunnel surfaces forward failures as action errors, not throws', async () => {
+      forwardPort.mockRejectedValue(new Error('tunnel connect timed out after 10000ms'));
+
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('timed out');
+    });
+
+    it('openTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
+    });
+
+    it('openTunnel rejects out-of-range and non-integer ports via schema validation', async () => {
+      for (const remotePort of [0, 65536, 1.5, -1]) {
+        const result = await executeActions(
+          { actions: [{ action: 'openTunnel', remotePort }] },
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          () => provider,
+        );
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Invalid action sequence');
+      }
+      expect(forwardPort).not.toHaveBeenCalled();
+    });
+
+    it('listTunnels returns active forwards tagged with the backend', async () => {
+      activeForwards.mockReturnValue([
+        { remotePort: 3000, localPort: 45678 },
+        { remotePort: 8080, localPort: 50123 },
+      ]);
+
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({
+        tunnels: [
+          { remotePort: 3000, localPort: 45678, backend: 'tunnel' },
+          { remotePort: 8080, localPort: 50123, backend: 'tunnel' },
+        ],
+      });
+    });
+
+    it('listTunnels returns an empty list when no provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'listTunnels' }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(true);
+      expect(result.results[0]?.result).toEqual({ tunnels: [] });
+    });
+
+    it('closeTunnel closes an existing forward', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(true);
+      expect(closeForward).toHaveBeenCalledWith(3000);
+      expect(result.results[0]?.result).toEqual({ remotePort: 3000, closed: true });
+    });
+
+    it('closeTunnel fails with a clear error when no such forward exists', async () => {
+      closeForward.mockReturnValue(false);
+
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 9999 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => provider,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('No active tunnel forward for remote port 9999');
+    });
+
+    it('closeTunnel fails with a clear error when no tunnel provider is available', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'closeTunnel', remotePort: 3000 }] },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => null,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('no tunnel provider');
+    });
+  });
 });
 
 // =============================================================================

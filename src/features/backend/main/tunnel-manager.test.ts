@@ -449,6 +449,35 @@ describe('TunnelManager', () => {
     expect((await received).equals(payload)).toBe(true);
   });
 
+  it('closeForward closes the forward and its listener; false for unknown ports (#2537)', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const { manager } = makeManager();
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(port);
+    const client = await connectClient(localPort);
+    onCleanup(() => client.destroy());
+
+    expect(manager.closeForward(port)).toBe(true);
+    expect(manager.activeForwards()).toEqual([]);
+    // The local listener is gone and the in-flight stream is destroyed.
+    await waitForClose(client);
+    await expect(connectClient(localPort)).rejects.toThrow();
+    // Closing again (or a never-forwarded port) reports false.
+    expect(manager.closeForward(port)).toBe(false);
+    expect(manager.closeForward(1)).toBe(false);
+
+    // A later forwardPort recreates the forward fresh.
+    const freshLocal = await manager.forwardPort(port);
+    const fresh = await connectClient(freshLocal);
+    onCleanup(() => fresh.destroy());
+    const payload = Buffer.from('reopened');
+    const received = collectUntil(fresh, payload.length);
+    fresh.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+  });
+
   it('a transient OPEN_ERR (timeout) ends only that stream, keeping the forward', async () => {
     const { manager, created } = makeManager({ daemon: false });
     onCleanup(() => manager.dispose());
