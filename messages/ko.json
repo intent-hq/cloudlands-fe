@@ -2042,8 +2042,6 @@
   "chat_chatPanel_assignedTask_fallback": "할당된 작업",
   "chat_chatPanel_selection_fallback": "선택 영역",
   "chat_chatPanel_yourProject_fallback": "내 프로젝트",
-  "chat_chatPanel_autoScrollLocked_tooltip": "자동 스크롤 잠김(클릭하여 해제)",
-  "chat_chatPanel_autoScrollUnlocked_tooltip": "자동 스크롤 해제됨(클릭하여 잠금)",
   "chat_chatPanel_scrollToBottom_tooltip": "맨 아래로 스크롤",
   "chat_newMessagesDivider_label": "새 메시지",
   "chat_previewToolLabel_tool_fallback": "도구",

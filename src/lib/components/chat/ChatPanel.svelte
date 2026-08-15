@@ -152,9 +152,8 @@
   import Fa from 'svelte-fa';
   import {
     faArrowDown,
-    faSquareCheck,
     faLock,
-    faLockOpen,
+    faSquareCheck,
     faPaperclip,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
@@ -188,6 +187,7 @@
     trackPinnedPrompt,
     type PinnedPromptState,
   } from './pinned-prompt';
+  import { measureScrollbarGutterWidth } from './scrollbar-gutter';
   import {
     createLazyTurnCacheScope,
     createLazyTurnHeightCache,
@@ -406,8 +406,24 @@
   let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
-  let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
+  // scrolling crosses back to the bottom and auto-follow re-engages. Purely
+  // decorative (aria-hidden, pointer-events-none) so it can never intercept
+  // hover hit-tests or land in the tab order (monorepo#2508).
+  let showLockConfirmation = $state(false);
+  let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
+  const LOCK_CONFIRMATION_DURATION_MS = 1500;
+
+  function flashLockConfirmation(): void {
+    if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
+    showLockConfirmation = true;
+    lockConfirmationTimer = setTimeout(() => {
+      showLockConfirmation = false;
+      lockConfirmationTimer = null;
+    }, LOCK_CONFIRMATION_DURATION_MS);
+  }
+
   let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
   let lazyTurnCacheScope = 'unbound';
 
@@ -587,6 +603,11 @@
   const COMPACT_HEIGHT_ENTER = 600; // Enter compact mode below this
   const COMPACT_HEIGHT_EXIT = 640; // Exit compact mode above this
   let isCompactMode = $state(false);
+
+  // Width the scroll container reserves for its vertical scrollbar gutter.
+  // The pinned-prompt overlay host subtracts it so the overlay lane occupies
+  // the same horizontal box as the conversation column.
+  let scrollbarGutterWidth = $state(0);
 
   $effect(() => {
     if (containerHeight > 0) {
@@ -1603,7 +1624,7 @@
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
     const hasNewMessages = currentCount > previousMessageCount;
     const shouldScroll =
-      hasNewMessages && (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
+      hasNewMessages && (isFirstMessage || shouldFollowBottom);
     if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
@@ -1623,7 +1644,6 @@
         // Re-enable auto-follow when first message is added
         if (shouldScroll && isFirstMessage) {
           shouldFollowBottom = true;
-          isScrollUnlocked = false;
         }
         tick().then(() => {
           // Guard against component destruction during tick
@@ -2295,7 +2315,6 @@
       )
     ) {
       shouldFollowBottom = true;
-      isScrollUnlocked = false;
       scrollToBottomUtil(scrollContainer);
       scheduleDeepOpenRelease();
       return;
@@ -2425,6 +2444,14 @@
       const newDistance = scrollHeight - scrollTop - clientHeight;
       // Only update if changed to avoid unnecessary re-renders
       if (newDistance !== distanceFromBottom) {
+        // Crossing back into the at-bottom zone re-locks auto-follow; flash
+        // the decorative lock confirmation so the re-lock is visible.
+        if (
+          distanceFromBottom > SCROLL_BOTTOM_THRESHOLD &&
+          newDistance <= SCROLL_BOTTOM_THRESHOLD
+        ) {
+          flashLockConfirmation();
+        }
         distanceFromBottom = newDistance;
       }
     };
@@ -2449,6 +2476,10 @@
       if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
       if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
       boundContainer?.removeEventListener('scroll', handleScroll);
+      if (lockConfirmationTimer !== null) {
+        clearTimeout(lockConfirmationTimer);
+        lockConfirmationTimer = null;
+      }
     };
   });
 
@@ -2491,6 +2522,12 @@
           const newHeight = entry.contentRect.height;
           if (newHeight !== containerHeight) {
             containerHeight = newHeight;
+          }
+        }
+        if (scrollContainer) {
+          const gutterWidth = measureScrollbarGutterWidth(scrollContainer);
+          if (gutterWidth !== scrollbarGutterWidth) {
+            scrollbarGutterWidth = gutterWidth;
           }
         }
       });
@@ -2842,7 +2879,6 @@
 
     if (options.followBottom) {
       shouldFollowBottom = true;
-      isScrollUnlocked = false;
       if (scrollContainer) scrollToBottomUtil(scrollContainer);
     }
   }
@@ -2884,8 +2920,7 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend =
-      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
+    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
       followBottom: followAfterSend,
@@ -3053,8 +3088,7 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
-    const followAfterSend =
-      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
+    const followAfterSend = $agentMessages$.length === 0 || shouldFollowBottom;
     const userAppMessageId = prepareMessageSendTransition(text, {
       enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
       followBottom: followAfterSend,
@@ -3329,21 +3363,29 @@
 
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
+    <!-- Inline-end padding compensates the scroll container's scrollbar gutter
+         so the lane's box matches the conversation column's box. -->
     <div
       class="pointer-events-none absolute inset-x-0 top-0 z-40"
+      style:padding-inline-end="{scrollbarGutterWidth}px"
       data-testid="pinned-prompt-overlay-host"
       aria-live="off"
     >
       {#if pinnedPrompt}
+        <!-- Mirror the conversation column's horizontal padding plus the chief
+             variant's user-row inset so the pinned bubble aligns with
+             in-conversation user bubbles. -->
         <div
-          class={isChiefWorkspace ? 'px-1 sm:px-2' : 'px-4 sm:px-6'}
+          class={isChiefWorkspace ? 'px-0' : 'px-4 sm:px-6'}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <PinnedUserPrompt
-            text={getPinnedPromptText(pinnedPrompt.message)}
-            {workspace}
-            onActivate={handlePinnedPromptClick}
-          />
+          <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+            <PinnedUserPrompt
+              text={getPinnedPromptText(pinnedPrompt.message)}
+              {workspace}
+              onActivate={handlePinnedPromptClick}
+            />
+          </div>
         </div>
       {/if}
     </div>
@@ -3360,15 +3402,10 @@
         // observers from yanking the viewport to the bottom when a LazyTurn
         // placeholder expands between us computing and applying the match's
         // scroll target.
-        follow:
-          shouldFollowBottom && !isScrollUnlocked && !showSearch && $agentMessages$.length > 0,
+        follow: shouldFollowBottom && !showSearch && $agentMessages$.length > 0,
         threshold: 100,
         onFollowChange: (f) => {
           shouldFollowBottom = f;
-          // When user scrolls up, clear unlocked state
-          if (!f) {
-            isScrollUnlocked = false;
-          }
         },
       }}
       class="flex-1 overflow-y-auto"
@@ -4166,40 +4203,33 @@
         <div class="min-h-px min-w-6 shrink-0"></div>
       </div>
     </div>
-    <!-- Scroll Lock/Unlock Button -->
-    {#if $agentMessages$.length > 0}
-      {@const isAtBottom = distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD}
-      {@const showLock = isAtBottom && !isScrollUnlocked}
-      {@const showUnlock = isAtBottom && isScrollUnlocked}
-      {@const showArrow = !isAtBottom}
+    <!-- Scroll-to-bottom button: rendered only while scrolled up so no
+         invisible control overlaps the message actions bar or lingers in the
+         tab order while at the bottom. Auto-follow re-locks on click or on
+         scrolling back to the bottom; scrolling up unlocks it. -->
+    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_THRESHOLD}
       <Button
         variant="outline"
         size="icon-xs"
-        data-testid="chat-scroll-lock-button"
-        onclick={() => {
-          if (showArrow) {
-            // Scrolled up - click to scroll to bottom and re-lock
-            isScrollUnlocked = false;
-            scrollToBottom();
-          } else if (showLock) {
-            // At bottom and locked - click to unlock (stop auto-scroll)
-            isScrollUnlocked = true;
-          } else if (showUnlock) {
-            // At bottom and unlocked - click to re-lock (resume auto-scroll)
-            isScrollUnlocked = false;
-          }
-        }}
-        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
-          ? 'opacity-0! pointer-events-none'
-          : ''}"
-        title={showLock
-          ? m.chat_chatPanel_autoScrollLocked_tooltip()
-          : showUnlock
-            ? m.chat_chatPanel_autoScrollUnlocked_tooltip()
-            : m.chat_chatPanel_scrollToBottom_tooltip()}
+        data-testid="chat-scroll-to-bottom-button"
+        onclick={() => scrollToBottom()}
+        class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 focus-visible:opacity-100 active:scale-95"
+        title={m.chat_chatPanel_scrollToBottom_tooltip()}
       >
-        <Fa icon={showArrow ? faArrowDown : showLock ? faLock : faLockOpen} class="w-3! h-3!" />
+        <Fa icon={faArrowDown} class="w-3! h-3!" />
       </Button>
+    {:else if showLockConfirmation}
+      <!-- Transient re-lock confirmation: purely decorative feedback that
+           auto-follow re-engaged on reaching the bottom. Never interactive:
+           aria-hidden keeps it out of the accessibility tree and
+           pointer-events-none out of hover hit-tests (monorepo#2508). -->
+      <div
+        aria-hidden="true"
+        data-testid="chat-scroll-lock-confirmation"
+        class="lock-confirmation pointer-events-none absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-sm border border-border bg-sidebar text-muted-foreground"
+      >
+        <Fa icon={faLock} class="w-3! h-3!" />
+      </div>
     {/if}
   </div>
 
@@ -4292,6 +4322,29 @@
   /* Flash animation for scroll-to-turn navigation */
   :global(.highlight-flash) {
     animation: highlight-flash 1.5s ease-out;
+  }
+
+  /* Transient scroll re-lock confirmation: hold briefly, then fade out.
+     Forwards fill keeps it invisible until the element unmounts. */
+  .lock-confirmation {
+    animation: lock-confirmation-fade 1.5s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lock-confirmation {
+      animation: none;
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes lock-confirmation-fade {
+    0%,
+    40% {
+      opacity: 0.9;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 
   @keyframes message-flash {

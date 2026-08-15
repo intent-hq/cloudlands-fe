@@ -60,6 +60,7 @@ vi.mock('$features/navigation/link-handler', () => ({
 }));
 
 import MonitoredPrsRow from '../MonitoredPrsRow.svelte';
+import monitoredPrsRowSource from '../MonitoredPrsRow.svelte?raw';
 import {
   cancelPrMonitorRequested,
   flushPrMonitorRequested,
@@ -85,14 +86,30 @@ async function openMenu() {
   return { menu, content };
 }
 
+// JSDOM does not apply component stylesheets, so the production
+// .monitored-pr-menu-content sizing is read from the component source and
+// modeled against the test viewport. Removing or altering the rule (the
+// menu's only width constraint) fails here instead of staying green.
+function readMenuContentRule() {
+  const rule = /\.monitored-pr-menu-content\)?\s*\{([^}]*)\}/.exec(monitoredPrsRowSource)?.[1];
+  if (!rule) {
+    throw new Error('Expected a .monitored-pr-menu-content rule in MonitoredPrsRow.svelte');
+  }
+  const width = /(?:^|;)\s*width:\s*([0-9]+)px/.exec(rule)?.[1];
+  const viewportInset = /max-width:\s*calc\(100vw\s*-\s*([0-9]+)px\)/.exec(rule)?.[1];
+  if (!width || !viewportInset) {
+    throw new Error(
+      'Expected the .monitored-pr-menu-content rule to set width and a viewport-clamped max-width'
+    );
+  }
+  return { preferredWidth: Number(width), viewportInset: Number(viewportInset) };
+}
+
 function measureRenderedMenu(menu: HTMLElement) {
   const viewportPadding = Number(menu.dataset.viewportPadding);
-  // JSDOM keeps a fixed CSS layout viewport when innerWidth changes. Resolve
-  // the production calc(100vw - 24px) against this test's rendered viewport.
-  menu.style.maxWidth = `${window.innerWidth - viewportPadding * 2}px`;
-  const style = getComputedStyle(menu);
-  const preferredWidth = Number.parseFloat(style.width);
-  const width = Math.min(preferredWidth, window.innerWidth - viewportPadding * 2);
+  const { preferredWidth, viewportInset } = readMenuContentRule();
+  expect(viewportInset).toBe(viewportPadding * 2);
+  const width = Math.min(preferredWidth, window.innerWidth - viewportInset);
   const right = window.innerWidth - viewportPadding;
   const rect = {
     x: right - width,
@@ -410,9 +427,9 @@ describe('MonitoredPrsRow', () => {
     const { menu, content } = await openMenu();
     expect(content.className).toContain('monitored-pr-menu-content');
     expect(menu.className).toContain('w-full');
+    expect(menu.className).toContain('min-w-0');
+    expect(menu.getAttribute('style')).toBeNull();
     const bounds = measureRenderedMenu(menu);
-    expect(getComputedStyle(menu).width).toBe('260px');
-    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
     expect(bounds.width).toBe(260);
     expect(bounds.left).toBeGreaterThanOrEqual(12);
     expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);
@@ -433,9 +450,8 @@ describe('MonitoredPrsRow', () => {
     const { menu, content } = await openMenu();
     expect(content.className).toContain('monitored-pr-menu-content');
     expect(window.devicePixelRatio).toBe(devicePixelRatio);
+    expect(menu.getAttribute('style')).toBeNull();
     const bounds = measureRenderedMenu(menu);
-    expect(getComputedStyle(menu).width).toBe('260px');
-    expect(getComputedStyle(menu).maxWidth).toBe(`${window.innerWidth - 24}px`);
     expect(bounds.width).toBeLessThanOrEqual(window.innerWidth - 24);
     expect(bounds.left).toBeGreaterThanOrEqual(12);
     expect(bounds.right).toBeLessThanOrEqual(window.innerWidth - 12);

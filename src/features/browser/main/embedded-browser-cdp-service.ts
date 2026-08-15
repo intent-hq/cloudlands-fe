@@ -8,10 +8,7 @@
  * a network port - only the main process can access the debugger.
  */
 
-import {
-  webContents,
-  ipcMain,
-} from 'electron';
+import { webContents, ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
@@ -59,11 +56,19 @@ class EmbeddedBrowserCdpService {
   /** Set of webContentsIds that have debugger attached */
   private attachedDebuggers = new Set<number>();
 
-  /** Cache of browser tabs from panel layout (includes unmounted tabs) */
-  private panelBrowserTabs: PanelBrowserTab[] = [];
+  /**
+   * Cache of browser tabs from panel layout (includes unmounted tabs),
+   * keyed by the workspaceId the request targeted ('' for untargeted
+   * broadcasts). Per-workspace keying keeps a timed-out request from
+   * falling back to another workspace's tab list.
+   */
+  private panelBrowserTabsCache = new Map<string, PanelBrowserTab[]>();
 
   /** Pending resolvers for list-tabs requests, keyed by request ID */
-  private pendingListTabsRequests = new Map<string, (tabs: PanelBrowserTab[]) => void>();
+  private pendingListTabsRequests = new Map<
+    string,
+    { workspaceId?: string; resolve: (tabs: PanelBrowserTab[]) => void }
+  >();
 
   /** Counter for generating unique request IDs */
   private listTabsRequestCounter = 0;
@@ -80,21 +85,22 @@ class EmbeddedBrowserCdpService {
           count: data.tabs.length,
           requestId: data.requestId,
         });
-        this.panelBrowserTabs = data.tabs;
         if (data.requestId) {
           // Resolve only the request this reply answers, so concurrent
           // requests for different workspaces never consume each other's
           // tab lists.
-          const resolver = this.pendingListTabsRequests.get(data.requestId);
-          if (resolver) {
+          const pending = this.pendingListTabsRequests.get(data.requestId);
+          if (pending) {
             this.pendingListTabsRequests.delete(data.requestId);
-            resolver(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
+            pending.resolve(data.tabs);
           }
         } else {
           // Reply without a requestId — resolve all pending requests
-          for (const [requestId, resolver] of this.pendingListTabsRequests) {
+          for (const [requestId, pending] of this.pendingListTabsRequests) {
             this.pendingListTabsRequests.delete(requestId);
-            resolver(data.tabs);
+            this.panelBrowserTabsCache.set(pending.workspaceId ?? '', data.tabs);
+            pending.resolve(data.tabs);
           }
         }
       },
@@ -110,7 +116,7 @@ class EmbeddedBrowserCdpService {
 
     // Create promise that will be resolved when response arrives
     const requestPromise = new Promise<PanelBrowserTab[]>((resolve) => {
-      this.pendingListTabsRequests.set(requestId, resolve);
+      this.pendingListTabsRequests.set(requestId, { workspaceId, resolve });
     });
 
     // Send to workspace windows (falls back to all windows if no workspaceId).
@@ -119,13 +125,18 @@ class EmbeddedBrowserCdpService {
     sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, { requestId });
     logger.debug('Sent LIST_TABS_REQUEST', { workspaceId, requestId });
 
-    // Create per-request timeout promise
+    // Create per-request timeout promise. The fallback only consults the
+    // cache entry for the SAME workspace target, so a timed-out request
+    // never answers with another workspace's tab list.
     const timeoutPromise = new Promise<PanelBrowserTab[]>((resolve) => {
       setTimeout(() => {
         if (this.pendingListTabsRequests.has(requestId)) {
-          logger.warn('Browser tab list request timed out, using cached data', { requestId });
+          logger.warn('Browser tab list request timed out, using cached data', {
+            requestId,
+            workspaceId,
+          });
           this.pendingListTabsRequests.delete(requestId);
-          resolve(this.panelBrowserTabs);
+          resolve(this.panelBrowserTabsCache.get(workspaceId ?? '') ?? []);
         }
       }, 500);
     });
@@ -216,6 +227,14 @@ class EmbeddedBrowserCdpService {
    * Get all browser tabs including unmounted ones from panel layout.
    * This is the preferred method for agents as it shows all tabs the user has open.
    *
+   * The panel layout is the single source of truth for which tabs exist —
+   * the same source closeTab() validates against — so every listed tab is a
+   * valid closeTab target. Live webviews whose tabId is not in the panel
+   * list (e.g. a tab closed in the UI whose webContents hasn't been torn
+   * down yet, or a webview belonging to another workspace's layout) are NOT
+   * listed: appending them used to resurrect UI-closed tabs as
+   * `mounted: true` entries that closeTab then rejected as not found.
+   *
    * Returns tabs with:
    * - webContentsId: number if mounted (can run CDP commands)
    * - webContentsId: -1 if unmounted (need to focusTab first)
@@ -227,40 +246,28 @@ class EmbeddedBrowserCdpService {
     // Get mounted webviews
     const mountedTabs = this.listTabs();
 
+    const orphaned = mountedTabs.filter((t) => !panelTabs.some((p) => p.tabId === t.tabId));
+    if (orphaned.length > 0) {
+      logger.debug('Ignoring live webviews not present in panel layout', {
+        tabIds: orphaned.map((t) => t.tabId),
+        workspaceId,
+      });
+    }
 
-    // Build combined list
-    const result: (TabInfo & { mounted: boolean })[] = [];
-
-    // Add all panel tabs, marking whether they're mounted
-    for (const panelTab of panelTabs) {
+    // Panel tabs only, marking whether each is backed by a live webview
+    return panelTabs.map((panelTab) => {
       const mounted = mountedTabs.find((t) => t.tabId === panelTab.tabId);
       if (mounted) {
-        result.push({
-          ...mounted,
-          mounted: true,
-        });
-      } else {
-        result.push({
-          tabId: panelTab.tabId,
-          webContentsId: -1, // Not mounted
-          url: panelTab.url,
-          title: panelTab.title,
-          mounted: false,
-        });
+        return { ...mounted, mounted: true };
       }
-    }
-
-    // Add any mounted tabs not in panel layout (shouldn't happen, but be safe)
-    for (const mounted of mountedTabs) {
-      if (!panelTabs.some((p) => p.tabId === mounted.tabId)) {
-        result.push({
-          ...mounted,
-          mounted: true,
-        });
-      }
-    }
-
-    return result;
+      return {
+        tabId: panelTab.tabId,
+        webContentsId: -1, // Not mounted
+        url: panelTab.url,
+        title: panelTab.title,
+        mounted: false,
+      };
+    });
   }
 
   /**
@@ -352,7 +359,12 @@ class EmbeddedBrowserCdpService {
     // For mounted tabs the webContents `destroyed` hook covers this too, but
     // unmounted tabs have no webContents to fire it.
     this.unregisterTab(tabId);
-    this.panelBrowserTabs = this.panelBrowserTabs.filter((t) => t.tabId !== tabId);
+    for (const [key, tabs] of this.panelBrowserTabsCache) {
+      this.panelBrowserTabsCache.set(
+        key,
+        tabs.filter((t) => t.tabId !== tabId),
+      );
+    }
 
     return { tabId };
   }
@@ -569,6 +581,47 @@ class EmbeddedBrowserCdpService {
       }
     }
 
+    return undefined;
+  }
+
+  /**
+   * Find a mounted, model-opened tab whose current URL exactly matches the
+   * requested URL, and claim it for the requesting agent.
+   *
+   * Used by openTab dedupe (intent-hq/monorepo#2541): opening a URL the
+   * model already has open focuses the existing tab instead of creating a
+   * duplicate.
+   *
+   * Candidates are restricted to tabs present in the requesting workspace's
+   * panel layout (the same source of truth listAllTabs/closeTab use), so a
+   * matching tab in another workspace is never reused or focused. Only tabs
+   * with a lease entry (i.e. opened or used by an agent) are considered —
+   * tabs the user opened are never returned, so the model can never hijack
+   * a user tab. A tab actively leased by a different agent is skipped so
+   * one agent never steals another's in-use tab. Matching is exact string
+   * equality on the live webview URL — no normalization.
+   */
+  async findModelTabByExactUrl(
+    url: string,
+    requestingAgentId: string,
+    workspaceId?: string,
+  ): Promise<string | undefined> {
+    const tabs = await this.listAllTabs(workspaceId);
+    for (const tab of tabs) {
+      if (!tab.mounted || tab.url !== url) continue;
+      const lease = this.tabLeases.get(tab.tabId);
+      if (!lease) continue; // user-opened tab — never reuse
+      if (lease.agentId !== requestingAgentId && this.isTabLeased(tab.tabId)) continue;
+      logger.info('Found model-opened tab with exact URL match', {
+        tabId: tab.tabId,
+        url,
+        previousAgentId: lease.agentId,
+        requestingAgentId,
+        workspaceId,
+      });
+      this.touchLease(tab.tabId, requestingAgentId);
+      return tab.tabId;
+    }
     return undefined;
   }
 
