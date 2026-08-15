@@ -141,3 +141,13 @@ export function attachPinnedPromptMessage(element: HTMLElement, message: AgentMe
   (element as HTMLElement & { __pinnedPromptMessage?: AgentMessage }).__pinnedPromptMessage =
     message;
 }
+
+/**
+ * Width the scroll container reserves for its vertical scrollbar gutter
+ * (`scrollbar-gutter: stable` / classic scrollbars). The pinned-prompt
+ * overlay compensates by this amount so its lane occupies the same
+ * horizontal box as the conversation column inside the scroll container.
+ */
+export function measureScrollbarGutterWidth(container: HTMLElement): number {
+  return Math.max(0, container.offsetWidth - container.clientWidth);
+}

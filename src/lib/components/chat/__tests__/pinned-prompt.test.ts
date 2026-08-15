@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import { attachPinnedPromptMessage, createPinnedPromptController } from '../pinned-prompt';
+import {
+  attachPinnedPromptMessage,
+  createPinnedPromptController,
+  measureScrollbarGutterWidth,
+} from '../pinned-prompt';
 
 function message(id: string): AgentMessage {
   return { id, role: 'user', contentBlocks: [{ type: 'text', text: id }] } as AgentMessage;
@@ -91,5 +95,26 @@ describe('pinned prompt controller', () => {
     container.prepend(earlier);
 
     expect(controller.update(container, true)?.id).toBe('current');
+  });
+});
+
+describe('measureScrollbarGutterWidth', () => {
+  function scrollContainer(offsetWidth: number, clientWidth: number): HTMLElement {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'offsetWidth', { value: offsetWidth });
+    Object.defineProperty(element, 'clientWidth', { value: clientWidth });
+    return element;
+  }
+
+  it('returns the width reserved by the scrollbar gutter', () => {
+    expect(measureScrollbarGutterWidth(scrollContainer(720, 704))).toBe(16);
+  });
+
+  it('returns zero when no gutter is reserved (overlay scrollbars)', () => {
+    expect(measureScrollbarGutterWidth(scrollContainer(720, 720))).toBe(0);
+  });
+
+  it('never returns a negative width', () => {
+    expect(measureScrollbarGutterWidth(scrollContainer(700, 720))).toBe(0);
   });
 });
