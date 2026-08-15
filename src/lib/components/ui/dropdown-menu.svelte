@@ -20,7 +20,7 @@
     side?: 'top' | 'bottom' | 'left' | 'right';
     portal?: boolean;
     collisionPadding?: number;
-    trigger?: Snippet<[{ toggle: () => void; open: boolean }]>;
+    trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
     contentMaxHeight?: string;
@@ -43,9 +43,7 @@
   <Menu.Root bind:open>
     <Menu.Trigger>
       {#snippet child({ props })}
-        <span class="contents" {...props}>
-          {@render trigger?.({ toggle, open })}
-        </span>
+        {@render trigger?.({ toggle, open, props })}
       {/snippet}
     </Menu.Trigger>
     <Menu.Content

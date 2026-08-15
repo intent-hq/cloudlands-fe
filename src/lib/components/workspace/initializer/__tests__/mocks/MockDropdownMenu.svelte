@@ -7,7 +7,7 @@
     content,
   }: {
     open?: boolean;
-    trigger?: Snippet<[{ toggle: () => void; open: boolean }]>;
+    trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
   } = $props();
 
@@ -17,6 +17,13 @@
       if (open === openBeforeClick) open = !openBeforeClick;
     });
   }
+
+  // Mock props that would come from bits-ui MenuPrimitive.Trigger
+  const mockProps = {
+    'aria-expanded': open,
+    'aria-haspopup': 'menu' as const,
+    'data-state': open ? 'open' : 'closed',
+  };
 </script>
 
 {#if trigger}
@@ -28,7 +35,7 @@
       if (event.key === 'Enter' || event.key === ' ') open = !open;
     }}
   >
-    {@render trigger({ toggle, open })}
+    {@render trigger({ toggle, open, props: mockProps })}
   </div>
 {/if}
 {#if open && content}

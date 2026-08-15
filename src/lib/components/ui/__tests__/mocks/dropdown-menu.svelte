@@ -4,7 +4,7 @@
   interface Props {
     open?: boolean;
     align?: string;
-    trigger?: Snippet<[{ toggle: () => void }]>;
+    trigger?: Snippet<[{ toggle: () => void; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     children?: Snippet;
   }
@@ -19,11 +19,18 @@
   function close() {
     open = false;
   }
+
+  // Mock props that would come from bits-ui MenuPrimitive.Trigger
+  const mockProps = {
+    'aria-expanded': open,
+    'aria-haspopup': 'menu' as const,
+    'data-state': open ? 'open' : 'closed',
+  };
 </script>
 
 <div class="dropdown-menu" data-open={open}>
   {#if trigger}
-    {@render trigger({ toggle })}
+    {@render trigger({ toggle, props: mockProps })}
   {/if}
 
   {#if open && content}

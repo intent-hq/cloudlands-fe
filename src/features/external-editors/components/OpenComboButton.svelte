@@ -385,7 +385,7 @@
 {:else}
   <div class="inline-flex items-center {className}">
     <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
-      {#snippet trigger({ toggle })}
+      {#snippet trigger({ toggle, props })}
         {#if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
           <button
@@ -393,6 +393,7 @@
             onclick={actions.length > 1 ? toggle : handlePrimaryClick}
             class="cursor-pointer"
             title={primaryTitle}
+            {...(actions.length > 1 ? props : {})}
           >
             {@render children()}
           </button>

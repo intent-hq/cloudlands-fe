@@ -6,13 +6,14 @@
 </script>
 
 <DropdownMenu bind:open portal={false} align="end" side="bottom">
-  {#snippet trigger({ toggle, open: isOpen })}
+  {#snippet trigger({ toggle, open: isOpen, props })}
     <button
       type="button"
       onclick={(event) => {
         if (stopPropagation) event.stopPropagation();
         toggle();
-      }}>Legacy actions {isOpen ? 'open' : 'closed'}</button
+      }}
+      {...props}>Legacy actions {isOpen ? 'open' : 'closed'}</button
     >
   {/snippet}
   {#snippet content({ close })}

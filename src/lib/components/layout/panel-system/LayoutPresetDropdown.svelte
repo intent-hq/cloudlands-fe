@@ -143,7 +143,7 @@
 </script>
 
 <DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0">
-  {#snippet trigger({ toggle, open }: { toggle: () => void; open: boolean })}
+  {#snippet trigger({ toggle, open, props }: { toggle: () => void; open: boolean; props: Record<string, unknown> })}
     {#if children}
       {@render children({ toggle, open })}
     {:else}
@@ -152,6 +152,7 @@
         size="xs"
         onclick={toggle}
         class="gap-1 px-1.5 text-muted-foreground hover:text-foreground"
+        {...props}
       >
         <span class="font-medium text-xs">{m.layout_presets_trigger_label()}</span>
         <Fa

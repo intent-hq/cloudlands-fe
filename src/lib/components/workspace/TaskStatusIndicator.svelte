@@ -132,12 +132,13 @@
 
 {#if isInteractive}
   <DropdownMenu align="start" side="bottom">
-    {#snippet trigger({ toggle, open }: { toggle: () => void; open: boolean })}
+    {#snippet trigger({ toggle, open, props }: { toggle: () => void; open: boolean; props: Record<string, unknown> })}
       <button
         onclick={() => {
           if (!open) handleMenuOpen();
           toggle();
         }}
+        {...props}
         class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
           ? 'py-0.5 text-sm gap-1.5'
           : 'py-1 text-sm gap-2'}"
