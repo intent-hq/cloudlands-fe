@@ -653,7 +653,20 @@
   }
 
   function handleTabClose(panelId: string, tabId: string) {
-    layoutManager.closeTab(tabId, panelId);
+    // Closing a panel's final tab removes the panel itself (closePanelHelper
+    // runs inside the closeTab reducer), so it collapses the split exactly
+    // like a panel close and needs the same motion suppression to avoid the
+    // surviving-sibling overflow flicker during the exit outro.
+    const panel = $panels$[panelId];
+    const collapsesPanel =
+      panel?.tabs.length === 1 &&
+      panel.tabs[0].id === tabId &&
+      Object.keys($panels$).length > 1;
+    if (collapsesPanel) {
+      commitPanelMoveWithoutReplay(() => layoutManager.closeTab(tabId, panelId));
+    } else {
+      layoutManager.closeTab(tabId, panelId);
+    }
   }
 
   function handleTabReorder(panelId: string, fromIndex: number, toIndex: number) {
@@ -689,7 +702,14 @@
   }
 
   function handleClosePanel(panelId: string) {
-    closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    // Commit the close without layout motion: during the removed wrapper's
+    // exit outro the surviving siblings already carry their new (larger)
+    // pixel flex bases, so the combined width overflows the canvas for the
+    // exit duration and visibly shifts/clips the survivors. Suppressing the
+    // replay applies the collapse in a single frame.
+    commitPanelMoveWithoutReplay(() => {
+      closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    });
   }
 
   function handleZoomToggle(_panelId: string) {
