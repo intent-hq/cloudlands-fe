@@ -15,7 +15,11 @@ name: Manual Signed Build
 #   - per-platform opt-in inputs and a sign input (default on)
 #   - a -manual.<run_number> version suffix so an installed manual build is
 #     never version-equal to a real release
-#   - artifacts are installers + blockmaps only, 7-day retention
+#   - one minimal artifact per installer kind (manual-macos-dmg,
+#     manual-windows-exe, manual-linux-{appimage,deb}-<arch>) so downloading
+#     one installer never pulls the rest; no mac .zip archive and no
+#     .blockmap files (both are auto-updater material, dead weight in manual
+#     builds); 7-day retention
 #   - the Windows leg gains integrated DigiCert signing (release-beta's
 #     Windows leg is still unsigned; the signing steps come from
 #     intent-manual-windows-build.yml)
@@ -213,16 +217,15 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
-      - name: Upload macOS artifacts
+      - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v7
         with:
-          name: manual-macos
-          # Installers + blockmaps only — deliberately no latest-mac.yml, so
-          # nothing that looks like an auto-updater feed leaves this workflow.
-          path: |
-            dist-electron/*.dmg
-            dist-electron/*.zip
-            dist-electron/*.blockmap
+          name: manual-macos-dmg
+          # DMG only — the mac .zip and .blockmap files exist solely for the
+          # auto-updater feed, which manual builds never publish (no
+          # latest-mac.yml leaves this workflow), so they are dead weight
+          # here.
+          path: dist-electron/*.dmg
           retention-days: 7
           if-no-files-found: error
 
@@ -241,8 +244,8 @@ jobs:
               echo "✅ Signed build completed (Developer ID + notarization)."
             fi
             echo ""
-            echo "Artifacts:"
-            find dist-electron -maxdepth 1 -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            echo "Artifacts (manual-macos-dmg):"
+            find dist-electron -maxdepth 1 -type f -name "*.dmg" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Always delete the temporary signing keychain, restore the pre-job
@@ -469,15 +472,14 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v7
         with:
-          name: manual-windows
-          # Installers + blockmaps only — deliberately no latest.yml, so
-          # nothing that looks like an auto-updater feed leaves this workflow.
-          path: |
-            dist-electron/*.exe
-            dist-electron/*.exe.blockmap
+          name: manual-windows-exe
+          # NSIS installer only — the .exe.blockmap exists solely for the
+          # auto-updater feed, which manual builds never publish (no
+          # latest.yml leaves this workflow), so it is dead weight here.
+          path: dist-electron/*.exe
           retention-days: 7
           if-no-files-found: error
 
@@ -497,8 +499,8 @@ jobs:
               echo "✅ Signed build completed (DigiCert Authenticode)."
             fi
             echo ""
-            echo "Artifacts:"
-            find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.exe.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            echo "Artifacts (manual-windows-exe):"
+            find dist-electron -maxdepth 1 -type f -name "*.exe" -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Copied from release-beta.yml build-linux. Linux packages are unsigned in
@@ -666,17 +668,25 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
-      - name: Upload Linux artifacts
+      # One artifact per installer kind, per arch (each arch is its own
+      # matrix job), so downloading one installer never pulls the rest.
+      # Installers only — the .blockmap files exist solely for the
+      # auto-updater feed, which manual builds never publish (no
+      # latest-linux*.yml leaves this workflow), so they are dead weight
+      # here.
+      - name: Upload Linux AppImage artifact
         uses: actions/upload-artifact@v7
         with:
-          name: manual-linux-${{ matrix.arch }}
-          # Installers + blockmaps only — deliberately no latest-linux*.yml,
-          # so nothing that looks like an auto-updater feed leaves this
-          # workflow.
-          path: |
-            dist-electron/*.AppImage
-            dist-electron/*.deb
-            dist-electron/*.blockmap
+          name: manual-linux-appimage-${{ matrix.arch }}
+          path: dist-electron/*.AppImage
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload Linux deb artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-linux-deb-${{ matrix.arch }}
+          path: dist-electron/*.deb
           retention-days: 7
           if-no-files-found: error
 
@@ -695,6 +705,6 @@ jobs:
               echo "✅ Build completed (Linux packages are unsigned by design; the sign input does not apply)."
             fi
             echo ""
-            echo "Artifacts:"
-            find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.blockmap" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
+            echo "Artifacts (manual-linux-appimage-${{ matrix.arch }}, manual-linux-deb-${{ matrix.arch }}):"
+            find dist-electron -maxdepth 1 -type f \( -name "*.AppImage" -o -name "*.deb" \) -exec basename {} \; 2>/dev/null | sed 's/^/- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
