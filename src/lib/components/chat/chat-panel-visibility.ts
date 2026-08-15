@@ -116,6 +116,38 @@ export function shouldShowTranscriptSkeleton(state: TranscriptSkeletonState): bo
   );
 }
 
+type SetupCardOnlyState = {
+  isInitialWorkspaceAgent: boolean;
+  hasOnboardingContext: boolean;
+  hasOnboardingPrompt: boolean;
+  hasMessages: boolean;
+  isStreaming: boolean;
+  hasPendingInitialPrompt: boolean;
+  hydrationSettled: boolean;
+};
+
+/**
+ * "Setup card only, no skeletons" gate for the initial workspace agent with no
+ * onboarding prompt. It must NOT match while the first hydration is in flight
+ * (`hydrationSettled` false): `workspace.initialPrompt` is not persisted, so a
+ * reopened workspace always reconstructs an empty prompt, and the transcript is
+ * momentarily empty until hydration lands — without the settled guard this
+ * branch would replace the loading skeleton with the setup card for the whole
+ * load. During loading, `shouldShowTranscriptSkeleton` wins (it already renders
+ * the setup card above the skeleton for initial-workspace agents).
+ */
+export function shouldShowSetupCardOnly(state: SetupCardOnlyState): boolean {
+  return (
+    state.isInitialWorkspaceAgent &&
+    state.hasOnboardingContext &&
+    !state.hasOnboardingPrompt &&
+    !state.hasMessages &&
+    !state.isStreaming &&
+    !state.hasPendingInitialPrompt &&
+    state.hydrationSettled
+  );
+}
+
 type QueuedMessagesVisibilityState = {
   queueLength: number;
   hasPendingQuestions: boolean;

@@ -215,6 +215,7 @@
     deriveQueuedMessagesVisibility,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
+    shouldShowSetupCardOnly,
     shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
@@ -3314,8 +3315,8 @@
             onSpecialistChange={handleSpecialistChange}
             session={$agentSession$}
           />
-        {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
-          <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
+        {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
+          <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
           <div class="pt-16 pb-6">
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
