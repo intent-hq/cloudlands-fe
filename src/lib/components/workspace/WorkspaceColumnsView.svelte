@@ -71,7 +71,7 @@
   let revealFrame: number | null = null;
   let revealSettleTimer: ReturnType<typeof setTimeout> | null = null;
   let visibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
-  let columnVisibilityTracker: ColumnVisibilityTracker | null = null;
+  let columnVisibilityTracker = $state<ColumnVisibilityTracker | null>(null);
   const UNMOUNT_HYSTERESIS_MS = 300;
   let recentlyVisibleWorkspaceIds = $state<ReadonlySet<string>>(new Set());
   const unmountHysteresisTimers = new Map<string, ReturnType<typeof setTimeout>>();
