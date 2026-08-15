@@ -374,7 +374,7 @@ describe('WorkspaceHoverCard', () => {
     expect(root.className.split(/\s+/)).not.toContain('border');
     expect(root.className.split(/\s+/)).not.toContain('border-border');
     expect(root.className).not.toMatch(/rounded/);
-    expect(root.className).toContain('shadow-2xl');
+    expect(root.className).toContain('shadow-(--elevation-overlay)');
     expect(root.className).toContain('ring-1');
   });
 

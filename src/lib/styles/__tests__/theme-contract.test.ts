@@ -332,6 +332,29 @@ describe('theme color contract', () => {
     );
   });
 
+  it('uses distinct black elevation shadows for light and dark surfaces', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const lightRaised = tokenValue(css, 'theme-light-elevation-raised');
+    const lightOverlay = tokenValue(css, 'theme-light-elevation-overlay');
+    const darkRaised = tokenValue(css, 'theme-dark-elevation-raised');
+    const darkOverlay = tokenValue(css, 'theme-dark-elevation-overlay');
+
+    for (const shadow of [lightRaised, lightOverlay, darkRaised, darkOverlay]) {
+      expect(shadow).toContain('rgb(0 0 0 /');
+      expect(shadow).not.toContain('var(--foreground)');
+    }
+    expect(lightRaised).not.toBe(lightOverlay);
+    expect(darkRaised).not.toBe(darkOverlay);
+    expect(tokenValue(css, 'elevation-raised')).toBe('var(--theme-light-elevation-raised)');
+    expect(tokenValue(css, 'elevation-overlay')).toBe('var(--theme-light-elevation-overlay)');
+    expect(css).toMatch(
+      /\.dark\s*{[^}]*--elevation-raised:\s*var\(--theme-dark-elevation-raised\)/s,
+    );
+    expect(css).toMatch(
+      /\.dark\s*{[^}]*--elevation-overlay:\s*var\(--theme-dark-elevation-overlay\)/s,
+    );
+  });
+
   it('limits product typography to five canonical styles with compatibility aliases', () => {
     const tokens = fs.readFileSync(
       path.resolve(process.cwd(), 'src/lib/styles/tokens.css'),

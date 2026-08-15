@@ -433,7 +433,7 @@
 </script>
 
 <div
-  class="bg-popover shadow-2xl ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
+  class="bg-popover shadow-(--elevation-overlay) ring-1 ring-border/70 py-3 px-4 w-[320px] shrink-0 max-w-[calc(100vw-1rem)] flex flex-col gap-1.5 text-left"
 >
   <!-- Header: Title and repo -->
   <div class="w-full">

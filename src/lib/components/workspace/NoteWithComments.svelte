@@ -2241,7 +2241,7 @@
     border-radius: 0.5rem;
     margin: 1.5rem 0;
     /* Subtle shadow for images that break out of text column */
-    box-shadow: 0 1px 3px 0 hsl(var(--foreground) / 0.04);
+    box-shadow: var(--elevation-raised);
   }
 
   /* Highlight for comment marks */

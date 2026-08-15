@@ -239,9 +239,14 @@
   --radius-medium: 7px;
   --radius-large: 9px;
   --radius-full: 9999px;
-  --elevation-raised: 0 1px 2px hsl(var(--foreground) / 0.08);
-  --elevation-overlay:
-    0 8px 24px hsl(var(--foreground) / 0.14), 0 2px 8px hsl(var(--foreground) / 0.08);
+  --theme-light-elevation-raised: 0 1px 2px rgb(0 0 0 / 0.08);
+  --theme-light-elevation-overlay:
+    0 8px 24px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.08);
+  --theme-dark-elevation-raised: 0 1px 2px rgb(0 0 0 / 0.32);
+  --theme-dark-elevation-overlay:
+    0 12px 32px rgb(0 0 0 / 0.56), 0 3px 10px rgb(0 0 0 / 0.4);
+  --elevation-raised: var(--theme-light-elevation-raised);
+  --elevation-overlay: var(--theme-light-elevation-overlay);
   --surface-hatch: repeating-linear-gradient(
     135deg,
     color-mix(in srgb, hsl(var(--muted)) 42%, hsl(var(--background))) 0 1px,
@@ -273,6 +278,8 @@
 
 .dark {
   color-scheme: dark;
+  --elevation-raised: var(--theme-dark-elevation-raised);
+  --elevation-overlay: var(--theme-dark-elevation-overlay);
   --theme-background: var(--theme-dark-background);
   --theme-foreground: var(--theme-dark-foreground);
   --theme-card: var(--theme-dark-card);

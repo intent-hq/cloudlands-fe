@@ -105,6 +105,6 @@
     padding: 0.375rem 0.75rem;
     border-radius: 4px;
     white-space: nowrap;
-    box-shadow: 0 2px 8px hsl(var(--foreground) / 0.1);
+    box-shadow: var(--elevation-overlay);
   }
 </style>
