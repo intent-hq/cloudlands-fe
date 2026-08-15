@@ -148,7 +148,12 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faArrowDown, faSquareCheck, faPaperclip } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faArrowDown,
+    faLock,
+    faSquareCheck,
+    faPaperclip,
+  } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
@@ -376,6 +381,22 @@
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
+  // scrolling crosses back to the bottom and auto-follow re-engages. Purely
+  // decorative (aria-hidden, pointer-events-none) so it can never intercept
+  // hover hit-tests or land in the tab order (monorepo#2508).
+  let showLockConfirmation = $state(false);
+  let lockConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
+  const LOCK_CONFIRMATION_DURATION_MS = 1500;
+
+  function flashLockConfirmation(): void {
+    if (lockConfirmationTimer !== null) clearTimeout(lockConfirmationTimer);
+    showLockConfirmation = true;
+    lockConfirmationTimer = setTimeout(() => {
+      showLockConfirmation = false;
+      lockConfirmationTimer = null;
+    }, LOCK_CONFIRMATION_DURATION_MS);
+  }
 
   interface PendingSendTransition {
     origin: MessageSendOrigin;
@@ -2296,6 +2317,14 @@
       const newDistance = scrollHeight - scrollTop - clientHeight;
       // Only update if changed to avoid unnecessary re-renders
       if (newDistance !== distanceFromBottom) {
+        // Crossing back into the at-bottom zone re-locks auto-follow; flash
+        // the decorative lock confirmation so the re-lock is visible.
+        if (
+          distanceFromBottom > SCROLL_BOTTOM_THRESHOLD &&
+          newDistance <= SCROLL_BOTTOM_THRESHOLD
+        ) {
+          flashLockConfirmation();
+        }
         distanceFromBottom = newDistance;
       }
     };
@@ -2320,6 +2349,10 @@
       if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
       if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
       boundContainer?.removeEventListener('scroll', handleScroll);
+      if (lockConfirmationTimer !== null) {
+        clearTimeout(lockConfirmationTimer);
+        lockConfirmationTimer = null;
+      }
     };
   });
 
@@ -4041,6 +4074,18 @@
       >
         <Fa icon={faArrowDown} class="w-3! h-3!" />
       </Button>
+    {:else if showLockConfirmation}
+      <!-- Transient re-lock confirmation: purely decorative feedback that
+           auto-follow re-engaged on reaching the bottom. Never interactive:
+           aria-hidden keeps it out of the accessibility tree and
+           pointer-events-none out of hover hit-tests (monorepo#2508). -->
+      <div
+        aria-hidden="true"
+        data-testid="chat-scroll-lock-confirmation"
+        class="lock-confirmation pointer-events-none absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-sm border border-border bg-sidebar text-muted-foreground"
+      >
+        <Fa icon={faLock} class="w-3! h-3!" />
+      </div>
     {/if}
   </div>
 
@@ -4160,6 +4205,29 @@
   /* Flash animation for scroll-to-turn navigation */
   :global(.highlight-flash) {
     animation: highlight-flash 1.5s ease-out;
+  }
+
+  /* Transient scroll re-lock confirmation: hold briefly, then fade out.
+     Forwards fill keeps it invisible until the element unmounts. */
+  .lock-confirmation {
+    animation: lock-confirmation-fade 1.5s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lock-confirmation {
+      animation: none;
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes lock-confirmation-fade {
+    0%,
+    40% {
+      opacity: 0.9;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 
   @keyframes message-flash {
