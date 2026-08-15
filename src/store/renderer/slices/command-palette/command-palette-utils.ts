@@ -103,9 +103,10 @@ export function fuzzyScore(haystackRaw: string, needleRaw: string): number {
 
 /**
  * Format a date string as a compact relative time label in the active locale;
- * dates older than a week show a short date instead.
+ * dates older than a week show a short date instead. Falsy inputs — including
+ * the epoch-0 placeholder used for unattributed changes — format as "".
  */
-export function formatRelativeTime(dateStr: Date | string | undefined): string {
+export function formatRelativeTime(dateStr: Date | string | number | undefined): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return "";
