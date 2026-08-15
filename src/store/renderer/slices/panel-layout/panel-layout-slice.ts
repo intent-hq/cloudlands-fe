@@ -33,6 +33,7 @@ import {
   countHorizontalPanelColumns,
   getAutomaticPanelLayoutCanvasWidth,
   getPanelOrder,
+  appendHorizontalPanelToLayout,
   insertHorizontalPanelInLayout,
   removePanelPreservingHorizontalWidths,
   resizeRootHorizontalPanel,
@@ -40,8 +41,10 @@ import {
   type PanelMovePosition,
 } from './panel-layout-tabless';
 import {
+  canUseWideFirstChatLayout,
   DEFAULT_PANEL_WIDTH,
   getAutomaticPanelCanvasWidth,
+  getWideFirstChatSizes,
 } from '../../../../shared/panel-layout-sizing';
 import {
   initializePanelCanvasWidth,
@@ -218,6 +221,25 @@ export const openTabInAdjacentOrSplit = createAction(
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
+    newTabId: generateTabId(),
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+export const openTabInNewRootColumn = createAction(
+  'panelLayout/openTabInNewRootColumn',
+  (
+    wsId: string,
+    tab: Omit<PanelTab, 'id'>,
+    options?: { availableCanvasWidth?: number; adaptiveFirstChat?: boolean; force?: boolean },
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tab,
+    availableCanvasWidth: options?.availableCanvasWidth,
+    adaptiveFirstChat: options?.adaptiveFirstChat ?? false,
+    force: options?.force ?? false,
+    newPanelId: generatePanelId(),
     newTabId: generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -1066,6 +1088,107 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
     pendingPanelReveal: null,
   };
   ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
+  return setWorkspaceState(state, wsId, ws);
+});
+panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
+  const {
+    wsId,
+    tab,
+    availableCanvasWidth,
+    adaptiveFirstChat,
+    force,
+    newPanelId,
+    newTabId,
+    timestamp,
+  } = payload;
+  if (tab.workspaceId && tab.workspaceId !== wsId) return state;
+  let ws = getWorkspaceState(state, wsId);
+  if (ws.deferSpecTab && tab.type === 'note' && tab.noteId === 'spec' && !force) return state;
+
+  const existing = findEquivalentPanelTab(wsId, ws, tab, ws.focusedPanelId);
+  if (existing) {
+    return setWorkspaceState(
+      state,
+      wsId,
+      activateEquivalentTab(ws, existing, tab, newTabId, timestamp),
+    );
+  }
+
+  const panelIds = Object.keys(ws.panels);
+  const isPristineLayout =
+    panelIds.length === 1 && ws.panels[panelIds[0]]?.tabs.length === 0 && ws.root.type === 'panel';
+  const newTab: PanelTab = { ...tab, id: newTabId };
+  ws = saveToHistory(ws, timestamp);
+
+  if (isPristineLayout && adaptiveFirstChat) {
+    const initialPanelId = panelIds[0];
+    const initialPanel = ws.panels[initialPanelId];
+    if (
+      typeof availableCanvasWidth === 'number' &&
+      canUseWideFirstChatLayout(availableCanvasWidth)
+    ) {
+      ws = {
+        ...ws,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: initialPanelId },
+            { type: 'panel', panelId: newPanelId },
+          ],
+          sizes: getWideFirstChatSizes(availableCanvasWidth),
+        },
+        panels: {
+          ...ws.panels,
+          [initialPanelId]: {
+            ...initialPanel,
+            tabs: [newTab],
+            activeTabId: newTabId,
+            pristine: false,
+          },
+          [newPanelId]: { id: newPanelId, tabs: [], activeTabId: null, pristine: true },
+        },
+        focusedPanelId: initialPanelId,
+        canvasWidth: availableCanvasWidth,
+        pendingFocusTabId: newTabId,
+        pendingPanelReveal: null,
+      };
+    } else {
+      ws = {
+        ...ws,
+        panels: {
+          ...ws.panels,
+          [initialPanelId]: {
+            ...initialPanel,
+            tabs: [newTab],
+            activeTabId: newTabId,
+            pristine: false,
+          },
+        },
+        focusedPanelId: initialPanelId,
+        pendingFocusTabId: newTabId,
+        pendingPanelReveal: null,
+      };
+    }
+    ws = addToFocusHistory(ws, initialPanelId, newTabId, timestamp);
+    return setWorkspaceState(state, wsId, ws);
+  }
+
+  const existingCanvasWidth =
+    ws.canvasWidth ?? getAutomaticPanelLayoutCanvasWidth(ws.root, ws.panels, 'content');
+  ws = {
+    ...ws,
+    root: appendHorizontalPanelToLayout(ws.root, newPanelId, existingCanvasWidth),
+    panels: {
+      ...ws.panels,
+      [newPanelId]: { id: newPanelId, tabs: [newTab], activeTabId: newTabId },
+    },
+    focusedPanelId: newPanelId,
+    canvasWidth: existingCanvasWidth + DEFAULT_PANEL_WIDTH,
+    pendingFocusTabId: newTabId,
+    pendingPanelReveal: null,
+  };
+  ws = addToFocusHistory(ws, newPanelId, newTabId, timestamp);
   return setWorkspaceState(state, wsId, ws);
 });
 // --- Close Tab ---

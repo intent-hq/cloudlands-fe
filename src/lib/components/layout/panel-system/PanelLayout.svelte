@@ -109,6 +109,7 @@
     onCreateNote?: () => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
     onPanelCanvasWidthChange?: (width: number) => void;
+    onAvailableCanvasWidthChange?: (width: number) => void;
     onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
@@ -125,6 +126,7 @@
     onCreateNote,
     onPanelMovePreviewWidthRatioChange,
     onPanelCanvasWidthChange,
+    onAvailableCanvasWidthChange,
     onCyclePanelBoundary,
   }: Props = $props();
 
@@ -259,6 +261,7 @@
         Number.parseFloat(styles.paddingLeft) || 0,
         Number.parseFloat(styles.paddingRight) || 0,
       );
+      onAvailableCanvasWidthChange?.(panelViewportWidth);
     }
 
     update();

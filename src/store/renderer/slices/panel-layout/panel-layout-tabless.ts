@@ -262,6 +262,18 @@ export function insertHorizontalPanelInLayout(
   return { ...root, children, sizes };
 }
 
+export function appendHorizontalPanelToLayout(
+  root: PanelLayoutNode,
+  panelId: string,
+  existingCanvasWidth?: number | null,
+): PanelLayoutNode {
+  const rightmostPanelId = getPanelOrder(root).at(-1);
+  if (!rightmostPanelId) return root;
+  return (
+    insertHorizontalPanelInLayout(root, panelId, rightmostPanelId, existingCanvasWidth) ?? root
+  );
+}
+
 export function removePanelPreservingHorizontalWidths(
   node: PanelLayoutNode,
   panelId: string,

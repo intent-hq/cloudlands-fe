@@ -134,9 +134,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain(
-      'rounded-lg border border-border bg-card px-3 pb-3 pt-2 text-foreground',
-    );
+    expect(sidebar).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
     expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
     expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
@@ -156,11 +154,10 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('content={`${tab.label}: ${getTabDescription');
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(sidebar).toContain('data-sidebar-context={note.id}');
-    expect(sidebar).toContain('data-sidebar-change={changePath}');
+    expect(sidebar).not.toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain(
-      'flex h-7 min-w-0 max-w-full flex-nowrap items-start overflow-hidden',
-    );
+    expect(sidebar).toContain('grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible');
+    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
     expect(sidebar).toContain('deriveNoteLauncherItems(');

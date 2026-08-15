@@ -871,6 +871,10 @@
   // First actionable descriptor for the full-mode workflow button. Actions that
   // require onAcceptChanges are hidden when no handler is provided.
   const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
+  const viewPullRequestAction = $derived(
+    displayAction?.id === 'view-pr' ? displayAction : undefined,
+  );
+  const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
@@ -972,7 +976,9 @@
           <Button
             variant="ghost-light"
             size="icon-sm"
-            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({ id: workspaceId ?? '' })}
+            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({
+              id: workspaceId ?? '',
+            })}
             data-workspace-close
             class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
             onpointerdown={(event) => event.stopPropagation()}
@@ -1120,8 +1126,8 @@
       </div>
     {/if}
     <!-- Workflow action button (styled like AI-assisted action prompts) -->
-    {#if displayAction}
-      {@const action = displayAction}
+    {#if workflowAction}
+      {@const action = workflowAction}
       <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
         {#if action}
           <div class="mt-1">
@@ -1235,6 +1241,23 @@
             {currentStatusMessage}
           </button>
         {/if}
+      </div>
+    {/if}
+
+    {#if viewPullRequestAction}
+      {@const action = viewPullRequestAction}
+      <div class="flex-1 w-full" data-workspace-view-pr>
+        <Tooltip content={action.tooltip} side="bottom" align="start" disabled={!action.tooltip}>
+          <Button
+            variant="ghost-light"
+            size="xs"
+            class="w-full text-left justify-start px-0!"
+            onclick={() => runProgressAction(action)}
+          >
+            <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+            <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+          </Button>
+        </Tooltip>
       </div>
     {/if}
 

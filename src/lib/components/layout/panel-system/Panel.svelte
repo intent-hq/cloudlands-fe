@@ -440,7 +440,12 @@
 {#if panel}
   <div
     bind:this={panelRef}
-    class="panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50 bg-card text-card-foreground"
+    class={cn(
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50',
+      panel.pristine === true && panel.tabs.length === 0
+        ? 'bg-transparent text-sidebar-foreground'
+        : 'bg-card text-card-foreground',
+    )}
     class:contained
     data-panel-id={panel.id}
     data-layout-id={layoutId}

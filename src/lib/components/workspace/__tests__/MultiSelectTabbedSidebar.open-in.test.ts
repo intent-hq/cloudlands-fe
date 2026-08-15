@@ -402,25 +402,24 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         const targets = [...stack.querySelectorAll<HTMLElement>('[data-launcher-preview-item]')];
         const glyphs = [...stack.querySelectorAll<HTMLElement>('[data-sidebar-launcher-glyph]')];
         expect(card.dataset.launcherTopInset).toBe('8');
-        expect(card.classList.contains('pt-2')).toBe(true);
-        expect(card.classList.contains('pb-3')).toBe(true);
+        expect(card.dataset.launcherInlineInset).toBe('8');
+        expect(card.classList.contains('p-2')).toBe(true);
         const isAgentStack = tabId === 'agents';
         expect(stack.dataset.launcherLayout).toBe('horizontal');
-        expect(stack.dataset.launcherOverlap).toBe('6');
-        expect(stack.dataset.launcherOverlapStep).toBe(isAgentStack ? '16' : '12');
-        expect(stack.dataset.launcherPrimaryGap).toBe('4');
-        expect(stack.dataset.launcherPrimaryStep).toBe(isAgentStack ? '26' : '22');
+        expect(stack.dataset.launcherPack).toBe('bounded-distribution');
         expect(stack.dataset.launcherTargetSize).toBe('28');
         expect(stack.dataset.launcherVisibleSize).toBe(isAgentStack ? '22' : '18');
         expect(stack.dataset.launcherVisibleOffset).toBe(isAgentStack ? '3' : '5');
-        expect(
-          stack.classList.contains(isAgentStack ? '-ml-2.5' : 'launcher-icon-stack-offset'),
-        ).toBe(true);
         expect(stack.classList.contains('h-7')).toBe(true);
-        expect(stack.classList.contains('flex-nowrap')).toBe(true);
-        expect(stack.classList.contains('overflow-hidden')).toBe(true);
+        expect(stack.classList.contains('grid')).toBe(true);
+        expect(stack.classList.contains('w-full')).toBe(true);
+        expect(stack.classList.contains('overflow-visible')).toBe(true);
         expect(targets.every((target) => target.classList.contains('size-7'))).toBe(true);
         expect(targets.every((target) => target.classList.contains('shrink-0'))).toBe(true);
+        expect(targets[0]?.parentElement?.classList.contains('justify-self-start')).toBe(true);
+        if (targets.length > 2) {
+          expect(targets[1].parentElement?.classList.contains('justify-self-center')).toBe(true);
+        }
         expect(targets.every((target) => target.classList.contains('hover:z-20'))).toBe(true);
         expect(targets.every((target) => target.classList.contains('focus-visible:z-30'))).toBe(
           true,
@@ -448,32 +447,17 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
           Number(stack.dataset.launcherTargetSize) / 2 -
             Number(stack.dataset.launcherVisibleSize) / 2,
         );
-        expect(
-          Number(stack.dataset.launcherPrimaryStep) - Number(stack.dataset.launcherVisibleSize),
-        ).toBe(Number(stack.dataset.launcherPrimaryGap));
-        expect(
-          Number(stack.dataset.launcherVisibleSize) - Number(stack.dataset.launcherOverlapStep),
-        ).toBe(Number(stack.dataset.launcherOverlap));
-        if (tabId !== 'changes') {
-          expect(targets[0]?.dataset.launcherLeadingItem).toBe('true');
-          if (targets.length > 1) {
-            expect(targets[1].classList.contains(isAgentStack ? '-ml-0.5' : '-ml-1.5')).toBe(true);
-          }
-        }
-        if (targets.length > 2) {
-          expect(targets[2].classList.contains(isAgentStack ? '-ml-3' : '-ml-4')).toBe(true);
-        }
+        expect(targets[0]?.dataset.launcherLeadingItem).toBe('true');
         expect(label).toBeTruthy();
         return {
           topInset: card.dataset.launcherTopInset,
-          overlap: stack.dataset.launcherOverlap,
-          primaryGap: stack.dataset.launcherPrimaryGap,
+          inlineInset: card.dataset.launcherInlineInset,
+          pack: stack.dataset.launcherPack,
           target: stack.dataset.launcherTargetSize,
         };
       };
 
       expect(geometry('agents')).toEqual(geometry('context'));
-      expect(geometry('agents')).toEqual(geometry('changes'));
     },
   );
 
@@ -492,19 +476,19 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
 
-    for (const tabId of ['agents', 'context', 'changes']) {
+    for (const tabId of ['agents', 'context']) {
       const card = container.querySelector<HTMLElement>(`[data-sidebar-launcher="${tabId}"]`)!;
       const stack = card.querySelector<HTMLElement>('[data-sidebar-launcher-icons]')!;
       const itemCount = stack.querySelectorAll('[data-launcher-preview-item]').length;
-      expect(stack.classList.contains('flex')).toBe(true);
-      expect(stack.classList.contains('flex-nowrap')).toBe(true);
+      expect(stack.classList.contains('grid')).toBe(true);
+      expect(stack.classList.contains('grid-flow-col')).toBe(true);
       expect(stack.className).not.toContain('grid-cols-');
+      expect(stack.style.gridTemplateColumns).toBe('repeat(7, minmax(0, 1fr))');
       expect(itemCount).toBe(7);
       expect(card.classList.contains('overflow-hidden')).toBe(true);
     }
     const agentOverflow = getByRole('button', { name: /2 more agents.*8 agents total/ });
     const noteOverflow = getByRole('button', { name: /2 more notes/ });
-    const changeOverflow = getByRole('button', { name: /2 more changes/ });
     const agentGlyphs = [
       ...container.querySelectorAll<HTMLElement>(
         '[data-sidebar-launcher="agents"] [data-launcher-avatar-size="22"]',
@@ -535,7 +519,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(style.boxShadow).toBe('none');
     };
 
-    for (const overflow of [agentOverflow, noteOverflow, changeOverflow]) {
+    for (const overflow of [agentOverflow, noteOverflow]) {
       expectPlainOverflowStyle(overflow);
     }
 
@@ -545,7 +529,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       for (const zoom of [1, 2]) {
         container.style.zoom = String(zoom);
         expectPlainOverflowStyle(agentOverflow);
-        expectPlainOverflowStyle(changeOverflow);
         for (const glyph of agentGlyphs) {
           const style = getComputedStyle(glyph);
           expect(style.width).toBe('22px');
@@ -582,7 +565,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     }
   });
 
-  it('keeps plain +N text immediately after the contained icon stack', async () => {
+  it('keeps plain +N text as the last bounded icon-grid item', async () => {
     mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
@@ -592,14 +575,15 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const stackRect = stack.getBoundingClientRect();
     const overflowRect = overflow.getBoundingClientRect();
 
-    expect(stack.classList.contains('-ml-2.5')).toBe(true);
+    expect(stack.className).not.toMatch(/-ml-/);
+    expect(stack.dataset.launcherPack).toBe('bounded-distribution');
     expect(stack.dataset.launcherVisibleSize).toBe('22');
     expect(stack.dataset.launcherVisibleOffset).toBe('3');
-    for (const tabId of ['context', 'changes']) {
+    for (const tabId of ['context']) {
       const siblingStack = container.querySelector<HTMLElement>(
         `[data-sidebar-launcher="${tabId}"] [data-sidebar-launcher-icons]`,
       )!;
-      expect(siblingStack.classList.contains('launcher-icon-stack-offset')).toBe(true);
+      expect(siblingStack.className).not.toMatch(/launcher-icon-stack-offset|-ml-/);
       expect(siblingStack.dataset.launcherVisibleSize).toBe('18');
       expect(siblingStack.dataset.launcherVisibleOffset).toBe('5');
     }
@@ -609,6 +593,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(overflow.textContent).toContain('+2');
     expect(overflow.className).toContain('w-auto');
     expect(overflow.className).toContain('justify-start');
+    expect(overflow.style.justifySelf).toBe('end');
   });
 
   it('affirms coordinator and Spec ordering in every required visual state', async () => {
@@ -669,7 +654,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(expanded.container.querySelectorAll('[data-expanded-agent]')).toHaveLength(8);
   });
 
-  it('opens each compact agent, note, and change exactly once', async () => {
+  it('opens each compact agent and note exactly once', async () => {
     mocks.agents = [makeAgent('primary', { isInitialAgent: true })];
     mocks.notes = [{ id: 'spec', title: 'Spec', content: '' }];
     mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
@@ -683,19 +668,43 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         ([action]) => action.type === 'appLayout/openAgentTabRequested',
       ),
     ).toHaveLength(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: [
+          'ws-1',
+          expect.objectContaining({
+            agentId: 'primary',
+            adaptiveFirstChat: true,
+            availablePanelCanvasWidth: 0,
+            openInNewColumn: true,
+          }),
+        ],
+      }),
+    );
 
     mocks.openUserTab.mockClear();
     await fireEvent.click(container.querySelector('[data-sidebar-context="spec"]')!);
     expect(mocks.openUserTab).toHaveBeenCalledTimes(1);
     expect(mocks.openUserTab).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'spec' }));
+  });
 
-    mocks.dispatch.mockClear();
-    await fireEvent.click(container.querySelector('[data-sidebar-change="file.ts"]')!);
-    expect(
-      mocks.dispatch.mock.calls.filter(
-        ([action]) => action.type === 'workspaceNavigation/openWorkspaceDiff',
-      ),
-    ).toHaveLength(1);
+  it('keeps Changes while omitting Activity Log and Local Changes previews', async () => {
+    mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    const overview = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+
+    expect(overview.container.querySelector('[data-testid="sidebar-activity-preview"]')).toBeNull();
+    expect(overview.container.querySelector('[data-sidebar-local-changes-summary]')).toBeNull();
+    expect(overview.container.querySelector('[data-sidebar-launcher="changes"]')).toBeTruthy();
+    expect(overview.container.querySelector('[data-sidebar-change]')).toBeNull();
+    cleanup();
+
+    mocks.selectedTabs = ['changes'];
+    const expanded = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    expect(expanded.container.querySelector('[data-sidebar-overlay]')).toBeTruthy();
+    expect(expanded.container.querySelector('[data-sidebar-changes-panel]')).toBeTruthy();
+    expect(expanded.container.querySelector('[data-testid="sidebar-activity-preview"]')).toBeNull();
+    expect(expanded.container.querySelector('[data-sidebar-local-changes-summary]')).toBeNull();
   });
 
   it('renders the expanded card as an overlay that dismisses only from its backdrop', async () => {

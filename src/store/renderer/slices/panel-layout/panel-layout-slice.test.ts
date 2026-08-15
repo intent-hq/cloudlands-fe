@@ -6,6 +6,7 @@ import {
   setRestoreStatus,
   openTab,
   openTabInAdjacentOrSplit,
+  openTabInNewRootColumn,
   splitPanel,
   closeTab,
   closeActiveTab,
@@ -677,6 +678,109 @@ describe('panelLayoutReducer', () => {
       expect(
         panels.find((panel) => panel.tabs.some((tab) => tab.noteId === 'linked')),
       ).toBeDefined();
+    });
+  });
+
+  describe('openTabInNewRootColumn', () => {
+    const agentTab = {
+      type: 'agent' as const,
+      title: 'Ada',
+      agentId: 'agent-1',
+      workspaceId: WS,
+      closable: true,
+    };
+
+    it('uses the pristine panel for a compact first chat', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1'),
+        openTabInNewRootColumn(
+          WS,
+          agentTab,
+          { adaptiveFirstChat: true, availableCanvasWidth: 800, force: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.root).toEqual({ type: 'panel', panelId: 'p1' });
+      expect(result.panels.p1.tabs).toEqual([expect.objectContaining({ agentId: 'agent-1' })]);
+    });
+
+    it('keeps a launcher column beside a wide first chat', () => {
+      const result = panelLayoutReducer(
+        stateWithPanel('p1'),
+        openTabInNewRootColumn(
+          WS,
+          agentTab,
+          { adaptiveFirstChat: true, availableCanvasWidth: 1400, force: true },
+          10,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.root).toMatchObject({
+        type: 'split',
+        direction: 'horizontal',
+        children: [{ panelId: 'p1' }, {}],
+      });
+      expect(Object.values(result.panels)).toHaveLength(2);
+      expect(result.panels.p1.tabs[0]).toMatchObject({ agentId: 'agent-1' });
+      expect(result.panels.p1.pristine).toBe(false);
+      expect(Object.values(result.panels).find((panel) => panel.id !== 'p1')).toMatchObject({
+        tabs: [],
+        pristine: true,
+      });
+      expect(result.canvasWidth).toBe(1400);
+    });
+
+    it('appends a root column without changing existing column pixels', () => {
+      const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
+      state.byWorkspaceId[WS] = {
+        ...state.byWorkspaceId[WS],
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [60, 40],
+        },
+        panels: {
+          ...state.byWorkspaceId[WS].panels,
+          p2: { id: 'p2', tabs: [], activeTabId: null },
+        },
+        canvasWidth: 1000,
+      };
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInNewRootColumn(WS, agentTab, { force: true }, 10),
+      ).byWorkspaceId[WS];
+      if (result.root.type !== 'split') throw new Error('Expected horizontal split');
+      expect(result.root.children).toMatchObject([{ panelId: 'p1' }, { panelId: 'p2' }, {}]);
+      expect(result.root.sizes).toEqual([
+        expect.closeTo(40, 6),
+        expect.closeTo(100 / 3.75, 6),
+        expect.closeTo(100 / 3, 6),
+      ]);
+      expect(result.canvasWidth).toBe(1500);
+    });
+
+    it('reveals an existing canonical agent instead of adding a column', () => {
+      let state = stateWithPanel('p1', [
+        { id: 'agent-tab', type: 'agent', title: 'Ada', agentId: 'agent-1' } as any,
+      ]);
+      state = panelLayoutReducer(state, splitPanel(WS, 'p1', 'horizontal', undefined, 5));
+      const before = state.byWorkspaceId[WS];
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInNewRootColumn(WS, agentTab, { force: true }, 10),
+      ).byWorkspaceId[WS];
+
+      expect(result.root).toEqual(before.root);
+      expect(Object.keys(result.panels)).toEqual(Object.keys(before.panels));
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingPanelReveal).toMatchObject({ panelId: 'p1', tabId: 'agent-tab' });
     });
   });
 

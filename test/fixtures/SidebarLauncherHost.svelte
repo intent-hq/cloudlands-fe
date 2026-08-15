@@ -9,22 +9,39 @@
   import { setThemeName } from '$store/renderer/slices/theme/theme-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
   let {
     width,
     zoom,
     theme,
     selectedTab = 'overview',
+    agentCount = 8,
+    noteCount = 8,
+    description,
+    hasPullRequest = false,
   }: {
     width: number;
     zoom: number;
     theme: 'light' | 'dark';
     selectedTab?: string;
+    agentCount?: number;
+    noteCount?: number;
+    description?: string;
+    hasPullRequest?: boolean;
   } = $props();
+  // svelte-ignore state_referenced_locally - each test host applies its initial data once
+  const initialAgentCount = agentCount;
+  // svelte-ignore state_referenced_locally - each test host applies its initial data once
+  const initialNoteCount = noteCount;
+  // svelte-ignore state_referenced_locally - each test host applies its initial data once
+  const initialDescription = description;
+  // svelte-ignore state_referenced_locally - each test host applies its initial data once
+  const initiallyHasPullRequest = hasPullRequest;
   const workspaceId = 'launcher-paint-test';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   const timestamp = '2026-08-13T16:51:00.000Z';
-  const agents = Array.from({ length: 8 }, (_, index) => ({
+  const agents = Array.from({ length: initialAgentCount }, (_, index) => ({
     id: index === 0 ? 'agent-running' : `agent-${index}`,
     workspaceId,
     name: index === 0 ? 'Running agent' : `Agent ${index}`,
@@ -44,12 +61,41 @@
       title: 'Launcher paint test',
       path: '/tmp/launcher-paint-test',
       status: 'active',
+      statusMessage: initialDescription,
+      activePullRequest: initiallyHasPullRequest
+        ? {
+            id: 'pr-42',
+            number: 42,
+            url: 'https://github.com/intent-hq/monorepo/pull/42',
+            title: 'Sidebar geometry review',
+            status: 'open',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          }
+        : undefined,
       createdAt: timestamp,
       updatedAt: timestamp,
     } as never),
   );
   store.dispatch(bulkUpsertSessions(agents, { preserveExplicitRuntimeFlags: false }));
   store.dispatch(setAgents(workspaceId, agents));
+  store.dispatch(
+    loadWorkspaceNotesSucceeded([workspaceId], {
+      [workspaceId]: Array.from({ length: initialNoteCount }, (_, index) => ({
+        id: `note-${index}`,
+        workspaceId,
+        title: `Context note ${index + 1}`,
+        content: `Context preview ${index + 1}`,
+        contentType: 'markdown',
+        tags: [],
+        isPinned: false,
+        isArchived: false,
+        visibility: 'private',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })),
+    } as never),
+  );
   // svelte-ignore state_referenced_locally - each test host applies its initial mode once
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [selectedTab]));
   $effect(() => store.dispatch(setThemeName(theme)));
