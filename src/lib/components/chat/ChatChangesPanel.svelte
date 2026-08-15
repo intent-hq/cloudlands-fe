@@ -1827,7 +1827,9 @@
   function handleOpenCommit(commitHash: string) {
     const wsId = $activeWorkspaceId;
     if (!wsId) return;
-    appStore.dispatch(openWorkspaceCommitChangeset(wsId, commitHash));
+    appStore.dispatch(
+      openWorkspaceCommitChangeset(wsId, commitHash, undefined, gitRootId ? { gitRootId } : undefined)
+    );
   }
 
   function toggleFile(expandKey: string) {
