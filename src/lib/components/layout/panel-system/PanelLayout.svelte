@@ -689,7 +689,14 @@
   }
 
   function handleClosePanel(panelId: string) {
-    closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    // Commit the close without layout motion: during the removed wrapper's
+    // exit outro the surviving siblings already carry their new (larger)
+    // pixel flex bases, so the combined width overflows the canvas for the
+    // exit duration and visibly shifts/clips the survivors. Suppressing the
+    // replay applies the collapse in a single frame.
+    commitPanelMoveWithoutReplay(() => {
+      closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    });
   }
 
   function handleZoomToggle(_panelId: string) {

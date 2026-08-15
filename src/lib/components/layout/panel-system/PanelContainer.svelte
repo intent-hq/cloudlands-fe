@@ -27,7 +27,10 @@
   import { getDraggedPanelId } from './panel-drag';
   import { resize } from '$lib/components/layout/size-transition';
   import { cubicOut } from 'svelte/easing';
-  import { getAcceptedIndependentPanelResizeWidth } from '$shared/panel-layout-sizing';
+  import {
+    getAcceptedIndependentPanelResizeWidth,
+    PANEL_SPLIT_GUTTER_WIDTH,
+  } from '$shared/panel-layout-sizing';
   import { getDominantPanelChildWidth } from './panel-dominant-flex';
 
   import type { DropZone } from './Panel.svelte';
@@ -303,17 +306,13 @@
   function measurePanelReferenceSize() {
     if (node.type !== 'split' || !containerRef) return;
 
-    const directChildren = Array.from(containerRef.children);
-    const gutterSize = directChildren
-      .filter((child) => child.classList.contains('panel-split-handle-wrapper'))
-      .reduce(
-        (total, gutter) =>
-          total +
-          (node.direction === 'horizontal'
-            ? (gutter as HTMLElement).offsetWidth
-            : (gutter as HTMLElement).offsetHeight),
-        0,
-      );
+    // Derive the gutter total from the node structure rather than the DOM:
+    // when a close collapses the split, exiting gutter wrappers are still in
+    // the DOM mid-outro (a leaving cross-axis gutter can measure at full
+    // container size), which would corrupt the reference size until an
+    // unrelated resize re-measures — leaving the surviving panel near zero.
+    const gutterCount = zoomedPanelId ? 0 : Math.max(0, node.children.length - 1);
+    const gutterSize = gutterCount * PANEL_SPLIT_GUTTER_WIDTH;
     const rootViewport = containerRef.closest<HTMLElement>('[data-testid="panel-workspace-inset"]');
     const resizeTarget = nodePath.length === 0 ? rootViewport : containerRef.parentElement;
     // Measure the content box: split children live inside it, so a padded

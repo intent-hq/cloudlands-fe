@@ -6,10 +6,12 @@
     panel,
     isFocused = false,
     onFocus,
+    onClosePanel,
   }: {
     panel: PanelState;
     isFocused?: boolean;
     onFocus?: () => void;
+    onClosePanel?: () => void;
   } = $props();
 </script>
 
@@ -21,4 +23,5 @@
 >
   {panel.tabs.find((tab) => tab.id === panel.activeTabId)?.title ?? ''}
   <Button variant="plain" data-panel-interaction onclick={onFocus}>Focus panel</Button>
+  <Button variant="plain" data-panel-close onclick={onClosePanel}>Close panel</Button>
 </div>
