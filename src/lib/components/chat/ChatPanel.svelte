@@ -1487,13 +1487,14 @@
   // above). Returns true when the cached position was consumed.
   function applyCachedScrollRestore(): boolean {
     if (cachedScrollRestoreTop === null || hasConsumedCachedScrollRestore) return false;
+    // Not consumed until the container is bound, so a premature call cannot
+    // silently drop the cached position.
+    if (!scrollContainer) return false;
     hasConsumedCachedScrollRestore = true;
     // The unread-divider entry scroll is superseded — the user already had a
     // deliberate reading position when the panel was unmounted.
     hasAppliedNewMessagesEntryScroll = true;
-    if (scrollContainer) {
-      scrollContainer.scrollTop = cachedScrollRestoreTop;
-    }
+    scrollContainer.scrollTop = cachedScrollRestoreTop;
     return true;
   }
   // Get the auggie session ID from the most recent assistant message's metadata
