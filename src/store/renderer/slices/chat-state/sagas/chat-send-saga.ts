@@ -10,6 +10,7 @@ import {
 } from 'typed-redux-saga';
 
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
+import { getAgentQueueEventSnapshotSeq } from '$features/agent/agent-queue-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -182,6 +183,10 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
       };
+      // Captured BEFORE the wire call: a live agent:queue:updated snapshot
+      // folded while the RPC is in flight advances this seq, and the
+      // queue-on-send seed below must then yield to it (monorepo#2481).
+      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
       const result =
         Object.keys(queueOptions).length > 0
           ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
@@ -199,9 +204,20 @@ function* dispatchToLifecycle(
         if (typeof turnId === 'string') {
           yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
         }
-        const existing = yield* selectAgentQueueMessages.effect(agentId);
-        if (!existing.some((message) => message.id === queuedMessage.id)) {
-          yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+        // Seed only when no live agent:queue:updated snapshot was folded
+        // since the send started — a snapshot (including the
+        // shrunk-after-drain one) is at least as fresh as this echo, so
+        // seeding over it would re-add a just-drained row (monorepo#2481).
+        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
+          const existing = yield* selectAgentQueueMessages.effect(agentId);
+          if (!existing.some((message) => message.id === queuedMessage.id)) {
+            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+          }
+        } else {
+          logger.debug(
+            'skipping queue-on-send seed; superseded by a live agent:queue:updated snapshot',
+            { agentId, queuedMessageId: queuedMessage.id },
+          );
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {

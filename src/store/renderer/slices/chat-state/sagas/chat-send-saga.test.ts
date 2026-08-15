@@ -39,7 +39,12 @@ import {
   agentQueueReducer,
   initialState as queueInitialState,
   removeQueuedMessageRequested,
+  replaceAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
+import {
+  __resetAgentQueueReadServiceForTests,
+  noteAgentQueueEventSnapshotApplied,
+} from '$features/agent/agent-queue-read-service';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   chatQueueProcessingReceived,
@@ -134,7 +139,10 @@ function harness(
 }
 
 describe('chatSendSaga', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    __resetAgentQueueReadServiceForTests();
+  });
 
   it('sends exact lifecycle options while processing same-agent work FIFO', async () => {
     let resolveFirst!: () => void;
@@ -412,6 +420,55 @@ describe('chatSendSaga', () => {
         },
         'turn-queued',
       ),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('skips the queue-on-send seed when a live agent:queue:updated snapshot superseded the queue RPC (monorepo#2481)', async () => {
+    // The daemon delivered the queued entry and emitted an EMPTY
+    // agent:queue:updated snapshot while the agent.queueMessage response was
+    // still in flight — seeding from the stale echo would re-add the row.
+    mocks.queue.mockImplementation(async () => {
+      noteAgentQueueEventSnapshotApplied(AGENT);
+      return {
+        success: true,
+        turnId: 'turn-superseded',
+        queuedMessage: { id: 'queued-superseded', content: 'later', timestamp: 1 },
+      };
+    });
+    const run = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
+    await settle();
+
+    // The turn-scoped retry record is still parked (cleaned by
+    // agent:queue:processing) — only the queue seed is guarded.
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
+    );
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type),
+    ).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('seeds the queue mirror from the queue RPC echo when no live snapshot intervened', async () => {
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-fresh',
+      queuedMessage: { id: 'queued-fresh', content: 'later', timestamp: 1 },
+    });
+    const run = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
+    await settle();
+
+    expect(run.dispatch).toHaveBeenCalledWith(
+      replaceAgentQueue(AGENT, [{ id: 'queued-fresh', content: 'later', timestamp: 1 }]),
     );
     run.task.cancel();
     await run.task.toPromise();

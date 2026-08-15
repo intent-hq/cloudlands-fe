@@ -40,7 +40,12 @@ import {
 import { sendMessage } from './agent-send';
 import { AgentStatus } from '$shared/types';
 import type { AgentSession, Workspace, QueuedMessage } from '$shared/types';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+import {
+  __resetAgentQueueReadServiceForTests,
+  noteAgentQueueEventSnapshotApplied,
+} from './agent-queue-read-service';
 import {
   chatLastAttemptedMessageSet,
   chatReset,
@@ -135,6 +140,7 @@ describe('agent-send wire contract (pending agent, first message)', () => {
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset(AGENT));
+    __resetAgentQueueReadServiceForTests();
   });
 
   it('emits agent.sendMessage on the wire for a first send to a pending agent (§5.5 shape)', async () => {
@@ -206,6 +212,40 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     expect(queueMessages[0]).toMatchObject({
       id: 'queued-msg-1',
       content: 'persist me please',
+    });
+  }, 30000);
+
+  it('does not re-seed the queue when a live agent:queue:updated snapshot superseded the send (monorepo#2481)', async () => {
+    // The daemon delivered the queued entry and emitted an EMPTY
+    // agent:queue:updated snapshot while the RPC response was still in
+    // flight; the bridge folded it before the queued:true echo resolved.
+    // Seeding from the stale echo would re-add the already-drained row.
+    const queuedMessage: QueuedMessage = {
+      id: 'queued-msg-superseded',
+      content: 'answered already',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-superseded',
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage') {
+        appStore.dispatch(replaceAgentQueue(AGENT, []));
+        noteAgentQueueEventSnapshotApplied(AGENT);
+        return { success: true, queued: true, queuedMessage, turnId: 'turn-superseded' };
+      }
+      return {};
+    });
+
+    await sendMessage(AGENT, 'answered already', workspace(), {});
+
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages).toEqual([]);
+    // The retry-record park is turn-scoped and cleaned by
+    // agent:queue:processing — it stays untouched by the seed guard.
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toMatchObject({
+      turnId: 'turn-superseded',
     });
   }, 30000);
 
