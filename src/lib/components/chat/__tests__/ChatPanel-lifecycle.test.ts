@@ -579,6 +579,26 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(frames).toHaveLength(0);
   });
 
+  it('keeps the hidden scroll-lock button out of hit-testing so it cannot flicker message actions', async () => {
+    // Regression: the scroll-lock button is fully transparent while locked at
+    // the bottom (`opacity-0!`) but used to stay hit-testable. It overlaps the
+    // last assistant message's bottom-right actions bar, so hover hit-tests
+    // oscillated between the invisible button (group-hover lost → bar hides)
+    // and the bar (group-hover held → bar shows), flickering the actions bar.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([{ id: 'message-1' }]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // distanceFromBottom starts at 0 → at bottom and locked → showLock state.
+    const lockButton = view.container.querySelector('[data-testid="chat-scroll-lock-button"]');
+    expect(lockButton).not.toBeNull();
+    expect(lockButton!.classList.contains('opacity-0!')).toBe(true);
+    expect(lockButton!.classList.contains('pointer-events-none')).toBe(true);
+  });
+
   it('sets up and tears down sticky scroll tracking and resize observation normally', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {

@@ -4051,6 +4051,7 @@
       <Button
         variant="outline"
         size="icon-xs"
+        data-testid="chat-scroll-lock-button"
         onclick={() => {
           if (showArrow) {
             // Scrolled up - click to scroll to bottom and re-lock
@@ -4065,7 +4066,7 @@
           }
         }}
         class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
-          ? 'opacity-0!'
+          ? 'opacity-0! pointer-events-none'
           : ''}"
         title={showLock
           ? m.chat_chatPanel_autoScrollLocked_tooltip()
