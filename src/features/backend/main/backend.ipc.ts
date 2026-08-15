@@ -36,6 +36,11 @@ import {
   type BackendConnectionConfig,
 } from './backend-connection';
 import { JsonRpcClient, type ConnectionStatus, type JsonRpcNotification } from './json-rpc-client';
+import {
+  disposeAllTransferConnections,
+  requestOverTransferConnection,
+  shouldUseTransferConnection,
+} from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
 import { getOrCreateClientId, persistClientId } from './client-identity';
 import { formatTransportInfo } from './transport-info';
@@ -1252,7 +1257,18 @@ export function registerBackendHandlers(): void {
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
       try {
-        const result = await getBackendClient().request(method, payload?.params, { timeoutMs });
+        const client = getBackendClient();
+        // Bulk attachment transfers on a remote backend ride their own
+        // short-lived connection so a slow-draining 20+ MiB frame never
+        // head-of-line-blocks the main channel (its heartbeat and unrelated
+        // RPCs stay unaffected) — monorepo#2458. The local UDS sidecar keeps
+        // the single socket: no uplink to saturate, same-host bandwidth.
+        if (shouldUseTransferConnection(method, client.getConfig())) {
+          const result = await requestOverTransferConnection(client.getConfig(), method,
+            payload?.params, { timeoutMs });
+          return { ok: true, result };
+        }
+        const result = await client.request(method, payload?.params, { timeoutMs });
         return { ok: true, result };
       } catch (error) {
         return { ok: false, error: toErrorPayload(error) };
@@ -1468,8 +1484,11 @@ function registerConnectionsHandlers(): void {
   });
 }
 
-/** Dispose the shared client (used on shutdown). */
+/** Dispose the shared client (used on shutdown and backend switch). */
 export function disposeBackendClient(): void {
+  // In-flight per-transfer connections target the same (outgoing) backend as
+  // the shared client, so they can no longer complete — tear them down too.
+  disposeAllTransferConnections();
   client?.dispose();
   client = null;
 }
