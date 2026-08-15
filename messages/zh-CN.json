@@ -2282,6 +2282,8 @@
   "chat_toolCall_technicalDetails_label": "技术详情",
   "chat_toolCall_success_label": "成功",
   "chat_toolCall_failed_label": "失败",
+  "chat_toolCall_commandFailed_label": "命令失败",
+  "chat_toolCall_toolFailed_label": "工具失败",
   "chat_toolCall_fileLines_label": "{action} {file} 第 {start}–{end} 行",
   "chat_toolCall_fileIn_label": "在 {location} 中{action} {file}",
   "chat_toolCall_contextSentence_label": "在 {source} 中搜索 {query}",

@@ -68,7 +68,7 @@
 </script>
 
 <div
-  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-medium text-muted-foreground {className}"
+  class="{SUBSCRIPTION_DISCLOSURE_ROW_CLASS} font-normal text-muted-foreground {className}"
   data-testid="agent-message-disclosure-header"
 >
   <button
@@ -83,7 +83,7 @@
     <span class="shrink-0" data-testid="agent-message-avatar-column">
       <AgentAvatar agentId={attribution.fromAgentId} size={20} />
     </span>
-    <span class="min-w-0 truncate font-medium text-foreground" title={attribution.displayName}>
+    <span class="min-w-0 truncate font-normal text-foreground" title={attribution.displayName}>
       {attribution.displayName}
     </span>
   </button>

@@ -45,10 +45,10 @@ export function getPanelContext(): PanelContext | undefined {
  * Get the current panel ID from DOM traversal
  * Used in click handlers when Svelte context is not available
  *
- * @param event - Mouse event to use for DOM traversal
+ * @param event - DOM event to use for DOM traversal
  * @returns The panel ID or undefined if not in a panel
  */
-export function getPanelIdFromEvent(event: MouseEvent): string | undefined {
+export function getPanelIdFromEvent(event: Event): string | undefined {
   if (event?.target) {
     const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
     return panelElement?.getAttribute('data-panel-id') ?? undefined;

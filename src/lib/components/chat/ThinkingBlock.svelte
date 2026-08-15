@@ -8,8 +8,8 @@
   import Fa from 'svelte-fa';
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
-  import InlineMarkdownSnippet from './InlineMarkdownSnippet.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { extractReasoningHeading } from './reasoning-heading';
   import {
     OPERATIONAL_DISCLOSURE_CLASS,
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
@@ -61,7 +61,13 @@
     toggle();
   }
 
-  const summaryContent = $derived(content || m.chat_shared_processing_fallback());
+  const reasoningContent = $derived(extractReasoningHeading(content));
+  const toggleLabel = $derived(
+    reasoningContent.heading ??
+      (isStreaming
+        ? m.chat_thinkingBlock_thinking_label()
+        : m.chat_thinkingBlock_reasoning_label()),
+  );
 </script>
 
 <div class="{OPERATIONAL_ROW_CONTAINER_CLASS} {className}" data-testid="reasoning-tool-call">
@@ -72,9 +78,7 @@
       onclick={toggle}
       onkeydown={handleDisclosureKeydown}
       aria-expanded={isExpanded}
-      aria-label={isStreaming
-        ? m.chat_thinkingBlock_thinking_label()
-        : `${m.chat_thinkingBlock_reasoning_label()}: ${summaryContent.slice(0, 100)}`}
+      aria-label={toggleLabel}
       data-testid="reasoning-disclosure"
     >
       <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box>
@@ -85,18 +89,10 @@
         />
       </span>
       <span class="flex min-w-0 flex-1 items-baseline gap-1">
-        {#if isStreaming}
-          <span class="shrink-0 whitespace-nowrap {OPERATIONAL_PRIMARY_CLASS}">
-            {m.chat_thinkingBlock_thinking_label()}
-          </span>
-        {/if}
-        {#if !isExpanded}
-          <InlineMarkdownSnippet
-            content={summaryContent}
-            class={OPERATIONAL_SUMMARY_CLASS}
-            testId="reasoning-summary"
-          />
-        {/if}
+        <span
+          class="font-normal {OPERATIONAL_PRIMARY_CLASS} {OPERATIONAL_SUMMARY_CLASS}"
+          data-testid="reasoning-summary">{toggleLabel}</span
+        >
       </span>
     </button>
   </div>
@@ -107,7 +103,12 @@
       data-operational-expanded-content
       transition:safeSlide={{ duration: 150 }}
     >
-      <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />
+      <MarkdownViewer
+        content={reasoningContent.body}
+        {isStreaming}
+        {workspaceId}
+        taskBlockRenderMode="content"
+      />
     </div>
   {/if}
 </div>

@@ -75,6 +75,10 @@
   --theme-light-sidebar-accent-foreground: 154 44% 14%;
   --theme-light-sidebar-border: 150 8% 82%;
   --theme-light-app-background: 0 0% 100%;
+  --theme-light-agent-avatar-surface-neutral: var(--theme-light-muted);
+  --theme-light-agent-avatar-surface-attention: 30.785 100% 62.549%;
+  --theme-light-agent-avatar-surface-active: 66.892 71.845% 59.608%;
+  --theme-light-agent-avatar-surface-unread: 218.049 87.234% 90.784%;
 
   --theme-dark-background: 154 16% 3%;
   --theme-dark-foreground: 135 20% 92%;
@@ -107,6 +111,10 @@
   --theme-dark-sidebar-accent-foreground: 125 25% 88%;
   --theme-dark-sidebar-border: 145 9% 28%;
   --theme-dark-app-background: 154 24% 7%;
+  --theme-dark-agent-avatar-surface-neutral: 145 12% 78%;
+  --theme-dark-agent-avatar-surface-attention: 31 100% 70%;
+  --theme-dark-agent-avatar-surface-active: 67 78% 68%;
+  --theme-dark-agent-avatar-surface-unread: 218 100% 86%;
 
   --theme-background: var(--theme-light-background);
   --theme-foreground: var(--theme-light-foreground);
@@ -139,6 +147,10 @@
   --theme-sidebar-accent-foreground: var(--theme-light-sidebar-accent-foreground);
   --theme-sidebar-border: var(--theme-light-sidebar-border);
   --theme-app-background: var(--theme-light-app-background);
+  --theme-agent-avatar-surface-neutral: var(--theme-light-agent-avatar-surface-neutral);
+  --theme-agent-avatar-surface-attention: var(--theme-light-agent-avatar-surface-attention);
+  --theme-agent-avatar-surface-active: var(--theme-light-agent-avatar-surface-active);
+  --theme-agent-avatar-surface-unread: var(--theme-light-agent-avatar-surface-unread);
 
   --background: var(--theme-background);
   --foreground: var(--theme-foreground);
@@ -172,6 +184,34 @@
   --sidebar-border: var(--theme-sidebar-border);
 
   --app-background: var(--theme-app-background);
+  --agent-avatar-surface-neutral: var(--theme-agent-avatar-surface-neutral);
+  --agent-avatar-surface-attention: var(--theme-agent-avatar-surface-attention);
+  --agent-avatar-surface-active: var(--theme-agent-avatar-surface-active);
+  --agent-avatar-surface-unread: var(--theme-agent-avatar-surface-unread);
+  --agent-avatar-compact-surface-size: 16px;
+  --agent-avatar-compact-art-size: 14px;
+  --agent-avatar-compact-clear-space: 1px;
+  --agent-avatar-compact-corner-radius: 5px;
+  --agent-avatar-compact-ring-width: 1px;
+  --agent-avatar-compact-stack-overlap: 4px;
+  --agent-avatar-standard-surface-size: 20px;
+  --agent-avatar-standard-art-size: 16px;
+  --agent-avatar-standard-clear-space: 2px;
+  --agent-avatar-standard-corner-radius: 6px;
+  --agent-avatar-standard-ring-width: 1px;
+  --agent-avatar-standard-stack-overlap: 5px;
+  --agent-avatar-emphasized-surface-size: 24px;
+  --agent-avatar-emphasized-art-size: 20px;
+  --agent-avatar-emphasized-clear-space: 2px;
+  --agent-avatar-emphasized-corner-radius: 7px;
+  --agent-avatar-emphasized-ring-width: 1px;
+  --agent-avatar-emphasized-stack-overlap: 6px;
+  --agent-avatar-prominent-surface-size: 40px;
+  --agent-avatar-prominent-art-size: 32px;
+  --agent-avatar-prominent-clear-space: 4px;
+  --agent-avatar-prominent-corner-radius: 12px;
+  --agent-avatar-prominent-ring-width: 2px;
+  --agent-avatar-prominent-stack-overlap: 8px;
   --text-primary: hsl(var(--foreground));
   --text-secondary: hsl(var(--muted-foreground));
   --text-tertiary: hsl(var(--muted-foreground) / 0.9);
@@ -311,6 +351,10 @@
   --theme-sidebar-accent-foreground: var(--theme-dark-sidebar-accent-foreground);
   --theme-sidebar-border: var(--theme-dark-sidebar-border);
   --theme-app-background: var(--theme-dark-app-background);
+  --theme-agent-avatar-surface-neutral: var(--theme-dark-agent-avatar-surface-neutral);
+  --theme-agent-avatar-surface-attention: var(--theme-dark-agent-avatar-surface-attention);
+  --theme-agent-avatar-surface-active: var(--theme-dark-agent-avatar-surface-active);
+  --theme-agent-avatar-surface-unread: var(--theme-dark-agent-avatar-surface-unread);
 }
 
 @media (prefers-reduced-motion: reduce) {

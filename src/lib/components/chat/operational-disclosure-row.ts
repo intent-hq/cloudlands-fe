@@ -22,7 +22,7 @@ export const OPERATIONAL_EXPANDED_CONTENT_CLASS = 'pt-1.5';
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS =
-  'text-ghost transition-colors group-hover:text-muted-foreground group-focus-within:text-muted-foreground';
+  'text-muted-foreground/70 transition-colors group-hover:text-muted-foreground group-focus-within:text-muted-foreground';
 
 export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
 

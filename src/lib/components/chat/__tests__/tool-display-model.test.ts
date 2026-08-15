@@ -59,9 +59,10 @@ describe('compact tool display model', () => {
     );
     expect(result.sentence).toBe('Read tool-classifier.ts lines 1–120');
     expect(result.sentenceSegments).toEqual([
-      { kind: 'text', text: 'Read ' },
+      { kind: 'primary', text: 'Read' },
+      { kind: 'secondary', text: ' ' },
       { kind: 'file', text: 'tool-classifier.ts' },
-      { kind: 'text', text: ' lines 1–120' },
+      { kind: 'secondary', text: ' lines 1–120' },
     ]);
     expect(result.accessibleSentence).toContain(
       '/Users/example/repository/src/lib/components/chat/tool-classifier.ts',

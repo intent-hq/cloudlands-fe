@@ -11,7 +11,6 @@ import {
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
-  SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS,
   SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
@@ -80,8 +79,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   ),
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./mocks/AuggieAvatar.svelte')).default,
+vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
+  default: (await import('./mocks/AgentAvatar.svelte')).default,
 }));
 
 // Stub the edit-mode input; its real dependency tree (ModelPicker → useAgentSession)
@@ -129,8 +128,11 @@ function installGeometryUtilities(): HTMLStyleElement {
     .px-3 { padding-left: 12px; padding-right: 12px; }
     .py-2 { padding-top: 8px; padding-bottom: 8px; }
     .min-h-9 { min-height: 36px; }
+    .h-9\\! { height: 36px; }
     .h-5 { height: 20px; }
     .w-5 { width: 20px; }
+    .h-6 { height: 24px; }
+    .w-6 { width: 24px; }
     [data-geometry-card] { box-sizing: border-box; border: 1px solid; }
   `;
   document.head.append(style);
@@ -152,10 +154,12 @@ function measureCollapsedCard(
   const rowStyle = getComputedStyle(row);
   const chevronStyle = getComputedStyle(chevron);
   const contentHeight = px(chevronStyle.height);
-  const rowHeight = Math.max(
-    px(rowStyle.minHeight),
-    px(rowStyle.paddingTop) + contentHeight + px(rowStyle.paddingBottom),
-  );
+  const rowHeight =
+    px(rowStyle.height) ||
+    Math.max(
+      px(rowStyle.minHeight),
+      px(rowStyle.paddingTop) + contentHeight + px(rowStyle.paddingBottom),
+    );
   const height =
     px(cardStyle.borderTopWidth) +
     px(cardStyle.paddingTop) +
@@ -279,7 +283,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(header).toBeTruthy();
     expect(screen.getByText('Builder')).toBeTruthy();
     expect(screen.getByText('sent a message')).toBeTruthy();
-    const avatar = screen.getByTestId('auggie-avatar');
+    const avatar = screen.getByTestId('agent-avatar');
     expect(avatar.getAttribute('data-agent-id')).toBe('agent-sender-1');
     const preview = screen.getByTestId('agent-message-preview');
     expect(preview.textContent).toContain('hello from another agent');
@@ -292,12 +296,13 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       expect(surface.classList.contains(token)).toBe(true);
     }
     const disclosureHeader = screen.getByTestId('agent-message-disclosure-header');
-    for (const token of SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS.split(' ')) {
+    for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(disclosureHeader.classList.contains(token)).toBe(true);
     }
-    for (const token of ['min-h-9', 'gap-2', 'px-3', 'py-2']) {
-      expect(disclosureHeader.classList.contains(token)).toBe(false);
+    for (const token of ['h-9!', 'px-3!', 'py-2!', 'type-body', 'font-normal']) {
+      expect(disclosureHeader.classList.contains(token)).toBe(true);
     }
+    expect(disclosureHeader.classList.contains('gap-2')).toBe(true);
     expect(surface.querySelector('button button')).toBeNull();
   });
 
@@ -306,7 +311,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     { width: 220, zoom: 1 },
     { width: 450, zoom: 2 },
     { width: 220, zoom: 2 },
-  ])('matches compact event geometry at $width px and $zoom× zoom', ({ width, zoom }) => {
+  ])('matches finished event geometry at $width px and $zoom× zoom', ({ width, zoom }) => {
     const style = installGeometryUtilities();
     const view = render(ChatMessage, {
       props: {
@@ -325,9 +330,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     eventCard.setAttribute('data-geometry-card', '');
     eventCard.className = SUBSCRIPTION_CARD_SURFACE_CLASS;
     const eventRow = document.createElement('div');
-    eventRow.className = SUBSCRIPTION_COMPACT_DISCLOSURE_ROW_CLASS;
+    eventRow.className = SUBSCRIPTION_DISCLOSURE_ROW_CLASS;
     const eventChevron = document.createElement('span');
-    eventChevron.className = 'h-5 w-5';
+    eventChevron.className = 'h-6 w-6';
     eventRow.append(eventChevron);
     eventCard.append(eventRow);
     view.container.append(eventCard);
@@ -597,7 +602,7 @@ describe('ChatMessage hook wake attribution', () => {
     for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(header.classList.contains(token)).toBe(true);
     }
-    expect(surface.classList.contains('mt-4')).toBe(true);
+    expect(surface.classList.contains('mt-5')).toBe(true);
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();

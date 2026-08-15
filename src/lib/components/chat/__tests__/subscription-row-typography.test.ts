@@ -114,7 +114,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
     openTabInAdjacentOrSplit: vi.fn(),
   }),
 }));
-vi.mock('$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
 vi.mock('$features/navigation/link-handler', () => ({

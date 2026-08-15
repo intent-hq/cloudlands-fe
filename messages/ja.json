@@ -2282,6 +2282,8 @@
   "chat_toolCall_technicalDetails_label": "技術的な詳細",
   "chat_toolCall_success_label": "成功",
   "chat_toolCall_failed_label": "失敗",
+  "chat_toolCall_commandFailed_label": "コマンドが失敗しました",
+  "chat_toolCall_toolFailed_label": "ツールが失敗しました",
   "chat_toolCall_fileLines_label": "{file} の {start}–{end} 行を{action}",
   "chat_toolCall_fileIn_label": "{location} の {file} を{action}",
   "chat_toolCall_contextSentence_label": "{source} で {query} を検索",

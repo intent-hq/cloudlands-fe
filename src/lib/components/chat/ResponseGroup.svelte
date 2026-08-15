@@ -217,7 +217,7 @@
          a flex sibling with `truncate` (overflow: hidden) would synthesize its
          baseline from the box edge and sit visibly raised. -->
     <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="response-group-summary">
-      <span class="font-medium {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
+      <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
         >{name}</span
       >{#if textSnippet && !isExpanded}<InlineMarkdownSnippet
           content={textSnippet}

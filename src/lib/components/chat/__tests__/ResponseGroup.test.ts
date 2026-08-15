@@ -250,9 +250,9 @@ describe('ResponseGroup - collapse state model', () => {
     await fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
     expect(queryByText('Collapsed preview text')).toBeNull();
-    expect(container.querySelector('[data-testid="response-group-name"]')?.className).toContain(
-      'font-medium',
-    );
+    const name = container.querySelector('[data-testid="response-group-name"]')!;
+    expect(name.className).toContain('font-normal');
+    expect(name.className).not.toContain('font-medium');
     expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
   });
 

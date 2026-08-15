@@ -2282,6 +2282,8 @@
   "chat_toolCall_technicalDetails_label": "Detalles técnicos",
   "chat_toolCall_success_label": "Correcto",
   "chat_toolCall_failed_label": "Error",
+  "chat_toolCall_commandFailed_label": "El comando falló",
+  "chat_toolCall_toolFailed_label": "La herramienta falló",
   "chat_toolCall_fileLines_label": "{action} {file}, líneas {start}–{end}",
   "chat_toolCall_fileIn_label": "{action} {file} en {location}",
   "chat_toolCall_contextSentence_label": "Buscar en {source}: {query}",

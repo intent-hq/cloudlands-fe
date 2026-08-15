@@ -138,7 +138,7 @@
     toggleExpanded();
   }
 
-  function openFile(event: MouseEvent) {
+  function openFile(event: MouseEvent | KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (!workspaceId || !toolDisplay.filePath) return;
@@ -206,7 +206,8 @@
                       role="button"
                       tabindex="0"
                       data-testid="tool-call-file-link"
-                      class="min-w-0 truncate whitespace-pre text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none cursor-pointer"
+                      class="min-w-0 cursor-pointer truncate whitespace-pre font-normal text-muted-foreground/70 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                      data-tool-secondary
                       aria-label={displayModel.accessibleSentence}
                       onclick={(e) => {
                         e.stopPropagation();
@@ -216,17 +217,26 @@
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           e.stopPropagation();
-                          openFile(e as any);
+                          openFile(e);
                         }
                       }}>{segment.text}</span
                     >
                   {:else}
-                    <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
-                      >{segment.text}</span
+                    <span
+                      data-testid="tool-call-file-name"
+                      class="min-w-0 truncate whitespace-pre font-normal text-muted-foreground/70"
+                      data-tool-secondary>{segment.text}</span
                     >
                   {/if}
                 {:else}
-                  <span class="shrink-0 whitespace-pre">{segment.text}</span>
+                  <span
+                    class="shrink-0 whitespace-pre {segment.kind === 'primary'
+                      ? 'font-normal text-muted-foreground'
+                      : 'font-normal text-muted-foreground/70'}"
+                    data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+                    data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
+                    >{segment.text}</span
+                  >
                 {/if}
               {/each}
             </span>
@@ -236,7 +246,16 @@
               data-testid="tool-call-summary"
               data-tool-sentence
             >
-              {displayModel.sentence}
+              {#each displayModel.sentenceSegments as segment}
+                <span
+                  class="font-normal {segment.kind === 'primary'
+                    ? 'text-muted-foreground'
+                    : 'text-muted-foreground/70'}"
+                  data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+                  data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
+                  >{segment.text}</span
+                >
+              {/each}
             </span>
           {/if}
         </button>
@@ -272,17 +291,27 @@
                   <button
                     type="button"
                     data-testid="tool-call-file-link"
-                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-inherit underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                    class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal text-muted-foreground/70 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+                    data-tool-secondary
                     aria-label={displayModel.accessibleSentence}
                     onclick={openFile}>{segment.text}</button
                   >
                 {:else}
-                  <span data-testid="tool-call-file-name" class="min-w-0 truncate whitespace-pre"
-                    >{segment.text}</span
+                  <span
+                    data-testid="tool-call-file-name"
+                    class="min-w-0 truncate whitespace-pre font-normal text-muted-foreground/70"
+                    data-tool-secondary>{segment.text}</span
                   >
                 {/if}
               {:else}
-                <span class="shrink-0 whitespace-pre">{segment.text}</span>
+                <span
+                  class="shrink-0 whitespace-pre font-normal {segment.kind === 'primary'
+                    ? 'text-muted-foreground'
+                    : 'text-muted-foreground/70'}"
+                  data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+                  data-tool-secondary={segment.kind === 'secondary' ? '' : undefined}
+                  >{segment.text}</span
+                >
               {/if}
             {/each}
           </span>
@@ -292,7 +321,15 @@
             data-testid="tool-call-summary"
             data-tool-sentence
             aria-label={displayModel.accessibleSentence}
-            title={displayModel.accessibleSentence}>{displayModel.sentence}</span
+            title={displayModel.accessibleSentence}
+            >{#each displayModel.sentenceSegments as segment}<span
+                class="font-normal {segment.kind === 'primary'
+                  ? 'text-muted-foreground'
+                  : 'text-muted-foreground/70'}"
+                data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+                data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}
+                >{segment.text}</span
+              >{/each}</span
           >
         {/if}
       {/if}

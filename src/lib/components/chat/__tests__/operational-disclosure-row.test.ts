@@ -395,11 +395,11 @@ describe('shared operational disclosure-row contract', () => {
         name: 'ThinkingBlock',
         renderRow: () => {
           const { container } = render(ThinkingBlock, {
-            props: { content: 'Analyzing requirements' },
+            props: { content: '# Analyzing requirements\n\nDetailed reasoning' },
           });
           return container.querySelector('[data-operational-disclosure-row]')! as HTMLElement;
         },
-        accessibleName: /Reasoning: Analyzing requirements/i,
+        accessibleName: /Analyzing requirements/i,
         iconSelector: '[data-operational-icon-box]',
         labelSelector: '[data-testid="reasoning-summary"]',
         detailsSelector: '[data-operational-expanded-content]',

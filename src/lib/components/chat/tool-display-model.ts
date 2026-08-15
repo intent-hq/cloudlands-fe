@@ -5,7 +5,7 @@ import type { ToolDisplay } from './tool-classifier';
 export type ToolState = 'running' | 'completed' | 'error';
 
 export interface CompactToolSentenceSegment {
-  kind: 'text' | 'file';
+  kind: 'primary' | 'secondary' | 'file';
   text: string;
 }
 
@@ -190,19 +190,44 @@ function sentenceSegments(
   input: Record<string, any>,
   sentence: string,
 ): CompactToolSentenceSegment[] {
-  if (!display.filePath || display.isDirectory) return [{ kind: 'text', text: sentence }];
+  const action = sanitizeToolText(display.verb);
   const subject = sanitizeToolText(display.subject || '');
   const file =
-    display.category === 'file-read' && Array.isArray(input.view_range)
+    display.filePath &&
+    !display.isDirectory &&
+    display.category === 'file-read' &&
+    Array.isArray(input.view_range)
       ? subject.replace(/:\d+-\d+$/, '')
-      : subject;
-  const index = file ? sentence.indexOf(file) : -1;
-  if (index < 0) return [{ kind: 'text', text: sentence }];
-  return [
-    { kind: 'text', text: sentence.slice(0, index) },
-    { kind: 'file', text: file },
-    { kind: 'text', text: sentence.slice(index + file.length) },
-  ].filter((segment) => segment.text.length > 0) as CompactToolSentenceSegment[];
+      : display.filePath && !display.isDirectory
+        ? subject
+        : '';
+  const markers = [
+    action && sentence.includes(action)
+      ? { start: sentence.indexOf(action), text: action, kind: 'primary' as const }
+      : null,
+    file && sentence.includes(file)
+      ? { start: sentence.indexOf(file), text: file, kind: 'file' as const }
+      : null,
+  ]
+    .filter((marker): marker is NonNullable<typeof marker> => marker !== null)
+    .sort((a, b) => a.start - b.start);
+
+  if (markers.length === 0) return [{ kind: 'primary', text: sentence }];
+
+  const segments: CompactToolSentenceSegment[] = [];
+  let offset = 0;
+  for (const marker of markers) {
+    if (marker.start < offset) continue;
+    if (marker.start > offset) {
+      segments.push({ kind: 'secondary', text: sentence.slice(offset, marker.start) });
+    }
+    segments.push({ kind: marker.kind, text: marker.text });
+    offset = marker.start + marker.text.length;
+  }
+  if (offset < sentence.length) {
+    segments.push({ kind: 'secondary', text: sentence.slice(offset) });
+  }
+  return segments;
 }
 
 /**

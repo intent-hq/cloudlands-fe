@@ -7,7 +7,7 @@
  * sites must read it, not only the legacy `content` field the FE's own
  * <think>-tag parser produces.
  */
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -57,13 +57,17 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('renders a persisted thinking block collapsed with its text as the summary', async () => {
+  it('renders a persisted headingless block with the localized collapsed fallback', async () => {
     await renderStreaming([thinking('msg_1:0', 'Checking the schema first')], false);
 
     const toggle = screen.getByRole('button');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.textContent).toContain('Checking the schema first');
+    expect(toggle.textContent?.trim()).toBe('Reasoning');
     expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(screen.getByTestId('markdown-viewer').textContent).toContain(
+      'Checking the schema first',
+    );
   });
 
   it('interleaves thinking and text blocks in stream order', async () => {
@@ -96,6 +100,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
     expect(document.body.textContent).toContain('Hidden reasoning');
     expect(document.querySelector('.content-block--text')?.textContent).toContain('Visible answer');
   });
@@ -122,6 +127,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
     expect(document.body.textContent).toContain('legacy hidden reasoning');
     expect(document.body.textContent).toContain('Visible answer');
   });
@@ -139,6 +145,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     );
 
     expect(document.querySelector('.content-block--thinking')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button'));
     expect(document.body.textContent).toContain('legacy visible reasoning');
   });
 });

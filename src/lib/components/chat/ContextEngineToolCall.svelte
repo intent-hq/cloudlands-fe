@@ -249,7 +249,15 @@
           <Fa icon={faMagnifyingGlass} size={18} class={OPERATIONAL_ICON_CLASS} />
         </span>
         <span class="{COMPACT_TOOL_SENTENCE_CLASS} flex-1" data-tool-sentence>
-          {displayModel.sentence}
+          {#each displayModel.sentenceSegments as segment}
+            <span
+              class="font-normal {segment.kind === 'primary'
+                ? 'text-muted-foreground'
+                : 'text-muted-foreground/70'}"
+              data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+              data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
+            >
+          {/each}
         </span>
       </button>
     {:else}
@@ -264,7 +272,14 @@
         data-testid="context-engine-query"
         data-tool-sentence
         aria-label={displayModel.accessibleSentence}
-        title={displayModel.accessibleSentence}>{displayModel.sentence}</span
+        title={displayModel.accessibleSentence}
+        >{#each displayModel.sentenceSegments as segment}<span
+            class="font-normal {segment.kind === 'primary'
+              ? 'text-muted-foreground'
+              : 'text-muted-foreground/70'}"
+            data-tool-primary={segment.kind === 'primary' ? '' : undefined}
+            data-tool-secondary={segment.kind !== 'primary' ? '' : undefined}>{segment.text}</span
+          >{/each}</span
       >
     {/if}
     <ToolStatusIcon status={toolState} />

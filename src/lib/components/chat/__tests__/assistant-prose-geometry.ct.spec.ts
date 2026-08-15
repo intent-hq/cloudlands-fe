@@ -56,6 +56,34 @@ for (const theme of ['light', 'dark'] as const) {
 
         const groupX = (await groupSummary.boundingBox())!.x;
         for (const contentX of operationalContentXs) expect(contentX).toBeCloseTo(groupX, 1);
+
+        const primaryStyles = await component
+          .locator(
+            '[data-testid="reasoning-summary"], [data-testid="response-group-name"], [data-tool-primary]',
+          )
+          .evaluateAll((elements) =>
+            elements.map((element) => {
+              const style = getComputedStyle(element);
+              return { color: style.color, fontWeight: style.fontWeight };
+            }),
+          );
+        expect(primaryStyles).toHaveLength(4);
+        expect(new Set(primaryStyles.map(({ color }) => color)).size).toBe(1);
+        expect(primaryStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
+
+        const secondaryStyles = await component
+          .locator(
+            '[data-testid="response-group-snippet"], [data-operational-icon-box], [data-tool-secondary]',
+          )
+          .evaluateAll((elements) =>
+            elements.map((element) => {
+              const style = getComputedStyle(element);
+              return { color: style.color, fontWeight: style.fontWeight };
+            }),
+          );
+        expect(new Set(secondaryStyles.map(({ color }) => color)).size).toBe(1);
+        expect(secondaryStyles.every(({ fontWeight }) => fontWeight === '400')).toBe(true);
+        expect(secondaryStyles[0].color).not.toBe(primaryStyles[0].color);
         for (const marker of await prose.all()) {
           const firstChild = marker.locator(':scope > *').first();
           const box = await firstChild.boundingBox();
