@@ -36,6 +36,8 @@ import {
   setMultiSelectSidebarTabOrder,
   setPanelWidth,
   setPinnedWorkspaceIds,
+  setShowArchivedWorkspaces,
+  SHOW_ARCHIVED_KEY,
   toggleCardPinned,
   togglePanel,
   togglePinWorkspace,
@@ -52,6 +54,7 @@ const current = {
     ...initialState,
     pinnedWorkspaceIds: ['ws-1'],
     allSpacesViewMode: 'repo' as const,
+    showArchivedWorkspaces: true,
     panelWidth: 320,
     combinedPanelSplit: 0.4,
     panelItem: 'chief' as const,
@@ -81,6 +84,7 @@ describe('sidebarNavSaga', () => {
     storage.getItem.mockImplementation((key: string) => (key === VIEW_MODE_KEY ? 'repo' : null));
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return ['ws-1', 2, 'ws-2'];
+      if (key === SHOW_ARCHIVED_KEY) return true;
       if (key === PANEL_WIDTH_KEY) return 320;
       if (key === COMBINED_PANEL_SPLIT_KEY) return 0.4;
       if (key === PANEL_ITEM_KEY) return 'chief';
@@ -100,6 +104,7 @@ describe('sidebarNavSaga', () => {
       hydrateSidebarNav({
         pinnedWorkspaceIds: ['ws-1', 'ws-2'],
         allSpacesViewMode: 'repo',
+        showArchivedWorkspaces: true,
         panelWidth: 320,
         combinedPanelSplit: 0.4,
         panelItem: 'chief',
@@ -117,6 +122,7 @@ describe('sidebarNavSaga', () => {
     storage.getItem.mockReturnValue(JSON.stringify('status'));
     storage.getJSON.mockImplementation((key: string) => {
       if (key === PINNED_WORKSPACES_KEY) return 'bad';
+      if (key === SHOW_ARCHIVED_KEY) return 'yes';
       if (key === PANEL_WIDTH_KEY) return Number.NaN;
       if (key === COMBINED_PANEL_SPLIT_KEY) return Number.NaN;
       if (key === LEGACY_HOME_PANEL_SPLIT_KEY) return Number.NaN;
@@ -147,6 +153,7 @@ describe('sidebarNavSaga', () => {
     [unpinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
     [togglePinWorkspace('ws-1'), [[PINNED_WORKSPACES_KEY, ['ws-1']]]],
     [setAllSpacesViewMode('repo'), [[VIEW_MODE_KEY, 'repo']]],
+    [setShowArchivedWorkspaces(true), [[SHOW_ARCHIVED_KEY, true]]],
     [setPanelWidth(320), [[PANEL_WIDTH_KEY, 320]]],
     [setCombinedPanelSplit(0.4), [[COMBINED_PANEL_SPLIT_KEY, 0.4]]],
     [
@@ -262,6 +269,7 @@ describe('sidebarNavSaga', () => {
 
       expect(storage.getJSON.mock.calls).toEqual([
         [REMOTE_PINNED_KEY],
+        [SHOW_ARCHIVED_KEY],
         [PANEL_WIDTH_KEY],
         [COMBINED_PANEL_SPLIT_KEY],
         [LEGACY_HOME_PANEL_SPLIT_KEY],

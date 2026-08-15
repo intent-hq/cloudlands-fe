@@ -26,6 +26,7 @@ import {
   parseGitHubIssueOrPrUrl,
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectGithubLinkDefaultAction } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -136,8 +137,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
                 url,
               }),
             );
-            const { goto } = await import('$app/navigation');
-            await goto('/');
+            appStore.dispatch(setShowCreateModal(true));
             return true;
           }
           case 'show-choices':
@@ -369,7 +369,10 @@ async function openLinkActionMenu(
 }
 
 /**
- * Open URL in browser panel (embedded, workspace-scoped).
+ * Open URL in browser panel (embedded, workspace-scoped). Loopback URLs are
+ * resolved through browser:resolve-url (rewrite → probe → tunnel) BEFORE the
+ * panel opens, so remote-mode links land on the daemon host or a tunnel port
+ * (the embedded browser never resolves; intent-hq/monorepo#2404).
  * Falls back to the external browser when the panel cannot be opened.
  */
 export async function openInBrowserPanel(
@@ -377,22 +380,29 @@ export async function openInBrowserPanel(
   workspaceId: WorkspaceId,
   sourcePanelId?: string,
 ): Promise<boolean> {
+  let targetUrl = url;
+  try {
+    const { resolveBrowserLinkForOpen } = await import('$lib/utils/browser-link-open');
+    targetUrl = await resolveBrowserLinkForOpen(url);
+  } catch (error) {
+    logger.warn('URL resolution failed, opening the URL unresolved', { url, error });
+  }
   try {
     const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
     const layoutManager = getPanelLayoutManager(workspaceId);
     if (sourcePanelId) {
-      layoutManager.openBrowserPanel(url, undefined, sourcePanelId);
+      layoutManager.openBrowserPanel(targetUrl, undefined, sourcePanelId);
     } else {
-      layoutManager.openBrowserPanel(url);
+      layoutManager.openBrowserPanel(targetUrl);
     }
-    logger.debug('Opened URL in browser panel', { url, workspaceId });
+    logger.debug('Opened URL in browser panel', { url, targetUrl, workspaceId });
     return true;
   } catch (error) {
     logger.warn('Failed to open URL in browser panel, falling back to external browser', {
       url,
       error,
     });
-    return await openInExternalBrowser(url);
+    return await openInExternalBrowser(targetUrl);
   }
 }
 

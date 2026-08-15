@@ -493,11 +493,7 @@ describe('lifecycleReadSaga', () => {
     const stale = [{ id: 'script-old' }];
     const fresh = [{ id: 'script-new' }];
     mocks.scripts.list
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveFirst = resolve;
-        }),
-      )
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValueOnce(fresh);
     const run = start();
 
@@ -523,11 +519,7 @@ describe('lifecycleReadSaga', () => {
   it('coalesces a same-workspace script refresh burst into one trailing read', async () => {
     let resolveFirst!: (scripts: unknown[]) => void;
     mocks.scripts.list
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveFirst = resolve;
-        }),
-      )
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValueOnce([]);
     const run = start();
 
@@ -589,11 +581,7 @@ describe('lifecycleReadSaga', () => {
   ])('cancels a script refresh and its trailing rerun on workspace %s', async (_name, cleanup) => {
     let resolveFirst!: (scripts: unknown[]) => void;
     mocks.scripts.list
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          resolveFirst = resolve;
-        }),
-      )
+      .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
       .mockResolvedValueOnce([]);
     const run = start();
 

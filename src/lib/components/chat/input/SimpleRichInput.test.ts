@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  configuredVisualStates,
+  exerciseVisualStates,
+} from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 
@@ -57,13 +61,6 @@ vi.mock('./ModelPicker.svelte', async () => {
 });
 
 vi.mock('./ContextPickerButton.svelte', async () => {
-  const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
-  return { default: SlotOnly };
-});
-
-// The effort control has its own suite (EffortPicker.test.ts); stub it here so
-// this suite does not need the reasoning-effort selector surface.
-vi.mock('./EffortPicker.svelte', async () => {
   const SlotOnly = (await import('../__tests__/mocks/SlotOnly.svelte')).default;
   return { default: SlotOnly };
 });
@@ -141,10 +138,24 @@ vi.mock('$lib/utils/provider-model-selection', () => ({
 }));
 
 const setModelMock = vi.hoisted(() => vi.fn());
+const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
+const modelEffortLevels = vi.hoisted(() => ({}) as Record<string, string[] | undefined>);
+const agentModelEffortLevels = vi.hoisted(() => ({ value: undefined as string[] | undefined }));
 
 vi.mock('$features/agent/agent.client', () => ({
   agentClient: {
     setModel: setModelMock,
+  },
+}));
+
+vi.mock('$features/agent/reasoning-effort', () => ({
+  reconcileAgentReasoningEffort: reconcileAgentReasoningEffortMock,
+}));
+
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+  selectAgentModelEffortLevels: () => readable(agentModelEffortLevels.value),
+  selectModelEffortLevels: {
+    select: (_state: unknown, modelId: string) => modelEffortLevels[modelId],
   },
 }));
 
@@ -229,6 +240,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentReasoningEffort: () => readable(undefined),
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
       for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
@@ -335,13 +347,90 @@ describe('SimpleRichInput image paste', () => {
   });
 });
 
-describe('SimpleRichInput action bar layout', () => {
+describe('SimpleRichInput external drop target (ChatPanel full-panel drop zone)', () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = '';
   });
 
-  it('keeps model and menu controls left while dictation and submit controls stay right', async () => {
+  function makeFileDropEvent(files: File[]) {
+    return {
+      dataTransfer: { types: ['Files'], files },
+    };
+  }
+
+  it('handleDroppedFiles forwards files into the attach pipeline like a direct drop', async () => {
+    const { component } = render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const file = new File(['image-bytes'], 'dropped.png', { type: 'image/png' });
+
+    await component.handleDroppedFiles([file]);
+
+    expect(await screen.findByRole('img', { name: 'dropped.png' })).toBeTruthy();
+  });
+
+  it('disables the container drop handlers when externalDropTarget is set', async () => {
+    render(SimpleRichInput, {
+      props: { value: '', contextItems: [], externalDropTarget: true },
+    });
+    const file = new File(['image-bytes'], 'ignored.png', { type: 'image/png' });
+
+    await fireEvent.drop(screen.getByTestId('message-input'), makeFileDropEvent([file]));
+
+    expect(screen.queryByRole('img', { name: 'ignored.png' })).toBeNull();
+  });
+
+  it('keeps local drop handling when externalDropTarget is not set', async () => {
+    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+    const file = new File(['image-bytes'], 'local.png', { type: 'image/png' });
+
+    await fireEvent.drop(screen.getByTestId('message-input'), makeFileDropEvent([file]));
+
+    expect(await screen.findByRole('img', { name: 'local.png' })).toBeTruthy();
+  });
+});
+
+describe('SimpleRichInput action bar layout', () => {
+  afterEach(() => {
+    agentModelEffortLevels.value = undefined;
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('delegates reasoning effort to the model picker without a standalone control', () => {
+    agentModelEffortLevels.value = ['low', 'high'];
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        agentId: 'agent-1',
+        workspace: { id: 'ws-1' } as any,
+      },
+    });
+
+    expect(screen.getByTestId('model-picker').getAttribute('data-show-reasoning')).toBe('true');
+    expect(screen.queryByTestId('effort-picker-trigger')).toBeNull();
+  });
+
+  it('affirms nested composer menus in every required visual state', async () => {
+    const observed = await exerciseVisualStates(() => {
+      const view = render(SimpleRichInput, { props: { value: '', contextItems: [] } });
+      const target = view.getByTestId('prompt-actions-trigger');
+      return {
+        ...view,
+        target,
+        assertCapability: () => {
+          const primaryActions = view.container.querySelector('[data-chat-input-primary-actions]');
+          const submitActions = view.container.querySelector('[data-chat-input-submit-actions]');
+          expect(primaryActions?.contains(target)).toBe(false);
+          expect(submitActions?.contains(target)).toBe(true);
+          expect(view.getByTestId('message-input').className).toContain('focus-within:border-ring');
+        },
+      };
+    });
+    expect(observed).toEqual(configuredVisualStates);
+  });
+
+  it('keeps the model left and places the prompt menu before dictation on the right', async () => {
     const { container } = render(SimpleRichInput, {
       props: { value: '', contextItems: [] },
     });
@@ -356,7 +445,14 @@ describe('SimpleRichInput action bar layout', () => {
     expect(actionBar?.className).toContain('pr-1.5!');
     expect(primaryActions?.className).toContain('items-center');
     expect(submitActions?.className).toContain('items-center');
-    expect(primaryActions?.contains(promptMenu)).toBe(true);
+    expect(submitActions?.className).toContain('gap-1');
+    expect(submitActions?.className).not.toContain('gap-px');
+    expect(submitActions?.querySelector('.mr-1')).toBeNull();
+    expect(primaryActions?.contains(promptMenu)).toBe(false);
+    expect(submitActions?.contains(promptMenu)).toBe(true);
+    expect(
+      promptMenu.compareDocumentPosition(micButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(promptMenu.dataset.size).toBe('icon-sm');
     expect(promptMenu.querySelector('[data-icon="plus"]')).toBeTruthy();
     expect(submitActions?.contains(micButton)).toBe(true);
@@ -385,6 +481,7 @@ describe('SimpleRichInput action bar layout', () => {
 describe('SimpleRichInput provider switch sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const modelId of Object.keys(modelEffortLevels)) delete modelEffortLevels[modelId];
     resolveCompatibleModelForProviderMock.mockResolvedValue('codex:gpt-5-codex');
     setModelMock.mockResolvedValue({
       ok: true,
@@ -521,6 +618,7 @@ describe('SimpleRichInput provider switch sync', () => {
 
     const modelPicker = screen.getByTestId('model-picker');
     expect(modelPicker.getAttribute('data-locked')).toBe('false');
+    expect(modelPicker.getAttribute('data-show-reasoning')).toBe('true');
   });
 
   it('shows the confirm dialog before a mid-conversation switch and applies on confirm', async () => {
@@ -717,6 +815,10 @@ describe('SimpleRichInput provider switch sync', () => {
       createdAt: new Date().toISOString(),
     } as any;
 
+    removeMockSession('ws-1', 'agent-1');
+    addMockSession('ws-1', createSession({ reasoningEffort: 'xhigh' }));
+    modelEffortLevels['codex:gpt-5-codex'] = ['low', 'high'];
+
     render(SimpleRichInput, {
       props: {
         value: '',
@@ -744,6 +846,10 @@ describe('SimpleRichInput provider switch sync', () => {
     // The explicit target provider rides along as the 4th wire arg so the
     // daemon validates the model against it, not the session's provider.
     expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
+    expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
+      'low',
+      'high',
+    ]);
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 
@@ -1591,10 +1697,16 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     await dropFiles([makeFile('dump.har', 'application/json', 12 * 1024 * 1024)]);
 
     await waitFor(() => {
-      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'dump.har', {
-        sourcePath: '/home/user/Downloads/dump.har',
-        mimeType: 'application/json',
-      });
+      expect(placeAttachmentMock).toHaveBeenCalledWith(
+        'ws-1',
+        'dump.har',
+        {
+          sourcePath: '/home/user/Downloads/dump.har',
+          mimeType: 'application/json',
+        },
+        expect.any(Function),
+        expect.any(AbortSignal),
+      );
     });
     // The placed file becomes a context item carrying the registry UUID +
     // metadata — never a mention chip, never an inline upload. oncontextAdd
@@ -1708,10 +1820,16 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     await waitFor(() => {
       expect(placeAttachmentMock).toHaveBeenCalledTimes(2);
     });
-    expect(placeAttachmentMock).toHaveBeenLastCalledWith('ws-1', 'big.log', {
-      sourcePath: '/home/user/big.log',
-      mimeType: 'text/plain',
-    });
+    expect(placeAttachmentMock).toHaveBeenLastCalledWith(
+      'ws-1',
+      'big.log',
+      {
+        sourcePath: '/home/user/big.log',
+        mimeType: 'text/plain',
+      },
+      expect.any(Function),
+      expect.any(AbortSignal),
+    );
     await waitFor(() => {
       expect(oncontextAdd).toHaveBeenCalledTimes(1);
     });
@@ -1757,6 +1875,53 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     });
   });
 
+  it('uploading pill shows percent progress as chunk acks arrive (chunked upload)', async () => {
+    (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/huge.bin');
+    let reportProgress!: (fraction: number) => void;
+    let resolvePlacement!: (v: unknown) => void;
+    placeAttachmentMock.mockImplementationOnce(
+      (_ws: string, _name: string, _source: unknown, onProgress: (fraction: number) => void) => {
+        reportProgress = onProgress;
+        return new Promise((resolve) => (resolvePlacement = resolve));
+      },
+    );
+
+    render(SimpleRichInput, { props: baseProps() });
+    await dropFiles([makeFile('huge.bin', 'application/octet-stream', 100 * 1024 * 1024)]);
+
+    // Single-shot phase: indeterminate spinner, no percent label yet.
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="placing"]')).not.toBeNull();
+    });
+    expect(document.querySelector('[data-testid="attachment-upload-progress"]')).toBeNull();
+
+    // Chunk acks drive the percent label.
+    reportProgress(0.25);
+    await waitFor(() => {
+      const label = document.querySelector('[data-testid="attachment-upload-progress"]');
+      expect(label?.textContent).toBe('25%');
+    });
+    reportProgress(0.75);
+    await waitFor(() => {
+      const label = document.querySelector('[data-testid="attachment-upload-progress"]');
+      expect(label?.textContent).toBe('75%');
+    });
+
+    resolvePlacement({
+      ok: true,
+      path: '.intent/attachments/huge.bin',
+      fileName: 'huge.bin',
+      size: 100 * 1024 * 1024,
+      attachmentId: 'att-uuid-7',
+      mimeType: 'application/octet-stream',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
+    await waitFor(() => {
+      expect(document.querySelector('[data-placement-status="placing"]')).toBeNull();
+    });
+    expect(document.querySelector('[data-testid="attachment-upload-progress"]')).toBeNull();
+  });
+
   it('places a non-image file arriving via clipboard paste (backed by a real file path)', async () => {
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/trace.log');
     placeAttachmentMock.mockResolvedValueOnce({
@@ -1797,9 +1962,8 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     // reload does): the restored item must render a failed pill that blocks
     // send, and retry must re-attempt placement from the persisted
     // sourcePath — never a silent drop.
-    const { serializeDraftAttachments, deserializeDraftAttachments } = await import(
-      '../chat-draft-attachments'
-    );
+    const { serializeDraftAttachments, deserializeDraftAttachments } =
+      await import('../chat-draft-attachments');
     const restored = deserializeDraftAttachments(
       serializeDraftAttachments([
         {
@@ -1843,10 +2007,16 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     });
     await fireEvent.click(screen.getByTestId('attachment-retry'));
     await waitFor(() => {
-      expect(placeAttachmentMock).toHaveBeenCalledWith('ws-1', 'crash.log', {
-        sourcePath: '/home/user/crash.log',
-        mimeType: 'text/plain',
-      });
+      expect(placeAttachmentMock).toHaveBeenCalledWith(
+        'ws-1',
+        'crash.log',
+        {
+          sourcePath: '/home/user/crash.log',
+          mimeType: 'text/plain',
+        },
+        expect.any(Function),
+        expect.any(AbortSignal),
+      );
     });
     await waitFor(() => {
       expect(oncontextAdd).toHaveBeenCalledTimes(1);

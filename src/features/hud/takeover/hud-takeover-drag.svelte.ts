@@ -5,8 +5,10 @@
  * fires the click under the pointer — capture-phase suppression), live
  * clamping to the rendered canvas bounds, and grab→grabbing cursor state.
  * Also owns the auto-pan to a far changed cell (mock `_panT`); starting a
- * manual drag cancels/overrides any pending or applied auto-pan.
- * Must be created during component init.
+ * manual drag cancels/overrides any pending or applied auto-pan. The pan
+ * offset is in CONTENT px — when the canvas renders zoom-to-fit scaled,
+ * pointer deltas divide by the scale (`getScale`) so dragging stays 1:1
+ * with the pointer on screen. Must be created during component init.
  */
 import {
   clampTakeoverPan,
@@ -25,10 +27,17 @@ export interface HudTakeoverMapDrag {
   /**
    * Sync the auto-pan with the active takeover: recenters on a new
    * workspace/changed-cell pair, then schedules the glide onto a far cell
-   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same pair
-   * are no-ops so reactive re-runs never clobber a manual drag.
+   * after `delayMs` (0 = immediate). Keyed — repeat calls for the same
+   * pair at the same pitch are no-ops so reactive re-runs never clobber a
+   * manual drag; a pitch change re-keys (the target cell's px position
+   * moved) so the pan re-centers on the shifted cell.
    */
   syncAutoPan(workspaceId: string, coord: HudTakeoverCellCoord | null, delayMs: number): void;
+  /**
+   * Manual camera move (wheel-zoom anchoring): clamps to the pan bounds and,
+   * like a drag, cancels any pending auto-pan and the glide transition.
+   */
+  setPan(next: { x: number; y: number }): void;
   /** Recenter and cancel any pending auto-pan or in-flight drag. */
   reset(): void;
   /** Svelte attachment wiring pointer + click-suppression listeners to the map. */
@@ -38,6 +47,8 @@ export interface HudTakeoverMapDrag {
 
 export function createTakeoverMapDrag(
   getBounds: () => HudTakeoverPanBounds,
+  getScale: () => number = () => 1,
+  getPitch: () => number = () => HUD_TAKEOVER_PITCH_PX,
 ): HudTakeoverMapDrag {
   let pan = $state({ x: 0, y: 0 });
   let dragging = $state(false);
@@ -60,12 +71,20 @@ export function createTakeoverMapDrag(
     if (!down) return;
     const dx = e.clientX - down.x;
     const dy = e.clientY - down.y;
-    if (Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX || Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX) {
+    if (
+      Math.abs(dx) > HUD_TAKEOVER_DRAG_THRESHOLD_PX ||
+      Math.abs(dy) > HUD_TAKEOVER_DRAG_THRESHOLD_PX
+    ) {
       moved = true;
       dragging = true;
       animate = false;
     }
-    if (moved) pan = clampTakeoverPan({ x: down.panX - dx, y: down.panY - dy }, getBounds());
+    // Pan lives in content px; the canvas renders it scaled, so pointer
+    // deltas divide by the zoom-to-fit scale to keep 1:1 visual tracking.
+    const scale = getScale();
+    if (moved) {
+      pan = clampTakeoverPan({ x: down.panX - dx / scale, y: down.panY - dy / scale }, getBounds());
+    }
   }
 
   function endDrag(e: PointerEvent, node: HTMLElement) {
@@ -96,20 +115,26 @@ export function createTakeoverMapDrag(
       return animate;
     },
     syncAutoPan(workspaceId, coord, delayMs) {
-      const key = `${workspaceId}|${coord ? `${coord.x},${coord.y}` : ''}`;
+      // Pitch keys the dedupe only while a target cell exists: the cell's px
+      // position is coord × pitch, so a lane-count change must re-pan; with
+      // no target, a pitch change must not reset a manual drag.
+      const key = coord ? `${workspaceId}|${coord.x},${coord.y}|${getPitch()}` : `${workspaceId}|`;
       if (key === autoPanKey) return;
       autoPanKey = key;
       this.reset();
       if (!workspaceId || !coord) return;
       const apply = () => {
         animate = true;
-        pan = clampTakeoverPan(
-          { x: coord.x * HUD_TAKEOVER_PITCH_PX, y: coord.y * HUD_TAKEOVER_PITCH_PX },
-          getBounds(),
-        );
+        const pitch = getPitch();
+        pan = clampTakeoverPan({ x: coord.x * pitch, y: coord.y * pitch }, getBounds());
       };
       if (delayMs <= 0) apply();
       else autoPanTimer = setTimeout(apply, delayMs);
+    },
+    setPan(next) {
+      clearTimeout(autoPanTimer);
+      animate = false;
+      pan = clampTakeoverPan(next, getBounds());
     },
     reset() {
       clearTimeout(autoPanTimer);

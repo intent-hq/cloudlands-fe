@@ -9,7 +9,10 @@ export const sliderMetadata = parseUiComponentMetadata({
   exports: ['Root', 'Slider', 'sliderMetadata'],
   category: 'primitive',
   owner: '008-B',
-  callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
+    'src/lib/components/settings/AgentBackendSettings.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/slider/slider.test.ts',
   removalGate: 'Retain while exported and native range, accessibility, and fixture tests pass.',

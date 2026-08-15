@@ -73,7 +73,7 @@ describe('workspace column layout contract', () => {
       'utf8',
     );
 
-    expect(columns).toContain('overflow-hidden rounded-md bg-sidebar');
+    expect(columns).toContain('overflow-hidden rounded-lg bg-sidebar');
     expect(columns).not.toContain(
       "import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte'",
     );
@@ -84,14 +84,17 @@ describe('workspace column layout contract', () => {
     expect(columns).toContain('selectPanelCanvasWidthsByWorkspaceId');
     expect(columns).toContain('livePanelCanvasWidths[workspaceId]');
     expect(columns).toContain('onPanelCanvasWidthChange={(width) => updatePanelCanvasWidth');
-    expect(columns).not.toContain('$resizablePanelSizes$[`workspace-left-panel-width:');
+    expect(columns).toContain('selectResizablePanelSizes');
+    expect(columns).toContain('selectHydratedResizablePanelSizes');
+    expect(columns).toContain('data-sidebar-widths-ready={sidebarWidthsReady}');
     expect(columns).not.toContain('workspace-panel-columns-width:');
     expect(surface).toContain("canvasSizing={columnMode ? 'content' : 'viewport'}");
+    expect(surface).toContain('{columnMode}');
     expect(columns).not.toContain("{#key stack.join(':')}");
     expect(surface).toContain('onDestroy(() => {');
     expect(surface).not.toContain('onDestroy(async () => {');
     expect(surface).not.toContain('flushPendingAgentDeletionsRequested');
-    expect(panelLayout).toContain("contained ? 'overflow-hidden py-2 pl-2'");
+    expect(panelLayout).toContain("contained ? 'overflow-hidden py-2 px-2'");
     expect(panelLayout).toContain('panelLayoutScopeMounted(mountedLayoutId)');
     expect(panelLayout).toContain('panelLayoutScopeUnmounted(mountedLayoutId)');
     expect(noteTab).toContain('class="h-full bg-background text-foreground"');
@@ -99,10 +102,11 @@ describe('workspace column layout contract', () => {
     expect(columns).not.toContain('absolute right-2 top-2');
     expect(surface).toContain('{onCloseWorkspace}');
     expect(surface).toContain('draggableTitleRegion={columnMode}');
-    expect(sidebar).toContain('{onCloseWorkspace} />');
+    expect(sidebar).toContain('{onCloseWorkspace}');
+    expect(sidebar).toContain('hideActionsMenu={!isLauncherOverview}');
     expect(sidebar).toContain('draggable={draggableTitleRegion}');
     expect(progress).toContain('data-workspace-header-actions');
-    expect(progress.indexOf('aria-label={`Close workspace ${workspaceId}`}')).toBeGreaterThan(
+    expect(progress.indexOf('data-workspace-close')).toBeGreaterThan(
       progress.indexOf('<DropdownMenu bind:open={dropdownOpen}>'),
     );
     expect(columns).not.toContain('w-[26rem]');
@@ -116,9 +120,10 @@ describe('workspace column layout contract', () => {
       "style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}",
     );
     expect(titleBar).toContain("$workspaceViewMode$ === 'columns' ? 'self-center' : 'self-end'");
-    expect(titleBar).toContain('<Fa icon={faSettings} class="pointer-events-none size-3.5!" />');
-    expect(viewModeToggle).toContain('<ColumnsPlusRightIcon');
-    expect(viewModeToggle).toContain('<TabsIcon');
+    expect(titleBar).toContain(
+      '<IntentNavigationIcon name="settings" size={16} class="pointer-events-none size-4!" />',
+    );
+    expect(viewModeToggle).toContain("name={isColumns ? 'tabs' : 'spaces'}");
     expect(appLayout).toContain('overlayWorkspaceColumns={showWorkspaceColumns}');
     expect(appLayout).toContain('style:padding-top={showWorkspaceColumns');
     expect(columns).not.toContain('data-titlebar-clearance');

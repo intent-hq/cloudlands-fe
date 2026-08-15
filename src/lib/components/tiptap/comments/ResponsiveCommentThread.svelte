@@ -296,7 +296,7 @@
           <Button
             variant="ghost-light"
             size="icon-xs"
-            aria-label="Show comment thread"
+            aria-label={m.tiptap_commentThread_show_ariaLabel()}
             onclick={(e) => {
               e.stopPropagation();
               onShow?.();

@@ -97,6 +97,10 @@ vi.mock('$features/agent/agent.client', () => ({
   },
 }));
 
+vi.mock('$features/agent/reasoning-effort', () => ({
+  applyReasoningEffort: vi.fn(async () => true),
+}));
+
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
@@ -174,7 +178,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
       selectorForSession(agentIdOrStore),
     { select: (_state: unknown, agentId: string) => sessions.get(agentId) },
   );
-  return { selectAgentSession };
+  const selectAgentReasoningEffort = Object.assign(() => writable(undefined), {
+    select: () => undefined,
+  });
+  return { selectAgentSession, selectAgentReasoningEffort };
 });
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
@@ -194,6 +201,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => writable(null),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => writable({}),
+  selectAgentModelEffortLevels: () => writable(undefined),
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({

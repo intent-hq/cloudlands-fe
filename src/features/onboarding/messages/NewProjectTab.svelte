@@ -66,7 +66,7 @@
   </p>
   <!-- Combined path input -->
   <div
-    class="flex items-center rounded-lg border border-border/50 bg-card/50 text-sm overflow-hidden"
+    class="flex items-center rounded-lg border border-border/50 bg-card/50 text-sm overflow-hidden focus-within:border-ring"
   >
     <button
       type="button"

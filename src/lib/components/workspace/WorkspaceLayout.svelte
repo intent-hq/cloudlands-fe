@@ -18,6 +18,7 @@
   import ErrorBoundary from '$lib/components/ErrorBoundary.svelte';
   import { Logger } from '$shared/logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { COLUMN_SIDEBAR_MAX_WIDTH } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   // Props
   interface Props {
@@ -56,6 +57,9 @@
     // Report the sidebar's fixed width to an outer workspace column.
     onSidebarWidthChange?: (width: number) => void;
 
+    // Apply the compact, refresh-stable sidebar contract used by workspace columns.
+    columnMode?: boolean;
+
     // Allow additional props to pass through
     [key: string]: unknown;
   }
@@ -77,6 +81,7 @@
     sidebarFillsAvailableWidth = false,
     disableSidebarWidthTransition = false,
     onSidebarWidthChange,
+    columnMode = false,
   }: Props = $props();
 
   const workspaceLogger = new Logger('WorkspaceLayout');
@@ -89,10 +94,10 @@
     aria-label={m.workspace_layout_ariaLabel()}
   >
     <!-- Upper Area: Sidebar + Content (shrinks when terminal is open) -->
-    <div class="upper-area flex-1 flex min-h-0">
+    <div class="upper-area flex-1 flex min-h-0" class:workspace-column-layout={columnMode}>
       {#if sidebarSide === 'right'}
         <!-- Main Content Area (Panel Layout) - rendered first when sidebar is on right -->
-        <div class="main-content-area flex h-full min-w-0 z-10 pl-2 sm:pl-3">
+        <div class="main-content-area flex h-full min-w-0 z-10 {columnMode ? '' : 'pl-2 sm:pl-3'}">
           {@render content()}
         </div>
       {/if}
@@ -101,15 +106,18 @@
       <ResizablePanel
         side={sidebarSide}
         minWidth={sidebarMinWidth}
-        maxWidth={sidebarMaxWidth}
+        maxWidth={columnMode ? COLUMN_SIDEBAR_MAX_WIDTH : sidebarMaxWidth}
         defaultWidth={sidebarDefaultWidth}
-        defaultExpandedWidth={sidebarDefaultExpandedWidth}
+        defaultExpandedWidth={columnMode ? COLUMN_SIDEBAR_MAX_WIDTH : sidebarDefaultExpandedWidth}
         storageKey={sidebarStorageKey}
         expandedStorageKey={sidebarExpandedStorageKey}
         percentageWeight={sidebarPercentageWeight}
         initiallyCollapsed={startCollapsed}
         doSkipResize={sidebarFillsAvailableWidth}
+        preserveFixedWidthAfterFill={columnMode}
         disableWidthTransition={disableSidebarWidthTransition}
+        notifyAutomaticWidthChanges={!columnMode}
+        clampStoredWidth={columnMode}
         onWidthChange={onSidebarWidthChange}
         className="workspace-sidebar-panel workspace-sidebar-{sidebarSide} flex-none h-full min-w-0 {sidebarSide ===
         'left'
@@ -151,7 +159,7 @@
   }
 
   @media (max-width: 639px) {
-    .upper-area :global(.workspace-sidebar-panel) {
+    .upper-area:not(.workspace-column-layout) :global(.workspace-sidebar-panel) {
       position: absolute;
       inset-block: 0;
       z-index: 20;

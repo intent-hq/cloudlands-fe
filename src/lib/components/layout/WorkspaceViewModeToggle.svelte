@@ -1,12 +1,15 @@
 <script lang="ts">
-  import ColumnsPlusRightIcon from 'phosphor-svelte/lib/ColumnsPlusRightIcon';
-  import TabsIcon from 'phosphor-svelte/lib/TabsIcon';
-  import { tick } from 'svelte';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { Toggle } from '$lib/components/ui/toggle';
-  import { store as appStore } from '$store/renderer/store';
-  import { setWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { setWorkspaceViewModeWithTransition } from '$features/workspace/workspace-view-mode-action';
   import { m } from '$shared/paraglide/messages.js';
+  import { cn } from '$lib/utils';
+  import {
+    TITLEBAR_NAVIGATION_CONTROL_CLASS,
+    TITLEBAR_NAVIGATION_GLYPH_CLASS,
+  } from './titlebar-navigation';
+  import TitlebarNavigationTooltip from './TitlebarNavigationTooltip.svelte';
 
   const viewMode$ = selectWorkspaceViewMode();
   const isColumns = $derived($viewMode$ === 'columns');
@@ -18,51 +21,27 @@
 
   function handleChange(pressed: string | boolean) {
     const nextMode = pressed === true ? 'columns' : 'single';
-    const update = async () => {
-      appStore.dispatch(setWorkspaceViewMode(nextMode));
-      await tick();
-    };
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const transitionDocument = document as Document & {
-      startViewTransition?: (update: () => Promise<void>) => { finished: Promise<void> };
-    };
-
-    if (!transitionDocument.startViewTransition || reduceMotion) {
-      void update();
-      return;
-    }
-
-    document.documentElement.classList.add('workspace-view-transition');
-    const transition = transitionDocument.startViewTransition.call(document, update);
-    void transition.finished.finally(() => {
-      document.documentElement.classList.remove('workspace-view-transition');
-    });
+    void setWorkspaceViewModeWithTransition(nextMode);
   }
 </script>
 
-<Toggle
-  pressed={isColumns}
-  onChange={handleChange}
-  size="xs"
-  class="app-no-drag size-7 border-0 bg-transparent p-0 shadow-none data-[state=on]:bg-transparent!"
-  ariaLabel={toggleLabel}
-  title={toggleLabel}
->
-  {#if isColumns}
-    <TabsIcon
-      size={14}
-      weight="bold"
-      class="pointer-events-none size-3.5!"
-      data-icon="tabs"
-      aria-hidden="true"
-    />
-  {:else}
-    <ColumnsPlusRightIcon
-      size={14}
-      weight="bold"
-      class="pointer-events-none size-3.5!"
-      data-icon="columns-plus-right"
-      aria-hidden="true"
-    />
-  {/if}
-</Toggle>
+<TitlebarNavigationTooltip label={toggleLabel} shortcut="mod+shift+l">
+  <Toggle
+    pressed={isColumns}
+    onChange={handleChange}
+    size="xs"
+    class={cn(
+      'app-no-drag size-8 shrink-0 border-0 p-0 data-[state=on]:text-foreground!',
+      TITLEBAR_NAVIGATION_CONTROL_CLASS,
+    )}
+    ariaLabel={toggleLabel}
+  >
+    <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+      <IntentNavigationIcon
+        name={isColumns ? 'tabs' : 'spaces'}
+        size={16}
+        class="pointer-events-none size-4!"
+      />
+    </span>
+  </Toggle>
+</TitlebarNavigationTooltip>

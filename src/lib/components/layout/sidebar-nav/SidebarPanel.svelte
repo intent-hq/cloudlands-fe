@@ -9,11 +9,12 @@
   import Fa from 'svelte-fa';
   import {
     faXmark,
-    faLayerGroup,
+    faEllipsisVertical,
     faMagnifyingGlass,
     faPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import * as Menu from '$lib/components/ui/menu';
 
   import {
     selectPanelItem,
@@ -21,12 +22,14 @@
     selectCombinedPanelSplit,
     selectOnboardingActive,
     selectAllSpacesViewMode,
+    selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
     closePanel,
     setPanelWidth as setPanelWidthAction,
     setCombinedPanelSplit as setCombinedPanelSplitAction,
     setAllSpacesViewMode,
+    setShowArchivedWorkspaces,
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
@@ -40,17 +43,13 @@
   const combinedPanelSplit$ = selectCombinedPanelSplit();
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
+  const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
     { value: 'repo', label: m.layout_allCard_repo_label() },
     { value: 'status', label: m.layout_allCard_status_label() },
   ] satisfies Array<{ value: AllSpacesViewMode; label: string }>;
-  const allSpacesViewModeLabel = $derived(
-    allSpacesViewModes.find((option) => option.value === $allSpacesViewMode$)?.label ??
-      m.layout_allCard_recent_label(),
-  );
-
   const MIN_WIDTH = 100;
   const MAX_WIDTH = 480;
   const MIN_SPLIT = 0.15;
@@ -82,6 +81,7 @@
 
   // Whether the workspace-list search input is shown (toggled from the header)
   let searchVisible = $state(false);
+  let spacesOptionsOpen = $state(false);
 
   // Combined-panel vertical split (fraction of height given to the workspace list)
   let splitContainerEl = $state<HTMLDivElement | null>(null);
@@ -123,12 +123,15 @@
     window.addEventListener('mouseup', splitOnMouseUp);
   }
 
-  function handleAllSpacesViewModeCycle() {
-    const currentMode = selectAllSpacesViewMode.select(appStore.state);
-    const currentIndex = allSpacesViewModes.findIndex((option) => option.value === currentMode);
-    const nextIndex = (currentIndex + 1) % allSpacesViewModes.length;
-    const nextMode = allSpacesViewModes[nextIndex]?.value ?? 'recent';
+  function handleAllSpacesViewModeChange(value: string) {
+    const nextMode = allSpacesViewModes.find((option) => option.value === value)?.value;
+    if (!nextMode || nextMode === selectAllSpacesViewMode.select(appStore.state)) return;
     appStore.dispatch(setAllSpacesViewMode(nextMode));
+  }
+
+  function handleShowArchivedChange(checked: boolean) {
+    if (checked === selectShowArchivedWorkspaces.select(appStore.state)) return;
+    appStore.dispatch(setShowArchivedWorkspaces(checked));
   }
 
   // Scroll-fade state: fade out overflowing content at the top/bottom edges
@@ -266,7 +269,7 @@
                 >
                   <button
                     type="button"
-                    class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
                     onclick={() => appStore.dispatch(setShowCreateModal(true))}
                     aria-label={m.layout_sidebarNav_newWorkspace_title()}
                     data-spaces-create
@@ -274,32 +277,75 @@
                     <Fa icon={faPlus} size="xs" />
                   </button>
                 </Tooltip>
-                <Tooltip
-                  content={`Group spaces: ${allSpacesViewModeLabel}`}
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <button
-                    type="button"
-                    class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                    onclick={handleAllSpacesViewModeCycle}
-                    aria-label={`Sort or group spaces: ${allSpacesViewModeLabel}`}
-                    data-spaces-view-mode-trigger
+                <Menu.Root bind:open={spacesOptionsOpen}>
+                  <Menu.Trigger>
+                    {#snippet child({ props })}
+                      <Tooltip
+                        content={m.layout_sidebarPanel_workspaceListOptions_tooltip()}
+                        side="bottom"
+                        sideOffset={4}
+                      >
+                        <button
+                          {...props}
+                          type="button"
+                          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                          aria-label={m.layout_sidebarPanel_workspaceListOptions_tooltip()}
+                          aria-haspopup="menu"
+                          aria-expanded={spacesOptionsOpen}
+                          data-spaces-options-trigger
+                        >
+                          <Fa icon={faEllipsisVertical} size="xs" />
+                        </button>
+                      </Tooltip>
+                    {/snippet}
+                  </Menu.Trigger>
+                  <Menu.Content
+                    align="end"
+                    class="w-48"
+                    aria-label={m.layout_sidebarPanel_workspaceListOptions_tooltip()}
                   >
-                    <Fa icon={faLayerGroup} size="xs" />
-                  </button>
-                </Tooltip>
+                    <div
+                      role="group"
+                      aria-label={m.layout_sidebarPanel_groupBy_label()}
+                      data-spaces-view-mode-options
+                    >
+                      <div class="type-caption px-2 pb-1 pt-1 font-medium text-muted-foreground">
+                        {m.layout_sidebarPanel_groupBy_label()}
+                      </div>
+                      <Menu.RadioGroup
+                        value={$allSpacesViewMode$}
+                        onValueChange={handleAllSpacesViewModeChange}
+                      >
+                        {#each allSpacesViewModes as option (option.value)}
+                          <Menu.RadioItem value={option.value}>{option.label}</Menu.RadioItem>
+                        {/each}
+                      </Menu.RadioGroup>
+                    </div>
+                    <Menu.Separator />
+                    <Menu.CheckboxItem
+                      checked={$showArchivedWorkspaces$}
+                      closeOnSelect={false}
+                      onCheckedChange={handleShowArchivedChange}
+                    >
+                      {m.workspace_home_showArchived_label()}
+                    </Menu.CheckboxItem>
+                  </Menu.Content>
+                </Menu.Root>
                 <Tooltip
-                  content={searchVisible ? 'Hide search' : 'Search workspaces'}
+                  content={searchVisible
+                    ? m.layout_sidebarPanel_hideSearch_ariaLabel()
+                    : m.layout_sidebarPanel_searchWorkspaces_ariaLabel()}
                   side="bottom"
                   sideOffset={4}
                 >
                   <button
-                    class="w-6 h-6 flex items-center justify-center rounded-md transition-colors cursor-pointer {searchVisible
+                    class="w-8 h-8 flex items-center justify-center rounded-md outline-none transition-colors cursor-pointer focus-visible:bg-muted/50 focus-visible:text-foreground {searchVisible
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
                     onclick={() => (searchVisible = !searchVisible)}
-                    aria-label={searchVisible ? 'Hide search' : 'Search workspaces'}
+                    aria-label={searchVisible
+                      ? m.layout_sidebarPanel_hideSearch_ariaLabel()
+                      : m.layout_sidebarPanel_searchWorkspaces_ariaLabel()}
                     aria-pressed={searchVisible}
                     data-combined-panel-search-toggle
                   >
@@ -323,7 +369,7 @@
             onmousedown={handleSplitResizeStart}
             role="separator"
             aria-orientation="horizontal"
-            aria-label="Resize workspace list and chat"
+            aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
           >
             <div
               class="pointer-events-none h-px w-full bg-border"

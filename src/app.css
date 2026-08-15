@@ -55,45 +55,120 @@
 }
 
 html.workspace-view-transition::view-transition-group(*) {
-  animation-duration: 300ms;
+  animation-duration: 280ms;
   animation-timing-function: var(--ease-emphasized-out);
 }
 
-html.workspace-view-transition::view-transition-group(root),
+html.workspace-view-transition::view-transition-group(root) {
+  animation: none;
+}
+
 html.workspace-view-transition::view-transition-old(root),
 html.workspace-view-transition::view-transition-new(root) {
-  animation: none;
+  display: none;
 }
 
 html.workspace-view-transition::view-transition-old(*),
 html.workspace-view-transition::view-transition-new(*) {
+  animation: none;
+  height: 100%;
+  object-fit: none;
+  object-position: left top;
   overflow: clip;
   mix-blend-mode: normal;
 }
 
-html.workspace-view-transition::view-transition-old(*) {
-  animation: workspace-view-old-fade 140ms ease-out both;
+html.workspace-view-transition::view-transition-group(workspace-view-active) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-emphasized-out);
+  overflow: clip;
 }
 
-html.workspace-view-transition::view-transition-new(*) {
-  animation: workspace-view-new-reveal 260ms var(--ease-emphasized-out) 40ms both;
+html.workspace-view-transition::view-transition-image-pair(workspace-view-active) {
+  overflow: clip;
 }
 
-@keyframes workspace-view-old-fade {
-  to {
+html.workspace-view-transition::view-transition-old(workspace-view-active) {
+  animation: workspace-anchor-old 280ms ease-out both;
+}
+
+html.workspace-view-transition::view-transition-new(workspace-view-active) {
+  animation: workspace-anchor-new 280ms var(--ease-emphasized-out) both;
+}
+
+html.workspace-view-transition::view-transition-group(workspace-view-titlebar-geometry),
+html.workspace-view-transition::view-transition-group(workspace-view-sidebar-geometry) {
+  animation-duration: 260ms;
+  animation-timing-function: var(--ease-emphasized-out);
+}
+
+@keyframes workspace-anchor-old {
+  0%,
+  48% {
+    opacity: 1;
+  }
+  72%,
+  100% {
     opacity: 0;
   }
 }
 
-@keyframes workspace-view-new-reveal {
-  from {
+@keyframes workspace-anchor-new {
+  0%,
+  42% {
     opacity: 0;
+  }
+  68%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes workspace-secondary-old-to-columns {
+  to {
+    opacity: 0.82;
+    transform: translateX(-4px);
+  }
+}
+
+@keyframes workspace-secondary-new-to-columns {
+  from {
+    opacity: 0.82;
+    transform: translateX(8px);
+  }
+}
+
+@keyframes workspace-secondary-old-to-single {
+  to {
+    opacity: 0.82;
+    transform: translateX(8px);
+  }
+}
+
+@keyframes workspace-secondary-new-to-single {
+  from {
+    opacity: 0.82;
+    transform: translateX(-6px);
+  }
+}
+
+@keyframes workspace-content-reveal {
+  from {
+    opacity: 0.86;
+  }
+}
+
+@keyframes workspace-content-recede {
+  to {
+    opacity: 0.86;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.workspace-view-transition::view-transition-group(*) {
-    animation-duration: 0.01ms;
+  html.workspace-view-transition::view-transition-group(*),
+  html.workspace-view-transition::view-transition-old(*),
+  html.workspace-view-transition::view-transition-new(*) {
+    animation: none !important;
   }
 }
 
@@ -125,14 +200,19 @@ kbd {
   cursor: pointer;
 }
 
-/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
+/* Keep pointer focus quiet while guaranteeing a semantic keyboard-focus fallback.
+   Layered so Tailwind utilities (e.g. `focus-visible:outline-none` from the Input
+   component's `noFocusStyle` opt-out) can override these rules — unlayered author
+   CSS would otherwise beat every layered utility under Tailwind v4. */
+@layer base {
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
 
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 body {
@@ -664,4 +744,53 @@ body.panel-resizing webview {
 
 .placeholder-current::placeholder {
   color: currentColor;
+}
+
+/* Frameless-window drag regions: interactive descendants of .app-drag-region
+   (plus explicit .app-no-drag opt-outs) must stay clickable. This lives here —
+   loaded by the root layout in every window — so standalone routes outside the
+   (app) group (e.g. /hud) get it too (intent-hq/monorepo#2167). Keep it scoped
+   to .app-drag-region descendants: an app-wide no-drag rule carved dead zones
+   into the titlebar drag strip (intent-hq/monorepo#1907; see
+   drag-region-no-drag-scoping.test.ts). */
+.app-drag-region button,
+.app-drag-region a,
+.app-drag-region input,
+.app-drag-region select,
+.app-drag-region textarea,
+.app-drag-region [role='button'],
+.app-drag-region [role='tab'],
+.app-drag-region [role='menuitem'],
+.app-drag-region [data-interactive],
+.app-drag-region [tabindex]:not([tabindex='-1']),
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollable containers inside a drag region (e.g. the workspace tab strip)
+   need their no-drag geometry CLIPPED: Chromium computes draggable regions
+   from UNCLIPPED element geometry, so interactive children scrolled out of
+   the container still carve no-drag holes in the titlebar drag strip where
+   their invisible rects land (intent-hq/monorepo#2400 — the dead gap left of
+   the tabs; same mechanism as #1907). Mark the container itself no-drag (its
+   own border box is exactly its visible area) and reset the per-element
+   no-drag on its interactive descendants so their unclipped geometry
+   contributes nothing. Visible descendants stay clickable — they sit inside
+   the container's no-drag region. Keep the reset list in sync with the rule
+   above (drag-region-no-drag-scoping.test.ts asserts the mirror). */
+.app-drag-region [data-app-region-clip] {
+  -webkit-app-region: no-drag;
+}
+
+.app-drag-region [data-app-region-clip] button,
+.app-drag-region [data-app-region-clip] a,
+.app-drag-region [data-app-region-clip] input,
+.app-drag-region [data-app-region-clip] select,
+.app-drag-region [data-app-region-clip] textarea,
+.app-drag-region [data-app-region-clip] [role='button'],
+.app-drag-region [data-app-region-clip] [role='tab'],
+.app-drag-region [data-app-region-clip] [role='menuitem'],
+.app-drag-region [data-app-region-clip] [data-interactive],
+.app-drag-region [data-app-region-clip] [tabindex]:not([tabindex='-1']) {
+  -webkit-app-region: initial;
 }

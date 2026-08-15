@@ -77,6 +77,15 @@ function relationFields(
   };
 }
 
+/**
+ * `specLinked` (additive, PROTOCOL §5.4): carried through only when the wire
+ * row has the boolean — an older daemon omits it and consumers keep their
+ * legacy behavior on `undefined` (presence-detected like the relation fields).
+ */
+function specLinkedField(source: Record<string, unknown>): Pick<WorkspaceTask, "specLinked"> {
+  return typeof source.specLinked === "boolean" ? { specLinked: source.specLinked } : {};
+}
+
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
 function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
   const metadata = raw.metadata as { task?: { status?: unknown } } | undefined;
@@ -96,6 +105,7 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     // returns it, left undefined otherwise (no behavior change → last-writer-wins).
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
     ...relationFields(task as Record<string, unknown>),
+    ...specLinkedField(task as Record<string, unknown>),
   };
 }
 
@@ -121,6 +131,7 @@ function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null
           : undefined,
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
     ...relationFields(raw),
+    ...specLinkedField(raw),
   };
 }
 

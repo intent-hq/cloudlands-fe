@@ -22,6 +22,7 @@
   } from '$store/renderer/slices/hud/hud-selectors';
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+  import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { formatHudTimer } from '../utils/hud-format';
   import { watchReducedMotion } from '../right-column/hud-slide.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
@@ -33,16 +34,9 @@
   } from './hud-takeover-queue';
   import { createTakeoverController } from './hud-takeover-controller.svelte';
   import { takeoverFrameStyle } from './hud-takeover-frame';
-  import {
-    bannerScrollDurationS,
-    cellLeft,
-    cellNeedsPan,
-    cellTop,
-    emptyCellCoords,
-    spiralCoords,
-    takeoverPanBounds,
-  } from './hud-takeover-layout';
-  import { createTakeoverMapDrag } from './hud-takeover-drag.svelte';
+  import { bannerScrollDurationS, cellLeft, cellTop } from './hud-takeover-layout';
+  import { createTakeoverMapState } from './hud-takeover-map.svelte';
+  import HudTakeoverEdges from './HudTakeoverEdges.svelte';
   import {
     agentBucketLabel,
     takeoverKindColor,
@@ -50,6 +44,8 @@
     taskCellMeta,
   } from './hud-takeover-meta';
   import HudTakeoverBanner from './HudTakeoverBanner.svelte';
+  import HudTakeoverHeading from './HudTakeoverHeading.svelte';
+  import HudTakeoverZoomControls from './HudTakeoverZoomControls.svelte';
   import { agentBucketColor } from '../grid/hud-card-meta';
   import { playTakeoverTransitionCues } from '../sound/hud-sound-player';
   import { createTypewriterCue } from '../sound/hud-typewriter-cue.svelte';
@@ -62,7 +58,8 @@
   const queue = $derived(controller.queue);
 
   // ── Sound: cue on queue phase transitions (enable gate lives in the
-  // service; viewers/'manual' are silent by the cue map). ──
+  // service; viewers play structural transients only — 'manual' maps to no
+  // kind cue). ──
   let prevQueueForSound = controller.queue;
   $effect(() => {
     const next = controller.queue;
@@ -115,6 +112,9 @@
   });
   const view$ = selectHudTakeoverView(activeWorkspaceIdStore);
 
+  // Hardware-key square gate: same as the grid card (connected + slotted).
+  const microConnected$ = microConnectedReadable();
+
   // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
   $effect(() => {
     const workspaceId = queue.active?.workspaceId;
@@ -135,32 +135,44 @@
   const primaryTrigger = $derived(activeTakeoverTrigger(queue));
   const countdown = $derived(takeoverCountdownSeconds(queue, nowMs));
 
-  /** Map cells: task list placed on the deterministic spiral. */
-  const mapCells = $derived.by(() => {
-    const view = $view$;
-    if (!view) return [];
-    const coords = spiralCoords(view.tasks.length);
-    return view.tasks.map((task, i) => ({ task, coord: coords[i] }));
+  // ── Task map: dependency-graph placement + edges + zoom-to-fit + camera
+  // (state and derivations live in hud-takeover-map.svelte.ts). ──
+  const map = createTakeoverMapState(() => $view$?.tasks ?? []);
+  const drag = $derived(map.drag);
+
+  // Hovered task cell: the edge layer highlights every edge touching it
+  // (full-strength, thicker stroke). Reset on display/workspace changes so
+  // a cell removed under the pointer never leaves a stale highlight.
+  let hoveredTaskId = $state<string | null>(null);
+  $effect(() => {
+    void visible;
+    void queue.active?.workspaceId;
+    hoveredTaskId = null;
   });
 
-  /** Coord of the changed task (newest trigger), null when none/absent. */
-  const changedCoord = $derived.by(() => {
-    const changedTaskId = primaryTrigger?.changedTaskId;
-    if (!changedTaskId) return null;
-    return mapCells.find((cell) => cell.task.id === changedTaskId)?.coord ?? null;
+  // Measure the map viewport once per display, keyed by workspace PLUS the
+  // controller's display counter: reduced motion chains closing → opening
+  // directly (no idle/blinking reset between displays), so a chained second
+  // takeover for the SAME workspace must still re-key to re-open at 100%
+  // zoom. Idle/blinking resets so the next display re-measures. Unmeasured
+  // viewports (jsdom, pre-layout) stay 1:1.
+  let mapClipEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const active = queue.phase !== 'idle' && queue.phase !== 'blinking' && queue.active;
+    map.measure(active ? `${queue.active!.workspaceId}#${controller.displaySeq}` : '', mapClipEl);
   });
 
-  /** Empty dashed cells filling the canvas ring around the occupied grid. */
-  const emptyCells = $derived(emptyCellCoords(mapCells.map((cell) => cell.coord)));
-
-  // Map camera: manual drag-to-pan + the auto-pan to a far changed cell
-  // (mock: 2s after open; reduced motion pans immediately, drags stay live).
-  const panBounds = $derived(takeoverPanBounds(mapCells.map((cell) => cell.coord)));
-  const drag = createTakeoverMapDrag(() => panBounds);
-  const needsPan = $derived(changedCoord !== null && cellNeedsPan(changedCoord));
+  // Auto-pan to a far changed cell (mock: 2s after open; reduced motion
+  // pans immediately, drags stay live) — suppressed when the graph is
+  // entirely visible at the display's 1:1 open zoom. A once-per-display
+  // decision: needsPan ignores the live zoom, so manual zoom never re-keys
+  // syncAutoPan (which would reset the pan / re-schedule the glide) or
+  // flips banner timing mid-display.
+  const needsPan = $derived(map.needsPan(primaryTrigger?.changedTaskId));
   $effect(() => {
     const workspaceId = queue.active?.workspaceId ?? '';
-    drag.syncAutoPan(workspaceId, needsPan ? changedCoord : null, motion ? 2000 : 0);
+    const coord = needsPan ? map.changedCoord(primaryTrigger?.changedTaskId) : null;
+    drag.syncAutoPan(workspaceId, coord, motion ? 2000 : 0);
   });
 
   // ── Banner overflow marquee: measure once per display during 'opening' ──
@@ -262,10 +274,11 @@
       <div class="ov-content">
         <!-- Header: title / spec progress / countdown / DISMISS -->
         <div class="ov-header">
-          <div class="ov-heading">
-            <span class="ov-ws-name">{view.title}</span>
-            <span class="ov-ws-repo">{view.repoRef}</span>
-          </div>
+          <HudTakeoverHeading
+            title={view.title}
+            repoRef={view.repoRef}
+            keySlot={$microConnected$ ? view.keySlot : null}
+          />
           <div class="ov-divider"></div>
           <div class="ov-progress">
             <div class="ov-progress-row">
@@ -311,15 +324,24 @@
                 class="ov-map-clip"
                 class:ov-map-dragging={drag.dragging}
                 data-testid="hud-takeover-map"
+                bind:this={mapClipEl}
                 {@attach drag.attach}
+                {@attach map.attachWheel}
               >
                 <div
                   class="ov-map-pan"
-                  style:transform={`translate(${-drag.pan.x}px, ${-drag.pan.y}px)`}
+                  style:transform={map.panTransform}
                   class:ov-map-pan-animate={motion && drag.animate}
                 >
+                  <!-- Dependency edges under the cells (arrowheads point at the dependent). -->
+                  <HudTakeoverEdges edges={map.edges} box={map.edgeBox} {motion} {hoveredTaskId} />
+
                   <!-- Spec cell anchored at (0,0) -->
-                  <div class="ov-cell ov-cell-spec" style:left={cellLeft(0)} style:top={cellTop(0)}>
+                  <div
+                    class="ov-cell ov-cell-spec"
+                    style:left={cellLeft(0, map.pitch)}
+                    style:top={cellTop(0, map.pitch)}
+                  >
                     <div class="ov-spec-tag">{m.hud_takeover_spec_label()}</div>
                     <div class="ov-spec-title">{view.title}</div>
                     <div class="ov-spec-segs">
@@ -335,27 +357,32 @@
                     </div>
                   </div>
 
-                  {#each emptyCells as cell (`${cell.x},${cell.y}`)}
+                  {#each map.emptyCells as cell (`${cell.x},${cell.y}`)}
                     <div
                       class="ov-cell ov-cell-empty"
-                      style:left={cellLeft(cell.x)}
-                      style:top={cellTop(cell.y)}
+                      style:left={cellLeft(cell.x, map.pitch)}
+                      style:top={cellTop(cell.y, map.pitch)}
                     ></div>
                   {/each}
 
-                  {#each mapCells as { task, coord }, i (task.id)}
+                  {#each map.cells as { task, coord }, i (task.id)}
                     {@const meta = taskCellMeta(task.status)}
                     {@const changed = primaryTrigger?.changedTaskId === task.id}
                     <div
                       class="ov-cell ov-cell-task"
                       class:ov-cell-changed={changed}
-                      style:left={cellLeft(coord.x)}
-                      style:top={cellTop(coord.y)}
+                      style:left={cellLeft(coord.x, map.pitch)}
+                      style:top={cellTop(coord.y, map.pitch)}
                       style:border={`1px ${meta.borderStyle} ${changed ? meta.color : meta.borderColor}`}
                       style:background={meta.bg}
                       style:outline-color={changed ? meta.color : 'transparent'}
                       style:animation-delay={motion ? `${(0.9 + i * 0.012).toFixed(2)}s` : '0s'}
                       data-testid="hud-takeover-cell"
+                      role="presentation"
+                      onpointerenter={() => (hoveredTaskId = task.id)}
+                      onpointerleave={() => {
+                        if (hoveredTaskId === task.id) hoveredTaskId = null;
+                      }}
                     >
                       <div class="ov-cell-head">
                         <span
@@ -393,6 +420,11 @@
                   {/each}
                 </div>
               </div>
+
+              <!-- Zoom controls: bottom-right cluster OUTSIDE the drag clip,
+                   so button clicks never reach the drag/click-suppression
+                   handlers attached to .ov-map-clip. -->
+              <HudTakeoverZoomControls {map} />
 
               <!-- Banners: one per trigger, typewriter wipe; VIEWER renders none.
                    Rendering (chip/headline/marquee + styles) lives in
@@ -725,29 +757,6 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     flex: none;
   }
-  .ov-heading {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .ov-ws-name {
-    font:
-      600 16px Inter,
-      system-ui,
-      sans-serif;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 380px;
-  }
-  .ov-ws-repo {
-    font:
-      500 10px 'JetBrains Mono',
-      monospace;
-    color: hsl(var(--muted-foreground));
-  }
   .ov-divider {
     width: 1px;
     height: 30px;
@@ -877,7 +886,7 @@
     transition: transform 1.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* ── Cells ── */
+  /* ── Cells (edge styles live in HudTakeoverEdges.svelte) ── */
   .ov-cell {
     position: absolute;
     width: 180px;

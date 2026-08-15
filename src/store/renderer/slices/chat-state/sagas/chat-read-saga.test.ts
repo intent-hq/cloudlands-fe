@@ -27,6 +27,7 @@ import {
   initializeChatRequested,
   initialState as chatStateInitialState,
   refreshChatTranscriptRequested,
+  transcriptHydrationFailed,
   transcriptHydrationSettled,
   transcriptHydrationStarted,
 } from '../chat-state-slice';
@@ -207,9 +208,15 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     mocks.get.mockResolvedValue(session());
     mocks.getConversation
       .mockResolvedValueOnce(
-        page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' })], {
-          nextToken: 'older',
-        }),
+        page(
+          [
+            message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }),
+            message('m-snap', 's', { timestamp: '2026-01-01T00:00:03.000Z' }),
+          ],
+          {
+            nextToken: 'older',
+          },
+        ),
       )
       .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
     const run = harness();
@@ -344,7 +351,9 @@ describe('chatReadSaga (single-transfer hydration)', () => {
   it('walks nextToken backward across multiple older pages', async () => {
     mocks.get.mockResolvedValue(session());
     mocks.getConversation
-      .mockResolvedValueOnce(page([message('m-old-3', 'o3'), message('m-snap', 's')], { nextToken: 'older' }))
+      .mockResolvedValueOnce(
+        page([message('m-old-3', 'o3'), message('m-snap', 's')], { nextToken: 'older' }),
+      )
       .mockResolvedValueOnce(page([message('m-old-1', 'o1'), message('m-old-2', 'o2')]));
     const run = harness();
     run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
@@ -389,7 +398,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
       mocks.getConversation.mockResolvedValue(page([message('fallback', 'fb')]));
       const run = harness();
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(11_000);
+      await vi.advanceTimersByTimeAsync(50);
 
       expect(mocks.getConversation).toHaveBeenCalledWith(AGENT, 200);
       expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
@@ -414,15 +423,21 @@ describe('chatReadSaga (single-transfer hydration)', () => {
           }),
         )
         .mockResolvedValueOnce(
-          page([message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }), message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' })], {
-            nextToken: 'older-2',
-          }),
+          page(
+            [
+              message('m-gap', 'gap', { timestamp: '2026-01-01T00:00:02.000Z' }),
+              message('m-page', 'newest', { timestamp: '2026-01-01T00:00:03.000Z' }),
+            ],
+            {
+              nextToken: 'older-2',
+            },
+          ),
         )
         .mockResolvedValueOnce(page([message('m-r1', 'retained')]));
       const run = harness();
       run.dispatch(bulkUpsertSessions([session({ messages: [message('m-r1', 'retained')] })]));
       run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
-      await vi.advanceTimersByTimeAsync(11_000);
+      await vi.advanceTimersByTimeAsync(50);
 
       expect(mocks.getConversation.mock.calls).toEqual([
         [AGENT, 200],
@@ -434,6 +449,41 @@ describe('chatReadSaga (single-transfer hydration)', () => {
         'm-gap',
         'm-page',
       ]);
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('accepts a late snapshot during bounded grace after the direct read rejects', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      mocks.getConversation.mockRejectedValue(new Error('direct rejected'));
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(550);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('loading');
+      applySnapshot(run, [message('late', 'late snapshot')]);
+      await settle();
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('settled');
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exposes retryable error after the direct read and snapshot grace fail', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.get.mockResolvedValue(session());
+      mocks.getConversation.mockRejectedValue(new Error('direct rejected'));
+      const run = harness();
+      run.channel.put(initializeChatRequested(AGENT, { wsId: WS }));
+      await vi.advanceTimersByTimeAsync(1_050);
+      expect(run.chat().byAgentId[AGENT]?.transcriptHydration).toBe('error');
       run.task.cancel();
       await run.task.toPromise();
     } finally {
@@ -461,7 +511,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
     await run.task.toPromise();
   });
 
-  it('settles a failed session read without replacing the prior transcript', async () => {
+  it('marks a failed session read without replacing the prior transcript', async () => {
     mocks.get.mockRejectedValue(new Error('read failed'));
     const run = harness();
     run.dispatch(bulkUpsertSessions([session({ messages: [message('prior', 'prior')] })]));
@@ -470,7 +520,7 @@ describe('chatReadSaga (single-transfer hydration)', () => {
 
     expect(run.sessions().byAgentId[AGENT]?.messages.map((m) => m.id)).toEqual(['prior']);
     expect(
-      run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationSettled.type),
+      run.dispatch.mock.calls.some(([action]) => action.type === transcriptHydrationFailed.type),
     ).toBe(true);
     run.task.cancel();
     await run.task.toPromise();

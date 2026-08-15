@@ -1,4 +1,10 @@
-import { getResolvedPanelCanvasWidth, type PanelCanvasSizing } from '$shared/panel-layout-sizing';
+import {
+  getAutomaticPanelCanvasWidth,
+  getResolvedPanelCanvasWidth,
+  MIN_PANEL_CANVAS_WIDTH,
+  type PanelCanvasSizing,
+} from '$shared/panel-layout-sizing';
+import type { PanelCanvasWidthSource } from '$store/renderer/slices/panel-layout/panel-layout-width-provenance';
 
 /** Convert a padding-inclusive DOM client width to the usable canvas viewport. */
 export function getPanelViewportContentWidth(
@@ -12,24 +18,29 @@ export function getPanelViewportContentWidth(
 /**
  * Compute default and minimum widths for the horizontal panel canvas.
  *
- * The default width resolves one intrinsic canvas through the active mode:
- * tab view fills at least the viewport and overflows when content is wider;
- * deck view always hugs the intrinsic content width.
+ * Automatic canvases start at their intrinsic panel-type widths in both views.
+ * An explicit Redux width remains authoritative across view changes and viewport
+ * measurements, while generic automatic viewport fill remains a separate policy.
  */
 export function getPanelCanvasWidths(
   viewportWidth: number,
-  panelColumnCount: number,
+  panelColumns: number | readonly number[],
   sizing: PanelCanvasSizing,
   persistedWidth: number | null,
+  persistedWidthSource: PanelCanvasWidthSource | null = 'explicit',
 ) {
+  const authoritativeWidth =
+    persistedWidthSource === 'explicit' || sizing === 'content' ? persistedWidth : null;
+  const hasPersistedWidth = authoritativeWidth !== null;
   const defaultWidth = getResolvedPanelCanvasWidth(
-    panelColumnCount,
-    sizing,
+    panelColumns,
+    hasPersistedWidth ? sizing : 'content',
     viewportWidth,
-    persistedWidth,
+    authoritativeWidth,
   );
   return {
     defaultWidth,
-    minWidth: sizing === 'viewport' ? Math.max(1, viewportWidth) : 1,
+    resetWidth: getAutomaticPanelCanvasWidth(panelColumns, 'content'),
+    minWidth: MIN_PANEL_CANVAS_WIDTH,
   };
 }

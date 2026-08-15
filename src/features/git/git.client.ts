@@ -76,10 +76,17 @@ class GitClient {
   }
 
   // `git.status` (PROTOCOL §5.6) returns the working-tree summary directly in
-  // the renderer `GitStatus` shape.
-  async getStatus(workspaceId: WorkspaceId): Promise<Result<GitStatus, string>> {
+  // the renderer `GitStatus` shape. Optional `gitRootId` (v6.15, monorepo#2053)
+  // scopes the read to a registered secondary git root.
+  async getStatus(
+    workspaceId: WorkspaceId,
+    opts?: { gitRootId?: string },
+  ): Promise<Result<GitStatus, string>> {
     try {
-      const data = await backendRequest<GitStatus>('git.status', { workspaceId });
+      const data = await backendRequest<GitStatus>('git.status', {
+        workspaceId,
+        ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
+      });
       return { ok: true, data };
     } catch (error) {
       return toError(error, m.git_client_statusFailed_error());
@@ -175,17 +182,34 @@ class GitClient {
   // `git.commits` (PROTOCOL §5.6, alias `git.log`) — paginated reverse-
   // chronological first-parent history. Items already carry the renderer
   // `CommitInfo` shape (hash/sha/author/email/date/message/files). The
-  // pagination envelope (`nextToken`) is not threaded through this seam.
+  // pagination envelope is threaded through: `opts.nextToken` resumes a
+  // previous page and the result carries `nextToken` when more pages exist
+  // (omitted on the last page). Optional `gitRootId` (v6.15) scopes the
+  // read to a registered root.
   async getHistory(
     workspaceId: WorkspaceId,
     limit?: number,
-  ): Promise<Result<CommitInfo[], string>> {
+    opts?: { gitRootId?: string; nextToken?: string },
+  ): Promise<Result<{ items: CommitInfo[]; nextToken?: string }, string>> {
     try {
-      const result = await backendRequest<{ items?: CommitInfo[] }>('git.commits', {
-        workspaceId,
-        ...(limit !== undefined ? { limit } : {}),
-      });
-      return { ok: true, data: Array.isArray(result?.items) ? result.items : [] };
+      const result = await backendRequest<{ items?: CommitInfo[]; nextToken?: string | null }>(
+        'git.commits',
+        {
+          workspaceId,
+          ...(limit !== undefined ? { limit } : {}),
+          ...(opts?.gitRootId ? { gitRootId: opts.gitRootId } : {}),
+          ...(opts?.nextToken ? { nextToken: opts.nextToken } : {}),
+        },
+      );
+      return {
+        ok: true,
+        data: {
+          items: Array.isArray(result?.items) ? result.items : [],
+          ...(typeof result?.nextToken === 'string' && result.nextToken
+            ? { nextToken: result.nextToken }
+            : {}),
+        },
+      };
     } catch (error) {
       return toError(error, m.git_client_historyFailed_error());
     }

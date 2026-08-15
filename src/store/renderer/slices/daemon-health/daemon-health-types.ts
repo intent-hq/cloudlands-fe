@@ -87,6 +87,14 @@ export interface BackendTransportInfo {
   daemonVersion?: string;
   /** True when the adopted daemon's version differs from the bundled intentd.version pin (warn-only). */
   versionMismatch?: boolean;
+  /** The bundled intentd.version pin, reported in every transport mode. */
+  pinnedVersion?: string;
+  /**
+   * True when the adopted daemon is an orphaned sidecar — a leftover from a
+   * crashed/force-quit prior app session running from this app's own bundle
+   * (#2444). The renderer offers a kill-and-restart recovery for it.
+   */
+  isOrphanedSidecar?: boolean;
 }
 
 /**

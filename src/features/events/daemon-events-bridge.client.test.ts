@@ -92,7 +92,11 @@ vi.mock('$features/agent/interrupted-agents-service', () => ({
 const { navigateAwayIfViewingSpy } = vi.hoisted(() => ({
   navigateAwayIfViewingSpy: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
+// `closeWorkspaceTabAndNavigateAway` stays REAL so the archive-transition
+// suite can assert actual tab-state changes (jsdom is never viewing the
+// workspace route, so its goto leg is inert here).
+vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/workspace/navigate-away-if-viewing')>()),
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
@@ -121,13 +125,15 @@ vi.mock('$features/agent/chat-read-service', () => ({
 }));
 
 // Fake the attention-toast service so the bridge's `agent:attention-requested`
-// routing (monorepo#1709) is observable without a real Sonner/toast-component
-// import chain.
-const { showAgentAttentionToastSpy } = vi.hoisted(() => ({
+// routing (monorepo#1709) and the `workspace:updated` auto-unarchive toast are
+// observable without a real Sonner/toast-component import chain.
+const { showAgentAttentionToastSpy, showWorkspaceAutoUnarchiveToastSpy } = vi.hoisted(() => ({
   showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+  showWorkspaceAutoUnarchiveToastSpy: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
+  showWorkspaceAutoUnarchiveToast: showWorkspaceAutoUnarchiveToastSpy,
 }));
 
 // Fake the terminal manager (dynamically imported by the bridge) so the
@@ -232,7 +238,10 @@ import {
   clearWorkspaceCreateProgress,
 } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
 import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
-import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import {
+  resolveFinishReasonNotice,
+  shouldShowStoppedIndicator,
+} from '$lib/components/chat/message-display-utils';
 import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
 import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/question-resource';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
@@ -423,7 +432,71 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
 
     // Deliver agent:process:queued event — should set processQueueHint.
     // Use saturated values (used === cap) to match the documented semantics
-    // ("all slots active") per PROTOCOL §6.5.
+    // ("all slots active") per PROTOCOL §6.5. The wire payload carries
+    // reason: 'slots' (intent-hq/intentd#1196).
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 3,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
+
+    // Deliver agent:process:resumed event — should clear processQueueHint.
+    // Include used/cap/reason to match PROTOCOL §6.5 (AgentProcessResumedEvent
+    // carries { agentId, used, cap, reason }) even though the handler only uses
+    // agentId.
+    handler(
+      notification('agent:process:resumed', {
+        agentId: AGENT,
+        used: 2,
+        cap: 3,
+        reason: 'slots',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toBeUndefined();
+  });
+
+  it('routes agent:process:queued with reason memory-budget into processQueueHint.reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Budget-queued spawn (PROTOCOL §6.5): used/cap still count agent slots,
+    // but the admission constraint is the aggregate memory budget.
+    handler(
+      notification('agent:process:queued', {
+        agentId: AGENT,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      }),
+    );
+
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 2,
+      cap: 8,
+      reason: 'memory-budget',
+    });
+  });
+
+  it('normalizes an absent agent:process:queued reason (older daemon) to slots', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Pre-#1196 daemons omit `reason`; the bridge treats absence as 'slots'
+    // (the only queueing constraint that existed before the memory budget).
     handler(
       notification('agent:process:queued', {
         agentId: AGENT,
@@ -436,20 +509,33 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       waiting: true,
       used: 3,
       cap: 3,
+      reason: 'slots',
     });
+  });
 
-    // Deliver agent:process:resumed event — should clear processQueueHint.
-    // Include used/cap to match PROTOCOL §6.5 (AgentProcessResumedEvent carries
-    // { agentId, used, cap }) even though the handler only uses agentId.
+  it('falls back to slots for an unrecognized agent:process:queued reason', async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A hypothetical future constraint the FE doesn't know yet: fall back to
+    // 'slots' (a stale label beats a broken render) — the bridge logs a
+    // warning so the divergence is observable rather than silently absorbed.
     handler(
-      notification('agent:process:resumed', {
+      notification('agent:process:queued', {
         agentId: AGENT,
-        used: 2,
+        used: 3,
         cap: 3,
+        reason: 'gpu-budget',
       }),
     );
 
-    expect(readSession()?.processQueueHint).toBeUndefined();
+    expect(readSession()?.processQueueHint).toEqual({
+      waiting: true,
+      used: 3,
+      cap: 3,
+      reason: 'slots',
+    });
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
@@ -2329,6 +2415,147 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       type: 'text',
       text: 'New turn',
     });
+  });
+});
+
+// Abnormal turn endings (PROTOCOL §7.3): the terminal `agent:stream:end`
+// carries `finishReason` when the turn completed with a non-`end_turn` ACP
+// stop reason (`refusal` | `max_tokens` | `max_turn_requests`), and the daemon
+// persists the same value as `metadata.finishReason` on the assistant row
+// (empty marker row on zero-output turns). The bridge must stamp the metadata
+// live so the notice renders without a reconcile, and rehydrated rows must
+// resolve the same notice.
+describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function streamTextChunk(handler: (n: { method: string; params?: unknown }) => void): void {
+    handler(
+      notification('agent:stream:chunk', {
+        agentId: AGENT,
+        content: 'Partial answer',
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: 'text',
+        streamId: STREAM_ID,
+      }),
+    );
+  }
+
+  it.each(['refusal', 'max_tokens', 'max_turn_requests'] as const)(
+    'stream:end with finishReason=%s stamps metadata.finishReason on the streamed turn — the notice resolves LIVE',
+    async (finishReason) => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      streamTextChunk(handler);
+      handler(
+        notification('agent:stream:end', {
+          agentId: AGENT,
+          streamId: STREAM_ID,
+          messageId: MESSAGE_ID,
+          finishReason,
+        }),
+      );
+
+      const assistantMessages = readAssistantMessages();
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+        type: 'text',
+        text: 'Partial answer',
+      });
+      expect(assistantMessages[0].isStreaming).toBe(false);
+      expect(assistantMessages[0].streamingComplete).toBe(true);
+      expect(assistantMessages[0].metadata).toMatchObject({ finishReason });
+      // Abnormal finish is NOT an interruption — no Stopped indicator.
+      expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+      expect(resolveFinishReasonNotice(assistantMessages[0])).toBeDefined();
+    },
+  );
+
+  it('zero-output abnormal turn: finishReason stream:end with messageId and NO local stream state creates the empty marker row', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Nothing streamed — the daemon persisted an empty marker row under the
+    // turn's minted messageId with metadata.finishReason and emits the
+    // terminal stream:end. The bridge must NOT early-return here.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        streamId: STREAM_ID,
+        messageId: MESSAGE_ID,
+        finishReason: 'refusal',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata).toMatchObject({ finishReason: 'refusal' });
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toEqual({ kind: 'refusal' });
+  });
+
+  it('normal stream:end (no finishReason) finalizes WITHOUT finishReason metadata — no notice', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    streamTextChunk(handler);
+    handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].metadata?.finishReason).toBeUndefined();
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toBeUndefined();
+  });
+
+  it('persisted finishReason row reconciles in after reload: the notice resolves from row metadata', async () => {
+    await primeBridge();
+
+    // Simulate the chat-read-service hydration reconcile: agents.getConversation
+    // returns the persisted row with metadata.finishReason (PROTOCOL §7.3) and
+    // bulkUpsertSessions upserts it — no live stream events at all.
+    const session = readSession();
+    expect(session).toBeDefined();
+    const persistedRow = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial answer' }],
+      metadata: { finishReason: 'max_tokens' },
+    } as unknown as AgentMessage;
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          isStreaming: false,
+          status: AgentStatus.Idle,
+          messages: [persistedRow],
+        },
+      ]),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].metadata).toMatchObject({ finishReason: 'max_tokens' });
+    expect(resolveFinishReasonNotice(assistantMessages[0])).toEqual({ kind: 'max-tokens' });
   });
 });
 
@@ -6128,6 +6355,228 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
   });
 });
 
+describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () => {
+  const WS_TAB = 'ws-updated-tab-1';
+  const OTHER_TAB = 'ws-updated-tab-other';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    resetMockIpcRouter();
+    capturedHandlers.length = 0;
+    // Tab state persists across tests via appStore — clear the whole strip
+    // (openTabs, currentTabId, stacks, recently-closed) before each test.
+    const { cleanupInvalidWorkspaceTabs } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(cleanupInvalidWorkspaceTabs([]));
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_TAB,
+        title: 'Tab ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function openTab(workspaceId: string): Promise<void> {
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(workspaceId));
+  }
+
+  function readTabState(): {
+    openTabs: Record<string, boolean>;
+    currentTabId: string | null;
+    workspaceStacks: string[][];
+  } {
+    const state = appStore.state as {
+      tabState: {
+        openTabs: Record<string, boolean>;
+        currentTabId: string | null;
+        workspaceStacks: string[][];
+      };
+    };
+    return state.tabState;
+  }
+
+  function updatedNotification(changes: Record<string, unknown>): {
+    method: string;
+    params?: unknown;
+  } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-ws-updated-tab-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_TAB,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:updated',
+          actor: { type: 'system' },
+          data: { workspaceId: WS_TAB, changes },
+        },
+      },
+    };
+  }
+
+  it('closes the open tab on an archived delta', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: true,
+        status: 'Archived',
+        archivedAt: '2026-07-25T12:00:00.000Z',
+      }),
+    );
+    // `closeWorkspaceTabAndNavigateAway` dispatches after dynamic imports.
+    await flush();
+
+    const tabs = readTabState();
+    expect(tabs.openTabs[WS_TAB]).toBeUndefined();
+    expect(tabs.workspaceStacks.flat()).not.toContain(WS_TAB);
+    // The delete-path helper is a different route and must not fire here.
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
+  });
+
+  it('is a tab-state no-op when the archived workspace has no open tab', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(updatedNotification({ archived: true, status: 'Archived' }));
+    await flush();
+
+    expect(readTabState()).toBe(before);
+  });
+
+  it('restores the tab in the background on an unarchive delta (no focus steal)', async () => {
+    await seedWorkspace();
+    await openTab(OTHER_TAB);
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    const tabs = readTabState();
+    expect(tabs.openTabs[WS_TAB]).toBe(true);
+    expect(tabs.workspaceStacks.flat()).toContain(WS_TAB);
+    expect(tabs.currentTabId).toBe(OTHER_TAB);
+  });
+
+  it('is a tab-state no-op when the unarchived workspace tab is already open', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    expect(readTabState()).toBe(before);
+  });
+
+  it('leaves tab state untouched for deltas without archive fields', async () => {
+    await seedWorkspace();
+    await openTab(WS_TAB);
+    await primeBridge();
+    const before = readTabState();
+
+    capturedHandlers[0]!(updatedNotification({ title: 'Renamed' }));
+    await flush();
+
+    expect(readTabState()).toBe(before);
+  });
+
+  it('fires the auto-unarchive toast when the unarchive delta carries the autoUnarchive stamp', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        archivedAt: null,
+        autoUnarchive: { reason: 'agent_activity', agentId: 'agent-77', agentName: 'Builder' },
+      }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).toHaveBeenCalledTimes(1);
+    expect(showWorkspaceAutoUnarchiveToastSpy).toHaveBeenCalledWith({
+      workspaceId: WS_TAB,
+      agentId: 'agent-77',
+      agentName: 'Builder',
+    });
+    // The background tab restore still runs alongside the toast.
+    expect(readTabState().openTabs[WS_TAB]).toBe(true);
+  });
+
+  it('shows NO toast on a manual unarchive delta (no autoUnarchive stamp)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', archivedAt: null }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores malformed autoUnarchive stamps safely (tab restore unaffected)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+
+    // Non-object stamp, unknown reason, and missing agent fields must all be
+    // dropped without firing the toast or breaking the unarchive handling.
+    capturedHandlers[0]!(
+      updatedNotification({ archived: false, status: 'Active', autoUnarchive: 'agent_activity' }),
+    );
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        autoUnarchive: { reason: 'something_else', agentId: 'agent-77', agentName: 'Builder' },
+      }),
+    );
+    capturedHandlers[0]!(
+      updatedNotification({
+        archived: false,
+        status: 'Active',
+        autoUnarchive: { reason: 'agent_activity' },
+      }),
+    );
+    await flush();
+
+    expect(showWorkspaceAutoUnarchiveToastSpy).not.toHaveBeenCalled();
+    expect(readTabState().openTabs[WS_TAB]).toBe(true);
+  });
+});
+
 describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', () => {
   const WS_ACT = 'ws-activity-1';
 
@@ -6654,6 +7103,204 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     const ws = await readWorkspace();
     expect(ws.attention).toBe('unread');
     expect(markWorkspaceSeenIfViewingSpy).toHaveBeenCalledWith(WS_ATT);
+  });
+});
+
+describe('daemonEventsBridge (workspace:waiting-changed → workspace slice)', () => {
+  const WS_WAIT = 'ws-waiting-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_WAIT,
+        title: 'Waiting ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{ waiting?: boolean }> {
+    const { getItem } = await import('@augmentcode/themis/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_WAIT) ?? {}) as never;
+  }
+
+  function waitingChangedNotification(waiting: boolean) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-waiting-${waiting}`,
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:waiting-changed in the bridge firehose filter', () => {
+    expect(DAEMON_EVENTS_SUBSCRIBE_TYPES).toContain('workspace:waiting-changed');
+  });
+
+  it('merges waiting=true onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('merges waiting=false onto the workspace entity (transition back)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler(waitingChangedNotification(false));
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(false);
+  });
+
+  it('is a no-op when the waiting value is not a boolean', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-bad',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: 'yes',
+          },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('is a no-op when data is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(waitingChangedNotification(true));
+    let ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-data',
+          workspaceId: WS_WAIT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+        },
+      },
+    });
+
+    ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Envelope points at a different (nonexistent) workspace; the payload's
+    // own workspaceId must win so the correct entity is updated.
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-data-id',
+          workspaceId: 'ws-waiting-other',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
+  });
+
+  it('applies a self-sufficient payload even when the envelope workspaceId is absent', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A relay that strips the envelope workspaceId must not gate out the
+    // event — the payload carries its own workspaceId (§6.7).
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-waiting-no-envelope-id',
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:waiting-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_WAIT,
+            waiting: true,
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.waiting).toBe(true);
   });
 });
 
@@ -7407,7 +8054,11 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
 
     // Parentless failure: inline banner + failure-registry entry (toast).
     handler(
-      notification('agent:failed', { agentId: AGENT, error: 'previous turn failed', status: 'error' }),
+      notification('agent:failed', {
+        agentId: AGENT,
+        error: 'previous turn failed',
+        status: 'error',
+      }),
     );
     expect(readChatAgent()?.error).toBe('previous turn failed');
     expect(listAgentFailureEntries()).toHaveLength(1);

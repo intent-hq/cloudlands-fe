@@ -29,15 +29,23 @@
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
   import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
   import Fa from 'svelte-fa';
-  import { faCodeFork } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight, faCodeFork, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 
   interface Props {
     checkoutMode?: 'cow' | 'worktree' | 'direct';
     workspace?: Workspace | null;
     class?: string;
+    presentation?: 'pill' | 'repository';
+    repositoryOpen?: boolean;
   }
 
-  let { checkoutMode, workspace, class: className = '' }: Props = $props();
+  let {
+    checkoutMode,
+    workspace,
+    class: className = '',
+    presentation = 'pill',
+    repositoryOpen = false,
+  }: Props = $props();
 
   // When a workspace is provided, its checkoutMode is authoritative so the
   // label always matches the workspace whose diskUsage the tooltip shows.
@@ -75,17 +83,22 @@
     };
   });
 
-  // i18n-ignore (CoW / Worktree / Direct are technical terms)
+  const effectiveMode = $derived(mode === 'cow' ? (cowIsolationActive ? 'cow' : 'direct') : mode);
   const label = $derived(
-    mode === 'cow'
-      ? cowIsolationActive
-        ? 'CoW'
-        : 'Direct'
-      : mode === 'worktree'
-        ? 'Worktree'
-        : mode === 'direct'
-          ? 'Direct'
+    effectiveMode === 'cow'
+      ? m.workspace_checkoutModePill_cow_label()
+      : effectiveMode === 'worktree'
+        ? m.workspace_checkoutModePill_worktree_label()
+        : effectiveMode === 'direct'
+          ? m.workspace_checkoutModePill_direct_label()
           : null,
+  );
+  const modeIcon = $derived(
+    effectiveMode === 'cow'
+      ? faLayerGroup
+      : effectiveMode === 'worktree'
+        ? faCodeFork
+        : faArrowRight,
   );
 
   /** Poll cadence while the tooltip is open and a daemon walk is in flight. */
@@ -167,6 +180,11 @@
     }
   }
 
+  $effect(() => {
+    if (presentation !== 'repository') return;
+    handleOpenChange(repositoryOpen);
+  });
+
   // Scope the fetched state to the hovered workspace: when this component
   // instance receives a different workspace, drop the previous workspace's
   // value instead of briefly rendering it.
@@ -202,6 +220,82 @@
   }
 </script>
 
+{#snippet details()}
+  <div class="flex flex-col gap-1.5 text-left whitespace-normal" data-checkout-mode-details>
+    <div
+      class="flex items-center gap-1.5 text-xs text-subtle"
+      aria-label={m.workspace_checkoutModePill_tooltip({ label: label ?? '' })}
+      data-effective-checkout-mode={effectiveMode}
+    >
+      <span
+        class="grid size-4 shrink-0 place-items-center"
+        data-checkout-mode-icon={effectiveMode}
+        aria-hidden="true"
+      >
+        <Fa icon={modeIcon} size="xs" />
+      </span>
+      <span>{m.workspace_checkoutModePill_tooltip({ label: label ?? '' })}</span>
+    </div>
+    {#if diskUsage && formattedSize}
+      <div class="font-medium">
+        {m.workspace_diskUsagePill_totalSize_label({ size: formattedSize })}
+        <span class="text-subtle">
+          · {diskUsage.fileCount === 1
+            ? m.workspace_diskUsagePill_fileCount_one()
+            : m.workspace_diskUsagePill_fileCount_many({
+                count: formatInteger(diskUsage.fileCount),
+              })}
+        </span>
+        {#if refreshing}
+          <span
+            role="status"
+            aria-label={m.workspace_diskUsagePill_refreshing_ariaLabel()}
+            class="ml-1 inline-block size-3 animate-spin rounded-full border border-current border-t-transparent align-middle text-subtle"
+          ></span>
+        {/if}
+      </div>
+      <div class="flex flex-col gap-0.5 text-xs text-subtle text-pretty">
+        <p class="m-0">
+          {mode === 'cow'
+            ? m.workspace_diskUsagePill_physicalNote_label()
+            : m.workspace_diskUsagePill_physicalNotePlain_label()}
+        </p>
+        <p class="m-0">{m.workspace_diskUsagePill_scopeNote_label()}</p>
+      </div>
+      {#if diskUsage.breakdown.length > 0}
+        <ul class="flex flex-col gap-0.5 text-xs">
+          {#each diskUsage.breakdown as entry (entry.name)}
+            <li class="flex items-baseline justify-between gap-3">
+              <span class="truncate">{entry.name}</span>
+              <span class="shrink-0 tabular-nums">{formatBytesBinary(entry.bytes)}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <div class="mt-0.5 flex flex-col gap-1 border-t border-border/50 pt-1.5 text-xs">
+        <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
+        <button
+          type="button"
+          class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+          onclick={handleShrinkClick}
+        >
+          {m.workspace_diskUsagePill_shrink_label()}
+        </button>
+      </div>
+    {:else if loading}
+      <div
+        class="flex min-w-56 flex-col gap-2 py-1"
+        role="status"
+        aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
+      >
+        <Skeleton class="h-4 w-36" />
+        <Skeleton class="h-3 w-full" />
+        <Skeleton class="h-3 w-4/5" />
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet pill(title?: string)}
   <span
     class="inline-flex h-5 shrink-0 cursor-help items-center justify-center rounded-full bg-muted/20 text-ui-sm leading-4 text-subtle {mode ===
@@ -221,7 +315,9 @@
 {/snippet}
 
 {#if label}
-  {#if workspace}
+  {#if presentation === 'repository'}
+    {@render details()}
+  {:else if workspace}
     <Tooltip
       side="bottom"
       align="start"
@@ -232,70 +328,7 @@
       onOpenChange={handleOpenChange}
     >
       {#snippet content()}
-        <div class="flex flex-col gap-1.5 text-left whitespace-normal">
-          <div class="text-xs text-subtle">
-            {m.workspace_checkoutModePill_tooltip({ label: label ?? '' })}
-          </div>
-          {#if diskUsage && formattedSize}
-            <div class="font-medium">
-              {m.workspace_diskUsagePill_totalSize_label({ size: formattedSize })}
-              <span class="text-subtle">
-                · {diskUsage.fileCount === 1
-                  ? m.workspace_diskUsagePill_fileCount_one()
-                  : m.workspace_diskUsagePill_fileCount_many({
-                      count: formatInteger(diskUsage.fileCount),
-                    })}
-              </span>
-              {#if refreshing}
-                <span
-                  role="status"
-                  aria-label={m.workspace_diskUsagePill_refreshing_ariaLabel()}
-                  class="ml-1 inline-block size-3 animate-spin rounded-full border border-current border-t-transparent align-middle text-subtle"
-                ></span>
-              {/if}
-            </div>
-            <!-- text-pretty overrides the tooltip shell's text-balance so the
-                 notes fill the available width instead of wrapping short. -->
-            <div class="flex flex-col gap-0.5 text-xs text-subtle text-pretty">
-              <p class="m-0">
-                {mode === 'cow'
-                  ? m.workspace_diskUsagePill_physicalNote_label()
-                  : m.workspace_diskUsagePill_physicalNotePlain_label()}
-              </p>
-              <p class="m-0">{m.workspace_diskUsagePill_scopeNote_label()}</p>
-            </div>
-            {#if diskUsage.breakdown.length > 0}
-              <ul class="flex flex-col gap-0.5 text-xs">
-                {#each diskUsage.breakdown as entry (entry.name)}
-                  <li class="flex items-baseline justify-between gap-3">
-                    <span class="truncate">{entry.name}</span>
-                    <span class="shrink-0 tabular-nums">{formatBytesBinary(entry.bytes)}</span>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-            <div class="mt-0.5 flex flex-col gap-1 border-t border-border/50 pt-1.5 text-xs">
-              <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
-              <button
-                type="button"
-                class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-                onclick={handleShrinkClick}
-              >
-                {m.workspace_diskUsagePill_shrink_label()}
-              </button>
-            </div>
-          {:else if loading}
-            <div
-              class="flex min-w-56 flex-col gap-2 py-1"
-              role="status"
-              aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
-            >
-              <Skeleton class="h-4 w-36" />
-              <Skeleton class="h-3 w-full" />
-              <Skeleton class="h-3 w-4/5" />
-            </div>
-          {/if}
-        </div>
+        {@render details()}
       {/snippet}
       {@render pill()}
     </Tooltip>

@@ -1,6 +1,7 @@
 /**
  * Tests for the intentd version-pin utilities: pin-file parsing/reading and
- * the semver comparison used against an adopted daemon's reported version.
+ * the shared semver comparison used against a connected daemon's reported
+ * version (`$shared/intentd-version-compare`).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -8,12 +9,8 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  compareToPinnedVersion,
-  parseVersionPin,
-  readPinnedVersion,
-  resolvePinFilePath,
-} from '../intentd-version-pin';
+import { compareToPinnedVersion } from '$shared/intentd-version-compare';
+import { parseVersionPin, readPinnedVersion, resolvePinFilePath } from '../intentd-version-pin';
 
 describe('parseVersionPin', () => {
   it('parses a bare semver line, ignoring comments and blanks', () => {

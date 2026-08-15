@@ -1,8 +1,37 @@
 import type { AgentSession } from '$shared/types';
+import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
 
 export interface FlatWorkspaceAgentRow {
   agent: AgentSession;
   depth: number;
+}
+
+/** Threshold above which a flat top-level foreground list switches to virtual scrolling. */
+export const WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD = 20;
+
+export function isBackgroundAgentSession(agent: AgentSession): boolean {
+  return !!(agent.isBackground || agent.metadata?.isBackground);
+}
+
+export function isCoordinatorAgentSession(agent: AgentSession): boolean {
+  return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
+}
+
+/**
+ * Virtualize only flat lists (no delegations — tree heights are variable) with more
+ * top-level foreground agents than the threshold. Coordinator workspaces keep the
+ * regular rendering: its Coordinator / "Your agents" section headers have no
+ * equivalent in the uniform-row virtual path.
+ */
+export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]): boolean {
+  let topLevelForegroundCount = 0;
+  for (const row of rows) {
+    if (row.depth > 0) return false;
+    if (isBackgroundAgentSession(row.agent)) continue;
+    if (isCoordinatorAgentSession(row.agent)) return false;
+    topLevelForegroundCount += 1;
+  }
+  return topLevelForegroundCount > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD;
 }
 
 function getParentAgentId(agent: AgentSession): AgentSession['id'] | undefined {
@@ -18,8 +47,8 @@ function getAgentRecency(agent: AgentSession): number {
 }
 
 function sortAgents(a: AgentSession, b: AgentSession): number {
-  const aIsCoordinator = (a.metadata?.specialist ?? a.agentMetadata?.specialist) === 'spec-writer';
-  const bIsCoordinator = (b.metadata?.specialist ?? b.agentMetadata?.specialist) === 'spec-writer';
+  const aIsCoordinator = isCoordinatorAgentSession(a);
+  const bIsCoordinator = isCoordinatorAgentSession(b);
   if (aIsCoordinator !== bIsCoordinator) return aIsCoordinator ? -1 : 1;
   return getAgentRecency(b) - getAgentRecency(a);
 }
@@ -70,6 +99,43 @@ export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspace
   for (const agent of dedupedAgents.sort(sortAgents)) append(agent, 0);
 
   return rows;
+}
+
+/** Filters agents by visible metadata and keeps every ancestor of a matching descendant. */
+export function filterWorkspaceAgentRows(
+  rows: FlatWorkspaceAgentRow[],
+  query: string,
+): FlatWorkspaceAgentRow[] {
+  const normalizedQuery = normalizeSidebarSearchText(query).trim();
+  if (!normalizedQuery) return rows;
+
+  const visibleIds = new Set<string>();
+  const ancestors: FlatWorkspaceAgentRow[] = [];
+  for (const row of rows) {
+    while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= row.depth) {
+      ancestors.pop();
+    }
+    const { agent } = row;
+    const metadata = agent.metadata;
+    const agentMetadata = agent.agentMetadata;
+    if (
+      sidebarSearchMatches(normalizedQuery, [
+        agent.name,
+        agent.id,
+        metadata?.specialist,
+        agentMetadata?.specialist,
+        metadata?.agentType,
+        agentMetadata?.agentType,
+        metadata?.role,
+        agentMetadata?.role,
+      ])
+    ) {
+      visibleIds.add(agent.id);
+      for (const ancestor of ancestors) visibleIds.add(ancestor.agent.id);
+    }
+    ancestors.push(row);
+  }
+  return rows.filter((row) => visibleIds.has(row.agent.id));
 }
 
 /** Direct-child counts per agent id, derived from the flat depth-ordered rows. */

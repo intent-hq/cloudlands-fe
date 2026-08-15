@@ -17,7 +17,9 @@ vi.mock('electron', () => ({
     getVersion: () => '2.0.0',
     on: vi.fn(),
   },
-  BrowserWindow: vi.fn(),
+  BrowserWindow: {
+    getAllWindows: () => [],
+  },
   ipcMain: {
     handle: vi.fn(),
   },
@@ -64,67 +66,93 @@ afterEach(async () => {
 });
 
 describe('AutoUpdateService channel persistence', () => {
-  it('setChannel(beta) persists betaUpdatesEnabled=true to local-prefs.json', async () => {
+  it.each(['stable', 'beta', 'alpha'] as const)(
+    'setChannel(%s) persists updateChannel to local-prefs.json',
+    async (channel) => {
+      // Import the service after mocks are set up
+      const { autoUpdateService } = await import('../auto-update.service');
+
+      // Initialize the service (this loads the channel from settings)
+      await autoUpdateService.initialize();
+
+      // Set the channel (now awaitable)
+      await autoUpdateService.setChannel(channel);
+
+      // Poll for the local-prefs.json file to be written
+      const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+      await expect.poll(
+        async () => {
+          const prefsContent = await fs.readFile(prefsPath, 'utf8');
+          const prefs = JSON.parse(prefsContent);
+          return prefs.updateChannel;
+        },
+        { timeout: 2000, interval: 50 },
+      ).toBe(channel);
+    },
+  );
+
+  it('loadChannelFromSettings reads updateChannel from local-prefs.json on init', async () => {
+    // Pre-populate local-prefs.json with the alpha channel
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(prefsPath, JSON.stringify({ updateChannel: 'alpha' }), 'utf8');
+
     // Import the service after mocks are set up
     const { autoUpdateService } = await import('../auto-update.service');
 
-    // Initialize the service (this loads the channel from settings)
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
+    // Initialize the service (this should load alpha from local-prefs)
+    await autoUpdateService.initialize();
 
-    // Set the channel to beta (now awaitable)
-    await autoUpdateService.setChannel('beta');
-
-    // Poll for the local-prefs.json file to be written
-    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
-    await expect.poll(
-      async () => {
-        const prefsContent = await fs.readFile(prefsPath, 'utf8');
-        const prefs = JSON.parse(prefsContent);
-        return prefs.betaUpdatesEnabled;
-      },
-      { timeout: 2000, interval: 50 },
-    ).toBe(true);
+    // Get the state and verify the channel is alpha
+    const state = autoUpdateService.getState();
+    expect(state.channel).toBe('alpha');
   });
 
-  it('setChannel(stable) persists betaUpdatesEnabled=false to local-prefs.json', async () => {
-    // Import the service after mocks are set up
-    const { autoUpdateService } = await import('../auto-update.service');
-
-    // Initialize the service
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
-
-    // Set the channel to stable (now awaitable)
-    await autoUpdateService.setChannel('stable');
-
-    // Poll for the local-prefs.json file to be written
-    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
-    await expect.poll(
-      async () => {
-        const prefsContent = await fs.readFile(prefsPath, 'utf8');
-        const prefs = JSON.parse(prefsContent);
-        return prefs.betaUpdatesEnabled;
-      },
-      { timeout: 2000, interval: 50 },
-    ).toBe(false);
-  });
-
-  it('loadChannelFromSettings reads betaUpdatesEnabled from local-prefs.json on init', async () => {
-    // Pre-populate local-prefs.json with beta enabled
+  it('migrates legacy betaUpdatesEnabled=true to updateChannel=beta and removes the old key', async () => {
     const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
     await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: true }), 'utf8');
 
-    // Import the service after mocks are set up
     const { autoUpdateService } = await import('../auto-update.service');
+    await autoUpdateService.initialize();
 
-    // Initialize the service (this should load beta from local-prefs)
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
+    expect(autoUpdateService.getState().channel).toBe('beta');
+    await expect.poll(
+      async () => {
+        const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+        return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
+      },
+      { timeout: 2000, interval: 50 },
+    ).toEqual(['beta', false]);
+  });
 
-    // Get the state and verify the channel is beta
-    const state = autoUpdateService.getState();
-    expect(state.channel).toBe('beta');
+  it('migrates legacy betaUpdatesEnabled=false to updateChannel=stable and removes the old key', async () => {
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(prefsPath, JSON.stringify({ betaUpdatesEnabled: false }), 'utf8');
+
+    const { autoUpdateService } = await import('../auto-update.service');
+    await autoUpdateService.initialize();
+
+    expect(autoUpdateService.getState().channel).toBe('stable');
+    await expect.poll(
+      async () => {
+        const prefs = JSON.parse(await fs.readFile(prefsPath, 'utf8'));
+        return [prefs.updateChannel, 'betaUpdatesEnabled' in prefs];
+      },
+      { timeout: 2000, interval: 50 },
+    ).toEqual(['stable', false]);
+  });
+
+  it('prefers updateChannel over a lingering legacy betaUpdatesEnabled key', async () => {
+    const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
+    await fs.writeFile(
+      prefsPath,
+      JSON.stringify({ updateChannel: 'stable', betaUpdatesEnabled: true }),
+      'utf8',
+    );
+
+    const { autoUpdateService } = await import('../auto-update.service');
+    await autoUpdateService.initialize();
+
+    expect(autoUpdateService.getState().channel).toBe('stable');
   });
 
   it('defaults to stable when no pref exists', async () => {
@@ -132,8 +160,7 @@ describe('AutoUpdateService channel persistence', () => {
     const { autoUpdateService } = await import('../auto-update.service');
 
     // Initialize the service
-    const mockWindow = {} as any;
-    await autoUpdateService.initialize(mockWindow);
+    await autoUpdateService.initialize();
 
     // Get the state and verify the channel defaults to stable
     const state = autoUpdateService.getState();
@@ -178,14 +205,14 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     expect(settled).toBe(false);
 
     // The deferred secondary-startup task initializes the updater
-    ipc.initializeAutoUpdater({} as any);
+    ipc.initializeAutoUpdater();
 
     const result = await pending;
     expect(result.success).toBe(true);
     expect(result.data.channel).toBe('beta');
   });
 
-  it('initializeAutoUpdater() with no window (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
+  it('initializeAutoUpdater() before any window exists (secondary task raced ahead of window creation) still initializes and settles the gate', async () => {
     // Persisted beta preference — only visible in GET_STATE if initialize()
     // really ran (intent-hq/monorepo#1848: the pre-window race used to skip
     // initialization entirely).
@@ -195,9 +222,9 @@ describe('GET_STATE boot gating (early renderer read)', () => {
     const { ipc, getStateHandler } = await registerAndGetStateHandler();
     const pending = getStateHandler({}, undefined);
 
-    // The deferred secondary-startup task runs before any window exists;
-    // initialization must proceed regardless.
-    ipc.initializeAutoUpdater(null);
+    // The deferred secondary-startup task runs before any window exists
+    // (getAllWindows is mocked to []); initialization must proceed regardless.
+    ipc.initializeAutoUpdater();
 
     const result = await pending;
     expect(result.success).toBe(true);

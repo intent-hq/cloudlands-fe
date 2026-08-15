@@ -1,17 +1,8 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-  tick,
-  type Snippet,
-} from 'svelte';
+  import { onMount, onDestroy, tick, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
-  import {
-  faCheck,
-  faChevronDown,
-  faChevronRight,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { slide } from 'svelte/transition';
   import Portal from '../Portal.svelte';
   import type {
@@ -36,6 +27,10 @@
     placeholder?: string;
     /** Whether to use a portal to render content (useful when inside overflow:hidden containers) */
     portal?: boolean;
+    /** Optional containing boundary for collision-aware inline content. */
+    collisionBoundary?: string | HTMLElement | null;
+    /** Space kept between collision-aware content and its boundary. */
+    collisionPadding?: number;
     /** Whether search is enabled */
     searchable?: boolean;
     /** Selection mode */
@@ -54,6 +49,10 @@
     triggerClass?: string;
     /** Custom class for the content/popover */
     contentClass?: string;
+    /** Estimated content height used to position portal popovers */
+    contentMaxHeight?: number;
+    /** Let the options region fill the content height before scrolling */
+    fillContentHeight?: boolean;
     /** Custom class for the header */
     headerClass?: string;
     /** Called when value changes */
@@ -82,6 +81,8 @@
     groups = [],
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
+    collisionBoundary = null,
+    collisionPadding = 8,
     searchable = true,
     multiple = false,
     disabled = false,
@@ -91,6 +92,8 @@
     class: className = '',
     triggerClass = '',
     contentClass = '',
+    contentMaxHeight,
+    fillContentHeight = false,
     headerClass = '',
     onchange,
     onopenchange,
@@ -107,6 +110,9 @@
   let triggerRef = $state.raw<HTMLButtonElement | null>(null);
   let portalContentRef = $state.raw<HTMLDivElement | null>(null);
   let portalStyle = $state('');
+  let inlineContentRef = $state.raw<HTMLDivElement | null>(null);
+  let inlineStyle = $state('');
+  let inlineSide = $state<'top' | 'bottom'>('bottom');
   let searchValue = $state('');
   let containerRef = $state.raw<HTMLDivElement | null>(null);
   let inputRef = $state.raw<HTMLInputElement | null>(null);
@@ -152,8 +158,7 @@
 
   // Filter groups based on search
   const filteredGroups = $derived.by(() => {
-    if (!searchValue)
-      return groups.map((g) => ({ ...g, options: deduplicateOptions(g.options) }));
+    if (!searchValue) return groups.map((g) => ({ ...g, options: deduplicateOptions(g.options) }));
     const terms = searchValue.toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0)
       return groups.map((g) => ({ ...g, options: deduplicateOptions(g.options) }));
@@ -236,8 +241,12 @@
     return allOptions.find((o) => o.value === value)?.label;
   });
 
-  async function handleOpen() {
-    if (disabled || open) return;
+  async function handleTriggerClick() {
+    if (disabled) return;
+    if (open) {
+      handleClose();
+      return;
+    }
 
     // Pre-compute highlight so the first render is correct
     highlightedIndex = findHighlightIndex();
@@ -245,11 +254,15 @@
     open = true;
     onopenchange?.(true);
 
-    if (portal && triggerRef) {
-      updatePortalPosition();
+    if ((portal || collisionBoundary) && triggerRef) {
+      updateContentPosition();
     }
 
     await tick();
+
+    if (portal || collisionBoundary) {
+      updateContentPosition();
+    }
 
     scrollHighlightedIntoView();
 
@@ -258,29 +271,62 @@
     }
   }
 
-  function updatePortalPosition() {
-    if (!triggerRef || !open || !portal) return;
+  function resolveCollisionRect(): Pick<DOMRect, 'top' | 'right' | 'bottom' | 'left'> {
+    const boundary =
+      typeof collisionBoundary === 'string'
+        ? document.querySelector<HTMLElement>(collisionBoundary)
+        : collisionBoundary;
+    if (boundary) return boundary.getBoundingClientRect();
+    return { top: 0, right: window.innerWidth, bottom: window.innerHeight, left: 0 };
+  }
+
+  function updateContentPosition() {
+    if (!triggerRef || !open || (!portal && !collisionBoundary)) return;
     const rect = triggerRef.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    const padding = 8; // Minimum padding from viewport edge
-    const spaceBelow = viewportHeight - rect.bottom - padding;
-    const spaceAbove = rect.top - padding;
-    const estimatedDropdownHeight = 300; // max-h-[300px] + some padding
+    const boundary = resolveCollisionRect();
+    const leftBoundary = Math.max(collisionPadding, boundary.left + collisionPadding);
+    const rightBoundary = Math.min(
+      viewportWidth - collisionPadding,
+      boundary.right - collisionPadding,
+    );
+    const topBoundary = Math.max(collisionPadding, boundary.top + collisionPadding);
+    const bottomBoundary = Math.min(
+      viewportHeight - collisionPadding,
+      boundary.bottom - collisionPadding,
+    );
+    const spaceBelow = Math.max(0, bottomBoundary - rect.bottom - 4);
+    const spaceAbove = Math.max(0, rect.top - topBoundary - 4);
+    const preferredDropdownHeight = contentMaxHeight ?? (portal ? 300 : 360);
+    const opensAbove = spaceBelow < preferredDropdownHeight && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(preferredDropdownHeight, opensAbove ? spaceAbove : spaceBelow);
 
     // Clamp horizontal position so dropdown doesn't overflow the viewport
-    const dropdownWidth = portalContentRef?.offsetWidth ?? 432;
-    const left = Math.max(padding, Math.min(rect.left, viewportWidth - dropdownWidth - padding));
+    const contentRef = portal ? portalContentRef : inlineContentRef;
+    const availableWidth = Math.max(0, rightBoundary - leftBoundary);
+    const dropdownWidth = Math.min(contentRef?.offsetWidth || (portal ? 432 : 332), availableWidth);
+    const left = Math.max(leftBoundary, Math.min(rect.left, rightBoundary - dropdownWidth));
+    const minWidth = Math.min(rect.width, availableWidth);
 
-    // If not enough space below, position above the trigger
-    if (spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow) {
-      // Position above - dropdown will grow upward, constrained to available space
-      const maxHeight = Math.min(estimatedDropdownHeight, spaceAbove);
-      portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+    if (portal) {
+      if (opensAbove) {
+        portalStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+      } else {
+        portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+      }
+      return;
+    }
+
+    const containerRect = containerRef?.getBoundingClientRect() ?? rect;
+    const relativeLeft = left - containerRect.left;
+    inlineSide = opensAbove ? 'top' : 'bottom';
+    if (opensAbove) {
+      const bottom = containerRect.bottom - rect.top + 4;
+      inlineStyle = `position: absolute; top: auto; bottom: ${bottom}px; left: ${relativeLeft}px; min-width: ${minWidth}px; max-width: ${availableWidth}px; max-height: ${maxHeight}px;`;
     } else {
-      // Position below (default), constrained to available space
-      const maxHeight = Math.min(estimatedDropdownHeight, spaceBelow);
-      portalStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${left}px; min-width: ${rect.width}px; max-height: ${maxHeight}px;`;
+      const top = rect.bottom - containerRect.top + 4;
+      inlineStyle = `position: absolute; top: ${top}px; bottom: auto; left: ${relativeLeft}px; min-width: ${minWidth}px; max-width: ${availableWidth}px; max-height: ${maxHeight}px;`;
     }
   }
 
@@ -367,8 +413,10 @@
     const target = e.target as Node;
     // Check if click is inside container or inside portal content
     const isInsideContainer = containerRef.contains(target);
-    const isInsidePortal = portalContentRef?.contains(target) ?? false;
-    if (!isInsideContainer && !isInsidePortal) {
+    const isInsideContent =
+      (portalContentRef?.contains(target) ?? false) ||
+      (inlineContentRef?.contains(target) ?? false);
+    if (!isInsideContainer && !isInsideContent) {
       handleClose();
     }
   }
@@ -376,7 +424,7 @@
   // Scroll highlighted option into view
   function scrollHighlightedIntoView() {
     tick().then(() => {
-      const container = portalContentRef ?? containerRef;
+      const container = portalContentRef ?? inlineContentRef ?? containerRef;
       if (!container || highlightedIndex < 0) return;
       const options = container.querySelectorAll('[role="option"]');
       const el = options[highlightedIndex] as HTMLElement | undefined;
@@ -405,6 +453,22 @@
           scrollHighlightedIntoView();
         }
         break;
+      case 'Home':
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectableOptions.length > 0) {
+          highlightedIndex = 0;
+          scrollHighlightedIntoView();
+        }
+        break;
+      case 'End':
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectableOptions.length > 0) {
+          highlightedIndex = selectableOptions.length - 1;
+          scrollHighlightedIntoView();
+        }
+        break;
       case 'Enter':
         e.preventDefault();
         e.stopPropagation();
@@ -423,21 +487,21 @@
   onMount(() => {
     document.addEventListener('mousedown', handleClickOutside, true);
     // Listen for scroll (with capture to catch scrolling in any container) and resize
-    window.addEventListener('scroll', updatePortalPosition, true);
-    window.addEventListener('resize', updatePortalPosition);
+    window.addEventListener('scroll', updateContentPosition, true);
+    window.addEventListener('resize', updateContentPosition);
   });
 
   onDestroy(() => {
     document.removeEventListener('mousedown', handleClickOutside, true);
-    window.removeEventListener('scroll', updatePortalPosition, true);
-    window.removeEventListener('resize', updatePortalPosition);
+    window.removeEventListener('scroll', updateContentPosition, true);
+    window.removeEventListener('resize', updateContentPosition);
   });
 
   // Update portal position when dropdown opens
   $effect(() => {
-    if (open && portal) {
+    if (open && (portal || collisionBoundary)) {
       // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => updatePortalPosition());
+      requestAnimationFrame(() => updateContentPosition());
     }
   });
 
@@ -471,7 +535,7 @@
 
     if (!open) return;
 
-    const container = portalContentRef ?? containerRef;
+    const container = portalContentRef ?? inlineContentRef ?? containerRef;
     const scrollEl = container?.querySelector('[data-scroll-container]');
     if (!scrollEl) return;
 
@@ -482,6 +546,15 @@
       }
     });
   });
+
+  export function focusTrigger() {
+    triggerRef?.focus();
+  }
+
+  export function dismissAndFocusTrigger() {
+    handleClose();
+    queueMicrotask(() => triggerRef?.focus());
+  }
 </script>
 
 <div bind:this={containerRef} class={cn('relative inline-block', className)}>
@@ -489,12 +562,12 @@
   <button
     bind:this={triggerRef}
     type="button"
-    onclick={handleOpen}
+    onclick={handleTriggerClick}
     onkeydown={handleKeyDown}
     {disabled}
     class={cn(
       'inline-flex items-center gap-2 rounded-md transition-colors cursor-pointer',
-      'focus:outline-none focus-visible:outline-none',
+      'focus:outline-none focus-visible:outline-none focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:border-foreground/50',
       'disabled:cursor-not-allowed disabled:opacity-50',
       sizeClasses[size],
       variantClasses[variant],
@@ -516,18 +589,23 @@
   <!-- Content (inline, no portal) -->
   {#if open && !portal}
     <div
+      bind:this={inlineContentRef}
       transition:slide={{ duration: 150 }}
       class={cn(
-        'absolute top-full left-0 z-50 mt-1 min-w-full w-max',
+        'absolute z-50 min-w-full w-max',
+        collisionBoundary ? 'flex flex-col' : 'top-full left-0 mt-1',
         'overflow-hidden rounded-md border border-border',
         'bg-popover text-popover-foreground shadow-md',
         contentClass,
       )}
+      style={collisionBoundary ? inlineStyle : undefined}
+      data-side={collisionBoundary ? inlineSide : undefined}
+      data-collision-aware={collisionBoundary ? 'true' : undefined}
       role="listbox"
       tabindex="-1"
       onkeydown={handleKeyDown}
     >
-      {@render dropdownContent(false)}
+      {@render dropdownContent(Boolean(collisionBoundary))}
     </div>
   {/if}
 </div>
@@ -592,7 +670,10 @@
   <!-- Options -->
   <div
     data-scroll-container
-    class={cn(isPortal ? 'flex-1 min-h-0' : 'max-h-[300px]', 'overflow-y-auto pb-1')}
+    class={cn(
+      isPortal || fillContentHeight ? 'flex-1 min-h-0' : 'max-h-[300px]',
+      'overflow-y-auto pb-1',
+    )}
   >
     {#if groups.length > 0}
       <!-- Grouped options -->
@@ -636,7 +717,9 @@
       {:else if empty}
         {@render empty()}
       {:else}
-        <div class="px-2 py-4 text-center text-sm text-subtle">{m.ui_dropdown_noResults_label()}</div>
+        <div class="px-2 py-4 text-center text-sm text-subtle">
+          {m.ui_dropdown_noResults_label()}
+        </div>
       {/if}
     {/if}
   </div>

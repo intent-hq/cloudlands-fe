@@ -175,7 +175,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Go back"
+            aria-label={m.layout_presets_goBack_ariaLabel()}
             class={cn(
               'relative flex-1 px-3 justify-start',
               canGoBack ? 'text-muted-foreground hover:text-foreground' : 'text-ghost',
@@ -192,7 +192,7 @@
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Go forward"
+            aria-label={m.layout_presets_goForward_ariaLabel()}
             class={cn(
               'relative flex-1 px-3 justify-end',
               canGoForward ? 'text-muted-foreground hover:text-foreground' : 'text-ghost',

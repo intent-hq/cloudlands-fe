@@ -13,6 +13,12 @@
  * (reviewer finding on cloudlands-fe#443): switching repos clears the
  * detected GitHub owner/repo immediately, and late responses for a previous
  * path never apply.
+ *
+ * Also covers the onboarding `workspace.create` wire request shape: the
+ * picked-repo payloads (githubUrl vs repositoryPath) and the live clone
+ * progress correlation — a minted `progressId` registered in the
+ * workspaceCreateProgress slice before the create goes out, echoed on the
+ * request (PROTOCOL §5.1), and cleared once the create settles.
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,6 +66,10 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingStep: () => mocks.readable(() => 'configuring'),
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
+  selectOnboardingFullFlowRequested: Object.assign(
+    () => mocks.readable(() => false),
+    { select: () => false },
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -450,6 +460,54 @@ describe('onboarding repo-config setup script detection', () => {
     expect(mocks.workspaceCreate).toHaveBeenCalledWith(
       expect.objectContaining({ setupScript: 'echo repo-config && echo edited' }),
     );
+  });
+
+  it('mints a progressId, registers it before create, sends it on the wire, and clears it on settle', async () => {
+    // Live clone progress: the FE mints a correlation id, registers the slice
+    // entry BEFORE workspace.create (so mid-flight git:clone:progress frames
+    // find it), echoes it as `progressId` on the create request (PROTOCOL
+    // §5.1), and drops the entry once the create settles.
+    mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+
+    renderPage();
+    selectLocalRepo('/repo/a');
+
+    const captured = (
+      window as unknown as {
+        __mockOnboardingPromptStep: {
+          onSubmit: () => void;
+          setInputValue: (value: string) => void;
+        };
+      }
+    ).__mockOnboardingPromptStep;
+    captured.setInputValue('build the thing');
+    captured.onSubmit();
+
+    await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalled());
+    const request = mocks.workspaceCreate.mock.calls[0][0] as { progressId?: string };
+    expect(typeof request.progressId).toBe('string');
+    expect(request.progressId).not.toBe('');
+
+    const actions = mocks.dispatch.mock.calls.map(
+      ([action]) => action as { type: string; payload?: unknown[] },
+    );
+    const begin = actions.find((a) => a.type === 'workspaceCreateProgress/begin');
+    expect(begin?.payload).toEqual([request.progressId]);
+    // begin must be dispatched before the create request goes out.
+    const beginIndex = mocks.dispatch.mock.calls.findIndex(
+      ([action]) => (action as { type: string }).type === 'workspaceCreateProgress/begin',
+    );
+    expect(beginIndex).toBeGreaterThanOrEqual(0);
+    expect(mocks.workspaceCreate.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.dispatch.mock.invocationCallOrder[beginIndex],
+    );
+    // The create settled (failure here) — the entry is dropped.
+    await waitFor(() => {
+      const clear = mocks.dispatch.mock.calls
+        .map(([action]) => action as { type: string; payload?: unknown[] })
+        .find((a) => a.type === 'workspaceCreateProgress/clear');
+      expect(clear?.payload).toEqual([request.progressId]);
+    });
   });
 
   it('submits a picked-repo create for GitHub selections: githubUrl only, no repositoryPath/clonePath', async () => {

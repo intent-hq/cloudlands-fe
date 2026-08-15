@@ -27,21 +27,13 @@ describe('sidebar overview status summary', () => {
     expect(sidebar).not.toContain('data-sidebar-agents-overflow');
   });
 
-  it('shows deduplicated local changes only when present and opens the changes panel', () => {
+  it('omits Activity Log and Local Changes from the sidebar overview', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('selectStagedWorkingChanges(workspaceIdStore)');
-    expect(sidebar).toContain('selectUnstagedWorkingChanges(workspaceIdStore)');
-    expect(sidebar).not.toContain('storeHasCorrectWorkspace');
-    expect(sidebar).toContain('const localChangesCount = $derived(');
-    expect(sidebar).toContain('.map((change) => change.relativePath || change.file)');
-    expect(sidebar).toContain('{#if localChangesCount > 0}');
-    expect(sidebar).toContain('data-sidebar-local-changes-summary');
-    expect(sidebar).toContain("onclick={() => handleTabClick('changes')}");
-    expect(sidebar).toContain(
-      "{localChangesCount} local change{localChangesCount === 1 ? '' : 's'}",
-    );
-    expect(sidebar).toContain("{#if tab.id === 'changes' && localChangesCount > 0}");
-    expect(sidebar).toContain('data-sidebar-changes-sync');
+    expect(sidebar).not.toContain('ActivityLogPreview');
+    expect(sidebar).toContain('SidebarChangesPanel');
+    expect(sidebar).toContain('data-sidebar-changes-panel');
+    expect(sidebar).not.toContain('data-sidebar-local-changes-summary');
+    expect(sidebar).not.toContain('data-sidebar-change=');
   });
 });

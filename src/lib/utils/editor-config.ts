@@ -393,6 +393,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         }),
         CustomTaskItem.configure({
           nested: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'custom-task-item',
           },
@@ -805,6 +806,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         }),
         CustomTaskItem.configure({
           nested: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'custom-task-item',
           },

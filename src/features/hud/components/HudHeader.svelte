@@ -9,7 +9,7 @@
    *
    * The HUD window has no WindowTitleBar, so this header is the frameless
    * window's drag region (-webkit-app-region: drag; interactive children are
-   * no-drag via the layout rule scoped to .app-drag-region). It shares the
+   * no-drag via the global app.css rule scoped to .app-drag-region). It shares the
    * grid's 24px gutter so the wordmark's left edge aligns with the SYSTEM
    * card below.
    *
@@ -20,7 +20,8 @@
    * lights to occupy — the header (and the wordmark's 24px left gutter,
    * aligned with the SYSTEM card) moves fully below it. The strip is a drag
    * region so the window can still be moved by its top edge. Non-mac
-   * platforms keep their native frame → no strip.
+   * platforms keep their native frame → no strip. In full screen macOS
+   * hides the traffic lights, so the strip hides too (isFullScreen prop).
    */
   import type { Snippet } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,7 +39,11 @@
   import { playHudSoundCue } from '../sound/hud-sound-player';
   import HudHeaderFilters from './HudHeaderFilters.svelte';
 
-  let { nowMs, controls }: { nowMs: number; controls?: Snippet } = $props();
+  let {
+    nowMs,
+    isFullScreen = false,
+    controls,
+  }: { nowMs: number; isFullScreen?: boolean; controls?: Snippet } = $props();
 
   /**
    * macOS detection from the preload-exposed `process.platform` (the same
@@ -117,9 +122,10 @@
   }
 </script>
 
-{#if isMac}
+{#if isMac && !isFullScreen}
   <!-- Traffic-light spacer: drag-region strip the macOS window controls
-       occupy so they never cover the header content below. -->
+       occupy so they never cover the header content below. Hidden in full
+       screen, where macOS hides the traffic lights. -->
   <div class="hud-titlebar-spacer" data-testid="hud-titlebar-spacer" aria-hidden="true"></div>
 {/if}
 
@@ -198,7 +204,7 @@
     border-bottom: 1px solid hsl(var(--border) / 0.8);
     flex-shrink: 0;
     /* Frameless-window drag region (no WindowTitleBar on the HUD route);
-       interactive children are no-drag via the layout rule scoped to
+       interactive children are no-drag via the global app.css rule scoped to
        .app-drag-region (which this header carries). */
     -webkit-app-region: drag;
   }

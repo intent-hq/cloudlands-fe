@@ -6,7 +6,7 @@
  * of known browser actions.
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
@@ -18,6 +18,10 @@ import {
   type ActionSequence,
 } from './browser-action-executor';
 import { embeddedBrowserCdp } from './embedded-browser-cdp-service';
+import { loopbackContextFromTransport, type LoopbackRewriteContext } from './loopback-rewrite';
+import { resolveBrowserUrl, type ResolvedBrowserUrl } from './loopback-url-resolver';
+import { getBackendClient, isSameHostBackendActive } from '../../backend/main/backend.ipc';
+import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 
 const logger = new Logger('BrowserIPC');
@@ -39,7 +43,10 @@ function openBrowserTab(
     if (!BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(parsed.protocol)) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
       const msg = `Protocol "${parsed.protocol}" is not allowed. Supported: ${BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.join(', ')}`;
-      logger.warn('Rejected browser:open-tab with disallowed protocol', { url, protocol: parsed.protocol });
+      logger.warn('Rejected browser:open-tab with disallowed protocol', {
+        url,
+        protocol: parsed.protocol,
+      });
       return { success: false, message: msg };
     }
   } catch {
@@ -53,7 +60,11 @@ function openBrowserTab(
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
   // user happens to be viewing at the moment.
-  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, { url, position, workspaceId });
+  sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, {
+    url,
+    position,
+    workspaceId,
+  });
   logger.info('Sent browser:open-tab', { url, position, workspaceId });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}` };
@@ -74,6 +85,58 @@ const ExecSchema = z.object({
   tabId: z.string().optional(),
 });
 
+const ResolveUrlSchema = z.object({
+  url: z.string(),
+  /** `rewrite-only` applies the loopback rewrite with no probe and no tunnel (display-only). */
+  mode: z.enum(['full', 'rewrite-only']).optional(),
+});
+
+/**
+ * Resolve the daemon loopback locality from the active backend connection so
+ * `navigate`/`openTab` URLs can be rewritten per the loopback-hostname table
+ * (intent-hq/monorepo#2323). Falls back to a local daemon (no bare-loopback
+ * rewriting; `*.localhost` aliases still resolve to `127.0.0.1`) if the
+ * connection state cannot be read.
+ */
+function getDaemonLoopbackContext(): LoopbackRewriteContext {
+  try {
+    return loopbackContextFromTransport(isSameHostBackendActive(), getBackendClient().getConfig());
+  } catch (err) {
+    logger.warn('Could not resolve daemon loopback context; assuming local daemon', {
+      error: (err as Error).message,
+    });
+    return { daemonIsRemote: false };
+  }
+}
+
+/**
+ * Lazy singleton TunnelManager backing the executor's probe-failure fallback:
+ * when a rewritten remote origin is unreachable, the port is forwarded over
+ * the daemon's `/tunnel` WebSocket and the embedded browser loads the local
+ * forward instead (intent-hq/monorepo#2323). Reset on backend switch (see
+ * `registerBrowserHandlers`) so forwards never outlive the connection they
+ * were opened against.
+ */
+let tunnelManager: TunnelManager | null = null;
+
+function getBrowserTunnelProvider(): TunnelManager {
+  if (!tunnelManager) {
+    tunnelManager = new TunnelManager({
+      getConfig: () => {
+        try {
+          return getBackendClient().getConfig();
+        } catch (err) {
+          logger.warn('Could not resolve backend config for the browser tunnel', {
+            error: (err as Error).message,
+          });
+          return null;
+        }
+      },
+    });
+  }
+  return tunnelManager;
+}
+
 /**
  * Execute a sequence of browser actions.
  *
@@ -93,6 +156,8 @@ export async function executeBrowserActions(
     (url, position) => openBrowserTab(url, position, workspaceId),
     agentId,
     workspaceId,
+    getDaemonLoopbackContext,
+    getBrowserTunnelProvider,
   );
 }
 
@@ -104,6 +169,17 @@ export type { ExecutionResult, ActionSequence };
  */
 export function registerBrowserHandlers(): void {
   logger.info('Registering browser IPC handlers');
+
+  // A backend switch invalidates every tunnel forward (they target the old
+  // daemon's loopback); dispose the manager so the next fallback rebuilds it
+  // against the new connection. Cast: 'backend-connection-changed' is a
+  // custom app event (emitted by backend.ipc.ts), not in Electron's App type.
+  (app as NodeJS.EventEmitter).on('backend-connection-changed', () => {
+    if (tunnelManager) {
+      tunnelManager.dispose();
+      tunnelManager = null;
+    }
+  });
 
   // Register a browser tab for CDP access
   ipcMain.handle(
@@ -140,6 +216,44 @@ export function registerBrowserHandlers(): void {
         // executeBrowserActions returns { success, results, error? } directly
         executeBrowserActions(validated.actions, validated.tabId),
       IPC_CHANNELS.BROWSER.EXEC,
+    ),
+  );
+
+  // Resolve a URL through the shared rewrite → probe → tunnel pipeline so
+  // programmatic renderer entry points (script URL clicks, terminal links)
+  // reach the same target `browser.exec` navigate/openTab would — the
+  // address bar never resolves (intent-hq/monorepo#2404). `mode:
+  // "rewrite-only"` skips the probe/tunnel stage for display-only callers.
+  // Never throws: probe+tunnel failures return the rewritten URL plus a
+  // structured `error`, and unexpected failures degrade to a non-rewritten
+  // passthrough.
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER.RESOLVE_URL,
+    createSafeValidatedHandler(
+      ResolveUrlSchema,
+      async (_event, validated): Promise<ResolvedBrowserUrl> => {
+        try {
+          return await resolveBrowserUrl(
+            validated.url,
+            getDaemonLoopbackContext(),
+            getBrowserTunnelProvider,
+            { rewriteOnly: validated.mode === 'rewrite-only' },
+          );
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          logger.warn('browser:resolve-url failed; passing the URL through unresolved', {
+            url: validated.url,
+            error: detail,
+          });
+          return {
+            url: validated.url,
+            rewritten: false,
+            // i18n-ignore (agent/renderer-facing protocol error, not user-facing)
+            error: `URL resolution failed: ${detail}`,
+          };
+        }
+      },
+      IPC_CHANNELS.BROWSER.RESOLVE_URL,
     ),
   );
 

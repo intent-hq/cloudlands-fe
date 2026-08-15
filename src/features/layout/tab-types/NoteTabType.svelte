@@ -34,7 +34,8 @@
   import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
-  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
+  import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
@@ -228,7 +229,7 @@
     <Fa icon={faClockRotateLeft} size="xs" />
   </Button> -->
   {#if noteFilePath}
-    <OpenComboButton filePath={noteFilePath} isDirectory={false} embedded />
+    <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}
   {#if tab.noteId && !isSpecNote(tab.noteId)}
     <Menu.CommandItem
@@ -276,7 +277,7 @@
     {/if}
   {:else}
     <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-      <Fa icon={faNote} class="text-4xl opacity-50" />
+      <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
       <p>{m.layout_noteTab_noNoteSelected_label()}</p>
     </div>
   {/if}

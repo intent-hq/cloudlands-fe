@@ -208,9 +208,11 @@
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
 
-  // Track the current URL that the webview should load
-  // Initialize from url prop if valid, otherwise use about:blank
-  // This ensures the webview starts with the correct URL on first render
+  // Track the current URL that the webview should load.
+  // Initialize from url prop if valid, otherwise use about:blank. The browser
+  // loads exactly the URL it is given — programmatic entry points (script
+  // URLs, terminal links) resolve loopback URLs BEFORE opening a tab, and
+  // user-typed address-bar URLs load literally (intent-hq/monorepo#2404).
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
 
@@ -252,7 +254,10 @@
   // IMPORTANT: Only triggers when the PROP changes, not when user navigates internally
   $effect(() => {
     const decision = reconcileEmbeddedBrowserUrlProp(navigationSync, url, {
-      webviewReady,
+      // `|| !webviewRef` keeps prop-driven navigations alive when no webview
+      // is mounted (about:blank / invalid current URL): loadUrl's no-webview
+      // branch recreates the webview with the new URL.
+      webviewReady: webviewReady || !webviewRef,
       isValidBrowserUrl,
     });
 
@@ -527,7 +532,8 @@
       updateNavigationState();
     });
 
-    // Navigation events
+    // Navigation events - the webview reports the URL it actually loaded,
+    // which is exactly what the address bar shows.
     addWebviewListener('did-navigate', (e: any) => {
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');

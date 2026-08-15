@@ -246,4 +246,125 @@ describe('file-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('file:download → real preload bridge (native save dialog)', () => {
+    const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI;
+
+    afterEach(() => {
+      (window as { electronAPI?: unknown }).electronAPI = originalElectronAPI;
+    });
+
+    it('forwards verbatim to the real preload bridge on electron and returns its response', async () => {
+      const invokeSpy = vi.fn(async () => ({ success: true, data: { filePath: '/dl/x.zip' } }));
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD, { path: '/ws/dir' });
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.DOWNLOAD, {
+        path: '/ws/dir',
+      });
+      expect(result).toEqual({ success: true, data: { filePath: '/dl/x.zip' } });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects loudly on web (no native bridge) instead of folding to a fake success', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD, { path: '/ws/a.txt' })).rejects.toThrow(
+        /requires the native Electron bridge/,
+      );
+    });
+
+    it('forwards file:download-attachment verbatim to the preload bridge', async () => {
+      const invokeSpy = vi.fn(async () => ({ success: true, data: { filePath: '/dl/a.zip' } }));
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+      const arg = { workspaceId: 'ws-1', path: '.intent/attachments/a.zip', fileName: 'a.zip' };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, arg);
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, arg);
+      expect(result).toEqual({ success: true, data: { filePath: '/dl/a.zip' } });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects file:download-attachment loudly on web (no native bridge)', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(
+        mockInvoke(IPC_CHANNELS.FILE.DOWNLOAD_ATTACHMENT, {
+          workspaceId: 'ws-1',
+          path: '.intent/attachments/a.zip',
+          fileName: 'a.zip',
+        }),
+      ).rejects.toThrow(/requires the native Electron bridge/);
+    });
+  });
+
+  describe('file:read-chunk / file:hash → real preload bridge (chunked upload host reads)', () => {
+    const originalElectronAPI = (window as { electronAPI?: unknown }).electronAPI;
+
+    afterEach(() => {
+      (window as { electronAPI?: unknown }).electronAPI = originalElectronAPI;
+    });
+
+    it('forwards file:read-chunk verbatim to the preload bridge and returns its response', async () => {
+      const response = {
+        success: true,
+        data: { content: 'aGVsbG8=', bytesRead: 5, size: 42 },
+      };
+      const invokeSpy = vi.fn(async () => response);
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.READ_CHUNK, {
+        path: '/host/big.bin',
+        offset: 0,
+        length: 5,
+      });
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.READ_CHUNK, {
+        path: '/host/big.bin',
+        offset: 0,
+        length: 5,
+      });
+      expect(result).toEqual(response);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('forwards file:hash verbatim to the preload bridge and returns its response', async () => {
+      const response = { success: true, data: { sha256: 'ab'.repeat(32), size: 42 } };
+      const invokeSpy = vi.fn(async () => response);
+      (window as { electronAPI?: unknown }).electronAPI = {
+        versions: { electron: '35.0.0' },
+        invoke: invokeSpy,
+      };
+
+      const result = await mockInvoke(IPC_CHANNELS.FILE.HASH, { path: '/host/big.bin' });
+
+      expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.FILE.HASH, {
+        path: '/host/big.bin',
+      });
+      expect(result).toEqual(response);
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects loudly on web (no native bridge) for both channels', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = undefined;
+
+      await expect(
+        mockInvoke(IPC_CHANNELS.FILE.READ_CHUNK, { path: '/host/a.bin', offset: 0, length: 1 }),
+      ).rejects.toThrow(/requires the native Electron bridge/);
+      await expect(mockInvoke(IPC_CHANNELS.FILE.HASH, { path: '/host/a.bin' })).rejects.toThrow(
+        /requires the native Electron bridge/,
+      );
+    });
+  });
 });

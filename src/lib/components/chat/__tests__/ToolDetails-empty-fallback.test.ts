@@ -3,10 +3,10 @@
  *
  * ToolDetails must never expand to an empty container: when parsedResult is
  * rich-typed (e.g. 'confirmation') but has no renderable content, it must fall
- * back to the input details + raw result view (or "Completed" when there is
- * no result payload at all).
+ * fall back to sanitized input/output behind an explicit technical-details
+ * disclosure, without adding a redundant completion state.
  */
-import { render, cleanup } from '@testing-library/svelte';
+import { render, cleanup, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('$store/renderer/store', async () => {
@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('ToolDetails empty rich-result fallback', () => {
-  it('falls back to input details + raw result when confirmation has no content', () => {
+  it('keeps fallback input and output behind a collapsed technical-details disclosure', async () => {
     const { container } = render(ToolDetails, {
       props: {
         input: {
@@ -60,14 +60,20 @@ describe('ToolDetails empty rich-result fallback', () => {
       },
     });
 
-    // Input details are visible
-    expect(container.textContent).toContain('summary');
-    expect(container.textContent).toContain('Ask the user a clarifying question');
-    // Raw result payload is visible
-    expect(container.textContent).toContain('Question queued');
+    expect(container.textContent).not.toContain('Completed');
+    expect(container.textContent).not.toContain('Raw');
+    const disclosure = container.querySelector('details');
+    const summary = container.querySelector('summary');
+    expect(disclosure?.open).toBe(false);
+    expect(summary?.textContent?.trim()).toBe('Technical details');
+
+    await fireEvent.click(summary!);
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.textContent).toContain('Ask the user a clarifying question');
+    expect(disclosure?.textContent).toContain('Question queued');
   });
 
-  it('shows input details and "Completed" when confirmation has no content and no result', () => {
+  it('shows input details without a redundant completion label', () => {
     const { container } = render(ToolDetails, {
       props: {
         input: {
@@ -81,7 +87,8 @@ describe('ToolDetails empty rich-result fallback', () => {
     });
 
     expect(container.textContent).toContain('Ask the user');
-    expect(container.textContent).toContain('Completed');
+    expect(container.textContent).toContain('Technical details');
+    expect(container.textContent).not.toContain('Completed');
   });
 
   it('never renders an empty details container for a rich-typed parsedResult', () => {
@@ -94,7 +101,8 @@ describe('ToolDetails empty rich-result fallback', () => {
       },
     });
 
-    expect(container.textContent).toContain('Completed');
+    expect(container.querySelector('details')).toBeNull();
+    expect(container.textContent).not.toContain('Completed');
   });
 
   it('falls back to input details + raw result for a bare browser parsedResult', () => {
@@ -143,5 +151,55 @@ describe('ToolDetails empty rich-result fallback', () => {
     });
 
     expect(container.textContent).toContain('Question queued for the user');
+  });
+});
+
+describe('ToolDetails batch delegate rendering', () => {
+  it('renders a disposition summary instead of the "Agent spawned" label', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {
+          code: 'return await ws.agent.delegate({ tasks: ["n-1", "n-2", "n-3"] })',
+          summary: 'Delegate batch',
+        },
+        result: '{"ok":true,"tasks":[]}',
+        parsedResult: {
+          type: 'delegate-task' as const,
+          delegateBatch: {
+            started: 2,
+            held: 1,
+            skipped: 1,
+            errors: 0,
+            startedRows: [
+              { agentId: 'agent-1', agentName: 'Implementor #1' },
+              { agentId: 'agent-2', agentName: 'Implementor #2' },
+            ],
+          },
+        },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('2 started');
+    expect(container.textContent).toContain('1 held');
+    expect(container.textContent).toContain('1 skipped');
+    expect(container.textContent).not.toContain('failed');
+    expect(container.textContent).not.toContain('Agent spawned');
+  });
+
+  it('keeps the single-agent fallback label when no agent id was parsed', () => {
+    const { container } = render(ToolDetails, {
+      props: {
+        input: {
+          code: 'return await ws.agent.delegate({ taskNoteId: "n-1" })',
+          summary: 'Delegate task',
+        },
+        result: 'ok',
+        parsedResult: { type: 'delegate-task' as const, content: 'ok' },
+        isError: false,
+      },
+    });
+
+    expect(container.textContent).toContain('Agent spawned');
   });
 });

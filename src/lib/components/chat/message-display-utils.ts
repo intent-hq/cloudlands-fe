@@ -53,7 +53,8 @@ export type StoppedIndicatorLabel =
   | { kind: 'preempted-by-message' }
   | { kind: 'preempted-by-agent'; name: string }
   | { kind: 'daemon-shutdown' }
-  | { kind: 'agent-stopped' };
+  | { kind: 'agent-stopped' }
+  | { kind: 'system-suspend' };
 
 export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedIndicatorLabel {
   const reason = message?.metadata?.interruptReason;
@@ -73,9 +74,33 @@ export function resolveStoppedIndicatorLabel(message?: AgentMessage): StoppedInd
       return { kind: 'daemon-shutdown' };
     case 'agent_stopped':
       return { kind: 'agent-stopped' };
+    case 'system_suspend':
+      return { kind: 'system-suspend' };
     case 'user_stop':
     default:
       return { kind: 'stopped' };
+  }
+}
+
+/**
+ * Abnormal-finish notice resolution (PROTOCOL §7.3): assistant rows whose turn
+ * ended with a non-`end_turn` ACP stop reason carry `metadata.finishReason`
+ * (`refusal` | `max_tokens` | `max_turn_requests` today — open union). The
+ * resolver returns a descriptor rather than localized text so ChatMessage owns
+ * the Paraglide message calls; unknown future reasons render no notice.
+ * `max_turn_requests` (per-turn request cap) shares the limit-reached wording.
+ */
+export type FinishReasonNotice = { kind: 'refusal' } | { kind: 'max-tokens' };
+
+export function resolveFinishReasonNotice(message?: AgentMessage): FinishReasonNotice | undefined {
+  switch (message?.metadata?.finishReason) {
+    case 'refusal':
+      return { kind: 'refusal' };
+    case 'max_tokens':
+    case 'max_turn_requests':
+      return { kind: 'max-tokens' };
+    default:
+      return undefined;
   }
 }
 

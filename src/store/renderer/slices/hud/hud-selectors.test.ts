@@ -25,6 +25,7 @@ import {
   selectHudTakeoverView,
   selectHudWorkspaceCards,
   selectHudWorkspaceStateBars,
+  selectWorkspaceTabStatuses,
 } from './hud-selectors';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
@@ -34,6 +35,7 @@ import {
   initialState as agentSessionInitialState,
 } from '../agent-session/agent-session-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import { initialState as hardwareConsoleInitialState } from '../hardware-console/hardware-console-slice';
 import { mapEventToFeedEntry } from '$features/hud/hud-feed-mapper';
 import { toHudAgentStateBucket } from './hud-types';
 import type { WorkspaceEvent } from '$features/events/types';
@@ -52,6 +54,242 @@ function makeWorkspace(id: string, overrides: Partial<Workspace> = {}): Workspac
     ...overrides,
   } as Workspace;
 }
+
+describe('selectWorkspaceTabStatuses', () => {
+  function withAgents(
+    id: string,
+    agents: Array<Record<string, unknown>>,
+    overrides: Partial<Workspace> = {},
+  ): Workspace {
+    return makeWorkspace(id, {
+      displayStatus: 'in_progress',
+      agentSummary: {
+        count: agents.length,
+        agentIds: agents.map((agent) => String(agent.id)),
+        agents,
+      } as Workspace['agentSummary'],
+      ...overrides,
+    });
+  }
+
+  function stateWithSessions(
+    workspaces: Workspace[],
+    sessions: Record<string, Record<string, unknown>> = {},
+    attention: Array<[string, string]> = [],
+    questions: HudCapturedQuestion[] = [],
+  ): StoreState {
+    const workspaceByAgentId = new Map<string, string>();
+    for (const workspace of workspaces) {
+      for (const agentId of workspace.agentSummary?.agentIds ?? []) {
+        workspaceByAgentId.set(String(agentId), String(workspace.id));
+      }
+    }
+    const byAgentId = Object.fromEntries(
+      Object.entries(sessions).map(([id, session]) => [
+        id,
+        {
+          messages: [],
+          workspaceId: session.workspaceId ?? workspaceByAgentId.get(id) ?? 'unrelated',
+          ...session,
+        },
+      ]),
+    );
+    const agentIdsByWorkspace: Record<string, string[]> = {};
+    for (const [id, session] of Object.entries(byAgentId)) {
+      const workspaceId = String(session.workspaceId);
+      agentIdsByWorkspace[workspaceId] = [...(agentIdsByWorkspace[workspaceId] ?? []), id];
+    }
+    return {
+      ...mockState(workspaces, attention, [], questions),
+      agentSessions: { byAgentId, agentIdsByWorkspace },
+    } as StoreState;
+  }
+
+  const categories = (state: StoreState, workspaceId = 'ws-1') =>
+    selectWorkspaceTabStatuses
+      .select(state)
+      [workspaceId]?.categories.map((item) => item.category) ?? [];
+
+  it('projects authoritative workspace rollups and attention overlays', () => {
+    const state = stateWithSessions(
+      [
+        makeWorkspace('failed', { displayStatus: 'failed' }),
+        makeWorkspace('blocked', { displayStatus: 'blocked' }),
+        makeWorkspace('input', { displayStatus: 'needs_attention' }),
+        makeWorkspace('unread'),
+        makeWorkspace('review'),
+        makeWorkspace('running', { activity: 'agent_running' }),
+      ],
+      {},
+      [
+        ['unread', 'unread'],
+        ['review', 'review_required'],
+      ],
+    );
+    const statuses = selectWorkspaceTabStatuses.select(state);
+    expect(statuses.failed.categories[0].category).toBe('failed');
+    expect(statuses.blocked.categories[0].category).toBe('blocker');
+    expect(statuses.input.categories[0].category).toBe('needs_input');
+    expect(statuses.unread.categories[0].category).toBe('unread');
+    expect(statuses.review.categories[0].category).toBe('review');
+    expect(statuses.running.categories[0].category).toBe('running');
+  });
+
+  it('keeps running, unread, and a persistent question as simultaneous axes', () => {
+    const question: HudCapturedQuestion = {
+      workspaceId: 'ws-1',
+      agentId: 'root',
+      messageId: 'question-1',
+      header: 'Choice',
+      question: 'Which path?',
+      ts: RAISED_TS,
+    };
+    const state = stateWithSessions(
+      [withAgents('ws-1', [{ id: 'root', name: 'Coordinator', status: 'idle' }])],
+      { root: { status: 'active', isResponding: true } },
+      [['ws-1', 'unread']],
+      [question],
+    );
+    expect(categories(state)).toEqual(['question', 'unread', 'running']);
+  });
+
+  it('filters delegated, background, unrelated, and summary-only historical agents', () => {
+    const workspace = withAgents('ws-1', [
+      { id: 'root', name: 'Coordinator', status: 'active' },
+      { id: 'child', name: 'Child', status: 'error', parentAgentId: 'root' },
+      { id: 'background', name: 'Background', status: 'error' },
+      { id: 'unrelated', name: 'Unrelated', status: 'error' },
+      { id: 'historical', name: 'Historical', status: 'error' },
+    ]);
+    const state = stateWithSessions([workspace], {
+      root: { status: 'active', isResponding: true },
+      child: { status: 'error' },
+      background: { status: 'error', isBackground: true },
+      unrelated: { status: 'error', workspaceId: 'ws-2' },
+    });
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
+      agentCount: 1,
+      categories: [{ category: 'running', count: 1, agentNames: ['Coordinator'] }],
+      visibleCategories: [{ category: 'running', count: 1, agentNames: ['Coordinator'] }],
+      hiddenCategoryCount: 0,
+    });
+  });
+
+  it('trusts BE activity for running when agentSummary agents have no hydrated sessions', () => {
+    // Regression: an unopened workspace's agentSummary carries agents, but no
+    // session is hydrated locally — the BE `activity: 'agent_running'` flag
+    // must still raise the running category (the green dot).
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'active' }],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace]);
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
+      agentCount: 0,
+      categories: [{ category: 'running', count: 1, agentNames: [] }],
+      visibleCategories: [{ category: 'running', count: 1, agentNames: [] }],
+      hiddenCategoryCount: 0,
+    });
+  });
+
+  it('trusts BE activity for running when only a delegated child agent runs', () => {
+    // The top-level coordinator is parked idle while its delegated child does
+    // the work: no tracked relevant agent contributes running, but the BE
+    // activity rollup is authoritative.
+    const workspace = withAgents(
+      'ws-1',
+      [
+        { id: 'root', name: 'Coordinator', status: 'idle' },
+        { id: 'child', name: 'Child', status: 'active', parentAgentId: 'root' },
+      ],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace], {
+      root: { status: 'idle' },
+      child: { status: 'active', isResponding: true },
+    });
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1']).toEqual({
+      agentCount: 1,
+      categories: [{ category: 'running', count: 1, agentNames: [] }],
+      visibleCategories: [{ category: 'running', count: 1, agentNames: [] }],
+      hiddenCategoryCount: 0,
+    });
+  });
+
+  it('keeps named running agents from tracked sessions over the BE activity fallback', () => {
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'active' }],
+      { activity: 'agent_running' },
+    );
+    const state = stateWithSessions([workspace], {
+      root: { status: 'active', isResponding: true },
+    });
+    expect(selectWorkspaceTabStatuses.select(state)['ws-1'].categories).toEqual([
+      { category: 'running', count: 1, agentNames: ['Coordinator'] },
+    ]);
+  });
+
+  it('raises no running category when activity is idle and no tracked agent runs', () => {
+    const workspace = withAgents(
+      'ws-1',
+      [{ id: 'root', name: 'Coordinator', status: 'idle' }],
+      { activity: 'idle' },
+    );
+    const state = stateWithSessions([workspace], { root: { status: 'idle' } });
+    expect(categories(state)).toEqual([]);
+  });
+
+  it('uses deterministic priority and a final overflow slot', () => {
+    const question: HudCapturedQuestion = {
+      workspaceId: 'ws-1',
+      agentId: 'question',
+      messageId: 'question-1',
+      header: 'Choice',
+      question: 'Which path?',
+      ts: RAISED_TS,
+    };
+    const state = stateWithSessions(
+      [
+        withAgents('ws-1', [
+          { id: 'failed', name: 'Failed', status: 'error' },
+          { id: 'blocker', name: 'Blocker', status: 'active' },
+          { id: 'question', name: 'Question', status: 'active' },
+          { id: 'discussion', name: 'Discussion', status: 'active' },
+          { id: 'running', name: 'Running', status: 'active' },
+        ]),
+      ],
+      {
+        failed: { status: 'error' },
+        blocker: { status: 'active', attentionRequestKind: 'blocker' },
+        question: { status: 'idle' },
+        discussion: { status: 'active', attentionRequestKind: 'discussion' },
+        running: { status: 'active', isResponding: true },
+      },
+      [
+        ['ws-1', 'review_required'],
+        ['ws-1', 'unread'],
+      ],
+      [question],
+    );
+    const status = selectWorkspaceTabStatuses.select(state)['ws-1'];
+    expect(status.categories.map((item) => item.category)).toEqual([
+      'failed',
+      'blocker',
+      'question',
+      'discussion',
+      'unread',
+      'running',
+    ]);
+    expect(status.visibleCategories.map((item) => item.category)).toEqual([
+      'failed',
+      'blocker',
+      'question',
+    ]);
+    expect(status.hiddenCategoryCount).toBe(3);
+  });
+});
 
 const RAISED_TS = '2026-07-30T12:00:00Z';
 
@@ -79,7 +317,11 @@ function mockState(
   for (const question of questions) {
     hudState = hudReducer(hudState, hudQuestionCaptured(question));
   }
-  return { workspace: workspaceState, hud: hudState } as StoreState;
+  return {
+    workspace: workspaceState,
+    hud: hudState,
+    hardwareConsole: hardwareConsoleInitialState,
+  } as StoreState;
 }
 
 function withStatus(id: string, displayStatus?: WorkspaceDisplayStatus): Workspace {
@@ -109,6 +351,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 2,
       attention: 0,
+      waiting: 0,
       prOpen: 2,
       prMerged: 1,
       failed: 0,
@@ -127,6 +370,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 1,
       prMerged: 0,
       failed: 0,
@@ -135,17 +379,20 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("buckets the BE `unread` displayStatus as UNREAD; the flag alone never does", () => {
+  it('counts the unread flag as an overlay that duplicates into UNREAD (intentd#1186)', () => {
     const state = mockState(
       [
-        // The daemon already applied the unread promotion (§5.1 step 6), so
-        // only its `unread` displayStatus buckets as UNREAD — the live flag
-        // on the other rows leaves their verbatim bucket alone.
-        withStatus('ws-1', 'unread'),
+        // Unread is flag-driven (no `unread` displayStatus anymore): every
+        // flagged card keeps its state bucket AND increments UNREAD — the
+        // overlay duplicates instead of folding, mirroring the card's unread
+        // border blink over any state.
+        withStatus('ws-1', 'idle'),
         withStatus('ws-2', 'in_progress'),
         withStatus('ws-3'),
         withStatus('ws-4', 'complete'),
         withStatus('ws-5', 'pr_merged'),
+        withStatus('ws-6', 'needs_attention'),
+        withStatus('ws-7', 'failed'),
       ],
       [
         ['ws-1', 'unread'],
@@ -153,18 +400,21 @@ describe('selectHudWorkspaceStateBars', () => {
         ['ws-3', 'unread'],
         ['ws-4', 'unread'],
         ['ws-5', 'unread'],
+        ['ws-6', 'unread'],
+        ['ws-7', 'unread'],
       ],
     );
     expect(selectHudWorkspaceStateBars.select(state)).toEqual({
-      idle: 1,
-      unread: 1,
+      idle: 2,
+      unread: 7,
       progress: 1,
-      attention: 0,
+      attention: 1,
+      waiting: 0,
       prOpen: 0,
       prMerged: 1,
-      failed: 0,
+      failed: 1,
       completed: 1,
-      total: 5,
+      total: 7,
     });
   });
 
@@ -178,6 +428,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 0,
@@ -186,7 +437,7 @@ describe('selectHudWorkspaceStateBars', () => {
     });
   });
 
-  it("buckets the BE `failed` displayStatus into FAILED (not attention)", () => {
+  it('buckets the BE `failed` displayStatus into FAILED (not attention)', () => {
     const state = {
       ...mockState([
         makeWorkspace('ws-1', {
@@ -204,6 +455,7 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 0,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 1,
@@ -230,11 +482,38 @@ describe('selectHudWorkspaceStateBars', () => {
       unread: 0,
       progress: 1,
       attention: 0,
+      waiting: 0,
       prOpen: 0,
       prMerged: 0,
       failed: 0,
       completed: 0,
       total: 1,
+    });
+  });
+
+  it('counts the waiting flag ORTHOGONALLY — a waiting card stays in its state bucket too', () => {
+    const state = mockState([
+      // Complete+waiting double-counts: COMPLETED and WAITING.
+      makeWorkspace('ws-1', { displayStatus: 'complete', waiting: true }),
+      // In-progress+waiting double-counts: PROGRESS and WAITING.
+      makeWorkspace('ws-2', { displayStatus: 'in_progress', waiting: true }),
+      // Waiting never feeds ATTENTION: a wait-state card counts there, and
+      // its waiting flag adds only the WAITING row.
+      makeWorkspace('ws-3', { displayStatus: 'needs_attention', waiting: true }),
+      // Absent flag ⇒ no WAITING count.
+      makeWorkspace('ws-4', { displayStatus: 'complete' }),
+    ]);
+    expect(selectHudWorkspaceStateBars.select(state)).toEqual({
+      idle: 0,
+      unread: 0,
+      progress: 1,
+      attention: 1,
+      waiting: 3,
+      prOpen: 0,
+      prMerged: 0,
+      failed: 0,
+      completed: 2,
+      total: 4,
     });
   });
 });
@@ -322,7 +601,10 @@ describe('selectHudAttnCount', () => {
       [],
       questions,
     );
-    return { ...base, agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} } } as StoreState;
+    return {
+      ...base,
+      agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} },
+    } as StoreState;
   }
 
   it('is zero when only child/background agents have attention requests (regression: no phantom blink)', () => {
@@ -454,7 +736,12 @@ describe('selectHudAttentionItems', () => {
                 status: 'waiting',
                 lastActivity: '2026-07-30T11:30:00Z',
               },
-              { id: 'a3', name: 'Developer', status: 'error', lastActivity: '2026-07-30T11:10:00Z' },
+              {
+                id: 'a3',
+                name: 'Developer',
+                status: 'error',
+                lastActivity: '2026-07-30T11:10:00Z',
+              },
             ],
           } as Workspace['agentSummary'],
         }),
@@ -639,9 +926,7 @@ describe('selectHudAttentionItems', () => {
           agentSummary: {
             count: 1,
             agentIds: ['root'],
-            agents: [
-              { id: 'root', name: 'Coordinator', status: 'idle', lastActivity: RAISED_TS },
-            ],
+            agents: [{ id: 'root', name: 'Coordinator', status: 'idle', lastActivity: RAISED_TS }],
           } as Workspace['agentSummary'],
         }),
       ],
@@ -832,9 +1117,14 @@ describe('selectHudWorkspaceCards', () => {
         repoRef: 'intent-hq/intentd',
         stateKey: 'in_progress',
         attention: null,
+        isUnread: false,
+        isWaiting: false,
         statusMessage: 'Wiring the release-channel fetch',
         attentionSnippet: null,
         prNumber: 482,
+        // Auto-filled into the first open slot by the seeded hardware-console
+        // slice (production behavior for a lone assignable workspace).
+        keySlot: 0,
         tasks: { total: 0, completed: 0, inProgress: 0 },
         tokens: 0,
         agents: [],
@@ -849,6 +1139,38 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.stateKey).toBe('not_started');
     expect(card.statusMessage).toBeNull();
     expect(card.prNumber).toBeNull();
+  });
+
+  it('resolves keySlot from the hardware-console assignment (pinned slot index)', () => {
+    const state = cardState([makeWorkspace('ws-1'), makeWorkspace('ws-2')], [], {
+      hardwareConsole: {
+        ...hardwareConsoleInitialState,
+        keyPins: [null, null, null, 'ws-1', null, null],
+      },
+    });
+    const cards = selectHudWorkspaceCards.select(state);
+    const byId = new Map(cards.map((card) => [card.workspaceId, card]));
+    // ws-1 pinned to slot 3; ws-2 auto-fills the first open slot (0).
+    expect(byId.get('ws-1')?.keySlot).toBe(3);
+    expect(byId.get('ws-2')?.keySlot).toBe(0);
+  });
+
+  it('keySlot is null for a workspace holding no slot (excluded from auto-fill)', () => {
+    const state = cardState([makeWorkspace('ws-1')], [], {
+      hardwareConsole: { ...hardwareConsoleInitialState, excludedWorkspaceIds: ['ws-1'] },
+    });
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.keySlot).toBeNull();
+  });
+
+  it('the takeover view carries the card keySlot through', () => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })], [], {
+      hardwareConsole: {
+        ...hardwareConsoleInitialState,
+        keyPins: [null, 'ws-1', null, null, null, null],
+      },
+    });
+    expect(selectHudTakeoverView.select(state, 'ws-1')?.keySlot).toBe(1);
   });
 
   it('keeps only live agents (running/needs-attention/failed) and joins last-response lines', () => {
@@ -944,45 +1266,45 @@ describe('selectHudWorkspaceCards', () => {
   });
 
   it('card agent lines use the shared preview derivation (user freshness + digest)', () => {
-    const state = cardState([
-      makeWorkspace('ws-1', {
-        displayStatus: 'in_progress',
-        agentSummary: {
-          count: 2,
-          agentIds: ['a1', 'a2'],
-          agents: [
-            { id: 'a1', name: 'Developer', status: 'active' },
-            { id: 'a2', name: 'Verifier', status: 'active' },
-          ],
-        } as Workspace['agentSummary'],
-      }),
-    ], [], {
-      agentSessions: {
-        byAgentId: {
-          // Newest transcript message is the user's → its first line previews
-          // (prefixes stripped), outranking the stale lastAgentResponse.
-          a1: {
-            lastAgentResponse: 'Stale previous-turn summary',
-            lastUserMessage: '[Currently viewing: a.ts] Please fix the panel focus',
-            lastMessageRole: 'user',
+    const state = cardState(
+      [
+        makeWorkspace('ws-1', {
+          displayStatus: 'in_progress',
+          agentSummary: {
+            count: 2,
+            agentIds: ['a1', 'a2'],
+            agents: [
+              { id: 'a1', name: 'Developer', status: 'active' },
+              { id: 'a2', name: 'Verifier', status: 'active' },
+            ],
+          } as Workspace['agentSummary'],
+        }),
+      ],
+      [],
+      {
+        agentSessions: {
+          byAgentId: {
+            // Newest transcript message is the user's → its first line previews
+            // (prefixes stripped), outranking the stale lastAgentResponse.
+            a1: {
+              lastAgentResponse: 'Stale previous-turn summary',
+              lastUserMessage: '[Currently viewing: a.ts] Please fix the panel focus',
+              lastMessageRole: 'user',
+            },
+            // Digest outranks the persisted response (same as AgentCard).
+            a2: {
+              lastAgentResponse: 'Old long response',
+              lastMessageRole: 'assistant',
+              digest: 'Verifying panel focus fix',
+            },
           },
-          // Digest outranks the persisted response (same as AgentCard).
-          a2: {
-            lastAgentResponse: 'Old long response',
-            lastMessageRole: 'assistant',
-            digest: 'Verifying panel focus fix',
-          },
+          agentIdsByWorkspace: {},
         },
-        agentIdsByWorkspace: {},
       },
-    });
+    );
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe(
-      'Please fix the panel focus',
-    );
-    expect(card.agents.find((agent) => agent.id === 'a2')?.line).toBe(
-      'Verifying panel focus fix',
-    );
+    expect(card.agents.find((agent) => agent.id === 'a1')?.line).toBe('Please fix the panel focus');
+    expect(card.agents.find((agent) => agent.id === 'a2')?.line).toBe('Verifying panel focus fix');
   });
 
   it('a merely-waiting agent (no attention) buckets idle and drops off the card rows', () => {
@@ -1895,9 +2217,7 @@ describe('selectHudWorkspaceCards', () => {
   });
 
   it('defaults an unknown wire displayStatus to not_started (forward compat)', () => {
-    const state = cardState([
-      makeWorkspace('ws-1', { displayStatus: 'something_new' as never }),
-    ]);
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'something_new' as never })]);
     expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe('not_started');
   });
 
@@ -1906,17 +2226,19 @@ describe('selectHudWorkspaceCards', () => {
     ['blocked', 'blocked'],
     ['needs_attention', 'wait'],
     ['in_progress', 'in_progress'],
-    ['unread', 'unread'],
     ['complete', 'complete'],
     ['pr_ready', 'pr_ready'],
     ['pr_open', 'pr_open'],
     ['pr_merged', 'pr_merged'],
     ['idle', 'idle'],
     ['not_started', 'not_started'],
-  ] as const)('renders the wire displayStatus %s as the card state %s', (displayStatus, stateKey) => {
-    const state = cardState([makeWorkspace('ws-1', { displayStatus })]);
-    expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe(stateKey);
-  });
+  ] as const)(
+    'renders the wire displayStatus %s as the card state %s',
+    (displayStatus, stateKey) => {
+      const state = cardState([makeWorkspace('ws-1', { displayStatus })]);
+      expect(selectHudWorkspaceCards.select(state)[0].stateKey).toBe(stateKey);
+    },
+  );
 
   it('live session signals never promote the card state (the BE rollup owns it)', () => {
     // A failed agent + a waiting agent on a pr_open workspace: the daemon has
@@ -1947,13 +2269,45 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attention).toBe('review_required');
   });
 
-  it("an 'unread' attention flag is exposed but never changes the card state", () => {
-    // The daemon already applied the §5.1 step-6 unread promotion, so the
-    // flag is presentation metadata only — the card renders its wire value.
-    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'idle' })], [['ws-1', 'unread']]);
+  it("an 'unread' attention flag sets isUnread but never changes the card state", () => {
+    // Unread is a flag, not a displayStatus (intentd#1186): the card keeps
+    // its real state and exposes the overlay boolean for the border blink.
+    const state = cardState(
+      [makeWorkspace('ws-1', { displayStatus: 'idle' })],
+      [['ws-1', 'unread']],
+    );
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBe('unread');
+    expect(card.isUnread).toBe(true);
+  });
+
+  it('a non-unread attention flag leaves isUnread false', () => {
+    const state = cardState(
+      [makeWorkspace('ws-1', { displayStatus: 'complete' })],
+      [['ws-1', 'review_required']],
+    );
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.isUnread).toBe(false);
+  });
+
+  it('the waiting flag sets isWaiting orthogonally — the card keeps its real state', () => {
+    // `workspace.waiting` (§5.1) overlays the displayStatus like isUnread:
+    // in_progress+waiting stays in_progress, complete+waiting stays complete.
+    const state = cardState([
+      makeWorkspace('ws-1', { displayStatus: 'in_progress', waiting: true }),
+      makeWorkspace('ws-2', { displayStatus: 'complete', waiting: true }),
+    ]);
+    const cards = selectHudWorkspaceCards.select(state);
+    expect(cards[0].stateKey).toBe('in_progress');
+    expect(cards[0].isWaiting).toBe(true);
+    expect(cards[1].stateKey).toBe('complete');
+    expect(cards[1].isWaiting).toBe(true);
+  });
+
+  it('an absent waiting flag reads as not waiting (presence-detected on the wire)', () => {
+    const state = cardState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })]);
+    expect(selectHudWorkspaceCards.select(state)[0].isWaiting).toBe(false);
   });
 
   it("the entity's daemon-served attention is exposed with no live event (app start)", () => {
@@ -1961,17 +2315,18 @@ describe('selectHudWorkspaceCards', () => {
     // (§5.1); a workspace already unread at launch exposes the flag without
     // waiting for a live `workspace:attention-changed` event.
     const state = cardState([
-      makeWorkspace('ws-1', { displayStatus: 'unread', attention: 'unread' }),
+      makeWorkspace('ws-1', { displayStatus: 'complete', attention: 'unread' }),
     ]);
     const [card] = selectHudWorkspaceCards.select(state);
-    expect(card.stateKey).toBe('unread');
+    expect(card.stateKey).toBe('complete');
     expect(card.attention).toBe('unread');
+    expect(card.isUnread).toBe(true);
   });
 
   it('a live clear never falls back to a stale entity attention (bridge keeps both fresh)', () => {
     // markSeen: the live 'none' event deletes the flag map entry and the
     // events bridge writes `attention: "none"` onto the entity (§9.9) — the
-    // card must not resurrect UNREAD from the entity fallback.
+    // card must not resurrect the unread overlay from the entity fallback.
     const state = cardState(
       [makeWorkspace('ws-1', { displayStatus: 'idle', attention: 'none' })],
       [
@@ -1982,12 +2337,13 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBeNull();
+    expect(card.isUnread).toBe(false);
   });
 
-  it("marking seen (attention 'none') recomputes the UNREAD card back to idle", () => {
+  it("marking seen (attention 'none') drops the unread overlay", () => {
     // `workspace.markSeen` clears the unread flag and emits
     // `workspace:attention-changed` with "none" (§9.9) — the fold drops the
-    // flag and the card falls back to its displayStatus.
+    // flag and the overlay boolean with it; the card state never moved.
     const state = cardState(
       [makeWorkspace('ws-1', { displayStatus: 'idle' })],
       [
@@ -1998,6 +2354,7 @@ describe('selectHudWorkspaceCards', () => {
     const [card] = selectHudWorkspaceCards.select(state);
     expect(card.stateKey).toBe('idle');
     expect(card.attention).toBeNull();
+    expect(card.isUnread).toBe(false);
   });
 
   /** Workspace with one top-level and one delegated agent plus session overlays. */
@@ -2024,7 +2381,10 @@ describe('selectHudWorkspaceCards', () => {
       [],
       questions,
     );
-    return { ...base, agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} } } as StoreState;
+    return {
+      ...base,
+      agentSessions: { byAgentId: sessions, agentIdsByWorkspace: {} },
+    } as StoreState;
   }
 
   it('a top-level blocker request alone does not turn the card blocked (BE rollup owns it)', () => {
@@ -2110,8 +2470,9 @@ describe('selectHudWorkspaceCards', () => {
       },
     };
     // A discussion alone does not flip the card (no attention state → no snippet).
-    expect(selectHudWorkspaceCards.select(gatedState(sessions, [question]))[0].attentionSnippet)
-      .toBeNull();
+    expect(
+      selectHudWorkspaceCards.select(gatedState(sessions, [question]))[0].attentionSnippet,
+    ).toBeNull();
     // With the daemon's needs_attention rollup the card waits and the
     // question text wins over the discussion reason.
     const rolled = gatedState(sessions, [question], 'needs_attention');
@@ -2223,9 +2584,7 @@ describe('selectHudWorkspaceCards', () => {
     ]);
     const childCard = selectHudWorkspaceCards.select(childWaiting)[0];
     expect(childCard.stateKey).toBe('in_progress');
-    expect(childCard.agents.find((agent) => agent.id === 'child')?.bucket).toBe(
-      'needs-attention',
-    );
+    expect(childCard.agents.find((agent) => agent.id === 'child')?.bucket).toBe('needs-attention');
   });
 
   it('a genuine ws.app.question.ask (idle agent + needs_attention rollup) shows the Q snippet, not the status text (live bug)', () => {
@@ -2502,7 +2861,6 @@ describe('selectHudWorkspaceCards', () => {
   });
 });
 
-
 describe('HUD agent running-state consistency (mid-turn delegated agents)', () => {
   /** ws-1 with one coordinator + one delegated child, summary-level overrides. */
   function midTurnState(
@@ -2548,10 +2906,9 @@ describe('HUD agent running-state consistency (mid-turn delegated agents)', () =
     // Precedence: an in-flight turn (isResponding) wins over the waiting
     // check — a mid-turn tool call is running work (failed > attention >
     // running > idle).
-    const state = midTurnState(
-      [{ id: 'a1', name: 'Implementor', status: 'active' }],
-      { a1: { status: 'active', isResponding: true, isWaitingOnTool: true } },
-    );
+    const state = midTurnState([{ id: 'a1', name: 'Implementor', status: 'active' }], {
+      a1: { status: 'active', isResponding: true, isWaitingOnTool: true },
+    });
     expect(selectHudAgentStateCounts.select(state).running).toBe(1);
     const view = selectHudTakeoverView.select(state, 'ws-1');
     expect(view?.activeAgents.map((a) => a.bucket)).toEqual(['running']);
@@ -2725,5 +3082,69 @@ describe('selectHudTakeoverView complete-cell reports', () => {
     });
     const view = selectHudTakeoverView.select(state, 'ws-1');
     expect(view?.tasks[0].report).toBeNull();
+  });
+});
+
+describe('selectHudTakeoverView task relation projection', () => {
+  function relationsState(tasks: Array<Partial<WorkspaceTask>>): StoreState {
+    const base = mockState([makeWorkspace('ws-1', { displayStatus: 'in_progress' })]);
+    return {
+      ...base,
+      workspaceTasks: {
+        byWorkspaceId: {
+          'ws-1': {
+            tasks: createCollection<WorkspaceTask, 'id'>('id', tasks as WorkspaceTask[]),
+            stats: { total: tasks.length, completed: 0, inProgress: 0 },
+          },
+        },
+      },
+    } as StoreState;
+  }
+
+  it('copies dependsOn/conflictsWith/unmetDependsOn verbatim from the wire task', () => {
+    const state = relationsState([
+      { id: 'task-a', title: 'Upstream', status: 'in_progress' },
+      {
+        id: 'task-b',
+        title: 'Downstream',
+        status: 'not_started',
+        dependsOn: ['task-a'],
+        conflictsWith: ['task-c'],
+        unmetDependsOn: ['task-a'],
+      } as WorkspaceTask,
+    ]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const downstream = view?.tasks.find((task) => task.id === 'task-b');
+    expect(downstream?.dependsOn).toEqual(['task-a']);
+    expect(downstream?.conflictsWith).toEqual(['task-c']);
+    expect(downstream?.unmetDependsOn).toEqual(['task-a']);
+  });
+
+  it('omits the relation fields when absent on the source task', () => {
+    const state = relationsState([{ id: 'task-a', title: 'Standalone', status: 'not_started' }]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    const task = view?.tasks[0];
+    expect(task).toBeDefined();
+    expect(task && 'dependsOn' in task).toBe(false);
+    expect(task && 'conflictsWith' in task).toBe(false);
+    expect(task && 'unmetDependsOn' in task).toBe(false);
+  });
+
+  it('copies specLinked verbatim (true and false) and omits it when absent', () => {
+    const state = relationsState([
+      { id: 'task-a', title: 'Linked', status: 'not_started', specLinked: true } as WorkspaceTask,
+      {
+        id: 'task-b',
+        title: 'Unlinked',
+        status: 'not_started',
+        specLinked: false,
+      } as WorkspaceTask,
+      { id: 'task-c', title: 'Legacy', status: 'not_started' },
+    ]);
+    const view = selectHudTakeoverView.select(state, 'ws-1');
+    expect(view?.tasks.find((task) => task.id === 'task-a')?.specLinked).toBe(true);
+    expect(view?.tasks.find((task) => task.id === 'task-b')?.specLinked).toBe(false);
+    const legacy = view?.tasks.find((task) => task.id === 'task-c');
+    expect(legacy && 'specLinked' in legacy).toBe(false);
   });
 });

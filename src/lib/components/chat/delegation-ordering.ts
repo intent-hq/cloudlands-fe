@@ -14,6 +14,11 @@ export interface DelegationGroupProgressInput {
   delivered: boolean;
 }
 
+/** Stable unique agent IDs for keyed presentation and logical progress counts. */
+export function uniqueAgentIds(agentIds: readonly string[]): string[] {
+  return Array.from(new Set(agentIds));
+}
+
 /**
  * Sorts still-working agents before finished ones while preserving the
  * existing relative order within each bucket (stable partition), so
@@ -25,7 +30,7 @@ export function sortWorkingAgentsFirst(
 ): string[] {
   const working: string[] = [];
   const finished: string[] = [];
-  for (const id of agentIds) {
+  for (const id of uniqueAgentIds(agentIds)) {
     (completedAgentIds.has(id) ? finished : working).push(id);
   }
   return [...working, ...finished];
@@ -33,7 +38,8 @@ export function sortWorkingAgentsFirst(
 
 /** Agents that have finished (completed or deleted) in one delegation group. */
 export function groupDoneCount(group: DelegationGroupProgressInput): number {
-  return group.completedAgentIds.length + group.deletedAgentIds.length;
+  const finished = new Set([...group.completedAgentIds, ...group.deletedAgentIds]);
+  return uniqueAgentIds(group.expectedAgentIds).filter((id) => finished.has(id)).length;
 }
 
 /**
@@ -41,6 +47,6 @@ export function groupDoneCount(group: DelegationGroupProgressInput): number {
  * wake has not been delivered yet (the footer's per-group warning state).
  */
 export function isGroupDeliveryPending(group: DelegationGroupProgressInput): boolean {
-  const total = group.expectedAgentIds.length;
+  const total = uniqueAgentIds(group.expectedAgentIds).length;
   return total > 0 && groupDoneCount(group) >= total && !group.delivered;
 }

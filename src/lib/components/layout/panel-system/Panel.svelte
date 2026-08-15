@@ -22,7 +22,10 @@
   import PanelEmptyState from './PanelEmptyState.svelte';
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
+  import { createPanelFileDropContext } from './panel-file-drop-context.svelte';
+  import type { PanelFileDropHandler } from './panel-file-drop-context.svelte';
   import { setPanelContext } from './panel-context';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
@@ -41,6 +44,7 @@
   } from './panel-drag';
   import { store as appStore } from '$store/renderer/store';
   import { endDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { markPanelTouched } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -123,6 +127,49 @@
   // Create header context for content components to register their actions
   const { actions: headerActions } = createPanelHeaderContext();
 
+  // File-drop seam: chat content (ChatPanel) registers a handler while it is
+  // the active tab, extending its OS-file drop target to the panel header.
+  // Header handlers are gated on both the Files drag type (inside
+  // createFileDropTarget) and a registered handler, so tab drags, panel-move
+  // drags, and non-agent tabs are untouched.
+  const { handler: fileDropHandler } = createPanelFileDropContext();
+  const headerFileDrop = createFileDropTarget({
+    onDragChange: (dragging) => fileDropHandler.current?.onDragChange(dragging),
+    onDrop: (files) => fileDropHandler.current?.onDrop(files),
+  });
+
+  // Clear stale drag state on any handler identity change: unregister mid-drag
+  // (tab switch/close) and direct A→B replacement (agent→agent tab switch where
+  // the new tab registers before the old tab's cleanup runs), so a mid-drag
+  // counter never leaks into the next handler's session.
+  let lastRegisteredHandler: PanelFileDropHandler | null = null;
+  $effect(() => {
+    if (fileDropHandler.current !== lastRegisteredHandler) {
+      lastRegisteredHandler = fileDropHandler.current;
+      headerFileDrop.reset();
+    }
+  });
+
+  function handleHeaderFileDragEnter(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragEnter(e);
+  }
+
+  function handleHeaderFileDragLeave(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragLeave(e);
+  }
+
+  function handleHeaderFileDragOver(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDragOver(e);
+  }
+
+  function handleHeaderFileDrop(e: DragEvent) {
+    if (!fileDropHandler.current) return;
+    headerFileDrop.handleDrop(e);
+  }
+
   // Set panel context so child components can access the panel ID
   // This is more reliable than DOM traversal for navigation events
   // (context must be set at init; a panel's ID is stable for its lifetime)
@@ -131,6 +178,7 @@
 
   // Get the active tab - use optional chaining to handle workspace transitions
   let activeTab = $derived(panel?.tabs?.find((t) => t.id === panel.activeTabId) ?? null);
+  let panelRef = $state.raw<HTMLDivElement | null>(null);
 
   // Keep recently-visited tabs mounted for faster switching
   // Tabs are kept for PANEL_TAB_CACHE_TTL_MS after switching away, then unmounted
@@ -165,6 +213,17 @@
     applyTabCacheUpdate(panel.tabs, panel.activeTabId);
   });
 
+  // Clear focus before a content-triggered tab switch hides its cached wrapper.
+  // Header controls are outside these wrappers and keep their focus normally.
+  $effect.pre(() => {
+    const activeTabId = panel.activeTabId;
+    if (typeof document === 'undefined' || !panelRef) return;
+    const focusedElement = document.activeElement;
+    if (!(focusedElement instanceof HTMLElement) || !panelRef.contains(focusedElement)) return;
+    const focusedWrapper = focusedElement.closest<HTMLElement>('.tab-content-wrapper');
+    if (focusedWrapper && focusedWrapper.dataset.tabId !== activeTabId) focusedElement.blur();
+  });
+
   // Enforce the TTL even when the active tab does not change again. Without
   // this timer, inactive browser/editor/diff tabs can stay mounted forever.
   $effect(() => {
@@ -197,8 +256,6 @@
   let isDragOver = $state(false);
   let activeDropZone = $state<DropZone | null>(null);
   let panelDropPlacement = $state<PanelDragPlacement | null>(null);
-  let panelRef = $state.raw<HTMLDivElement | null>(null);
-
   // Tab bar height in pixels (h-9 = 2.25rem = 36px)
   const TAB_BAR_HEIGHT = 36;
 
@@ -218,6 +275,10 @@
     onFocus?.();
   }
 
+  function markUserTouch() {
+    if (panel.pristine) appStore.dispatch(markPanelTouched(layoutId, panel.id));
+  }
+
   // Focus the panel when the user clicks anywhere inside it. `onfocusin` only
   // fires when a focusable descendant receives focus; clicks on non-focusable
   // content (empty area, static text, non-interactive tab content) would
@@ -225,8 +286,13 @@
   // panel focuses before nested interactive elements handle the event, and it
   // stays passive — no preventDefault / stopPropagation.
   function handlePanelPointerDown() {
+    markUserTouch();
     if (isFocused) return;
     onFocus?.();
+  }
+
+  function handlePanelKeyDown() {
+    markUserTouch();
   }
 
   // Determine which drop zone based on cursor position (relative to content area below tab bar)
@@ -314,6 +380,7 @@
   }
 
   function handleDrop(e: DragEvent) {
+    markUserTouch();
     e.preventDefault();
     e.stopPropagation(); // Prevent drop from reaching content (like editors)
     isDragOver = false;
@@ -373,14 +440,21 @@
 {#if panel}
   <div
     bind:this={panelRef}
-    class="panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50 bg-card text-card-foreground"
+    class={cn(
+      'panel group/panel relative flex flex-col h-full overflow-hidden rounded-lg border border-border/50',
+      panel.pristine === true && panel.tabs.length === 0
+        ? 'bg-transparent text-sidebar-foreground'
+        : 'bg-card text-card-foreground',
+    )}
     class:contained
     data-panel-id={panel.id}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-zoomed={isZoomed}
+    data-pristine={panel.pristine === true}
     onfocusin={handlePanelFocus}
     onpointerdowncapture={handlePanelPointerDown}
+    onkeydowncapture={handlePanelKeyDown}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
@@ -391,7 +465,7 @@
     <PanelDropZones activeZone={activeDropZone} isActive={isDragOver} />
     {#if !activeTab && onClosePanel}
       <div class="absolute right-2 top-2 z-20" data-empty-panel-close>
-        <Tooltip content="Close panel" side="bottom" delayDuration={300}>
+        <Tooltip content={m.layout_panel_closePanel_ariaLabel()} side="bottom" delayDuration={300}>
           <Button
             variant="ghost-light"
             size="icon-xs"
@@ -400,7 +474,7 @@
               event.stopPropagation();
               onClosePanel?.();
             }}
-            aria-label="Close panel"
+            aria-label={m.layout_panel_closePanel_ariaLabel()}
           >
             <Fa icon={faXmark} size="xs" />
           </Button>
@@ -409,9 +483,14 @@
     {/if}
     <!-- Tab Bar (shows group label and actions when focused) -->
     <div
+      data-panel-header
       style={animateTabBar
         ? 'animation: slideDownTabBar 350ms cubic-bezier(0.33, 1, 0.68, 1) 300ms forwards; opacity: 0; transform: translateY(-100%);'
         : ''}
+      ondragenter={handleHeaderFileDragEnter}
+      ondragleave={handleHeaderFileDragLeave}
+      ondragover={handleHeaderFileDragOver}
+      ondrop={handleHeaderFileDrop}
     >
       <PanelTabBar
         tabs={panel.tabs}
@@ -463,6 +542,7 @@
           <div
             class="tab-content-wrapper h-full w-full"
             class:hidden={!isActive}
+            data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
           >

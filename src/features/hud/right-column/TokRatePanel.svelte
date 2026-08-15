@@ -49,11 +49,11 @@
   const bars = $derived.by((): Bar[] =>
     samples.map((sample) => {
       const counts: Record<SegmentKind, number> = {
-        in: sample.inputTokens,
-        out: sample.outputTokens,
+        in: sample.inputTokens ?? 0,
+        out: sample.outputTokens ?? 0,
         // Absent when the daemon reported no reasoning tokens (§5.23/§5.39).
         thoughts: sample.thoughtTokens ?? 0,
-        cached: sample.cacheReadTokens + sample.cacheCreationTokens,
+        cached: (sample.cacheReadTokens ?? 0) + (sample.cacheCreationTokens ?? 0),
       };
       return {
         bucketUtc: sample.bucketUtc,

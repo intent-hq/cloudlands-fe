@@ -41,11 +41,27 @@ export default defineConfig({
     /* Vite configuration for component testing */
     ctViteConfig: {
       resolve: {
-        alias: {
-          $lib: resolve(__dirname, './src/lib'),
-          $features: resolve(__dirname, './src/features'),
-          $shared: resolve(__dirname, './src/shared'),
-        },
+        alias: [
+          { find: '$lib', replacement: resolve(__dirname, './src/lib') },
+          { find: '$store', replacement: resolve(__dirname, './src/store') },
+          { find: '$features', replacement: resolve(__dirname, './src/features') },
+          { find: '$shared', replacement: resolve(__dirname, './src/shared') },
+          // SvelteKit runtime modules don't exist outside the kit plugin;
+          // resolve them to browser-safe stubs (the vitest mocks in
+          // src/__mocks__/$app depend on `vi` and can't run in this bundle).
+          { find: '$app', replacement: resolve(__dirname, './playwright/app-stubs') },
+          // Icon compatibility aliases (mirrors vite.config.mjs): legacy
+          // svelte-fa / fontawesome identifiers resolve to the Phosphor-backed
+          // catalog and renderer.
+          {
+            find: /^@fortawesome\/(?:fontawesome-common-types|fontawesome-svg-core|free-brands-svg-icons|free-regular-svg-icons|free-solid-svg-icons)$/,
+            replacement: resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+          },
+          {
+            find: /^svelte-fa$/,
+            replacement: resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+          },
+        ],
       },
       css: {
         postcss: {

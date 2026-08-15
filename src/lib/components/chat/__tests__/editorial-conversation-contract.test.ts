@@ -12,49 +12,110 @@ describe('editorial conversation presentation contract', () => {
 
     expect(panel).toContain('conversation-column flex min-h-full w-full flex-col');
     expect(panel).not.toContain('max-w-[var(--content-measure-wide)]');
-    expect(panel).toContain('<div class="w-full pb-2">');
+    expect(panel).toContain('<div class="w-full" data-testid="question-wizard-slot">');
     expect(panel).toContain("? 'w-full px-1.5!'");
     expect(panel).toContain(": 'w-full px-4 sm:px-6'");
-    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
     expect(panel).toContain('conversation-composer relative z-20 w-full');
     expect(panel).toContain('edgeDocked');
     expect(panel).not.toContain("'px-[5%]'");
   });
 
-  it('sticks the single user prompt without restoring the duplicate compact layer', () => {
+  it('pins one user prompt in an independent overlay without moving the source row', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const pinned = source('src/lib/components/chat/PinnedUserPrompt.svelte');
+    const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const surface = source('src/lib/components/chat/user-message-surface.ts');
 
     expect(panel).not.toContain('formatMessageForStickyHeader');
     expect(panel).not.toContain('h-0 overflow-visible');
+    expect(panel).toContain("import PinnedUserPrompt from './PinnedUserPrompt.svelte';");
+    expect(panel).toContain('trackPinnedPrompt,');
+    expect(panel).toContain('use:trackPinnedPrompt={{');
+    expect(panel).toContain('data-pinnable-user-prompt');
+    expect(panel).toContain('data-pinned-prompt-id={message.id}');
+    expect(panel).toContain('data-conversation-turn');
+    expect(panel).toContain('<PinnedUserPrompt');
+    expect(panel).toContain('text={getPinnedPromptText(pinnedPrompt.message)}');
+    expect(panel).toContain('onActivate={handlePinnedPromptClick}');
     expect(panel).toMatch(
-      /data-message-role="user"[\s\S]{0,400}class:sticky=\{shouldEnableSticky\}/,
+      /data-message-role="user"[\s\S]{0,600}class="message-nav-target relative z-20 mb-4/,
     );
-    expect(panel).toMatch(
-      /data-message-role="user"[\s\S]{0,440}class:-top-px=\{shouldEnableSticky\}/,
-    );
-    expect(panel).toMatch(
-      /data-message-role="user"[\s\S]{0,300}class="message-nav-target relative z-20 mb-4/,
-    );
-    expect(panel).toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain('class:bg-card={!isChiefWorkspace}');
     expect(panel).toContain(':global(.conversation-turn) {\n    contain: style;');
     expect(panel).toContain(':global(.message-nav-target) {\n    contain: style;');
     expect(panel).not.toContain('contain: style paint');
-    expect(panel).toContain('isSticky={stickyMessageId === message.id}');
-    expect(panel).toContain('onStickyClick={() => scrollUserMessageToTop(message.id)}');
-    expect(panel).toMatch(
-      /function scrollUserMessageToTop[\s\S]{0,500}closest\('\.conversation-turn'\)[\s\S]{0,160}smoothScrollTo\(target, 'start'\)/,
-    );
+    expect(pinned).toContain('data-testid="pinned-user-prompt"');
+    expect(pinned).toContain('USER_MESSAGE_SURFACE_CLASS');
+    expect(pinned).toContain('USER_MESSAGE_TEXT_CLASS');
+    expect(pinned).toContain('truncate whitespace-nowrap');
+    expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
+    expect(surface).toContain('bg-primary');
+    expect(surface).toContain('text-primary-foreground');
+    expect(surface).toContain('selection:bg-primary-foreground selection:text-primary');
+    expect(surface).toContain('[&_a]:text-primary-foreground');
+    expect(surface).toContain('[&_code]:text-primary-foreground');
+    expect(surface).not.toContain('bg-secondary');
+    expect(surface).not.toContain('text-foreground/90');
+  });
 
-    const message = source('src/lib/components/chat/ChatMessage.svelte');
-    expect(message).toMatch(/isSticky \|\|[\s\S]{0,100}'line-clamp-2'/);
-    expect(message).toContain(
-      "agentAttribution\n                ? ''\n                : 'line-clamp-6'",
+  it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
+    const panel = source('src/lib/components/chat/ChatPanel.svelte');
+
+    // Native scroll anchoring must stay off: it compensates for the pinned row's
+    // sticky compaction by shifting scrollTop, re-firing detection and un-pinning
+    // the row in a per-frame loop (top-of-chat flicker).
+    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
+
+    // The overlay is derived from source-row geometry, so compaction cannot
+    // change the source row's height or restart pin detection.
+    expect(panel).toContain('enabled: containerHeight >= 400');
+    const pinned = source('src/lib/components/chat/pinned-prompt.ts');
+    expect(pinned).toContain(
+      "const SELECTOR = '[data-pinnable-user-prompt][data-pinned-prompt-id]';",
     );
-    expect(message).toContain('imageBlocks.length > 0 && !isSticky');
-    expect(message).toContain('fileBlocks.length > 0 && !isSticky');
-    expect(message).toContain('transition: height var(--motion-slow) var(--ease-emphasized-out)');
-    expect(message).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(pinned).toContain("source.closest<HTMLElement>('[data-conversation-turn]')");
+    expect(pinned).toContain('candidate.sourceBottom <= containerTop - ENTER_OFFSET');
+    expect(pinned).toContain('candidate.turnBottom > containerTop + ENTER_OFFSET');
+    expect(pinned).toContain('const resizeObserver = new ResizeObserver(schedule);');
+    expect(pinned).toContain('const mutationObserver = new MutationObserver(() => {');
+
+    // With native anchoring off, LazyTurn owns scroll compensation for ALL of
+    // its height changes above the reader's viewport — placeholder <-> content
+    // swaps AND late-settling content after a swap (the v2.37.0 one-shot
+    // compensation missed the latter, showing as intermittent 20–30px jumps at
+    // the top of the chat while scrolling; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
+    const lazyTurn = source('src/lib/components/chat/LazyTurn.svelte');
+    expect(lazyTurn).toContain(
+      "import { createHeightLedger, snapshotScroller } from './lazy-turn-scroll-ledger';",
+    );
+    expect(lazyTurn).toContain('function setVisibleWithScrollCompensation(next: boolean)');
+    // The swap path must capture the scroller geometry BEFORE the flush and
+    // hand it to account(): a swap that shrinks scrollHeight can natively
+    // clamp scrollTop at flush time, and only the pre-flush snapshot lets the
+    // ledger preserve the reader's distance-from-bottom through that clamp
+    // (the bottom-of-chat snap-back; behavioral coverage in
+    // lazy-turn-scroll-ledger.test.ts).
+    expect(lazyTurn).toContain('const preSwap = snapshotScroller(scrollRoot);');
+    expect(lazyTurn).toMatch(/void tick\(\)\.then\(\(\) => ledger\.account\(preSwap\)\);/);
+    expect(lazyTurn).toContain('setVisibleWithScrollCompensation(true);');
+    expect(lazyTurn).toContain('setVisibleWithScrollCompensation(false);');
+    // The ResizeObserver path must reconcile the ledger FIRST on EVERY fire
+    // (before the shouldRenderContent early-return) so post-swap settles are
+    // caught in the same frame.
+    expect(lazyTurn).toMatch(/if \(!entry\) return;\s*\n[\s\S]{0,700}?ledger\.account\(\);/);
+    expect(lazyTurn).toMatch(
+      /ledger\.account\(\);[\s\S]{0,1600}?if \(!shouldRenderContent\) return;/,
+    );
+    // Cached heights are panel-scoped and wrap-width-dependent. ChatPanel
+    // owns the bounded cache, while each LazyTurn validates reads and writes.
+    expect(lazyTurn).toContain("type LazyTurnHeightCache } from './lazy-turn-height-cache';");
+    expect(lazyTurn).toContain('heightCache: LazyTurnHeightCache;');
+    expect(lazyTurn).toContain('const initialCachedHeight = heightCache.get(turnKey, null);');
+    expect(lazyTurn).toContain('heightCache.get(turnKey, observedWidth)');
+    expect(lazyTurn).toContain('heightCache.set(turnKey, height, measuredWidth);');
+    expect(panel).toContain("createLazyTurnHeightCache('unbound')");
+    expect(panel).toContain('heightCache={lazyTurnHeightCache}');
   });
 
   it('does not restore the removed date separators', () => {
@@ -74,24 +135,29 @@ describe('editorial conversation presentation contract', () => {
 
   it('uses vertical rhythm instead of decorative separators between routine turns', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
+    const gap = source('src/lib/components/chat/ConversationTurnGap.svelte');
 
     expect(panel).toContain('<!-- Editorial rhythm between turns');
-    expect(panel).toContain('<div class="h-8" aria-hidden="true"></div>');
+    expect(panel).toContain('<ConversationTurnGap');
+    expect(gap).toContain('data-testid="conversation-turn-gap"');
+    expect(gap).toContain(": 'h-8'");
     expect(panel).not.toContain('<hr class="border-t border-border/50 mb-3" />');
   });
 
-  it('uses an aligned accent user prompt and semantic body typography', () => {
+  it('uses the canonical primary user prompt surface and semantic body typography', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const surface = source('src/lib/components/chat/user-message-surface.ts');
     const markdown = source('src/lib/components/markdown/MarkdownViewer.svelte');
 
-    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0');
     expect(message).toContain(
-      "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
+      "import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface'",
+    );
+    expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
+    expect(surface).toContain(
+      'relative overflow-hidden rounded-lg border border-border/50 bg-primary px-3 py-2 text-primary-foreground shadow-sm',
     );
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
-    expect(message).toContain(
-      'class="type-body select-text font-medium! text-pretty text-foreground',
-    );
+    expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
     expect(message).toContain('<div class="type-body text-pretty text-foreground">');
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
@@ -111,7 +177,7 @@ describe('editorial conversation presentation contract', () => {
     ).toHaveLength(2);
   });
 
-  it('gives Chief user messages an opaque semantic surface so sticky text cannot overlap', () => {
+  it('keeps the accepted opaque user surface in Chief sticky rows', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -122,10 +188,8 @@ describe('editorial conversation presentation contract', () => {
     );
     expect(panel).not.toContain('chief-sticky-message-mask');
     expect(panel).not.toContain('backdrop-filter: blur(24px)');
-    expect(message).toContain('relative overflow-hidden py-2 pr-3 pl-0 {stickySurfaceClass}');
-    expect(message).toContain(
-      "workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-transparent' : 'bg-card'",
-    );
+    expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
+    expect(message).not.toContain('stickySurfaceClass');
   });
 
   it('uses the original Thinking indicator without the staged hydration line', () => {
@@ -144,44 +208,38 @@ describe('editorial conversation presentation contract', () => {
     expect(indicator).toContain('animation: legacy-spinner-wave');
   });
 
-  it('renders wake-up details as one compact sticky row', () => {
+  it('renders wake-up details as one compact disclosure surface', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const wakeup = source('src/lib/components/chat/EventWakeupBanner.svelte');
-    const agentCard = source('src/lib/components/chat/AgentCard.svelte');
+    const avatar = source('src/lib/components/chat/InlineAgentAvatar.svelte');
 
     expect(panel).toMatch(
       /data-message-index=\{globalIndex\}[\s\S]{0,220}message-nav-target relative z-10[\s\S]{0,120}class:bg-sidebar=\{isChiefWorkspace\}[\s\S]{0,80}class:bg-card=\{!isChiefWorkspace\}/,
     );
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
-    expect(wakeup).toMatch(
-      /items-center gap-1.5 py-1.5 pr-3 pl-0 \{isSticky[\s\S]{0,80}\? stickySurfaceClass[\s\S]{0,50}: 'bg-transparent'/,
-    );
-    expect(wakeup).toContain("workspace?.id === CHIEF_WORKSPACE_ID ? 'bg-sidebar' : 'bg-card'");
-    expect(wakeup).toContain('{#if showSummary && !(showAgentCards && agentEvents.length > 0)}');
-    expect(wakeup).toContain('statusLabel={event.type ===');
+    expect(wakeup).toMatch(/items-center gap-1.5 py-0.5 pr-2 pl-0 text-primary/);
+    expect(wakeup).toContain('SUBSCRIPTION_CARD_CONTAINMENT_CLASS');
+    expect(wakeup).toContain('SUBSCRIPTION_CARD_SURFACE_CLASS');
+    expect(wakeup).toContain('{#if showSummary || (showAgentCards && agentEvents.length > 0)}');
+    expect(wakeup).toContain('<InlineAgentAvatar');
+    expect(wakeup).toContain('data-testid="event-wakeup-avatar-stack"');
+    expect(wakeup).toContain('data-testid="event-wakeup-details"');
     expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
-    expect(wakeup).toContain('inline');
-    expect(wakeup).toContain('hidePreview');
-    expect(wakeup).not.toContain('isCompleted={event.type');
-    expect(agentCard).toContain("? 'flex-row items-center gap-2'");
-    expect(agentCard).toContain("? 'type-body items-center rounded-md");
-    expect(agentCard).toContain("? 'inline-agent-card-header overflow-hidden'");
-    expect(agentCard).toContain('<div class="relative shrink-0 {inline ?');
-    expect(agentCard).toContain('{#if delegatedByName && !inline}');
-    expect(agentCard).toContain('{#if inline && statusLabel}');
-    expect(agentCard).toContain('max-w-[40%] shrink-0 truncate text-ui text-subtle');
-    expect(agentCard).not.toContain('max-w-[52%]');
-    expect(agentCard).not.toContain('· {statusLabel}');
-    expect(agentCard).not.toContain('· Delegated by');
+    expect(wakeup).not.toContain('<AgentCard');
+    expect(avatar).toContain('<Tooltip.Trigger');
+    expect(avatar).toContain('<AugieAvatarWithState');
+    expect(avatar).toContain('aria-label={onclick');
   });
 
   it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
     const message = source('src/lib/components/chat/ChatMessage.svelte');
+    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(message.match(/group-focus-within:opacity-100/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(message).toContain('showOnHover={false}');
+    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
+    expect(actionSurface).toContain('group-focus-within:opacity-100');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
@@ -203,14 +261,30 @@ describe('editorial conversation presentation contract', () => {
   it('keeps tool-call rows compact and dims their leading icon', () => {
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
     const reasoning = source('src/lib/components/chat/ThinkingBlock.svelte');
+    const contextEngine = source('src/lib/components/chat/ContextEngineToolCall.svelte');
+    const responseGroup = source('src/lib/components/chat/ResponseGroup.svelte');
+    const operationalRow = source('src/lib/components/chat/operational-disclosure-row.ts');
     const agentTab = source('src/features/layout/tab-types/AgentTabType.svelte');
 
-    expect(toolCall).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(toolCall).toContain('text-foreground/75');
-    expect(toolCall).toContain('text-foreground/60');
-    expect(reasoning).toContain('tool-call-container');
-    expect(reasoning).toContain('relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0');
-    expect(reasoning).toContain('text-foreground/60');
+    expect(operationalRow).toContain(
+      'relative flex min-h-5 w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden py-0',
+    );
+    expect(operationalRow).toContain('type-body font-family-child font-normal');
+    expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground'");
+    expect(operationalRow).toContain("OPERATIONAL_SECONDARY_CLASS =\n  'text-ghost");
+    expect(operationalRow).toContain('group-hover:text-muted-foreground');
+    for (const component of [toolCall, reasoning, contextEngine]) {
+      expect(component).toContain('OPERATIONAL_ROW_CONTAINER_CLASS');
+    }
+    for (const component of [toolCall, contextEngine]) {
+      expect(component).toContain('COMPACT_TOOL_ROW_CLASS');
+      expect(component).toContain('COMPACT_TOOL_ICON_BOX_CLASS');
+      expect(component).toContain('COMPACT_TOOL_SENTENCE_CLASS');
+    }
+    expect(reasoning).toContain('OPERATIONAL_ROW_LINE_CLASS');
+    expect(reasoning).toContain('OPERATIONAL_ICON_CLASS');
+    expect(responseGroup).toContain('OPERATIONAL_ROW_TONE_CLASS');
+    expect(responseGroup).toContain('OPERATIONAL_ROW_LINE_CLASS');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
     expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });
@@ -229,16 +303,17 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const COMPACT_HEIGHT_ENTER = 600');
     expect(panel).toContain('const COMPACT_HEIGHT_EXIT = 640');
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');
-    expect(panel).toContain('class:pb-8={!isChiefWorkspace && !isCompactMode}');
-    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'");
+    expect(panel).toContain('class:pb-2={!isChiefWorkspace && !isCompactMode}');
+    expect(panel).toContain("isCompactMode ? 'pb-1 pt-2' : 'py-2'");
     expect(panel).not.toContain("'pb-1 pt-3'");
-    expect(panel).toContain("isCompactMode ? 'pb-1' : 'pb-4'");
+    expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
+    expect(panel).not.toContain('eventSubscriptionsVisible');
     expect(panel.match(/isCompactMode \? 'mb-2' : 'mb-16'/g)).toHaveLength(4);
     expect(panel).toContain("isCompactMode ? 'mb-2' : 'mb-8'");
-    expect(panel).toContain('style="scrollbar-gutter: stable;"');
-    expect(message).toContain('pointer-events-none absolute bottom-0 right-0 z-10');
-    expect(message).toContain('rounded-md bg-background/95 p-0.5');
-    expect(message).toContain('group-hover:pointer-events-auto group-hover:opacity-100');
+    expect(panel).toContain('style="scrollbar-gutter: stable; overflow-anchor: none;"');
+    expect(message).toContain('class="absolute right-1 z-10');
+    expect(message).toContain('<MessageActions');
+    expect(message).toContain('class="absolute right-1 z-10');
     expect(message).not.toContain('group-hover:grid-rows-[1fr]');
     expect(message).not.toContain('class="mt-1 flex items-center justify-end"');
     expect(panel).not.toContain('w-full pt-8 pb-12');

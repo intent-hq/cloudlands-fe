@@ -84,7 +84,12 @@
             <p class="text-sm text-subtle mt-0.5">{description}</p>
           {/if}
         </div>
-        <Button variant="ghost" size="icon" onclick={close} aria-label="Close input dialog">
+        <Button
+          variant="ghost"
+          size="icon"
+          onclick={close}
+          aria-label={m.modals_input_close_ariaLabel()}
+        >
           <Fa icon={faXmark} />
         </Button>
       </div>

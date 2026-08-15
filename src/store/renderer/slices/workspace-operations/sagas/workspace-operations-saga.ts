@@ -24,7 +24,9 @@ import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
+import { navigateToRoute } from '$lib/utils/navigation.client';
 import { removeRepo } from '../../known-repos/known-repos-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
@@ -283,6 +285,14 @@ function* watchArchiveUndo(workspaceId: WorkspaceId, undo: Channel<true>): SagaG
         status: WorkspaceStatusEnum.Active,
         archived: false,
       });
+      // The daemon `workspace:updated` event restores the tab in the background;
+      // an explicit undo also focuses the restored workspace.
+      yield* put(openWorkspaceTab(workspaceId));
+      try {
+        yield* call(navigateToRoute, `/workspace/${workspaceId}`);
+      } catch (error) {
+        logger.warn('Failed to navigate to the unarchived workspace', { workspaceId, error });
+      }
     }
   } finally {
     undo.close();
@@ -304,7 +314,6 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
 function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
   const toast = yield* call(getToast);
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
-  yield* call(navigateAwayIfViewing, workspaceId);
   try {
     const result = yield* call(
       [workspaceClient, workspaceClient.archive],

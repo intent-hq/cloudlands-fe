@@ -483,7 +483,10 @@ describe('cycle-unread-agents HUD remaining count', () => {
     ]);
   });
 
-  it('counts an attention agent in the visited unread workspace as its own stop', () => {
+  it('counts 0 remaining when the visited attention agent shares the unread workspace', () => {
+    // The attention agent is visited first (attention precedes unread) and
+    // visiting it clears its own workspace's unread flag, so the unread
+    // stop of that same workspace is not a further stop.
     const state = makeState({
       agentsByWorkspace: { 'ws-1': { ids: ['a-1', 'a-2'], activeAgentId: null } },
       unreadWorkspaceIds: ['ws-1'],
@@ -491,8 +494,9 @@ describe('cycle-unread-agents HUD remaining count', () => {
     });
     const { context, dispatch } = makeContext(state);
     getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([['ws-1', 'a-2']]);
     expect(hudDispatches(dispatch)).toEqual([
-      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_label()],
     ]);
   });
 
@@ -583,7 +587,8 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
 
   it('unions unread-workspace agents with attention agents without duplicates', () => {
     // a-1 sits in an unread workspace AND requests attention — it must
-    // appear once; the walk alternates between it and the attention-only b-1.
+    // appear once, at its attention position; the walk alternates between
+    // the blocker b-1 (highest bucket) and the discussion a-1.
     const state = makeState({
       workspaces: ['ws-1', 'ws-2'],
       agentsByWorkspace: {
@@ -602,9 +607,103 @@ describe('cycle-unread-agents union (unread workspaces + attention requests)', (
     definition.execute(context);
     definition.execute(context);
     expect(activeAgentDispatches(dispatch)).toEqual([
-      ['ws-1', 'a-1'],
       ['ws-2', 'b-1'],
       ['ws-1', 'a-1'],
+      ['ws-2', 'b-1'],
+    ]);
+  });
+
+  it('walks blocker → question → discussion → unread regardless of workspace order', () => {
+    // Workspace order is deliberately the reverse of the priority order.
+    const state = makeState({
+      workspaces: ['ws-u', 'ws-d', 'ws-q', 'ws-b'],
+      agentsByWorkspace: {
+        'ws-u': { ids: ['u-1'], activeAgentId: null },
+        'ws-d': { ids: ['d-1'], activeAgentId: null },
+        'ws-q': { ids: ['q-1'], activeAgentId: null },
+        'ws-b': { ids: ['b-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-u'],
+      sessionOverrides: {
+        'd-1': { attentionRequestKind: 'discussion' },
+        'q-1': { messages: [questionMessage('msg-1')] },
+        'b-1': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-b', 'b-1'],
+      ['ws-q', 'q-1'],
+      ['ws-d', 'd-1'],
+      ['ws-u', 'u-1'],
+      ['ws-b', 'b-1'],
+    ]);
+  });
+
+  it('agents in the same bucket keep the workspace walk order', () => {
+    // Two blockers and two questions across workspaces: priority groups
+    // them (blockers first), and inside each bucket the workspace order
+    // (ws-1, ws-2, ...) is preserved — never re-sorted.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3', 'ws-4'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['q-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['q-2'], activeAgentId: null },
+        'ws-4': { ids: ['b-2'], activeAgentId: null },
+      },
+      sessionOverrides: {
+        'q-1': { messages: [questionMessage('msg-1')] },
+        'b-1': { attentionRequestKind: 'blocker' },
+        'q-2': { messages: [questionMessage('msg-2')] },
+        'b-2': { attentionRequestKind: 'blocker' },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-2', 'b-1'],
+      ['ws-4', 'b-2'],
+      ['ws-1', 'q-1'],
+      ['ws-3', 'q-2'],
+    ]);
+  });
+
+  it('an agent with several attention signals classifies at its highest bucket', () => {
+    // dq-1 (discussion + question) walks in the question bucket — after the
+    // blocker+question bq-1 (blocker wins) and before the discussion-only d-1.
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['d-1'], activeAgentId: null },
+        'ws-2': { ids: ['dq-1'], activeAgentId: null },
+        'ws-3': { ids: ['bq-1'], activeAgentId: null },
+      },
+      sessionOverrides: {
+        'd-1': { attentionRequestKind: 'discussion' },
+        'dq-1': { attentionRequestKind: 'discussion', messages: [questionMessage('msg-1')] },
+        'bq-1': { attentionRequestKind: 'blocker', messages: [questionMessage('msg-2')] },
+      },
+    });
+    const { context, dispatch } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-3', 'bq-1'],
+      ['ws-2', 'dq-1'],
+      ['ws-1', 'd-1'],
     ]);
   });
 
@@ -706,6 +805,127 @@ describe('cycle-unread-agents last-active pick (intent-hq/monorepo#1779)', () =>
       ['ws-1', 'a-2'],
       ['ws-2', 'b-1'],
     ]);
+  });
+});
+
+describe('cycle-unread-agents unhydrated workspaces (intent-hq/monorepo#2438)', () => {
+  /** The hydrateAgentsRequested workspace ids dispatched, in order. */
+  function hydrateDispatches(dispatch: ReturnType<typeof vi.fn>): unknown[] {
+    return dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload: unknown })
+      .filter((action) => action.type === 'workspaceAgents/hydrateAgentsRequested')
+      .map((action) => action.payload);
+  }
+
+  it('is available when the only unread workspace has no hydrated sessions', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' } },
+      unreadWorkspaceIds: ['ws-2'],
+    });
+    const { context } = makeContext(state);
+    expect(getActionKeyDefinition('cycle-unread-agents').isAvailable(context)).toBe(true);
+  });
+
+  it('steps to the unhydrated workspace: navigates, hydrates, and focuses no agent', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' } },
+      unreadWorkspaceIds: ['ws-2'],
+    });
+    const { context, dispatch, navigate, focusComposer } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(navigate).toHaveBeenCalledWith('/workspace/ws-2');
+    expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
+    expect(activeAgentDispatches(dispatch)).toEqual([]);
+    expect(focusComposer).not.toHaveBeenCalled();
+  });
+
+  it('walks hydrated and unhydrated unread workspaces alternately without sticking', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    const { context, dispatch, navigate } = makeContext(state);
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    definition.execute(context);
+    definition.execute(context);
+    definition.execute(context);
+    expect(activeAgentDispatches(dispatch)).toEqual([
+      ['ws-1', 'a-1'],
+      ['ws-1', 'a-1'],
+    ]);
+    expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
+    expect(navigate.mock.calls).toEqual([['/workspace/ws-2']]);
+  });
+
+  it('counts an unhydrated unread workspace as one remaining stop in the HUD', () => {
+    const state = makeState({
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    const { context, dispatch } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    const hud = dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload: unknown })
+      .filter((action) => action.type === 'hardwareConsole/actionHudShown')
+      .map((action) => action.payload);
+    expect(hud).toEqual([
+      [m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_one({ count: 1 })],
+    ]);
+  });
+
+  it('shows the single-candidate hint when the only stop is the active agent-less workspace', () => {
+    const state = makeState({
+      activeWorkspaceId: 'ws-2',
+      workspaces: ['ws-1', 'ws-2'],
+      agentsByWorkspace: { 'ws-1': { ids: ['a-1'], activeAgentId: null } },
+      unreadWorkspaceIds: ['ws-2'],
+    });
+    const { context, dispatch, navigate, showHint } = makeContext(state);
+    getActionKeyDefinition('cycle-unread-agents').execute(context);
+    expect(showHint).toHaveBeenCalledWith(
+      m.hardwareConsole_actionKey_noOtherUnreadAgents_message(),
+    );
+    expect(navigate).not.toHaveBeenCalled();
+    // Still re-requests hydration so the press converges the session cache
+    // even if the route-mount hydration failed.
+    expect(hydrateDispatches(dispatch)).toEqual([['ws-2']]);
+  });
+
+  it('resumes the walk when a workspace-level cursor hydrates before the next press', () => {
+    const before = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+    });
+    const definition = getActionKeyDefinition('cycle-unread-agents');
+    const first = makeContext(before);
+    definition.execute(first.context); // -> ws-1/a-1
+    definition.execute(first.context); // -> ws-2 workspace-level stop
+    expect(activeAgentDispatches(first.dispatch)).toEqual([['ws-1', 'a-1']]);
+    expect(hydrateDispatches(first.dispatch)).toEqual([['ws-2']]);
+
+    // ws-2 hydrates before the next press while still unread: its stop now
+    // keys by agent id, so the stored workspace-level cursor resumes from
+    // that workspace's stop instead of restarting the walk at ws-1.
+    const after = makeState({
+      workspaces: ['ws-1', 'ws-2', 'ws-3'],
+      agentsByWorkspace: {
+        'ws-1': { ids: ['a-1'], activeAgentId: null },
+        'ws-2': { ids: ['b-1'], activeAgentId: null },
+        'ws-3': { ids: ['c-1'], activeAgentId: null },
+      },
+      unreadWorkspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+    });
+    const second = makeContext(after);
+    definition.execute(second.context);
+    expect(activeAgentDispatches(second.dispatch)).toEqual([['ws-3', 'c-1']]);
   });
 });
 

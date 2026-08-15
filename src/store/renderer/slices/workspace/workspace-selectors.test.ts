@@ -5,8 +5,11 @@ import type { TaskStats } from "$shared/utils/task-stats";
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
 import { initialState, setWorkspaceEntity, workspaceReducer } from "./workspace-slice";
+import { initialState as daemonHealthInitialState } from "../daemon-health/daemon-health-slice";
 import {
+  selectIsWorkspaceHostLocal,
   selectWorkflowStage,
+  selectWorkspaceIsWaiting,
   selectWorkspaceProgressActions,
   selectWorkspaceProgressHeadline,
 } from "./workspace-selectors";
@@ -86,6 +89,84 @@ function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
     ...overrides,
   };
 }
+
+/**
+ * Build store state for locality tests: daemon locality via the BE-reported
+ * `hostLocality`, plus an optional workspace entity.
+ */
+function mockLocalityState(
+  hostLocality: "local" | "remote",
+  workspace?: Workspace,
+): StoreState {
+  return {
+    workspace: workspace
+      ? workspaceReducer(initialState, setWorkspaceEntity(workspace))
+      : initialState,
+    daemonHealth: { ...daemonHealthInitialState, hostLocality },
+  } as StoreState;
+}
+
+describe("selectIsWorkspaceHostLocal (monorepo#2171)", () => {
+  it("is true for a local workspace on a local daemon", () => {
+    const state = mockLocalityState("local", makeWorkspace());
+    expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(true);
+  });
+
+  it("is false for a remote workspace (environmentConfig.type === 'remote') on a local daemon", () => {
+    const state = mockLocalityState(
+      "local",
+      makeWorkspace({
+        environmentConfig: { type: "remote", ssh: { host: "example.com", user: "dev" } },
+      }),
+    );
+    expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false for a legacy isRemote workspace on a local daemon", () => {
+    const state = mockLocalityState("local", makeWorkspace({ isRemote: true }));
+    expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false for a local workspace on a remote daemon", () => {
+    const state = mockLocalityState("remote", makeWorkspace());
+    expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(false);
+  });
+
+  it("treats a missing workspace entity as local (optimistic default; remote workspaces always carry environmentConfig)", () => {
+    const state = mockLocalityState("local");
+    expect(selectIsWorkspaceHostLocal.select(state, WS_ID)).toBe(true);
+  });
+});
+
+describe("selectWorkspaceIsWaiting", () => {
+  function mockWaitingState(workspace?: Workspace): StoreState {
+    return {
+      workspace: workspace
+        ? workspaceReducer(initialState, setWorkspaceEntity(workspace))
+        : initialState,
+    } as StoreState;
+  }
+
+  it("is true when the daemon marked the workspace as waiting", () => {
+    const state = mockWaitingState(makeWorkspace({ waiting: true }));
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(true);
+  });
+
+  it("is false when waiting is false", () => {
+    const state = mockWaitingState(makeWorkspace({ waiting: false }));
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false when the field is absent (older daemons never send it)", () => {
+    const state = mockWaitingState(makeWorkspace());
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
+  });
+
+  it("is false for a missing workspace entity", () => {
+    const state = mockWaitingState();
+    expect(selectWorkspaceIsWaiting.select(state, WS_ID)).toBe(false);
+  });
+});
 
 describe("selectWorkflowStage", () => {
   it("returns 'loading' while git status loads with no cached PR or tasks", () => {

@@ -37,7 +37,6 @@
   import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { m } from '$shared/paraglide/messages.js';
-  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
   import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import { logger, createLogger } from '$lib/utils/client-logger';
@@ -76,7 +75,6 @@
     WorkspaceProgressInput,
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
-  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -87,9 +85,17 @@
     onAcceptChanges?: () => void;
     /** Column-mode action rendered to the right of the workspace kebab. */
     onCloseWorkspace?: (event: MouseEvent) => void;
+    /** Hides the kebab actions menu (e.g. while a sidebar card is expanded). */
+    hideActionsMenu?: boolean;
   }
 
-  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges, onCloseWorkspace }: Props = $props();
+  let {
+    workspaceId,
+    onOpenNote: _onOpenNote,
+    onAcceptChanges,
+    onCloseWorkspace,
+    hideActionsMenu = false,
+  }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -267,6 +273,11 @@
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
+  // Reset the menu when it hides (e.g. a sidebar card expands) so it never remounts open.
+  $effect(() => {
+    if (hideActionsMenu) dropdownOpen = false;
+  });
+
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const repositoryLabel = $derived(
@@ -385,7 +396,6 @@
           },
         },
       });
-      await navigateAfterWorkspaceRemoval($workspace.id);
     } else {
       toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
     }
@@ -861,6 +871,10 @@
   // First actionable descriptor for the full-mode workflow button. Actions that
   // require onAcceptChanges are hidden when no handler is provided.
   const displayAction = $derived($progressActions$.find((action) => action.url || onAcceptChanges));
+  const viewPullRequestAction = $derived(
+    displayAction?.id === 'view-pr' ? displayAction : undefined,
+  );
+  const workflowAction = $derived(displayAction?.id === 'view-pr' ? undefined : displayAction);
 </script>
 
 {#snippet sidebarToggleIconSnippet()}
@@ -883,13 +897,9 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            oninput={(e) => {
-              const target = e.currentTarget;
-              target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
-            }}
             class="text-xl font-semibold text-foreground bg-none
                py-0.5 rounded
-               outline-none min-w-20 w-full leading-normal
+               outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
             placeholder={m.workspace_links_untitled_label()}
@@ -915,55 +925,60 @@
       </div>
 
       <div class="flex shrink-0 -mt-0.5 -mr-2 items-center gap-0.5" data-workspace-header-actions>
-        <DropdownMenu bind:open={dropdownOpen}>
-          {#snippet trigger({ toggle }: { toggle: () => void })}
-            <Button
-              variant="ghost-light"
-              size="icon-sm"
-              aria-label="Workspace actions"
-              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
-              onclick={toggle}
-              disabled={isDeleting}
-            >
-              {#if isDeleting}
-                <div
-                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                ></div>
-              {:else}
-                <KebabIcon class="size-4" />
-              {/if}
-            </Button>
-          {/snippet}
+        {#if !hideActionsMenu}
+          <DropdownMenu bind:open={dropdownOpen}>
+            {#snippet trigger({ toggle }: { toggle: () => void })}
+              <Button
+                variant="ghost-light"
+                size="icon-sm"
+                data-workspace-actions-kebab
+                aria-label={m.workspace_progressCard_actions_ariaLabel()}
+                class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+                onclick={toggle}
+                disabled={isDeleting}
+              >
+                {#if isDeleting}
+                  <div
+                    class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
+                  ></div>
+                {:else}
+                  <KebabIcon class="size-4" />
+                {/if}
+              </Button>
+            {/snippet}
 
-          {#snippet content()}
-            <div class="w-48">
-              <WorkspaceActionsMenu
-                filePath={$workspace?.worktreePath ||
-                  $workspace?.repositoryPath ||
-                  $workspace?.path ||
-                  ''}
-                workspaceId={$workspace?.id || workspaceId || ''}
-                isDirectory={true}
-                isWorkspaceRoot={true}
-                onDelete={handleDelete}
-                onArchive={handleArchive}
-                onUnarchive={handleUnarchive}
-                {isArchived}
-                onClose={handleDropdownClose}
-                showDeleteOption={true}
-                showArchiveOption={true}
-                showFileNameCopy={false}
-                showFileActions={true}
-                additionalActions={[sidebarToggleAction, sidebarSideAction]}
-              />
-            </div>
-          {/snippet}
-        </DropdownMenu>
+            {#snippet content()}
+              <div class="w-48">
+                <WorkspaceActionsMenu
+                  filePath={$workspace?.worktreePath ||
+                    $workspace?.repositoryPath ||
+                    $workspace?.path ||
+                    ''}
+                  workspaceId={$workspace?.id || workspaceId || ''}
+                  isDirectory={true}
+                  isWorkspaceRoot={true}
+                  onDelete={handleDelete}
+                  onArchive={handleArchive}
+                  onUnarchive={handleUnarchive}
+                  {isArchived}
+                  onClose={handleDropdownClose}
+                  showDeleteOption={true}
+                  showArchiveOption={true}
+                  showFileNameCopy={false}
+                  showFileActions={true}
+                  additionalActions={[sidebarToggleAction, sidebarSideAction]}
+                />
+              </div>
+            {/snippet}
+          </DropdownMenu>
+        {/if}
         {#if onCloseWorkspace}
           <Button
             variant="ghost-light"
             size="icon-sm"
-            aria-label={`Close workspace ${workspaceId}`}
+            aria-label={m.workspace_progressCard_closeWorkspace_ariaLabel({
+              id: workspaceId ?? '',
+            })}
             data-workspace-close
             class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
             onpointerdown={(event) => event.stopPropagation()}
@@ -988,6 +1003,7 @@
         contentClass="border-0!"
         contentContainerClass="p-0! space-y-0!"
         showArrow={false}
+        interactive
         class={`h-5 min-w-0 cursor-copy items-center overflow-hidden border-none bg-transparent p-0 text-left font-inherit text-muted-foreground outline-none hover:underline focus:outline-none focus-visible:outline-none ${$workspace?.branch ? 'shrink' : 'flex-1'}`}
         bind:open={repoTooltipOpen}
         onOpenChange={handleRepoTooltipOpenChange}
@@ -1015,16 +1031,31 @@
               {#if copiedRepoPath}
                 <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                   <Fa icon={faCheck} size="xs" />
-                  Copied
+                  {m.workspace_progressCard_copied_label()}
                 </span>
               {/if}
             </div>
-            <p class="mt-1 truncate text-xs text-muted-foreground" title={workspacePath}>
-              {workspacePath}
-            </p>
-            <p class="mt-1 text-xs text-subtle">
-              {$workspace?.skipWorktree ? 'Direct checkout' : 'Worktree'}
-            </p>
+            {#if workspacePath}
+              <Button
+                variant="plain"
+                class="mt-1 h-auto w-full min-w-0 cursor-copy justify-start rounded-none text-xs font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+                title={workspacePath}
+                aria-label={m.workspace_progressCard_copyPath_ariaLabel()}
+                onclick={copyRepoPath}
+                data-sidebar-repository-path-copy
+              >
+                <span class="block min-w-0 truncate">{workspacePath}</span>
+              </Button>
+            {/if}
+            {#if $workspace?.checkoutMode}
+              <div class="mt-1.5 border-t border-border/50 pt-1.5">
+                <CheckoutModePill
+                  workspace={$workspace}
+                  presentation="repository"
+                  repositoryOpen={repoTooltipOpen}
+                />
+              </div>
+            {/if}
           </div>
         {/snippet}
       </TooltipRich>
@@ -1038,7 +1069,7 @@
           contentClass="border-0!"
           contentContainerClass="p-0! space-y-0!"
           showArrow={false}
-          class="h-5 min-w-0 shrink cursor-copy items-center justify-start gap-0.5 overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+          class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
           bind:open={branchTooltipOpen}
           onOpenChange={handleBranchTooltipOpenChange}
           disableCloseOnTriggerClick
@@ -1046,14 +1077,10 @@
         >
           {#snippet trigger()}
             <span
-              class="grid size-4 shrink-0 place-items-center text-muted-foreground"
-              data-sidebar-branch-icon
+              class="min-w-0 flex-1 truncate"
               data-sidebar-branch-control
-              aria-hidden="true"
+              data-sidebar-branch-label
             >
-              <GitBranchIcon size={16} class="block size-4" />
-            </span>
-            <span class="min-w-0 flex-1 truncate" data-sidebar-branch-label>
               {$workspace.branch}
             </span>
           {/snippet}
@@ -1069,25 +1096,18 @@
                 {#if copiedBranchName}
                   <span class="flex shrink-0 items-center gap-1 text-xs text-success">
                     <Fa icon={faCheck} size="xs" />
-                    Copied
+                    {m.workspace_progressCard_copied_label()}
                   </span>
                 {/if}
               </div>
-              <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                {#if $workspace.baseRef}
-                  <span class="min-w-0 truncate">Base {$workspace.baseRef}</span>
-                  <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
-                {/if}
-                <span class="shrink-0">
-                  {$workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
-                </span>
-              </div>
+              {#if $workspace.baseRef}
+                <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                  {m.workspace_progressCard_base_label({ ref: $workspace.baseRef })}
+                </p>
+              {/if}
             </div>
           {/snippet}
         </TooltipRich>
-      {/if}
-      {#if $workspace?.checkoutMode}
-        <CheckoutModePill workspace={$workspace} />
       {/if}
     </div>
   </div>
@@ -1106,8 +1126,8 @@
       </div>
     {/if}
     <!-- Workflow action button (styled like AI-assisted action prompts) -->
-    {#if displayAction}
-      {@const action = displayAction}
+    {#if workflowAction}
+      {@const action = workflowAction}
       <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
         {#if action}
           <div class="mt-1">
@@ -1221,6 +1241,23 @@
             {currentStatusMessage}
           </button>
         {/if}
+      </div>
+    {/if}
+
+    {#if viewPullRequestAction}
+      {@const action = viewPullRequestAction}
+      <div class="flex-1 w-full" data-workspace-view-pr>
+        <Tooltip content={action.tooltip} side="bottom" align="start" disabled={!action.tooltip}>
+          <Button
+            variant="ghost-light"
+            size="xs"
+            class="w-full text-left justify-start px-0!"
+            onclick={() => runProgressAction(action)}
+          >
+            <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+            <span class="underline decoration-dotted underline-offset-2">{action.label}</span>
+          </Button>
+        </Tooltip>
       </div>
     {/if}
 

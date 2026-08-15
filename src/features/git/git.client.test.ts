@@ -48,6 +48,19 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     expect(result).toEqual({ ok: false, error: 'daemon unavailable' });
   });
 
+  it('getStatus forwards gitRootId when supplied and omits it when empty (v6.15)', async () => {
+    mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
+    await gitClient.getStatus(wsId, { gitRootId: 'root-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('git.status', {
+      workspaceId: wsId,
+      gitRootId: 'root-1',
+    });
+
+    mockedRequest.mockResolvedValueOnce({ branch: 'main', files: [] });
+    await gitClient.getStatus(wsId, { gitRootId: '' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.status', { workspaceId: wsId });
+  });
+
   it('stageFiles forwards git.stage with explicit paths', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true, paths: ['a.ts', 'b.ts'] });
 
@@ -86,7 +99,7 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     if (result.ok) expect(result.data.hash).toBe('abc1234');
   });
 
-  it('getHistory forwards git.commits with limit and unwraps the items page', async () => {
+  it('getHistory forwards git.commits with limit and returns the items page envelope', async () => {
     const items = [
       {
         hash: 'aaaa111',
@@ -103,7 +116,8 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     const result = await gitClient.getHistory(wsId, 5);
 
     expect(mockedRequest).toHaveBeenCalledWith('git.commits', { workspaceId: wsId, limit: 5 });
-    expect(result).toEqual({ ok: true, data: items });
+    // A null wire nextToken (last page) folds to an absent field.
+    expect(result).toEqual({ ok: true, data: { items } });
   });
 
   it('getHistory omits limit when not provided and folds errors', async () => {
@@ -114,6 +128,35 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const failed = await gitClient.getHistory(wsId);
     expect(failed).toEqual({ ok: false, error: 'boom' });
+  });
+
+  it('getHistory forwards gitRootId alongside limit (v6.15)', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: [], nextToken: null });
+
+    await gitClient.getHistory(wsId, 30, { gitRootId: 'root-1' });
+
+    expect(mockedRequest).toHaveBeenCalledWith('git.commits', {
+      workspaceId: wsId,
+      limit: 30,
+      gitRootId: 'root-1',
+    });
+  });
+
+  it('getHistory forwards nextToken and surfaces the returned nextToken', async () => {
+    mockedRequest.mockResolvedValueOnce({ items: [], nextToken: 'page-3' });
+
+    const result = await gitClient.getHistory(wsId, 30, {
+      gitRootId: 'root-1',
+      nextToken: 'page-2',
+    });
+
+    expect(mockedRequest).toHaveBeenCalledWith('git.commits', {
+      workspaceId: wsId,
+      limit: 30,
+      gitRootId: 'root-1',
+      nextToken: 'page-2',
+    });
+    expect(result).toEqual({ ok: true, data: { items: [], nextToken: 'page-3' } });
   });
 
   it('showFile forwards git.showFile and unwraps { content }', async () => {

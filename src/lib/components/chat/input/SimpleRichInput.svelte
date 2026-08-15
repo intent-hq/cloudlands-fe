@@ -22,6 +22,8 @@
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   import { agentClient } from '$features/agent/agent.client';
+  import { reconcileAgentReasoningEffort } from '$features/agent/reasoning-effort';
+  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
 
   import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -54,7 +56,6 @@
   import Button from '../../ui/button/button.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
-  import EffortPicker from './EffortPicker.svelte';
   import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import AttachmentPreview from '../AttachmentPreview.svelte';
@@ -148,6 +149,13 @@
     editorClassName?: string;
     /** Override the horizontal inset applied to context rows and the action bar. */
     contentInsetClassName?: string;
+    /**
+     * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
+     * target): the container's own drag handlers and drop overlay are disabled
+     * so drag events bubble up, and the parent forwards dropped files via
+     * `handleDroppedFiles()`.
+     */
+    externalDropTarget?: boolean;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -168,6 +176,7 @@
   import { hasBlockingAttachments, type ContextItem } from './context-api';
   import {
     extractPlacementErrorDetail,
+    isPlacementCancellation,
     placeAttachmentViaTransport,
   } from './attachment-placement';
   import { cn } from '$lib/utils';
@@ -203,6 +212,7 @@
     edgeDocked = false,
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
+    externalDropTarget = false,
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -680,6 +690,13 @@
       if (!result.ok || !result.data.success) {
         throw new Error(result.ok ? result.data.error : result.error);
       }
+      const supportedEfforts = selectModelEffortLevels.select(appStore.state, newModel);
+      await reconcileAgentReasoningEffort(
+        agentId,
+        workspace.id,
+        previousSession?.reasoningEffort,
+        supportedEfforts,
+      );
       onmodelChange?.(newModel);
     } catch (error) {
       logger.error('Failed to switch agent provider via model change', {
@@ -721,7 +738,17 @@
     }
   }
 
+  /**
+   * In-flight placement cancellers keyed by context-item id. Removing an
+   * attachment mid-upload aborts the transfer (and the daemon-side staged
+   * session) instead of letting it commit after the pill disappeared.
+   * Transient UI-only state — never Redux.
+   */
+  const placementAborters = new Map<string, AbortController>();
+
   function removeContextItem(id: string) {
+    placementAborters.get(id)?.abort();
+    placementAborters.delete(id);
     contextItems = contextItems.filter((item) => item.id !== id);
     oncontextRemove?.(id);
   }
@@ -875,6 +902,14 @@
     await processImageFiles(Array.from(files));
   }
 
+  // Export for parents that own the drop target (externalDropTarget, e.g.
+  // ChatPanel's full-panel drop zone) — forwards dropped files into the same
+  // attach pipeline as a direct drop on the input.
+  export async function handleDroppedFiles(files: File[]) {
+    if (files.length === 0) return;
+    await processImageFiles(files);
+  }
+
   // Handle clipboard paste for files (images and non-images alike)
   async function handlePaste(e: ClipboardEvent) {
     const items = e.clipboardData?.items;
@@ -997,8 +1032,9 @@
         : file.name;
 
     const sourcePath =
-      (window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } })
-        .electronAPI?.getPathForFile?.(file) ?? '';
+      (
+        window as unknown as { electronAPI?: { getPathForFile?: (f: File) => string } }
+      ).electronAPI?.getPathForFile?.(file) ?? '';
 
     const mimeType = file.type || undefined;
     const itemId = `attachment-pending-${Date.now()}-${fileName}`;
@@ -1049,15 +1085,28 @@
       return;
     }
 
-    patchItem({ placementStatus: 'placing', placementError: undefined });
+    patchItem({
+      placementStatus: 'placing',
+      placementError: undefined,
+      placementProgress: undefined,
+    });
+    const aborter = new AbortController();
+    placementAborters.set(itemId, aborter);
     try {
-      const result = await placeAttachmentViaTransport(workspace.id, item.label, {
-        sourcePath: item.sourcePath,
-        mimeType: item.attachmentMimeType,
-      });
+      const result = await placeAttachmentViaTransport(
+        workspace.id,
+        item.label,
+        {
+          sourcePath: item.sourcePath,
+          mimeType: item.attachmentMimeType,
+        },
+        (fraction) => patchItem({ placementProgress: fraction }),
+        aborter.signal,
+      );
 
       patchItem({
         placementStatus: 'placed',
+        placementProgress: undefined,
         label: result.fileName,
         path: result.path,
         attachmentId: result.attachmentId,
@@ -1073,14 +1122,26 @@
       });
       toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
+      if (isPlacementCancellation(error, aborter.signal)) {
+        // User removed the attachment mid-upload — the item is already gone
+        // and the daemon session was aborted; no failure UI.
+        logger.debug('Attachment placement cancelled', { fileName: item.label });
+        return;
+      }
       logger.error('Failed to place attachment', { fileName: item.label, error });
       const detail = extractPlacementErrorDetail(error);
-      patchItem({ placementStatus: 'failed', placementError: detail });
+      patchItem({
+        placementStatus: 'failed',
+        placementError: detail,
+        placementProgress: undefined,
+      });
       toast.error(
         detail
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
           : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
       );
+    } finally {
+      placementAborters.delete(itemId);
     }
   }
 
@@ -1280,10 +1341,10 @@
   style={isAutoExpand
     ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
     : `height: ${containerHeight}px;`}
-  ondragenter={handleDragEnter}
-  ondragleave={handleDragLeave}
-  ondragover={handleDragOver}
-  ondrop={handleDrop}
+  ondragenter={externalDropTarget ? undefined : handleDragEnter}
+  ondragleave={externalDropTarget ? undefined : handleDragLeave}
+  ondragover={externalDropTarget ? undefined : handleDragOver}
+  ondrop={externalDropTarget ? undefined : handleDrop}
   onpaste={handlePaste}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
@@ -1354,6 +1415,7 @@
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
             placementStatus={item.placementStatus}
+            placementProgress={item.placementProgress}
             placementError={item.placementError}
             onRetry={(id) => void runPlacement(id)}
             variant="chip"
@@ -1466,7 +1528,7 @@
     class="action-bar flex items-center justify-between pb-1.5 pr-1.5! pt-0 text-muted-foreground transition-opacity duration-150 {contentInsetClasses}"
     data-chat-input-action-bar
   >
-    <div class="flex items-center gap-1 min-w-0" data-chat-input-primary-actions>
+    <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
@@ -1480,6 +1542,8 @@
         {agentId}
         portal
         updateGlobalStore
+        showReasoning
+        reasoningDisabled={disabled}
         onModelChange={(newModel) => {
           if (!newModel) return;
 
@@ -1499,10 +1563,6 @@
         }}
       />
 
-      <!-- Reasoning effort indicator + slider popover; renders only when the
-           session's model advertises effort levels. -->
-      <EffortPicker {agentId} workspaceId={workspace?.id} {disabled} />
-
       <!-- Context picker stays mounted for its popover API; its trigger lives in the action menu. -->
       <ContextPickerButton
         bind:this={contextPickerRef}
@@ -1516,7 +1576,9 @@
         onInsertMention={(mention) => tiptap?.insertMention(mention)}
         renderTrigger={false}
       />
+    </div>
 
+    <div class="flex items-center gap-1 min-w-0 shrink-0" data-chat-input-submit-actions>
       <div class="relative inline-block">
         <Menu.Root>
           <Menu.Trigger>
@@ -1533,12 +1595,10 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent groups={promptActionGroups} align="start" side="top" class="w-52" />
+          <Menu.StackedContent groups={promptActionGroups} align="end" side="top" class="w-52" />
         </Menu.Root>
       </div>
-    </div>
 
-    <div class="flex items-center gap-px min-w-0 shrink-0" data-chat-input-submit-actions>
       {#if micTranscribing}
         <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
           <Button
@@ -1638,7 +1698,7 @@
           <div class="absolute top-0.5 right-0.5">
             <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
               <Button variant="ghost-light" size="xs" onclick={() => oncancel?.()}>
-                <Fa icon={faXmark} class="mr-1" size="sm" />
+                <Fa icon={faXmark} size="sm" />
               </Button>
             </TooltipShortcut>
           </div>
@@ -1650,11 +1710,11 @@
             <Button
               variant="ghost-light"
               size="icon-sm"
-              aria-label="Save and resend"
+              aria-label={m.chat_richInput_saveAndResend_label()}
               onclick={handleSubmit}
               disabled={disabled || inputLocked || !canSend || isEnhancing}
             >
-              <Fa icon={faArrowRight} class="mr-1" size="sm" />
+              <Fa icon={faArrowRight} size="sm" />
             </Button>
           </TooltipShortcut>
         </div>

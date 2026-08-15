@@ -31,7 +31,6 @@
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
-  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
@@ -48,7 +47,10 @@
     openAgentTabRequested,
     openTerminalTabRequested,
   } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { resetOnboarding } from '$store/renderer/slices/onboarding/onboarding-slice';
+  import {
+    resetOnboarding,
+    setOnboardingFullFlowRequested,
+  } from '$store/renderer/slices/onboarding/onboarding-slice';
   import {
     setShowCreateModal,
     setStatsOverlayOpen,
@@ -74,7 +76,8 @@
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
-  import { COMMAND_PALETTE_COMMANDS as commands } from './command-palette-commands';
+  import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectCurrentChanges } from '$store/renderer/slices/changes/changes-selectors';
@@ -87,6 +90,8 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
+  import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { toggleWorkspaceViewModeWithTransition } from '$features/workspace/workspace-view-mode-action';
 
   const logger = createLogger('CommandPalette');
 
@@ -114,14 +119,12 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
+  const workspaceViewMode$ = selectWorkspaceViewMode();
+  let commands = $derived(COMMAND_PALETTE_COMMANDS($workspaceViewMode$));
   const currentChanges$ = selectCurrentChanges();
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
   const browserRecentUrls$ = selectBrowserRecentUrls(workspaceIdStore);
-  // The palette lives outside +layout.svelte's {#key $resolvedLocale$} block,
-  // so the terminal-loading effect below must track the locale itself to
-  // refresh localized metadata titles after a runtime language switch.
-  const resolvedLocale$ = selectResolvedLocale();
   let selectedIndex = $state(0);
   let searchResults: any[] = $state([]);
   const paletteMruEntries$ = selectPaletteMruEntries();
@@ -209,8 +212,8 @@
       description: `+${c.stats.additions || 0} -${c.stats.deletions || 0}`,
       icon: faCodeBranch,
       path: c.relativePath,
-      timestamp: new Date(c.attribution.timestamp).getTime(),
-      _time: formatRelativeTime(new Date(c.attribution.timestamp).toISOString()),
+      timestamp: c.attribution.timestamp || 0,
+      _time: formatRelativeTime(c.attribution.timestamp),
     }));
   });
   let terminals: WorkspaceObject[] = $state([]);
@@ -268,11 +271,11 @@
   // FILTER_PREFIXES, and WorkspaceObject types are now imported from
   // '$store/renderer/slices/command-palette/command-palette-utils'
 
-  // Load workspace objects when workspace or locale changes (terminal metadata
-  // titles are localized at read time, so a runtime language switch must re-run
-  // this — the palette is mounted outside the layout's {#key $resolvedLocale$}).
+  // Load workspace objects when the workspace changes. Terminal metadata
+  // titles are localized at read time; a runtime language switch remounts the
+  // palette via the root +layout.svelte {#key $resolvedLocale$} block, which
+  // re-runs this effect, so no explicit locale tracking is needed here.
   $effect(() => {
-    void $resolvedLocale$;
     if (!workspaceId) {
       untrack(() => {
         terminals = [];
@@ -778,6 +781,9 @@
         }
         return true;
       case 'show-onboarding':
+        // Explicit restart: request the full flow so OnboardingPage's
+        // initial-step decision never skips ahead on setup state.
+        appStore.dispatch(setOnboardingFullFlowRequested(true));
         appStore.dispatch(resetOnboarding());
         goto('/workspace/new');
         return true;
@@ -795,6 +801,9 @@
         return true;
       case 'open-usage-stats':
         appStore.dispatch(setStatsOverlayOpen(true));
+        return true;
+      case 'workspace-view-mode':
+        void toggleWorkspaceViewModeWithTransition();
         return true;
       default:
         return true;
@@ -1034,6 +1043,12 @@
                   <div class="flex-none mt-0.5">
                     <AuggieAvatar agentId={item.id} size={18} />
                   </div>
+                {:else if item.navigationIcon}
+                  <IntentNavigationIcon
+                    name={item.navigationIcon}
+                    size={16}
+                    class="text-ghost flex-none mt-0.5"
+                  />
                 {:else}
                   <Fa icon={item.icon} class="text-[15px] text-foreground/25 flex-none mt-0.5" />
                 {/if}

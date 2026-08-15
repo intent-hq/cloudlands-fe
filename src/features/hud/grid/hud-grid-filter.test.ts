@@ -18,6 +18,7 @@ function makeCard(overrides: Partial<HudWorkspaceCard>): HudWorkspaceCard {
     attention: null,
     statusMessage: null,
     prNumber: null,
+    keySlot: null,
     tasks: { total: 0, completed: 0, inProgress: 0 },
     tokens: 0,
     agents: [],

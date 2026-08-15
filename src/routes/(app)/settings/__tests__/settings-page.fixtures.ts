@@ -211,6 +211,42 @@ export const SETTINGS_PROTOCOL_FIXTURES = {
       },
     },
   },
+  // The budget's `max` is the daemon's detected total physical memory, so it
+  // varies per machine; the fixture pins the shape, not a constant the FE is
+  // allowed to assume (48 GB here — deliberately not a value worth hardcoding).
+  memoryBudgetMb: {
+    request: { method: 'settings.get', params: { path: 'agents.memoryBudgetMb' } },
+    response: {
+      path: 'agents.memoryBudgetMb',
+      value: 0,
+      definition: {
+        path: 'agents.memoryBudgetMb',
+        label: 'Agent memory budget (MB)',
+        description: '',
+        category: 'agents',
+        type: 'number',
+        min: 0,
+        max: 49152,
+        defaultValue: 0,
+      },
+    },
+  },
+  idleReapMinutes: {
+    request: { method: 'settings.get', params: { path: 'agents.idleReapMinutes' } },
+    response: {
+      path: 'agents.idleReapMinutes',
+      value: 10,
+      definition: {
+        path: 'agents.idleReapMinutes',
+        label: 'Idle reap minutes',
+        description: '',
+        category: 'agents',
+        type: 'number',
+        min: 0,
+        defaultValue: 10,
+      },
+    },
+  },
   resetMaxConcurrent: {
     request: { method: 'settings.reset', params: { path: 'agents.maxConcurrent' } },
     response: { path: 'agents.maxConcurrent', value: 0 },

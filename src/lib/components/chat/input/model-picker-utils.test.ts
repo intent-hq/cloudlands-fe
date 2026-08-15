@@ -20,6 +20,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 import {
+  collapseCodexEffortModels,
   findModelFallbackOption,
   isUserProviderSettled,
   normalizeModelIdForMatch,
@@ -40,6 +41,64 @@ describe('normalizeModelIdForMatch', () => {
 
   it('preserves an explicit different provider', () => {
     expect(normalizeModelIdForMatch('codex:gpt5.6-sol', 'auggie')).toBe('codex:gpt5.6-sol');
+  });
+});
+
+describe('collapseCodexEffortModels', () => {
+  it('collapses live-shaped Codex effort rows to one base model', () => {
+    const result = collapseCodexEffortModels([
+      {
+        value: 'codex:gpt-5.6-sol[LOW]',
+        label: 'GPT-5.6-Sol',
+        description: 'Low reasoning effort',
+        effortLevels: ['low'],
+      },
+      {
+        value: 'codex:gpt-5.6-sol/medium',
+        label: 'GPT-5.6-Sol',
+        description: 'Codex model with balanced speed and intelligence',
+        effortLevels: ['medium'],
+      },
+      {
+        value: 'codex:gpt-5.6-sol:xhigh',
+        label: 'GPT-5.6-Sol',
+        description: 'Higher effort',
+        effortLevels: ['xhigh'],
+      },
+      {
+        value: 'codex:gpt-5.6-sol[ultra]',
+        label: 'GPT-5.6-Sol (Ultra)',
+        description: 'Ultra reasoning effort',
+        effortLevels: ['ultra', 'high', 'custom'],
+        isDefault: true,
+      },
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        value: 'codex:gpt-5.6-sol',
+        label: 'GPT-5.6-Sol',
+        description: 'Codex model with balanced speed and intelligence',
+        effortLevels: ['low', 'medium', 'high', 'xhigh', 'ultra', 'custom'],
+        isDefault: true,
+      }),
+    ]);
+  });
+
+  it('keeps the same base id isolated across providers', () => {
+    const result = collapseCodexEffortModels([
+      { value: 'codex:gpt-5.5[none]', label: 'GPT-5.5 (none)' },
+      { value: 'auggie:gpt-5.5[none]', label: 'Auggie GPT-5.5 (none)' },
+    ]);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        value: 'codex:gpt-5.5',
+        label: 'GPT-5.5',
+        effortLevels: ['none'],
+      }),
+      { value: 'auggie:gpt-5.5[none]', label: 'Auggie GPT-5.5 (none)' },
+    ]);
   });
 });
 

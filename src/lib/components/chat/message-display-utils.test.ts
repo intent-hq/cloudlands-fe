@@ -3,6 +3,7 @@ import type { AgentMessage, ContentBlock } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import {
   isQuestionOnlyContent,
+  resolveFinishReasonNotice,
   resolveStoppedIndicatorLabel,
   shouldShowStoppedIndicator,
 } from './message-display-utils';
@@ -166,10 +167,54 @@ describe('resolveStoppedIndicatorLabel', () => {
     );
   });
 
+  it('resolves system-suspend', () => {
+    expect(resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'system_suspend' }))).toEqual(
+      { kind: 'system-suspend' },
+    );
+  });
+
   it('resolves generic stopped for an unknown future reason', () => {
     expect(
       resolveStoppedIndicatorLabel(interrupted({ interruptReason: 'some_future_reason' })),
     ).toEqual({ kind: 'stopped' });
+  });
+});
+
+// Abnormal-finish notices (PROTOCOL §7.3 `metadata.finishReason`): refusal and
+// token/turn-limit endings resolve to notice descriptors; normal completions,
+// absent metadata, and unknown future reasons resolve to no notice.
+describe('resolveFinishReasonNotice', () => {
+  const finished = (finishReason?: unknown) =>
+    assistant({ metadata: finishReason === undefined ? {} : { finishReason: finishReason as string } });
+
+  it('resolves refusal', () => {
+    expect(resolveFinishReasonNotice(finished('refusal'))).toEqual({ kind: 'refusal' });
+  });
+
+  it('resolves max-tokens for max_tokens', () => {
+    expect(resolveFinishReasonNotice(finished('max_tokens'))).toEqual({ kind: 'max-tokens' });
+  });
+
+  it('resolves max-tokens for max_turn_requests (shared limit wording)', () => {
+    expect(resolveFinishReasonNotice(finished('max_turn_requests'))).toEqual({
+      kind: 'max-tokens',
+    });
+  });
+
+  it('returns undefined when finishReason is absent', () => {
+    expect(resolveFinishReasonNotice(finished())).toBeUndefined();
+  });
+
+  it('returns undefined for an undefined message', () => {
+    expect(resolveFinishReasonNotice(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for an unknown future reason (open union)', () => {
+    expect(resolveFinishReasonNotice(finished('some_future_reason'))).toBeUndefined();
+  });
+
+  it('returns undefined for a normal end_turn completion', () => {
+    expect(resolveFinishReasonNotice(finished('end_turn'))).toBeUndefined();
   });
 });
 

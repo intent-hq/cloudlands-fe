@@ -1,4 +1,11 @@
-name: Release Beta
+# Tag builds publish to the rolling *alpha* channel: every v*.*.* tag builds
+# the desktop app and publishes an immutable versioned release plus the
+# rolling 'alpha' release on intent-hq/cloudlands-releases. The rolling
+# 'beta' release is NOT touched by tag builds — beta is a promotion of an
+# existing versioned release via promote-beta.yml (and stable via
+# release-stable.yml). The file name is historical: tag builds used to
+# publish straight to beta.
+name: Release Alpha
 
 on:
   push:
@@ -214,7 +221,7 @@ jobs:
 
       # Drop build output left by a previous run so the artifact upload can't
       # pick up stale files (no-op on this ephemeral hosted runner; kept for
-      # parity with the Windows job and the still self-hosted Linux legs).
+      # parity with the Windows job and the still self-hosted Linux x64 leg).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
@@ -385,7 +392,7 @@ jobs:
       # Drop build output left by a previous run so the artifact upload
       # can't pick up stale files (no-op on this ephemeral hosted runner;
       # kept for parity with the macOS job and the still self-hosted Linux
-      # legs).
+      # x64 leg).
       - name: Clean previous build output
         shell: bash
         run: rm -rf dist-electron
@@ -457,31 +464,33 @@ jobs:
           # passing at 8192 earlier the same day; the bundle sits right at
           # that limit), while 12288 (run 30764745052) and later 10240 plus
           # node/vite overhead trip the OS OOM killer. tinybox has the RAM
-          # for the same 12288 cap as the other self-hosted legs. Fall back
-          # to a hosted runner only if it offers well over 16 GB.
+          # for the same 12288 cap as the arm64 leg's 32 GB hosted runner.
+          # Fall back to a hosted runner only if it offers well over 16 GB.
           - arch: x64
             runner: [self-hosted, Linux, X64, tinybox]
             intentd_target: x86_64-unknown-linux-musl
             targets: AppImage:x64 deb:x64
             node_heap: 12288
-          # arm64 builds natively on the self-hosted arm64 Linux runner. If it
-          # is unavailable, fall back to cross-building by switching `runner`
-          # to ubuntu-latest — INTENTD_TARGET is set explicitly below, so the
-          # staged intentd matches the package arch regardless of the host.
+          # arm64 builds natively on the gh-linux-arm64-8x org larger runner
+          # (GH-hosted, 8-core/32 GB ARM64). The 32 GB class is deliberate:
+          # 16 GB machines OS-OOM-killed this bundle (monorepo#1340), so a
+          # standard hosted runner is not a viable fallback. INTENTD_TARGET
+          # is set explicitly below, so the staged intentd matches the
+          # package arch regardless of the host.
           #
-          # TEMPORARY: arm64 ships AppImage-only. electron-builder's bundled
-          # fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) fails to spawn on the
-          # self-hosted runner (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code
-          # null), killing the deb target. Restore deb:arm64 once the runner
-          # is fixed. Refs intent-hq/monorepo#1286.
+          # deb:arm64 is restored on the hosted runner: electron-builder's
+          # bundled fpm (fpm-1.17.0-ruby-3.4.3-linux-arm64v8) failed to spawn
+          # only on the previous self-hosted arm64 runner
+          # (ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, exit code null). Refs
+          # intent-hq/monorepo#1286.
           # node_heap: the arm64 leg OOM'd at the old 8192 cap in the v2.13.0
           # run even with sourcemaps disabled — committed heap hit ~8.2 GB
           # ("Ineffective mark-compacts near heap limit", monorepo#1340) — and
-          # the self-hosted runner has the RAM for 12288.
+          # the 32 GB runner has the RAM for 12288.
           - arch: arm64
-            runner: [self-hosted, Linux, ARM64, comfy]
+            runner: gh-linux-arm64-8x
             intentd_target: aarch64-unknown-linux-musl
-            targets: AppImage:arm64
+            targets: AppImage:arm64 deb:arm64
             node_heap: 12288
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -526,20 +535,19 @@ jobs:
           INTENTD_TARGET: ${{ matrix.intentd_target }}
         run: node scripts/fetch-sidecar.cjs
 
-      # The self-hosted runners are non-ephemeral; drop build output left by
-      # a previous run so the artifact upload can't pick up stale files
-      # (no-op on ephemeral hosted runners).
+      # The self-hosted x64 runner is non-ephemeral; drop build output left
+      # by a previous run so the artifact upload can't pick up stale files
+      # (no-op on the ephemeral hosted arm64 runner).
       - name: Clean previous build output
         run: rm -rf dist-electron
 
       # electron-builder's bundled fpm builds the deb by shelling out to host
       # tools — `ar` (binutils), tar, and xz (electron-builder defaults deb
       # compression to xz, so fpm produces data.tar.xz via tar/xz) —
-      # preinstalled on ubuntu-latest but not guaranteed on a bare
+      # preinstalled on GH-hosted images but not guaranteed on a bare
       # self-hosted box. Fail fast with a clear message instead of a cryptic
       # fpm error mid-package. AppImage needs no system packages
-      # (app-builder is self-contained — the arm64 leg already builds
-      # AppImages on self-hosted with no extra setup).
+      # (app-builder is self-contained).
       - name: Verify deb packaging prerequisites
         if: contains(matrix.targets, 'deb')
         run: |
@@ -548,7 +556,7 @@ jobs:
             command -v "$TOOL" >/dev/null 2>&1 || MISSING="${MISSING:+$MISSING, }$TOOL"
           done
           if [ -n "$MISSING" ]; then
-            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner (labels: self-hosted, Linux, X64, tinybox)."
+            echo "::error::Missing tool(s) required by fpm for the deb target: ${MISSING}. Install binutils/tar/xz-utils on this runner."
             exit 1
           fi
           echo "deb packaging prerequisites present (ar, tar, xz)"
@@ -563,8 +571,7 @@ jobs:
       # electron-builder.yml's per-target arch lists, so each matrix job built
       # BOTH arches — and the cross-arch package embedded this job's (wrong
       # -arch) staged sidecar. CLI targets fully override the config's target
-      # list; the per-arch list lives in matrix.targets (arm64 is temporarily
-      # AppImage-only, see the matrix comment). The maintainer override
+      # list; the per-arch list lives in matrix.targets. The maintainer override
       # backfills the deb Maintainer field for dispatch rebuilds of tags whose
       # checked-out package.json author still lacks an email (fixed on main;
       # both were first exercised by the v2.12.0 rebuild, run 30714120208,
@@ -576,8 +583,9 @@ jobs:
           -c.linux.maintainer='Intent HQ <intent-hq@users.noreply.github.com>'
         env:
           # Per-arch heap cap — see the matrix node_heap comments: 12288 on
-          # both self-hosted legs now that x64 is off the 16 GB hosted
-          # runner (monorepo#1340).
+          # both legs — self-hosted tinybox (x64) and the 32 GB
+          # gh-linux-arm64-8x hosted runner (arm64); 16 GB machines can't
+          # hold this bundle (monorepo#1340).
           NODE_OPTIONS: '--max-old-space-size=${{ matrix.node_heap }}'
           # Sourcemap generation multiplies rollup's peak heap past the
           # cap (same OOM as monorepo#1074; both Linux legs died at ~7.6 GB in
@@ -848,31 +856,31 @@ jobs:
             dist-electron/latest-linux-arm64.yml \
             release-manifest.json
 
-      - name: Publish to GitHub Releases (rolling beta tag)
+      - name: Publish to GitHub Releases (rolling alpha tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
-          # Ensure the rolling 'beta' release tag exists
-          if ! gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
-            echo "Creating rolling 'beta' release tag"
-            gh release create beta \
+          # Ensure the rolling 'alpha' release tag exists
+          if ! gh release view alpha --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "Creating rolling 'alpha' release tag"
+            gh release create alpha \
               --repo intent-hq/cloudlands-releases \
-              --title "Intent Beta Channel (Rolling)" \
-              --notes "Rolling beta channel - always points to the latest beta release. Auto-updater uses this." \
+              --title "Intent Alpha Channel (Rolling)" \
+              --notes "Rolling alpha channel - always points to the latest tagged release. Auto-updater uses this." \
               --draft=false \
               --prerelease
           fi
 
           # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
-          echo "Cleaning up old assets from rolling beta release"
-          gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+          echo "Cleaning up old assets from rolling alpha release"
+          gh release view alpha --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
             echo "Deleting old asset: $asset"
-            gh release delete-asset beta "$asset" --repo intent-hq/cloudlands-releases --yes || true
+            gh release delete-asset alpha "$asset" --repo intent-hq/cloudlands-releases --yes || true
           done
 
           # Upload new artifacts
-          gh release upload beta --repo intent-hq/cloudlands-releases \
+          gh release upload alpha --repo intent-hq/cloudlands-releases \
             dist-electron/*.dmg \
             dist-electron/*.zip \
             dist-electron/*.exe \
@@ -884,23 +892,23 @@ jobs:
             dist-electron/latest-linux.yml \
             dist-electron/latest-linux-arm64.yml
 
-          # Update beta release body to match versioned release notes
-          gh release edit beta --repo intent-hq/cloudlands-releases \
+          # Update alpha release body to match versioned release notes
+          gh release edit alpha --repo intent-hq/cloudlands-releases \
             --notes-file release-notes.md
 
-      # Re-stamps published_at on the rolling beta release (GitHub renders its
+      # Re-stamps published_at on the rolling alpha release (GitHub renders its
       # "released N ago" from that field, which otherwise sticks at first
       # publication) by toggling draft on→off via the REST API. Reading state
       # and entering draft are fail-soft — the refresh is cosmetic and must
       # never block a release — but once the release is drafted its download
       # URLs (auto-updater feeds) 404, so the un-draft retries with backoff
       # and fails the job loudly if the release is left drafted.
-      - name: Refresh published date on rolling beta release
+      - name: Refresh published date on rolling alpha release
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           REPO=intent-hq/cloudlands-releases
-          TAG=beta
+          TAG=alpha
 
           # Read current state so the un-draft re-applies it (re-publishing
           # defaults make_latest to true; prereleases can never be latest)
@@ -947,18 +955,24 @@ jobs:
           echo "::error::Rolling '${TAG}' release is stuck in draft after ${MAX_RETRIES} attempts - its download URLs 404 until re-published. Fix manually: gh api -X PATCH repos/${REPO}/releases/${RELEASE_ID} -F draft=false -F prerelease=${PRERELEASE} -f make_latest=${MAKE_LATEST}"
           exit 1
 
-      # Comments on the intent-hq/monorepo issues fixed in this release. Fail-soft:
-      # skips with a warning when MONOREPO_ISSUES_TOKEN is absent, and never blocks
-      # the release (continue-on-error). The marker check inside the script makes
+      # Comments on the intent-hq/monorepo issues whose fix is fully delivered
+      # by this release: the script scans both the fe range and the bundled
+      # intentd delta, then gates each candidate on cross-repo completeness
+      # (every linked fix PR merged and contained in the released fe tag /
+      # bundled intentd tag). Fail-soft: skips with a warning when
+      # MONOREPO_ISSUES_TOKEN is absent, and never blocks the release
+      # (continue-on-error). The marker check inside the script makes
       # workflow_dispatch rebuilds of an existing tag no-ops (no duplicate comments).
       - name: Notify fixed monorepo issues
         continue-on-error: true
         env:
           ISSUES_GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}
+          INTENTD_GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.resolve.outputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_PIN: ${{ steps.intentd_pin.outputs.version }}
+          INTENTD_BASE: ${{ steps.prev_intentd.outputs.version }}
         run: |
           if [ -z "$ISSUES_GH_TOKEN" ]; then
             echo "::warning::MONOREPO_ISSUES_TOKEN secret is not set; skipping issue notifications"
@@ -985,8 +999,8 @@ jobs:
           # (authoritative); fall back to the intentd.version pin
           BUNDLED_INTENTD=$(jq -r '.intentdVersion // empty' release-manifest.json 2>/dev/null || echo "")
           BUNDLED_INTENTD="${BUNDLED_INTENTD:-$INTENTD_PIN}"
-          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" beta \
-            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}"
+          ./scripts/notify-fixed-issues.sh cloudlands-fe "${VERSION}" \
+            "${PREV_FE_TAG}" "v${VERSION}" "${BUNDLED_INTENTD}" "${INTENTD_BASE}"
 
       - name: Post summary
         env:
@@ -999,22 +1013,22 @@ jobs:
           EXE_FILE=$(find dist-electron -maxdepth 1 -name "*Setup*.exe" -exec basename {} \; -quit)
           APPIMAGE_X64=$(find dist-electron -maxdepth 1 -name "*.AppImage" ! -name "*arm64*" -exec basename {} \; -quit)
           APPIMAGE_ARM64=$(find dist-electron -maxdepth 1 -name "*arm64*.AppImage" -exec basename {} \; -quit)
-          BETA_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/beta"
+          ALPHA_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/alpha"
           {
-            echo "## Beta Release"
+            echo "## Alpha Release"
             echo ""
             echo "**Version:** v$VERSION"
             echo "**Tag:** \`v$VERSION\`"
-            echo "**Channel:** beta"
+            echo "**Channel:** alpha"
             echo ""
             echo "### Download URLs"
-            echo "- [Apple Silicon Mac (DMG)]($BETA_URL/$(encode "$DMG_FILE"))"
-            echo "- [Windows x64 installer (EXE, unsigned)]($BETA_URL/$(encode "$EXE_FILE"))"
-            echo "- [Linux x64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_X64"))"
-            echo "- [Linux arm64 (AppImage)]($BETA_URL/$(encode "$APPIMAGE_ARM64"))"
-            echo "- Auto-updater feeds: [latest-mac.yml]($BETA_URL/latest-mac.yml), [latest.yml]($BETA_URL/latest.yml), [latest-linux.yml]($BETA_URL/latest-linux.yml), [latest-linux-arm64.yml]($BETA_URL/latest-linux-arm64.yml)"
+            echo "- [Apple Silicon Mac (DMG)]($ALPHA_URL/$(encode "$DMG_FILE"))"
+            echo "- [Windows x64 installer (EXE, unsigned)]($ALPHA_URL/$(encode "$EXE_FILE"))"
+            echo "- [Linux x64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_X64"))"
+            echo "- [Linux arm64 (AppImage)]($ALPHA_URL/$(encode "$APPIMAGE_ARM64"))"
+            echo "- Auto-updater feeds: [latest-mac.yml]($ALPHA_URL/latest-mac.yml), [latest.yml]($ALPHA_URL/latest.yml), [latest-linux.yml]($ALPHA_URL/latest-linux.yml), [latest-linux-arm64.yml]($ALPHA_URL/latest-linux-arm64.yml)"
             echo ""
             echo "### Releases"
             echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"
-            echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
+            echo "- [Rolling alpha channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/alpha)"
           } >> "$GITHUB_STEP_SUMMARY"

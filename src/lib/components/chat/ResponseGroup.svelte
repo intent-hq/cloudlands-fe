@@ -9,15 +9,24 @@
 <script lang="ts">
   import { cubicOut } from 'svelte/easing';
   import Fa from 'svelte-fa';
-  import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { Snippet } from 'svelte';
   import { onDestroy } from 'svelte';
-  import { classifyTool, CATEGORY_ICONS, type ToolCategory } from './tool-classifier';
   import type { ContentBlock, ToolUseBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import CylinderScroller from './CylinderScroller.svelte';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { getResponseGroupPreviewBlock } from './response-group-blocks';
+  import { faArrowsInLineVertical } from '$lib/icons/phosphor-icons';
+  import {
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    OPERATIONAL_ICON_BOX_CLASS,
+    OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_PRIMARY_CLASS,
+    OPERATIONAL_ROW_LINE_CLASS,
+    OPERATIONAL_SECONDARY_CLASS,
+    OPERATIONAL_ROW_TONE_CLASS,
+    OPERATIONAL_SUMMARY_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     name: string;
@@ -49,6 +58,8 @@
   let showCylinder = $state(isLast && !isStreaming);
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
+  const instanceId = $props.id();
+  const detailsId = `response-group-details-${instanceId}`;
   // Tracks a manual collapse so the streaming-end effect doesn't force the
   // last group back to fully expanded (non-reactive by design).
   let userCollapsed = false;
@@ -143,28 +154,6 @@
     if (!isExpanded) showCylinder = isLast || isStreaming;
   }
 
-  // Compute stats from blocks
-  const stats = $derived.by(() => {
-    if (!blocks || blocks.length === 0)
-      return { toolCalls: 0, agents: 0, icons: [] as IconDefinition[] };
-
-    let toolCalls = 0;
-    let agents = 0;
-    const categorySet = new Set<ToolCategory>();
-
-    for (const block of blocks) {
-      if (block.type === 'tool_use') {
-        toolCalls++;
-        const display = classifyTool(block.name || '', (block.input as Record<string, any>) || {});
-        categorySet.add(display.category);
-        if (display.category === 'agent') agents++;
-      }
-    }
-
-    const icons = [...categorySet].map((cat) => CATEGORY_ICONS[cat]).filter(Boolean);
-    return { toolCalls, agents, icons };
-  });
-
   // Custom collapse transition that reads the element's CURRENT offsetHeight
   // (constrained by the cylinder) instead of the full content height.
   function collapseFromCurrent(node: HTMLElement, { duration = 300, easing = cubicOut } = {}) {
@@ -218,34 +207,37 @@
   const previewText = $derived(previewBlock ? getContentBlockText(previewBlock) : '');
 </script>
 
-<div class={className}>
+<div class="min-w-0 max-w-full overflow-hidden {className}">
   <button
     type="button"
-    class="type-caption flex w-full cursor-pointer items-center gap-2.5 rounded-md border-none py-1 text-left text-muted-foreground/60 transition-colors duration-[var(--motion-fast)] hover:text-muted-foreground focus-visible:text-muted-foreground"
+    class="{OPERATIONAL_ROW_TONE_CLASS} {OPERATIONAL_ROW_LINE_CLASS} cursor-pointer rounded-md border-none bg-transparent text-left focus-visible:outline-none"
+    data-operational-disclosure-row
     onclick={toggle}
     aria-expanded={isExpanded}
+    aria-controls={detailsId}
   >
+    <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
+      <Fa icon={faArrowsInLineVertical} size={14} class={OPERATIONAL_ICON_CLASS} />
+    </span>
     <!-- Name and snippet share one line box so their text baselines coincide;
          a flex sibling with `truncate` (overflow: hidden) would synthesize its
          baseline from the box edge and sit visibly raised. -->
-    <span class="min-w-0 truncate">
-      <span class="text-foreground">{name}</span>{#if textSnippet && !isExpanded}<span
-          class="ml-2.5 text-muted-foreground">{textSnippet}</span
+    <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="response-group-summary">
+      <span class="font-medium {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
+        >{name}</span
+      >{#if textSnippet && !isExpanded}<span
+          class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
+          data-testid="response-group-snippet">{textSnippet}</span
         >{/if}
     </span>
-    <div class="ml-auto flex shrink-0 items-center gap-1.5 opacity-30">
-      {#each stats.icons.slice(0, 5) as icon, i (icon)}
-        <span class="icon-animate-in" style="animation-delay: {i * 50}ms">
-          <Fa {icon} size={10} />
-        </span>
-      {/each}
-    </div>
   </button>
 
   {#if isExpanded || showCylinder}
     <div
       bind:this={contentEl}
-      class="border-l border-muted-foreground/10 pl-4.5"
+      id={detailsId}
+      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} border-l border-muted-foreground/10 pl-4.5"
+      data-operational-expanded-content
       out:collapseFromCurrent={{ duration: 300 }}
     >
       <CylinderScroller isActive={isStreaming && !isExpanded} constrained={!isExpanded}>

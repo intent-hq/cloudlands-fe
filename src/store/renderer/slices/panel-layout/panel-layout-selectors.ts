@@ -6,8 +6,14 @@
 
 import { store } from '../../store';
 import { emptyWorkspaceState } from './panel-layout-slice';
-import { countHorizontalPanelColumns } from './panel-layout-tabless';
-import { getAutomaticPanelCanvasWidth } from '../../../../shared/panel-layout-sizing';
+import {
+  countHorizontalPanelColumns,
+  getAutomaticPanelLayoutCanvasWidth,
+  getHorizontalPanelColumnDefaultWidthTiers,
+  getHorizontalPanelColumnDefaultWidths,
+} from './panel-layout-tabless';
+import { panelTabsAreEquivalent } from './panel-tab-identity';
+import type { PanelDefaultWidthTier } from '../../../../shared/panel-layout-sizing';
 import type {
   WorkspacePanelLayoutState,
   PanelLayoutNode,
@@ -33,6 +39,62 @@ export const selectPanelLayoutWorkspace = store.createSelector<
   WorkspacePanelLayoutState
 >((state, wsId) => state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState);
 
+export const selectPendingPanelReveal = store.createSelector((state, wsId: string) => {
+  const workspace = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  return workspace.pendingPanelReveal ?? null;
+});
+
+export const selectPanelRevealRequestsByWorkspaceId = store.createSelector((state) =>
+  Object.fromEntries(
+    Object.entries(state.panelLayout.byWorkspaceId).flatMap(([workspaceId, layout]) =>
+      layout.pendingPanelReveal ? [[workspaceId, layout.pendingPanelReveal]] : [],
+    ),
+  ),
+);
+
+export type PanelTabIdentityRequest = Pick<PanelTab, 'type'> &
+  Partial<Omit<PanelTab, 'id' | 'type'>>;
+
+export interface PanelTabOpenState {
+  count: number;
+  isOpen: boolean;
+  isActive: boolean;
+  isOpenElsewhere: boolean;
+}
+
+const closedPanelTabState: PanelTabOpenState = {
+  count: 0,
+  isOpen: false,
+  isActive: false,
+  isOpenElsewhere: false,
+};
+
+export function getPanelTabOpenState(
+  tabs: PanelTab[],
+  activeTab: PanelTab | null | undefined,
+  workspaceId: string,
+  requested: PanelTabIdentityRequest,
+): PanelTabOpenState {
+  if (requested.workspaceId && requested.workspaceId !== workspaceId) return closedPanelTabState;
+  const identity = requested as Omit<PanelTab, 'id'>;
+  const matches = tabs.filter(
+    (tab) =>
+      (!tab.workspaceId || tab.workspaceId === workspaceId) &&
+      panelTabsAreEquivalent(tab, identity),
+  );
+  if (matches.length === 0) return closedPanelTabState;
+  const isActive =
+    !!activeTab &&
+    (!activeTab.workspaceId || activeTab.workspaceId === workspaceId) &&
+    panelTabsAreEquivalent(activeTab, identity);
+  return {
+    count: matches.length,
+    isOpen: true,
+    isActive,
+    isOpenElsewhere: !isActive,
+  };
+}
+
 // ============================================================================
 // Layout Tree
 // ============================================================================
@@ -40,6 +102,11 @@ export const selectPanelLayoutWorkspace = store.createSelector<
 /** Select the root layout node */
 export const selectPanelLayoutRoot = store.createSelector<[wsId: string], PanelLayoutNode>(
   (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).root,
+);
+
+/** Select the session-only panel whose rendered width owns the live remainder. */
+export const selectExpandedPanelId = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).expandedPanelId,
 );
 
 /** Select all panels */
@@ -142,12 +209,36 @@ export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state)
   );
 });
 
+export const selectPanelColumnDefaultWidthsByWorkspaceId = store.createSelector((state) => {
+  return Object.fromEntries(
+    Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
+      workspaceId,
+      getHorizontalPanelColumnDefaultWidths(layout.root, layout.panels),
+    ]),
+  );
+});
+
+export const selectPanelColumnDefaultWidthTiers = store.createSelector<
+  [wsId: string],
+  PanelDefaultWidthTier[]
+>((state, wsId) => {
+  const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+  return getHorizontalPanelColumnDefaultWidthTiers(layout.root, layout.panels);
+});
+
+export const selectPanelColumnDefaultWidths = store.createSelector<[wsId: string], number[]>(
+  (state, wsId) => {
+    const layout = state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+    return getHorizontalPanelColumnDefaultWidths(layout.root, layout.panels);
+  },
+);
+
 export const selectPanelCanvasWidthsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
     Object.entries(state.panelLayout.byWorkspaceId).map(([workspaceId, layout]) => [
       workspaceId,
       layout.canvasWidth ??
-        getAutomaticPanelCanvasWidth(countHorizontalPanelColumns(layout.root), 'content'),
+        getAutomaticPanelLayoutCanvasWidth(layout.root, layout.panels, 'content'),
     ]),
   );
 });
@@ -159,6 +250,13 @@ export const selectPanelCanvasWidthsByWorkspaceId = store.createSelector((state)
  */
 export const selectPanelCanvasWidth = store.createSelector<[wsId: string], number | null>(
   (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).canvasWidth,
+);
+
+export const selectPanelCanvasWidthSource = store.createSelector<
+  [wsId: string],
+  WorkspacePanelLayoutState['canvasWidthSource']
+>(
+  (state, wsId) => (state.panelLayout.byWorkspaceId[wsId] ?? emptyWorkspaceState).canvasWidthSource,
 );
 
 /** Select the horizontal column count for one mounted layout scope. */

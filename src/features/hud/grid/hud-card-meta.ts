@@ -57,11 +57,18 @@ export function cardStateLabel(stateKey: HudCardStateKey): string {
       return m.hud_card_stateBlocked_label();
     case 'failed':
       return m.hud_card_stateFailed_label();
-    case 'unread':
-      return m.hud_card_stateUnread_label();
     case 'idle':
       return m.hud_card_stateIdle_label();
   }
+}
+
+/**
+ * Dimmed `/ WAITING` status-line suffix rendered after the state label when
+ * the orthogonal `workspace.waiting` flag is set (any state, including
+ * IN PROGRESS). Styling (muted-foreground) lives in HudWorkspaceCard.
+ */
+export function cardWaitingSuffixLabel(): string {
+  return m.hud_card_stateWaitingSuffix_label();
 }
 
 /** Card accent color for a state key (mock `wsMeta.c`) — canonical table. */
@@ -74,8 +81,6 @@ export function cardStateColor(stateKey: HudCardStateKey): string {
     case 'pr_ready':
     case 'pr_open':
       return HUD_STATE_COLORS.pr;
-    case 'unread':
-      return HUD_STATE_COLORS.unread;
     case 'pr_merged':
       return HUD_STATE_COLORS.prMerged;
     case 'wait':

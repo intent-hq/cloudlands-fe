@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * "+ Add model option" rows for the specialist editor (PROTOCOL §5.11
-   * `modelOptions`): each row is a ModelPicker + effort dropdown + free-text
+   * `modelOptions`): each row is a ModelPicker + free-text
    * hint + remove button. Rows without a picked model are local drafts — they
    * are never committed; a commit fires when a row gains a model, a hint blurs
    * or the effort changes on a committed row, or a committed row is removed.
@@ -15,7 +15,6 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import { m } from '$shared/paraglide/messages.js';
-  import EffortSelect from './EffortSelect.svelte';
   import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -154,14 +153,11 @@
           defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
           variant="default"
           size="sm"
+          showReasoning
+          reasoningEffort={row.reasoningEffort ?? null}
+          onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
         />
       </div>
-      <EffortSelect
-        model={row.model || undefined}
-        value={row.reasoningEffort}
-        onChange={(effort) => handleEffortChange(index, effort)}
-        testId={`option-effort-${index}`}
-      />
       <input
         type="text"
         value={row.hint}

@@ -336,6 +336,62 @@ describe('status forwarder', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Switch serialization (monorepo#2221): switchBackend invocations queue behind
+// a module-level promise-chain mutex, so overlapping switches can never
+// interleave across the orchestration's await points.
+// ---------------------------------------------------------------------------
+
+describe('switchBackend serialization', () => {
+  it('runs overlapping switches strictly sequentially', async () => {
+    const mod = await loadModule();
+    // Park the first switch at its window-teardown await point.
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((r) => (releaseFirst = r));
+    const captureAndClose = vi.fn(async () => {
+      if (captureAndClose.mock.calls.length === 1) await gate;
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+    const first = mod.switchBackend('remote-1');
+    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+    const second = mod.switchBackend('local');
+
+    // The queued switch makes no progress while the first is still in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(captureAndClose).toHaveBeenCalledTimes(1);
+    expect(store.setActiveId).not.toHaveBeenCalled();
+
+    releaseFirst();
+    await expect(first).resolves.toEqual({ activeId: 'remote-1' });
+    await expect(second).resolves.toEqual({ activeId: 'local' });
+
+    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'local']);
+    // Strict client lifecycle: switch 1 builds+starts its client, then switch 2
+    // disposes it before building its own — never interleaved.
+    expect(lifecycle.events.map((e) => e.type)).toEqual([
+      'construct',
+      'start',
+      'dispose',
+      'construct',
+      'start',
+    ]);
+    // The final switch targeted local, so no remote identity is pinned.
+    expect(mod.isRemoteBackendActive()).toBe(false);
+  });
+
+  it('a rejected switch does not block the switches queued behind it', async () => {
+    const mod = await loadModule();
+
+    const first = mod.switchBackend('unknown-id');
+    const second = mod.switchBackend('remote-1');
+
+    await expect(first).rejects.toThrow('Unknown or incomplete connection');
+    await expect(second).resolves.toEqual({ activeId: 'remote-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T22 review — "Start local intentd" recovery is atomic in main: switching to
 // local tears down every window (captureAndClose) before the switch resolves, so
 // the spawn MUST NOT depend on the initiating renderer surviving. switchToLocalAndSpawn
@@ -371,6 +427,54 @@ describe('switchToLocalAndSpawn — atomic recovery survives window teardown', (
       // ...yet the active backend flipped to local AND the sidecar spawn was
       // still initiated in main — recovery did not depend on the renderer.
       expect(store.setActiveId).toHaveBeenCalledWith('local');
+      expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(true);
+    } finally {
+      if (priorSocket === undefined) delete process.env.INTENTD_SOCKET;
+      else process.env.INTENTD_SOCKET = priorSocket;
+    }
+  });
+
+  it('decides the no-op switch inside the switch queue (monorepo#2228)', async () => {
+    // Stateful active-id so the in-flight switch's setActiveId is visible to
+    // the recovery's enqueued re-read.
+    let activeId = 'remote-1';
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
+    const priorSocket = process.env.INTENTD_SOCKET;
+    process.env.INTENTD_SOCKET = '/tmp/intent-switch-spawn-test.sock';
+    vi.mocked(spawnSidecarOnDemand).mockResolvedValue({
+      ok: true,
+      spawned: true,
+    } as unknown as Awaited<ReturnType<typeof spawnSidecarOnDemand>>);
+
+    try {
+      const mod = await loadModule();
+      // Park the user's own switch to local at its window-teardown await point.
+      let releaseSwitch!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
+      const captureAndClose = vi.fn(async () => {
+        if (captureAndClose.mock.calls.length === 1) await gate;
+      });
+      mod.__setBackendWindowHooksForTesting({ captureAndClose, restore: vi.fn(() => {}) });
+
+      const userSwitch = mod.switchBackend('local');
+      await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+      // Recovery kicks in while the user's switch is still in flight. A stale
+      // pre-queue read would see 'remote-1' and perform a redundant second
+      // switch-to-local (another full window teardown).
+      const recovery = mod.switchToLocalAndSpawn();
+
+      releaseSwitch();
+      await expect(userSwitch).resolves.toEqual({ activeId: 'local' });
+      const result = await recovery;
+
+      // The no-op decision ran AFTER the user's switch inside the queue:
+      // already local → no second teardown/switch, just the spawn.
+      expect(captureAndClose).toHaveBeenCalledTimes(1);
+      expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['local']);
       expect(spawnSidecarOnDemand).toHaveBeenCalledTimes(1);
       expect(result.ok).toBe(true);
     } finally {

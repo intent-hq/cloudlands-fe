@@ -20,6 +20,16 @@
   }
 
   /**
+   * Strip a leading `v` from a version string. system.status may report a
+   * v-prefixed version (the pin comparator accepts it), but the mismatch
+   * messages prepend their own `v` — without normalization a valid `v0.9.1`
+   * would render as `vv0.9.1`.
+   */
+  export function stripLeadingV(version: string): string {
+    return version.replace(/^v/, '');
+  }
+
+  /**
    * Display label for a remote connection (T14): prefer the captured hostname,
    * rendered as `hostname (host:port)` so the address stays visible for
    * reconnection, and fall back to the record's raw `label` (`host:port`) when
@@ -65,6 +75,7 @@
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
+    selectDaemonVersionComparison,
     selectUnslothStatus,
     selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
@@ -96,6 +107,7 @@
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
+  const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
   const connections$ = selectConnections();
@@ -122,6 +134,38 @@
     degraded: () => m.layout_daemonStatus_degraded_label(),
     down: () => m.layout_daemonStatus_down_label(),
   };
+
+  // Connected-daemon-vs-bundled-sidecar version mismatch: either direction
+  // ('older'/'newer') counts; 'equal'/'unknown'/missing sides do not.
+  const versionMismatch = $derived.by(() => {
+    const cmp = $versionComparison$;
+    return cmp && (cmp.comparison === 'older' || cmp.comparison === 'newer') ? cmp : null;
+  });
+
+  // A version mismatch turns an otherwise-healthy dot yellow; degraded
+  // (already yellow) and down (red) are unchanged.
+  const dotColorClass = $derived(
+    $health$ === 'healthy' && versionMismatch ? 'bg-yellow-500' : healthColors[$health$],
+  );
+
+  const triggerLabel = $derived(
+    $health$ === 'healthy' && versionMismatch
+      ? m.layout_daemonStatus_healthyVersionMismatch_label()
+      : healthLabels[$health$](),
+  );
+
+  const versionMismatchTooltip = $derived.by(() => {
+    if (!versionMismatch) return null;
+    // The i18n messages prepend "v" — strip any daemon-reported prefix so a
+    // valid v-prefixed version never renders as "vv0.9.1".
+    const params = {
+      daemonVersion: stripLeadingV(versionMismatch.daemonVersion),
+      pinnedVersion: stripLeadingV(versionMismatch.pinnedVersion),
+    };
+    return versionMismatch.comparison === 'older'
+      ? m.layout_daemonStatus_versionBehind_tooltip(params)
+      : m.layout_daemonStatus_versionAhead_tooltip(params);
+  });
 
   // Format uptime from seconds to human-readable string
   function formatUptime(seconds: number | undefined): string {
@@ -216,9 +260,7 @@
   // Trigger accessible name: includes the visible remote name when shown so
   // the label-in-name relationship holds (WCAG 2.5.3).
   const triggerAriaLabel = $derived(
-    activeRemoteName
-      ? `${healthLabels[$health$]()} — ${activeRemoteName}`
-      : healthLabels[$health$](),
+    activeRemoteName ? `${triggerLabel} — ${activeRemoteName}` : triggerLabel,
   );
 
   const stopUnslothDescription = $derived.by(() => {
@@ -324,7 +366,7 @@
   {#snippet trigger({ toggle }: { toggle: () => void })}
     <Tooltip side="bottom">
       {#snippet content()}
-        <span>{healthLabels[$health$]()}</span>
+        <span>{triggerLabel}</span>
       {/snippet}
       <button
         onclick={toggle}
@@ -337,7 +379,7 @@
         {#if activeRemoteName}
           <span class="text-xs text-subtle truncate max-w-32">{activeRemoteName}</span>
         {/if}
-        <div class={cn('w-2 h-2 rounded-full shrink-0', healthColors[$health$])}></div>
+        <div class={cn('w-2 h-2 rounded-full shrink-0', dotColorClass)}></div>
       </button>
     </Tooltip>
   {/snippet}
@@ -402,10 +444,38 @@
 
             <!-- Version -->
             {#if $stats$.version}
-              <div class="flex justify-between text-xs">
-                <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
-                <span class="font-mono text-xs">{$stats$.version}</span>
-              </div>
+              {#if versionMismatchTooltip}
+                <Tooltip side="left" contentClass="z-[10001]" class="w-full">
+                  {#snippet content()}
+                    <span>{versionMismatchTooltip}</span>
+                  {/snippet}
+                  <div class="flex justify-between text-xs w-full">
+                    <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
+                    <span class="flex items-center gap-1.5">
+                      <!--
+                        Keyboard focus inside the menu is menu-managed (bits-ui
+                        closes on Tab; arrow keys visit only menu items), so the
+                        tooltip cannot open from keyboard focus here. Expose the
+                        full explanation as the icon's accessible name instead
+                        (role="img" so the span's aria-label is reliably mapped).
+                      -->
+                      <span
+                        class="text-yellow-600 dark:text-yellow-500"
+                        role="img"
+                        aria-label={versionMismatchTooltip}
+                      >
+                        <Fa icon={faTriangleExclamation} />
+                      </span>
+                      <span class="font-mono text-xs">{$stats$.version}</span>
+                    </span>
+                  </div>
+                </Tooltip>
+              {:else}
+                <div class="flex justify-between text-xs">
+                  <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
+                  <span class="font-mono text-xs">{$stats$.version}</span>
+                </div>
+              {/if}
             {/if}
 
             <!-- Protocol version -->
@@ -612,17 +682,29 @@
                       {#snippet content()}
                         <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
                       {/snippet}
+                      <!--
+                        Same aria-only pattern as the Version-row warning icon:
+                        the full explanation is the icon's accessible name, and
+                        it flows into this submenu trigger's name-from-contents
+                        so arrow-key navigation announces it with the row.
+                      -->
                       <span
                         class="text-yellow-600 dark:text-yellow-500"
-                        aria-label={m.layout_daemonStatus_protocolMismatch_ariaLabel()}
+                        role="img"
+                        aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
                       >
                         <Fa icon={faTriangleExclamation} />
                       </span>
                     </Tooltip>
                   {/if}
                   {#if isActive}
+                    <!--
+                      role="img" so the span's aria-label reliably maps to an
+                      accessible name (same treatment as the warning icons).
+                    -->
                     <span
                       class="text-green-500"
+                      role="img"
                       aria-label={m.layout_daemonStatus_connectionActive_label()}
                     >
                       <Fa icon={faCheck} />

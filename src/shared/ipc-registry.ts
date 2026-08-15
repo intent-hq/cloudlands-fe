@@ -248,6 +248,8 @@ export const IPC_CHANNELS = {
   // File Management
   FILE: {
     READ: 'file:read',
+    READ_CHUNK: 'file:read-chunk',
+    HASH: 'file:hash',
     WRITE: 'file:write',
     DELETE: 'file:delete',
     EXISTS: 'file:exists',
@@ -262,6 +264,8 @@ export const IPC_CHANNELS = {
     GET_GIT_STATUS: 'file:getGitStatus',
     GET_TREE_WITH_SIZES: 'file:getTreeWithSizes',
     GET_DIRECTORY_STATUS: 'file:getDirectoryStatus',
+    DOWNLOAD: 'file:download',
+    DOWNLOAD_ATTACHMENT: 'file:download-attachment',
   },
 
   // Notes Primitives (ws-block rendering)
@@ -474,6 +478,8 @@ export const IPC_CHANNELS = {
     UNREGISTER_TAB: 'browser:unregister-tab',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
+    /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */
+    RESOLVE_URL: 'browser:resolve-url',
     /** Focus a browser tab (bring to front) - main->renderer event */
     FOCUS_TAB: 'browser:focus-tab',
     /** Request browser tab list from renderer (main->renderer event) */
@@ -816,6 +822,12 @@ export const IPC_CHANNELS = {
     // both steps in main so recovery survives the window teardown.
     SWITCH_LOCAL_AND_SPAWN: 'backend:switch-local-and-spawn',
     GET_SIDECAR_RUN_LOG: 'backend:get-sidecar-run-log',
+    // Kill-and-restart recovery for an orphaned sidecar (#2444): the adopted
+    // daemon's executable lives inside our own bundle (leftover from a
+    // crashed/force-quit session). The handler re-verifies the classification,
+    // confirms with the user when agents are responding, stops the orphan
+    // (SIGTERM→SIGKILL) and spawns the bundled sidecar.
+    RESTART_ORPHANED_SIDECAR: 'backend:restart-orphaned-sidecar',
   },
 
   // Multi-backend connect: the "Connect to another intentd" registry.

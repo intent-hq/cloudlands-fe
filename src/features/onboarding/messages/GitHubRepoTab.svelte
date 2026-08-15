@@ -275,7 +275,7 @@
   <!-- GitHub URL input — the only control; the daemon owns the checkout location. -->
   <div class="flex items-stretch gap-2">
     <div
-      class="flex-1 flex items-center rounded-lg py-1 border border-border/50 bg-card/50 overflow-hidden"
+      class="flex-1 flex items-center rounded-lg py-1 border border-border/50 bg-card/50 overflow-hidden focus-within:border-ring"
     >
       <Fa icon={faGithub} class="ml-3 text-muted-foreground" />
       <!-- i18n-ignore (domain name prefix) -->

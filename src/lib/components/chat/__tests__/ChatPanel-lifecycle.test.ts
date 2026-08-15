@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => {
     resizeDisconnect: vi.fn(),
     resizeConstructor: vi.fn(),
     agentMessages: mutableReadable<unknown[]>([]),
+    animateMessageSend: vi.fn(),
+    createMessageSendLaunchBubble: vi.fn(),
     pendingQuestions: null as { messageId: string; questions: unknown[] } | null,
     selector,
   };
@@ -79,6 +81,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatStreamingStartTime: mocks.selector(null),
   selectTranscriptHydration: mocks.selector('settled'),
   selectTranscriptHydratedOnce: mocks.selector(true),
+  selectTranscriptSnapshotMeta: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: mocks.selector([]),
@@ -112,6 +115,13 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 vi.mock('$lib/utils/smartScroll', () => ({
   followBottom: () => ({ update: () => {}, destroy: () => {} }),
   scrollToBottom: vi.fn(),
+}));
+vi.mock('../message-send-transition', () => ({
+  captureMessageSendOrigin: () => ({ left: 0, top: 600, width: 320, borderRadius: '8px' }),
+  createMessageSendLaunchBubble: mocks.createMessageSendLaunchBubble,
+  animateMessageSend: mocks.animateMessageSend,
+  MESSAGE_SEND_MATCH_TIMEOUT_MS: 3000,
+  MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -224,6 +234,13 @@ beforeEach(() => {
     return action;
   });
   mocks.agentMessages.set([]);
+  mocks.animateMessageSend.mockResolvedValue(undefined);
+  mocks.createMessageSendLaunchBubble.mockImplementation(() => {
+    const bubble = document.createElement('div');
+    bubble.dataset.messageSendTransition = 'true';
+    document.body.append(bubble);
+    return bubble;
+  });
   mocks.pendingQuestions = null;
 });
 
@@ -337,6 +354,47 @@ describe('ChatPanel mounted lifecycle', () => {
     await vi.advanceTimersByTimeAsync(60);
 
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
+  });
+
+  it('expires an unclaimed send launch bubble at the bounded transition deadline', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'send without an optimistic transcript row' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
+    expect(bubble.isConnected).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(bubble.isConnected).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(bubble.isConnected).toBe(false);
+    expect(mocks.animateMessageSend).not.toHaveBeenCalled();
+  });
+
+  it('removes a pending send launch bubble when the panel is destroyed', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'pending handoff' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
+    expect(bubble.isConnected).toBe(true);
+
+    view.unmount();
+    expect(bubble.isConnected).toBe(false);
   });
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {
@@ -507,7 +565,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('cancels deferred setup when destroyed before container resources bind', async () => {
+  it('tears down container-owned prompt tracking when destroyed immediately', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -518,9 +576,29 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
     flushFrame();
 
-    expect(mocks.resizeConstructor).not.toHaveBeenCalled();
-    expect(mocks.resizeObserve).not.toHaveBeenCalled();
+    expect(mocks.resizeConstructor).toHaveBeenCalledOnce();
+    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
     expect(frames).toHaveLength(0);
+  });
+
+  it('keeps the hidden scroll-lock button out of hit-testing so it cannot flicker message actions', async () => {
+    // Regression: the scroll-lock button is fully transparent while locked at
+    // the bottom (`opacity-0!`) but used to stay hit-testable. It overlaps the
+    // last assistant message's bottom-right actions bar, so hover hit-tests
+    // oscillated between the invisible button (group-hover lost → bar hides)
+    // and the bar (group-hover held → bar shows), flickering the actions bar.
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.agentMessages.set([{ id: 'message-1' }]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    // distanceFromBottom starts at 0 → at bottom and locked → showLock state.
+    const lockButton = view.container.querySelector('[data-testid="chat-scroll-lock-button"]');
+    expect(lockButton).not.toBeNull();
+    expect(lockButton!.classList.contains('opacity-0!')).toBe(true);
+    expect(lockButton!.classList.contains('pointer-events-none')).toBe(true);
   });
 
   it('sets up and tears down sticky scroll tracking and resize observation normally', async () => {
@@ -534,7 +612,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const removeListener = vi.spyOn(scrollContainer, 'removeEventListener');
 
     flushFrame();
-    expect(addListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
+    expect(addListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1);
     expect(mocks.resizeObserve).toHaveBeenCalledWith(scrollContainer);
 
     scrollContainer.dispatchEvent(new Event('scroll'));
@@ -542,7 +620,7 @@ describe('ChatPanel mounted lifecycle', () => {
     view.unmount();
 
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
-    expect(mocks.resizeDisconnect).toHaveBeenCalledOnce();
+    expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
     expect(frames).toHaveLength(0);
   });
 });

@@ -23,7 +23,12 @@ import {
   selectFocusedPanelId,
   selectRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
+import { m } from '$shared/paraglide/messages.js';
+import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
+import { isWorkspaceViewModeRoute } from '$features/workspace/workspace-view-mode-action';
 
 export type WorkspaceTabDirection = 'next' | 'previous';
 
@@ -74,6 +79,7 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  toggleWorkspaceViewMode: () => void;
 }
 
 function navigateToSelectedWorkspace(
@@ -82,7 +88,9 @@ function navigateToSelectedWorkspace(
   navigate: (path: string) => unknown,
 ): string | null {
   const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
-  const nextPath = workspaceId ? `/workspace/${workspaceId}` : '/workspace/new';
+  const nextPath = workspaceId
+    ? `/workspace/${workspaceId}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(store.state));
   if (currentPath !== nextPath) navigate(nextPath);
   return workspaceId;
 }
@@ -261,23 +269,38 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  toggleWorkspaceViewMode,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
+  const workspaceViewModeChord = getShortcutChord('WORKSPACE_VIEW_MODE', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
 
-  register({ ...mod, key: 'n', global: true, description: 'New Space', action: openNewWorkspace });
+  register({
+    ...mod,
+    key: 'n',
+    global: true,
+    description: m.workspace_shortcuts_newSpace_description(),
+    action: openNewWorkspace,
+  });
+  register({
+    ...workspaceViewModeChord,
+    description: SHORTCUTS.WORKSPACE_VIEW_MODE.label,
+    ignoreRepeat: true,
+    enabled: () => isWorkspaceViewModeRoute(getCurrentPath()),
+    action: toggleWorkspaceViewMode,
+  });
   register({
     ...mod,
     key: 't',
     global: true,
-    description: 'New Panel',
+    description: m.workspace_shortcuts_newPanel_description(),
     action: withRoute((path) => openNewPanel(store, path)),
   });
   register({
     ...mod,
     key: 'w',
     global: true,
-    description: 'Close Panel, Tab, or Space',
+    description: m.workspace_shortcuts_closePanelTabOrSpace_description(),
     action: withRoute((path) => closePanelOrWorkspaceTab(store, path, navigate)),
   });
   register({
@@ -285,7 +308,7 @@ export function registerWorkspaceTabShortcuts({
     key: 't',
     shift: true,
     global: true,
-    description: 'Reopen Closed Tab or Space',
+    description: m.workspace_shortcuts_reopenClosedTabOrSpace_description(),
     action: withRoute((path) => reopenPanelOrWorkspaceTab(store, path, navigate)),
   });
 
@@ -298,7 +321,10 @@ export function registerWorkspaceTabShortcuts({
       ctrl: true,
       shift,
       global: true,
-      description: `${direction === 'next' ? 'Next' : 'Previous'} Space Tab`,
+      description:
+        direction === 'next'
+          ? m.workspace_shortcuts_nextSpaceTab_description()
+          : m.workspace_shortcuts_previousSpaceTab_description(),
       action: withRoute((path) => cycleWorkspaceTab(store, direction, path, navigate)),
     });
   }
@@ -308,7 +334,10 @@ export function registerWorkspaceTabShortcuts({
       ...mod,
       key: String(digit),
       global: true,
-      description: digit === 9 ? 'Select Last Space Tab' : `Select Space Tab ${digit}`,
+      description:
+        digit === 9
+          ? m.workspace_shortcuts_selectLastSpaceTab_description()
+          : m.workspace_shortcuts_selectSpaceTab_description({ digit }),
       action: withRoute((path) =>
         selectWorkspaceTabByPosition(store, digit === 9 ? 'last' : digit - 1, path, navigate),
       ),

@@ -9,7 +9,11 @@
     filterPickableSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
 
-  import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import {
+    selectAvailableModels,
+    selectModelEffortLevels,
+    selectSelectedModel,
+  } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
@@ -22,14 +26,17 @@
   import { parseCompoundModelId } from '$shared/utils/compound-model-id';
   import {
     selectEffectiveDefaultProviderId,
+    selectNormalizedProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectProviderModelsCacheEntry } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('InitialAgentPicker');
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -44,6 +51,7 @@
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
+  const availableModels$ = selectAvailableModels();
 
   interface Props {
     /** Selected specialist ID - null means blank agent */
@@ -52,6 +60,8 @@
     selectedModel?: string | undefined;
     /** Whether the user explicitly overrode the model (vs using specialist default) */
     modelWasOverridden?: boolean;
+    /** Explicit reasoning effort for the initial agent, or undefined to inherit */
+    selectedReasoningEffort?: string | undefined;
     /** Whether team work mode is selected (spec-writer orchestrates) */
     isTeamMode?: boolean;
     /** Selected provider ID (auto-selected from first available) */
@@ -60,6 +70,8 @@
     onSpecialistChange?: (specialistId: string | null) => void;
     /** Callback when model changes */
     onModelChange?: (model: string | undefined) => void;
+    /** Callback when reasoning effort changes */
+    onReasoningEffortChange?: (effort: string | undefined) => void;
     /** Callback when team mode changes */
     onTeamModeChange?: (isTeamMode: boolean) => void;
     /** Callback when provider changes (called when auto-selected) */
@@ -70,13 +82,45 @@
     selectedSpecialist = $bindable<string | null>('spec-writer'),
     selectedModel = $bindable<string | undefined>(undefined),
     modelWasOverridden = $bindable<boolean>(false),
+    selectedReasoningEffort = $bindable<string | undefined>(undefined),
     isTeamMode = $bindable<boolean>(true),
     selectedProvider = $bindable<string>($activeProviderId$ || $defaultProviderId$),
     onSpecialistChange,
     onModelChange,
+    onReasoningEffortChange,
     onTeamModeChange,
     onProviderChange,
   }: Props = $props();
+
+  function updateReasoningEffort(effort: string | undefined) {
+    if (selectedReasoningEffort === effort) return;
+    selectedReasoningEffort = effort;
+    onReasoningEffortChange?.(effort);
+  }
+
+  function reconcileReasoningEffort(model: string | undefined) {
+    void $availableModels$;
+    if (!selectedReasoningEffort || !model) return;
+    let levels = selectModelEffortLevels.select(appStore.state, model);
+    if (levels === undefined) {
+      const { providerId, modelId } = parseCompoundModelId(model, $defaultProviderId$);
+      const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+      const cachedModels = selectProviderModelsCacheEntry.select(
+        appStore.state,
+        normalizedProviderId,
+      )?.models;
+      levels = cachedModels?.find(
+        (row) => row.value === model || row.value === modelId,
+      )?.effortLevels;
+    }
+    if (levels === undefined) return;
+    if (!levels.includes(selectedReasoningEffort)) updateReasoningEffort(undefined);
+  }
+
+  function handleReasoningChange(effort: string | null) {
+    updateReasoningEffort(effort ?? undefined);
+    return true;
+  }
 
   // Provider availability state (for auto-selection only, no UI picker)
   let providerAvailability = $state<ProviderAvailabilityResult | null>(null);
@@ -172,6 +216,8 @@
         });
         selectedModel = undefined;
         modelWasOverridden = false;
+        onModelChange?.(undefined);
+        reconcileReasoningEffort(resolveEffectiveModel(selectedSpecialist));
       }
     }
   });
@@ -209,8 +255,12 @@
       // Custom specialist was deleted, reset to team mode
       isTeamMode = true;
       selectedSpecialist = 'spec-writer';
+      selectedModel = undefined;
+      modelWasOverridden = false;
       onTeamModeChange?.(true);
       onSpecialistChange?.('spec-writer');
+      onModelChange?.(undefined);
+      reconcileReasoningEffort(resolveEffectiveModel('spec-writer'));
     }
   });
 
@@ -272,6 +322,28 @@
 
   // Effective model for the single-agent card (based on displayedSpecialist to preserve across mode switches)
   const singleAgentModel = $derived.by(() => resolveEffectiveModel(displayedSpecialist));
+
+  const activeModelForReasoning = $derived(
+    modelWasOverridden && selectedModel
+      ? selectedModel
+      : isTeamMode
+        ? teamModeModel
+        : singleAgentModel,
+  );
+
+  // Keep the parent-owned effort valid as async default-model previews settle.
+  // For a non-default provider, wait for that provider's specialist preview so
+  // the fallback store view cannot clear a level the new default supports.
+  $effect(() => {
+    void $availableModels$;
+    if (!selectedReasoningEffort) return;
+    const defaultPreviewReady =
+      modelWasOverridden ||
+      !selectedSpecialist ||
+      selectedProvider === $defaultProviderId$ ||
+      selectedProvider in resolvedModelsByProvider;
+    if (defaultPreviewReady) reconcileReasoningEffort(activeModelForReasoning);
+  });
 
   // Clear stale model overrides restored from saved state.
   // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
@@ -372,6 +444,7 @@
       onModelChange?.(selectedModel);
       onProviderChange?.(selectedProvider);
     }
+    reconcileReasoningEffort(selectedModel ?? teamModeModel);
   }
 
   function selectSingleAgentMode() {
@@ -396,6 +469,7 @@
         onModelChange?.(selectedModel);
         onProviderChange?.(selectedProvider);
       }
+      reconcileReasoningEffort(selectedModel ?? singleAgentModel);
     }
     // If already in single-agent mode, do nothing (specialist dropdown handles changes)
   }
@@ -415,24 +489,30 @@
     }
     onTeamModeChange?.(false);
     onSpecialistChange?.(specialistId);
+    onModelChange?.(undefined);
+    reconcileReasoningEffort(resolveEffectiveModel(specialistId));
     specialistDropdownOpen = false;
   }
 
   function handleModelChange(model: string | undefined) {
-    selectedModel = model;
-    modelWasOverridden = true;
-    modelOverriddenThisSession = true;
+    const explicitModel = model || undefined;
+    selectedModel = explicitModel;
+    modelWasOverridden = !!explicitModel;
+    modelOverriddenThisSession = !!explicitModel;
 
     // Update provider to match the selected model's provider
-    if (model) {
-      const { providerId } = parseCompoundModelId(model, $defaultProviderId$);
+    if (explicitModel) {
+      const { providerId } = parseCompoundModelId(explicitModel, $defaultProviderId$);
       if (providerId !== selectedProvider) {
         selectedProvider = providerId;
         onProviderChange?.(providerId);
       }
     }
 
-    onModelChange?.(model);
+    reconcileReasoningEffort(
+      explicitModel ?? resolveEffectiveModel(isTeamMode ? selectedSpecialist : displayedSpecialist),
+    );
+    onModelChange?.(explicitModel);
   }
 
   async function openSpecialistSettings() {
@@ -475,6 +555,8 @@
     <div
       class="model-picker-row {isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={!isTeamMode}
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key teamModeModel}
@@ -483,12 +565,17 @@
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center rounded-md border border-border bg-background px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle"
+          showReasoning
+          reasoningEffort={selectedReasoningEffort ?? null}
+          onReasoningChange={handleReasoningChange}
           showManageLink={true}
           defaultModelId={teamModeModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
+          portal={false}
+          modalAware={true}
+          collisionBoundary="[data-model-picker-collision-boundary]"
         />
       {/key}
     </div>
@@ -625,6 +712,8 @@
     <div
       class="model-picker-row {!isTeamMode ? '' : 'opacity-0 pointer-events-none'}"
       inert={isTeamMode}
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => event.stopPropagation()}
     >
       <span class="text-sm text-subtle">{m.workspace_initialAgentPicker_using_before()}</span>
       {#key singleAgentModel}
@@ -633,12 +722,17 @@
           onModelChange={handleModelChange}
           variant="ghost-light"
           size="xs"
-          triggerClass="inline-flex items-center rounded-md border border-border bg-background px-1.5 py-0.5 cursor-pointer text-sm font-medium text-subtle"
+          showReasoning
+          reasoningEffort={selectedReasoningEffort ?? null}
+          onReasoningChange={handleReasoningChange}
           showManageLink={true}
           defaultModelId={singleAgentModel}
           defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
           noticeClass="basis-full w-full max-w-full mt-1.5"
           silentFallback
+          portal={false}
+          modalAware={true}
+          collisionBoundary="[data-model-picker-collision-boundary]"
         />
       {/key}
     </div>
@@ -666,7 +760,8 @@
 
   .agent-card:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ring) 40%, transparent);
+    border-color: var(--color-foreground);
+    background: color-mix(in srgb, var(--color-accent) 72%, var(--color-card));
   }
 
   .model-picker-row {
@@ -698,6 +793,12 @@
     background: var(--color-muted);
   }
 
+  .specialist-trigger:focus-visible {
+    outline: none;
+    border-color: var(--color-foreground);
+    background: var(--color-muted);
+  }
+
   .specialist-option {
     display: flex;
     align-items: center;
@@ -714,6 +815,24 @@
 
   .specialist-option:hover {
     background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 60%, transparent);
+  }
+
+  .specialist-option:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 75%, transparent);
+  }
+
+  @media (forced-colors: active) {
+    .agent-card:focus-visible,
+    .specialist-trigger:focus-visible {
+      border-color: Highlight;
+      background: Canvas;
+    }
+
+    .specialist-option:focus-visible {
+      background: Highlight;
+      color: HighlightText;
+    }
   }
 
   .specialist-option-selected {

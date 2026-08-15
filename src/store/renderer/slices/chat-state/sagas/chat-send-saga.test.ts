@@ -5,6 +5,7 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   queue: vi.fn(),
+  hydrateQueue: vi.fn(async () => undefined),
   sendQueuedNow: vi.fn(),
   removeQueued: vi.fn(),
   stop: vi.fn(),
@@ -24,8 +25,16 @@ vi.mock('$lib/client', () => ({
     },
   },
 }));
+// Partial mock: the real seq counter drives the guard, but the reconciling
+// hydrate is stubbed — the service dispatches to the configured appStore,
+// which is not initialized under this runSaga harness. Its behavior is
+// covered in agent-queue-read-service.test.ts / agent-send.test.ts.
+vi.mock('$features/agent/agent-queue-read-service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$features/agent/agent-queue-read-service')>()),
+  hydrateAgentQueue: mocks.hydrateQueue,
+}));
 
-import type { AgentSession, Workspace } from '$shared/types';
+import type { AgentSession, QueuedMessage, Workspace } from '$shared/types';
 import { AgentStatus, WorkspaceStatusEnum } from '$shared/types';
 import {
   agentSessionReducer,
@@ -39,7 +48,12 @@ import {
   agentQueueReducer,
   initialState as queueInitialState,
   removeQueuedMessageRequested,
+  replaceAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
+import {
+  __resetAgentQueueReadServiceForTests,
+  noteAgentQueueEventSnapshotApplied,
+} from '$features/agent/agent-queue-read-service';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   chatQueueProcessingReceived,
@@ -134,7 +148,10 @@ function harness(
 }
 
 describe('chatSendSaga', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    __resetAgentQueueReadServiceForTests();
+  });
 
   it('sends exact lifecycle options while processing same-agent work FIFO', async () => {
     let resolveFirst!: () => void;
@@ -150,6 +167,7 @@ describe('chatSendSaga', () => {
       sendMessage(AGENT, {
         wsId: WS,
         text: ' first ',
+        userAppMessageId: 'app-message-first',
         forceSubmit: true,
         imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
         noteIds: ['note-1'],
@@ -167,6 +185,7 @@ describe('chatSendSaga', () => {
       {
         imageBlocks: [{ type: 'image', data: 'abc', mimeType: 'image/png' }],
         noteIds: ['note-1'],
+        userAppMessageId: 'app-message-first',
         priority: 'interrupt',
       },
     );
@@ -239,6 +258,7 @@ describe('chatSendSaga', () => {
         imageBlocks: undefined,
         noteIds: undefined,
         messageMetadata: undefined,
+        userAppMessageId: undefined,
         priority: undefined,
       },
     );
@@ -410,6 +430,73 @@ describe('chatSendSaga', () => {
         'turn-queued',
       ),
     );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('skips the queue-on-send seed when a live agent:queue:updated snapshot superseded the queue RPC (monorepo#2481)', async () => {
+    // The daemon delivered the queued entry and emitted an EMPTY
+    // agent:queue:updated snapshot while the agent.queueMessage response was
+    // still in flight — seeding from the stale echo would re-add the row.
+    const supersededQueuedMessage: QueuedMessage = {
+      id: 'queued-superseded',
+      content: 'later',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-superseded',
+    };
+    mocks.queue.mockImplementation(async () => {
+      noteAgentQueueEventSnapshotApplied(AGENT);
+      return {
+        success: true,
+        turnId: 'turn-superseded',
+        queuedMessage: supersededQueuedMessage,
+      };
+    });
+    const run = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
+    await settle();
+    await settle();
+
+    // The turn-scoped retry record is still parked (cleaned by
+    // agent:queue:processing) — only the queue seed is guarded.
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
+    );
+    expect(
+      run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type),
+    ).toBe(false);
+    // The guard trip must be followed by a reconciling hydrate: client-side
+    // apply order cannot rank the superseding snapshot against the echo, so
+    // the daemon's true queue is re-read instead of trusting either side
+    // (monorepo#2486 review).
+    expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('seeds the queue mirror from the queue RPC echo when no live snapshot intervened', async () => {
+    const freshQueuedMessage: QueuedMessage = {
+      id: 'queued-fresh',
+      content: 'later',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-fresh',
+    };
+    mocks.queue.mockResolvedValue({
+      success: true,
+      turnId: 'turn-fresh',
+      queuedMessage: freshQueuedMessage,
+    });
+    const run = harness(
+      session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),
+    );
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
+    await settle();
+
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage]));
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -596,7 +683,7 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
   });
 
-  it('shows one archived-workspace suggestion toast while still sending normally', async () => {
+  it('sends normally to an archived workspace with no suggestion toast (daemon auto-unarchives)', async () => {
     mocks.send.mockResolvedValue(undefined);
     const archivedWorkspace = {
       id: WS,
@@ -615,32 +702,7 @@ describe('chatSendSaga', () => {
       expect.objectContaining({ id: WS }),
       expect.any(Object),
     );
-    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
-    const [, options] = mocks.toastInfo.mock.calls[0] as [
-      string,
-      { id?: string; action?: { label?: string } },
-    ];
-    expect(options.id).toBe(`chat-send-unarchive-${WS}`);
-    expect(options.action?.label).toBeTruthy();
-    run.task.cancel();
-    await run.task.toPromise();
-  });
-
-  it('shows the archived-workspace suggestion when the archived flag is set but status is stale', async () => {
-    mocks.send.mockResolvedValue(undefined);
-    const archivedWorkspace = {
-      id: WS,
-      name: 'Workspace',
-      path: '/repo',
-      status: WorkspaceStatusEnum.Active,
-      archived: true,
-    } as Workspace;
-    const run = harness(session(), undefined, archivedWorkspace);
-    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'hello stale-status' }));
-    await settle();
-
-    expect(mocks.send).toHaveBeenCalledTimes(1);
-    await vi.waitFor(() => expect(mocks.toastInfo).toHaveBeenCalledTimes(1));
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

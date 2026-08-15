@@ -4,9 +4,10 @@
  * IPC layer for file operations.
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream } from 'fs';
+import { createHash } from 'crypto';
 import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
@@ -24,6 +25,8 @@ import { type IpcResponse, FileIpc } from '$shared/ipc';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   FileReadSchema,
+  FileReadChunkSchema,
+  FileHashSchema,
   FileWriteSchema,
   FileDeleteSchema,
   FileListSchema,
@@ -37,9 +40,16 @@ import {
   FileCopySchema,
   FileGetTreeWithSizesSchema,
   FileGetDirectoryStatusSchema,
+  FileDownloadSchema,
+  FileDownloadAttachmentSchema,
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 import { renameWithRetry } from '../../../shared/main/file-sync-utils';
+import { createZipFromPaths } from '../../debug-export/main/zip-utils';
+import {
+  shouldUseTransferConnection,
+  withTransferConnection,
+} from '../../backend/main/transfer-connections';
 
 const logger = new Logger('FileIPC');
 
@@ -48,6 +58,13 @@ const logger = new Logger('FileIPC');
  * Files larger than this will be rejected to prevent memory issues
  */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Bytes requested per `file.readChunk` call in the attachment download loop
+ * — the daemon's per-call cap (READ_CHUNK_MAX_BYTES, PROTOCOL §5.9), so big
+ * attachments take the fewest round trips without ever tripping -32602.
+ */
+const DOWNLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
 
 /**
  * Maximum file size for preview/mention context (1MB)
@@ -209,6 +226,98 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.READ,
+    ),
+  );
+
+  // Read one bounded slice of a file (base64). Used by the chunked remote
+  // attachment upload (file.attachmentUpload.*, PROTOCOL §5.9) so gigabyte
+  // files never get buffered whole in either process.
+  ipcMain.handle(
+    FILE_CHANNELS.READ_CHUNK,
+    createSafeValidatedHandler(
+      FileReadChunkSchema,
+      async (_, validated): Promise<IpcResponse<FileIpc.ReadChunkResponse>> => {
+        try {
+          const expandedPath = expandPath(validated.path);
+          const stats = await fs.stat(expandedPath);
+          if (stats.isDirectory()) {
+            return {
+              success: false,
+              error: {
+                code: 'IS_DIRECTORY',
+                message: m.file_ipc_isDirectory_error({ path: validated.path }),
+              },
+            };
+          }
+          const handle = await fs.open(expandedPath, 'r');
+          try {
+            const buffer = Buffer.alloc(validated.length);
+            const { bytesRead } = await handle.read(buffer, 0, validated.length, validated.offset);
+            return {
+              success: true,
+              data: {
+                content: buffer.subarray(0, bytesRead).toString('base64'),
+                bytesRead,
+                size: stats.size,
+              },
+            };
+          } finally {
+            await handle.close();
+          }
+        } catch (error) {
+          logger.error('Failed to read file chunk', error as Error, { path: validated.path });
+          return {
+            success: false,
+            error: {
+              code: 'FILE_READ_FAILED',
+              message: error instanceof Error ? error.message : m.file_ipc_readFailed_error(),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.READ_CHUNK,
+    ),
+  );
+
+  // Streaming SHA-256 of a file (chunked remote attachment upload: the
+  // daemon verifies the assembled payload against this checksum at commit).
+  ipcMain.handle(
+    FILE_CHANNELS.HASH,
+    createSafeValidatedHandler(
+      FileHashSchema,
+      async (_, validated): Promise<IpcResponse<FileIpc.HashResponse>> => {
+        try {
+          const expandedPath = expandPath(validated.path);
+          const stats = await fs.stat(expandedPath);
+          if (stats.isDirectory()) {
+            return {
+              success: false,
+              error: {
+                code: 'IS_DIRECTORY',
+                message: m.file_ipc_isDirectory_error({ path: validated.path }),
+              },
+            };
+          }
+          const sha256 = await new Promise<string>((resolve, reject) => {
+            const hash = createHash('sha256');
+            const stream = createReadStream(expandedPath);
+            stream.on('data', (chunk) => hash.update(chunk));
+            stream.on('end', () => resolve(hash.digest('hex')));
+            stream.on('error', reject);
+          });
+          return { success: true, data: { sha256, size: stats.size } };
+        } catch (error) {
+          logger.error('Failed to hash file', error as Error, { path: validated.path });
+          return {
+            success: false,
+            error: {
+              code: 'FILE_READ_FAILED',
+              message: error instanceof Error ? error.message : m.file_ipc_readFailed_error(),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.HASH,
     ),
   );
 
@@ -941,6 +1050,194 @@ export function setupFileIPC() {
         }
       },
       FILE_CHANNELS.GET_DIRECTORY_STATUS,
+    ),
+  );
+
+  // Download (save a copy of) a file, or a zip of a folder, to a user-chosen
+  // location.
+  ipcMain.handle(
+    FILE_CHANNELS.DOWNLOAD,
+    createSafeValidatedHandler(
+      FileDownloadSchema,
+      async (
+        _,
+        validated,
+      ): Promise<IpcResponse<FileIpc.DownloadResponse> & { canceled?: boolean }> => {
+        const expandedPath = expandPath(validated.path);
+
+        let stats;
+        try {
+          stats = await fs.stat(expandedPath);
+        } catch (error) {
+          logger.warn('Download source path not found', {
+            path: validated.path,
+            error: (error as Error).message,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: m.file_ipc_downloadNotFound_error({ path: validated.path }),
+            },
+          };
+        }
+
+        try {
+          const baseName = path.basename(expandedPath);
+
+          if (stats.isDirectory()) {
+            const { filePath, canceled } = await dialog.showSaveDialog({
+              defaultPath: `${baseName}.zip`,
+              filters: [{ name: m.dialog_zip_files_filter(), extensions: ['zip'] }],
+            });
+            if (canceled || !filePath) {
+              return { success: false, canceled: true };
+            }
+            // Prefix entries with the folder name so the archive unpacks
+            // into a folder rather than spilling its contents.
+            await createZipFromPaths(expandedPath, filePath, baseName);
+            logger.info('Folder downloaded as zip', { source: expandedPath, filePath });
+            return { success: true, data: { filePath } };
+          }
+
+          const { filePath, canceled } = await dialog.showSaveDialog({
+            defaultPath: baseName,
+          });
+          if (canceled || !filePath) {
+            return { success: false, canceled: true };
+          }
+          await fs.copyFile(expandedPath, filePath);
+          logger.info('File downloaded', { source: expandedPath, filePath });
+          return { success: true, data: { filePath } };
+        } catch (error) {
+          logger.error('Failed to download path', error as Error, {
+            path: validated.path,
+            errorMsg: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            success: false,
+            error: {
+              code: 'DOWNLOAD_FAILED',
+              message: m.file_ipc_downloadFailed_error({ path: validated.path }),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.DOWNLOAD,
+    ),
+  );
+
+  // Save an attachment to a user-chosen location (monorepo#2458). Unlike
+  // `file:download` (host-local absolute paths), the source path here is
+  // daemon-side workspace-relative, so the bytes are fetched through the
+  // backend: a remote backend streams `file.readChunk` slices over a
+  // per-transfer connection (no whole-file buffering, and the ~21 MiB
+  // base64 frames never head-of-line-block the main channel); the local
+  // UDS backend copies straight from the workspace path on disk.
+  ipcMain.handle(
+    FILE_CHANNELS.DOWNLOAD_ATTACHMENT,
+    createSafeValidatedHandler(
+      FileDownloadAttachmentSchema,
+      async (
+        _,
+        validated,
+      ): Promise<IpcResponse<FileIpc.DownloadAttachmentResponse> & { canceled?: boolean }> => {
+        const { workspaceId, path: sourcePath, fileName } = validated;
+        try {
+          const { filePath, canceled } = await dialog.showSaveDialog({
+            defaultPath: fileName,
+          });
+          if (canceled || !filePath) {
+            return { success: false, canceled: true };
+          }
+
+          // Atomic write: stage into a temp file so a mid-transfer failure
+          // never truncates or partially overwrites the chosen destination.
+          const randomSuffix = Math.random().toString(36).substring(2, 8);
+          const tempPath = `${filePath}.${Date.now()}-${randomSuffix}.tmp`;
+          const client = getBackendClient();
+          try {
+            if (shouldUseTransferConnection('file.readChunk', client.getConfig())) {
+              await withTransferConnection(client.getConfig(), async (connection) => {
+                const handle = await fs.open(tempPath, 'w');
+                try {
+                  let offset = 0;
+                  for (;;) {
+                    const chunk = await connection.request<FileIpc.ReadChunkResponse>(
+                      'file.readChunk',
+                      { workspaceId, path: sourcePath, offset, length: DOWNLOAD_CHUNK_BYTES },
+                    );
+                    // PROTOCOL §5.9 guarantees content decodes to bytesRead
+                    // bytes; fail loudly rather than reassemble a corrupt
+                    // file if they ever diverge.
+                    const buffer = Buffer.from(chunk.content, 'base64');
+                    if (buffer.length !== chunk.bytesRead) {
+                      throw new Error(
+                        `file.readChunk content/bytesRead mismatch (${buffer.length} vs ${chunk.bytesRead})`,
+                      );
+                    }
+                    if (buffer.length > 0) {
+                      // FileHandle.write() may complete a short write; loop
+                      // until the whole chunk is on disk.
+                      let written = 0;
+                      while (written < buffer.length) {
+                        const { bytesWritten } = await handle.write(buffer, written);
+                        written += bytesWritten;
+                      }
+                      offset += buffer.length;
+                    }
+                    if (buffer.length < DOWNLOAD_CHUNK_BYTES || offset >= chunk.size) break;
+                  }
+                } finally {
+                  await handle.close();
+                }
+              });
+            } else {
+              // Same root resolution the daemon's file ops use: the worktree
+              // when one exists, else the workspace path.
+              const response = await client.request<{
+                workspace?: { path?: string; worktreePath?: string };
+              }>('workspace.get', { workspaceId });
+              const workspacePath = response?.workspace?.worktreePath ?? response?.workspace?.path;
+              if (!workspacePath) {
+                throw new Error(`workspace ${workspaceId} has no path`);
+              }
+              // Mirror the daemon-side workspace containment the remote arm
+              // gets from file.readChunk: reject paths escaping the root.
+              const resolved = path.resolve(workspacePath, sourcePath);
+              if (resolved !== workspacePath && !resolved.startsWith(workspacePath + path.sep)) {
+                throw new Error(`attachment path escapes workspace root: ${sourcePath}`);
+              }
+              await fs.copyFile(resolved, tempPath);
+            }
+            await renameWithRetry(tempPath, filePath);
+          } catch (error) {
+            try {
+              await fs.unlink(tempPath);
+            } catch {
+              // Ignore cleanup errors
+            }
+            throw error;
+          }
+
+          logger.info('Attachment downloaded', { workspaceId, source: sourcePath, filePath });
+          return { success: true, data: { filePath } };
+        } catch (error) {
+          logger.error('Failed to download attachment', error as Error, {
+            workspaceId,
+            path: sourcePath,
+            errorMsg: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            success: false,
+            error: {
+              code: 'DOWNLOAD_FAILED',
+              message: m.file_ipc_downloadFailed_error({ path: fileName }),
+            },
+          };
+        }
+      },
+      FILE_CHANNELS.DOWNLOAD_ATTACHMENT,
     ),
   );
 }

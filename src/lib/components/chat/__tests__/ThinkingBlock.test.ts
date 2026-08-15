@@ -32,12 +32,12 @@ describe('ThinkingBlock — tool-call presentation', () => {
 
     const row = screen.getByTestId('reasoning-tool-call');
     expect(row.className).toContain('tool-call-container');
-    expect(row.className).toContain('type-caption');
+    expect(row.className).toContain('type-body');
     expect(row.className).not.toContain('bg-muted');
     const icon = row.querySelector('[data-icon="brain"]');
-    expect(icon?.className).toContain('text-foreground/60');
+    expect(icon?.closest('[data-operational-icon-box]')?.className).toContain('text-ghost');
     expect(icon?.className).not.toContain('opacity-30');
-    expect(row.className).toContain('text-foreground/75');
+    expect(row.className).toContain('text-muted-foreground');
   });
 
   it('auto-expands while the thought is streaming', async () => {

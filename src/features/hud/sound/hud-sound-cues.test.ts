@@ -128,14 +128,23 @@ describe('cuesForTakeoverTransition', () => {
     );
   });
 
-  it('keeps manual viewers silent on blink, open and close', () => {
+  it('plays structural transients but no kind cue for manual viewers', () => {
     const viewer = entry({ isViewer: true, triggers: [trigger({ kind: 'manual', detail: '' })] });
-    expect(cuesForTakeoverTransition(state('idle', null), state('blinking', viewer))).toEqual([]);
+    expect(cuesForTakeoverTransition(state('idle', null), state('blinking', viewer))).toEqual([
+      'blink-tick',
+    ]);
     expect(cuesForTakeoverTransition(state('blinking', viewer), state('opening', viewer))).toEqual(
-      [],
+      ['takeover-open'],
     );
     expect(cuesForTakeoverTransition(state('dwelling', viewer), state('closing', viewer))).toEqual(
-      [],
+      ['takeover-close'],
+    );
+  });
+
+  it('suppresses the kind cue for a blink-converted viewer retaining event triggers', () => {
+    const viewer = entry({ isViewer: true, triggers: [trigger({ kind: 'task_complete' })] });
+    expect(cuesForTakeoverTransition(state('blinking', viewer), state('opening', viewer))).toEqual(
+      ['takeover-open'],
     );
   });
 

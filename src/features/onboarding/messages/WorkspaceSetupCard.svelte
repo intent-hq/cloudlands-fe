@@ -30,6 +30,11 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { getSpecialistById } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
+  import {
+    createProgressLabel,
+    formatCreateProgressPercent,
+  } from '$lib/components/workspace/initializer/create-progress-label';
 
   type StepStatus = 'pending' | 'active' | 'done';
 
@@ -42,6 +47,8 @@
     repoPath?: string;
     /** Where the worktree/clone was created */
     worktreePath?: string;
+    /** Workspace the worktree belongs to; gates editor opens on workspace locality (monorepo#2171) */
+    workspaceId?: string;
     /** Branch name for the workspace */
     branch?: string;
     /** Base ref the branch was created from (e.g. "origin/main") */
@@ -66,12 +73,22 @@
     agentStatus?: StepStatus;
     /** If true, the workspace works directly on the branch without an isolated checkout (worktree or CoW clone) */
     skipIsolation?: boolean;
+    /**
+     * FE-minted correlation id of the in-flight `workspace.create` (echoed on
+     * git:clone:progress frames, PROTOCOL §5.1). When set and frames arrive,
+     * the repo step shows the live stage label + percent + bar; without it
+     * (ChatPanel usage, older daemons) the card renders exactly as before.
+     * The caller must key this component on the id — the selector readable
+     * binds at init only (STATE_MANAGEMENT.md).
+     */
+    progressId?: string;
   }
 
   let {
     repoName,
     repoPath,
     worktreePath,
+    workspaceId,
     branch,
     baseRef = 'origin/main',
     projectType,
@@ -85,7 +102,26 @@
     branchStatus = 'pending',
     agentStatus = 'pending',
     skipIsolation = false,
+    progressId,
   }: Props = $props();
+
+  // Selector readables bind at component init only (STATE_MANAGEMENT.md); the
+  // caller keys this component on progressId, so the initial value is the only
+  // one it ever renders. An absent id binds a never-matching key (null entry).
+  // svelte-ignore state_referenced_locally
+  const progressEntry$ = selectWorkspaceCreateProgress(progressId ?? '');
+
+  // Monotonic floor: track the highest percent seen so the label and bar
+  // never move backwards even if frames arrive out of order. Clamped to 100
+  // at the source so text, bar width, and ARIA can never disagree (negatives
+  // are excluded by the > maxPercent guard against the initial 0).
+  let maxPercent = $state(0);
+  $effect(() => {
+    const percent = Math.min($progressEntry$?.percent ?? 0, 100);
+    if (percent > maxPercent) maxPercent = percent;
+  });
+
+  const liveProgress = $derived($progressEntry$?.sawFrame === true);
 
   /** For skipIsolation mode, strip the remote prefix (e.g. "origin/main" → "main") */
   const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
@@ -220,7 +256,31 @@
       {/if}
     {/snippet}
     {#snippet repoActive()}
-      {#if skipIsolation}
+      {#if liveProgress && $progressEntry$}
+        <!-- Live daemon-driven provisioning progress (git:clone:progress
+             frames, PROTOCOL §5.1): stage label + monotonic percent, with a
+             determinate bar. Mirrors CreateButtonProgress. -->
+        <span data-testid="setup-card-progress-label">
+          {m.workspace_compactInitializer_progressWithPercent_label({
+            label: createProgressLabel($progressEntry$),
+            percent: formatCreateProgressPercent(maxPercent),
+          })}
+        </span>
+        <div
+          class="mt-1 h-[2px] w-full max-w-64 rounded-full bg-secondary overflow-hidden"
+        >
+          <div
+            class="h-full bg-foreground/60 transition-[width] duration-300 ease-out"
+            style="width: {maxPercent}%"
+            role="progressbar"
+            aria-label={createProgressLabel($progressEntry$)}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={maxPercent}
+            data-testid="setup-card-progress-bar"
+          ></div>
+        </div>
+      {:else if skipIsolation}
         {m.onboarding_setupCard_opening_before()}
         {@render repoNameCopyable()}{m.onboarding_setupCard_opening_after()}
       {:else}
@@ -234,6 +294,7 @@
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
+            {workspaceId}
             isDirectory={true}
             variant="sidebar"
             compact
@@ -250,6 +311,7 @@
         {#if worktreePath}{' '}{m.onboarding_setupCard_at_label()}
           <OpenComboButton
             filePath={worktreePath}
+            {workspaceId}
             isDirectory={true}
             variant="sidebar"
             compact

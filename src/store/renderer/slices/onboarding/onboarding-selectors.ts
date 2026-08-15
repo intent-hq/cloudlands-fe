@@ -10,3 +10,7 @@ export const selectOnboardingState = store.createSelector((state): OnboardingSta
 export const selectOnboardingStep = store.createSelector(
   (state) => state.onboarding.step,
 );
+
+export const selectOnboardingFullFlowRequested = store.createSelector(
+  (state) => state.onboarding.fullFlowRequested,
+);

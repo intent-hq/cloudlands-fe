@@ -446,6 +446,7 @@ describe('tool-result-parser', () => {
       expect(result.delegatedAgentName).toBe('Implementor #1');
       expect(result.taskNoteId).toBe('note-1');
       expect(result.delegatedAgentProvider).toBe('claude-code');
+      expect(result.delegateBatch).toBeUndefined();
     });
 
     it('parses a JSON delegate result without the optional provider field', () => {
@@ -456,6 +457,100 @@ describe('tool-result-parser', () => {
       expect(result.agentId).toBe(AGENT_ID);
       expect(result.delegatedAgentName).toBe('X');
       expect(result.delegatedAgentProvider).toBeUndefined();
+    });
+
+    it('parses a batch delegate result into a disposition summary', () => {
+      const json = JSON.stringify(
+        {
+          ok: true,
+          greedy: false,
+          tasks: [
+            {
+              taskNoteId: 'n-1',
+              title: 'Task A',
+              disposition: 'started',
+              agentId: AGENT_ID,
+              agentName: 'Implementor #1',
+            },
+            {
+              taskNoteId: 'n-2',
+              title: 'Task B',
+              disposition: 'held:blocked-on-deps',
+              unmetDependsOn: ['n-1'],
+              reason: 'waiting on incomplete dependencies: n-1',
+            },
+            {
+              taskNoteId: 'n-3',
+              title: 'Task C',
+              disposition: 'held:conflict',
+              conflictsWith: ['n-1'],
+              reason: 'conflictsWith intersects the running/starting set (n-1)',
+            },
+            {
+              taskNoteId: 'n-4',
+              title: 'Task D',
+              disposition: 'skipped',
+              reason: 'task is complete',
+            },
+            { taskNoteId: 'n-5', title: 'Task E', disposition: 'error', reason: 'boom' },
+          ],
+          startedTaskIds: ['n-1'],
+          unlockPlan: { unlockedBySettlement: ['n-2'], message: 'msg' },
+        },
+        null,
+        2,
+      );
+      const batchInput = {
+        code: 'return await ws.agent.delegate({ tasks: ["n-1", "n-2", "n-3", "n-4", "n-5"] })',
+        summary: 'Delegate batch',
+      };
+      const result = parseToolResult('workspace_api_workspace-mcp', batchInput, json);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+      expect(result.delegateBatch).toEqual({
+        started: 1,
+        held: 2,
+        skipped: 1,
+        errors: 1,
+        startedRows: [
+          { agentId: AGENT_ID, agentName: 'Implementor #1', taskNoteId: 'n-1', title: 'Task A' },
+        ],
+      });
+    });
+
+    it('does not surface a skipped already-running agent as a started row', () => {
+      const json = JSON.stringify({
+        ok: true,
+        greedy: false,
+        tasks: [
+          {
+            taskNoteId: 'n-1',
+            title: 'Task A',
+            disposition: 'skipped',
+            agentId: AGENT_ID,
+            agentName: 'Implementor #1',
+            reason: `already being worked by agent ${AGENT_ID} ("Implementor #1")`,
+          },
+        ],
+        startedTaskIds: [],
+        unlockPlan: { unlockedBySettlement: [], message: 'msg' },
+      });
+      const batchInput = {
+        code: 'return await ws.agent.delegate({ tasks: ["n-1"] })',
+        summary: 'Delegate batch',
+      };
+      const result = parseToolResult('workspace_api_workspace-mcp', batchInput, json);
+
+      expect(result.type).toBe('delegate-task');
+      expect(result.agentId).toBeUndefined();
+      expect(result.delegateBatch).toEqual({
+        started: 0,
+        held: 0,
+        skipped: 1,
+        errors: 0,
+        startedRows: [],
+      });
     });
 
     it('still parses the legacy prose delegate result', () => {

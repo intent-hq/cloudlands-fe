@@ -8,6 +8,7 @@
     align = 'start',
     side = 'bottom',
     portal = true,
+    collisionPadding = 8,
     trigger,
     content,
     contentClass = '',
@@ -18,6 +19,7 @@
     align?: 'start' | 'center' | 'end';
     side?: 'top' | 'bottom' | 'left' | 'right';
     portal?: boolean;
+    collisionPadding?: number;
     trigger?: Snippet<[{ toggle: () => void; open: boolean }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
@@ -50,6 +52,7 @@
       {align}
       {side}
       {portal}
+      {collisionPadding}
       class={contentClass}
       maxHeight={contentMaxHeight}
       aria-label={m.ui_dropdownMenu_ariaLabel()}

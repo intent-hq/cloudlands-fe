@@ -22,6 +22,8 @@ import {
   updateAgentDigest,
   renameSession,
   renameAgent,
+  setProcessQueueHint,
+  clearProcessQueueHint,
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
@@ -1915,6 +1917,37 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
+  describe('setProcessQueueHint / clearProcessQueueHint', () => {
+    it('stores the hint with the reason from the event (slots)', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      expect(state.byAgentId['a1'].processQueueHint).toEqual({
+        waiting: true,
+        used: 3,
+        cap: 3,
+        reason: 'slots',
+      });
+    });
+
+    it('stores the memory-budget reason distinctly', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 2, 8, 'memory-budget'));
+      expect(state.byAgentId['a1'].processQueueHint).toEqual({
+        waiting: true,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      });
+    });
+
+    it('clearProcessQueueHint removes the hint', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      state = agentSessionReducer(state, clearProcessQueueHint('a1'));
+      expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+    });
+  });
+
   describe('renameSession', () => {
     it('renames session', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -2594,6 +2627,25 @@ describe('agent-session selectors', () => {
 
       expect(selectAgentSessionStreamingContent.select(state, 'a1')).toBe('');
       expect(selectAgentSessionStreamingContent.select(state, 'unknown')).toBe('');
+    });
+
+    it('treats metadata.finishReason as terminal — an abnormal-finish row is never the current streaming message', () => {
+      // PROTOCOL §7.3: the daemon only stamps finishReason on finalized rows,
+      // so even while the session-level isStreaming flag is momentarily stale
+      // (between agent:stream:end and agent:idle) the marker row must not be
+      // picked up as live streaming content.
+      const session = makeSession('a1', 'ws-1', {
+        isStreaming: true,
+        messages: [
+          {
+            ...makeUniqueMessage('marker-row', 'assistant'),
+            metadata: { finishReason: 'refusal' },
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+
+      expect(selectAgentSessionStreamingContent.select(state, 'a1')).toBe('');
     });
   });
 

@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor, screen } from '@testing-library/svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -31,6 +32,8 @@ const mocks = vi.hoisted(() => {
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
+  const handleLink = vi.fn();
+  const progressActions = [] as WorkspaceProgressAction[];
   const notes = [] as Note[];
   const taskState = {
     loading: false,
@@ -63,6 +66,8 @@ const mocks = vi.hoisted(() => {
     clipboardWrite,
     toastSuccess,
     toastError,
+    handleLink,
+    progressActions,
     notes,
     taskState,
     workspaceEntity,
@@ -90,7 +95,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
-  selectWorkspaceProgressActions: mocks.selector(() => []),
+  selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -171,7 +176,7 @@ vi.mock('$lib/electron-bridge', () => ({
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$features/navigation/link-handler', () => ({ handleLink: vi.fn() }));
+vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
@@ -265,6 +270,8 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.clipboardWrite.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
+    mocks.handleLink.mockReset();
+    mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
@@ -366,6 +373,18 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
+  it('renders the title editor full-width without JS auto-resize', async () => {
+    await renderProgressCard();
+    await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
+    const titleInput = screen.getByRole('textbox') as HTMLInputElement;
+
+    expect(titleInput.className.split(/\s+/)).toContain('w-full');
+    expect(titleInput.style.width).toBe('');
+
+    await fireEvent.input(titleInput, { target: { value: 'A much longer workspace title' } });
+    expect(titleInput.style.width).toBe('');
+  });
+
   it('aligns the branch control, explains its context, and copies on click', async () => {
     const { container } = await renderProgressCard({
       branch: 'feature/status',
@@ -373,19 +392,15 @@ describe('WorkspaceProgressCard status message', () => {
       skipWorktree: false,
     });
     const branch = screen.getByRole('button', { name: 'feature/status' });
-    const icon = container.querySelector('[data-sidebar-branch-icon]');
     const hoverCard = container.querySelector('[data-sidebar-branch-hover-card]');
 
     expect(branch.className).toContain('h-5');
-    expect(branch.className.split(/\s+/)).toContain('gap-0.5');
+    expect(branch.className.split(/\s+/)).not.toContain('gap-0.5');
     expect(branch.className.split(/\s+/)).not.toContain('gap-1.5');
-    expect(icon?.className).toContain('size-4');
-    expect(icon?.className).toContain('place-items-center');
-    expect(icon?.className).toContain('text-muted-foreground');
+    expect(container.querySelector('[data-sidebar-branch-icon]')).toBeNull();
     expect(hoverCard?.textContent).toContain('feature/status');
     expect(hoverCard?.textContent).toContain('Base main');
     expect(hoverCard?.textContent).toContain('main');
-    expect(hoverCard?.textContent).toContain('Worktree');
     expect(hoverCard?.textContent).not.toContain('Click to copy branch name');
 
     await fireEvent.click(branch);
@@ -436,6 +451,31 @@ describe('WorkspaceProgressCard status message', () => {
   it('hides the status row when the active sidebar status is whitespace', async () => {
     await renderProgressCard({ statusMessage: '   ' });
 
+    expect(screen.queryByRole('button', { name: 'Add workspace status' })).toBeNull();
+  });
+
+  it('renders one View PR action directly after a long status description', async () => {
+    mocks.progressActions.push({
+      id: 'view-pr',
+      label: 'View PR',
+      iconKey: 'code-branch',
+      tooltip: 'Open the pull request.',
+      url: 'https://github.com/intent-hq/monorepo/pull/42',
+    });
+    const { container } = await renderProgressCard({
+      statusMessage: 'A long workspace description that wraps before the pull request action.',
+    });
+    const status = screen.getByRole('button', { name: 'Edit workspace status' });
+    const viewPr = screen.getByRole('button', { name: 'View PR' });
+
+    expect(container.querySelectorAll('[data-workspace-view-pr]')).toHaveLength(1);
+    expect(status.compareDocumentPosition(viewPr) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await fireEvent.click(viewPr);
+    expect(mocks.handleLink).toHaveBeenCalledWith('https://github.com/intent-hq/monorepo/pull/42', {
+      workspaceId: 'ws-1',
+    });
+
+    mocks.workspaceEntity.statusMessage = undefined;
     expect(screen.queryByRole('button', { name: 'Add workspace status' })).toBeNull();
   });
 

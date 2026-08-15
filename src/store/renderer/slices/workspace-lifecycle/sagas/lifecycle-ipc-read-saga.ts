@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, put, takeLeading } from 'typed-redux-saga';
+import { all, call, put, takeEvery, takeLeading } from 'typed-redux-saga';
 
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { externalEditorsClient } from '$features/external-editors/external-editors.client';
@@ -181,6 +181,6 @@ export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
     takeLeading(fetchEditors, refreshEditorsWorker),
     takeLeading(loadKnownRepos, refreshKnownRepos),
     takeLeading(refreshAcceptChangesStatus, refreshAcceptChangesWorker),
-    takeLeading(workspaceMounted, workspaceMountedWorker),
+    takeEvery(workspaceMounted, workspaceMountedWorker),
   ]);
 }

@@ -6,13 +6,21 @@
    * Augment branding to highlight they use Augment's proprietary context engine.
    */
   import type { ToolUseBlock } from '$shared/types';
-  import { faExclamationTriangle, faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+  import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { safeSlide } from '$lib/utils/animations';
   import { parseToolResult } from './tool-result-parser';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import {
+    COMPACT_TOOL_ICON_BOX_CLASS,
+    COMPACT_TOOL_ROW_CLASS,
+    COMPACT_TOOL_SENTENCE_CLASS,
+    COMPACT_TOOL_TRAILING_CLASS,
+    OPERATIONAL_ROW_CONTAINER_CLASS,
+  } from './operational-disclosure-row';
+  import { buildToolDisplayModel } from './tool-display-model';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -29,6 +37,7 @@
   );
 
   let expanded = $state(false);
+  const detailsId = $derived(`context-engine-details-${toolUse.id}`);
 
   function expand(node: Element) {
     return safeSlide(node, { duration: 150 });
@@ -50,6 +59,22 @@
 
   // Get the query/information request (cast to String to handle non-string values safely)
   const query = $derived(String(toolUse.input?.information_request || toolUse.input?.query || ''));
+  const displayModel = $derived(
+    buildToolDisplayModel({
+      toolName: toolUse.name,
+      display: {
+        category: 'context-engine',
+        icon: faMagnifyingGlass,
+        verb: '',
+        subject: sourceLabel,
+        path: null,
+      },
+      input: toolUse.input || {},
+      result,
+      parsedResult,
+      toolState,
+    }),
+  );
 
   // Get snippets from parsed result
   const snippets = $derived(parsedResult?.snippets || []);
@@ -65,6 +90,16 @@
   // Only allow expanding if there are actual results to show.
   const hasResults = $derived(snippetCount > 0 || plainContentPreview.length > 0);
   const isExpandable = $derived(hasResults || toolState === 'error');
+
+  function toggleExpanded() {
+    if (isExpandable) expanded = !expanded;
+  }
+
+  function handleDisclosureKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggleExpanded();
+  }
 
   // Normalize content with line numbers to have consistent formatting
   // Input format: "    42\tcode here" (varying leading spaces + digits + tab + content)
@@ -187,49 +222,49 @@
 </script>
 
 <div
-  class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-muted-foreground/65 transition-all duration-[var(--motion-fast)] ease-out hover:text-muted-foreground focus-within:text-muted-foreground"
+  class={OPERATIONAL_ROW_CONTAINER_CLASS}
   data-testid="context-engine-tool-call"
+  data-conversation-layer="tool-activity"
 >
-  <div class="relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0">
-    <Fa
-      icon={faMagnifyingGlass}
-      size="xs"
-      class="w-4 shrink-0 text-muted-foreground opacity-30 {toolState === 'running'
-        ? 'animate-pulse'
-        : ''}"
-    />
-    <button
-      class="flex min-w-0 items-center gap-[0.5ch] overflow-hidden border-0 bg-transparent p-0 text-left {isExpandable
-        ? 'cursor-pointer'
-        : 'cursor-default'}"
-      style="flex: 0 0.01 auto;"
-      onclick={() => {
-        if (isExpandable) expanded = !expanded;
-      }}
+  <div class={COMPACT_TOOL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
+    <div
+      class="{COMPACT_TOOL_ICON_BOX_CLASS} {toolState === 'running' ? 'animate-pulse' : ''}"
+      data-tool-icon
     >
-      <span class="shrink-0 whitespace-nowrap text-muted-foreground">
-        {m.chat_contextEngine_search_label({ source: sourceLabel })}
-      </span>
-      {#if query}
-        <span
-          class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
-          data-testid="context-engine-query"
-        >
-          {query.slice(0, 600)}
-        </span>
-      {/if}
-    </button>
+      <Fa icon={faMagnifyingGlass} size={14} class="h-3.5! w-3.5!" />
+    </div>
+    {#if isExpandable}
+      <button
+        type="button"
+        class="{COMPACT_TOOL_SENTENCE_CLASS} cursor-pointer"
+        data-testid="context-engine-query"
+        data-tool-sentence
+        aria-label={displayModel.accessibleSentence}
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        title={m.chat_toolCall_technicalDetails_label()}
+        onclick={toggleExpanded}
+        onkeydown={handleDisclosureKeydown}>{displayModel.sentence}</button
+      >
+    {:else}
+      <span
+        class={COMPACT_TOOL_SENTENCE_CLASS}
+        data-testid="context-engine-query"
+        data-tool-sentence
+        aria-label={displayModel.accessibleSentence}
+        title={displayModel.accessibleSentence}>{displayModel.sentence}</span
+      >
+    {/if}
     {#if toolState === 'error'}
-      <Fa icon={faExclamationTriangle} size="xs" class="ml-auto shrink-0 text-destructive" />
+      <span class="{COMPACT_TOOL_TRAILING_CLASS} text-destructive" data-tool-status="error"
+        >{m.chat_toolCall_failed_label()}</span
+      >
     {/if}
   </div>
 
   {#if expanded}
-    <div class="mt-1" transition:expand>
-      <div
-        class="type-caption px-3 py-1 text-muted-foreground"
-        data-testid="context-engine-brand"
-      >
+    <div id={detailsId} class="mt-1" transition:expand>
+      <div class="type-caption px-3 py-1 text-muted-foreground" data-testid="context-engine-brand">
         <!-- i18n-ignore (brand name) -->
         Augment Context Engine
       </div>
@@ -237,7 +272,6 @@
       {#if toolState === 'error'}
         <div class="border-b border-destructive/20 bg-destructive/10 px-4 py-3">
           <div class="flex items-start gap-2">
-            <Fa icon={faExclamationTriangle} size="sm" class="mt-0.5 shrink-0 text-destructive" />
             <div class="type-caption text-destructive">
               {#if result}
                 {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}

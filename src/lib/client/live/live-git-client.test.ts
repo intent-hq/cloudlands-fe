@@ -317,6 +317,26 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", { workspaceId: "ws-1" });
   });
 
+  it("diffs forwards gitRootId exactly when set and omits it otherwise (v6.15)", async () => {
+    mockedRequest.mockResolvedValue([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { commitHash: "abc123", path: "a.ts", gitRootId: "root-1" });
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
+      path: "a.ts",
+      gitRootId: "root-1",
+    });
+
+    await client.diffs("ws-1", { commitHash: "abc123", path: "a.ts" });
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
+      path: "a.ts",
+    });
+  });
+
   it("commitDetails forwards git.commitDetails and normalizes the wire shape", async () => {
     mockedRequest.mockResolvedValueOnce({
       commitHash: "abc123",
@@ -349,6 +369,32 @@ describe("LiveGitClient reads (fake transport)", () => {
         { path: "seed.txt", additions: 2, deletions: 1 },
         { path: "new.txt", additions: 1, deletions: 0 },
       ],
+    });
+  });
+
+  it("commitDetails forwards gitRootId exactly when set and omits it otherwise (v6.15)", async () => {
+    mockedRequest.mockResolvedValue({
+      commitHash: "abc123",
+      author: "",
+      authorEmail: "",
+      date: "",
+      message: "",
+      files: [],
+      fileDetails: [],
+    });
+    const client = new LiveGitClient();
+
+    await client.commitDetails("ws-1", "abc123", { gitRootId: "root-1" });
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.commitDetails", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
+      gitRootId: "root-1",
+    });
+
+    await client.commitDetails("ws-1", "abc123", {});
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.commitDetails", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
     });
   });
 

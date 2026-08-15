@@ -19,8 +19,6 @@
     localizeDaemonTerminalName,
     terminalDisplayName,
   } from '$lib/utils/terminal-display-name';
-  import { slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
   import {
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
@@ -36,6 +34,7 @@
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
+    selectScript,
     clearScriptSelection,
     terminalCreated,
     type TerminalTab,
@@ -68,6 +67,8 @@
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
+  import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
+  import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
     selectWorkspaceScriptEntries,
@@ -147,6 +148,27 @@
   let editedScriptCommand = $state('');
 
   let isDetectingScripts = $state(false);
+  let terminalPanel: HTMLDivElement | undefined = $state();
+  let mountedPanelWorkspaceId: string | null = $state(null);
+  const panelIsVisible = $derived(
+    $isOpen && ($activeTerminalId !== null || selectedScriptId !== null),
+  );
+  const shouldMountPanel = $derived(mountedPanelWorkspaceId === workspaceId);
+
+  $effect(() => {
+    if (panelIsVisible && workspaceId) mountedPanelWorkspaceId = workspaceId;
+  });
+
+  $effect(() => {
+    if (
+      !panelIsVisible &&
+      terminalPanel &&
+      typeof document !== 'undefined' &&
+      terminalPanel.contains(document.activeElement)
+    ) {
+      overlayContainer?.focus({ preventScroll: true });
+    }
+  });
 
   function setSelectedScript(scriptId: string | null) {
     if (!workspaceId) return;
@@ -299,9 +321,15 @@
     const ownership = workspaceOwnership;
     const mutationWorkspaceId = ownership.workspaceId;
     if (!mutationWorkspaceId) return;
+    const scriptActionErrors = {
+      start: m.terminal_quakeOverlay_startScriptFailed_error,
+      stop: m.terminal_quakeOverlay_stopScriptFailed_error,
+      restart: m.terminal_quakeOverlay_restartScriptFailed_error,
+      delete: m.terminal_quakeOverlay_deleteScriptFailed_error,
+    };
     const succeeded = await runScriptMutation(
       () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
-      `Failed to ${action} script`,
+      scriptActionErrors[action](),
     );
     if (!succeeded) return;
 
@@ -322,6 +350,26 @@
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
+
+  // Display form of the selected script's detected URL: the loopback rewrite
+  // only (daemon host in remote mode), NO probe and NO tunnel, so the chip
+  // shows where the link actually points without side effects. The full
+  // resolve (probe + tunnel) runs only on click.
+  let displayedDetectedUrl = $state<string | null>(null);
+  $effect(() => {
+    const rawUrl = selectedScriptRuntime?.detectedUrl;
+    if (!rawUrl) {
+      displayedDetectedUrl = null;
+      return;
+    }
+    displayedDetectedUrl = rawUrl;
+    void rewriteBrowserLinkForDisplay(rawUrl, window.electronAPI?.invoke).then((rewritten) => {
+      // Only apply if the detected URL hasn't changed while resolving.
+      if (selectedScriptRuntime?.detectedUrl === rawUrl) {
+        displayedDetectedUrl = rewritten;
+      }
+    });
+  });
 
   const STATUS_CONFIG: Record<string, { label: string; colorClass: string }> = {
     idle: {
@@ -371,7 +419,7 @@
       if (trimmed && trimmed !== selectedScript.name) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, { name: trimmed }),
-          'Failed to rename script',
+          m.terminal_quakeOverlay_renameScriptFailed_error(),
         );
         if (!succeeded) return;
         appStore.dispatch(refreshScripts(mutationWorkspaceId));
@@ -427,7 +475,7 @@
       if (Object.keys(updates).length > 0) {
         const succeeded = await runScriptMutation(
           () => scriptsClient.update(mutationWorkspaceId, mutationScriptId, updates),
-          'Failed to update script command',
+          m.terminal_quakeOverlay_updateCommandFailed_error(),
         );
         if (!succeeded) return;
         appStore.dispatch(refreshScripts(mutationWorkspaceId));
@@ -443,16 +491,24 @@
     showScriptEditPanel = false;
   }
 
+  // Resolve a script's detected URL (rewrite → probe → tunnel; toasts on
+  // resolver warning/error) BEFORE opening the browser panel on it.
+  function openScriptUrl(rawUrl: string): void {
+    void resolveBrowserLinkForOpen(rawUrl).then((resolvedUrl) => {
+      import('$features/layout/panel-layout-adapter')
+        .then(({ getPanelLayoutManager }) => {
+          const layoutManager = getPanelLayoutManager(workspaceId!);
+          layoutManager.openBrowserPanel(resolvedUrl);
+        })
+        .catch(() => {
+          window.open(resolvedUrl, '_blank');
+        });
+    });
+  }
+
   function handleScriptOpenUrl(): void {
     if (!selectedScriptRuntime?.detectedUrl) return;
-    import('$features/layout/panel-layout-adapter')
-      .then(({ getPanelLayoutManager }) => {
-        const layoutManager = getPanelLayoutManager(workspaceId!);
-        layoutManager.openBrowserPanel(selectedScriptRuntime.detectedUrl);
-      })
-      .catch(() => {
-        window.open(selectedScriptRuntime.detectedUrl, '_blank');
-      });
+    openScriptUrl(selectedScriptRuntime.detectedUrl);
   }
 
   // Live and previously-running scripts shown as tabs in the bottom bar.
@@ -615,7 +671,7 @@
           scriptsClient.update(mutationWorkspaceId, mutationScriptId, {
             name: mutationValue.trim(),
           }),
-        'Failed to rename script',
+        m.terminal_quakeOverlay_renameScriptFailed_error(),
       );
       if (!succeeded) return;
       appStore.dispatch(refreshScripts(mutationWorkspaceId));
@@ -899,13 +955,23 @@
     tabindex="-1"
     class="terminal-overlay flex flex-col w-full outline-none"
   >
-    <!-- Expanded Terminal Panel -->
-    {#if $isOpen && ($activeTerminalId || selectedScriptId)}
+    <div
+      class="terminal-panel-spacer"
+      class:is-visible={panelIsVisible}
+      style="--terminal-panel-height: {$height}vh;"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Keep the expensive panel subtree mounted after its first reveal. -->
+    {#if shouldMountPanel}
       <div
+        bind:this={terminalPanel}
         class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
         class:is-resizing={isResizing}
+        class:is-visible={panelIsVisible}
         style="height: {$height}vh;"
-        transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+        aria-hidden={!panelIsVisible}
+        inert={!panelIsVisible}
       >
         <!-- Resize Handle - Sleek minimal design -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -986,16 +1052,17 @@
                 {selectedScriptStatusInfo.label}
               </span>
 
-              <!-- Detected URL -->
+              <!-- Detected URL (display shows the rewrite-only form) -->
               {#if selectedScriptRuntime.detectedUrl}
+                {@const shownUrl = displayedDetectedUrl ?? selectedScriptRuntime.detectedUrl}
                 <Button
                   variant="plain"
                   class="text-blue-400 hover:underline text-xs flex items-center gap-1 cursor-pointer flex-shrink-0"
                   onclick={handleScriptOpenUrl}
-                  title={selectedScriptRuntime.detectedUrl}
+                  title={shownUrl}
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" />
-                  <span class="max-w-[200px] truncate">{selectedScriptRuntime.detectedUrl}</span>
+                  <span class="max-w-[200px] truncate">{shownUrl}</span>
                 </Button>
               {/if}
             </div>
@@ -1127,6 +1194,25 @@
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->
           <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {#if $activeTerminalId}
+              <div
+                class="flex-1 overflow-hidden"
+                class:hidden={selectedScriptId !== null}
+                data-terminal-content
+                aria-hidden={selectedScriptId !== null}
+                inert={selectedScriptId !== null}
+              >
+                {#key terminalWorkspaceId + ':' + $activeTerminalId}
+                  <Terminal
+                    terminalId={$activeTerminalId}
+                    workspaceId={terminalWorkspaceId}
+                    visible={panelIsVisible && selectedScriptId === null}
+                    class="h-full w-full"
+                  />
+                {/key}
+              </div>
+            {/if}
+
             {#if selectedScriptId}
               {#key selectedScriptId}
                 <ScriptOutputViewer
@@ -1138,17 +1224,6 @@
                   }}
                 />
               {/key}
-            {:else if $activeTerminalId}
-              <!-- Terminal Content -->
-              <div class="flex-1 overflow-hidden">
-                {#key $activeTerminalId}
-                  <Terminal
-                    terminalId={$activeTerminalId}
-                    workspaceId={terminalWorkspaceId}
-                    class="h-full w-full"
-                  />
-                {/key}
-              </div>
             {/if}
 
             <!-- Setup Script Banner - horizontal bar at bottom -->
@@ -1159,15 +1234,17 @@
 
           <!-- Scripts Sidebar -->
           {#if isRealWorkspace}
-            <TerminalSidebar
-              {workspaceId}
-              {selectedScriptId}
-              onSelectScript={(id) => setSelectedScript(id)}
-              onSelectTerminal={(id) => {
-                if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
-              }}
-              onCreateTerminal={createNewTerminal}
-            />
+            {#key workspaceId}
+              <TerminalSidebar
+                {workspaceId}
+                {selectedScriptId}
+                onSelectScript={(id) => setSelectedScript(id)}
+                onSelectTerminal={(id) => {
+                  if (workspaceId) appStore.dispatch(selectTerminal(workspaceId, id));
+                }}
+                onCreateTerminal={createNewTerminal}
+              />
+            {/key}
           {/if}
         </div>
       </div>
@@ -1299,16 +1376,7 @@
                     onclick={(e) => {
                       e.stopPropagation();
                       const url = script.runtime.detectedUrl;
-                      if (url) {
-                        import('$features/layout/panel-layout-adapter')
-                          .then(({ getPanelLayoutManager }) => {
-                            const layoutManager = getPanelLayoutManager(workspaceId!);
-                            layoutManager.openBrowserPanel(url);
-                          })
-                          .catch(() => {
-                            window.open(url, '_blank');
-                          });
-                      }
+                      if (url) openScriptUrl(url);
                     }}
                     title={m.terminal_quakeOverlay_openUrl_tooltip()}
                     aria-label={m.terminal_quakeOverlay_openUrl_tooltip()}
@@ -1479,6 +1547,40 @@
 {/if}
 
 <style>
+  .terminal-overlay {
+    position: relative;
+  }
+
+  .terminal-panel-spacer {
+    height: 0;
+  }
+
+  .terminal-panel-spacer.is-visible {
+    height: var(--terminal-panel-height);
+  }
+
+  .terminal-panel {
+    position: absolute;
+    right: 0;
+    bottom: 36px;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate3d(0, 100%, 0);
+    transition:
+      transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
+      visibility 0s linear 160ms;
+  }
+
+  .terminal-panel.is-visible {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate3d(0, 0, 0);
+    transition:
+      transform 160ms cubic-bezier(0.33, 1, 0.68, 1),
+      visibility 0s linear 0s;
+  }
+
   .terminal-panel.is-resizing {
     user-select: none;
     pointer-events: none;
@@ -1486,5 +1588,12 @@
 
   .terminal-panel.is-resizing :global(*) {
     pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .terminal-panel,
+    .terminal-panel.is-visible {
+      transition: none;
+    }
   }
 </style>

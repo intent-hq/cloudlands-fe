@@ -13,6 +13,7 @@ import {
   selectChiefThreadPreview,
   selectChiefThreads,
   selectReusableChiefThread,
+  selectShowArchivedWorkspaces,
 } from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
 import {
@@ -268,5 +269,15 @@ describe('sidebar nav Chief selectors', () => {
     expect(selectReusableChiefThread.select(stateWithSessions([rehydrated]))).toMatchObject({
       agentId: rehydrated.id,
     });
+  });
+});
+
+describe('sidebar nav list preferences', () => {
+  it('selects archived workspace visibility', () => {
+    const state = {
+      sidebarNav: { showArchivedWorkspaces: true },
+    } as unknown as StoreState;
+
+    expect(selectShowArchivedWorkspaces.select(state)).toBe(true);
   });
 });

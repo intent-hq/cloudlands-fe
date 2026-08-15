@@ -8,20 +8,19 @@ function source(relativePath: string) {
 describe('workspace sidebar hierarchy presentation contract', () => {
   it('moves compact semantic global navigation beside the title-bar workspace tabs', () => {
     const navigation = source('../../layout/sidebar-nav/SidebarNav.svelte');
-    const chiefTrigger = source('../../layout/sidebar-nav/ChiefTrigger.svelte');
     const titleBar = source('../../layout/WindowTitleBar.svelte');
     const appLayout = source('../../../../routes/(app)/+layout.svelte');
 
     expect(navigation).toContain('data-top-navigation');
     expect(navigation).toContain('variant="ghost-light"');
-    expect(navigation).toContain('size="icon-xs"');
-    expect(navigation).toContain("? 'text-sidebar-accent-foreground'");
+    expect(navigation).toContain('size="icon"');
+    expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
     expect(navigation).toContain('data-nav-item={item.id}');
-    expect(navigation).toContain('<AsteriskIcon');
+    expect(navigation).toContain('name="dandelion"');
+    expect(navigation).not.toContain('name="spaces"');
     expect(titleBar).toContain('<SidebarNav />');
-    expect(titleBar.indexOf('<ChiefTrigger />')).toBeLessThan(titleBar.indexOf('<SidebarNav />'));
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
-    expect(chiefTrigger).toContain('data-chief-trigger');
+    expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
     expect(titleBar).toContain('class="flex min-w-0 items-center gap-1"');
@@ -74,21 +73,24 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(fullMode).not.toContain('pb-2 pl-1 text-left');
     expect(fullMode).not.toContain('px-0.5 py-1');
     expect(fullMode).toContain('{$workspace.branch}');
-    expect(fullMode).toContain('<CheckoutModePill workspace={$workspace} />');
-    expect(fullMode).not.toContain(
-      'aria-hidden="true">·</span>\n          <CheckoutModePill workspace={$workspace} />',
-    );
+    expect(fullMode).toContain('presentation="repository"');
+    expect(fullMode).toContain('repositoryOpen={repoTooltipOpen}');
+    expect(fullMode).not.toContain('data-sidebar-branch-icon');
+    expect(fullMode).not.toContain('<CheckoutModePill workspace={$workspace} />');
     expect(fullMode).not.toContain('data-workspace-title-section class="bg-');
   });
 
   it('renders one task progress bar with status details in its hover surface', () => {
     const progress = source('../sidebar/FlameGraph.svelte');
+    const sharedProgress = source('../TaskStatusProgress.svelte');
 
-    expect(progress).toContain('role="progressbar"');
-    expect(progress).toContain('style:flex-grow={bar.count}');
-    expect(progress).toContain('TASK_STATUS_BAR_CLASSES[bar.status]');
+    expect(progress).toContain('<TaskStatusProgress');
+    expect(sharedProgress).toContain('role="progressbar"');
+    expect(sharedProgress).toContain('style:flex-grow={segment.count}');
+    expect(sharedProgress).toContain('TASK_PROGRESS_SEGMENT_CLASSES[');
+    expect(sharedProgress).toContain('segment.visualState');
     expect(progress).toContain('content={taskListTooltip}');
-    expect(progress).toContain('contentClass="h-auto! min-h-0! max-w-80 whitespace-normal p-0!"');
+    expect(progress).toContain('bg-secondary!');
     expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 pt-2');
     expect(progress).toContain('onclick={() => specNoteId && onTaskClick?.(specNoteId)}');
     expect(progress).toContain('onclick={() => onTaskClick?.(task.note.id as string)}');
@@ -132,11 +134,11 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('data-testid="sidebar-launchers"');
     expect(sidebar).toContain('data-launcher-layout="tiles"');
     expect(sidebar).toContain('h-56 w-full auto-rows-fr grid-cols-2 gap-3');
-    expect(sidebar).toContain('rounded-lg bg-card border border-border p-3');
+    expect(sidebar).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
+    expect(sidebar).toContain('data-sidebar-overlay');
     expect(sidebar).toContain('sidebar-expanded-card relative');
-    expect(tabs).toContain("label: 'Context'");
+    expect(tabs).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('TAB_DEFINITIONS.filter');
-    expect(sidebar).not.toContain('OverviewTimelinePanel');
     expect(sidebar).not.toContain('tab-bar-container');
     expect(sidebar).not.toContain('transition:slide');
   });
@@ -152,15 +154,17 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('content={`${tab.label}: ${getTabDescription');
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(sidebar).toContain('data-sidebar-context={note.id}');
-    expect(sidebar).toContain('data-sidebar-change={changePath}');
+    expect(sidebar).not.toContain('data-sidebar-change={changePath}');
     expect(sidebar).toContain('const LAUNCHER_ICON_LIMIT = 6');
-    expect(sidebar).toContain('grid-cols-[repeat(3,1.75rem)]');
+    expect(sidebar).toContain('grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible');
+    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
     expect(sidebar).toContain('deriveAgentLauncherItems(');
     expect(sidebar).toContain('LAUNCHER_ICON_LIMIT,');
-    expect(sidebar).toContain('$notes.filter((note) => !isChildNote(note, $notes))');
-    expect(sidebar).toContain('{#each launcherNotes as note (note.id)}');
+    expect(sidebar).toContain('deriveNoteLauncherItems(');
+    expect(sidebar).toContain('(note, allNotes) => !isChildNote(note, allNotes)');
+    expect(sidebar).toContain('{#each launcherNotes as note, index (note.id)}');
     expect(sidebar).not.toContain('$notes.slice(0, LAUNCHER_ICON_LIMIT)');
-    expect(sidebar.match(/pointer-events-auto flex size-5 cursor-pointer/g)).toHaveLength(2);
+    expect(sidebar).toContain('const LAUNCHER_ICON_BUTTON_CLASS =');
     expect(sidebar).toContain('data-files-open-in');
     expect(sidebar).toContain('filePath={$fileExplorerWorkspacePath}');
     expect(sidebar).toContain('side="top"');
@@ -170,8 +174,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).not.toContain('faChevronDown');
     expect(sidebar).toContain('onclick={() => handleOpenAgentInPanel(agent.id)}');
     expect(sidebar).toContain('onclick={() => handleOpenNoteInPanel(note.id as string)}');
-    expect(sidebar).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
-    expect(sidebar).toContain('rounded-lg bg-card border border-border');
+    expect(sidebar).toContain('rounded-sm outline-none transition-colors');
+    expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('focus-visible:ring-0');
   });
 
@@ -210,7 +214,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
   it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('function launcherGridReveal()');
+    expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
     expect(sidebar).toContain('delay: 210');
     expect(sidebar).toContain('duration: 90');
     expect(sidebar).toContain('in:launcherGridReveal|global');
@@ -220,11 +224,14 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
     const browserLauncher = source('../SidebarBrowserLauncher.svelte');
 
-    expect(sidebar).toContain('<SidebarBrowserLauncher {workspaceId} {panelLayoutId} />');
+    expect(sidebar).toContain('<SidebarBrowserLauncher');
+    expect(sidebar).toContain("onExpand={() => handleTabClick('browser')}");
     expect(browserLauncher).toContain('data-sidebar-launcher="browser"');
     expect(browserLauncher).toContain('onclick={openBrowser}');
     expect(browserLauncher).toContain('getPanelLayoutManager(panelLayoutId).openBrowserPanel()');
-    expect(browserLauncher).toContain('aria-label="Open Browser"');
+    expect(browserLauncher).toContain(
+      'aria-label={m.workspace_browserLauncher_openBrowser_ariaLabel()}',
+    );
     expect(browserLauncher).toContain('icon={faWindowMaximize}');
     expect(browserLauncher).toContain('hover:bg-background/70');
     expect(browserLauncher).toContain('focus-visible:bg-background/70');

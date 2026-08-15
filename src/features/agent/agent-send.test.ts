@@ -40,7 +40,13 @@ import {
 import { sendMessage } from './agent-send';
 import { AgentStatus } from '$shared/types';
 import type { AgentSession, Workspace, QueuedMessage } from '$shared/types';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
+import {
+  __resetAgentQueueReadServiceForTests,
+  hydrateAgentQueue,
+  noteAgentQueueEventSnapshotApplied,
+} from './agent-queue-read-service';
 import {
   chatLastAttemptedMessageSet,
   chatReset,
@@ -135,6 +141,7 @@ describe('agent-send wire contract (pending agent, first message)', () => {
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset(AGENT));
+    __resetAgentQueueReadServiceForTests();
   });
 
   it('emits agent.sendMessage on the wire for a first send to a pending agent (§5.5 shape)', async () => {
@@ -207,6 +214,122 @@ describe('agent-send wire contract (pending agent, first message)', () => {
       id: 'queued-msg-1',
       content: 'persist me please',
     });
+  }, 30000);
+
+  it('does not re-seed the queue when a live agent:queue:updated snapshot superseded the send (monorepo#2481)', async () => {
+    // The daemon delivered the queued entry and emitted an EMPTY
+    // agent:queue:updated snapshot while the RPC response was still in
+    // flight; the bridge folded it before the queued:true echo resolved.
+    // Seeding from the stale echo would re-add the already-drained row.
+    const queuedMessage: QueuedMessage = {
+      id: 'queued-msg-superseded',
+      content: 'answered already',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-superseded',
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage') {
+        appStore.dispatch(replaceAgentQueue(AGENT, []));
+        noteAgentQueueEventSnapshotApplied(AGENT);
+        return { success: true, queued: true, queuedMessage, turnId: 'turn-superseded' };
+      }
+      return {};
+    });
+
+    await sendMessage(AGENT, 'answered already', workspace(), {});
+
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages).toEqual([]);
+    // The retry-record park is turn-scoped and cleaned by
+    // agent:queue:processing — it stays untouched by the seed guard.
+    const chatAgent = appStore.state.chatState.byAgentId[AGENT];
+    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toMatchObject({
+      turnId: 'turn-superseded',
+    });
+  }, 30000);
+
+  it('does not re-seed the queue when a hydrate-reconciled fold superseded the send (monorepo#2486)', async () => {
+    // Same race as monorepo#2481, but the drain's own agent:queue:updated
+    // event was missed and hydrateAgentQueue did the reconciliation instead:
+    // the hydrate fold lands while the sendMessage RPC response is still in
+    // flight. The fold must advance the same seq the seed guard captured, so
+    // the stale queued:true echo does not re-seed the drained row.
+    const queuedMessage: QueuedMessage = {
+      id: 'queued-msg-hydrate-superseded',
+      content: 'answered already',
+      queuedAt: '2026-08-15T14:00:00.000Z',
+      position: 0,
+      turnId: 'turn-hydrate-superseded',
+    };
+    appStore.dispatch(replaceAgentQueue(AGENT, [queuedMessage]));
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      // The daemon has already drained the queue (§5.5 agent.getQueue shape) —
+      // both the mid-send hydrate and the guard-trip reconciling hydrate see
+      // the drained queue.
+      if (method === 'agent.getQueue') return { success: true, queue: [] };
+      if (method === 'agent.sendMessage') {
+        // Runs the REAL hydrate service (agent.getQueue via the same mocked
+        // transport) inside the send RPC window.
+        await hydrateAgentQueue(AGENT);
+        return {
+          success: true,
+          queued: true,
+          queuedMessage,
+          turnId: 'turn-hydrate-superseded',
+        };
+      }
+      return {};
+    });
+
+    await sendMessage(AGENT, 'answered already', workspace(), {});
+
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages).toEqual([]);
+  }, 30000);
+
+  it('recovers a still-queued row via the reconciling hydrate when the guard tripped on a stale-empty hydrate (monorepo#2486 review)', async () => {
+    // Inverse race: the daemon served the mid-send hydrate's agent.getQueue
+    // BEFORE processing the sendMessage, so that fold saw the OLD empty queue
+    // and its seq bump trips the seed guard against a perfectly valid
+    // queued:true echo. Client-side apply order cannot rank the two, so the
+    // guard-trip path must run a reconciling hydrate — by then the daemon has
+    // processed the enqueue and returns the true queue including the row.
+    const queuedMessage: QueuedMessage = {
+      id: 'queued-msg-hydrate-stale',
+      content: 'still queued',
+      queuedAt: '2026-08-15T15:00:00.000Z',
+      position: 0,
+      turnId: 'turn-hydrate-stale',
+    };
+    let getQueueCalls = 0;
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.getQueue') {
+        getQueueCalls += 1;
+        // First read raced ahead of the enqueue (stale empty); the
+        // reconciling read sees the daemon's true queue.
+        return { success: true, queue: getQueueCalls === 1 ? [] : [queuedMessage] };
+      }
+      if (method === 'agent.sendMessage') {
+        await hydrateAgentQueue(AGENT);
+        return {
+          success: true,
+          queued: true,
+          queuedMessage,
+          turnId: 'turn-hydrate-stale',
+        };
+      }
+      return {};
+    });
+
+    await sendMessage(AGENT, 'still queued', workspace(), {});
+
+    expect(getQueueCalls).toBe(2);
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages.map((m) => m.id)).toEqual(['queued-msg-hydrate-stale']);
   }, 30000);
 
   it('parks the retry record under the echoed queuedMessage id instead of lastAttemptedMessage (#1011)', async () => {

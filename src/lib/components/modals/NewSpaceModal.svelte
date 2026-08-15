@@ -48,6 +48,7 @@
 <Dialog.Root bind:open onOpenChange={handleOpenChange}>
   <Dialog.Content
     data-new-space-modal
+    data-model-picker-collision-boundary
     showCloseButton={true}
     closeLabel={m.ui_updateToast_close_ariaLabel()}
     escapeKeydownBehavior="ignore"

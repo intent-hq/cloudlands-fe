@@ -14,7 +14,7 @@ const logger = createLogger('ModelBootSaga');
  * misc-ui-events-seeder "Models" block, dropped in #584 without a saga
  * replacement). Without it `state.model.availableModels` stays empty until
  * the first provider switch dispatches `reloadModelsForProvider`, starving
- * catalog consumers such as `selectModelEffortLevels` / EffortSelect.
+ * catalog consumers such as `selectModelEffortLevels` / ModelPicker reasoning controls.
  *
  * The active provider is read from the slice when settings hydration has
  * already landed, otherwise from the daemon (`settings.getProviderSettings`)

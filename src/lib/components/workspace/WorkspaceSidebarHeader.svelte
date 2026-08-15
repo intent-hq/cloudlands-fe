@@ -19,7 +19,6 @@
   } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type Workspace } from '$shared/types';
-  import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
@@ -221,10 +220,10 @@
     const { toast } = await import('svelte-sonner');
     try {
       await navigator.clipboard.writeText(workspace.branch);
-      toast.success('Branch name copied to clipboard');
+      toast.success(m.workspace_sidebarHeader_branchCopied_toast());
     } catch (error) {
       logger.error('Failed to copy branch name:', error);
-      toast.error('Failed to copy branch name');
+      toast.error(m.workspace_sidebarHeader_branchCopyFailed_error());
     }
   }
 
@@ -442,17 +441,11 @@
         bind:value={editedTitle}
         onblur={saveTitle}
         onkeydown={handleTitleKeydown}
-        oninput={(e) => {
-          const target = e.currentTarget;
-          // Auto-resize input based on content
-          target.style.width = `${Math.max(80, Math.min(200, target.value.length * 8 + 20))}px`;
-        }}
-        class="type-title min-w-[80px] max-w-full rounded bg-none py-0.5 text-foreground
+        class="type-title w-full rounded bg-none py-0.5 text-foreground
                outline-none leading-normal
                focus:ring-none! focus:outline-none!
                transition-all duration-150"
         placeholder={m.ui_editableName_placeholder()}
-        style="width: {Math.max(80, Math.min(200, (editedTitle || '').length * 8 + 20))}px"
       />
     {:else}
       <button
@@ -530,17 +523,7 @@
         <span class="flex h-5 shrink-0 items-center leading-5" aria-hidden="true">·</span>
       {/if}
       {#if workspace}
-        <div
-          class="flex h-5 min-w-0 flex-1 items-center gap-1.5 leading-5"
-          data-sidebar-branch-metadata
-        >
-          <span
-            class="grid size-4 shrink-0 place-items-center text-muted-foreground"
-            data-sidebar-branch-icon
-            aria-hidden="true"
-          >
-            <GitBranchIcon size={16} class="block size-4" />
-          </span>
+        <div class="flex h-5 min-w-0 flex-1 items-center leading-5" data-sidebar-branch-metadata>
           {#if isEditingBranch}
             <input
               bind:this={branchInputRef}
@@ -585,15 +568,11 @@
                   >
                     {workspace.branch || m.workspace_sidebarHeader_noBranch_label()}
                   </p>
-                  <div class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    {#if workspace.baseRef}
-                      <span class="min-w-0 truncate">Base {workspace.baseRef}</span>
-                      <span class="shrink-0 text-subtle" aria-hidden="true">·</span>
-                    {/if}
-                    <span class="shrink-0">
-                      {workspace.skipWorktree ? 'Direct checkout' : 'Worktree'}
-                    </span>
-                  </div>
+                  {#if workspace.baseRef}
+                    <p class="mt-1 min-w-0 truncate text-xs text-muted-foreground">
+                      {m.workspace_sidebarHeader_base_label({ ref: workspace.baseRef })}
+                    </p>
+                  {/if}
                 </div>
               {/snippet}
             </TooltipRich>
@@ -608,7 +587,7 @@
       <Button
         variant="ghost-light"
         size="icon-sm"
-        aria-label="Workspace actions"
+        aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
         class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
         onclick={toggle}
         disabled={isDeleting}

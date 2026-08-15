@@ -161,6 +161,12 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_search_label();
     },
   },
+  WORKSPACE_VIEW_MODE: {
+    key: 'mod+shift+l',
+    get label() {
+      return m.ui_shortcuts_workspaceViewMode_label();
+    },
+  },
 
   // ============================================================================
   // Dock / Agent Navigation
@@ -462,6 +468,21 @@ export function getShortcutDisplay(shortcutKey: keyof typeof SHORTCUTS): string 
   return formatShortcut(shortcut.key);
 }
 
+export function getShortcutChord(
+  shortcutKey: keyof typeof SHORTCUTS,
+  mac = isMac,
+): { key: string; meta: boolean; ctrl: boolean; shift: boolean; alt: boolean } {
+  const parts = SHORTCUTS[shortcutKey].key.toLowerCase().split('+');
+  const key = parts.at(-1) ?? '';
+  return {
+    key,
+    meta: parts.includes('meta') || parts.includes('cmd') || (mac && parts.includes('mod')),
+    ctrl: parts.includes('ctrl') || (!mac && parts.includes('mod')),
+    shift: parts.includes('shift'),
+    alt: parts.includes('alt') || parts.includes('option'),
+  };
+}
+
 /**
  * Check if the current platform is Mac
  */
@@ -529,6 +550,13 @@ export const SHORTCUT_CATEGORIES: Record<
         key: 'mod+o',
         get label() {
           return m.ui_shortcuts_toggleSpaces_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: SHORTCUTS.WORKSPACE_VIEW_MODE.key,
+        get label() {
+          return SHORTCUTS.WORKSPACE_VIEW_MODE.label;
         },
         contexts: ['global'],
       },

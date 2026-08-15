@@ -44,7 +44,6 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import EffortSelect from './EffortSelect.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import {
     hasExplicitModelPin,
@@ -103,6 +102,7 @@
   let newDescription = $state('');
   let newCodingAgent = $state<string | undefined>(undefined);
   let newModel = $state<string | undefined>(undefined);
+  let newEffort = $state<string | undefined>(undefined);
   let newPrompt = $state(m.settings_aiBehavior_newPromptTemplate());
 
   // Character limits
@@ -125,6 +125,7 @@
       newDescription = '';
       newCodingAgent = undefined;
       newModel = undefined;
+      newEffort = undefined;
       newPrompt = m.settings_aiBehavior_newPromptTemplate();
     }
   });
@@ -171,10 +172,6 @@
   let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state<string | undefined>(undefined);
   let specialistEffortValue = $state<string | undefined>(undefined);
-
-  // Model the effort level applies to: the explicit pin when present, else
-  // the daemon-resolved preview of what an inheriting specialist would run.
-  const specialistEffortModel = $derived(specialistModelValue ?? currentSpecialist?.resolvedModel);
 
   // Saved model options from the resolved specialist view (file override →
   // bundled). Reactive to file specialist changes so the rows resync after
@@ -240,7 +237,7 @@
    * (`model.defaultReasoningEffort`). Default (undefined) writes '' so the
    * daemon reads it as unset.
    */
-  function handleDefaultEffortChange(effort: string | undefined) {
+  function handleDefaultEffortChange(effort: string | null) {
     appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
   }
 
@@ -433,11 +430,13 @@
     if (!compoundModelId) {
       newCodingAgent = undefined;
       newModel = undefined;
+      newEffort = effortForModel($selectedModel, newEffort);
       return;
     }
     const { providerId } = parseCompoundModelId(compoundModelId);
     newCodingAgent = providerId;
     newModel = compoundModelId;
+    newEffort = effortForModel(compoundModelId, newEffort);
   }
 
   function handlePromptSave(prompt: string) {
@@ -649,6 +648,7 @@
         description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
         codingAgent: newCodingAgent,
         model: newModel,
+        reasoningEffort: newEffort,
         behaviorPrompt: newPrompt,
         scope: 'user',
       }),
@@ -670,6 +670,7 @@
     newDescription = '';
     newCodingAgent = undefined;
     newModel = undefined;
+    newEffort = undefined;
     newPrompt = m.settings_aiBehavior_newPromptTemplate();
     onDiscard?.();
   }
@@ -719,13 +720,9 @@
           variant="default"
           size="sm"
           updateGlobalDefault
-        />
-        <EffortSelect
-          model={$selectedModel}
-          value={$defaultReasoningEffort$ || undefined}
-          onChange={handleDefaultEffortChange}
-          testId="default-effort"
-          showLabel
+          showReasoning
+          reasoningEffort={$defaultReasoningEffort$ || null}
+          onReasoningChange={handleDefaultEffortChange}
         />
         {#if anySpecialistHasExplicitModel}
           <button
@@ -856,13 +853,9 @@
             m.settings_aiBehavior_inheritModelPreview_label({ model })}
           size="sm"
           variant="default"
-        />
-        <EffortSelect
-          model={specialistEffortModel}
-          value={specialistEffortValue}
-          onChange={handleSpecialistEffortChange}
-          testId="specialist-effort"
-          showLabel
+          showReasoning
+          reasoningEffort={specialistEffortValue ?? null}
+          onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
         />
         {#if isBuiltIn && hasFileOverride()}
           <button
@@ -973,6 +966,11 @@
             m.settings_aiBehavior_inheritModelPreview_label({ model })}
           variant="default"
           size="sm"
+          showReasoning
+          reasoningEffort={newEffort ?? null}
+          onReasoningChange={(effort) => {
+            newEffort = effort ?? undefined;
+          }}
         />
       </div>
     </div>

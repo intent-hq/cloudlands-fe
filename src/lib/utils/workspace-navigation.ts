@@ -24,9 +24,8 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { dispatchWindowEvent } from './window-events';
-import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
@@ -112,6 +111,8 @@ export async function navigateToTerminal(terminalId: string): Promise<void> {
 
 /** Options for opening content in panels */
 export interface OpenInPanelOptions {
+  /** Explicit owning workspace. Falls back to the route workspace for legacy callers. */
+  workspaceId?: string;
   /** If true, opens in an adjacent panel (or creates a split if needed). Used for cmd+click. */
   openInAdjacentPanel?: boolean;
   /** If true, creates a new adjacent panel rather than reusing an existing neighbor. */
@@ -147,7 +148,7 @@ export async function navigateToNote(noteId: string, options?: OpenInPanelOption
   logger.info(`[navigateToNote] Navigating to note: ${noteId}`, options);
 
   const currentPage = get(page);
-  const workspaceId = currentPage.params.id;
+  const workspaceId = options?.workspaceId ?? currentPage.params.id;
 
   if (!workspaceId) {
     logger.error('[navigateToNote] No workspace ID found in current page params');
@@ -401,47 +402,6 @@ export async function navigateBackFromSettings(): Promise<void> {
 }
 
 /**
- * Navigate after a workspace has been archived or deleted.
- *
- * Closes the tab for the removed workspace and navigates to:
- * - The next available workspace tab (if any exist)
- * - Another available workspace, or workspace creation when none remain
- *
- * Uses the tab manager's built-in "pick next or previous" logic.
- *
- * @param removedWorkspaceId - The ID of the workspace being archived/deleted
- */
-export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
-  logger.info(
-    '[navigateAfterWorkspaceRemoval] Navigating after workspace removal:',
-    removedWorkspaceId,
-  );
-
-  // Close the tab - this automatically sets currentTabId to the next available tab
-  appStore.dispatch(closeWorkspaceTab(removedWorkspaceId));
-
-  // Get the next tab ID (already set by closeTab)
-  const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
-
-  if (
-    nextTabId &&
-    typeof nextTabId === 'string' &&
-    nextTabId.length > 0 &&
-    nextTabId !== 'undefined' &&
-    nextTabId !== 'null' &&
-    nextTabId !== removedWorkspaceId
-  ) {
-    logger.info('[navigateAfterWorkspaceRemoval] Navigating to next tab:', nextTabId);
-    await goto(`/workspace/${nextTabId}`);
-  } else {
-    const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
-    const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
-    logger.info('[navigateAfterWorkspaceRemoval] Navigating to fallback:', target);
-    await goto(target);
-  }
-}
-
-/**
  * Return the first non-archived workspace, excluding one being removed.
  */
 function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
@@ -455,10 +415,25 @@ function getFirstAvailableWorkspace(excludedWorkspaceId?: string) {
     );
 }
 
-/** Navigate to an available workspace, or workspace creation when none exist. */
+/** Navigate to an available workspace, or the shared empty-window destination when none exist. */
 export async function navigateToFirstWorkspace(): Promise<void> {
   const workspace = getFirstAvailableWorkspace();
-  const target = workspace ? `/workspace/${workspace.id}` : '/workspace/new';
+  const target = workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
+  await goto(target);
+}
+
+/** Navigate away from a workspace after it has been archived or deleted. */
+export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string): Promise<void> {
+  const workspace = getFirstAvailableWorkspace(removedWorkspaceId);
+  const target = workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(
+        selectWorkspaceItems.select(appStore.state),
+        removedWorkspaceId,
+      );
+  logger.info('[navigateAfterWorkspaceRemoval] Navigating to:', target);
   await goto(target);
 }

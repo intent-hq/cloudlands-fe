@@ -30,7 +30,8 @@ describe('panel resize rendering', () => {
     expect(canvas).toContain('storageKey={null}');
     expect(canvas).toContain('side="left"');
     expect(canvas).toContain('handleClassName="right-0! panel-canvas-resize-handle"');
-    expect(layout).toContain('canvasWidth={$panelCanvasWidth$}');
+    expect(layout).toContain('panelCanvasResizeCommittedWidth ??');
+    expect(layout).toContain('$panelCanvasWidth$}');
     expect(layout).toContain('scrollContainer={panelWorkspaceInset}');
     expect(layout).toContain('onResizeEnd={handlePanelCanvasResizeEnd}');
     expect(layout).toContain('onResizePreview={handlePanelOuterResizePreview}');
@@ -53,9 +54,9 @@ describe('panel resize rendering', () => {
     const layout = source('PanelLayout.svelte');
     const canvas = source('PanelCanvasFrame.svelte');
 
-    expect(layout).toContain('panelColumnCount={$panelColumnCount$}');
+    expect(layout).toContain('panelColumnWidths={$panelColumnDefaultWidths$}');
     expect(canvas).toContain(
-      'getPanelCanvasWidths(viewportWidth, panelColumnCount, sizing, canvasWidth)',
+      'getPanelCanvasWidths(\n      viewportWidth,\n      panelColumnWidths,',
     );
     expect(layout).toContain('sizing={canvasSizing}');
     expect(canvas).not.toContain('doSkipResize');
@@ -86,6 +87,17 @@ describe('panel resize rendering', () => {
     expect(container).toContain('applyLiveCanvasResizeChildWidths');
     expect(container).toMatch(/style\.flex = `0 0 \$\{pinnedWidth\}px`/);
     expect(container).toContain('return `0 0 ${pinnedWidth}px`;');
+    expect(container).toContain('onResizeStart={() => handleResizeStart(item.index)}');
+  });
+
+  it('bypasses adjacent redistribution for every root horizontal handle', () => {
+    const container = source('PanelContainer.svelte');
+    const rootBranch = container.indexOf('if (\n      growsCanvasAtRootHorizontal');
+    const adjacentFallback = container.indexOf('const newSizes = resizeAdjacentPanels');
+
+    expect(rootBranch).toBeGreaterThan(0);
+    expect(rootBranch).toBeLessThan(adjacentFallback);
+    expect(container.slice(rootBranch, adjacentFallback)).toContain('return;');
   });
 
   it('applies outer canvas resize preview only to the final root panel', () => {

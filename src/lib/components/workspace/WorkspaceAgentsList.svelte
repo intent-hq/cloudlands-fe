@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { AgentSession } from '$shared/types';
+  import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import { ListEmpty } from '$lib/components/ui/list';
+  import VirtualList from '$lib/components/ui/VirtualList.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -13,8 +15,16 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
-  import { getFlatWorkspaceAgentRows } from './workspace-agents-list-utils';
+  import {
+    filterWorkspaceAgentRows,
+    getFlatWorkspaceAgentRows,
+    isBackgroundAgentSession as isBackgroundAgent,
+    isCoordinatorAgentSession as isCoordinator,
+    shouldVirtualizeWorkspaceAgentRows,
+  } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   interface Props {
     agents?: AgentSession[];
@@ -24,6 +34,10 @@
     onCreateWithSpecialist?: (specialistId: string | null) => void;
     runningAgentIds?: string[];
     loading?: boolean;
+    workspaceId?: string;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
+    searchQuery?: string;
   }
 
   let {
@@ -34,19 +48,21 @@
     onCreateWithSpecialist,
     runningAgentIds = [],
     loading = false,
+    workspaceId = '',
+    openPanelTabs = [],
+    activePanelTab,
+    searchQuery = '',
   }: Props = $props();
 
-  function isBackgroundAgent(agent: AgentSession): boolean {
-    return !!(agent.isBackground || agent.metadata?.isBackground);
-  }
-
   const flatAgentRows = $derived(getFlatWorkspaceAgentRows(agents));
+  const filteredAgentRows = $derived(filterWorkspaceAgentRows(flatAgentRows, searchQuery));
+  const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
   const runningAgentIdSet = $derived(new Set(runningAgentIds));
   const directChildrenByAgentId = $derived.by(() => {
     const children = new Map<string, AgentSession[]>();
     const ancestors: { id: string; depth: number }[] = [];
 
-    for (const row of flatAgentRows) {
+    for (const row of filteredAgentRows) {
       while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= row.depth) {
         ancestors.pop();
       }
@@ -62,7 +78,7 @@
     return children;
   });
   const topLevelAgents = $derived(
-    flatAgentRows.filter((row) => row.depth === 0).map((row) => row.agent),
+    filteredAgentRows.filter((row) => row.depth === 0).map((row) => row.agent),
   );
   const topLevelForegroundAgents = $derived(
     topLevelAgents.filter((agent) => !isBackgroundAgent(agent)),
@@ -71,15 +87,18 @@
     topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
   );
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // Fall back to the regular list when delegations exist (tree heights are variable)
+  // or a coordinator is present (its section headers need the regular rendering).
+  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
+  // Matches the slim card's base height (LazyAgentCard's estimatedHeight default);
+  // virtualized rows hide the preview line so every row stays uniform.
+  const itemHeight = 48;
+  const containerHeight = 600;
   let expandedAgentIds = $state(new Set<string>());
   let showBackgroundAgents = $state(false);
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
-
-  function isCoordinator(agent: AgentSession): boolean {
-    return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
-  }
 
   function isAgentRunning(agentId: string): boolean {
     return runningAgentIdSet.has(agentId);
@@ -107,22 +126,33 @@
   function handleAgentClick(agentId: string) {
     onSelect?.({ agentId });
   }
+
+  function getAgentPanelState(agentId: string) {
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'agent',
+      agentId,
+      workspaceId,
+    });
+  }
 </script>
 
 {#snippet agentTree(agentList: AgentSession[])}
   {#each agentList as agent (agent.id)}
+    {@const panelState = getAgentPanelState(agent.id)}
     <LazyAgentCard
       cacheKey={agent.id}
       agentId={agent.id}
       agentName={agent.name}
       isBackground={isBackgroundAgent(agent)}
       selected={agent.id === selectedAgentId}
+      openPanelCount={panelState.count}
+      activeInPanel={panelState.isActive}
       onclick={() => handleAgentClick(agent.id)}
     />
 
     {@const children = directChildrenByAgentId.get(agent.id) ?? []}
     {#if children.length > 0}
-      {@const isExpanded = expandedAgentIds.has(agent.id)}
+      {@const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
       <div class="mb-2" style="padding-left: 26px;">
         <Button
@@ -179,6 +209,7 @@
         {:else if runningChildren.length > 0}
           <div class="flex flex-col gap-0.5">
             {#each runningChildren as child (child.id)}
+              {@const panelState = getAgentPanelState(child.id)}
               <div transition:slide={{ axis: 'y', duration: 150 }}>
                 <LazyAgentCard
                   cacheKey={child.id}
@@ -186,6 +217,8 @@
                   agentName={child.name}
                   isBackground={isBackgroundAgent(child)}
                   selected={child.id === selectedAgentId}
+                  openPanelCount={panelState.count}
+                  activeInPanel={panelState.isActive}
                   onclick={() => handleAgentClick(child.id)}
                 />
               </div>
@@ -216,7 +249,40 @@
     {/each}
   </div>
 {:else if topLevelForegroundAgents.length === 0 && standaloneBackgroundAgents.length === 0}
-  <ListEmpty message={m.workspace_agentsList_empty_label()} />
+  <ListEmpty
+    message={hasActiveSearch
+      ? m.workspace_agentsList_noSearchResults_label()
+      : m.workspace_agentsList_empty_label()}
+    class={hasActiveSearch ? 'min-h-14 py-3' : undefined}
+    role="status"
+    aria-live="polite"
+  />
+{:else if shouldUseVirtual}
+  <!-- Virtual scrolling fallback (flat, no delegations, no coordinator) -->
+  <div class="h-full max-h-150 overflow-hidden">
+    <VirtualList
+      items={topLevelForegroundAgents}
+      {itemHeight}
+      {containerHeight}
+      getKey={(agent: AgentSession) => agent.id}
+    >
+      {#snippet children({ item: agent }: { item: AgentSession })}
+        {@const panelState = getAgentPanelState(agent.id)}
+        <div class="w-full">
+          <AgentCard
+            agentId={agent.id}
+            agentName={agent.name}
+            isBackground={false}
+            selected={agent.id === selectedAgentId}
+            openPanelCount={panelState.count}
+            activeInPanel={panelState.isActive}
+            hidePreview
+            onclick={() => handleAgentClick(agent.id)}
+          />
+        </div>
+      {/snippet}
+    </VirtualList>
+  </div>
 {:else}
   <div class="flex flex-col gap-0.5">
     {#if topLevelForegroundAgents.length > 0}
@@ -298,7 +364,8 @@
 
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
-      {#if showBackgroundAgents || isAgentRunning(agent.id)}
+      {@const panelState = getAgentPanelState(agent.id)}
+      {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
         <div transition:slide={{ axis: 'y', duration: 150 }}>
           <LazyAgentCard
             cacheKey={agent.id}
@@ -306,6 +373,8 @@
             agentName={agent.name}
             isBackground
             selected={agent.id === selectedAgentId}
+            openPanelCount={panelState.count}
+            activeInPanel={panelState.isActive}
             onclick={() => handleAgentClick(agent.id)}
           />
         </div>

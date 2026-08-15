@@ -106,6 +106,7 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
         (mocks.tasksByWorkspace[workspaceId] ?? []).filter((task) => task.status !== 'cancelled'),
       ),
     ),
+    selectWorkspaceTasksInitialized: vi.fn(mocks.createWorkspaceValueReadable(() => true)),
   };
 });
 

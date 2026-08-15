@@ -65,7 +65,19 @@ try {
 // pnpm forwards a literal `--` separator (`pnpm run test:ct -- --list`); drop it.
 const forwarded = process.argv.slice(2);
 if (forwarded[0] === '--') forwarded.shift();
-const args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
+
+// CI helpers: browsers must match the CT-aligned runner version (not the
+// repo's top-level playwright), so version printing (for cache keys) and
+// browser installation go through this launcher too.
+let args;
+if (forwarded[0] === '--print-playwright-version') {
+  process.stdout.write(`${cli.version}\n`);
+  process.exit(0);
+} else if (forwarded[0] === '--install-browsers') {
+  args = ['install', ...forwarded.slice(1)];
+} else {
+  args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
+}
 console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
 
 const child = spawn(process.execPath, [cli.cliPath, ...args], {

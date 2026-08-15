@@ -16,6 +16,7 @@ describe('FlameGraph task progress', () => {
     const { container } = render(FlameGraph, { props: { notes: [], animationKey: 'loading' } });
 
     expect(container.querySelector('[data-flame-progress-placeholder]')).not.toBeNull();
+    expect(container.querySelector('[data-task-status-progress]')?.className).toContain('h-5');
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
@@ -38,9 +39,9 @@ describe('FlameGraph task progress', () => {
 
     render(FlameGraph, { props: { notes, progress: 0.5, onTaskClick } });
 
-    const row = screen.getByRole('button', { name: 'Open Build UI, In progress' });
+    const row = screen.getByRole('button', { name: 'Open Build UI, In Progress' });
     const summary = screen.getByRole('button', { name: 'Open spec, 0 of 1 tasks complete' });
-    const status = screen.getByText('In progress');
+    const status = screen.getByText('In Progress');
     const tooltipContent = screen.getByTestId('mock-tooltip-content');
     const tooltipTrigger = screen.getByTestId('mock-tooltip-trigger');
     expect(status.className).toContain('font-normal');
@@ -48,6 +49,11 @@ describe('FlameGraph task progress', () => {
     expect(summary.className).toContain('cursor-pointer');
     expect(summary.className).toContain('font-normal');
     expect(row.className).not.toContain('hover:bg-');
+    expect(tooltipContent.dataset.contentClass).toContain('bg-secondary!');
+    expect(tooltipContent.dataset.contentClass).toContain('text-secondary-foreground!');
+    expect(tooltipContent.dataset.contentClass).toContain('border-foreground/20!');
+    expect(tooltipContent.dataset.contentClass).toContain('shadow-(--elevation-overlay)!');
+    expect(tooltipContent.dataset.contentClass).toContain('ring-foreground/10');
     expect(tooltipContent.dataset.contentClass).toContain('whitespace-normal');
     expect(tooltipTrigger.className).toContain('cursor-pointer');
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
@@ -108,25 +114,23 @@ describe('FlameGraph task progress', () => {
     const progressbar = screen.getByRole('progressbar');
 
     expect(Array.from(bars, (bar) => bar.dataset.flameStatusBar)).toEqual([
-      'complete',
-      'in_progress',
-      'review_required',
-      'not_started',
+      'completed',
+      'striped',
+      'not-started',
     ]);
-    expect(bars[1].style.flexGrow).toBe('1');
+    expect(Array.from(bars, (bar) => bar.style.flexGrow)).toEqual(['1', '2', '1']);
     expect(bars[1].style.maskImage).toBe('var(--status-in-progress-hatch-mask)');
     expect(bars[0].className).toContain('bg-foreground');
     expect(bars[0].className).toContain('dark:bg-accent');
     expect(bars[0].className).not.toContain('border');
-    expect(bars[1].className).toContain('bg-foreground');
-    expect(bars[1].className).toContain('dark:bg-muted-foreground/60');
-    expect(bars[2].className).toContain('bg-primary/70');
-    expect(bars[2].className).toContain('dark:bg-secondary');
-    expect(bars[3].className).toContain('bg-background');
-    expect(bars[3].className).toContain('dark:bg-muted/60');
+    expect(bars[1].className).toContain('bg-foreground/65');
+    expect(bars[1].className).toContain('dark:bg-muted-foreground/70');
+    expect(bars[2].className).toContain('bg-background');
+    expect(bars[2].className).toContain('dark:bg-muted/60');
     expect(bars[1].className).toContain('flame-status-segment');
     expect(progressbar.className).toContain('bg-background');
     expect(progressbar.className).toContain('flame-progress-enter');
+    expect(progressbar.getAttribute('data-task-status-size')).toBe('default');
     expect(progressbar.getAttribute('data-flame-animation-key')).toBe('workspace-one');
     expect(progressbar.getAttribute('aria-valuetext')).toBe(
       '1 complete, 1 in progress, 1 review required, 1 not started',

@@ -2,6 +2,7 @@
  * Daemon Health Selectors
  */
 
+import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
 import type { BackendTransportInfo } from './daemon-health-types';
 
@@ -29,6 +30,37 @@ export const selectDaemonTransport = store.createSelector(
 /** Reconnect attempts since the last successful connect (#1750). */
 export const selectReconnectAttempts = store.createSelector(
   (state) => state.daemonHealth.reconnectAttempts,
+);
+
+/** Connected-daemon-vs-pin version comparison derived for the health UI. */
+export interface DaemonVersionComparison {
+  /** Semver ordering of the daemon version relative to the pin ('unknown' when unparsable). */
+  comparison: PinComparison;
+  /** Live version from the last system.status poll. */
+  daemonVersion: string;
+  /** The bundled intentd.version pin, from transport info. */
+  pinnedVersion: string;
+}
+
+/**
+ * Compares the connected daemon's live version (`stats.version`, from the
+ * last system.status poll) against the bundled intentd.version pin
+ * (`transport.pinnedVersion`). Returns `null` when either side is missing —
+ * older daemons that omit `version` and builds without a pin degrade to "no
+ * mismatch". A mismatch is `comparison === 'older' | 'newer'`; 'unknown'
+ * (unparsable version) is not a mismatch.
+ */
+export const selectDaemonVersionComparison = store.createSelector(
+  (state): DaemonVersionComparison | null => {
+    const daemonVersion = state.daemonHealth.stats?.version;
+    const pinnedVersion = state.daemonHealth.transport?.pinnedVersion;
+    if (!daemonVersion || !pinnedVersion) return null;
+    return {
+      comparison: compareToPinnedVersion(daemonVersion, pinnedVersion),
+      daemonVersion,
+      pinnedVersion,
+    };
+  },
 );
 
 /**

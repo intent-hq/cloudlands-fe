@@ -6,7 +6,6 @@ import {
   deriveAgentLauncherItems,
   getAgentLauncherPreview,
   getNoteLauncherPreview,
-  shouldShowAgentInLauncher,
 } from '../utils/sidebar-launcher-preview';
 
 function source(relativePath: string) {
@@ -60,13 +59,23 @@ describe('sidebar launcher hover previews', () => {
     expect(getNoteLauncherPreview(note)).toBe('Plan\n\nReview hover previews.');
   });
 
-  it('shows only running or unread agents in the launcher', () => {
-    const readAgent = { hasUnread: false } as AgentSession;
-    const unreadAgent = { hasUnread: true } as AgentSession;
+  it('includes every unique agent and prioritizes running then unread sessions', () => {
+    const readAgent = { id: 'read', hasUnread: false, messages: [] } as unknown as AgentSession;
+    const unreadAgent = {
+      id: 'unread',
+      hasUnread: true,
+      messages: [],
+    } as unknown as AgentSession;
 
-    expect(shouldShowAgentInLauncher(readAgent, false)).toBe(false);
-    expect(shouldShowAgentInLauncher(readAgent, true)).toBe(true);
-    expect(shouldShowAgentInLauncher(unreadAgent, false)).toBe(true);
+    const result = deriveAgentLauncherItems(
+      [readAgent, unreadAgent, readAgent],
+      6,
+      (agent) => agent.id === 'read',
+      () => ({ lastUserMessage: '', response: '' }),
+    );
+
+    expect(result.launcherAgents.map(({ agent }) => agent.id)).toEqual(['read', 'unread']);
+    expect(result.totalAgents).toBe(2);
   });
 
   it('builds previews only after filtering, ordering, and applying the launcher limit', () => {
@@ -125,7 +134,9 @@ describe('sidebar launcher hover previews', () => {
     expect(sidebar).toContain('let openLauncherHoverKey = $state<string | null>(null)');
     expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
     expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');
-    expect(sidebar).toContain('grid-cols-[repeat(3,1.75rem)] gap-0');
-    expect(sidebar).not.toContain('grid-cols-[repeat(3,1.75rem)] gap-0.5');
+    expect(sidebar).toContain(
+      'isolate grid h-7 w-full min-w-0 grid-flow-col items-start overflow-visible',
+    );
+    expect(sidebar).toContain('data-launcher-pack="bounded-distribution"');
   });
 });

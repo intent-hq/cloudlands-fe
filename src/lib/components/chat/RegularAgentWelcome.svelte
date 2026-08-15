@@ -219,7 +219,7 @@
   {/if}
 
   <!-- Behavior Prompt / Description -->
-  <div class="mb-3 rounded-lg border border-border bg-card px-4 py-3 shadow-xs">
+  <div class="mb-3 px-4" data-testid="agent-welcome-description">
     <p
       class="text-sm text-subtle leading-relaxed whitespace-pre-wrap {specialistInfo &&
       !showFullPrompt

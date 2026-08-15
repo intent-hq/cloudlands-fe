@@ -10,15 +10,7 @@ vi.mock('../../ui/button/button.svelte', async () => ({
   default: (await import('./mocks/Button.svelte')).default,
 }));
 
-vi.mock('$features/agent/components/auggie-avatar/AuggieAvatar.svelte', async () => ({
-  default: (await import('./mocks/AuggieAvatar.svelte')).default,
-}));
-
 import QueuedMessageList from '../QueuedMessageList.svelte';
-
-const WAKE_TEXT =
-  '[WORKSPACE EVENTS] You have been woken up by 1 subscribed event(s):\n\n' +
-  '1. [agent:idle] Agent "Foo" is now idle {{agentId:agent-foo-1}}';
 
 function queued(overrides: Partial<QueuedMessage>): QueuedMessage {
   return {
@@ -49,275 +41,32 @@ describe('QueuedMessageList', () => {
     expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
   });
 
-  it('renders an event wake (messageMetadata) as a compact system row without Edit', () => {
-    const message = queued({
-      content: WAKE_TEXT,
-      messageMetadata: {
-        type: 'event_notification',
-        eventCount: 1,
-        eventTypes: ['agent:idle'],
-        events: [
-          {
-            type: 'agent:idle',
-            timestamp: '2026-01-01T00:00:00.000Z',
-            data: {
-              agentId: 'agent-foo-1',
-              agentName: 'Foo',
-              completionReport: 'Implemented the feature and ran tests.',
-            },
-          },
-        ],
-      },
-    });
-    const { container } = render(QueuedMessageList, { props: { messages: [message] } });
-
-    // Compact label + report preview instead of the raw prefixed text
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(screen.getByText(/Implemented the feature and ran tests\./)).toBeTruthy();
-    expect(screen.queryByText(WAKE_TEXT)).toBeNull();
-
-    // No Edit affordance; Remove and Send now stay
-    const tooltips = buttonTooltips(container);
-    expect(tooltips).not.toContain('Edit');
-    expect(tooltips).toContain('Remove');
-    expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
-  });
-
-  it('falls back to the [WORKSPACE EVENTS] prefix when metadata is absent', () => {
-    const { container } = render(QueuedMessageList, {
-      props: { messages: [queued({ content: WAKE_TEXT })] },
-    });
-
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(screen.queryByText(WAKE_TEXT)).toBeNull();
-    expect(buttonTooltips(container)).not.toContain('Edit');
-  });
-
-  it('falls back to text parsing when messageMetadata has an unexpected shape', () => {
-    const { container } = render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: WAKE_TEXT,
-            messageMetadata: { type: 'event_notification', events: 'not-an-array' },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(buttonTooltips(container)).not.toContain('Edit');
-  });
-
-  it('falls back to text parsing when metadata events items are malformed', () => {
+  it('reserves the three-action lane before hover and keyboard focus', () => {
     render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: WAKE_TEXT,
-            // events is an array, but its items lack the expected `data` object
-            messageMetadata: { type: 'event_notification', events: ['agent:idle'] },
-          }),
-        ],
-      },
+      props: { messages: [queued({ content: 'A long queued message that stays on one line' })] },
     });
 
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+    const content = screen.getByTestId('queued-message-content');
+    const text = screen.getByTestId('queued-message-text');
+    const actions = screen.getByTestId('queued-message-actions');
+    expect(actions.children).toHaveLength(3);
+    expect(actions.className).toContain('absolute');
+    expect(actions.className).toContain('pointer-events-none');
+    expect(actions.className).toContain('group-hover:pointer-events-auto');
+    expect(actions.className).toContain('group-focus-within:pointer-events-auto');
+    expect(content.className).toContain('pr-24');
+    expect(content.className).not.toContain('group-hover:pr-24');
+    expect(content.className).not.toContain('group-focus-within:pr-24');
+    expect(content.className).not.toContain('transition-[padding-right]');
+    expect(text.className).toContain('truncate');
   });
 
-  it('renders a reportToParent wake as a completion with the report as preview', () => {
-    const message = queued({
-      content:
-        '[WORKSPACE EVENTS] Child agent Foo (agent-foo-1) completed. Report: Opened PR #410 and all checks pass.',
-      messageMetadata: {
-        type: 'event_notification',
-        eventCount: 1,
-        eventTypes: ['agent:reportToParent'],
-        events: [
-          {
-            type: 'agent:reportToParent',
-            timestamp: '2026-01-01T00:00:00.000Z',
-            data: {
-              agentId: 'agent-foo-1',
-              agentName: 'Foo',
-              report: 'Opened PR #410 and all checks pass.',
-            },
-          },
-        ],
-      },
-    });
-    const { container } = render(QueuedMessageList, { props: { messages: [message] } });
-
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(screen.getByText(/Opened PR #410 and all checks pass\./)).toBeTruthy();
-    expect(buttonTooltips(container)).not.toContain('Edit');
-  });
-
-  it('reads the legacy data.report key as the preview for agent:idle wakes', () => {
-    render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: WAKE_TEXT,
-            messageMetadata: {
-              type: 'event_notification',
-              eventCount: 1,
-              eventTypes: ['agent:idle'],
-              events: [
-                {
-                  type: 'agent:idle',
-                  timestamp: '2026-01-01T00:00:00.000Z',
-                  data: {
-                    agentId: 'agent-foo-1',
-                    agentName: 'Foo',
-                    report: 'Fixed the flaky test and reran the suite.',
-                  },
-                },
-              ],
-            },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(screen.getByText(/Fixed the flaky test and reran the suite\./)).toBeTruthy();
-  });
-
-  it('strips the [WORKSPACE EVENTS] prefix as the preview for single-line wakes without metadata', () => {
-    render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content:
-              '[WORKSPACE EVENTS] Child agent Foo (agent-foo-1) completed. Report: Did the thing.',
-            messageMetadata: { type: 'event_notification', eventCount: 1 },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('1 workspace event')).toBeTruthy();
-    expect(
-      screen.getByText(/Child agent Foo \(agent-foo-1\) completed\. Report: Did the thing\./),
-    ).toBeTruthy();
-  });
-
-  it('labels a non-agent event wake with categories derived from eventTypes', () => {
-    const { container } = render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: '[WORKSPACE EVENTS] You have been woken up by 3 subscribed event(s):',
-            messageMetadata: {
-              type: 'event_notification',
-              eventCount: 3,
-              eventTypes: ['file:modified', 'task:updated', 'note:updated'],
-            },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('file changes · task updates · note changes')).toBeTruthy();
-    expect(buttonTooltips(container)).not.toContain('Edit');
-  });
-
-  it('combines agent labels with non-agent categories for mixed event wakes', () => {
-    render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: WAKE_TEXT,
-            messageMetadata: {
-              type: 'event_notification',
-              eventCount: 2,
-              eventTypes: ['agent:idle', 'file:modified'],
-              events: [
-                {
-                  type: 'agent:idle',
-                  timestamp: '2026-01-01T00:00:00.000Z',
-                  data: { agentId: 'agent-foo-1', agentName: 'Foo' },
-                },
-              ],
-            },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('Child agent Foo completed · file changes')).toBeTruthy();
-  });
-
-  it('falls back to an event count when no categories can be derived', () => {
-    render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content: '[WORKSPACE EVENTS] You have been woken up by 4 subscribed event(s):',
-            messageMetadata: {
-              type: 'event_notification',
-              eventCount: 4,
-              eventTypes: ['mystery:thing', 'other:thing'],
-            },
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('4 workspace events')).toBeTruthy();
-    expect(screen.queryByText('Workspace events')).toBeNull();
-  });
-
-  it('shows a content-derived preview for legacy no-metadata wakes', () => {
-    render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({
-            content:
-              '[WORKSPACE EVENTS] You have been woken up by 2 subscribed event(s):\n\n' +
-              '1. [file:modified] src/lib/foo.ts changed\n' +
-              '2. [file:created] src/lib/bar.ts created',
-          }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('2 workspace events')).toBeTruthy();
-    expect(screen.getByText(/\[file:modified\] src\/lib\/foo\.ts changed/)).toBeTruthy();
-  });
-
-  it('keeps the requeued-after-failure indicator on event wake rows', () => {
-    const { container } = render(QueuedMessageList, {
-      props: { messages: [queued({ content: WAKE_TEXT, requeuedAfterFailure: true })] },
-    });
-
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
-  });
-
-  it('keeps regular messages unchanged when mixed with an event wake', () => {
-    const { container } = render(QueuedMessageList, {
-      props: {
-        messages: [
-          queued({ id: 'q-1', content: 'normal message', position: 0 }),
-          queued({ id: 'q-2', content: WAKE_TEXT, position: 1 }),
-        ],
-      },
-    });
-
-    expect(screen.getByText('normal message')).toBeTruthy();
-    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
-    // Exactly one Edit button (the normal message's)
-    expect(buttonTooltips(container).filter((t) => t === 'Edit')).toHaveLength(1);
-  });
-
-  it('editLastMessage() skips a trailing event wake and edits the last user message', async () => {
+  it('editLastMessage() starts editing the last queued message', async () => {
     const { component, container } = render(QueuedMessageList, {
       props: {
         messages: [
-          queued({ id: 'q-1', content: 'normal message', position: 0 }),
-          queued({ id: 'q-2', content: WAKE_TEXT, position: 1 }),
+          queued({ id: 'q-1', content: 'first message', position: 0 }),
+          queued({ id: 'q-2', content: 'second message', position: 1 }),
         ],
       },
     });
@@ -327,12 +76,12 @@ describe('QueuedMessageList', () => {
 
     const textarea = container.querySelector('textarea');
     expect(textarea).toBeTruthy();
-    expect(textarea?.value).toBe('normal message');
+    expect(textarea?.value).toBe('second message');
   });
 
-  it('editLastMessage() returns false when the queue only holds event wakes', async () => {
+  it('editLastMessage() returns false when the queue is empty', async () => {
     const { component, container } = render(QueuedMessageList, {
-      props: { messages: [queued({ content: WAKE_TEXT })] },
+      props: { messages: [] },
     });
 
     expect(component.editLastMessage()).toBe(false);
@@ -341,192 +90,13 @@ describe('QueuedMessageList', () => {
     expect(container.querySelector('textarea')).toBeNull();
   });
 
-  describe('agent-to-agent messages (messageMetadata.type === "agent_message")', () => {
-    const AGENT_MESSAGE_METADATA = {
-      type: 'agent_message',
-      fromAgentId: 'agent-sender-1',
-      fromAgentName: 'Builder',
-    };
-
-    it('renders avatar + sender name attribution without Edit, keeping Remove and Send now', () => {
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({ content: 'please review my PR', messageMetadata: AGENT_MESSAGE_METADATA }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('Builder')).toBeTruthy();
-      expect(screen.getByText(/please review my PR/)).toBeTruthy();
-      const avatar = screen.getByTestId('auggie-avatar');
-      expect(avatar.getAttribute('data-agent-id')).toBe('agent-sender-1');
-
-      const tooltips = buttonTooltips(container);
-      expect(tooltips).not.toContain('Edit');
-      expect(tooltips).toContain('Remove');
-      expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
+  it('keeps the requeued-after-failure indicator on queued rows', () => {
+    const { container } = render(QueuedMessageList, {
+      props: { messages: [queued({ content: 'try again', requeuedAfterFailure: true })] },
     });
 
-    it('falls back to "Agent" when fromAgentName is absent', () => {
-      render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: 'hello',
-              messageMetadata: { type: 'agent_message', fromAgentId: 'agent-sender-2' },
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('Agent')).toBeTruthy();
-    });
-
-    it('renders as a normal editable message when metadata is malformed', () => {
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: 'hello',
-              // agent_message without a usable fromAgentId
-              messageMetadata: { type: 'agent_message', fromAgentId: 42 },
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('hello')).toBeTruthy();
-      expect(screen.queryByTestId('queued-agent-message-avatar')).toBeNull();
-      expect(buttonTooltips(container)).toContain('Edit');
-    });
-
-    it('editLastMessage() skips a trailing agent message and edits the last user message', async () => {
-      const { component, container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({ id: 'q-1', content: 'normal message', position: 0 }),
-            queued({
-              id: 'q-2',
-              content: 'agent says hi',
-              position: 1,
-              messageMetadata: AGENT_MESSAGE_METADATA,
-            }),
-          ],
-        },
-      });
-
-      expect(component.editLastMessage()).toBe(true);
-      await tick();
-
-      const textarea = container.querySelector('textarea');
-      expect(textarea).toBeTruthy();
-      expect(textarea?.value).toBe('normal message');
-    });
-
-    it('keeps the requeued-after-failure indicator on agent message rows', () => {
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: 'hello',
-              messageMetadata: AGENT_MESSAGE_METADATA,
-              requeuedAfterFailure: true,
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('Builder')).toBeTruthy();
-      expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
-    });
-  });
-
-  describe('hook wake messages (messageMetadata.type === "hook_wake")', () => {
-    const HOOK_WAKE_METADATA = {
-      type: 'hook_wake',
-      hookId: 'hook-1',
-      hookName: 'ci-watch',
-      reason: 'dispatched',
-    };
-
-    it('renders bolt + hook name attribution with the prefix stripped, no Edit', () => {
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: '[Background hook "ci-watch"] CI is red',
-              messageMetadata: HOOK_WAKE_METADATA,
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('ci-watch')).toBeTruthy();
-      expect(screen.getByTestId('queued-hook-wake-icon')).toBeTruthy();
-      expect(screen.getByText(/CI is red/)).toBeTruthy();
-      expect(screen.queryByText(/\[Background hook/)).toBeNull();
-
-      const tooltips = buttonTooltips(container);
-      expect(tooltips).not.toContain('Edit');
-      expect(tooltips).toContain('Remove');
-      expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
-    });
-
-    it('hides the trailing [This hook …] state note from the row and its tooltip', () => {
-      const content =
-        '[Background hook "ci-watch"] CI is red\n\n' +
-        '[This hook is now retired and will not run again — ' +
-        'reschedule via ws.hook.schedule if still needed.]';
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [queued({ content, messageMetadata: HOOK_WAKE_METADATA })],
-        },
-      });
-
-      expect(screen.getByText(/CI is red/)).toBeTruthy();
-      expect(screen.queryByText(/\[This hook/)).toBeNull();
-      const row = container.querySelector('[title*="CI is red"]');
-      expect(row?.getAttribute('title')).toBe('CI is red');
-    });
-
-    it('falls back to "Hook" when hookName is absent', () => {
-      render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: 'wake up',
-              messageMetadata: { type: 'hook_wake', hookId: 'hook-2' },
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('Hook')).toBeTruthy();
-    });
-
-    it('editLastMessage() skips a trailing hook wake and edits the last user message', async () => {
-      const { component, container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({ id: 'q-1', content: 'normal message', position: 0 }),
-            queued({
-              id: 'q-2',
-              content: '[Background hook "ci-watch"] CI is red',
-              position: 1,
-              messageMetadata: HOOK_WAKE_METADATA,
-            }),
-          ],
-        },
-      });
-
-      expect(component.editLastMessage()).toBe(true);
-      await tick();
-
-      const textarea = container.querySelector('textarea');
-      expect(textarea).toBeTruthy();
-      expect(textarea?.value).toBe('normal message');
-    });
+    expect(screen.getByText(/try again/)).toBeTruthy();
+    expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
   });
 
   describe('image thumbnails', () => {
@@ -605,31 +175,6 @@ describe('QueuedMessageList', () => {
           /^View attached image \d+ of \d+ full size$/,
         );
       }
-    });
-
-    it('renders thumbnails on agent-to-agent attribution rows', () => {
-      const { container } = render(QueuedMessageList, {
-        props: {
-          messages: [
-            queued({
-              content: 'from an agent',
-              imageBlocks: [IMAGE_BLOCKS[0]],
-              messageMetadata: {
-                type: 'agent_message',
-                fromAgentId: 'agent-sender-1',
-                fromAgentName: 'Builder',
-              },
-            }),
-          ],
-        },
-      });
-
-      expect(screen.getByText('Builder')).toBeTruthy();
-      const buttons = thumbnails(container);
-      expect(buttons).toHaveLength(1);
-      expect(buttons[0].querySelector('img')?.getAttribute('src')).toBe(
-        'data:image/png;base64,AAAA',
-      );
     });
   });
 

@@ -9,6 +9,16 @@
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    OPERATIONAL_DISCLOSURE_CLASS,
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+    OPERATIONAL_ICON_BOX_CLASS,
+    OPERATIONAL_ICON_CLASS,
+    OPERATIONAL_PRIMARY_CLASS,
+    OPERATIONAL_ROW_CONTAINER_CLASS,
+    OPERATIONAL_ROW_LINE_CLASS,
+    OPERATIONAL_SUMMARY_CLASS,
+  } from './operational-disclosure-row';
 
   interface Props {
     content: string;
@@ -54,36 +64,35 @@
   });
 </script>
 
-<div
-  class="tool-call-container group type-caption font-family-child relative block w-full overflow-hidden text-foreground/75 transition-all duration-[var(--motion-fast)] ease-out hover:text-foreground focus-within:text-foreground {className}"
-  data-testid="reasoning-tool-call"
->
-  <div class="relative flex min-h-5 w-full min-w-0 items-center gap-1.5 py-0">
-    <Fa
-      icon={faBrain}
-      size={14}
-      class="a11y-ignore w-4 shrink-0 text-foreground/60 {isStreaming ? 'animate-pulse' : ''}"
-    />
+<div class="{OPERATIONAL_ROW_CONTAINER_CLASS} {className}" data-testid="reasoning-tool-call">
+  <div class={OPERATIONAL_ROW_LINE_CLASS} data-operational-disclosure-row>
+    <span class={OPERATIONAL_ICON_BOX_CLASS} data-operational-icon-box aria-hidden="true">
+      <Fa
+        icon={faBrain}
+        size={14}
+        class="{OPERATIONAL_ICON_CLASS} {isStreaming ? 'animate-pulse' : ''}"
+      />
+    </span>
     <button
-      class="flex min-w-0 items-center gap-1 overflow-hidden border-0 bg-transparent p-0 text-left cursor-pointer"
-      style="flex: 0 0.01 auto;"
+      class="{OPERATIONAL_DISCLOSURE_CLASS} cursor-pointer"
       onclick={toggle}
       aria-expanded={isExpanded}
     >
-      <span class="shrink-0 whitespace-nowrap text-muted-foreground">
+      <span class="shrink-0 whitespace-nowrap {OPERATIONAL_PRIMARY_CLASS}">
         {isStreaming
           ? m.chat_thinkingBlock_thinking_label()
           : m.chat_thinkingBlock_reasoning_label()}
       </span>
       {#if !isExpanded}
-        <span class="min-w-0 truncate whitespace-nowrap text-muted-foreground">{summary}</span>
+        <span class={OPERATIONAL_SUMMARY_CLASS} data-testid="reasoning-summary">{summary}</span>
       {/if}
     </button>
   </div>
 
   {#if isExpanded}
     <div
-      class="type-caption ml-5 pt-1 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      class="{OPERATIONAL_EXPANDED_CONTENT_CLASS} type-caption ml-5 text-muted-foreground [&_p]:my-2 [&_p:first-child]:mt-0 [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+      data-operational-expanded-content
       transition:safeSlide={{ duration: 150 }}
     >
       <MarkdownViewer {content} {isStreaming} {workspaceId} taskBlockRenderMode="content" />

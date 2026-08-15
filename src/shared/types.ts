@@ -219,17 +219,18 @@ export const WORKSPACE_STATUS_MESSAGE_MAX_LENGTH = 500;
  *  guard, and every consumer set derive from this array. `idle` (intentd#793)
  *  folds live agent activity into the daemon-side derivation: a running agent
  *  promotes to `in_progress`, and without one the task-stage rollups
- *  (`in_progress`/`not_started`) demote to `idle`. `failed`, `blocked` and
- *  `unread` (intentd#945) complete the BE-owned canonical precedence
- *  `failed > blocked > needs_attention > in_progress > unread > PR/task rollup`,
- *  so clients no longer synthesize those axes locally. */
+ *  (`in_progress`/`not_started`) demote to `idle`. `failed` and `blocked`
+ *  (intentd#945) complete the BE-owned canonical precedence
+ *  `failed > blocked > needs_attention > in_progress > PR/task rollup`,
+ *  so clients no longer synthesize those axes locally. Unread is NOT a
+ *  displayStatus (intentd#1186): it travels only on the dismissible
+ *  `workspace.attention` flag and overlays the real status. */
 export const WORKSPACE_DISPLAY_STATUS_VALUES = [
   'failed',
   'blocked',
   'needs_attention',
   'not_started',
   'in_progress',
-  'unread',
   'idle',
   'complete',
   'pr_ready',
@@ -303,6 +304,13 @@ export interface Workspace {
    *  `workspace.markSeen` / `workspace.dismissAttention`. Optional on decode —
    *  when absent (older daemons) the FE treats it as 'none'. */
   attention?: WorkspaceAttention;
+  /** BE-derived orthogonal waiting flag (PROTOCOL §5.1): true when the
+   *  workspace's agents are purely waiting on external conditions (active
+   *  background hooks, PR monitors, or watched agents). Overlays the real
+   *  displayStatus rather than folding into it. Presence-detected on the
+   *  wire — omitted when false, so older daemons (which never send it) read
+   *  as not waiting. */
+  waiting?: boolean;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -665,6 +673,12 @@ export interface WorkspaceTask {
    * then omit `expectedVersion` and last-writer-wins applies.
    */
   rev?: number;
+  /**
+   * Daemon-computed: true iff this task's id is linked from the spec note
+   * body (PROTOCOL §5.4, additive). `undefined` when the daemon predates the
+   * field — consumers then keep their legacy (pre-`specLinked`) behavior.
+   */
+  specLinked?: boolean;
   /** Task-note ids this task depends on (hard ordering edges); omitted when empty. */
   dependsOn?: NoteId[];
   /** Task-note ids this task may conflict with (advisory); omitted when empty. */

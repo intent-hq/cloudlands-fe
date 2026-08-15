@@ -85,10 +85,11 @@ export interface SendMessageOptions {
 export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 
 /**
- * Transcript hydration status: 'loading' when a transcript fetch is in flight,
- * 'settled' when it completes (success or error). Defaults to undefined (not yet started).
+ * Transcript hydration status: 'loading' while the newest window is unresolved,
+ * 'settled' after a successful source paints, and 'error' when all bounded
+ * first-window sources fail. Defaults to undefined (not yet started).
  */
-export type TranscriptHydrationStatus = 'loading' | 'settled';
+export type TranscriptHydrationStatus = 'loading' | 'settled' | 'error';
 
 /**
  * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
@@ -116,12 +117,7 @@ export interface TranscriptSnapshotMeta {
  * in app-client.ts). Drives the pre-live hydration indicator in ChatPanel.
  * `null`/absent means no standing subscription is open for the agent.
  */
-export type LiveStreamPhase =
-  | 'connecting'
-  | 'awaiting-snapshot'
-  | 'live'
-  | 'resyncing'
-  | 'delayed';
+export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
  * Serializable per-agent chat state stored in Redux.
@@ -160,9 +156,8 @@ export interface ChatAgentState {
   lastChunkReceivedAt: number;
   /**
    * Transcript hydration status for this agent. Undefined means hydration has not
-   * started; 'loading' means a fetch is in flight; 'settled' means the fetch completed
-   * (success or error). Gates the welcome page: skeleton shows while loading, welcome
-   * shows only when settled with zero messages.
+   * started; 'loading' means the newest window is unresolved, 'settled' means a source
+   * succeeded, and 'error' exposes a retry instead of a false new-chat welcome.
    */
   transcriptHydration?: TranscriptHydrationStatus;
   /**
@@ -194,6 +189,8 @@ export interface ChatAgentState {
  */
 export interface SendMessagePayload {
   text: string;
+  /** Stable identity shared by the optimistic row and its composer transition. */
+  userAppMessageId?: string;
   contextItems?: ChatInputContextItem[];
   serializedContextItems?: SerializableContextItem[];
   workspaceContextStr?: string;

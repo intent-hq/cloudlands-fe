@@ -31,15 +31,20 @@
     selectCounterScale,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { navigateBackFromSettings, navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { faSettings } from '$lib/icons/phosphor-icons';
-  import Fa from 'svelte-fa';
+  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectWorkspaceViewMode } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import {
+    TITLEBAR_NAVIGATION_CONTROL_CLASS,
+    TITLEBAR_NAVIGATION_GLYPH_CLASS,
+  } from './titlebar-navigation';
+  import { getCounterScaledTitlebarHeight, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
   import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import WorkspaceViewModeToggle from './WorkspaceViewModeToggle.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import {
+    selectOnboardingActive,
     selectPanelItem,
     selectPanelWidth,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -60,6 +65,7 @@
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
   const workspaceViewMode$ = selectWorkspaceViewMode();
+  const onboardingActive$ = selectOnboardingActive();
 
   // Where the workspace controls naturally start (left edge, titlebar coords).
   // Measured from the fixed controls (SidebarNav) so the margin below can align
@@ -258,18 +264,17 @@
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
     <Button
       variant="ghost"
-      size="icon-xs"
+      size="icon"
       iconOnly
-      class={cn(
-        'text-foreground hover:text-foreground',
-        page.url.pathname.startsWith('/settings') && 'text-accent-foreground',
-      )}
+      class={TITLEBAR_NAVIGATION_CONTROL_CLASS}
       onclick={() => void handleSettings()}
       aria-label={m.layout_sidebarNav_settings_label()}
       aria-current={page.url.pathname.startsWith('/settings') ? 'page' : undefined}
       data-titlebar-settings
     >
-      <Fa icon={faSettings} class="pointer-events-none size-3.5!" />
+      <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
+        <IntentNavigationIcon name="settings" size={16} class="pointer-events-none size-4!" />
+      </span>
     </Button>
   </Tooltip>
 {/snippet}
@@ -278,7 +283,7 @@
 <div
   class="window-title-bar-wrapper"
   class:workspace-columns-titlebar={overlayWorkspaceColumns}
-  style:height="{35 / $zoomFactor}px"
+  style:height="{getCounterScaledTitlebarHeight($zoomFactor)}px"
   aria-label={m.layout_titleBar_ariaLabel()}
 >
   <!-- app-drag-region scopes the layout rule in +layout.svelte that marks
@@ -288,6 +293,7 @@
       'window-title-bar app-drag-region',
       isMac ? 'window-title-bar-mac' : 'window-title-bar-windows',
     )}
+    style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
     style:transform="scale({$counterScale})"
     style:transform-origin="top left"
     style:width="{100 * $zoomFactor}%"
@@ -317,14 +323,18 @@
         style:margin-left={`${$workspaceViewMode$ === 'columns' ? 0 : panelOffset}px`}
         data-titlebar-workspace-controls
       >
-        <WorkspaceViewModeToggle />
+        {#if !$onboardingActive$}
+          <WorkspaceViewModeToggle />
+        {/if}
         {#if $workspaceViewMode$ === 'single'}
           <WorkspaceTabStrip
             onActiveTabBoundsChange={handleActiveTabBoundsChange}
             onActiveTabTrackingChange={handleActiveTabTrackingChange}
             activeWorkspaceId={routedWorkspaceId}
           />
-          <WorkspaceRepoLauncher />
+          {#if !$onboardingActive$}
+            <WorkspaceRepoLauncher />
+          {/if}
         {/if}
         {#if $workspaceViewMode$ === 'columns'}
           {@render titlebarUtilities(false)}
@@ -378,7 +388,7 @@
   }
 
   .window-title-bar {
-    height: 35px;
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;

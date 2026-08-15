@@ -35,6 +35,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { formatDate, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
+  import { sanitizeToolPayload, sanitizeToolText } from './tool-display-model';
 
   interface Props {
     input: Record<string, any>;
@@ -42,9 +43,17 @@
     parsedResult?: ParsedToolResult | null;
     isError?: boolean;
     workspaceId?: string;
+    suppressOkOnlyResult?: boolean;
   }
 
-  const { input, result, parsedResult, isError = false, workspaceId }: Props = $props();
+  const {
+    input,
+    result,
+    parsedResult,
+    isError = false,
+    workspaceId,
+    suppressOkOnlyResult = false,
+  }: Props = $props();
 
   // This tool result's workspace (resolved from the workspaceId prop, not the
   // globally active workspace — the result may render outside the active
@@ -59,9 +68,35 @@
 
   let copied = $state(false);
   let showRaw = $state(false);
+  const sanitizedInput = $derived(sanitizeToolPayload(input) as Record<string, any>);
+  const sanitizedResult = $derived(sanitizeToolPayload(result));
 
   // Whether this tool call has a rich (non-raw) preview available
   const hasRichPreview = $derived(parsedResult != null && parsedResult.type !== 'unknown');
+
+  // Disposition summary for batch delegate results ("2 started · 1 held · 1 skipped").
+  // The started count always shows; held/skipped/failed only when non-zero.
+  const delegateBatchSummary = $derived.by(() => {
+    const batch = parsedResult?.delegateBatch;
+    if (!batch) return null;
+    const parts = [
+      m.chat_toolDetails_delegateBatchStarted_label({ count: formatInteger(batch.started) }),
+    ];
+    if (batch.held > 0) {
+      parts.push(m.chat_toolDetails_delegateBatchHeld_label({ count: formatInteger(batch.held) }));
+    }
+    if (batch.skipped > 0) {
+      parts.push(
+        m.chat_toolDetails_delegateBatchSkipped_label({ count: formatInteger(batch.skipped) }),
+      );
+    }
+    if (batch.errors > 0) {
+      parts.push(
+        m.chat_toolDetails_delegateBatchFailed_label({ count: formatInteger(batch.errors) }),
+      );
+    }
+    return parts.join(' · ');
+  });
 
   // Special input keys that should be shown at the top of output (not hidden)
   // These are the "query" or "request" that provides important context
@@ -107,7 +142,7 @@
   const featuredInput = $derived.by(() => {
     for (const key of FEATURED_INPUT_KEYS) {
       if (input[key] && typeof input[key] === 'string') {
-        return input[key] as string;
+        return sanitizeToolText(input[key]);
       }
     }
     return null;
@@ -117,7 +152,8 @@
   function formatValue(val: unknown): string {
     if (val == null) return '';
     if (typeof val === 'string') {
-      return val.length > 150 ? val.slice(0, 150) + '…' : val;
+      const sanitized = sanitizeToolText(val);
+      return sanitized.length > 150 ? sanitized.slice(0, 150) + '…' : sanitized;
     }
     if (typeof val === 'number' || typeof val === 'boolean') return String(val);
     if (Array.isArray(val))
@@ -134,7 +170,7 @@
   const inputEntries = $derived.by(() => {
     if (!input) return null;
     const entries: Array<{ key: string; value: string }> = [];
-    for (const [key, val] of Object.entries(input)) {
+    for (const [key, val] of Object.entries(sanitizedInput)) {
       if (val == null) continue;
       // Skip very long values in the summary (like file_content, instructions_reminder)
       if (FEATURED_INPUT_KEYS.has(key)) continue;
@@ -146,60 +182,67 @@
     return entries.length > 0 ? entries : null;
   });
 
-  // Extract display text from an error result payload (§7.1 shapes: string,
-  // MCP content-item array, `{ output }` fallback), else the raw JSON
-  // representation
+  // Extract concise display text from common error payloads. Structured raw
+  // data stays behind the explicit disclosure below.
   const errorText = $derived.by(() => {
     if (result == null) return null;
     const text = extractPayloadText(result);
-    if (text !== null) return text;
-    try {
-      return JSON.stringify(result, null, 2);
-    } catch {
-      return String(result);
+    if (text !== null) return sanitizeToolText(text);
+    if (typeof result === 'object' && typeof result.message === 'string') {
+      return sanitizeToolText(result.message);
     }
+    return null;
   });
 </script>
 
+{#snippet rawDetails()}
+  {#if inputEntries || result != null}
+    <details class="mt-2 rounded border border-border/50 bg-muted/20">
+      <summary
+        class="type-caption cursor-pointer select-none px-2 py-1.5 text-muted-foreground hover:text-foreground"
+      >
+        {m.chat_toolCall_technicalDetails_label()}
+      </summary>
+      <div class="flex flex-col gap-2 border-t border-border/50 p-2">
+        {#if inputEntries}
+          <div>
+            <div class="type-caption mb-1 text-subtle">
+              {m.chat_toolDetails_input_label()}
+            </div>
+            <pre
+              class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{JSON.stringify(
+                sanitizedInput,
+                null,
+                2,
+              )}</pre>
+          </div>
+        {/if}
+        {#if result != null}
+          <div>
+            <div class="type-caption mb-1 text-subtle">
+              {m.chat_toolDetails_result_label()}
+            </div>
+            <pre
+              class="m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-subtle">{typeof sanitizedResult ===
+              'string'
+                ? sanitizedResult
+                : JSON.stringify(sanitizedResult, null, 2)}</pre>
+          </div>
+        {/if}
+      </div>
+    </details>
+  {/if}
+{/snippet}
+
 {#snippet fallbackDetails()}
-  <!-- Fallback: input details + raw result (or "Completed" when there is no result) -->
-  {#if inputEntries}
-    <div class="flex flex-col gap-1 pb-2 mb-2 border-b border-border/50">
-      {#each inputEntries as { key, value }}
-        <div class="text-xs">
-          <span class="text-subtle">{key}</span>
-          <span class="text-subtle ml-1.5 break-all">{value}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-  {#if result != null}
-    <div class="overflow-hidden rounded">
-      <pre
-        class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-subtle">{typeof result ===
-        'string'
-          ? result
-          : JSON.stringify(result, null, 2)}</pre>
-    </div>
-  {:else}
-    <div class="text-xs text-subtle italic">{m.chat_toolDetails_completed_label()}</div>
-  {/if}
+  <!-- Keep unknown payloads hidden until technical details are explicitly disclosed. -->
+  {@render rawDetails()}
 {/snippet}
 
 <div class="flex flex-col text-sm">
   <!-- Error display -->
   {#if isError}
     <div class="rounded-md border border-border overflow-hidden mb-2 divide-y divide-border">
-      {#if inputEntries}
-        <div class="px-3 py-2 flex flex-col gap-1 bg-muted/30">
-          {#each inputEntries as { key, value }}
-            <div class="text-xs">
-              <span class="text-subtle">{key}</span>
-              <span class="text-subtle ml-1.5">{value}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
       {#if errorText}
         <div class="px-3 py-2 flex items-start gap-2">
           <Fa icon={faExclamationTriangle} size="xs" class="text-red-500/70 mt-0.5 shrink-0" />
@@ -212,7 +255,12 @@
           <span class="text-xs text-subtle">{m.chat_toolDetails_noErrorDetails_label()}</span>
         </div>
       {/if}
+      {#if inputEntries || result != null}
+        <div class="px-3 pb-2">{@render rawDetails()}</div>
+      {/if}
     </div>
+  {:else if suppressOkOnlyResult}
+    <!-- Successful ok-only mutations intentionally have no expanded body. -->
   {:else if result || parsedResult}
     <!-- Output Section (no Input section - hidden for cleaner display) -->
     <div class="flex flex-col">
@@ -239,7 +287,9 @@
                 ? m.chat_toolDetails_showFormatted_title()
                 : m.chat_toolDetails_showRaw_title()}
             >
-              {showRaw ? m.chat_toolDetails_formatted_label() : m.chat_toolDetails_raw_label()}
+              {showRaw
+                ? m.chat_toolDetails_formatted_label()
+                : m.chat_toolCall_technicalDetails_label()}
             </button>
           {/if}
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
@@ -267,7 +317,7 @@
                 </div>
                 <pre
                   class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-48 overflow-y-auto text-subtle bg-muted/30 rounded">{JSON.stringify(
-                    input,
+                    sanitizedInput,
                     null,
                     2,
                   )}</pre>
@@ -279,10 +329,10 @@
                   {m.chat_toolDetails_result_label()}
                 </div>
                 <pre
-                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle bg-muted/30 rounded">{typeof result ===
+                  class="m-0 p-2 font-mono text-xs leading-relaxed overflow-x-auto max-h-72 overflow-y-auto text-subtle bg-muted/30 rounded">{typeof sanitizedResult ===
                   'string'
-                    ? result
-                    : JSON.stringify(result, null, 2)}</pre>
+                    ? sanitizedResult
+                    : JSON.stringify(sanitizedResult, null, 2)}</pre>
               </div>
             {/if}
           </div>
@@ -531,25 +581,38 @@
               </div>
             </div>
           {:else if parsedResult.type === 'delegate-task'}
-            <!-- Delegate task - show task name and agent card -->
+            <!-- Delegate task - show task name and agent card(s) -->
             <div class="flex flex-col gap-2">
-              {#if parsedResult.delegatedTaskName}
-                <div class="text-sm text-subtle">
-                  {m.chat_toolDetails_task_label()}
-                  <span class="text-foreground font-medium">{parsedResult.delegatedTaskName}</span>
-                </div>
-              {/if}
-              {#if parsedResult.agentId}
-                <AgentCard
-                  agentId={parsedResult.agentId}
-                  agentName={parsedResult.delegatedAgentName}
-                  provider={parsedResult.delegatedAgentProvider}
-                  workspace={$toolWorkspace ?? null}
-                />
+              {#if parsedResult.delegateBatch && delegateBatchSummary}
+                <!-- Batch delegate: disposition summary + cards for started agents -->
+                <div class="text-sm text-subtle">{delegateBatchSummary}</div>
+                {#each parsedResult.delegateBatch.startedRows as row (row.agentId)}
+                  <AgentCard
+                    agentId={row.agentId}
+                    agentName={row.agentName}
+                    workspace={$toolWorkspace ?? null}
+                  />
+                {/each}
               {:else}
-                <div class="text-xs text-subtle italic">
-                  {m.chat_toolDetails_agentSpawned_label()}
-                </div>
+                {#if parsedResult.delegatedTaskName}
+                  <div class="text-sm text-subtle">
+                    {m.chat_toolDetails_task_label()}
+                    <span class="text-foreground font-medium">{parsedResult.delegatedTaskName}</span
+                    >
+                  </div>
+                {/if}
+                {#if parsedResult.agentId}
+                  <AgentCard
+                    agentId={parsedResult.agentId}
+                    agentName={parsedResult.delegatedAgentName}
+                    provider={parsedResult.delegatedAgentProvider}
+                    workspace={$toolWorkspace ?? null}
+                  />
+                {:else}
+                  <div class="text-xs text-subtle italic">
+                    {m.chat_toolDetails_agentSpawned_label()}
+                  </div>
+                {/if}
               {/if}
             </div>
           {:else if parsedResult.type === 'agent-list' && parsedResult.agents?.length}
@@ -1363,28 +1426,8 @@
       </div>
     </div>
   {:else if inputEntries}
-    <!-- No result, but we have input details to show -->
-    <div class="flex flex-col">
-      <div class="p-2 bg-muted/30">
-        <div class="flex flex-col gap-1">
-          {#each inputEntries as { key, value }}
-            <div class="text-xs">
-              <span class="text-subtle">{key}</span>
-              <span class="text-subtle ml-1.5 break-all">{value}</span>
-            </div>
-          {/each}
-        </div>
-        <div class="text-xs text-subtle mt-2 italic">{m.chat_toolDetails_completed_label()}</div>
-      </div>
-    </div>
+    {@render rawDetails()}
   {:else}
-    <!-- No result and no input details — tool completed with no output -->
-    <div class="p-2 bg-muted/30">
-      <span class="text-xs text-subtle italic"
-        >{isError
-          ? m.chat_toolDetails_noDetails_label()
-          : m.chat_toolDetails_completed_label()}</span
-      >
-    </div>
+    <!-- No meaningful output: the collapsed row is the complete presentation. -->
   {/if}
 </div>

@@ -6,6 +6,7 @@
     getLastSelectedRepoHydrationAction,
     getInitialRepoKey,
     mapInitialRepoToFormState,
+    mapRecentRepoToSelection,
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
@@ -54,6 +55,7 @@
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   import {
     selectSpecialists,
@@ -119,14 +121,8 @@
   import { resolveSubmitProvider } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-  hasBlockingAttachments,
-  type ContextItem,
-} from '$lib/components/chat/input/context-api';
-  import {
-  hasStagedFileItems,
-  redeemStagedAttachments,
-} from './initializer/staged-attachments';
+  import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
+  import { hasStagedFileItems, redeemStagedAttachments } from './initializer/staged-attachments';
   import { backendRequest } from '$lib/client/live/backend-transport';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
@@ -485,6 +481,11 @@
       ? (savedState?.modelWasOverridden ?? lastSubmittedAgent?.modelWasOverridden ?? false)
       : false,
   );
+  let selectedReasoningEffort = $state<string | undefined>(
+    isModelForCurrentProvider
+      ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
+      : undefined,
+  );
   // Track if team mode is selected (spec-writer orchestrates)
   let isTeamMode = $state<boolean>(
     savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? true,
@@ -580,15 +581,17 @@
     if (!settings) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     const model = settings.selectedModel;
-    if (
-      model &&
+    const savedModelAccepted =
+      !!model &&
       parseCompoundModelId(model, $defaultProviderId$).providerId ===
-        ($activeProviderId$ || $defaultProviderId$)
-    ) {
+        ($activeProviderId$ || $defaultProviderId$);
+    if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
     }
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
+    selectedReasoningEffort =
+      !model || savedModelAccepted ? settings.selectedReasoningEffort : undefined;
   }
 
   function applyCompactFormState(formState: CompactWorkspaceInitializerFormState) {
@@ -645,12 +648,7 @@
       applyLastSelectedRepo(lastSelectedRepo);
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
-      const mostRecentRepo = recentRepos[0];
-      applyLastSelectedRepo({
-        path: mostRecentRepo.path,
-        type: mostRecentRepo.type,
-        isValidPath: true,
-      });
+      applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
     }
   });
 
@@ -732,6 +730,7 @@
         selectedSpecialist,
         selectedModel,
         modelWasOverridden,
+        selectedReasoningEffort,
         isTeamMode,
         selectedProvider,
         skipIsolation,
@@ -749,8 +748,6 @@
     const currentProvider = untrack(() => selectedProvider);
     if (newProviderId && newProviderId !== currentProvider) {
       selectedProvider = newProviderId;
-      selectedModel = undefined;
-      modelWasOverridden = false;
     }
   });
 
@@ -2034,6 +2031,65 @@
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
 
+      // workspace.create does not accept reasoningEffort on initialAgent. Apply
+      // an explicit user pick to the daemon-minted session through agent.update;
+      // omitting this mutation preserves the daemon's normal resolution chain.
+      if (selectedReasoningEffort && initialAgentId) {
+        try {
+          const effortResult = await appClient.agents.setReasoningEffort({
+            agentId: initialAgentId,
+            workspaceId: workspace.id,
+            reasoningEffort: selectedReasoningEffort,
+          });
+          if (!effortResult.success) {
+            logger.warn('Failed to set reasoning effort on initial agent', {
+              error: effortResult.error,
+            });
+          }
+        } catch (effortError) {
+          logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
+        }
+      }
+
+      // Clear reused-ID state before installing the authoritative first-frame
+      // layout. The panel seed owns the initial agent identity; legacy
+      // navigation stays an empty shell so drawer migration cannot compete.
+      try {
+        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        getPanelLayoutManager(workspace.id).clearLayout();
+      } catch (error) {
+        logger.debug('Could not clear panel layout', { error });
+      }
+      try {
+        const { workspaceStorageManager } =
+          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        workspaceStorageManager.clearState(workspace.id);
+      } catch (error) {
+        logger.debug('Could not clear workspace storage state', { error });
+      }
+
+      appStore.dispatch(setWorkspaceEntity(workspace));
+      if (initialAgentId) {
+        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
+      }
+      appStore.dispatch(
+        bootstrapNewWorkspaceLayout(
+          workspace.id,
+          initialAgentId ?? null,
+          agentName,
+          specialistId === 'spec-writer',
+        ),
+      );
+      const initialState: WorkspaceNavigationWorkspaceState = {
+        version: 2,
+        workspace: { id: workspace.id, status: 'loading' },
+        mainPanel: { type: 'empty' },
+        drawer: { open: false, type: null, itemId: null },
+        navigation: { history: [], currentIndex: -1 },
+        ui: { hasInitialized: false },
+      };
+      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
+      appStore.dispatch(openWorkspaceTab(workspace.id));
       // Redeem staged attachments now that the workspace exists: place each
       // from its sourcePath, then send the held-back first message with the
       // attachment-reference file blocks. A placement failure keeps the modal
@@ -2084,32 +2140,6 @@
           });
       }
 
-      // Clear any stale panel layout data for this workspace ID.
-      // This is important when workspace IDs are reused (e.g., after deletion and recreation).
-      // Without this, the workspace page may load stale layout data with duplicate tabs.
-      try {
-        const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
-        getPanelLayoutManager(workspace.id).clearLayout();
-      } catch (error) {
-        logger.debug('Could not clear panel layout', { error });
-      }
-
-      // Clear any stale workspace storage state (drawer state, main panel, etc.)
-      // for this workspace ID. When workspace IDs are reused, stale drawer state
-      // can cause the workspace page to open a non-existent agent from a previous
-      // workspace, leading to spurious agent creation.
-      try {
-        const { workspaceStorageManager } =
-          await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
-        workspaceStorageManager.clearState(workspace.id);
-      } catch (error) {
-        logger.debug('Could not clear workspace storage state', { error });
-      }
-
-      // Pre-populate Redux with the workspace entity so the workspace page
-      // has data on the very first render frame (before sagas/effects run).
-      appStore.dispatch(setWorkspaceEntity(workspace));
-
       // Record the script as this repo's last-used default (localStorage).
       // Skip the unedited repo-config script — the committed .intent/config.json
       // is its source of truth, and recording a copy would shadow future
@@ -2129,32 +2159,6 @@
         );
       }
 
-      // Initial-agent delivery (message + sends) is owned by the daemon; the
-      // FE only records which agent is the initial one so the UI can highlight
-      // and focus it. The id is daemon-assigned (from the create result); when
-      // it is somehow absent, skip the highlight/focus rather than invent one.
-      if (initialAgentId) {
-        appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
-      }
-
-      // Pre-store the workspace state so the workspace page mounts on the
-      // initial-agent conversation as its only tab (full-width, no spec split).
-      // The spec note stays reachable manually from the sidebar; leaving the
-      // main panel empty here keeps the hydration payload consistent with the
-      // agent-only intent instead of asking the middleware to special-case it.
-      const initialState: WorkspaceNavigationWorkspaceState = {
-        version: 2,
-        workspace: { id: workspace.id, status: 'loading' },
-        mainPanel: { type: 'empty' },
-        drawer: initialAgentId
-          ? { open: true, type: 'agent' as const, itemId: initialAgentId }
-          : { open: false, type: null, itemId: null },
-        navigation: { history: [], currentIndex: -1 },
-        ui: { hasInitialized: false },
-      };
-      appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
-      appStore.dispatch(openWorkspaceTab(workspace.id));
-
       await goto(`/workspace/${workspace.id}`);
 
       // Save last submitted agent settings before clearing form.
@@ -2164,6 +2168,7 @@
           selectedSpecialist,
           selectedModel,
           modelWasOverridden,
+          selectedReasoningEffort,
           isTeamMode,
         }),
       );
@@ -2185,13 +2190,24 @@
   }
 
   function clearForm() {
-    repoPath = '';
-    repoType = 'local';
-    githubUrl = '';
-    branch = '';
-    isNewRepo = false;
-    isValidPath = false;
-    scope = '';
+    // Note: NOT resetting the repo selection (repoPath, repoType, githubUrl,
+    // branch, isNewRepo, isValidPath, scope) — it is preserved so the next
+    // new-workspace form re-opens on the same repo (intent-hq/monorepo#2148).
+    // remoteSetup IS cleared: it is per-create connection state and stale
+    // values must not leak into the next create. Because a 'remote' selection
+    // is unusable without its remoteSetup (submission reads
+    // remoteSetup.workspacePath/environmentConfig, and isValid waives the
+    // branch requirement for remote), a remote selection cannot be preserved —
+    // reset it to defaults instead of leaving a valid-looking broken form.
+    if (repoType === 'remote') {
+      repoPath = '';
+      repoType = 'local';
+      githubUrl = '';
+      branch = '';
+      isNewRepo = false;
+      isValidPath = false;
+      scope = '';
+    }
     remoteSetup = null;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
@@ -2206,6 +2222,12 @@
     setupScriptName = 'Custom';
     isCustomSetupScript = false;
 
+    // Restore the last used setup script for the preserved repo so the next
+    // workspace creation defaults to the same script
+    if (repoPath) {
+      restoreLastUsedSetupScript(repoPath);
+    }
+
     hasFiredClick = false;
     hasFiredType = false;
     error = null;
@@ -2217,16 +2239,27 @@
 
     // Immediately write the cleaned form state to Redux so that even if the
     // $effect doesn't fire before the component unmounts (e.g. navigation
-    // happens right after oncreate?.()), stale repo fields won't be restored.
+    // happens right after oncreate?.()), stale remoteSetup state won't be
+    // restored and the preserved repo selection is persisted.
     const cleanedState: CompactWorkspaceInitializerFormState = {
       // Agent prefs — always preserved
       selectedSpecialist,
       selectedModel,
       modelWasOverridden,
+      selectedReasoningEffort,
       isTeamMode,
       selectedProvider,
       skipIsolation,
       remoteSetup, // null at this point, but keeps parity with $effect's formState
+      // Repo selection — preserved so the next form re-opens on the same repo
+      repoPath,
+      repoType,
+      githubUrl,
+      branch,
+      isNewRepo,
+      isValidPath,
+      scope,
+      scopeRepoPath: scope ? repoPath : undefined,
     };
     // Snapshot to strip $state proxies before dispatching into Redux (see $effect above)
     appStore.dispatch(setCompactWorkspaceInitializerFormState($state.snapshot(cleanedState)));
@@ -2421,9 +2454,7 @@
         };
         contextItems = [...contextItems, contextItem];
         if (!sourcePath) {
-          toast.error(
-            m.workspace_compactInitializer_attachmentNoPath_error({ fileName }),
-          );
+          toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName }));
         }
         insertedFileCount.value++;
       }
@@ -2473,9 +2504,7 @@
   }
 
   function isImageAttachment(item: ContextItem): boolean {
-    return Boolean(
-      (item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'),
-    );
+    return Boolean((item.imageData && item.imageMimeType) || item.file?.type?.startsWith('image/'));
   }
 
   // Set when workspace.create succeeded but staged-attachment placement (or
@@ -2583,9 +2612,7 @@
       return;
     }
     if (!item.sourcePath) {
-      toast.error(
-        m.workspace_compactInitializer_attachmentNoPath_error({ fileName: item.label }),
-      );
+      toast.error(m.workspace_compactInitializer_attachmentNoPath_error({ fileName: item.label }));
       return;
     }
     // Pre-create failure with a sourcePath (shouldn't normally happen):
@@ -3066,7 +3093,9 @@
           <div class="flex items-start gap-3">
             <Fa icon={faExclamationTriangle} class="text-warning-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-warning-foreground">{m.workspace_compactInitializer_gitCheckUnknown_label()}</p>
+              <p class="font-medium text-warning-foreground">
+                {m.workspace_compactInitializer_gitCheckUnknown_label()}
+              </p>
               <p class="text-subtle mt-1">
                 {m.workspace_compactInitializer_gitCheckUnknown_description()}
               </p>
@@ -3132,11 +3161,15 @@
               </span>
             {:else}
               <span>{m.workspace_compactInitializer_createWorkspace_label()}</span>
-              {#if isValid}
-                <span class="opacity-50 ml-1" transition:slide={{ axis: 'x', duration: 200 }}>
-                  {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
-                </span>
-              {/if}
+              <!-- Always rendered so the button never resizes when validity flips;
+                   `invisible` reserves the space while hiding it (incl. from AT). -->
+              <span
+                class="opacity-50 ml-1"
+                class:invisible={!isValid}
+                aria-hidden={!isValid ? 'true' : undefined}
+              >
+                {navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'} + ↵
+              </span>
             {/if}
           </Button>
         </div>
@@ -3203,6 +3236,7 @@
             onModelChange={(model) => {
               selectedModel = model;
             }}
+            bind:selectedReasoningEffort
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider
@@ -3218,21 +3252,24 @@
               onclick={() => (showSetupScript = !showSetupScript)}
             >
               <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              {#if isRepoConfigLoading}
-                <Fa icon={faSpinner} class="animate-spin mx-1.5" size="sm" />
-                <span class="sr-only"
-                  >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
-                >
-              {:else}
-                <span
-                  class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
-                >
+              <!-- The pill and trailing suffix render in both states (spinner
+                   inside the pill while loading) so the row keeps the same
+                   structure and height when the probe resolves. -->
+              <span
+                class="rounded-md border border-border bg-background px-2 py-0.5 font-medium text-foreground"
+              >
+                {#if isRepoConfigLoading}
+                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                  <span class="sr-only"
+                    >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
+                  >
+                {:else}
                   {setupScriptName}
-                </span>
-                <p class="text-sm text-subtle">
-                  {m.workspace_compactInitializer_setupDevEnvWith_after()}
-                </p>
-              {/if}
+                {/if}
+              </span>
+              <p class="text-sm text-subtle">
+                {m.workspace_compactInitializer_setupDevEnvWith_after()}
+              </p>
             </button>
           </div>
           <SetupScriptModal

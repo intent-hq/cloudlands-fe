@@ -78,7 +78,7 @@
     <div class="hud-scan-band"></div>
   </div>
 
-  <HudHeader {nowMs}>
+  <HudHeader {nowMs} {isFullScreen}>
     {#snippet controls()}
       {#if isFullScreen}
         <button
@@ -128,7 +128,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    height: 100vh;
     width: 100%;
     min-width: 1280px;
     min-height: 720px;

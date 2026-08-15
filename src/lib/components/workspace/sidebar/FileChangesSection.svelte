@@ -68,6 +68,8 @@
   import TimelineSection from './TimelineSection.svelte';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 
   interface Props {
     workspaceId: string;
@@ -80,6 +82,8 @@
     onOpenNote?: (noteId: string) => void;
     /** Callback when a file is clicked (for parent keyboard nav tracking) */
     onFileClicked?: (path: string, staged: boolean) => void;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -91,6 +95,8 @@
     onOpenChange,
     onOpenNote,
     onFileClicked,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   // Transition functions matching parent's animation coordination
@@ -133,6 +139,14 @@
 
   // Get panel layout manager for opening file tabs
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
+
+  function getFilePanelState(diffPath: string) {
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'diff',
+      diffPath,
+      workspaceId,
+    });
+  }
 
   // Agent grouping
   const unstagedByAgent = $derived<AgentChangeGroup[]>(
@@ -331,9 +345,9 @@
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        // Staging routes through the AppClient seam (git.stage). TODO: the
-        // file-tracking-rendered list converges only once file-tracking moves
-        // off legacy IPC (out of scope for this wave).
+        // Staging routes through the AppClient seam (git.stage); the seam
+        // resolves only after the changes slice has converged with the fresh
+        // git status, so isStaging holds until the lists have moved.
         const result = await stageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
           toast.error(m.workspace_fileChanges_stageFailed_error(), {
@@ -770,6 +784,7 @@
               {#if !isCollapsed}
                 <div class="pl-1" transition:slide={{ duration: 150 }}>
                   {#each group.files as file (file.path)}
+                    {@const panelState = getFilePanelState(file.path)}
                     <div
                       data-file-key="unstaged:{file.path}"
                       in:receive|global={{ key: file.path }}
@@ -783,6 +798,8 @@
                         active={isFileActive(file.path, false)}
                         selected={isFileSelected(file.path, false)}
                         focused={isFileFocused(file.path, false)}
+                        openPanelCount={panelState.count}
+                        activeInPanel={panelState.isActive}
                         onFileClick={(path, commitHash) => {
                           trackLastClicked(path, false);
                           handleFileClick(path, commitHash, false);
@@ -803,6 +820,7 @@
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
           {#each unstagedChanges as change (change.id)}
+            {@const panelState = getFilePanelState(change.relativePath)}
             <div
               data-file-key="unstaged:{change.relativePath}"
               in:receive|global={{ key: change.relativePath }}
@@ -816,6 +834,8 @@
                 active={isFileActive(change.relativePath, false)}
                 selected={isFileSelected(change.relativePath, false)}
                 focused={isFileFocused(change.relativePath, false)}
+                openPanelCount={panelState.count}
+                activeInPanel={panelState.isActive}
                 onFileClick={(path, commitHash) => {
                   trackLastClicked(path, false);
                   handleFileClick(path, commitHash, false);
@@ -979,6 +999,7 @@
               {#if !isCollapsed}
                 <div class="pl-1" transition:slide={{ duration: 150 }}>
                   {#each group.files as file (file.path)}
+                    {@const panelState = getFilePanelState(file.path)}
                     <div
                       data-file-key="staged:{file.path}"
                       in:receive|global={{ key: file.path }}
@@ -991,6 +1012,8 @@
                         active={isFileActive(file.path, true)}
                         selected={isFileSelected(file.path, true)}
                         focused={isFileFocused(file.path, true)}
+                        openPanelCount={panelState.count}
+                        activeInPanel={panelState.isActive}
                         onFileClick={(path, commitHash) => {
                           trackLastClicked(path, true);
                           handleFileClick(path, commitHash, true);
@@ -1010,6 +1033,7 @@
         <!-- Flat view when no agent attribution -->
         <div class="space-y-px">
           {#each stagedChanges as change (change.id)}
+            {@const panelState = getFilePanelState(change.relativePath)}
             <div
               data-file-key="staged:{change.relativePath}"
               in:receive|global={{ key: change.relativePath }}
@@ -1021,6 +1045,8 @@
                 active={isFileActive(change.relativePath, true)}
                 selected={isFileSelected(change.relativePath, true)}
                 focused={isFileFocused(change.relativePath, true)}
+                openPanelCount={panelState.count}
+                activeInPanel={panelState.isActive}
                 onFileClick={(path, commitHash) => {
                   trackLastClicked(path, true);
                   handleFileClick(path, commitHash, true);

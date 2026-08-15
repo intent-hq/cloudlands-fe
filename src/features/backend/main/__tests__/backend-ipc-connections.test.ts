@@ -742,3 +742,127 @@ describe('multi-host candidates (#1746)', () => {
     expect(store.setHosts).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Switch-queue TOCTOU (monorepo#2228): the forget/add handlers make their
+// active-id decision INSIDE the serialized switch queue, so a concurrent
+// switch can never make the decision stale — forget's fall-back-to-local must
+// not disconnect a backend the user just selected, and a re-pair of A must
+// not switch back to A after the user selected B.
+// ---------------------------------------------------------------------------
+
+describe('forget/add active-id decisions inside the switch queue (monorepo#2228)', () => {
+  const REMOTE2 = {
+    id: 'remote-2',
+    label: 'Laptop',
+    host: '10.0.0.6',
+    port: 8443,
+    fingerprint: 'EE:FF:00:11',
+    isLocal: false,
+  };
+
+  /** Stateful active-id so `setActiveId` writes are visible to later reads. */
+  function installStatefulActiveId(initial: string): () => string {
+    let activeId = initial;
+    store.getActiveId.mockImplementation(async () => activeId);
+    store.setActiveId.mockImplementation(async (id: string) => {
+      activeId = id;
+    });
+    return () => activeId;
+  }
+
+  it('forget(A) racing a switch to B does not take the stale fall-back-to-local', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE2]);
+    store.forget.mockResolvedValue(undefined);
+    const getActive = installStatefulActiveId('remote-1');
+    installWindow();
+    const { mod, restore } = await loadModule();
+    mod.registerBackendHandlers();
+    const forgetHandler = findHandler('connections:forget')!;
+
+    // Park the user's switch to B at its window-teardown await point…
+    let releaseSwitch!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
+    const captureAndClose = vi.fn(async () => {
+      if (captureAndClose.mock.calls.length === 1) await gate;
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
+
+    const switchToB = mod.switchBackend('remote-2');
+    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+    // …then forget(A) lands while that switch is still in flight.
+    const forget = forgetHandler({}, { id: 'remote-1' });
+
+    // The enqueued forget makes NO progress (not even the store forget) while
+    // the switch is in flight — the whole decision waits its queue turn.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.forget).not.toHaveBeenCalled();
+
+    releaseSwitch();
+    await expect(switchToB).resolves.toEqual({ activeId: 'remote-2' });
+    await expect(forget).resolves.toEqual({ id: 'remote-1' });
+
+    // A was no longer active at decision time → record forgotten, but no
+    // fall-back-to-local switch: the FE stays on the B the user selected.
+    expect(store.forget).toHaveBeenCalledWith('remote-1');
+    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-2']);
+    expect(getActive()).toBe('remote-2');
+    expect(captureAndClose).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledWith('remote-2');
+  });
+
+  it('re-pairing A racing a switch to B never switches back to A', async () => {
+    store.list.mockResolvedValue([LOCAL, REMOTE, REMOTE2]);
+    store.add.mockResolvedValue(REMOTE); // upsert of remote-1 (refreshed token)
+    const getActive = installStatefulActiveId('remote-1');
+    installWindow();
+    const { mod, restore } = await loadModule();
+    mod.registerBackendHandlers();
+    const addHandler = findHandler('connections:add')!;
+
+    // Park the user's switch to B at its window-teardown await point…
+    let releaseSwitch!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseSwitch = resolve));
+    const captureAndClose = vi.fn(async () => {
+      if (captureAndClose.mock.calls.length === 1) await gate;
+    });
+    mod.__setBackendWindowHooksForTesting({ captureAndClose, restore });
+
+    const switchToB = mod.switchBackend('remote-2');
+    await vi.waitFor(() => expect(captureAndClose).toHaveBeenCalledTimes(1));
+    // …then the re-pair of A lands while that switch is still in flight.
+    const add = addHandler(
+      {},
+      {
+        label: 'Studio Mac',
+        host: '10.0.0.5',
+        port: 8443,
+        fingerprint: 'AA:BB:CC:DD',
+        token: 'fresh-token',
+      },
+    );
+
+    releaseSwitch();
+    await expect(switchToB).resolves.toEqual({ activeId: 'remote-2' });
+    // A was no longer active at decision time → upsert only, no switch-back.
+    await expect(add).resolves.toEqual({ connection: REMOTE, switched: false });
+
+    expect(store.setActiveId.mock.calls.map(([id]) => id)).toEqual(['remote-2']);
+    expect(getActive()).toBe('remote-2');
+    expect(captureAndClose).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledWith('remote-2');
+  });
+
+  it('a rejected enqueued forget does not poison the queue for later switches', async () => {
+    store.forget.mockRejectedValue(new Error('cannot forget the reserved local connection'));
+    installWindow();
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const forgetHandler = findHandler('connections:forget')!;
+
+    await expect(forgetHandler({}, { id: 'remote-1' })).rejects.toThrow(/cannot forget/i);
+    await expect(mod.switchBackend('remote-1')).resolves.toEqual({ activeId: 'remote-1' });
+  });
+});

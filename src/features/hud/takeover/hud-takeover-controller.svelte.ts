@@ -34,6 +34,14 @@ export interface HudTakeoverController {
   readonly queue: HudTakeoverQueueState;
   readonly frameFrom: HudTakeoverFrameFrom | null;
   readonly zoom: 'from' | 'to';
+  /**
+   * Monotonic display counter: bumps on every non-'opening' → 'opening'
+   * transition. Keys once-per-display work (the overlay's map viewport
+   * measurement) so back-to-back displays of the SAME workspace — reduced
+   * motion chains closing → opening with no blinking/idle in between —
+   * still re-key and reset the map zoom to 100%.
+   */
+  readonly displaySeq: number;
   enqueue(trigger: HudTakeoverTrigger): void;
   openViewer(trigger: HudTakeoverTrigger): void;
   dismiss(): void;
@@ -50,6 +58,7 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
   let queue = $state<HudTakeoverQueueState>(createHudTakeoverQueue());
   let frameFrom = $state<HudTakeoverFrameFrom | null>(null);
   let zoom = $state<'from' | 'to'>('to');
+  let displaySeq = $state(0);
   let phaseTimer: ReturnType<typeof setTimeout> | undefined;
   let zoomTimer: ReturnType<typeof setTimeout> | undefined;
   let zoomKey = '';
@@ -59,11 +68,15 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
 
   function apply(next: HudTakeoverQueueState) {
     // Entering 'opening' starts a fresh display: drop the previous entry's
-    // marquee measurement HERE, as part of the state transition itself, so
-    // the reset can never race the overlay's measurement effect (which only
-    // re-reports after it observes the applied 'opening' state). Re-applied
-    // 'opening' states (e.g. an enqueue while opening) keep the fresh report.
-    if (next.phase === 'opening' && queue.phase !== 'opening') bannerScrollMs = 0;
+    // marquee measurement and bump the display counter HERE, as part of the
+    // state transition itself, so the reset can never race the overlay's
+    // measurement effects (which only re-run after they observe the applied
+    // 'opening' state). Re-applied 'opening' states (e.g. an enqueue while
+    // opening) keep the fresh report and the same display key.
+    if (next.phase === 'opening' && queue.phase !== 'opening') {
+      bannerScrollMs = 0;
+      displaySeq += 1;
+    }
     queue = next;
     clearTimeout(phaseTimer);
     const deadline = nextTakeoverDeadline(next);
@@ -119,6 +132,9 @@ export function createTakeoverController(reduced: () => boolean): HudTakeoverCon
     },
     get zoom() {
       return zoom;
+    },
+    get displaySeq() {
+      return displaySeq;
     },
     enqueue(trigger) {
       apply(

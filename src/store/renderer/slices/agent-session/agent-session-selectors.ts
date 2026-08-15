@@ -31,7 +31,15 @@ function materializeSession(stored: StoredAgentSession | undefined): AgentSessio
 
 function hasTerminalMessageMetadata(message: AgentMessage | undefined): boolean {
   const metadata = message?.metadata;
-  return metadata?.interrupted === true || typeof metadata?.stopReason === 'string';
+  return (
+    metadata?.interrupted === true ||
+    typeof metadata?.stopReason === 'string' ||
+    // Abnormal-finish rows (PROTOCOL §7.3) are finalized by definition — the
+    // daemon only stamps `finishReason` on persisted terminal rows, so never
+    // pick one as the "current streaming message" even if the session-level
+    // isStreaming flag is momentarily stale between stream:end and agent:idle.
+    typeof metadata?.finishReason === 'string'
+  );
 }
 
 function isStreamingMessage(message: AgentMessage | undefined): boolean {

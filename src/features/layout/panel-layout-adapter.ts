@@ -121,10 +121,22 @@ export class PanelLayoutAdapter {
     }
     this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab));
   }
+  /** User opens bypass Spec deferral and consume a pristine coordinator placeholder first. */
+  openUserTab(tab: Omit<PanelTab, 'id'>, panelId?: string) {
+    const panels = selectPanels.select(this.state, this.workspaceId);
+    const placeholder = Object.values(panels).find(
+      (panel) => panel.pristine === true && panel.tabs.length === 0,
+    );
+    if (panelId || placeholder) {
+      this.dispatch(openTab(this.workspaceId, tab, panelId ?? placeholder?.id, undefined, true));
+      return;
+    }
+    this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, undefined, { force: true }));
+  }
   openTabInAdjacentOrSplit(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
-    options?: { animated?: boolean },
+    options?: { animated?: boolean; force?: boolean; allowDuplicate?: boolean },
   ) {
     this.dispatch(openTabInAdjacentOrSplit(this.workspaceId, tab, sourcePanelId, options));
   }

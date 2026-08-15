@@ -14,9 +14,12 @@ describe('chat typography contract', () => {
     expect(panel).not.toContain('max-w-[var(--content-measure-');
   });
 
-  it('keeps prose at body hierarchy and operational rows at caption hierarchy', () => {
+  it('keeps prose at body hierarchy and operational rows on the shared quiet tone', () => {
     expect(source('src/lib/components/chat/ChatMessage.svelte')).toContain('type-body text-pretty');
-    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain('type-caption');
+    expect(source('src/lib/components/chat/ToolCall.svelte')).toContain(
+      'OPERATIONAL_ROW_CONTAINER_CLASS',
+    );
+    expect(source('src/lib/components/chat/operational-disclosure-row.ts')).toContain('type-body');
     expect(source('src/lib/components/chat/ResponseGroup.svelte')).toContain('type-caption');
     expect(source('src/lib/components/chat/ChatFileChangesSummary.svelte')).toContain(
       'type-caption',
@@ -59,7 +62,7 @@ describe('chat typography contract', () => {
     expect(pickerFiles.slice(0, 2).concat(pickerFiles.slice(3)).join('')).not.toMatch(
       /text-(?:xs|sm)|font-(?:semibold|bold)/,
     );
-    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{currentModelLabel}</span>');
+    expect(pickerFiles[2]).toContain('<span class="text-xs truncate">{triggerLabel}</span>');
   });
 
   it('keeps transcript metadata semantic and the unread divider neutral and legible', () => {
@@ -80,6 +83,7 @@ describe('chat typography contract', () => {
     expect(divider).toContain('type-caption');
     expect(divider).toContain('whitespace-nowrap');
     expect(divider.match(/bg-border/g)).toHaveLength(2);
+    expect(divider).not.toContain('faEnvelope');
     expect(divider).not.toContain('text-accent');
     expect(divider).not.toContain('rounded-full');
   });

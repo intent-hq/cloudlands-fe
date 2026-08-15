@@ -1,18 +1,12 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import {
-  AgentStatus,
-  type AgentSession,
-} from '$shared/types';
+import { describe, expect, it } from 'vitest';
+import { AgentStatus, type AgentSession } from '$shared/types';
 
 import {
   deriveQueuedMessagesVisibility,
   isSessionActivelyResponding,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
+  shouldShowSetupCardOnly,
   shouldShowTranscriptSkeleton,
   shouldStopChatBeforeSending,
 } from '../chat-panel-visibility';
@@ -68,7 +62,9 @@ describe('chat panel visibility helpers', () => {
 
   it('treats responding and legacy Processing sessions as active', () => {
     expect(isSessionActivelyResponding({ ...baseSession, isResponding: true })).toBe(true);
-    expect(isSessionActivelyResponding({ ...baseSession, status: AgentStatus.Processing })).toBe(true);
+    expect(isSessionActivelyResponding({ ...baseSession, status: AgentStatus.Processing })).toBe(
+      true,
+    );
   });
 
   it('stops chat before queued sends while streaming or actively processing', () => {
@@ -285,8 +281,8 @@ describe('shouldShowTranscriptSkeleton', () => {
     ).toBe(true);
   });
 
-  it('covers the failed-hydration case: settled + empty + existing backend session', () => {
-    expect(shouldShowTranscriptSkeleton(settledExistingSession)).toBe(true);
+  it('does not keep a settled empty transcript behind an infinite skeleton', () => {
+    expect(shouldShowTranscriptSkeleton(settledExistingSession)).toBe(false);
   });
 
   it('suppresses the skeleton when a pending initial prompt renders optimistically', () => {
@@ -298,6 +294,65 @@ describe('shouldShowTranscriptSkeleton', () => {
         hasBackendSession: false,
         hasPendingInitialPrompt: true,
       }),
+    ).toBe(false);
+  });
+});
+
+describe('shouldShowSetupCardOnly', () => {
+  // Reopened workspace: initialPrompt is not persisted, so the reconstructed
+  // onboarding prompt is always empty — only the hydration gate separates
+  // "still loading" from "genuinely never used".
+  const settledEmptyInitialAgent = {
+    isInitialWorkspaceAgent: true,
+    hasOnboardingContext: true,
+    hasOnboardingPrompt: false,
+    hasMessages: false,
+    isStreaming: false,
+    hasPendingInitialPrompt: false,
+    hydrationSettled: true,
+  };
+
+  it('does NOT match while the first hydration is in flight — the skeleton branch must win', () => {
+    // Regression (PR #1031): reopening an existing conversation showed the
+    // "Workspace ready to go!" setup card instead of the loading skeleton for
+    // the whole duration of the load.
+    const loadingState = { ...settledEmptyInitialAgent, hydrationSettled: false };
+    expect(shouldShowSetupCardOnly(loadingState)).toBe(false);
+    // ...and the transcript-skeleton gate matches that same loading state.
+    expect(
+      shouldShowTranscriptSkeleton({
+        isFirstHydrationLoading: true,
+        hasSession: true,
+        hydrationSettled: false,
+        hasBackendSession: true,
+        hasMessages: false,
+        isStreaming: false,
+        hasPendingInitialPrompt: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('matches once hydration settles with an empty, idle transcript', () => {
+    expect(shouldShowSetupCardOnly(settledEmptyInitialAgent)).toBe(true);
+  });
+
+  it('never matches for non-initial-workspace agents or without onboarding context', () => {
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, isInitialWorkspaceAgent: false }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingContext: false }),
+    ).toBe(false);
+  });
+
+  it('defers to the transcript once messages, streaming, or a pending/onboarding prompt exist', () => {
+    expect(shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasMessages: true })).toBe(false);
+    expect(shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, isStreaming: true })).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasPendingInitialPrompt: true }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingPrompt: true }),
     ).toBe(false);
   });
 });

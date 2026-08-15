@@ -16,6 +16,10 @@ import { get } from 'svelte/store';
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  hydrateHardwareConsoleKeyPins,
+  pinWorkspaceToKey,
+} from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { loadWorkspaceTasksSucceeded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { hydrateTaskAgentAssociations } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -25,8 +29,13 @@ import { WorkspaceStatus } from '$shared/types';
 
 import HudTakeoverOverlay from './HudTakeoverOverlay.svelte';
 import { emitTakeoverTrigger, takeoverBlinkTarget } from './hud-takeover-bus';
-import { HUD_TAKEOVER_BLINK_MS } from './hud-takeover-queue';
-import { HUD_TAKEOVER_PITCH_PX } from './hud-takeover-layout';
+import {
+  HUD_TAKEOVER_BLINK_MS,
+  HUD_TAKEOVER_CLOSE_MS,
+  HUD_TAKEOVER_DWELL_MIN_MS,
+  HUD_TAKEOVER_OPEN_MS,
+} from './hud-takeover-queue';
+import { takeoverPitchPx } from './hud-takeover-layout';
 import { playHudSoundCue } from '../sound/hud-sound-player';
 
 // The typewriter-cue suite asserts the overlay's timer-armed garnish call;
@@ -35,6 +44,14 @@ vi.mock('../sound/hud-sound-player', () => ({
   playHudSoundCue: vi.fn(),
   playTakeoverTransitionCues: vi.fn(),
 }));
+
+// Controllable micro-connected gate for the header key square; defaults to
+// disconnected, matching the real jsdom behavior (WebHID unavailable).
+const hw = vi.hoisted(() => ({ connected: false }));
+vi.mock('$features/hardware-console/device/connection-status', async () => {
+  const { readable } = await import('svelte/store');
+  return { microConnectedReadable: () => readable(hw.connected) };
+});
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 const WS = 'ws-1';
@@ -152,6 +169,60 @@ describe('HudTakeoverOverlay COMPLETE-cell report body', () => {
 
     expect(screen.getAllByTestId('hud-takeover-cell')).toHaveLength(2);
     expect(screen.queryByTestId('hud-takeover-cell-report')).toBeNull();
+  });
+});
+
+describe('HudTakeoverOverlay header hardware-key square', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+  });
+  afterEach(() => {
+    hw.connected = false;
+    cleanup();
+    appStore.dispose();
+  });
+
+  function headerSquare(): Element | null {
+    return document.querySelector('.ov-title-row .ov-key-square');
+  }
+
+  it('renders the slot square immediately before the workspace name when connected + slotted', () => {
+    hw.connected = true;
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const square = headerSquare();
+    const name = document.querySelector('.ov-ws-name');
+    expect(square?.textContent?.trim()).toBe('3'); // 1-based slot number.
+    expect(
+      square && name && square.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders no square when the micro is disconnected', () => {
+    appStore.dispatch(pinWorkspaceToKey(2, WS));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
+  });
+
+  it('renders no square when the workspace holds no key slot', () => {
+    hw.connected = true;
+    // Exclude WS from auto-fill so it resolves to no slot.
+    appStore.dispatch(hydrateHardwareConsoleKeyPins(new Array(6).fill(null), [WS]));
+
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(headerSquare()).toBeNull();
+    expect(document.querySelector('.ov-ws-name')?.textContent?.trim()).toBe('Sidecar auto-update');
   });
 });
 
@@ -555,12 +626,12 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
     openTakeover();
 
-    // One task at (0,−1): bounds x −2…2, y −2…1 cells (± ring), in px ×192.
+    // One rootless task at (1,0): bounds x −2…2, y −1…1 cells (base viewport),
+    // in px × the corridor-only pitch (192 floor).
+    const pitch = takeoverPitchPx(0);
     const map = screen.getByTestId('hud-takeover-map');
     dragMap(map, [500, 300], [-10_000, 10_000]);
-    expect(panTransform()).toBe(
-      `translate(${-2 * HUD_TAKEOVER_PITCH_PX}px, ${2 * HUD_TAKEOVER_PITCH_PX}px)`,
-    );
+    expect(panTransform()).toBe(`translate(${-2 * pitch}px, ${1 * pitch}px)`);
   });
 
   it('movement under the threshold stays a click; a real drag suppresses it', () => {
@@ -591,7 +662,8 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
   });
 
   it('a manual drag cancels the pending auto-pan to a far changed cell', () => {
-    // 12 tasks: task-12 sits at seed coord (0,−2) — |y| ≥ 2 needs pan.
+    // 12 rootless tasks share column x=1, rows −6…5: task-12 lands at
+    // (1,5) — |y| ≥ 2 needs pan.
     seedTasks(
       Array.from({ length: 12 }, (_, i) => ({
         id: `task-${i + 1}`,
@@ -639,8 +711,625 @@ describe('HudTakeoverOverlay map drag-to-pan', () => {
     expect(panTransform()).toBe('translate(0px, 0px)');
     vi.advanceTimersByTime(2100);
     flushSync();
-    // Cell (0,−2) → camera offset (0, −2·192); canvas translates the negation.
-    expect(panTransform()).toBe(`translate(0px, ${2 * HUD_TAKEOVER_PITCH_PX}px)`);
+    // The 12 spec fan-out edges bundle onto one trunk lane in gutter v:0.5 →
+    // pitch 196. Cell (1,5) → camera offset (196, 5·196); canvas negates.
+    const pitch = takeoverPitchPx(1);
+    expect(panTransform()).toBe(`translate(${-1 * pitch}px, ${-5 * pitch}px)`);
+  });
+});
+
+describe('HudTakeoverOverlay dependency-graph map (placement + edges)', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+  });
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  function seedGraphTasks(
+    tasks: Array<{
+      id: string;
+      title: string;
+      status: string;
+      dependsOn?: string[];
+      conflictsWith?: string[];
+      unmetDependsOn?: string[];
+    }>,
+  ): void {
+    const total = tasks.length;
+    const completed = tasks.filter((t) => t.status === 'complete').length;
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total,
+        completed,
+        inProgress: 0,
+      }),
+    );
+  }
+
+  it('places cells by the dependency layout: a chain runs left→right from the spec', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cells = screen.getAllByTestId('hud-takeover-cell');
+    const byTitle = new Map(
+      cells.map((cell) => [cell.querySelector('.ov-cell-title')?.textContent?.trim(), cell]),
+    );
+    // Columns 1..3 on row 0 → left = x·pitch − 90 (corridor-only chain → 192 floor).
+    const pitch = takeoverPitchPx(0);
+    expect(byTitle.get('A')?.style.left).toBe(`${1 * pitch - 90}px`);
+    expect(byTitle.get('B')?.style.left).toBe(`${2 * pitch - 90}px`);
+    expect(byTitle.get('C')?.style.left).toBe(`${3 * pitch - 90}px`);
+    for (const title of ['A', 'B', 'C']) {
+      expect(byTitle.get(title)?.style.top).toBe(`${-90}px`);
+    }
+  });
+
+  it('renders per-source colored dep paths, muted spec, and arrowless conflicts', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'], conflictsWith: ['c'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(screen.getByTestId('hud-takeover-edges')).toBeTruthy();
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const kinds = edges.map((edge) => edge.getAttribute('data-kind')).sort();
+    expect(kinds).toEqual(['conflict', 'dep', 'dep', 'spec']);
+
+    // The b→c dep and the conflict both run b→c on the row-0 corridor,
+    // straddling the centerline by ∓4px; corridor spread never widens the
+    // gutter, so the pitch stays at the 192px floor.
+    const pitch = takeoverPitchPx(0);
+    const byD = new Map(edges.map((edge) => [edge.getAttribute('d'), edge]));
+    const aToB = byD.get(`M${pitch + 90} -4L${2 * pitch - 92} -4`);
+    const bToC = byD.get(`M${2 * pitch + 90} -4L${3 * pitch - 92} -4`);
+    const conflict = byD.get(`M${2 * pitch + 90} 4L${3 * pitch - 92} 4`);
+    const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec');
+
+    // Dep arrowheads take the SOURCE task's palette slot (input order: a=0, b=1);
+    // the spec edge keeps the muted arrow, conflicts render none.
+    expect(aToB?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c0)');
+    expect(bToC?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c1)');
+    expect(spec?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-spec)');
+    expect(conflict?.getAttribute('data-kind')).toBe('conflict');
+    expect(conflict?.getAttribute('marker-end')).toBeNull();
+
+    // Consumption dimming: a→b enters in-progress b (dim); b→c enters
+    // not-started c (full-strength); spec never dims; the b↔c conflict is
+    // live (neither endpoint complete) so it stays full-strength and pulses.
+    expect(aToB?.classList.contains('ov-edge-dim')).toBe(true);
+    expect(bToC?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(spec?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict?.getAttribute('data-pulse')).toBe('conflict');
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(true);
+    expect(conflict?.classList.contains('ov-edge-pulse')).toBe(true);
+    // c has an unmet dependency → its incoming dep edge never pulses green.
+    for (const edge of [aToB, bToC, spec]) {
+      expect(edge?.getAttribute('data-pulse')).toBeNull();
+      expect(edge?.classList.contains('ov-edge-pulse')).toBe(false);
+    }
+  });
+
+  it('hovering a task cell highlights every edge touching it; hover end restores', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'in_progress', dependsOn: ['a'], conflictsWith: ['c'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['b'], unmetDependsOn: ['b'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cells = screen.getAllByTestId('hud-takeover-cell');
+    const cellByTitle = (title: string) =>
+      cells.find((cell) => cell.querySelector('.ov-cell-title')?.textContent?.trim() === title)!;
+    // jsdom has no PointerEvent ctor; the handlers read no pointer fields.
+    const hover = (el: Element, type: string) => {
+      el.dispatchEvent(new MouseEvent(type));
+      flushSync();
+    };
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const spec = edges.find((edge) => edge.getAttribute('data-kind') === 'spec')!;
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict')!;
+    // Dep edges by source palette slot (input order: a=0, b=1).
+    const aToB = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c0)')!;
+    const bToC = edges.find((edge) => edge.getAttribute('marker-end') === 'url(#ov-edge-arrow-c1)')!;
+    expect(edges).toHaveLength(4);
+
+    // Hover B: incoming dep, outgoing dep, and the live conflict highlight;
+    // the spec→a edge keeps its normal rendering.
+    hover(cellByTitle('B'), 'pointerenter');
+    expect(aToB.classList.contains('ov-edge-hover')).toBe(true);
+    expect(bToC.classList.contains('ov-edge-hover')).toBe(true);
+    expect(conflict.classList.contains('ov-edge-hover')).toBe(true);
+    expect(spec.classList.contains('ov-edge-hover')).toBe(false);
+    // Full-strength: the consumed a→b edge sheds its dim, the live conflict
+    // its pulse (colors stay).
+    expect(aToB.classList.contains('ov-edge-dim')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-pulse')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-conflict-live')).toBe(true);
+
+    // Hover end restores normal rendering.
+    hover(cellByTitle('B'), 'pointerleave');
+    for (const edge of edges) {
+      expect(edge.classList.contains('ov-edge-hover')).toBe(false);
+    }
+    expect(aToB.classList.contains('ov-edge-dim')).toBe(true);
+    expect(conflict.classList.contains('ov-edge-pulse')).toBe(true);
+
+    // Hover A: its spec edge highlights too (matched via the destination).
+    hover(cellByTitle('A'), 'pointerenter');
+    expect(spec.classList.contains('ov-edge-hover')).toBe(true);
+    expect(aToB.classList.contains('ov-edge-hover')).toBe(true);
+    expect(bToC.classList.contains('ov-edge-hover')).toBe(false);
+    expect(conflict.classList.contains('ov-edge-hover')).toBe(false);
+  });
+
+  it('arrowhead markers are fixed user-space size (immune to hover stroke thickening)', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // markerUnits="userSpaceOnUse" keeps arrowheads at a constant size when
+    // the hovered edge stroke thickens (default strokeWidth units would
+    // scale them with the stroke); 10.5 matches the pre-hover appearance
+    // (7 marker units × 1.5 stroke).
+    const markers = screen.getByTestId('hud-takeover-edges').querySelectorAll('defs marker');
+    expect(markers.length).toBeGreaterThan(0);
+    for (const marker of markers) {
+      expect(marker.getAttribute('markerUnits')).toBe('userSpaceOnUse');
+      expect(marker.getAttribute('markerWidth')).toBe('10.5');
+      expect(marker.getAttribute('markerHeight')).toBe('10.5');
+    }
+  });
+
+  it('pulses ready dep edges green and mutes resolved conflicts', () => {
+    // b is ready: deps met (no unmetDependsOn), not started. The a↔b
+    // conflict is resolved (a complete) → static muted.
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'complete' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'], conflictsWith: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const dep = edges.find((edge) => edge.getAttribute('data-kind') === 'dep');
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict');
+
+    expect(dep?.getAttribute('data-pulse')).toBe('ready');
+    expect(dep?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-ready)');
+    expect(dep?.classList.contains('ov-edge-ready')).toBe(true);
+    expect(dep?.classList.contains('ov-edge-pulse')).toBe(true);
+    expect(dep?.classList.contains('ov-edge-dim')).toBe(false);
+
+    expect(conflict?.getAttribute('data-pulse')).toBeNull();
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-pulse')).toBe(false);
+    expect(conflict?.classList.contains('ov-edge-dim')).toBe(true);
+  });
+
+  it('reduced motion: pulse colors stay, the animation class does not apply', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'in_progress' },
+      { id: 'b', title: 'B', status: 'not_started', dependsOn: ['a'], conflictsWith: ['a'] },
+      { id: 'c', title: 'C', status: 'not_started', dependsOn: ['a'], unmetDependsOn: [] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    const conflict = edges.find((edge) => edge.getAttribute('data-kind') === 'conflict');
+    const ready = edges.find((edge) => edge.getAttribute('data-pulse') === 'ready');
+
+    // Same static treatment (colors/markers), no pulse animation class.
+    expect(conflict?.getAttribute('data-pulse')).toBe('conflict');
+    expect(conflict?.classList.contains('ov-edge-conflict-live')).toBe(true);
+    expect(ready?.classList.contains('ov-edge-ready')).toBe(true);
+    expect(ready?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-ready)');
+    for (const edge of edges) {
+      expect(edge.classList.contains('ov-edge-pulse')).toBe(false);
+    }
+  });
+
+  it('dims the dep edge into a complete dependent (no unmet override anymore)', () => {
+    seedGraphTasks([
+      { id: 'a', title: 'A', status: 'in_progress' },
+      { id: 'b', title: 'B', status: 'complete', dependsOn: ['a'], unmetDependsOn: ['a'] },
+    ]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const edges = screen.getAllByTestId('hud-takeover-edge');
+    expect(edges.map((edge) => edge.getAttribute('data-kind')).sort()).toEqual(['dep', 'spec']);
+    const dep = edges.find((edge) => edge.getAttribute('data-kind') === 'dep');
+    expect(dep?.getAttribute('marker-end')).toBe('url(#ov-edge-arrow-c0)');
+    expect(dep?.classList.contains('ov-edge-dim')).toBe(true);
+  });
+
+  it('renders no edge layer when the workspace has no tasks', () => {
+    seedGraphTasks([]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(screen.queryByTestId('hud-takeover-edges')).toBeNull();
+  });
+});
+
+describe('HudTakeoverOverlay map zoom (default 1:1)', () => {
+  // jsdom has no layout: mock the map clip's client size so the per-display
+  // viewport measurement sees a real box (needsPan evaluates against it).
+  const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+  const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!;
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 1000 : 0;
+      },
+    });
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 600 : 0;
+      },
+    });
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
+    Object.defineProperty(Element.prototype, 'clientHeight', originalClientHeight);
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function panTransform(): string {
+    return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
+  }
+
+  /** Chain t1→…→t5 spans columns 1..5 (corridor-only → pitch 192); half-extent 5·192+90=1050 vs the 500px half-viewport. */
+  function seedWideChain(): void {
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+  }
+
+  it('renders 1:1 by default even for a graph wider than the viewport (no auto-fit)', () => {
+    seedWideChain();
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(panTransform()).toBe('translate(0px, 0px)');
+  });
+
+  it('a small graph keeps the 1:1 transform (never scales up)', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    expect(panTransform()).toBe('translate(0px, 0px)');
+  });
+
+  it('auto-pans to a far changed cell at 1:1 (the graph no longer auto-fits)', () => {
+    seedWideChain();
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    // t5 sits at (5,0) — cellNeedsPan true, and at 1:1 the chain overflows
+    // the 1000px viewport, so the glide onto the changed cell takes over.
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'T5',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 't5',
+    });
+    flushSync();
+
+    expect(panTransform()).toBe('translate(0px, 0px)');
+    vi.advanceTimersByTime(2500);
+    flushSync();
+    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(0)}px, 0px)`);
+  });
+});
+
+describe('HudTakeoverOverlay map zoom controls (bottom-right cluster)', () => {
+  // Same measured-viewport mock as the zoom suite: 1000×600 map clip.
+  const originalClientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+  const originalClientHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight')!;
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 1000 : 0;
+      },
+    });
+    Object.defineProperty(Element.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: Element) {
+        return this.classList.contains('ov-map-clip') ? 600 : 0;
+      },
+    });
+    appStore.init();
+    appStore.dispatch(setWorkspaceEntity(workspace()));
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Object.defineProperty(Element.prototype, 'clientWidth', originalClientWidth);
+    Object.defineProperty(Element.prototype, 'clientHeight', originalClientHeight);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    cleanup();
+    appStore.dispose();
+  });
+
+  function panTransform(): string {
+    return (document.querySelector('.ov-map-pan') as HTMLElement).style.transform;
+  }
+
+  function button(id: string): HTMLButtonElement {
+    return screen.getByTestId(id) as HTMLButtonElement;
+  }
+
+  function click(id: string): void {
+    button(id).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+  }
+
+  it('renders fit / − / + / 100% outside the drag clip', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const map = screen.getByTestId('hud-takeover-map');
+    const ids = [
+      'hud-takeover-zoom-fit',
+      'hud-takeover-zoom-out',
+      'hud-takeover-zoom-in',
+      'hud-takeover-zoom-reset',
+    ];
+    for (const id of ids) {
+      const btn = button(id);
+      expect(btn.getAttribute('aria-label')).toBeTruthy();
+      // Sibling of the clip, not inside it: pointer events on the buttons
+      // never reach the drag/click-suppression handlers.
+      expect(map.contains(btn)).toBe(false);
+    }
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+    expect(button('hud-takeover-zoom-out').disabled).toBe(false);
+  });
+
+  it('+/− step the scale multiplicatively; 100% resets to 1:1', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.563)');
+
+    click('hud-takeover-zoom-reset');
+    expect(panTransform()).toBe('translate(0px, 0px)');
+
+    click('hud-takeover-zoom-out');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.8)');
+  });
+
+  it('FIT shrinks a wide chain to the measured viewport', () => {
+    // Chain t1→…→t5 spans columns 1..5 (corridor-only → pitch 192); half-extent
+    // 5·192+90=1050 vs the 500px half-viewport → fit scale 500/1050 = 0.476.
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    click('hud-takeover-zoom-fit');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.476)');
+  });
+
+  it('+/− disable at the zoom limits', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // 1 → 1.25 → 1.563 → 1.954 → 2 (clamped max).
+    for (let i = 0; i < 4; i++) click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(2)');
+    expect(button('hud-takeover-zoom-in').disabled).toBe(true);
+    expect(button('hud-takeover-zoom-out').disabled).toBe(false);
+
+    click('hud-takeover-zoom-reset');
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+
+    // 7 downward steps land on the 0.25 floor.
+    for (let i = 0; i < 7; i++) click('hud-takeover-zoom-out');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(0.25)');
+    expect(button('hud-takeover-zoom-out').disabled).toBe(true);
+    expect(button('hud-takeover-zoom-in').disabled).toBe(false);
+  });
+
+  it('exposes the cluster as a labelled group for screen readers', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    const cluster = screen.getByTestId('hud-takeover-zoom');
+    expect(cluster.getAttribute('role')).toBe('group');
+    expect(cluster.getAttribute('aria-label')).toBe('Map zoom');
+  });
+
+  it('manual zoom after open never resets the pan or re-schedules the auto-pan (latched needsPan)', () => {
+    // Chain t1..t5: t5 at (5,0) is far and the chain overflows the 1000px
+    // viewport at 1:1 → needsPan latches true at open.
+    const tasks = Array.from({ length: 5 }, (_, i) => ({
+      id: `t${i + 1}`,
+      title: `T${i + 1}`,
+      status: 'in_progress',
+      ...(i > 0 ? { dependsOn: [`t${i}`] } : {}),
+    }));
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, tasks as WorkspaceTask[], {
+        total: 5,
+        completed: 0,
+        inProgress: 5,
+      }),
+    );
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'T5',
+      raisedAtMs: NOW_MS,
+      changedTaskId: 't5',
+    });
+    flushSync();
+
+    // Pan-delayed banner timing from the latched decision.
+    const banner = screen.getByTestId('hud-takeover-banner');
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // The scheduled 2s glide lands on the changed cell (5,0).
+    vi.advanceTimersByTime(2100);
+    flushSync();
+    expect(panTransform()).toBe(`translate(${-5 * takeoverPitchPx(0)}px, 0px)`);
+
+    // Manual drag to a custom camera position.
+    const map = screen.getByTestId('hud-takeover-map');
+    for (const [type, x, y] of [
+      ['pointerdown', 500, 300],
+      ['pointermove', 530, 310],
+      ['pointerup', 530, 310],
+    ] as const) {
+      map.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }));
+      flushSync();
+    }
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+
+    // FIT makes the whole graph visible: the latched decision must not flip
+    // (which would re-key syncAutoPan and snap the manual pan to {0,0}).
+    click('hud-takeover-zoom-fit');
+    expect(panTransform()).toBe(
+      `translate(${-930 * 0.476}px, ${10 * 0.476}px) scale(0.476)`,
+    );
+    // Banner timing never flips mid-display either.
+    expect(banner.style.getPropertyValue('--banner-in-delay')).toBe('3.5s');
+
+    // Zooming back to 100% must not re-schedule a surprise 2s glide.
+    click('hud-takeover-zoom-reset');
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+    vi.advanceTimersByTime(2500);
+    flushSync();
+    expect(panTransform()).toBe('translate(-930px, 10px)');
+  });
+
+  it('reduced motion: a chained second takeover for the same workspace re-opens at 100%', () => {
+    // prefers-reduced-motion disables the pre-roll blink, so the queue
+    // chains closing → opening directly — no idle/blinking phase resets the
+    // measurement between the two displays. The spec still requires every
+    // open to start at 100% zoom.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover(); // blink:false → instant open.
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
+
+    // A trigger for the SAME workspace queues at the front and re-opens
+    // right after the close ('Port the fetch loop' dwells the 3s minimum).
+    emitTakeoverTrigger({
+      workspaceId: WS,
+      kind: 'task_complete',
+      detail: 'Port the fetch loop',
+      raisedAtMs: NOW_MS + 100,
+      changedTaskId: null,
+    });
+    flushSync();
+    vi.advanceTimersByTime(
+      HUD_TAKEOVER_OPEN_MS + HUD_TAKEOVER_DWELL_MIN_MS + HUD_TAKEOVER_CLOSE_MS + 50,
+    );
+    flushSync();
+
+    expect(screen.getByTestId('hud-takeover-overlay')).toBeTruthy();
+    expect(panTransform()).toBe('translate(0px, 0px)');
+  });
+
+  it('a drag gesture across a control never suppresses its click', () => {
+    seedTasks([{ id: 'task-1', title: 'Port the fetch loop', status: 'in_progress' }]);
+    render(HudTakeoverOverlay, { props: { nowMs: NOW_MS } });
+    openTakeover();
+
+    // Pointer travel over the button (well past the 6px drag threshold):
+    // the cluster sits outside .ov-map-clip, so the drag controller never
+    // sees it — no pan, and the button's click still lands.
+    const zoomIn = button('hud-takeover-zoom-in');
+    for (const [type, x] of [
+      ['pointerdown', 500],
+      ['pointermove', 440],
+      ['pointerup', 440],
+    ] as const) {
+      zoomIn.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: 300, bubbles: true }));
+      flushSync();
+    }
+    expect(panTransform()).toBe('translate(0px, 0px)');
+
+    click('hud-takeover-zoom-in');
+    expect(panTransform()).toBe('translate(0px, 0px) scale(1.25)');
   });
 });
 
@@ -929,11 +1618,11 @@ describe('HudTakeoverOverlay banner-typewriter sound cue', () => {
     expect(playHudSoundCue).not.toHaveBeenCalled();
   });
 
-  // NOTE: manual VIEWER silence is not renderable here — the redux
-  // card-click request flows through an argument-less cached selector
-  // readable that freezes across this file's store dispose/init cycles
-  // (viewer choreography is queue-tested in hud-takeover-queue.test.ts).
-  // The overlay's isViewer guard plus the cue-map viewer tests cover it.
+  // NOTE: manual VIEWER cue behavior (structural transients only, no kind
+  // cue) is not renderable here — the redux card-click request flows through
+  // an argument-less cached selector readable that freezes across this
+  // file's store dispose/init cycles (viewer choreography is queue-tested in
+  // hud-takeover-queue.test.ts). The cue-map viewer tests cover it.
 
   it('stays silent under reduced motion (banners render with no wipe)', () => {
     vi.stubGlobal(

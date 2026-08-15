@@ -5,6 +5,7 @@ import { parseUiComponentMetadata } from '../component-metadata';
 import SidebarHarness from './SidebarHarness.svelte';
 import { sidebarFixtures } from './sidebar.fixtures';
 import * as sidebarApi from './index';
+import { m } from '$shared/paraglide/messages.js';
 
 const originalMatchMedia = window.matchMedia;
 
@@ -36,7 +37,7 @@ describe('Sidebar', () => {
     const { container } = render(SidebarHarness);
     const sidebar = container.querySelector('[data-slot="sidebar"][data-state]');
     expect(sidebar?.getAttribute('data-state')).toBe('collapsed');
-    await fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    await fireEvent.click(screen.getByRole('button', { name: m.ui_sidebar_toggle_label() }));
     expect(sidebar?.getAttribute('data-state')).toBe('expanded');
     expect(screen.getByLabelText('Sidebar open state').textContent).toBe('true');
     await fireEvent.keyDown(window, { key: 'b', metaKey: true });
@@ -64,7 +65,7 @@ describe('Sidebar', () => {
     stubMatchMedia(true);
     render(SidebarHarness);
     expect(screen.queryByRole('dialog', { name: 'Sidebar' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    await fireEvent.click(screen.getByRole('button', { name: m.ui_sidebar_toggle_label() }));
     expect(await screen.findByRole('dialog', { name: 'Sidebar' })).not.toBeNull();
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sidebar' })).toBeNull());

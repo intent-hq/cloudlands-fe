@@ -524,6 +524,33 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
+  it('renders the Agent Backend section on Advanced and no longer on Tools', async () => {
+    const advanced = renderSettings('/settings?tab=advanced');
+    await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
+    expect(screen.getByRole('heading', { name: 'Agent Backend' })).toBeTruthy();
+
+    cleanup();
+
+    const tools = renderSettings('/settings?tab=tools');
+    await waitFor(() => expect(tools.container.querySelector('#mcp-servers')).not.toBeNull());
+    expect(tools.container.querySelector('#agent-backend')).toBeNull();
+  });
+
+  it.each([
+    ['/settings#agent-backend'],
+    // Legacy deep link from when the section lived on Tools.
+    ['/settings?tab=setup#agent-backend'],
+  ])('routes %s to the Advanced tab that now renders the section', async (url) => {
+    renderSettings(url);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Advanced' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(document.querySelector('#agent-backend')).not.toBeNull();
+  });
+
   it('exposes sidebar navigation buttons with the active page marked', async () => {
     renderSettings('/settings?tab=accounts');
     expect(screen.getByRole('navigation', { name: 'Settings' })).toBeTruthy();

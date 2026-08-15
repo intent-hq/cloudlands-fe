@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import NavigationHelpCatalogPreview from './NavigationHelpCatalogPreview.svelte';
+import { m } from '$shared/paraglide/messages.js';
 
 const originalMatchMedia = window.matchMedia;
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -79,7 +80,7 @@ describe('NavigationHelpCatalogPreview', () => {
     expect(
       screen.getByRole('button', { name: 'Catalog overview' }).getAttribute('data-active'),
     ).toBe('true');
-    await fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }));
+    await fireEvent.click(screen.getByRole('button', { name: m.ui_sidebar_toggle_label() }));
     expect(sidebar?.getAttribute('data-state')).toBe('expanded');
     const state = screen.getByLabelText('Catalog sidebar state');
     expect(state.textContent?.trim()).toBe('expanded');

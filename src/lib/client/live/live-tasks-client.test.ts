@@ -372,6 +372,46 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     warnSpy.mockRestore();
   });
 
+  // ---- specLinked (additive §5.4; presence-detected like the relations) -----
+
+  it("list carries the boolean specLinked from the wire row", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [
+        { id: "t1", title: "Linked", status: "not_started", specLinked: true },
+        { id: "t2", title: "Unlinked", status: "not_started", specLinked: false },
+      ],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].specLinked).toBe(true);
+    expect(tasks[1].specLinked).toBe(false);
+  });
+
+  it("list leaves specLinked undefined when the daemon omits it (older daemon)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [{ id: "t1", title: "T", status: "not_started" }],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].specLinked).toBeUndefined();
+    expect("specLinked" in tasks[0]).toBe(false);
+  });
+
+  it("list discards a non-boolean specLinked instead of coercing it", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [{ id: "t1", title: "T", status: "not_started", specLinked: "yes" }],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].specLinked).toBeUndefined();
+  });
+
   it("note-shaped entities carry relations (incl. unmetDependsOn) from metadata.task", async () => {
     mockedRequest.mockResolvedValueOnce({
       tasks: [

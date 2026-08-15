@@ -132,15 +132,6 @@
     "fr",
     "es"
   ],
-  "chat_monitoredPrs_crossRepoChip_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
-  ],
   "chat_monitoredPrs_hover_untitled_label": [
     "zh-CN",
     "zh-TW",
@@ -152,15 +143,6 @@
   ],
   "chat_permissionParser_browser_action": [
     "de"
-  ],
-  "chat_prMonitorWakeAttribution_crossRepoChip_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
-    "es"
   ],
   "chat_previewToolLabel_tool_fallback": [
     "de"
@@ -380,12 +362,19 @@
     "fr",
     "es"
   ],
+  "events_activity_script_fallback": [
+    "fr",
+    "es"
+  ],
   "events_activity_verbFile_label": [
     "zh-CN",
     "zh-TW",
     "de",
     "fr",
     "es"
+  ],
+  "events_activity_workspaceStatus_label": [
+    "de"
   ],
   "externalEditors_ipc_applications_filterName": [
     "fr"
@@ -835,6 +824,18 @@
   "settings_agentBackend_autoPlaceholder": [
     "fr"
   ],
+  "settings_agentBackend_idleReap_minutesValue": [
+    "es",
+    "fr"
+  ],
+  "settings_agentBackend_memoryBudget_megabytesValue": [
+    "de",
+    "es",
+    "ja",
+    "ko",
+    "zh-CN",
+    "zh-TW"
+  ],
   "settings_aiBehavior_description_label": [
     "fr"
   ],
@@ -972,6 +973,21 @@
   ],
   "settings_theme_system": [
     "de"
+  ],
+  "settings_updateChannel_alpha_label": [
+    "de",
+    "fr",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_beta_label": [
+    "de",
+    "es",
+    "zh-CN",
+    "zh-TW"
+  ],
+  "settings_updateChannel_stable_label": [
+    "fr"
   ],
   "settings_voice_inputDevice_label": [
     "fr"
@@ -1232,6 +1248,15 @@
     "fr",
     "es"
   ],
+  "workspace_checkoutModePill_cow_label": [
+    "zh-CN",
+    "zh-TW",
+    "ja",
+    "ko",
+    "de",
+    "fr",
+    "es"
+  ],
   "workspace_compactInitializer_setupDevEnvWith_after": [
     "fr",
     "es"
@@ -1286,6 +1311,9 @@
   "workspace_multiSelectSidebar_browser_label": [
     "de"
   ],
+  "workspace_multiSelectSidebar_sync_label": [
+    "de"
+  ],
   "workspace_nav_dashboard_label": [
     "de"
   ],
@@ -1293,15 +1321,6 @@
     "de"
   ],
   "workspace_noteVersionHistory_error_label": [
-    "es"
-  ],
-  "workspace_overviewTimeline_prNumber_label": [
-    "zh-CN",
-    "zh-TW",
-    "ja",
-    "ko",
-    "de",
-    "fr",
     "es"
   ],
   "workspace_page_createFile_placeholder": [
@@ -1327,9 +1346,17 @@
   "workspace_prSection_pullRequests_label": [
     "de"
   ],
+  "workspace_progressCard_base_label": [
+    "es",
+    "fr"
+  ],
   "workspace_setupScriptEditor_variables_label": [
     "fr",
     "es"
+  ],
+  "workspace_sidebarHeader_base_label": [
+    "es",
+    "fr"
   ],
   "workspace_skills_title": [
     "de"
@@ -1342,6 +1369,13 @@
     "de",
     "fr",
     "es"
+  ],
+  "workspace_terminalDock_shell_label": [
+    "de",
+    "es",
+    "fr",
+    "zh-CN",
+    "zh-TW"
   ],
   "workspace_tokenUsage_agentFallback_label": [
     "de",

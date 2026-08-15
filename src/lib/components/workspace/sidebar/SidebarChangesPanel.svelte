@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
    * Shows the git workflow as a vertical timeline: Unstaged → Staged → Commits → PRs
@@ -67,9 +68,15 @@
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
     mapWorkspacePRs,
-    mergeMonitoredPRs,
+    orderPRSectionsForSelection,
+    sectionPRs,
   } from './sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import {
+    selectGitRoots,
+    type WorkspaceGitRootEntry,
+  } from '$store/renderer/slices/git-roots/git-roots-selectors';
+  import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
@@ -78,6 +85,9 @@
   import PostMergeActions from './PostMergeActions.svelte';
   import PRSection from './PRSection.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import OpenPanelIndicator from './OpenPanelIndicator.svelte';
 
   interface Props {
     workspaceId: string;
@@ -91,6 +101,8 @@
     onOpenNote?: (noteId: string) => void;
     /** Callback to open the code review panel */
     onOpenCodeReview?: () => void;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -103,6 +115,8 @@
     onOpenNote,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onOpenCodeReview,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -170,8 +184,11 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : undefined,
   );
-  const pullRequests = $derived(
-    mergeMonitoredPRs(
+  // Secondary git roots (monorepo#2053) attribute non-workspace PRs into
+  // "Other PRs"; leftover monitors land in "Other Tracked PRs".
+  const gitRoots$ = selectGitRoots(workspaceIdStore);
+  const sectionedPRs = $derived(
+    sectionPRs(
       mapWorkspacePRs(
         $workspace?.pullRequests,
         $activePullRequest$,
@@ -180,10 +197,27 @@
       ),
       $prMonitors$,
       workspaceRepo,
+      $gitRoots$,
+      getPRDisplayTitle,
     ),
   );
+  // The workspace's own PRs — every pre-sectioning consumer (merge gating,
+  // post-merge detection, MergePanel) still keys off these alone,
+  // regardless of the dropdown selection.
+  const pullRequests = $derived(sectionedPRs.own);
   const trunkBranch = $derived($workspace?.baseRef || 'main');
   const hasPushedCommits = $derived(pushedCommits.length > 0);
+
+  // Multi git root browsing (monorepo#2053): while GitRootBrowser has a
+  // secondary root selected this panel hides its primary-root body and the
+  // PR sections reorder to follow the selection.
+  let selectedSecondaryRoot = $state<WorkspaceGitRootEntry | null>(null);
+  const isBrowsingSecondaryRoot = $derived(selectedSecondaryRoot !== null);
+  // Visual PR section ordering only — primary selection passes sectionedPRs
+  // through unchanged.
+  const orderedPRSections = $derived(
+    orderPRSectionsForSelection(sectionedPRs, workspaceRepo, selectedSecondaryRoot),
+  );
 
   // Truncation state - when there are more changes than we can display
   // Only show truncation warning if there are actual working changes being truncated
@@ -497,13 +531,18 @@
   $effect(() => {
     const ac = $acceptChangesState$;
     const pending = $pendingAutoAction$;
+    // While a secondary root is selected the primary body is unmounted, so
+    // prSectionRef/mergePanelRef are undefined — leave the pending action
+    // queued (unconsumed) until the selection returns to primary; reading
+    // the flag here re-runs the effect on that switch (monorepo#2053).
+    const browsingSecondaryRoot = isBrowsingSecondaryRoot;
     untrack(() => {
       if (ac.commitMessage && ac.commitMessage !== commitMessage) {
         commitMessage = ac.commitMessage;
       }
 
       // Handle pending auto-actions
-      if (pending) {
+      if (pending && !browsingSecondaryRoot) {
         appStore.dispatch(setPendingAutoAction(workspaceId, null));
         if (pending.action === 'commit') {
           isCommitting = true;
@@ -531,15 +570,6 @@
   const hasCommits = $derived(allCommits.length > 0);
   const hasPRs = $derived(pullRequests.length > 0);
 
-  // Total files changed for "View All Changes" button
-  const totalStats = $derived(computeTotalStats(unstagedChanges, stagedChanges, allCommits));
-  const totalFilesChanged = $derived(totalStats.totalFilesChanged);
-  const hasAnyChanges = $derived(totalFilesChanged > 0);
-
-  // Check if workspace is "completed" - commits have been merged to trunk
-  // This persists across refreshes since it's based on actual git state
-  const hasNoLocalChanges = $derived(!hasUnstaged && !hasStaged && commits.length === 0);
-
   // Detect new work after a merge. Checks uncommitted changes, unpushed commits,
   // and pushed-but-not-PR'd commits (aheadOfTrunk). The aheadOfTrunk check is
   // guarded by !isContentMergedToTrunk because after a squash merge, aheadOfTrunk
@@ -551,6 +581,51 @@
       (aheadOfTrunk !== null && aheadOfTrunk > 0 && !isContentMergedToTrunk),
   );
 
+  // Props shared by both PRSection instances (primary timeline + the
+  // list-only secondary-root view, monorepo#2053).
+  const prSectionSharedProps = $derived({
+    workspaceId,
+    activeFilePath,
+    activeFileStaged,
+    hasStaged,
+    hasUnstaged,
+    hasCommits,
+    hasOpenPR,
+    hasRemote,
+    commits,
+    pushedCommits,
+    allCommits,
+    stagedChanges,
+    trunkBranch,
+    targetBranch,
+    repoPath,
+    repoType,
+    commitMessage,
+    hasUnpushedCommits,
+    unpushedCount,
+    hasPushedCommits,
+    isDiverged,
+    isBehind,
+    behindCount,
+    isMergedToTrunk,
+    areAllPRsMerged,
+    hasResetToTrunk,
+    isContentMergedToTrunk,
+    hasNewWorkAfterMerge,
+    isPRMerged,
+    onOpenFullPanel,
+    onOpenChange,
+  });
+
+  // Total files changed for "View All Changes" button
+  const totalStats = $derived(computeTotalStats(unstagedChanges, stagedChanges, allCommits));
+  const totalFilesChanged = $derived(totalStats.totalFilesChanged);
+  const hasAnyChanges = $derived(totalFilesChanged > 0);
+
+  // Check if workspace is "completed" - commits have been merged to trunk
+  // This persists across refreshes since it's based on actual git state
+  const hasNoLocalChanges = $derived(!hasUnstaged && !hasStaged && commits.length === 0);
+
   // Note: mergeHeadSha is ONLY set during in-session merges (see merge handlers below at lines ~2354/~2423).
   // For external merges (areAllPRsMerged, isContentMergedToTrunk), we do NOT capture mergeHeadSha
   // because detection may happen after the user made new commits, and capturing HEAD at detection
@@ -561,6 +636,13 @@
   function handleOpenAllChanges() {
     appStore.dispatch(openWorkspaceLocalChanges(workspaceId));
   }
+
+  const localChangesPanelState = $derived(
+    getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'local-changes',
+      workspaceId,
+    }),
+  );
 
   // Multi-select state for bulk staging/unstaging
   // Keys are "{staged}:{path}" to distinguish between same file in staged vs unstaged
@@ -968,211 +1050,203 @@
         aria-label={m.workspace_sidebarChanges_fileChanges_ariaLabel()}
         onkeydown={handleChangesKeydown}
       >
-        <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-          <p class="text-subtle leading-snug text-ui">
-            {m.workspace_sidebarChanges_codeLivesIn_label()}
-          </p>
-          <p class="text-subtle leading-snug text-ui">
-            {m.workspace_sidebarChanges_mergedInto_label()}
-          </p>
-        </div>
+        <!-- Git root dropdown + read-only per-root browsing (monorepo#2053) -->
+        <GitRootBrowser
+          {workspaceId}
+          onSelectedRootChange={(entry) => (selectedSecondaryRoot = entry)}
+        />
 
-        <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
-
-        <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
-          <button
-            type="button"
-            class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
-            onclick={handleRefreshGitStatus}
-            disabled={isRefreshingGitStatus}
-            title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-          >
-            <Fa
-              icon={faArrowsRotate}
-              class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
-              size={10}
+        {#if isBrowsingSecondaryRoot}
+          <!-- PR sections follow the dropdown while browsing a secondary root:
+               the selected root's PRs on top, the workspace's own PRs under
+               "Other PRs". Read-only list — merge gating and post-merge stay
+               keyed to sectionedPRs.own in the primary view (monorepo#2053). -->
+          <div class="relative flex flex-col pb-2 w-full mt-2">
+            <PRSection
+              {...prSectionSharedProps}
+              hasPRs={orderedPRSections.selected.length > 0}
+              pullRequests={orderedPRSections.selected}
+              otherRootPRs={orderedPRSections.others}
+              otherTrackedPRs={orderedPRSections.otherTracked}
+              mergeDrawerOpen={false}
+              onMergeDrawerToggle={() => {}}
+              listOnly
             />
-          </button>
-
-          <!-- View All Changes Button -->
-          {#if hasAnyChanges}
-            {@const isActive = isAllChangesViewActive}
-            <button
-              onclick={handleOpenAllChanges}
-              class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                ? 'bg-background text-foreground border-border shadow-xs pl-2'
-                : 'border-transparent'}
-                "
-            >
-              <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
-                <span class="text-ui truncate min-w-0 text-left flex-1">
-                  {totalFilesChanged === 1
-                    ? m.workspace_sidebarChanges_filesChangedInSpace_one()
-                    : m.workspace_sidebarChanges_filesChangedInSpace_many({
-                        count: formatInteger(totalFilesChanged),
-                      })}
-                </span>
-                <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
-              </div>
-            </button>
-          {:else}
-            <div
-              class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
-            >
-              <span class="text-ui truncate min-w-0 text-left flex-1"
-                >{m.workspace_sidebarChanges_noChangesYet_label()}</span
-              >
-            </div>
-          {/if}
-
-          <!-- Code Review Button -->
-          <!-- {#if hasAnyChanges}
-            <Tooltip content="Open AI code review" side="bottom">
-              <button
-                onclick={handleOpenCodeReviewClick}
-                class="flex items-center gap-1.5 px-2 py-1.5 text-muted-foreground hover:text-foreground rounded-sm transition-colors cursor-pointer border border-transparent hover:border-border hover:bg-background"
-              >
-                <Fa icon={faMagnifyingGlass} class="opacity-50" size="xs" />
-                <span class="text-xs">Review</span>
-              </button>
-            </Tooltip>
-          {/if} -->
-        </div>
-
-        <!-- Truncation warning banner -->
-        {#if changesTruncated}
-          <div
-            class="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-600 dark:text-amber-400"
-          >
-            <span class="font-medium"
-              >{m.workspace_sidebarChanges_showingChanges_label({
-                shown: formatInteger(unstagedChanges.length + stagedChanges.length),
-                total: formatInteger(totalChangesCount),
-              })}</span
-            >
-            {#if hiddenChangesCount > 0}
-              <span class="opacity-80">
-                {hiddenChangesCount === 1
-                  ? m.workspace_sidebarChanges_olderChangesHidden_one()
-                  : m.workspace_sidebarChanges_olderChangesHidden_many({
-                      count: formatInteger(hiddenChangesCount),
-                    })}
-              </span>
-            {/if}
           </div>
         {/if}
 
-        <div class="relative flex-1 flex flex-col pb-2 w-full">
-          <!-- Vertical timeline line -->
-          <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border/50"></div>
+        {#if !isBrowsingSecondaryRoot}
+          <div class="branch-labels w-full flex justify-between mb-1 mt-1">
+            <p class="text-subtle leading-snug text-ui">
+              {m.workspace_sidebarChanges_codeLivesIn_label()}
+            </p>
+            <p class="text-subtle leading-snug text-ui">
+              {m.workspace_sidebarChanges_mergedInto_label()}
+            </p>
+          </div>
 
-          <FileChangesSection
-            {workspaceId}
-            {activeFilePath}
-            {activeFileStaged}
-            {focusedFile}
-            {isWorkspaceSwitching}
-            {onOpenChange}
-            {onOpenNote}
-            onFileClicked={(path, staged) => {
-              focusedFile = { path, staged };
-              if (selectedFiles.size > 0) {
-                clearSelection();
-              }
-              lastClickedFile = { path, staged };
-            }}
-          />
+          <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
-          <CommitDrawer
-            {workspaceId}
-            bind:commitMessage
-            bind:isCommitting
-            bind:commitDrawerOpen
-            {hasStaged}
-            {stagedChanges}
-            onCommit={() => handleCommit()}
-          />
+          <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
+            <button
+              type="button"
+              class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
+              onclick={handleRefreshGitStatus}
+              disabled={isRefreshingGitStatus}
+              title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
+            >
+              <Fa
+                icon={faArrowsRotate}
+                class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
+                size={10}
+              />
+            </button>
 
-          <!-- COMMITS SECTION -->
-          <CommitsTimeline
-            {workspaceId}
-            {activeFilePath}
-            {activeFileStaged}
-            pullRequestCount={pullRequests.length}
-          />
+            <!-- View All Changes Button -->
+            {#if hasAnyChanges}
+              {@const isActive = isAllChangesViewActive}
+              <button
+                onclick={handleOpenAllChanges}
+                class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
+                  ? 'bg-background text-foreground border-border shadow-xs pl-2'
+                  : 'border-transparent'}
+                "
+              >
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                  <!-- <Fa icon={faFolderOpen} class="opacity-30" size="xs" /> -->
+                  <span class="text-ui truncate min-w-0 text-left flex-1">
+                    {totalFilesChanged === 1
+                      ? m.workspace_sidebarChanges_filesChangedInSpace_one()
+                      : m.workspace_sidebarChanges_filesChangedInSpace_many({
+                          count: formatInteger(totalFilesChanged),
+                        })}
+                  </span>
+                  <OpenPanelIndicator
+                    count={localChangesPanelState.count}
+                    active={localChangesPanelState.isActive}
+                  />
+                  <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
+                </div>
+              </button>
+            {:else}
+              <div
+                class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+              >
+                <span class="text-ui truncate min-w-0 text-left flex-1"
+                  >{m.workspace_sidebarChanges_noChangesYet_label()}</span
+                >
+              </div>
+            {/if}
+          </div>
 
-          {#snippet mergePanelContent()}
-            <MergePanel
-              {workspaceId}
-              {hasOpenPR}
-              {hasRemote}
-              {pullRequests}
-              {hasStaged}
-              {hasCommits}
-              {allCommits}
-              {stagedChanges}
-              {trunkBranch}
-              {targetBranch}
-              {repoPath}
-              {repoType}
-              {commitMessage}
-              onCommitMessageChange={(v) => (commitMessage = v)}
-              onMergeComplete={() => {
-                mergeDrawerOpen = false;
-              }}
-              onOpenRebaseTerminal={openRebaseTerminal}
-              bind:this={mergePanelRef}
-            />
-          {/snippet}
-
-          <PRSection
-            {workspaceId}
-            {activeFilePath}
-            {activeFileStaged}
-            {hasStaged}
-            {hasUnstaged}
-            {hasCommits}
-            {hasOpenPR}
-            {hasRemote}
-            {hasPRs}
-            {pullRequests}
-            {commits}
-            {pushedCommits}
-            {allCommits}
-            {stagedChanges}
-            {trunkBranch}
-            {targetBranch}
-            {repoPath}
-            {repoType}
-            {commitMessage}
-            {hasUnpushedCommits}
-            {unpushedCount}
-            {hasPushedCommits}
-            {isDiverged}
-            {isBehind}
-            {behindCount}
-            {isMergedToTrunk}
-            {areAllPRsMerged}
-            {hasResetToTrunk}
-            {isContentMergedToTrunk}
-            {hasNewWorkAfterMerge}
-            {isPRMerged}
-            {mergeDrawerOpen}
-            onMergeDrawerToggle={(open) => {
-              mergeDrawerOpen = open;
-            }}
-            {onOpenFullPanel}
-            {onOpenChange}
-            {mergePanelContent}
-            bind:this={prSectionRef}
-          />
-
-          <!-- Post-merge options - shown when workspace is completed (commits merged to trunk) -->
-          {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
-            <PostMergeActions {workspaceId} {hasNoLocalChanges} {trunkBranch} />
+          <!-- Truncation warning banner -->
+          {#if changesTruncated}
+            <div
+              class="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-600 dark:text-amber-400"
+            >
+              <span class="font-medium"
+                >{m.workspace_sidebarChanges_showingChanges_label({
+                  shown: formatInteger(unstagedChanges.length + stagedChanges.length),
+                  total: formatInteger(totalChangesCount),
+                })}</span
+              >
+              {#if hiddenChangesCount > 0}
+                <span class="opacity-80">
+                  {hiddenChangesCount === 1
+                    ? m.workspace_sidebarChanges_olderChangesHidden_one()
+                    : m.workspace_sidebarChanges_olderChangesHidden_many({
+                        count: formatInteger(hiddenChangesCount),
+                      })}
+                </span>
+              {/if}
+            </div>
           {/if}
-        </div>
+
+          <div class="relative flex-1 flex flex-col pb-2 w-full">
+            <!-- Vertical timeline line -->
+            <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border/50"></div>
+
+            <FileChangesSection
+              {workspaceId}
+              {activeFilePath}
+              {activeFileStaged}
+              {focusedFile}
+              {isWorkspaceSwitching}
+              {onOpenChange}
+              {onOpenNote}
+              {openPanelTabs}
+              {activePanelTab}
+              onFileClicked={(path, staged) => {
+                focusedFile = { path, staged };
+                if (selectedFiles.size > 0) {
+                  clearSelection();
+                }
+                lastClickedFile = { path, staged };
+              }}
+            />
+
+            <CommitDrawer
+              {workspaceId}
+              bind:commitMessage
+              bind:isCommitting
+              bind:commitDrawerOpen
+              {hasStaged}
+              {stagedChanges}
+              onCommit={() => handleCommit()}
+            />
+
+            <!-- COMMITS SECTION -->
+            <CommitsTimeline
+              {workspaceId}
+              {activeFilePath}
+              {activeFileStaged}
+              pullRequestCount={pullRequests.length}
+            />
+
+            {#snippet mergePanelContent()}
+              <MergePanel
+                {workspaceId}
+                {hasOpenPR}
+                {hasRemote}
+                {pullRequests}
+                {hasStaged}
+                {hasCommits}
+                {allCommits}
+                {stagedChanges}
+                {trunkBranch}
+                {targetBranch}
+                {repoPath}
+                {repoType}
+                {commitMessage}
+                onCommitMessageChange={(v) => (commitMessage = v)}
+                onMergeComplete={() => {
+                  mergeDrawerOpen = false;
+                }}
+                onOpenRebaseTerminal={openRebaseTerminal}
+                bind:this={mergePanelRef}
+              />
+            {/snippet}
+
+            <PRSection
+              {...prSectionSharedProps}
+              {hasPRs}
+              {pullRequests}
+              otherRootPRs={sectionedPRs.otherRoots}
+              otherTrackedPRs={sectionedPRs.otherTracked}
+              {mergeDrawerOpen}
+              onMergeDrawerToggle={(open) => {
+                mergeDrawerOpen = open;
+              }}
+              {mergePanelContent}
+              bind:this={prSectionRef}
+            />
+
+            <!-- Post-merge options - shown when workspace is completed (commits merged to trunk) -->
+            {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
+              <PostMergeActions {workspaceId} {hasNoLocalChanges} {trunkBranch} />
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>

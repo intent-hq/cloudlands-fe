@@ -306,43 +306,6 @@
   --theme-app-background: var(--theme-dark-app-background);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.dark) {
-    color-scheme: dark;
-    --theme-background: var(--theme-dark-background);
-    --theme-foreground: var(--theme-dark-foreground);
-    --theme-card: var(--theme-dark-card);
-    --theme-card-foreground: var(--theme-dark-card-foreground);
-    --theme-popover: var(--theme-dark-popover);
-    --theme-popover-foreground: var(--theme-dark-popover-foreground);
-    --theme-primary: var(--theme-dark-primary);
-    --theme-primary-foreground: var(--theme-dark-primary-foreground);
-    --theme-secondary: var(--theme-dark-secondary);
-    --theme-secondary-foreground: var(--theme-dark-secondary-foreground);
-    --theme-accent: var(--theme-dark-accent);
-    --theme-accent-foreground: var(--theme-dark-accent-foreground);
-    --theme-muted: var(--theme-dark-muted);
-    --theme-muted-foreground: var(--theme-dark-muted-foreground);
-    --theme-destructive: var(--theme-dark-destructive);
-    --theme-destructive-foreground: var(--theme-dark-destructive-foreground);
-    --theme-border: var(--theme-dark-border);
-    --theme-input: var(--theme-dark-input);
-    --theme-ring: var(--theme-dark-ring);
-    --theme-info: var(--theme-dark-info);
-    --theme-info-foreground: var(--theme-dark-info-foreground);
-    --theme-success: var(--theme-dark-success);
-    --theme-success-foreground: var(--theme-dark-success-foreground);
-    --theme-warning: var(--theme-dark-warning);
-    --theme-warning-foreground: var(--theme-dark-warning-foreground);
-    --theme-sidebar: var(--theme-dark-sidebar);
-    --theme-sidebar-foreground: var(--theme-dark-sidebar-foreground);
-    --theme-sidebar-accent: var(--theme-dark-sidebar-accent);
-    --theme-sidebar-accent-foreground: var(--theme-dark-sidebar-accent-foreground);
-    --theme-sidebar-border: var(--theme-dark-sidebar-border);
-    --theme-app-background: var(--theme-dark-app-background);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

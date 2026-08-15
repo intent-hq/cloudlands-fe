@@ -4,6 +4,7 @@ import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-
 import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { Workspace } from '$shared/types';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setWorkspaceInitializerPendingGitHubPrefill } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 const TEST_WORKSPACE_ID = 'ws-1' as WorkspaceId;
@@ -26,6 +27,14 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 const invokeIpcMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock('../../shared/generated/ipc-client', () => ({
   invoke: invokeIpcMock,
+}));
+
+// Entry-point URL resolution (loopback rewrite/probe/tunnel); echoes by default
+const resolveBrowserLinkForOpenMock = vi.hoisted(() =>
+  vi.fn(async (url: string) => url),
+);
+vi.mock('$lib/utils/browser-link-open', () => ({
+  resolveBrowserLinkForOpen: resolveBrowserLinkForOpenMock,
 }));
 
 const showLinkActionMenuMock = vi.hoisted(() => vi.fn());
@@ -515,6 +524,7 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     showLinkActionMenuMock.mockClear();
     writeTextToClipboardMock.mockClear();
     gotoMock.mockClear();
+    resolveBrowserLinkForOpenMock.mockClear();
   });
 
   it('Cmd+Click routes http(s) links to the embedded browser panel', async () => {
@@ -527,6 +537,34 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(result).toBe(true);
     expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
     expect(invokeIpcMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves the URL BEFORE opening the browser panel and opens the resolved URL', async () => {
+    const url = 'http://localhost:5173/app';
+    const resolvedUrl = 'http://10.0.0.5:5173/app';
+    resolveBrowserLinkForOpenMock.mockResolvedValueOnce(resolvedUrl);
+
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(resolveBrowserLinkForOpenMock).toHaveBeenCalledWith(url);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(resolvedUrl);
+  });
+
+  it('opens the URL unresolved when entry-point resolution throws', async () => {
+    const url = 'http://localhost:5173/app';
+    resolveBrowserLinkForOpenMock.mockRejectedValueOnce(new Error('ipc unavailable'));
+
+    const result = await handleLink(url, {
+      workspaceId: TEST_WORKSPACE_ID,
+      modifiers: { metaKey: true, ctrlKey: true },
+    });
+
+    expect(result).toBe(true);
+    expect(openBrowserPanelMock).toHaveBeenCalledWith(url);
   });
 
   it('Cmd+Click without a workspaceId falls back to the external browser', async () => {
@@ -707,7 +745,8 @@ describe('handleLink – flipped http(s) routing and link action menu', () => {
     expect(reduxDispatchMock).toHaveBeenCalledWith(
       setWorkspaceInitializerPendingGitHubPrefill({ ...ref, url }),
     );
-    expect(gotoMock).toHaveBeenCalledWith('/');
+    expect(reduxDispatchMock).toHaveBeenCalledWith(setShowCreateModal(true));
+    expect(gotoMock).not.toHaveBeenCalled();
     expect(showLinkActionMenuMock).not.toHaveBeenCalled();
   });
 

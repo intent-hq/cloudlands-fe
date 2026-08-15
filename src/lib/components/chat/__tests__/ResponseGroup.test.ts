@@ -24,13 +24,31 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { cubicOut } from 'svelte/easing';
 import ResponseGroup from '../ResponseGroup.svelte';
-import { getResponseGroupBlockKey, getResponseGroupPreviewBlock } from '../response-group-blocks';
+import {
+  dedupeKeys,
+  getResponseGroupBlockKey,
+  getResponseGroupBlockKeys,
+  getResponseGroupPreviewBlock,
+} from '../response-group-blocks';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
+});
+
+vi.mock('$lib/components/markdown/MarkdownViewer.svelte', async () => ({
+  default: (await import('./mocks/MarkdownViewerStub.svelte')).default,
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ theme: { name: 'light' } }),
+    dispatch: vi.fn(),
+  });
 });
 
 /**
@@ -187,6 +205,35 @@ describe('ResponseGroup - collapse state model', () => {
     return !!el && (el.getAttribute('style') ?? '').includes('max-height');
   }
 
+  it('gives duplicate-name instances stable unique details IDs and isolated controls', async () => {
+    const first = render(ResponseGroup, { props: { name: 'Repeated group', children } });
+    const second = render(ResponseGroup, { props: { name: 'Repeated group', children } });
+    const firstButton = header(first.container);
+    const secondButton = header(second.container);
+    const firstId = firstButton.getAttribute('aria-controls')!;
+    const secondId = secondButton.getAttribute('aria-controls')!;
+
+    expect(firstId).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
+    expect(secondId).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
+    expect(firstId).not.toBe(secondId);
+
+    await first.rerender({ name: 'Renamed group' });
+    expect(firstButton.getAttribute('aria-controls')).toBe(firstId);
+
+    await fireEvent.click(firstButton);
+    expect(first.container.contains(document.getElementById(firstId))).toBe(true);
+    expect(document.getElementById(secondId)).toBeNull();
+
+    await fireEvent.click(secondButton);
+    expect(second.container.contains(document.getElementById(secondId))).toBe(true);
+    expect(second.container.contains(document.getElementById(firstId))).toBe(false);
+
+    await fireEvent.click(firstButton);
+    await waitFor(() => expect(document.getElementById(firstId)).toBeNull());
+    expect(document.getElementById(secondId)).not.toBeNull();
+    expect(secondButton.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('uses caption-sized operational titles and only shows the preview while collapsed', async () => {
     const blocks = [{ type: 'text', text: 'Collapsed preview text' }] as ContentBlock[];
     const { container, queryByText } = render(ResponseGroup, {
@@ -194,8 +241,8 @@ describe('ResponseGroup - collapse state model', () => {
     });
     const btn = header(container);
 
-    expect(btn.className).toContain('type-caption');
-    expect(btn.className).toContain('text-muted-foreground/60');
+    expect(btn.className).toContain('type-body');
+    expect(btn.className).toContain('text-muted-foreground');
     expect(btn.className).not.toContain('text-base');
     expect(btn.className).not.toContain('px-1');
     expect(queryByText('Collapsed preview text')).not.toBeNull();
@@ -203,15 +250,24 @@ describe('ResponseGroup - collapse state model', () => {
     await fireEvent.click(btn);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
     expect(queryByText('Collapsed preview text')).toBeNull();
+    expect(container.querySelector('[data-testid="response-group-name"]')?.className).toContain(
+      'font-medium',
+    );
     expect(container.querySelector('.border-l')?.className).not.toContain('ml-2');
   });
 
-  it('does not render a leading group icon', () => {
+  it('keeps one aligned operational icon and a spaced expanded guide', async () => {
     const { container } = render(ResponseGroup, {
       props: { name: 'Group title', children },
     });
 
-    expect(header(container).querySelector('svg')).toBeNull();
+    const button = header(container);
+    expect(button.querySelector('[data-operational-icon-box]')).toBeTruthy();
+    expect(button.querySelector('[data-icon="arrows-in-line-vertical"]')).toBeTruthy();
+    await fireEvent.click(button);
+    expect(container.querySelector('[data-operational-expanded-content]')?.className).toContain(
+      'pt-1.5',
+    );
   });
 
   it('last completed group toggles expanded ↔ semi-open and never fully closes', async () => {
@@ -409,6 +465,56 @@ describe('ResponseGroup - block identity', () => {
     expect(getResponseGroupBlockKey(toolResult, 2)).toBe(getResponseGroupBlockKey(toolResult, 100));
   });
 
+  it('getResponseGroupBlockKeys dedupes tool_results sharing a tool_use_id', () => {
+    const blocks = [
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[0]).toBe('tool_result:tool-1');
+    expect(keys[1]).toBe('tool_result:tool-1-dup-1');
+  });
+
+  it('getResponseGroupBlockKeys dedupes tool_uses sharing a toolCallId without an id', () => {
+    const blocks = [
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+      { type: 'tool_use', toolCallId: 'call-7', name: 'search' },
+    ] as unknown as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[0]).toBe('tool_use:call-7');
+    expect(keys[1]).toBe('tool_use:call-7-dup-1');
+    expect(keys[2]).toBe('tool_use:call-7-dup-2');
+  });
+
+  it('getResponseGroupBlockKeys dedupes repeated id-backed blocks', () => {
+    const blocks = [
+      { type: 'code', id: 'block-1', code: 'a' },
+      { type: 'code', id: 'block-1', code: 'a' },
+    ] as unknown as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+    expect(keys[1]).toBe(`${keys[0]}-dup-1`);
+  });
+
+  it('getResponseGroupBlockKeys leaves collision-free inputs unchanged', () => {
+    const blocks = [
+      { type: 'tool_use', id: 'tool-1', name: 'search' },
+      { type: 'tool_result', tool_use_id: 'tool-1' },
+      { type: 'text', text: 'hello' },
+      { type: 'thinking', text: 'hmm' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(keys).toEqual(blocks.map((block, index) => getResponseGroupBlockKey(block, index)));
+    expect(new Set(keys).size).toBe(blocks.length);
+  });
+
   it('selects the latest presentable payload without cloning or rewriting it', () => {
     const latestTool = {
       type: 'tool_use',
@@ -423,5 +529,52 @@ describe('ResponseGroup - block identity', () => {
     } as ContentBlock;
 
     expect(getResponseGroupPreviewBlock([latestTool, trailingResult])).toBe(latestTool);
+  });
+});
+
+describe('dedupeKeys', () => {
+  it('resolves second-order collisions against already-emitted keys', () => {
+    // A raw input key can collide with a suffix emitted for an earlier
+    // duplicate: ['K', 'K', 'K-dup-1'] must not emit 'K-dup-1' twice.
+    const keys = dedupeKeys(['K', 'K', 'K-dup-1']);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[0]).toBe('K');
+    expect(keys[1]).toBe('K-dup-1');
+    expect(keys[2]).not.toBe('K-dup-1');
+  });
+
+  it('suffixes by occurrence count, stable under prefix insertions', () => {
+    expect(dedupeKeys(['K', 'K', 'K'])).toEqual(['K', 'K-dup-1', 'K-dup-2']);
+    // Inserting an unrelated key before the duplicates must not shift their suffixes.
+    expect(dedupeKeys(['A', 'K', 'K']).slice(1)).toEqual(dedupeKeys(['K', 'K']));
+  });
+
+  it('leaves collision-free inputs byte-identical', () => {
+    const keys = ['a', 'b', 'c-dup-1', 'd'];
+    expect(dedupeKeys(keys)).toEqual(keys);
+  });
+
+  it('propagates through getResponseGroupBlockKeys for id-shaped collisions', () => {
+    const blocks = [
+      { type: 'tool_result', tool_use_id: 'call' },
+      { type: 'tool_result', tool_use_id: 'call' },
+      { type: 'tool_result', tool_use_id: 'call-dup-1' },
+    ] as ContentBlock[];
+
+    const keys = getResponseGroupBlockKeys(blocks);
+    expect(new Set(keys).size).toBe(blocks.length);
+  });
+});
+
+describe('MessageContent - outer key dedup', () => {
+  it('renders duplicate top-level tool_results without each_key_duplicate', async () => {
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    const content = [
+      { type: 'tool_result', tool_use_id: 'call-1', output: 'first' },
+      { type: 'tool_result', tool_use_id: 'call-1', output: 'second' },
+    ] as ContentBlock[];
+
+    const { container } = render(MessageContent, { props: { content } });
+    expect(container.querySelectorAll('.border.border-border').length).toBe(2);
   });
 });

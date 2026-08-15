@@ -1427,7 +1427,7 @@
 
       <!-- Tab bar -->
       <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+        {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
           <button
             type="button"
             class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
@@ -1459,13 +1459,12 @@
           </button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
-          <div class="flex items-center rounded-lg bg-sidebar">
+          <div class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring">
             <Fa icon={faGithub} class="ml-3" />
             <!-- i18n-ignore (domain prefix) -->
             <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
-            <!-- i18n-ignore (GitHub path format example placeholder) -->
             <Input
-              placeholder="owner/repo"
+              placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
               bind:this={inputElement}
               bind:ref={githubInputElement}
               type="text"
@@ -1581,9 +1580,8 @@
             <span class="text-sm text-subtle shrink-0 w-24 pl-1"
               >{m.workspace_repoSelector_folderName_label()}</span
             >
-            <!-- i18n-ignore (example folder name placeholder) -->
             <Input
-              placeholder="new-project"
+              placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
               type="text"
               bind:value={newRepoProjectName}
               onkeydown={(e) => {
@@ -1593,7 +1591,7 @@
                   handleConfirmNewRepo();
                 }
               }}
-              class="bg-sidebar border-none"
+              class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
               noFocusStyle
             />
           </div>

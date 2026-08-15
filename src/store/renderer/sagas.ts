@@ -39,6 +39,7 @@ import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
 import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga';
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
+import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
@@ -63,6 +64,7 @@ import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
 import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-saga';
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
+import { scriptsOperationSaga } from './slices/scripts/sagas/scripts-operation-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
@@ -74,7 +76,7 @@ import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persi
 import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
 import { unreadTrackingSaga } from './slices/unread-tracking/sagas/unread-tracking-saga';
-import { betaUpdatesSaga } from './slices/user-preferences/sagas/beta-updates-saga';
+import { updateChannelSaga } from './slices/user-preferences/sagas/update-channel-saga';
 import { notificationSettingsSaga } from './slices/user-preferences/sagas/notification-settings-saga';
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
@@ -141,6 +143,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceImportSaga,
+  scriptsOperationSaga,
   lifecycleReadSaga,
   lifecycleIpcReadSaga,
   modelSelectionSaga,
@@ -166,6 +169,7 @@ export const sagas = [
   legacyImportSaga,
   statsReadSaga,
   prMonitorSaga,
+  gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
   sidebarNavSaga,
@@ -177,7 +181,7 @@ export const sagas = [
   terminalPersistenceSaga,
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,
-  betaUpdatesSaga,
+  updateChannelSaga,
   notificationSettingsSaga,
   userPreferencesPersistenceSaga,
   workspaceInitializerSaga,

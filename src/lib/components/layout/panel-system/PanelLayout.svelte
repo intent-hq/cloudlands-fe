@@ -21,7 +21,7 @@
   } from '$features/layout/panel-cycle-navigation';
   import PanelContainer from './PanelContainer.svelte';
   import PanelCanvasFrame from './PanelCanvasFrame.svelte';
-  import { getPanelViewportContentWidth } from './panel-canvas-width';
+  import { getPanelCanvasWidths, getPanelViewportContentWidth } from './panel-canvas-width';
   import PanelDragPreview from './PanelDragPreview.svelte';
   import {
     EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
@@ -33,7 +33,7 @@
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { appClient } from '$lib/client';
   import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
-  import { get, writable } from 'svelte/store';
+  import { derived, get, writable } from 'svelte/store';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -64,27 +64,34 @@
 
   import {
     selectPanelLayoutRoot,
+    selectExpandedPanelId,
     selectPanels,
     selectFocusedPanelId,
     selectFocusedPanel,
     selectActiveTab,
     selectAllTabs,
-    selectPanelColumnCount,
     selectPanelIds,
+    selectPanelColumnDefaultWidthTiers,
     selectPanelCanvasWidth,
+    selectPanelCanvasWidthSource,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
+    markPanelTouched,
     movePanelToRootEdge,
     panelLayoutScopeMounted,
     panelLayoutScopeUnmounted,
     resizePanelLayoutRightEdge,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { store as appStore } from '$store/renderer/store';
-  import type { PanelCanvasSizing } from '$shared/panel-layout-sizing';
+  import {
+    getAutomaticPanelCanvasWidth,
+    getPanelDefaultWidth,
+    type PanelCanvasSizing,
+  } from '$shared/panel-layout-sizing';
 
   const logger = createLogger('PanelLayout');
 
@@ -102,6 +109,7 @@
     onCreateNote?: () => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
     onPanelCanvasWidthChange?: (width: number) => void;
+    onAvailableCanvasWidthChange?: (width: number) => void;
     onCyclePanelBoundary?: (direction: PanelCycleDirection) => PanelCycleBoundaryTarget | null;
   }
 
@@ -118,6 +126,7 @@
     onCreateNote,
     onPanelMovePreviewWidthRatioChange,
     onPanelCanvasWidthChange,
+    onAvailableCanvasWidthChange,
     onCyclePanelBoundary,
   }: Props = $props();
 
@@ -131,19 +140,26 @@
 
   // Reactive writable store that mirrors the layout scope so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
-  const layoutIdStore = writable(layoutId ?? workspaceId);
+  const layoutIdStore = writable('');
   $effect(() => {
     layoutIdStore.set(effectiveLayoutId);
   });
 
   // Reactive selector subscriptions for template rendering
   const root$ = selectPanelLayoutRoot(layoutIdStore);
+  const expandedPanelId$ = selectExpandedPanelId(layoutIdStore);
   const panels$ = selectPanels(layoutIdStore);
   const focusedPanelId$ = selectFocusedPanelId(layoutIdStore);
   const activeTab$ = selectActiveTab(layoutIdStore);
   const allTabs$ = selectAllTabs(layoutIdStore);
-  const panelColumnCount$ = selectPanelColumnCount(layoutIdStore);
+  const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(layoutIdStore);
+  const panelDefaultWidthViewport = writable(0);
+  const panelColumnDefaultWidths$ = derived(
+    [panelColumnDefaultWidthTiers$, panelDefaultWidthViewport],
+    ([$tiers, viewportWidth]) => $tiers.map((tier) => getPanelDefaultWidth(tier, viewportWidth)),
+  );
   const panelCanvasWidth$ = selectPanelCanvasWidth(layoutIdStore);
+  const panelCanvasWidthSource$ = selectPanelCanvasWidthSource(layoutIdStore);
   const restoreStatus$ = selectRestoreStatus(layoutIdStore);
   const isDragging$ = selectIsDragging();
   // Keep the root renderer on the split branch when the first adjacent panel
@@ -172,11 +188,70 @@
   let panelLayoutMotionElement = $state.raw<HTMLDivElement | null>(null);
   let panelWorkspaceInset = $state.raw<HTMLDivElement | null>(null);
   let panelViewportWidth = $state(0);
-  let panelCanvasWidth = $state(0);
+  $effect(() => {
+    panelDefaultWidthViewport.set(canvasSizing === 'viewport' ? panelViewportWidth : 0);
+  });
   let panelRootReferenceSize = $state(0);
   let panelCanvasResizeDelta = $state(0);
+  let panelCanvasResizeCommittedWidth = $state<number | null>(null);
   let panelOuterResizeDelta = $state(0);
+  let panelOuterResizeCommittedDelta = $state(0);
+  let panelOuterResizeCommittedWidth = $state<number | null>(null);
+  let panelOuterResizeStartReferenceSize: number | null = null;
+  const expandedAutomaticViewportWidth = $derived(
+    $expandedPanelId$ !== null &&
+      canvasSizing === 'viewport' &&
+      $panelCanvasWidthSource$ !== 'explicit'
+      ? Math.max(
+          panelViewportWidth,
+          $panelCanvasWidth$ ?? 0,
+          getPanelCanvasWidths(
+            panelViewportWidth,
+            $panelColumnDefaultWidths$,
+            canvasSizing,
+            $panelCanvasWidth$,
+            $panelCanvasWidthSource$,
+          ).defaultWidth,
+        )
+      : null,
+  );
+  const panelGeometryCanvasWidth = $derived(
+    (panelOuterResizeCommittedWidth ??
+      panelCanvasResizeCommittedWidth ??
+      expandedAutomaticViewportWidth ??
+      getPanelCanvasWidths(
+        panelViewportWidth,
+        $panelColumnDefaultWidths$,
+        canvasSizing,
+        $panelCanvasWidth$,
+        panelOuterResizeCommittedWidth !== null || panelCanvasResizeCommittedWidth !== null
+          ? 'explicit'
+          : $panelCanvasWidthSource$,
+      ).defaultWidth) +
+      panelCanvasResizeDelta +
+      panelOuterResizeDelta,
+  );
   let retainedRootPanel = $state<{ panelId: string; width: number } | null>(null);
+
+  $effect(() => {
+    const authoritativeWidth = getPanelCanvasWidths(
+      panelViewportWidth,
+      $panelColumnDefaultWidths$,
+      canvasSizing,
+      $panelCanvasWidth$,
+      $panelCanvasWidthSource$,
+    ).defaultWidth;
+    if (panelCanvasResizeCommittedWidth === authoritativeWidth) {
+      panelCanvasResizeCommittedWidth = null;
+    }
+    if (
+      panelOuterResizeCommittedWidth !== null &&
+      authoritativeWidth === panelOuterResizeCommittedWidth
+    ) {
+      panelOuterResizeCommittedWidth = null;
+      panelOuterResizeCommittedDelta = 0;
+    }
+  });
 
   function measurePanelViewportWidth(node: HTMLElement) {
     function update() {
@@ -186,6 +261,7 @@
         Number.parseFloat(styles.paddingLeft) || 0,
         Number.parseFloat(styles.paddingRight) || 0,
       );
+      onAvailableCanvasWidthChange?.(panelViewportWidth);
     }
 
     update();
@@ -202,19 +278,39 @@
     if (retainedRootPanel && $root$.type !== 'panel') retainedRootPanel = null;
   });
 
+  function handlePanelCanvasResizeStart() {
+    markPristinePanelsTouched();
+    panelOuterResizeCommittedWidth = null;
+    panelOuterResizeCommittedDelta = 0;
+    panelOuterResizeStartReferenceSize = panelRootReferenceSize > 0 ? panelRootReferenceSize : null;
+  }
+
   function handlePanelCanvasResizeEnd(previousWidth: number, nextWidth: number) {
+    const startReferenceSize = panelOuterResizeStartReferenceSize;
+    panelOuterResizeStartReferenceSize = null;
     if (previousWidth === nextWidth) return;
     const gutterWidth =
-      panelRootReferenceSize > 0 ? Math.max(0, panelCanvasWidth - panelRootReferenceSize) : 0;
-    panelOuterResizeDelta = 0;
+      startReferenceSize !== null ? Math.max(0, previousWidth - startReferenceSize) : 0;
+    const automaticWidth = getAutomaticPanelCanvasWidth($panelColumnDefaultWidths$, 'content');
+    panelOuterResizeCommittedWidth = nextWidth;
+    panelOuterResizeCommittedDelta = nextWidth - previousWidth;
     appStore.dispatch(
       resizePanelLayoutRightEdge(
         effectiveLayoutId,
         Math.max(1, previousWidth - gutterWidth),
         Math.max(1, nextWidth - gutterWidth),
         nextWidth,
+        nextWidth === automaticWidth,
       ),
     );
+    panelOuterResizeDelta = 0;
+  }
+
+  function handlePanelCanvasResizeCancel() {
+    panelOuterResizeCommittedWidth = null;
+    panelOuterResizeCommittedDelta = 0;
+    panelOuterResizeStartReferenceSize = null;
+    panelOuterResizeDelta = 0;
   }
   let panelDragPreviewElement = $state.raw<HTMLDivElement | null>(null);
   let panelPreviewStartPositions = new Map<string, DOMRect>();
@@ -552,6 +648,12 @@
   setContext('panelLayoutManager', () => layoutManager);
 
   // Event handlers
+  function markPristinePanelsTouched() {
+    for (const panel of Object.values($panels$)) {
+      if (panel.pristine) appStore.dispatch(markPanelTouched(effectiveLayoutId, panel.id));
+    }
+  }
+
   function handleFocusPanel(panelId: string) {
     layoutManager.focusPanel(panelId);
   }
@@ -562,7 +664,18 @@
   }
 
   function handleTabClose(panelId: string, tabId: string) {
-    layoutManager.closeTab(tabId, panelId);
+    // Closing a panel's final tab removes the panel itself (closePanelHelper
+    // runs inside the closeTab reducer), so it collapses the split exactly
+    // like a panel close and needs the same motion suppression to avoid the
+    // surviving-sibling overflow flicker during the exit outro.
+    const panel = $panels$[panelId];
+    const collapsesPanel =
+      panel?.tabs.length === 1 && panel.tabs[0].id === tabId && Object.keys($panels$).length > 1;
+    if (collapsesPanel) {
+      commitPanelMoveWithoutReplay(() => layoutManager.closeTab(tabId, panelId));
+    } else {
+      layoutManager.closeTab(tabId, panelId);
+    }
   }
 
   function handleTabReorder(panelId: string, fromIndex: number, toIndex: number) {
@@ -598,7 +711,14 @@
   }
 
   function handleClosePanel(panelId: string) {
-    closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    // Commit the close without layout motion: during the removed wrapper's
+    // exit outro the surviving siblings already carry their new (larger)
+    // pixel flex bases, so the combined width overflows the canvas for the
+    // exit duration and visibly shifts/clips the survivors. Suppressing the
+    // replay applies the collapse in a single frame.
+    commitPanelMoveWithoutReplay(() => {
+      closePanelWithLastPanelPolicy(layoutManager, panelId, allowCloseLastPanel);
+    });
   }
 
   function handleZoomToggle(_panelId: string) {
@@ -606,6 +726,7 @@
   }
 
   function handleUpdateSizes(nodePath: number[], sizes: number[]) {
+    markPristinePanelsTouched();
     // nodePath represents the path to the split node whose sizes are being updated
     // Empty path means root
     layoutManager.updateSizes(nodePath, sizes);
@@ -617,9 +738,11 @@
     panelIndex: number,
     nextCanvasWidth: number,
   ) {
-    // Remove the visual delta before committing its equivalent persisted width.
-    // Both writes are synchronous and Svelte batches their render, so the canvas
-    // stays at `nextWidth` without briefly applying the drag delta twice.
+    markPristinePanelsTouched();
+    // Pin the accepted outer pixels before removing the preview delta. Redux then
+    // replaces this handoff value with the same authoritative width after Svelte
+    // reconciles, so pointer-up cannot expose the old canvas for one frame.
+    panelCanvasResizeCommittedWidth = nextCanvasWidth;
     handlePanelCanvasResizePreview(0);
     layoutManager.growCanvasAtHorizontalPanel(
       previousWidth,
@@ -634,7 +757,6 @@
   }
 
   function handlePanelCanvasWidthChange(width: number) {
-    panelCanvasWidth = width;
     onPanelCanvasWidthChange?.(width);
   }
 
@@ -836,6 +958,7 @@
     const focusedPanelId = selectFocusedPanelId.select(appStore.state, effectiveLayoutId);
     const localTargetId = resolveLocalPanelCycleTarget(panelIds, focusedPanelId, direction);
     if (localTargetId) {
+      appStore.dispatch(markPanelTouched(effectiveLayoutId, localTargetId));
       layoutManager.focusPanel(localTargetId);
       dispatchFocusPanelContent(localTargetId);
       return true;
@@ -847,6 +970,7 @@
       const targetPanelId =
         direction === 'next' ? targetPanelIds[0] : targetPanelIds[targetPanelIds.length - 1];
       if (targetPanelId) {
+        appStore.dispatch(markPanelTouched(boundaryTarget.layoutId, targetPanelId));
         const targetLayoutManager = getPanelLayoutManager(boundaryTarget.layoutId);
         targetLayoutManager.focusPanel(targetPanelId);
         dispatchFocusPanelContent(targetPanelId, targetLayoutManager, boundaryTarget.workspaceId);
@@ -857,6 +981,7 @@
     const wrappedPanelId = direction === 'next' ? panelIds[0] : panelIds[panelIds.length - 1];
     if (!wrappedPanelId || (panelIds.length === 1 && wrappedPanelId === focusedPanelId))
       return false;
+    appStore.dispatch(markPanelTouched(effectiveLayoutId, wrappedPanelId));
     layoutManager.focusPanel(wrappedPanelId);
     dispatchFocusPanelContent(wrappedPanelId);
     return true;
@@ -1137,13 +1262,14 @@
           panels={$panels$}
           focusedPanelId={active ? $focusedPanelId$ : null}
           zoomedPanelId={keyboardShortcuts.zoomedPanelId}
+          dominantPanelId={$expandedPanelId$}
           {workspaceId}
           layoutId={effectiveLayoutId}
           {contained}
           suppressLayoutMotion={suppressCommittedPanelMoveMotion}
           {retainedRootPanelWidth}
-          rootPanelReferenceSize={panelCanvasWidth > 0 ? panelCanvasWidth : null}
-          rootCanvasResizeDelta={panelOuterResizeDelta}
+          rootPanelReferenceSize={panelGeometryCanvasWidth > 0 ? panelGeometryCanvasWidth : null}
+          rootCanvasResizeDelta={panelOuterResizeDelta + panelOuterResizeCommittedDelta}
           onFocusPanel={handleFocusPanel}
           onTabClick={handleTabClick}
           onTabClose={handleTabClose}
@@ -1204,7 +1330,7 @@
     use:measurePanelViewportWidth
     class={cn(
       'flex-1 min-h-0 overflow-y-hidden scrollbar-none',
-      contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
+      contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3',
     )}
     data-testid="panel-workspace-inset"
     use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}
@@ -1217,13 +1343,23 @@
         <PanelCanvasFrame
           sizing={canvasSizing}
           viewportWidth={panelViewportWidth}
-          panelColumnCount={$panelColumnCount$}
-          canvasWidth={$panelCanvasWidth$}
+          panelColumnWidths={$panelColumnDefaultWidths$}
+          canvasWidth={panelOuterResizeCommittedWidth ??
+            panelCanvasResizeCommittedWidth ??
+            expandedAutomaticViewportWidth ??
+            $panelCanvasWidth$}
+          canvasWidthSource={panelOuterResizeCommittedWidth !== null ||
+          panelCanvasResizeCommittedWidth !== null ||
+          expandedAutomaticViewportWidth !== null
+            ? 'explicit'
+            : $panelCanvasWidthSource$}
           transientWidthDelta={panelCanvasResizeDelta}
           scrollContainer={panelWorkspaceInset}
           onWidthChange={handlePanelCanvasWidthChange}
+          onResizeStart={handlePanelCanvasResizeStart}
           onResizePreview={handlePanelOuterResizePreview}
           onResizeEnd={handlePanelCanvasResizeEnd}
+          onResizeCancel={handlePanelCanvasResizeCancel}
         >
           {@render panelCanvas()}
         </PanelCanvasFrame>

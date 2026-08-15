@@ -21,6 +21,33 @@ export const HUD_AGENT_STATE_BUCKETS = [
 
 export type HudAgentStateBucket = (typeof HUD_AGENT_STATE_BUCKETS)[number];
 
+/** Priority order for compact workspace-tab status glyphs. */
+export const WORKSPACE_TAB_STATUS_CATEGORY_ORDER = [
+  'failed',
+  'blocker',
+  'question',
+  'discussion',
+  'needs_input',
+  'review',
+  'unread',
+  'running',
+] as const;
+
+export type WorkspaceTabStatusCategory = (typeof WORKSPACE_TAB_STATUS_CATEGORY_ORDER)[number];
+
+export interface WorkspaceTabStatusItem {
+  category: WorkspaceTabStatusCategory;
+  count: number;
+  agentNames: string[];
+}
+
+export interface WorkspaceTabStatus {
+  agentCount: number;
+  categories: WorkspaceTabStatusItem[];
+  visibleCategories: WorkspaceTabStatusItem[];
+  hiddenCategoryCount: number;
+}
+
 /**
  * Bucket a wire agent status (`agentSummary.agents[].status`, PROTOCOL §5.1 —
  * same strings as `agent.list`) into a HUD state bar. The wire carries both
@@ -85,11 +112,13 @@ export function isHudTrackedAttentionValue(value: string): boolean {
 /**
  * Mock-faithful workspace-card state keys: one per BE-owned
  * `workspace.displayStatus` wire value (`idle` since intentd#793 — it doubles
- * as the fallback for rows without a displayStatus; `failed`, `blocked` and
- * `unread` since intentd#945). The daemon owns the precedence between them
+ * as the fallback for rows without a displayStatus; `failed` and `blocked`
+ * since intentd#945). The daemon owns the precedence between them
  * (PROTOCOL §5.1), so the HUD adds no refinements of its own; the only
  * divergence from the wire vocabulary is the presentational rename of
- * `needs_attention` to `wait`.
+ * `needs_attention` to `wait`. Unread is NOT a card state (intentd#1186):
+ * it travels on the `workspace.attention` flag and overlays the real state
+ * (the card's blue border blink + the UNREAD state bar).
  */
 export const HUD_CARD_STATE_KEYS = [
   'in_progress',
@@ -99,7 +128,6 @@ export const HUD_CARD_STATE_KEYS = [
   'wait',
   'blocked',
   'failed',
-  'unread',
   'idle',
   'not_started',
   'complete',

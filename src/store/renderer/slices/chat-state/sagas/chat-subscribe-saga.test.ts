@@ -58,6 +58,7 @@ import { appClient } from '$lib/client';
 import { takeEvery } from 'typed-redux-saga';
 import { store as appStore } from '$store/renderer/store';
 import {
+  chatSendStarted,
   initializeChatRequested,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
@@ -719,13 +720,17 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
 
   it('edge-triggers streaming flags from transcript.isStreaming and never clobbers a fresh optimistic turn', () => {
     const agentId = 'agent-sub-flags';
-    // Simulate the optimistic send: both runtime flags on before the first emit.
-    seedSession(agentId, { isStreaming: true, isProcessing: true });
+    seedSession(agentId);
     const sub = openChat(agentId);
+
+    // The renderer starts a new turn after the subscription opens. Its pending
+    // seq-0 snapshot may predate the send, so the first idle snapshot must not
+    // clear the optimistic flags.
+    appStore.dispatch(chatSendStarted(agentId, WS));
 
     // First emit reports isStreaming=false (snapshot raced the turn start).
     // No falling edge has occurred — the optimistic flags must survive.
-    sub.handler(transcript([makeMessage('m-1', 'hi')]));
+    sub.handler({ ...transcript([makeMessage('m-1', 'hi')]), fromSnapshot: true });
     let session = selectAgentSession.select(appStore.state, agentId);
     expect(session?.isStreaming).toBe(true);
     expect(session?.isProcessing).toBe(true);
@@ -741,6 +746,54 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(session?.isStreaming).toBe(false);
     expect(session?.isProcessing).toBe(false);
     expect(session?.isResponding).toBe(false);
+  });
+
+  it('clears retained HMR runtime flags from an authoritative idle seq-0 snapshot', () => {
+    const agentId = 'agent-sub-hmr-idle';
+    // Vite retains Redux while replacing the root sagas. The replacement
+    // coordinator did not observe the old turn's chatSendStarted action.
+    seedSession(agentId, {
+      status: AgentStatus.Idle,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    });
+    const sub = openChat(agentId);
+
+    sub.handler({ ...transcript([makeMessage('m-final', 'done')]), fromSnapshot: true });
+
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
+  });
+
+  it('clears a local send-race exemption when the subscription closes before any emit', () => {
+    const agentId = 'agent-sub-detached-idle';
+    seedSession(agentId, { status: AgentStatus.Idle });
+    const first = openChat(agentId);
+    appStore.dispatch(chatSendStarted(agentId, WS));
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isStreaming: true,
+      isProcessing: true,
+    });
+
+    // Detach before any snapshot/stream edge, then miss the terminal event.
+    appStore.dispatch(clearCurrentlyViewedAgent());
+    expect(first.unsubscribe).toHaveBeenCalledOnce();
+
+    appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+    const reopened = fakeSubscriptions.filter((sub) => sub.agentId === agentId).at(-1);
+    expect(reopened).toBeDefined();
+    expect(reopened).not.toBe(first);
+    reopened!.handler({ ...transcript([makeMessage('m-final', 'done')]), fromSnapshot: true });
+
+    expect(selectAgentSession.select(appStore.state, agentId)).toMatchObject({
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
   });
 
   it('swaps subscriptions on agent switch without leaking the previous registration', async () => {

@@ -1,0 +1,27 @@
+.titlebar-navigation-control,
+.titlebar-navigation-control:hover,
+.titlebar-navigation-control:active,
+.titlebar-navigation-control:focus-visible,
+.titlebar-navigation-control[data-state='on'],
+.titlebar-navigation-control[aria-pressed='true'],
+.titlebar-navigation-control[aria-expanded='true'],
+.titlebar-navigation-control[aria-current='page'] {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: hsl(var(--foreground)) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  backdrop-filter: none !important;
+}
+
+.titlebar-navigation-glyph {
+  transform: scale(1);
+}
+
+.titlebar-navigation-control:focus .titlebar-navigation-glyph {
+  transform: scale(1.125);
+}
+
+.titlebar-navigation-control:focus-visible .titlebar-navigation-glyph {
+  transform: scale(1.125);
+}

@@ -16,6 +16,7 @@ import type {
   ScriptsWorkspaceState,
   ScriptOutputBuffer,
   ScriptOutputChunk,
+  ScriptQuickAction,
 } from './scripts-types';
 
 // ============================================================================
@@ -34,6 +35,7 @@ export const MAX_OUTPUT_CHARS = 2_000_000;
 export const emptyWorkspaceState: ScriptsWorkspaceState = {
   scripts: {},
   outputBuffers: {},
+  operations: {},
   initialized: false,
   loading: false,
 };
@@ -77,6 +79,28 @@ export const initializeScripts = createAction<[wsId: string]>('scripts/initializ
 
 /** Refresh scripts for a workspace (triggers saga) */
 export const refreshScripts = createAction<[wsId: string]>('scripts/refreshScripts');
+
+export const startScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/startScriptRequested',
+);
+
+export const stopScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/stopScriptRequested',
+);
+
+export const restartScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/restartScriptRequested',
+);
+
+export const scriptOperationSucceeded = createAction<
+  [wsId: string, scriptId: string, action: ScriptQuickAction]
+>('scripts/scriptOperationSucceeded');
+
+export const scriptOperationFailed = createAction<
+  [wsId: string, scriptId: string, action: ScriptQuickAction, error: string]
+>('scripts/scriptOperationFailed');
+
+export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
 
 /** Set loading state */
 export const setScriptsLoading =
@@ -137,66 +161,113 @@ export const disposeScripts = createAction<[wsId: string]>('scripts/dispose');
 // ============================================================================
 
 export const scriptsReducer = createReducer<ScriptsState>(initialState);
+function requestOperation(
+  state: ScriptsState,
+  wsId: string,
+  scriptId: string,
+  action: ScriptQuickAction,
+): ScriptsState {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.operations[scriptId]?.pending) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    operations: { ...ws.operations, [scriptId]: { action, pending: true } },
+  });
+}
+
+scriptsReducer.with(startScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'start'),
+);
+scriptsReducer.with(stopScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'stop'),
+);
+scriptsReducer.with(restartScriptRequested, (state, { payload: [wsId, scriptId] }) =>
+  requestOperation(state, wsId, scriptId, 'restart'),
+);
+scriptsReducer.with(scriptOperationSucceeded, (state, { payload: [wsId, scriptId, action] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (ws.operations[scriptId]?.action !== action) return state;
+  const { [scriptId]: _operation, ...operations } = ws.operations;
+  return setWorkspaceState(state, wsId, { ...ws, operations });
+});
+scriptsReducer.with(
+  scriptOperationFailed,
+  (state, { payload: [wsId, scriptId, action, error] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.operations[scriptId]?.action !== action) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      operations: { ...ws.operations, [scriptId]: { action, pending: false, error } },
+    });
+  },
+);
+scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (Object.keys(ws.operations).length === 0) return state;
+  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+});
 scriptsReducer.with(setScriptsLoading, (state, { payload: [wsId, loading] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, loading });
-  });
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, loading });
+});
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, initialized });
-  });
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, { ...ws, initialized });
+});
 scriptsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const scriptsById: Record<string, ScriptWithState> = {};
-    for (const script of scripts) {
-      scriptsById[script.id] = script;
-    }
-    return setWorkspaceState(state, wsId, { ...ws, scripts: scriptsById });
-  });
+  const ws = getWorkspaceState(state, wsId);
+  const scriptsById: Record<string, ScriptWithState> = {};
+  for (const script of scripts) {
+    scriptsById[script.id] = script;
+  }
+  return setWorkspaceState(state, wsId, { ...ws, scripts: scriptsById });
+});
 scriptsReducer.with(upsertScript, (state, { payload: [wsId, script] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const runtime = ws.scripts[script.id]?.runtime ?? createDefaultRuntimeState();
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      scripts: { ...ws.scripts, [script.id]: { ...script, runtime } },
-    });
+  const ws = getWorkspaceState(state, wsId);
+  const runtime = ws.scripts[script.id]?.runtime ?? createDefaultRuntimeState();
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: { ...ws.scripts, [script.id]: { ...script, runtime } },
   });
+});
 scriptsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const { [scriptId]: _s, ...scripts } = ws.scripts;
-    const { [scriptId]: _o, ...outputBuffers } = ws.outputBuffers;
-    return setWorkspaceState(state, wsId, { ...ws, scripts, outputBuffers });
-  });
+  const ws = getWorkspaceState(state, wsId);
+  const { [scriptId]: _s, ...scripts } = ws.scripts;
+  const { [scriptId]: _o, ...outputBuffers } = ws.outputBuffers;
+  return setWorkspaceState(state, wsId, { ...ws, scripts, outputBuffers });
+});
 scriptsReducer.with(updateRuntimeState, (state, { payload: { wsId, scriptId, partial } }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const script = ws.scripts[scriptId];
-    if (!script) return state;
-    const current = script.runtime ?? createDefaultRuntimeState();
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      scripts: {
-        ...ws.scripts,
-        [scriptId]: { ...script, runtime: { ...current, ...partial } },
-      },
-    });
+  const ws = getWorkspaceState(state, wsId);
+  const script = ws.scripts[scriptId];
+  if (!script) return state;
+  const current = script.runtime ?? createDefaultRuntimeState();
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    scripts: {
+      ...ws.scripts,
+      [scriptId]: { ...script, runtime: { ...current, ...partial } },
+    },
   });
+});
 scriptsReducer.with(appendScriptOutput, (state, { payload: [wsId, scriptId, chunk] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
-    const combined = trimOutputBuffer({
-      chunks: [...current.chunks, chunk],
-      dropped: current.dropped,
-    });
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
-    });
+  const ws = getWorkspaceState(state, wsId);
+  const current = ws.outputBuffers[scriptId] ?? emptyOutputBuffer;
+  const combined = trimOutputBuffer({
+    chunks: [...current.chunks, chunk],
+    dropped: current.dropped,
   });
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    outputBuffers: { ...ws.outputBuffers, [scriptId]: combined },
+  });
+});
 scriptsReducer.with(setScriptOutput, (state, { payload: [wsId, scriptId, chunks] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      outputBuffers: { ...ws.outputBuffers, [scriptId]: trimOutputBuffer({ chunks, dropped: 0 }) },
-    });
+  const ws = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    outputBuffers: { ...ws.outputBuffers, [scriptId]: trimOutputBuffer({ chunks, dropped: 0 }) },
   });
-scriptsReducer.with(disposeScripts, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+});
+scriptsReducer.with(disposeScripts, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);

@@ -19,8 +19,6 @@
  * adapter that translates between the two framings.
  */
 import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
 import tls from 'node:tls';
 import { Duplex } from 'node:stream';
 import { createRequire } from 'node:module';
@@ -29,7 +27,8 @@ import type { RawData, WebSocket as WsWebSocket } from 'ws';
 
 import { Logger } from '$shared/logger';
 import { describeBackendUrl } from './backend-log-descriptor';
-import { defaultWindowsSocketPath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
+import { resolveIntentdSocketPath } from './intentd-data-dir';
+import { toLocalEndpoint } from './intentd-pipe-name';
 
 const raceLogger = new Logger('BackendConnection');
 
@@ -90,28 +89,20 @@ export interface ResolveBackendConfigOptions {
 /**
  * Default local connect target for the running intentd daemon.
  *
- * Honors `INTENTD_DATA_DIR` (socket = `$INTENTD_DATA_DIR/intentd.sock`) so the
- * FE connects to the same socket the sidecar spawned intentd with. On win32
- * the daemon serves a named pipe derived from the socket path, so this
- * returns the pipe name (see `intentd-pipe-name.ts` for the contract); the
- * no-data-dir default mirrors the daemon's `%APPDATA%\intentd\data`.
+ * The socket lives in the daemon's data dir — resolved by
+ * `intentd-data-dir.ts`, which honors `INTENTD_DATA_DIR` (so the FE connects
+ * to the same socket the sidecar spawned intentd with) and mirrors the
+ * daemon's platform defaults (macOS: `~/Library/Application Support/intentd`,
+ * Linux: `$XDG_DATA_HOME/intentd` with a `~/.local/share/intentd` fallback,
+ * Windows: `%APPDATA%\intentd\data`). On win32 the daemon serves a named pipe
+ * derived from the socket path, so this returns the pipe name (see
+ * `intentd-pipe-name.ts` for the contract).
  */
 export function defaultSocketPath(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const dataDir = env.INTENTD_DATA_DIR?.trim();
-  if (platform === 'win32') {
-    const socketPath = dataDir
-      ? path.win32.join(dataDir, 'intentd.sock')
-      : defaultWindowsSocketPath(env);
-    return windowsPipeName(socketPath);
-  }
-  if (dataDir) {
-    return path.join(dataDir, 'intentd.sock');
-  }
-  // i18n-ignore (filesystem path)
-  return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
+  return toLocalEndpoint(resolveIntentdSocketPath(env, platform), platform);
 }
 
 /** Resolve the connection target from environment variables (with UDS default). */
@@ -183,6 +174,7 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
     return createWssSocket(config);
   }
   throw new Error(
+    // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
     'Legacy INTENTD_TCP transport is disabled because authenticated remote transport is not implemented; use INTENTD_SOCKET or INTENTD_WS_URL',
   );
 }

@@ -186,7 +186,11 @@ import {
   removeWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
+import {
+  closeWorkspaceTabAndNavigateAway,
+  navigateAwayIfViewing,
+} from '$features/workspace/navigate-away-if-viewing';
+import { restoreWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { markWorkspaceSeenIfViewing } from '$features/workspace/mark-workspace-seen';
 import { applyNoteFromEvent } from '$features/notes/notes-read-service';
 import { applyCommentFromEvent } from '$features/comments/comments-read-service';
@@ -199,7 +203,10 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import { recordAgentFailure, removeAgentFailure } from '$features/agent/agent-failure-registry';
-import { showAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
+import {
+  showAgentAttentionToast,
+  showWorkspaceAutoUnarchiveToast,
+} from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   permissionRequestReceived,
@@ -592,6 +599,7 @@ function dispatchStreamUpdate(
   state: StreamState,
   eventType: 'chunk' | 'content-blocks' | 'complete' | 'error',
   stopReason?: string,
+  finishReason?: string,
 ): void {
   appStore.dispatch(
     agentStreamUpdateReceived({
@@ -603,6 +611,7 @@ function dispatchStreamUpdate(
       assistantMessageId: state.messageId,
       contentBlocks: buildContentBlocks(state),
       ...(stopReason ? { stopReason } : {}),
+      ...(finishReason ? { finishReason } : {}),
     }),
   );
 }
@@ -1080,6 +1089,13 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
   // terminal `agent:stream:end` with `stopReason: "interrupted"` (+ the turn's
   // `messageId`); absence means a normal turn end.
   const stopReason = typeof data?.stopReason === 'string' ? data.stopReason : undefined;
+  // Optional abnormal finish reason (PROTOCOL §7.3): the turn-worker terminal
+  // emit carries `finishReason` when the turn completed with a non-`end_turn`
+  // ACP stop reason (`refusal` | `max_tokens` | `max_turn_requests`); absent
+  // on normal completions. The same value is persisted on the assistant row
+  // as `metadata.finishReason`, so stamping it here just makes the notice
+  // render live without waiting for a reconcile.
+  const finishReason = typeof data?.finishReason === 'string' ? data.finishReason : undefined;
   const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
   // LIVE Q&A DELIVERY (PROTOCOL §7): the terminal `agent:stream:end` carries
   // `trailingBlocks` — the standalone resource blocks the daemon appended to
@@ -1132,25 +1148,28 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         state.blocksByIndex.set(maxIndex + 1 + ordinal, block);
       });
     }
-    dispatchStreamUpdate(agentId, state, 'complete', stopReason);
+    dispatchStreamUpdate(agentId, state, 'complete', stopReason, finishReason);
     streamsByAgent.delete(agentId);
     return;
   }
   if (state) {
     // Accumulator holds a DIFFERENT turn's message: finalize it as-is and
     // fall through so the trailing blocks land under their own messageId.
-    // The stopReason belongs to THIS event's messageId — do not stamp the
-    // Stopped badge onto the unrelated accumulated turn.
+    // The stopReason/finishReason belong to THIS event's messageId — do not
+    // stamp the Stopped badge / finish notice onto the unrelated accumulated
+    // turn.
     dispatchStreamUpdate(agentId, state, 'complete');
     streamsByAgent.delete(agentId);
   }
   // No local stream state for this turn (pre-first-token): the daemon
   // persisted an assistant row under `messageId` anyway — a synthetic empty
-  // interrupted row on `agent.stop`, or a turn whose ONLY content is the
-  // trailing blocks (e.g. questions with no streamed text). Finalize a
-  // matching placeholder so the Stopped indicator / question wizard appears
-  // live. A later `agents.getConversation` reconcile dedupes by message id.
-  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted')) {
+  // interrupted row on `agent.stop`, a zero-output abnormal turn (refusal /
+  // token-limit marker row carrying `finishReason`), or a turn whose ONLY
+  // content is the trailing blocks (e.g. questions with no streamed text).
+  // Finalize a matching placeholder so the Stopped indicator / finish notice /
+  // question wizard appears live. A later `agents.getConversation` reconcile
+  // dedupes by message id.
+  if (messageId && (trailingBlocks.length > 0 || stopReason === 'interrupted' || finishReason)) {
     appStore.dispatch(
       agentStreamUpdateReceived({
         workspaceId,
@@ -1161,6 +1180,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
         assistantMessageId: messageId,
         contentBlocks: dedupeResourceBlocks(trailingBlocks),
         ...(stopReason ? { stopReason } : {}),
+        ...(finishReason ? { finishReason } : {}),
       }),
     );
     return;
@@ -1310,10 +1330,15 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
- * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
- * without a follow-up read.
+ * `agent:process:queued` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when an agent spawn is queued waiting for admission: a free process
+ * slot (maxConcurrent limit, reason `"slots"`) or memory headroom under the
+ * aggregate budget (reason `"memory-budget"`, intent-hq/intentd#1196). The
+ * payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read. An absent `reason` (older daemons) is normalized
+ * to `"slots"`, the pre-#1196 behavior; a present-but-unrecognized value (a
+ * hypothetical future constraint) also falls back to `"slots"` but logs a
+ * warning so the divergence is observable rather than silently absorbed.
  *
  * The Redux reducer's updateSessionFields is a no-op when the session doesn't
  * exist yet, but during normal operation the agent:created or agent:updated
@@ -1331,13 +1356,21 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  if (data.reason !== undefined && data.reason !== 'slots' && data.reason !== 'memory-budget') {
+    logger.warn('agent:process:queued with unrecognized reason; falling back to slots', {
+      agentId,
+      reason: data.reason,
+    });
+  }
+  const reason = data.reason === 'memory-budget' ? 'memory-budget' : 'slots';
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap, reason));
 }
 
 /**
- * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * a queued agent spawn resumes (a slot freed). The renderer clears the hint so
- * the UI no longer shows the waiting message.
+ * `agent:process:resumed` (§6.5) carries `{ agentId, used, cap, reason }` —
+ * emitted when a queued agent spawn resumes (a slot freed / memory freed);
+ * `reason` echoes the constraint the spawn originally queued under. The
+ * renderer clears the hint so the UI no longer shows the waiting message.
  */
 function handleProcessResumedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1827,6 +1860,34 @@ function handleAttentionChangedEvent(event: WorkspaceEvent, envelopeWorkspaceId:
 }
 
 /**
+ * `workspace:waiting-changed` (PROTOCOL §5.1 / §6.5) carries the
+ * self-sufficient payload `{ workspaceId, waiting }` — the daemon emits it
+ * only on an actual transition of the orthogonal waiting flag (agents purely
+ * waiting on hooks / PR monitors / watched agents), so the FE mirrors the new
+ * boolean directly into the workspace entity without a follow-up
+ * `workspace.get`. Like the attention/displayStatus handlers, the payload's
+ * own `data.workspaceId` wins over the envelope id when present — and because
+ * the payload is self-sufficient, an envelope whose `workspaceId` was
+ * stripped by a relay still applies (routed before the envelope gate with
+ * `envelopeWorkspaceId: null`).
+ */
+function handleWaitingChangedEvent(
+  event: WorkspaceEvent,
+  envelopeWorkspaceId: string | null,
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === 'string' && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : envelopeWorkspaceId;
+  const waiting = data.waiting;
+  if (!workspaceId || typeof waiting !== 'boolean') return;
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { waiting })]));
+}
+
+/**
  * Reconcile workspace.activity when a missed edge is detected. The daemon only
  * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
  * workspaces that edge can fire before the FE bridge subscribed or before the
@@ -2067,6 +2128,42 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
   // standalone case; the slice folds it through `bulkUpdateWorkspaceEntities`.
   appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+
+  // Tab-bar sync: the daemon `workspace:updated` event is the single driver
+  // for archive transitions. Archived → close the tab unconditionally (the
+  // reducer no-ops when it is not open) and navigate away only when the
+  // archived workspace is on screen; Active/unarchive → restore the tab in
+  // the background (no focus steal). Deltas carrying neither field leave tab
+  // state untouched — `changes` only holds fields the wire delta explicitly
+  // carried.
+  if (changes.status === WorkspaceStatus.Archived || changes.archived === true) {
+    closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+      logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:updated archive', error);
+    });
+  } else if (changes.status === WorkspaceStatus.Active || changes.archived === false) {
+    appStore.dispatch(restoreWorkspaceTab(workspaceId));
+  }
+
+  // Auto-unarchive stamp: an additive field the daemon attaches to the
+  // unarchive delta when an agent turn start unarchived the workspace
+  // (absent on manual `workspace.unarchive` / `workspace.restore`). Surface
+  // one transient toast naming the workspace and the agent that became
+  // active; malformed or unknown-reason stamps are ignored.
+  const autoUnarchive = raw.autoUnarchive;
+  if (autoUnarchive && typeof autoUnarchive === 'object') {
+    const stamp = autoUnarchive as Record<string, unknown>;
+    if (
+      stamp.reason === 'agent_activity' &&
+      typeof stamp.agentId === 'string' &&
+      typeof stamp.agentName === 'string'
+    ) {
+      void showWorkspaceAutoUnarchiveToast({
+        workspaceId,
+        agentId: stamp.agentId,
+        agentName: stamp.agentName,
+      });
+    }
+  }
 }
 
 /**
@@ -2760,6 +2857,16 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `workspace:waiting-changed` (§5.1 / §6.5) also carries a self-sufficient
+  // `data.workspaceId`, so an envelope with a stripped workspaceId must not
+  // be gated out. Envelope-carrying events fall through to the gated
+  // side-effect route below (keeping the timeline fan-out); only the
+  // envelope-less shape is handled here.
+  if (type === 'workspace:waiting-changed' && !workspaceIdOf(event)) {
+    handleWaitingChangedEvent(event, null);
+    return;
+  }
+
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
   if (type === 'mcp.servers:status-changed') {
@@ -2846,6 +2953,12 @@ export function routeDaemonEventsNotification(
   // update live without a refetch. Side effect, never an early return.
   if (type === 'workspace:attention-changed') {
     handleAttentionChangedEvent(event, workspaceId);
+  }
+  // `workspace:waiting-changed` (§5.1 / §6.5) — merge the BE-derived orthogonal
+  // waiting flag onto the workspace entity so waiting indicators update live
+  // without a refetch. Side effect, never an early return.
+  if (type === 'workspace:waiting-changed') {
+    handleWaitingChangedEvent(event, workspaceId);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
@@ -3228,6 +3341,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `workspace:attention-changed` (§6.5 / §9.9) — self-sufficient dismissible
   // attention flag changes so unread indicators update without a refetch.
   'workspace:attention-changed',
+  // `workspace:waiting-changed` (§5.1 / §6.5) — self-sufficient orthogonal
+  // waiting flag transitions so waiting indicators update without a refetch.
+  'workspace:waiting-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',

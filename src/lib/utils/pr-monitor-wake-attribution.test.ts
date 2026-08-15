@@ -2,7 +2,8 @@
  * pr-monitor-wake-attribution tests: metadata detection (PROTOCOL §5.42
  * `{ type: 'pr_monitor_wake', monitorId, repo, prNumber, reason, url? }`),
  * URL resolution (metadata `url` first, GitHub fallback), chip labeling
- * (cross-repo prefix), and display-only stripping of the daemon's literal
+ * (`repo #N` same-owner, `owner/repo #N` cross-owner or unknown workspace
+ * repo), and display-only stripping of the daemon's literal
  * `[PR monitor <owner/repo>#<n>]` prefix.
  */
 import { describe, expect, it } from 'vitest';
@@ -27,6 +28,7 @@ describe('getPrMonitorWakeAttribution', () => {
       monitorId: 'mon-1',
       repo: 'intent-hq/intentd',
       prNumber: 42,
+      reason: 'checks_failed',
       url: 'https://github.com/intent-hq/intentd/pull/42',
     });
   });
@@ -34,10 +36,10 @@ describe('getPrMonitorWakeAttribution', () => {
   it('omits url when absent or blank', () => {
     expect(
       getPrMonitorWakeAttribution({ type: 'pr_monitor_wake', repo: 'o/r', prNumber: 7 }),
-    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7 });
+    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7, reason: '' });
     expect(
       getPrMonitorWakeAttribution({ type: 'pr_monitor_wake', repo: 'o/r', prNumber: 7, url: '  ' }),
-    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7 });
+    ).toEqual({ monitorId: '', repo: 'o/r', prNumber: 7, reason: '' });
   });
 
   it('returns null for absent, non-object, or wrong-type metadata', () => {
@@ -91,17 +93,27 @@ describe('getPrMonitorWakeUrl', () => {
 describe('getPrMonitorWakeChipLabel', () => {
   const attr = { monitorId: 'm', repo: 'intent-hq/intentd', prNumber: 42 };
 
-  it('renders a plain #N when the repo matches the workspace repo', () => {
-    expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/intentd')).toBe('#42');
+  it('renders "repo #N" when owner and repo match the workspace repo', () => {
+    expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/intentd')).toBe('intentd #42');
   });
 
-  it('renders a plain #N when the workspace repo is unknown', () => {
-    expect(getPrMonitorWakeChipLabel(attr)).toBe('#42');
-    expect(getPrMonitorWakeChipLabel(attr, undefined)).toBe('#42');
+  it('renders "repo #N" for a same-owner, different-repo PR', () => {
+    expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/monorepo')).toBe('intentd #42');
   });
 
-  it('prefixes the repo when it differs from the workspace repo', () => {
-    expect(getPrMonitorWakeChipLabel(attr, 'intent-hq/monorepo')).toBe('intent-hq/intentd: #42');
+  it('renders "owner/repo #N" for a different-owner PR', () => {
+    expect(getPrMonitorWakeChipLabel(attr, 'other/monorepo')).toBe('intent-hq/intentd #42');
+  });
+
+  it('renders "owner/repo #N" when the workspace repo is unknown', () => {
+    expect(getPrMonitorWakeChipLabel(attr)).toBe('intent-hq/intentd #42');
+    expect(getPrMonitorWakeChipLabel(attr, undefined)).toBe('intent-hq/intentd #42');
+  });
+
+  it('renders 4+ digit PR numbers without digit grouping', () => {
+    const bigAttr = { monitorId: 'm', repo: 'intent-hq/intentd', prNumber: 1182 };
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'intent-hq/monorepo')).toBe('intentd #1182');
+    expect(getPrMonitorWakeChipLabel(bigAttr, 'other/monorepo')).toBe('intent-hq/intentd #1182');
   });
 });
 
@@ -110,7 +122,7 @@ describe('stripPrMonitorWakePrefix', () => {
     expect(stripPrMonitorWakePrefix('[PR monitor intent-hq/intentd#42] Checks failed')).toBe(
       'Checks failed',
     );
-    expect(stripPrMonitorWakePrefix('[PR monitor ] no details')).toBe('no details');
+    expect(stripPrMonitorWakePrefix('[PR monitor ] no details')).toBe('[PR monitor ] no details');
   });
 
   it('returns non-prefixed text unchanged', () => {

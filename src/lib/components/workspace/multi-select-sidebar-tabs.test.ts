@@ -13,6 +13,8 @@ describe('multi-select sidebar tabs', () => {
       'context',
       'changes',
       'files',
+      'browser',
+      'shell',
     ]);
     expect(LAUNCHER_GRID_POSITIONS).toEqual({
       agents: { column: 0, row: 0 },
@@ -24,6 +26,7 @@ describe('multi-select sidebar tabs', () => {
 
   it('keeps only the first valid selection and defaults to overview', () => {
     expect([...normalizeSelectedTabs(['unknown', 'changes', 'files'])]).toEqual(['changes']);
+    expect([...normalizeSelectedTabs(['browser', 'shell'])]).toEqual(['browser']);
     expect([...normalizeSelectedTabs(['unknown'])]).toEqual(['overview']);
   });
 });

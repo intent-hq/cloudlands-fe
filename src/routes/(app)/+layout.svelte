@@ -1,5 +1,6 @@
 <script lang="ts">
   import './app-layout.css';
+  import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -29,6 +30,10 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import {
+    cancelWorkspaceViewModeTransition,
+    toggleWorkspaceViewModeWithTransition,
+  } from '$features/workspace/workspace-view-mode-action';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import DebugPanel from '$lib/components/debug/DebugPanel.svelte';
@@ -37,6 +42,7 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
+  import { getCounterScaledTitlebarHeight } from '$lib/components/layout/titlebar-geometry';
   import WorkspaceColumnsView from '$lib/components/workspace/WorkspaceColumnsView.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
@@ -44,11 +50,12 @@
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
+  import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
+  import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import UpdateDownloadIndicator from '$lib/components/UpdateDownloadIndicator.svelte';
   import { invoke } from '$lib/electron-bridge';
 
   import {
@@ -206,15 +213,16 @@
     }
   });
 
-  // The root route has no page and fresh windows boot at /workspace/new,
-  // which renders onboarding. Gate boot (and legacy `/`) loads on the
-  // backend-derived setup evaluation: land on an existing workspace when the
-  // backend has one, and only fall through to onboarding when the local
-  // backend genuinely needs first-run setup (no workspaces and no ready
-  // providers). The decision logic lives in decideBootRoute (boot-route-gate);
-  // it fires at most once per full page load, so deliberate in-app navigation
-  // to /workspace/new is unaffected. While it holds, WorkspaceSurface
-  // suppresses onboarding so the wizard never flashes before a redirect.
+  // The root route is a minimal empty state and fresh windows boot at
+  // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
+  // loads on the backend-derived setup evaluation: land on an existing
+  // workspace when the backend has one, and only fall through to onboarding
+  // when the local backend genuinely needs first-run setup (no workspaces and
+  // no ready providers). The decision logic lives in decideBootRoute
+  // (boot-route-gate); it fires at most once per full page load, so
+  // deliberate in-app navigation to `/` or /workspace/new is unaffected.
+  // While it holds, WorkspaceSurface suppresses onboarding so the wizard
+  // never flashes before a redirect.
   $effect(() => {
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
@@ -334,7 +342,7 @@
           logger.info(
             `[+layout] Initializing release notes: version=${currentVersion}, channel=${channel}`,
           );
-          appStore.dispatch(initializeReleaseNotes(currentVersion, channel));
+          appStore.dispatch(initializeReleaseNotes());
         } catch (e) {
           logger.warn('[+layout] Failed to initialize release notes store', e);
         }
@@ -350,6 +358,7 @@
 
     const handleNavigationError = (event: CustomEvent) => {
       // Check if this is a "Not found" error (routeId is null)
+      // i18n-ignore (matches SvelteKit router error message, not rendered in UI)
       if (event.detail?.error?.message?.includes('Not found')) {
         navigationFailureCount++;
         logger.warn('[Layout] Navigation failure detected', {
@@ -446,6 +455,8 @@
       description: string;
       skipInEditableElements?: boolean;
       global?: boolean;
+      ignoreRepeat?: boolean;
+      enabled?: () => boolean;
       action: () => void;
     }) => {
       paletteShortcuts!.register({
@@ -457,6 +468,8 @@
         description: opts.description,
         skipInEditableElements: opts.skipInEditableElements,
         global: opts.global,
+        ignoreRepeat: opts.ignoreRepeat,
+        enabled: opts.enabled,
         action: opts.action,
       });
     };
@@ -471,6 +484,7 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      toggleWorkspaceViewMode: () => void toggleWorkspaceViewModeWithTransition(),
     });
 
     // Optionally register config-driven shortcut for opening the command palette
@@ -511,6 +525,7 @@
       try {
         const shortcuts = await invoke<any>('config:get', { key: 'shortcuts' });
         if (shortcuts && typeof shortcuts === 'object') {
+          // i18n-ignore (shortcut registry metadata, not rendered in UI)
           registerChord(shortcuts['command-palette'], 'Open Command Palette (Config)', openCmd);
         }
       } catch {
@@ -525,14 +540,14 @@
     register({
       key: 'k',
       meta: true,
-      description: 'Command Palette (Mac)',
+      description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
     if (!isMac) {
       register({
         key: 'k',
         ctrl: true,
-        description: 'Command Palette (Win/Linux)',
+        description: 'Command Palette (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
         action: openCommandPalette,
       });
     }
@@ -543,14 +558,16 @@
     register({
       key: 'o',
       meta: true,
-      description: 'Toggle All Spaces (Mac)',
+      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+      skipInEditableElements: true,
       action: toggleAllSpaces,
     });
     if (!isMac) {
       register({
         key: 'o',
         ctrl: true,
-        description: 'Toggle All Spaces (Win/Linux)',
+        description: 'Toggle All Spaces (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
+        skipInEditableElements: true,
         action: toggleAllSpaces,
       });
     }
@@ -559,11 +576,14 @@
     const goToDefinition = () => {
       dispatchWindowEvent('editor:go-to-definition');
     };
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'F12', description: 'Go to Definition', action: goToDefinition });
     // Cmd+P (Mac) / Ctrl+P (Win/Linux)
     // Note: On macOS, Ctrl+P is an Emacs shortcut (previous line) and should NOT open quick open
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'p', meta: true, description: 'Quick Open (Mac)', action: openFile });
     if (!isMac) {
+      // i18n-ignore (shortcut registry metadata, not rendered in UI)
       register({ key: 'p', ctrl: true, description: 'Quick Open (Win/Linux)', action: openFile });
     }
     // Cmd+Shift+P (Mac) / Ctrl+Shift+P (Win/Linux) -> command palette (VS Code-style)
@@ -572,17 +592,18 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Command Palette (Alt)',
+      description: 'Command Palette (Alt)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCmd,
     });
     // Cmd+G (Mac) / Ctrl+G (Win/Linux) -> Go to Line
     const openGoToLineAction = () => appStore.dispatch(openGoToLine());
+    // i18n-ignore (shortcut registry metadata, not rendered in UI)
     register({ key: 'g', meta: true, description: 'Go to Line (Mac)', action: openGoToLineAction });
     if (!isMac) {
       register({
         key: 'g',
         ctrl: true,
-        description: 'Go to Line (Win/Linux)',
+        description: 'Go to Line (Win/Linux)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
         action: openGoToLineAction,
       });
     }
@@ -592,14 +613,14 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Search in files',
+      description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openSearch,
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
     register({
       key: 'z',
       alt: true,
-      description: 'Toggle Word Wrap',
+      description: 'Toggle Word Wrap', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleLineWrapping()),
     });
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
@@ -618,7 +639,7 @@
       key: '`',
       ctrl: true, // Ctrl on all platforms (including Mac) to match VS Code
       global: true, // Must work even when an input is focused
-      description: 'Toggle Terminal Overlay',
+      description: 'Toggle Terminal Overlay', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: toggleTerminal,
     });
     // NOTE: Cmd+` is intentionally NOT registered here — it is the native macOS shortcut
@@ -630,7 +651,7 @@
       key: 'j',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Toggle Terminal Overlay',
+      description: 'Toggle Terminal Overlay', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: toggleTerminal,
     });
     // Cmd+, (Mac) / Ctrl+, (Win/Linux) -> toggle settings
@@ -638,7 +659,7 @@
       key: ',',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Toggle Settings',
+      description: 'Toggle Settings', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => {
         const isOnSettings = $page.url.pathname.startsWith('/settings');
         if (isOnSettings) {
@@ -691,7 +712,7 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Toggle Keyboard Shortcuts',
+      description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleCheatSheet('global')),
     });
     // Also register with '/' for keyboards where e.key stays as '/' even with shift
@@ -700,7 +721,7 @@
       meta: isMac,
       ctrl: !isMac,
       shift: true,
-      description: 'Toggle Keyboard Shortcuts',
+      description: 'Toggle Keyboard Shortcuts', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => appStore.dispatch(toggleCheatSheet('global')),
     });
 
@@ -710,7 +731,7 @@
       ctrl: true,
       shift: true,
       global: true,
-      description: 'Feature Code Entry',
+      description: 'Feature Code Entry', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => {
         appStore.dispatch(toggleFeatureCodeDialog());
       },
@@ -722,7 +743,7 @@
       key: 'ArrowUp',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Scroll Conversation Up',
+      description: 'Scroll Conversation Up', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       skipInEditableElements: true,
       action: () => dispatchWindowEvent('navigate-message', { direction: 'previous' }),
     });
@@ -733,7 +754,7 @@
       key: 'ArrowDown',
       meta: isMac,
       ctrl: !isMac,
-      description: 'Scroll Conversation Down',
+      description: 'Scroll Conversation Down', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       skipInEditableElements: true,
       action: () => dispatchWindowEvent('navigate-message', { direction: 'next' }),
     });
@@ -744,7 +765,7 @@
       meta: isMac,
       ctrl: !isMac,
       alt: true,
-      description: 'Open Model Picker',
+      description: 'Open Model Picker', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => dispatchWindowEvent('chat:open-model-picker'),
     });
 
@@ -752,7 +773,7 @@
     register({
       key: 'Enter',
       alt: true,
-      description: 'Resend Message',
+      description: 'Resend Message', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: () => dispatchWindowEvent('chat:resend-message'),
     });
 
@@ -824,7 +845,7 @@
 
     import('svelte-sonner')
       .then(({ toast }) => {
-        toast.success('GitHub connected', {
+        toast.success(m.layout_appShell_githubConnected_toast(), {
           duration: 3000,
         });
       })
@@ -870,6 +891,8 @@
 
   // Set currentWorkspaceId when navigating to workspace pages
   beforeNavigate(({ to }: any) => {
+    cancelWorkspaceViewModeTransition();
+
     if (to && to.url.pathname.startsWith('/workspace/')) {
       const workspaceId = to.url.pathname.split('/')[2];
       // Don't set workspace for 'new' page - let the page handle it
@@ -949,7 +972,7 @@
   <!-- Main Layout with Title Bar -->
   <div
     class="panel-layout-container relative h-screen w-screen overflow-hidden text-foreground flex flex-col"
-    aria-label="Application shell"
+    aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
     <!-- Title bar at top -->
@@ -958,18 +981,15 @@
       overlayWorkspaceColumns={showWorkspaceColumns}
     />
 
-    <!-- Update indicator (top-right corner) -->
-    <div class="app-no-drag absolute top-2 right-3 z-10">
-      <UpdateDownloadIndicator />
-    </div>
-
     <!-- Main Content Area with Sidebar Nav -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2">
         <!-- Sidebar Panel (persistent, pushes content) -->
         <div
           class="flex min-h-0 shrink-0"
-          style:padding-top={showWorkspaceColumns ? `${35 / $zoomFactor}px` : undefined}
+          style:padding-top={showWorkspaceColumns
+            ? `${getCounterScaledTitlebarHeight($zoomFactor)}px`
+            : undefined}
           data-sidebar-panel-frame
         >
           <SidebarPanel />
@@ -981,7 +1001,7 @@
             class="workspace-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden {showWorkspaceColumns
               ? ''
               : 'rounded-xl bg-sidebar border border-border shadow-sm'}"
-            aria-label="Main content"
+            aria-label={m.layout_appShell_mainContent_ariaLabel()}
           >
             <div
               class="flex-1 min-h-0"
@@ -1036,8 +1056,14 @@
 
   <Toast />
 
+  <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
+  <NodeVersionToast />
+
   <!-- Link Hover Tooltip (singleton — shows URL + Cmd+Click hint on link hover) -->
   <LinkTooltip />
+
+  <!-- Link Action Menu (singleton — anchored menu for GitHub issue/PR links) -->
+  <LinkActionMenu />
 
   <!-- Auto-Update Notification -->
   {#await import('$lib/components/UpdateNotification.svelte') then { default: UpdateNotification }}

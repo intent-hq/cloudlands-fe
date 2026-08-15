@@ -43,21 +43,22 @@
   import {
     resetNotificationSettings,
     setAgentFontStyle,
-    setBetaUpdatesEnabled,
     setCodeFontFamily,
     setNoteFontStyle,
+    setUpdateChannel,
     type AgentFontStyle,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectAgentFontStyle,
-    selectBetaUpdatesEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectNoteFontStyle,
+    selectUpdateChannel,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { isUpdateChannel } from '$features/auto-update/types';
 
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
@@ -75,7 +76,7 @@
 
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
-  const betaUpdatesEnabled$ = selectBetaUpdatesEnabled();
+  const updateChannel$ = selectUpdateChannel();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -143,7 +144,7 @@
     'cli-optimization': 'tools',
     'workspace-api': 'tools',
     'agent-features': 'tools',
-    'agent-backend': 'tools',
+    'agent-backend': 'advanced',
     'utility-default-model': 'tools',
     hardware: 'advanced',
     'websocket-api': 'advanced',
@@ -161,7 +162,12 @@
     if (tabParam === 'fonts-colors' || tabParam === 'interface-system') return 'appearance';
     if (tabParam === 'setup') {
       const targetTab = hashToTab[targetId];
-      return targetTab === 'git-workspace' || targetTab === 'general' ? targetTab : 'tools';
+      // `advanced` is here because Agent Backend moved off Tools: a shipped
+      // `?tab=setup#agent-backend` link must still land on the tab that now
+      // renders that anchor, not on a Tools pane without it.
+      return targetTab === 'git-workspace' || targetTab === 'general' || targetTab === 'advanced'
+        ? targetTab
+        : 'tools';
     }
   }
 
@@ -343,11 +349,23 @@
     appStore.dispatch(requestThemePreferenceChange(theme));
   }
 
-  function handleBetaUpdatesToggle(enabled: string | boolean) {
-    // Dispatch only: the beta-updates persistence middleware is the single
+  const updateChannelOptions = [
+    { value: 'stable', get label() { return m.settings_updateChannel_stable_label(); } },
+    { value: 'beta', get label() { return m.settings_updateChannel_beta_label(); } },
+    { value: 'alpha', get label() { return m.settings_updateChannel_alpha_label(); } },
+  ];
+
+  const updateChannelLabel = $derived(
+    updateChannelOptions.find((option) => option.value === $updateChannel$)?.label ??
+      m.settings_updateChannel_stable_label(),
+  );
+
+  function handleUpdateChannelChange(value: string) {
+    if (!isUpdateChannel(value)) return;
+    // Dispatch only: the update-channel persistence saga is the single
     // owner of the SET_CHANNEL write (persist + feed switch). A direct
     // setChannel call here would issue a duplicate write.
-    appStore.dispatch(setBetaUpdatesEnabled(Boolean(enabled)));
+    appStore.dispatch(setUpdateChannel(value));
   }
 
   function handleResetInterfaceSystem() {
@@ -532,18 +550,6 @@
             <AgentFeaturesSettings />
           </div>
 
-          <!-- Agent Backend -->
-          <div id="agent-backend" class="mb-12">
-            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              {m.settings_section_agentBackend()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section class="px-6 py-5">
-                <AgentBackendSettings />
-              </section>
-            </div>
-          </div>
-
           <!-- Quick Actions -->
           <div
             id="utility-default-model"
@@ -716,19 +722,26 @@
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="text-sm font-medium text-foreground">
-                      {m.settings_betaUpdates_label()}
+                      {m.settings_updateChannel_label()}
                     </p>
                     <p class="text-xs text-subtle mt-0.5">
-                      {m.settings_betaUpdates_description()}
+                      {m.settings_updateChannel_description()}
                     </p>
                   </div>
-                  <Toggle
-                    variant="indicator"
-                    pressed={$betaUpdatesEnabled$}
-                    onChange={handleBetaUpdatesToggle}
-                    size="xs"
-                    ariaLabel={m.settings_betaUpdates_ariaLabel()}
-                  />
+                  <div class="w-45 flex-shrink-0">
+                    <Select.Root value={$updateChannel$} onchange={handleUpdateChannelChange}>
+                      <Select.Trigger aria-label={m.settings_updateChannel_ariaLabel()}>
+                        <span class="truncate">{updateChannelLabel}</span>
+                      </Select.Trigger>
+                      <Select.Content portal class="max-h-75 w-45">
+                        {#each updateChannelOptions as option (option.value)}
+                          <Select.Item value={option.value}>
+                            <span class="truncate">{option.label}</span>
+                          </Select.Item>
+                        {/each}
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
                 </div>
               </section>
             </div>
@@ -778,6 +791,18 @@
 
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
+          <!-- Agent Backend -->
+          <div id="agent-backend" class="mb-12">
+            <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              {m.settings_section_agentBackend()}
+            </h2>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section class="px-6 py-5">
+                <AgentBackendSettings />
+              </section>
+            </div>
+          </div>
+
           <!-- WebSocket API -->
           <div
             id="websocket-api"

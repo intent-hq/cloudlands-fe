@@ -34,6 +34,10 @@
 
   let wrapper: HTMLSpanElement | null = $state(null);
   let hasInteractiveChild = $state(false);
+  // Menu content manages focus itself (roving focus visits only menu items and
+  // Tab is intercepted), so a wrapper rendered inside menu content must not
+  // become a nested interactive element: skip role="button" and the tab stop.
+  let inMenuContent = $state(false);
   let forwardedTargets: HTMLElement[] = [];
   const originalAttributes = new WeakMap<HTMLElement, Map<string, string | null>>();
 
@@ -66,6 +70,7 @@
   function restoreForwardedAttributes(target: HTMLElement) {
     for (const attribute of forwardedAttributes) {
       const original = originalAttribute(target, attribute);
+      if (attribute === 'data-state' && original !== null) continue;
       if (original === null) target.removeAttribute(attribute);
       else target.setAttribute(attribute, original);
     }
@@ -74,6 +79,7 @@
   function syncForwardedAttributes(target: HTMLElement) {
     for (const attribute of forwardedAttributes) {
       const original = originalAttribute(target, attribute);
+      if (attribute === 'data-state' && original !== null) continue;
       const value = triggerProps[attribute];
       if (value === undefined || value === null || value === false) {
         if (original === null) target.removeAttribute(attribute);
@@ -90,6 +96,7 @@
 
   $effect(() => {
     if (!wrapper) return;
+    inMenuContent = wrapper.closest('[role="menu"], [role="menuitem"]') !== null;
     const targets = Array.from(wrapper.querySelectorAll<HTMLElement>(interactiveSelector));
     for (const target of forwardedTargets) {
       if (!targets.includes(target)) restoreForwardedAttributes(target);
@@ -115,9 +122,11 @@
   bind:this={wrapper}
   {...wrapperProps}
   class={triggerProps.class}
-  role={hasInteractiveChild ? undefined : 'button'}
-  tabindex={hasInteractiveChild ? -1 : triggerProps.tabindex}
-  aria-disabled={hasInteractiveChild ? undefined : triggerProps.disabled || undefined}
+  role={hasInteractiveChild || inMenuContent ? undefined : 'button'}
+  tabindex={hasInteractiveChild ? -1 : inMenuContent ? undefined : triggerProps.tabindex}
+  aria-disabled={hasInteractiveChild || inMenuContent
+    ? undefined
+    : triggerProps.disabled || undefined}
   aria-describedby={hasInteractiveChild ? undefined : triggerProps['aria-describedby']}
   data-state={hasInteractiveChild ? undefined : triggerProps['data-state']}
   data-disabled={hasInteractiveChild ? undefined : triggerProps['data-disabled']}

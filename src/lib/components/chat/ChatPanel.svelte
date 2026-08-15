@@ -84,6 +84,7 @@
   import {
     sendMessage,
     initializeChatRequested,
+    refreshChatTranscriptRequested,
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
@@ -100,6 +101,7 @@
     selectChatStreamingStartTime,
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
+    selectTranscriptSnapshotMeta,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
   import { appClient } from '$lib/client';
@@ -111,6 +113,8 @@
   import type { Workspace, AgentMetadata } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import { createFileDropTarget } from '$lib/utils/file-drop';
+  import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
   import ChatDraftLoadingGate from './ChatDraftLoadingGate.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
@@ -120,12 +124,15 @@
     resolveNewMessagesDividerAnchor,
     resolveLatchedDividerAnchor,
     dividerVisibleWhenScrolledToBottom,
+    dividerDefersToTurnBoundary,
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
+  import ConversationTurnGap from './ConversationTurnGap.svelte';
   import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
+  import { createAppMessageId } from '$shared/utils/app-message-id';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
@@ -148,6 +155,7 @@
     faSquareCheck,
     faLock,
     faLockOpen,
+    faPaperclip,
   } from '@fortawesome/free-solid-svg-icons';
   import { fade } from 'svelte/transition';
   import { safeSlide } from '$lib/utils/animations';
@@ -157,17 +165,42 @@
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
-  import BackgroundHooksRow from './BackgroundHooksRow.svelte';
-  import MonitoredPrsRow from './MonitoredPrsRow.svelte';
+  import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import Button from '../ui/button/button.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import AgentSubscriptions from './AgentSubscriptions.svelte';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import { parseSuggestedPrompts } from '$lib/utils/messageParser';
+  import { getQueueInfo, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import {
+    animateMessageSend,
+    captureMessageSendOrigin,
+    createMessageSendLaunchBubble,
+    MESSAGE_SEND_MATCH_TIMEOUT_MS,
+    type MessageSendOrigin,
+  } from './message-send-transition';
 
   import LazyTurn from './LazyTurn.svelte';
+  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
+  import {
+    attachPinnedPromptMessage,
+    trackPinnedPrompt,
+    type PinnedPromptState,
+  } from './pinned-prompt';
+  import {
+    createLazyTurnCacheScope,
+    createLazyTurnHeightCache,
+    type LazyTurnHeightCache,
+  } from './lazy-turn-height-cache';
+  import { isTurnInRecentWindow, shouldVirtualizeTurns } from './chat-turn-virtualization';
+  import {
+    EMPTY_TEMPORARY_TURN_MATERIALIZATION,
+    isTurnTemporarilyMaterialized,
+    materializeTurn,
+    releaseMaterializedTurn,
+    type TemporaryTurnMaterialization,
+  } from './temporary-turn-materialization';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
   import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -201,10 +234,13 @@
   import { resolveHydratedInputModel } from './input-hydration';
   import {
     deriveQueuedMessagesVisibility,
+    hasAuthoritativeConversationEvidence,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
+    shouldShowSetupCardOnly,
     shouldShowTranscriptSkeleton,
   } from './chat-panel-visibility';
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -214,10 +250,6 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
-  /** PERF: Number of recent turns to always render (for streaming and smooth UX) */
-  const FORCE_VISIBLE_TURN_COUNT = 3;
-  /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
-  const LAZY_TURN_THRESHOLD = 10;
 
   interface Props {
     workspace: Workspace;
@@ -302,6 +334,7 @@
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
   const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
+  const transcriptSnapshotMeta$ = selectTranscriptSnapshotMeta(agentIdStore);
   // First-hydration latch: false until the initial hydration settles, then
   // true for the agent's lifetime — gates the indeterminate skeleton so a
   // partially-loaded transcript never renders as if complete.
@@ -313,6 +346,13 @@
   // re-hydrations (latch already true) keep the messages visible.
   const isFirstHydrationLoading = $derived(
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
+  );
+  const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
+  const authoritativeConversationEvidence = $derived(
+    hasAuthoritativeConversationEvidence(
+      $agentSession$ ?? null,
+      $transcriptSnapshotMeta$?.totalMessages ?? 0,
+    ),
   );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
@@ -363,13 +403,126 @@
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
   let scrollContainer = $state<HTMLDivElement>();
+  let composerElement = $state<HTMLDivElement>();
   let inputComponent = $state<SimpleRichInput>();
   let shouldFollowBottom = $state(true);
   let isScrollUnlocked = $state(false); // User manually unlocked auto-scroll while at bottom
   let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  let lazyTurnHeightCache = $state.raw<LazyTurnHeightCache>(createLazyTurnHeightCache('unbound'));
+  let lazyTurnCacheScope = 'unbound';
 
-  // Track which message is currently "sticky" (scrolled past its natural position)
-  let stickyMessageId = $state<string | null>(null);
+  $effect(() => {
+    const scope = createLazyTurnCacheScope({
+      workspaceId: String(workspace?.id ?? ''),
+      agentId,
+      sessionId: $agentSession$?.backendSessionId ?? $agentSession$?.acpSessionId ?? null,
+    });
+    if (scope === lazyTurnCacheScope) return;
+    lazyTurnHeightCache.clear();
+    lazyTurnCacheScope = scope;
+    lazyTurnHeightCache = createLazyTurnHeightCache(scope);
+  });
+
+  interface PendingSendTransition {
+    origin: MessageSendOrigin;
+    launchBubble: HTMLElement | null;
+    followBottom: boolean;
+    expiry: ReturnType<typeof setTimeout>;
+  }
+
+  const pendingSendTransitions = new Map<string, PendingSendTransition>();
+  const activeSendTransitions = new Map<string, AbortController>();
+  let pendingSendMessageIds = $state.raw<Set<string>>(new Set());
+
+  function setPendingSendMessage(key: string, pending: boolean): void {
+    const next = new Set(pendingSendMessageIds);
+    if (pending) next.add(key);
+    else next.delete(key);
+    pendingSendMessageIds = next;
+  }
+
+  function cancelPendingSendTransition(key: string, pending: PendingSendTransition): void {
+    if (pendingSendTransitions.get(key) !== pending) return;
+    clearTimeout(pending.expiry);
+    pending.launchBubble?.remove();
+    pendingSendTransitions.delete(key);
+    setPendingSendMessage(key, false);
+  }
+
+  function cancelAllSendTransitions(): void {
+    for (const [key, pending] of pendingSendTransitions) {
+      cancelPendingSendTransition(key, pending);
+    }
+    for (const controller of activeSendTransitions.values()) controller.abort();
+    activeSendTransitions.clear();
+  }
+
+  function prepareMessageSendTransition(
+    text: string,
+    options: { enabled: boolean; followBottom: boolean; allowOverlap?: boolean },
+  ): string {
+    const userAppMessageId = createAppMessageId();
+    if (!options.enabled || (!options.allowOverlap && pendingSendTransitions.size > 0)) {
+      return userAppMessageId;
+    }
+    if (!composerElement) return userAppMessageId;
+    const origin = captureMessageSendOrigin(composerElement);
+    if (origin.width <= 0) return userAppMessageId;
+    const key = String(userAppMessageId);
+    const launchBubble = createMessageSendLaunchBubble(
+      origin,
+      text,
+      `${workspace?.id ?? 'workspace'}:${agentId}:${instanceId}`,
+    );
+    const pending: PendingSendTransition = {
+      origin,
+      launchBubble,
+      followBottom: options.followBottom,
+      expiry: setTimeout(
+        () => cancelPendingSendTransition(key, pending),
+        MESSAGE_SEND_MATCH_TIMEOUT_MS,
+      ),
+    };
+    pendingSendTransitions.set(key, pending);
+    if (launchBubble) setPendingSendMessage(key, true);
+    return userAppMessageId;
+  }
+
+  function startPendingSendTransitions(): boolean {
+    if (!scrollContainer || pendingSendTransitions.size === 0) return false;
+    let started = false;
+    for (const message of $agentMessages$) {
+      const key = message.role === 'user' ? String(message.appMessageId ?? '') : '';
+      const pending = pendingSendTransitions.get(key);
+      if (!pending) continue;
+      const row = Array.from(
+        scrollContainer.querySelectorAll<HTMLElement>('[data-send-app-message-id]'),
+      ).find((candidate) => candidate.dataset.sendAppMessageId === key);
+      if (!row) continue;
+      clearTimeout(pending.expiry);
+      pendingSendTransitions.delete(key);
+      const target = row.querySelector<HTMLElement>('[data-testid="user-message-surface"]') ?? row;
+      activeSendTransitions.get(key)?.abort();
+      const controller = new AbortController();
+      activeSendTransitions.set(key, controller);
+      const settle = () => {
+        if (activeSendTransitions.get(key) === controller) activeSendTransitions.delete(key);
+        setPendingSendMessage(key, false);
+      };
+      void animateMessageSend({
+        origin: pending.origin,
+        target,
+        scrollContainer,
+        launchBubble: pending.launchBubble,
+        followBottom: pending.followBottom,
+        signal: controller.signal,
+      }).then(settle, settle);
+      started = true;
+    }
+    return started;
+  }
+
+  let pinnedPrompt = $state<PinnedPromptState | null>(null);
 
   // Onboarding context — reconstructed from workspace + agent session data.
   // No external storage needed; all essential fields live on the workspace object.
@@ -394,6 +547,34 @@
     }
   }
 
+  function handleRetryTranscriptHydration() {
+    appStore.dispatch(refreshChatTranscriptRequested(String(workspace.id), agentId));
+  }
+
+  function handlePinnedPromptClick() {
+    if (!scrollContainer || !pinnedPrompt) return;
+    const source = scrollContainer.querySelector<HTMLElement>(
+      `[data-pinned-prompt-id="${CSS.escape(pinnedPrompt.id)}"]`,
+    );
+    const turn = source?.closest<HTMLElement>('[data-conversation-turn]');
+    setPinnedPrompt(null);
+    if (turn) smoothScrollTo(turn, 'start');
+  }
+
+  function getPinnedPromptText(message: AgentMessage): string {
+    const extracted = extractAllContent(message);
+    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
+    if (text.trim()) return text.trim();
+    const attachment = message.contentBlocks?.find(
+      (block) => block.type === 'image' || block.type === 'file',
+    );
+    if (attachment?.type === 'file' && attachment.fileName) return attachment.fileName;
+    if (attachment?.type === 'image') {
+      return m.chat_chatMessage_attachedImage_fallback({ number: '1' });
+    }
+    return m.chat_shared_context_fallback();
+  }
+
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
   // This prevents "N is not a function" errors when Svelte's reactive system tries to call
   // nullified internal functions. This MUST be set FIRST in onDestroy, before any other cleanup.
@@ -407,25 +588,12 @@
   const COMPACT_HEIGHT_EXIT = 640; // Exit compact mode above this
   let isCompactMode = $state(false);
 
-  // Track whether sticky positioning should be enabled
-  // Disable sticky when panel is too short (< 400px) to avoid awkward UX
-  const STICKY_HEIGHT_ENABLE = 420; // Enable sticky above this
-  const STICKY_HEIGHT_DISABLE = 400; // Disable sticky below this
-  let shouldEnableSticky = $state(true);
-
   $effect(() => {
     if (containerHeight > 0) {
       if (!isCompactMode && containerHeight < COMPACT_HEIGHT_ENTER) {
         isCompactMode = true;
       } else if (isCompactMode && containerHeight > COMPACT_HEIGHT_EXIT) {
         isCompactMode = false;
-      }
-
-      // Track sticky enable/disable with hysteresis
-      if (shouldEnableSticky && containerHeight < STICKY_HEIGHT_DISABLE) {
-        shouldEnableSticky = false;
-      } else if (!shouldEnableSticky && containerHeight > STICKY_HEIGHT_ENABLE) {
-        shouldEnableSticky = true;
       }
     }
   });
@@ -505,13 +673,20 @@
     }
   });
 
+  // Queue entries the user should see: user-authored ones only. Daemon-origin
+  // entries (agent sends, event wakes, hook wakes, PR-monitor wakes,
+  // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
+  // the list, its count, and the up-arrow edit path all use this filtered
+  // view (display-only; the daemon queue and drain order are untouched).
+  const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
+
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown with a held-for-questions hint while Ignore-collapsed (the daemon
   // parks automatic deliveries behind the pending Q&A — question hold,
   // PROTOCOL §5.5). Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
-      queueLength: $queuedMessages$.length,
+      queueLength: visibleQueuedMessages.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
     }),
@@ -577,6 +752,45 @@
   // on the panel wrapper plus an initial sync below.
   let isInternallyFocused = $state(false);
   const isChatFocused = $derived(isPanelFocused || isInternallyFocused);
+
+  // Panel-wide OS-file drop target: dropping files anywhere over the chat panel
+  // attaches them via SimpleRichInput's pipeline (which renders with
+  // externalDropTarget so its own drag handlers/overlay stay off in this
+  // context). Gated on isFileDragEvent inside the helper, so text/content and
+  // tab drags are unaffected, and on input availability, so the overlay never
+  // invites a drop that would be discarded (e.g. while the question wizard is
+  // expanded and SimpleRichInput is unmounted).
+  let isFileDragOverPanel = $state(false);
+  const panelFileDrop = createFileDropTarget({
+    onDragChange: (dragging) => (isFileDragOverPanel = dragging),
+    onDrop: (files) => void inputComponent?.handleDroppedFiles?.(files),
+    isEnabled: () => !!inputComponent,
+  });
+
+  // Clear stale drag state if the input unmounts mid-drag (wizard expands).
+  $effect(() => {
+    if (!inputComponent) panelFileDrop.reset();
+  });
+
+  // The panel header (agent name row) is part of the drop target too: while
+  // this chat is the active tab and the input can accept files, register the
+  // same pipeline with the surrounding panel-system Panel (context is null
+  // outside a panel, e.g. the Chief of Staff sidebar). Header drags drive the
+  // same overlay via isFileDragOverHeader.
+  const panelFileDropContext = getPanelFileDropContext();
+  let isFileDragOverHeader = $state(false);
+  $effect(() => {
+    if (!panelFileDropContext || !isActive || !inputComponent) return;
+    const handler = {
+      onDrop: (files: File[]) => void inputComponent?.handleDroppedFiles?.(files),
+      onDragChange: (dragging: boolean) => (isFileDragOverHeader = dragging),
+    };
+    panelFileDropContext.register(handler);
+    return () => {
+      panelFileDropContext.unregister(handler);
+      isFileDragOverHeader = false;
+    };
+  });
 
   $effect(() => {
     if (!panelElement || typeof document === 'undefined') return;
@@ -931,6 +1145,14 @@
     }
 
     return false;
+  }
+
+  function isEventWakeMessage(message?: AgentMessage): boolean {
+    if (!message) return false;
+    return (
+      message.metadata?.type === 'event_notification' ||
+      extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
+    );
   }
 
   // Initialize input history from existing chat messages
@@ -1345,7 +1567,7 @@
   const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
 
   // PERF: Enable lazy loading only for larger conversations
-  const shouldUseLazyLoading = $derived(totalTurnCount > LAZY_TURN_THRESHOLD);
+  const shouldUseLazyLoading = $derived(shouldVirtualizeTurns(totalTurnCount));
 
   // PERF: Pre-compute message index and turn number maps for O(1) lookups
   // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
@@ -1379,29 +1601,37 @@
     // 1. New message added AND following is enabled, OR
     // 2. First message added (transition from empty to non-empty) - always scroll to show the new content
     const isFirstMessage = previousMessageCount === 0 && currentCount > 0;
+    const hasNewMessages = currentCount > previousMessageCount;
     const shouldScroll =
-      currentCount > previousMessageCount &&
-      (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
-    if (shouldScroll) {
+      hasNewMessages && (isFirstMessage || (shouldFollowBottom && !isScrollUnlocked));
+    if (hasNewMessages) {
       // Unread-marker entry: on the first transcript hydration with a latched
       // divider anchor, land at the "New messages" divider with follow
       // disabled when the unseen tail is taller than the viewport; when it
       // fits on screen, scroll to the bottom with follow enabled instead
       // (decided inside scrollToNewMessagesDivider).
-      if (isFirstMessage && !hasAppliedNewMessagesEntryScroll && newMessagesDividerAnchorId) {
+      if (
+        shouldScroll &&
+        isFirstMessage &&
+        !hasAppliedNewMessagesEntryScroll &&
+        newMessagesDividerAnchorId
+      ) {
         hasAppliedNewMessagesEntryScroll = true;
         void scrollToNewMessagesDivider(newMessagesDividerAnchorId);
       } else {
         // New message added - scroll to bottom after DOM updates
         // Re-enable auto-follow when first message is added
-        if (isFirstMessage) {
+        if (shouldScroll && isFirstMessage) {
           shouldFollowBottom = true;
           isScrollUnlocked = false;
         }
         tick().then(() => {
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
-          if (scrollContainer) scrollToBottomUtil(scrollContainer);
+          const startedTransition = startPendingSendTransitions();
+          if (scrollContainer && shouldScroll && !startedTransition) {
+            scrollToBottomUtil(scrollContainer);
+          }
         });
       }
     }
@@ -1452,6 +1682,10 @@
   // Maps turnKey (userMessageId or `group-${groupIndex}-turn-${turnIndex}`) to global index
   const globalTurnIndexMap = $derived(conversationTurnIndex.globalIndexByTurnKey);
 
+  $effect(() => {
+    lazyTurnHeightCache.retain(globalTurnIndexMap.keys());
+  });
+
   // Map each messageId to its enclosing turnKey. Used by allSearchMatches so that
   // matches in virtualized LazyTurn placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
@@ -1462,8 +1696,10 @@
     const globalIndex = globalTurnIndexMap.get(turnKey);
     if (globalIndex === undefined) return true; // Unknown turn, render it
     const totalTurns = globalTurnIndexMap.size;
-    // Force visible if it's in the last N turns
-    return globalIndex >= totalTurns - FORCE_VISIBLE_TURN_COUNT;
+    return (
+      isTurnInRecentWindow(globalIndex, totalTurns) ||
+      isTurnTemporarilyMaterialized(temporaryTurnMaterialization, turnKey)
+    );
   }
 
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
@@ -1662,6 +1898,12 @@
     return () => clearTimeout(autoFocusTimer);
   });
 
+  $effect(() => {
+    const transitionWorkspaceId = workspace?.id;
+    if (!transitionWorkspaceId) return;
+    return cancelAllSendTransitions;
+  });
+
   // WORKSPACE REBIND FIX: Reactively re-initialize chat state when the workspace
   // changes underneath an already-mounted ChatPanel. Without this, the panel stays stuck
   // on the pre-send conversation snapshot because initializeChatRequested only runs on mount and
@@ -1745,6 +1987,10 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      scrollContainer.scrollTop = targetScrollTop;
+      return;
+    }
     animateScrollTo(() => scrollContainer, targetScrollTop, duration);
   }
 
@@ -1973,10 +2219,28 @@
   // highlights the query terms via the CSS Custom Highlight API (cleared on the
   // next user interaction or a short timeout — no persistent markup).
   let deepOpenTurnKey = $state<string | null>(null);
+  let deepOpenReleaseTimer: ReturnType<typeof setTimeout> | null = null;
+  let temporaryTurnMaterialization = $state<TemporaryTurnMaterialization>({
+    ...EMPTY_TEMPORARY_TURN_MATERIALIZATION,
+  });
   const handledOpenMessageRequestIds = new Set<string>();
   let clearDeepOpenHighlight: (() => void) | null = null;
   const DEEP_OPEN_HIGHLIGHT_NAME = 'deep-open-match';
   const DEEP_OPEN_HIGHLIGHT_TIMEOUT_MS = 8000;
+
+  function handleTurnEditStateChange(turnKey: string, isEditing: boolean) {
+    temporaryTurnMaterialization = isEditing
+      ? materializeTurn(temporaryTurnMaterialization, 'editing', turnKey)
+      : releaseMaterializedTurn(temporaryTurnMaterialization, 'editing', turnKey);
+  }
+
+  function scheduleDeepOpenRelease(turnKey = deepOpenTurnKey) {
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    deepOpenReleaseTimer = setTimeout(() => {
+      if (deepOpenTurnKey === turnKey) deepOpenTurnKey = null;
+      deepOpenReleaseTimer = null;
+    }, 200);
+  }
 
   // Force-render a message's turn through the LazyTurn virtualization (reuses
   // the deep-open force-visible key) and resolve its DOM element once rendered.
@@ -1993,6 +2257,7 @@
       if (targetElement) return targetElement;
     }
     logger.warn('[ChatPanel] Message turn not rendered after force-visible', { messageId });
+    scheduleDeepOpenRelease();
     return null;
   }
 
@@ -2016,6 +2281,7 @@
     if (!targetElement) {
       shouldFollowBottom = true;
       scrollToBottomUtil(scrollContainer);
+      scheduleDeepOpenRelease();
       return;
     }
     const containerRect = scrollContainer.getBoundingClientRect();
@@ -2031,9 +2297,11 @@
       shouldFollowBottom = true;
       isScrollUnlocked = false;
       scrollToBottomUtil(scrollContainer);
+      scheduleDeepOpenRelease();
       return;
     }
     smoothScrollTo(targetElement, 'center');
+    scheduleDeepOpenRelease();
   }
 
   // Collect ranges for every case-insensitive occurrence of each query token
@@ -2090,6 +2358,7 @@
       }
       handledOpenMessageRequestIds.add(detail.requestId);
       smoothScrollTo(targetElement, 'center');
+      scheduleDeepOpenRelease();
       targetElement.classList.add('message-highlight-flash');
       setTimeout(() => targetElement.classList.remove('message-highlight-flash'), 600);
       if (detail.query) applyDeepOpenQueryHighlight(targetElement, detail.query);
@@ -2105,6 +2374,7 @@
     return () => {
       window.removeEventListener('chat:open-message', listener);
       clearDeepOpenHighlight?.();
+      if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
     };
   });
 
@@ -2182,104 +2452,26 @@
     };
   });
 
-  // Track sticky state for user messages
-  // Use onMount pattern to avoid effect loops - scrollContainer binding can cause
-  // effects to re-run when state changes trigger re-renders
-  onMount(() => {
-    let destroyed = false;
-    let readinessFrame: number | null = null;
-    let initialCalculationFrame: number | null = null;
-    let throttledScrollFrame: number | null = null;
-    let boundContainer: HTMLDivElement | null = null;
-
-    const handleScroll = () => {
-      if (!boundContainer) return;
-
-      // Find all user message containers (they have data-message-id and are sticky)
-      const messageContainers = boundContainer.querySelectorAll(
-        '.message-nav-target[data-message-id]',
+  function setPinnedPrompt(next: PinnedPromptState | null) {
+    if (next?.id === pinnedPrompt?.id && next?.message === pinnedPrompt?.message) return;
+    const previousTurnKey = pinnedPrompt ? messageIdToTurnKey.get(pinnedPrompt.id) : undefined;
+    if (previousTurnKey) {
+      temporaryTurnMaterialization = releaseMaterializedTurn(
+        temporaryTurnMaterialization,
+        'pinned',
+        previousTurnKey,
       );
-
-      let foundSticky: string | null = null;
-
-      // Check each message to see if it's in sticky position
-      for (const container of messageContainers) {
-        // For EventWakeupBanner, the sticky element is inside the container
-        // For regular messages, the container itself is sticky
-        const stickyElement =
-          container.querySelector('.sticky') ??
-          (container.classList.contains('sticky') ? container : null);
-        if (!stickyElement) continue;
-
-        const rect = stickyElement.getBoundingClientRect();
-        const scrollRect = boundContainer.getBoundingClientRect();
-
-        // A message is sticky when its top is at (or very close to) the scroll container top
-        // The sticky offset is -top-px which is -1px, so check if within a few pixels
-        const stickyThreshold = 20; // pixels
-        const isAtStickyPosition = Math.abs(rect.top - scrollRect.top + 1) < stickyThreshold;
-
-        // Also check that we've scrolled past the message's natural position
-        // by checking if the turn's top is above the scroll container's top
-        const conversationTurn = container.closest('.conversation-turn');
-        if (conversationTurn && isAtStickyPosition) {
-          const turnRect = conversationTurn.getBoundingClientRect();
-          // The element is sticky if:
-          // 1. It's at the sticky position (near the top)
-          // 2. The turn's top is above the viewport (we've scrolled into the turn)
-          // 3. The turn's bottom is still below the sticky element (the turn hasn't scrolled past)
-          const scrolledPastTurnStart = turnRect.top < scrollRect.top;
-          const turnStillVisible = turnRect.bottom > rect.bottom;
-          if (scrolledPastTurnStart && turnStillVisible) {
-            foundSticky = container.getAttribute('data-message-id');
-            break;
-          }
-        }
-      }
-
-      // Only update if changed to avoid unnecessary re-renders
-      if (foundSticky !== stickyMessageId) {
-        stickyMessageId = foundSticky;
-      }
-    };
-
-    // Throttle the scroll handler for performance
-    let ticking = false;
-    const throttledHandler = () => {
-      if (!ticking) {
-        throttledScrollFrame = requestAnimationFrame(() => {
-          throttledScrollFrame = null;
-          if (destroyed) return;
-          handleScroll();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
-
-    // Wait for scrollContainer to be bound, then set up
-    const setupWhenReady = () => {
-      readinessFrame = null;
-      if (destroyed) return;
-      if (!scrollContainer) {
-        readinessFrame = requestAnimationFrame(setupWhenReady);
-        return;
-      }
-      boundContainer = scrollContainer;
-      boundContainer.addEventListener('scroll', throttledHandler, { passive: true });
-      // Initial check (deferred to avoid effect loops)
-      initialCalculationFrame = requestAnimationFrame(handleScroll);
-    };
-    readinessFrame = requestAnimationFrame(setupWhenReady);
-
-    return () => {
-      destroyed = true;
-      if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
-      if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
-      if (throttledScrollFrame !== null) cancelAnimationFrame(throttledScrollFrame);
-      boundContainer?.removeEventListener('scroll', throttledHandler);
-    };
-  });
+    }
+    pinnedPrompt = next;
+    const nextTurnKey = next ? messageIdToTurnKey.get(next.id) : undefined;
+    if (nextTurnKey) {
+      temporaryTurnMaterialization = materializeTurn(
+        temporaryTurnMaterialization,
+        'pinned',
+        nextTurnKey,
+      );
+    }
+  }
 
   // Track container height for compact mode using ResizeObserver
   onMount(() => {
@@ -2341,19 +2533,6 @@
       // setTimeout(() => {
       //   targetElement.classList.remove('message-highlight-flash');
       // }, 600);
-    }
-  }
-
-  function scrollUserMessageToTop(messageId: string) {
-    if (!scrollContainer) return;
-
-    const messageContainer = scrollContainer.querySelector(
-      `.message-nav-target[data-message-id="${CSS.escape(messageId)}"]`,
-    ) as HTMLElement | null;
-    const target = messageContainer?.closest('.conversation-turn') as HTMLElement | null;
-
-    if (target) {
-      smoothScrollTo(target, 'start');
     }
   }
 
@@ -2428,6 +2607,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    cancelAllSendTransitions();
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
@@ -2442,6 +2622,8 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    if (deepOpenReleaseTimer !== null) clearTimeout(deepOpenReleaseTimer);
+    lazyTurnHeightCache.clear();
     // Note: followBottom action cleanup is handled automatically by Svelte
     // Don't clear chat data - just cleanup listeners
     // The service will persist data for when the panel is reopened
@@ -2562,9 +2744,10 @@
 
   // Input history navigation callbacks (terminal-like up/down arrow)
   function handleHistoryPrev(): string | null {
-    // If there are queued messages and we're not already navigating history,
-    // edit the last queued message instead of cycling through sent history
-    if ($queuedMessages$.length > 0 && historyIndex === -1 && !inputValue.trim()) {
+    // If there are visible queued messages and we're not already navigating
+    // history, edit the last queued message instead of cycling through sent
+    // history
+    if (visibleQueuedMessages.length > 0 && historyIndex === -1 && !inputValue.trim()) {
       const editStarted = queuedMessageListRef?.editLastMessage?.();
       if (editStarted) {
         // Return null so TipTapEditor doesn't change the input content
@@ -2701,12 +2884,19 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const followAfterSend =
+      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0,
+      followBottom: followAfterSend,
+    });
 
     // Dispatch all orchestration to the send-message saga
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -2720,7 +2910,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: true,
+      followBottom: followAfterSend,
       historyText: text,
     });
   }
@@ -2863,11 +3053,19 @@
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    const followAfterSend =
+      $agentMessages$.length === 0 || (shouldFollowBottom && !isScrollUnlocked);
+    const userAppMessageId = prepareMessageSendTransition(text, {
+      enabled: imageBlocks.length === 0 && fileBlocks.length === 0,
+      followBottom: followAfterSend,
+      allowOverlap: true,
+    });
 
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
         text,
+        userAppMessageId,
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
@@ -2882,7 +3080,7 @@
 
     void performLocalSendCleanup({
       clearInput: true,
-      followBottom: true,
+      followBottom: followAfterSend,
       historyText: text,
     });
   }
@@ -3093,7 +3291,24 @@
       isInternallyFocused = false;
     }
   }}
+  ondragenter={panelFileDrop.handleDragEnter}
+  ondragleave={panelFileDrop.handleDragLeave}
+  ondragover={panelFileDrop.handleDragOver}
+  ondrop={panelFileDrop.handleDrop}
 >
+  <!-- Full-panel drop zone overlay (file drags only) -->
+  {#if isFileDragOverPanel || isFileDragOverHeader}
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
+      data-testid="chat-panel-drop-overlay"
+    >
+      <div class="flex flex-col items-center gap-2 text-primary">
+        <Fa icon={faPaperclip} class="w-6 h-6" />
+        <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
+      </div>
+    </div>
+  {/if}
+
   <!-- Search Bar -->
   {#if showSearch}
     <PanelFindBar
@@ -3115,7 +3330,30 @@
   <!-- Messages Area -->
   <div class="w-full relative flex-1 flex flex-col min-h-0 z-10">
     <div
+      class="pointer-events-none absolute inset-x-0 top-0 z-40"
+      data-testid="pinned-prompt-overlay-host"
+      aria-live="off"
+    >
+      {#if pinnedPrompt}
+        <div
+          class={isChiefWorkspace ? 'px-1 sm:px-2' : 'px-4 sm:px-6'}
+          data-testid="pinned-prompt-overlay-lane"
+        >
+          <PinnedUserPrompt
+            text={getPinnedPromptText(pinnedPrompt.message)}
+            {workspace}
+            onActivate={handlePinnedPromptClick}
+          />
+        </div>
+      {/if}
+    </div>
+    <!-- followBottom and the LazyTurn height ledger own scroll compensation. -->
+    <div
       bind:this={scrollContainer}
+      use:trackPinnedPrompt={{
+        enabled: containerHeight >= 400,
+        onChange: setPinnedPrompt,
+      }}
       use:followBottom={{
         // While search is open we drive our own programmatic scrolls (to the
         // current match), so we drop `follow` to keep the mutation/resize
@@ -3135,14 +3373,14 @@
       }}
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}
-      style="scrollbar-gutter: stable;"
+      style="scrollbar-gutter: stable; overflow-anchor: none;"
     >
       <div
         class="conversation-column flex min-h-full w-full flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-2 sm:px-6'}"
         class:pb-3={!isChiefWorkspace && isCompactMode}
-        class:pb-8={!isChiefWorkspace && !isCompactMode}
+        class:pb-2={!isChiefWorkspace && !isCompactMode}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -3159,17 +3397,24 @@
           </a>
         {/if}
 
-        {#if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && $agentSession$.backendSessionId === null}
+        {#if transcriptHydrationFailed && $agentMessages$.length === 0}
+          <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+            <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
+            <Button variant="outline" onclick={handleRetryTranscriptHydration}>
+              {m.chat_shared_retry_label()}
+            </Button>
+          </div>
+        {:else if isChiefWorkspace && !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
           <ChiefStarterPrompts onSelect={handleSelectSuggestedPrompt} compact={isCompactMode} />
-        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && $agentSession$.backendSessionId === null}
-          <!-- Welcome page: settled hydration + zero messages + never-used session (backendSessionId === null) -->
+        {:else if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && !authoritativeConversationEvidence}
+          <!-- Welcome page: settled hydration + zero messages + no durable conversation evidence. -->
           <div class="mt-16"></div>
           <RegularAgentWelcome
             onSpecialistChange={handleSpecialistChange}
             session={$agentSession$}
           />
-        {:else if isInitialWorkspaceAgent && onboardingContext && !onboardingContext.prompt?.trim() && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
-          <!-- Initial workspace agent with no prompt — show setup card only, no skeletons -->
+        {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
+          <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
           <div class="pt-16 pb-6">
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
@@ -3177,6 +3422,7 @@
                 m.chat_chatPanel_yourProject_fallback()}
               repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
               worktreePath={onboardingContext.worktreePath}
+              workspaceId={workspace?.id}
               branch={onboardingContext.branch}
               baseRef={onboardingContext.baseRef || 'origin/main'}
               specialistName={onboardingContext.specialistName}
@@ -3193,8 +3439,8 @@
               skipIsolation={onboardingContext.skipWorktree}
             />
           </div>
-        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasBackendSession: $agentSession$?.backendSessionId != null, hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
-          <!-- Skeleton: FIRST hydration in flight (even with partial/streaming messages — never render a partial transcript as complete), or hydration not settled / existing session with zero messages (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
+        {:else if shouldShowTranscriptSkeleton( { isFirstHydrationLoading, hasSession: Boolean($agentSession$), hydrationSettled: $transcriptHydration$ === 'settled', hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt) } )}
+          <!-- Skeleton: initial newest-window hydration is unresolved. -->
           {#if isInitialWorkspaceAgent && onboardingContext}
             <div class="pt-16 pb-6">
               <WorkspaceSetupCard
@@ -3203,6 +3449,7 @@
                   m.chat_chatPanel_yourProject_fallback()}
                 repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                 worktreePath={onboardingContext.worktreePath}
+                workspaceId={workspace?.id}
                 branch={onboardingContext.branch}
                 baseRef={onboardingContext.baseRef || 'origin/main'}
                 specialistName={onboardingContext.specialistName}
@@ -3276,6 +3523,7 @@
                         m.chat_chatPanel_yourProject_fallback()}
                       repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                       worktreePath={onboardingContext.worktreePath}
+                      workspaceId={workspace?.id}
                       branch={onboardingContext.branch}
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
@@ -3299,8 +3547,6 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
-                      showTimestamp={false}
-                      enableSticky={shouldEnableSticky}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -3383,6 +3629,7 @@
                         m.chat_chatPanel_yourProject_fallback()}
                       repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                       worktreePath={onboardingContext.worktreePath}
+                      workspaceId={workspace?.id}
                       branch={onboardingContext.branch}
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
@@ -3406,7 +3653,6 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
-                      enableSticky={shouldEnableSticky}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -3521,6 +3767,7 @@
                       m.chat_chatPanel_yourProject_fallback()}
                     repoPath={onboardingContext.repoPath || onboardingContext.projectPath}
                     worktreePath={onboardingContext.worktreePath}
+                    workspaceId={workspace?.id}
                     branch={onboardingContext.branch}
                     baseRef={onboardingContext.baseRef || 'origin/main'}
                     specialistName={onboardingContext.specialistName}
@@ -3538,8 +3785,11 @@
                   />
                 </div>
               {/if}
-              {#snippet newMessagesDividerAfter(messageId: string)}
-                {#if newMessagesDividerAnchorId === messageId}
+              <!-- Inline (mid-turn) divider placement; suppressed when the anchor
+                   is the turn's last rendered message and another turn follows —
+                   the divider then renders after the inter-turn spacer instead. -->
+              {#snippet newMessagesDividerAfter(messageId: string, deferToTurnBoundary: boolean)}
+                {#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}
                   <NewMessagesDivider />
                 {/if}
               {/snippet}
@@ -3548,18 +3798,42 @@
                 {@const turns = indexedGroup.turns}
                 {#each turns as turn, turnIndex (turn.userMessage?.id ?? `turn-${turnIndex}`)}
                   {@const turnKey = turn.userMessage?.id ?? `group-${groupIndex}-turn-${turnIndex}`}
+                  <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
+                       turns groupIntoTurns produced), not the last raw date group — a
+                       trailing group holding only skipped rows (system/error, non-model-
+                       change notices) renders no turn and must not count as a follower. -->
+                  {@const isEventNotification = isEventWakeMessage(turn.userMessage ?? undefined)}
+                  {@const nextTurn =
+                    turns[turnIndex + 1] ?? conversationTurnIndex.groups[groupIndex + 1]?.turns[0]}
+                  {@const nextTurnIsEventNotification = isEventWakeMessage(
+                    nextTurn?.userMessage ?? undefined,
+                  )}
                   {@const isLastTurnInConversation =
-                    groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
+                    globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- PERF: LazyTurn defers rendering of off-screen turns -->
                   <!-- PERF: Only force-visible the last turn during streaming, not all turns -->
-                  {@const turnMessageText = turn.userMessage
-                    ? extractAllContent(turn.userMessage)
-                    : ''}
-                  <div class="conversation-turn">
+                  <!-- Fallback chain mirrors the row render order below. Edge case:
+                       a user message with metadata.type === 'event_notification' but
+                       no eventTypes (and no [WORKSPACE EVENTS] prefix) renders neither
+                       the banner nor the user row, yet still counts as "last rendered"
+                       here — if it is the anchor, the divider renders at the turn
+                       boundary (previously it rendered nowhere). -->
+                  {@const turnLastRenderedMessageId =
+                    turn.assistantMessages[turn.assistantMessages.length - 1]?.id ??
+                    turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
+                    turn.userMessage?.id ??
+                    null}
+                  {@const dividerAtTurnBoundary = dividerDefersToTurnBoundary(
+                    newMessagesDividerAnchorId,
+                    turnLastRenderedMessageId,
+                    !isLastTurnInConversation,
+                  )}
+                  <div class="conversation-turn" data-conversation-turn>
                     <LazyTurn
                       {turnKey}
                       scrollRoot={scrollContainer}
+                      heightCache={lazyTurnHeightCache}
                       forceVisible={isTurnForceVisible(turnKey) ||
                         ($agentSessionIsStreaming$ && isLastTurnInConversation) ||
                         visibleSearchTurnKeys.has(turnKey) ||
@@ -3568,25 +3842,19 @@
                       {#snippet children()}
                         <!-- Event wakeup banner - shown when agent is woken by a subscription -->
                         <!-- Also detect [WORKSPACE EVENTS] messages as a fallback in case metadata is missing -->
-                        {@const hasEventMetadata =
-                          turn.userMessage?.metadata?.type === 'event_notification' &&
-                          turn.userMessage?.metadata?.eventTypes}
-                        {@const hasEventContent = turnMessageText
-                          .trim()
-                          .startsWith('[WORKSPACE EVENTS]')}
-                        {#if turn.userMessage && (hasEventMetadata || hasEventContent)}
+                        {#if turn.userMessage && isEventNotification}
                           {@const message = turn.userMessage}
                           {@const globalIndex = getMessageIndex(message.id)}
                           {@const messageText = extractAllContent(message)}
-                          <!-- Sticky, compact wake-up row (z-10 to stay above scrolling content) -->
+                          <!-- Source wake-up row remains owned by this transcript turn. -->
                           <div
                             data-message-id={message.id}
+                            data-pinned-prompt-id={message.id}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-10"
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
-                            class:sticky={shouldEnableSticky}
-                            class:-top-px={shouldEnableSticky}
+                            use:attachPinnedPromptMessage={message}
                             transition:safeSlide={{ axis: 'y', duration: 200 }}
                           >
                             <EventWakeupBanner
@@ -3602,53 +3870,52 @@
                               }}
                               {messageText}
                               asDivider={true}
-                              isSticky={stickyMessageId === message.id}
-                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              compact={isCompactMode}
                               showAgentCards={!isDelegatedBackgroundTaskAgent}
                               {workspace}
                             />
                           </div>
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/if}
-                        <!-- User message (sticky within this turn) - skip for event notifications (already shown above) -->
+                        <!-- User message source row; the independent overlay never moves this node. -->
                         <!-- Also skip messages starting with [WORKSPACE EVENTS] as a fallback in case metadata is missing -->
-                        {@const isEventNotification =
-                          turn.userMessage?.metadata?.type === 'event_notification' ||
-                          (turn.userMessage &&
-                            extractAllContent(turn.userMessage)
-                              .trim()
-                              .startsWith('[WORKSPACE EVENTS]'))}
                         {#if turn.userMessage && !isEventNotification}
                           {@const message = turn.userMessage}
                           {@const globalIndex = getMessageIndex(message.id)}
                           <div
                             data-message-id={message.id}
                             data-message-role="user"
+                            data-pinnable-user-prompt={!isAutomatedMessage(message)
+                              ? ''
+                              : undefined}
+                            data-pinned-prompt-id={message.id}
+                            data-send-app-message-id={message.appMessageId}
                             data-message-index={globalIndex}
                             class="message-nav-target relative z-20 mb-4"
+                            class:invisible={pendingSendMessageIds.has(
+                              String(message.appMessageId ?? ''),
+                            )}
                             class:bg-sidebar={isChiefWorkspace}
                             class:bg-card={!isChiefWorkspace}
-                            class:sticky={shouldEnableSticky}
-                            class:-top-px={shouldEnableSticky}
+                            use:attachPinnedPromptMessage={message}
                           >
                             <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
                                 {workspace}
-                                isSticky={stickyMessageId === message.id}
-                                onStickyClick={() => scrollUserMessageToTop(message.id)}
                                 onEditSubmit={(newText, model, blocks) =>
                                   handleEditMessage(message.id, newText, model, blocks)}
+                                onEditStateChange={(isEditing) =>
+                                  handleTurnEditStateChange(turnKey, isEditing)}
                                 editModel={turn.assistantMessages[0]?.metadata?.model ??
                                   hydratedInputModel}
-                                enableSticky={shouldEnableSticky}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
                               />
                             </div>
                           </div>
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/if}
 
                         <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
@@ -3661,7 +3928,10 @@
                                 fallbackText={extractAllContent(noticeMessage) || undefined}
                               />
                             </div>
-                            {@render newMessagesDividerAfter(noticeMessage.id)}
+                            {@render newMessagesDividerAfter(
+                              noticeMessage.id,
+                              dividerAtTurnBoundary,
+                            )}
                           {/if}
                         {/each}
 
@@ -3763,14 +4033,27 @@
                               workspaceId={workspace.id}
                             />
                           {/if}
-                          {@render newMessagesDividerAfter(message.id)}
+                          {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                         {/each}
                       {/snippet}
                     </LazyTurn>
                   </div>
-                  <!-- Editorial rhythm between turns (not after the last one) -->
-                  {#if !(groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1)}
-                    <div class="h-8" aria-hidden="true"></div>
+                  <!-- Editorial rhythm between turns (not after the last one).
+                       Must stay the negation of dividerDefersToTurnBoundary's
+                       hasFollowingTurn input so a deferred divider always follows
+                       a spacer. -->
+                  {#if !isLastTurnInConversation}
+                    <ConversationTurnGap
+                      currentIsEventNotification={isEventNotification}
+                      currentHasAssistantMessages={turn.assistantMessages.length > 0}
+                      nextIsEventNotification={nextTurnIsEventNotification}
+                    />
+                  {/if}
+                  <!-- Turn-boundary divider placement: the anchor is this turn's
+                       last rendered message and another turn follows, so the
+                       divider sits after the spacer, directly above the next turn. -->
+                  {#if dividerAtTurnBoundary}
+                    <NewMessagesDivider />
                   {/if}
                 {/each}
               {/each}
@@ -3815,7 +4098,7 @@
 
         <!-- Show suggested prompts for the last message only, when not streaming -->
         {#if suggestedPrompts.length > 0}
-          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'pb-6 pt-4'}">
+          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}">
             <SuggestedPrompts
               prompts={suggestedPrompts}
               onSelect={handleSelectSuggestedPrompt}
@@ -3838,23 +4121,46 @@
           </div>
         {/if}
 
-        <!-- Agent Subscriptions (shows what events agent is waiting for) -->
-        <!-- {#key} forces a full remount when workspace or agent changes,
-           preventing stale "Waiting for N agents" UI from leaking across switches -->
-        {#if workspace?.id}
-          {#key `${workspace.id}::${agentId}`}
-            <div
-              class="w-full {isCompactMode ? 'pb-1' : 'pb-4'}"
-              transition:safeSlide={{ axis: 'y', duration: 200 }}
-            >
-              <!-- Pending attention request (discussion/blocker) for this agent -->
-              {#if agentId}
-                <AttentionRequestBanner {agentId} />
-              {/if}
-              <AgentSubscriptions workspaceId={workspace.id} {agentId} />
-            </div>
-          {/key}
+        <!-- Pending attention request (discussion/blocker) remains in transcript order. -->
+        {#if workspace?.id && agentId}
+          <AttentionRequestBanner {agentId} />
         {/if}
+
+        <!-- The utility stack owns short-chat surplus through its auto margin.
+             It collapses naturally when transcript or expanded disclosure content overflows. -->
+        <div class="mt-auto" data-testid="transcript-utility-stack">
+          <!-- {#key} forces a full remount when workspace or agent changes,
+             preventing stale subscription UI from leaking across switches. -->
+          {#if workspace?.id}
+            {#key `${workspace.id}::${agentId}`}
+              <EventSubscriptionsCard
+                workspaceId={workspace.id}
+                {agentId}
+                compact={isCompactMode}
+              />
+            {/key}
+          {/if}
+
+          <!-- Queued messages remain in the same scroll/follow surface. -->
+          {#if queuedMessagesVisibility.showQueue}
+            <div
+              class="mt-6 {isChiefWorkspace
+                ? 'w-full'
+                : 'queued-message-utility-wide -mx-4 sm:-mx-6'}"
+              data-testid="queued-message-utility-area"
+            >
+              <QueuedMessageList
+                bind:this={queuedMessageListRef}
+                messages={visibleQueuedMessages}
+                heldForQuestions={queuedMessagesVisibility.heldForQuestions}
+                onedit={handleEditQueuedMessage}
+                onremove={handleRemoveQueuedMessage}
+                onsendnow={handleSendQueuedMessageNow}
+                ondone={() => inputComponent?.focus?.()}
+              />
+            </div>
+          {/if}
+        </div>
 
         <!-- Scroll anchor - ensures proper scroll to absolute bottom -->
         <div class="min-h-px min-w-6 shrink-0"></div>
@@ -3869,6 +4175,7 @@
       <Button
         variant="outline"
         size="icon-xs"
+        data-testid="chat-scroll-lock-button"
         onclick={() => {
           if (showArrow) {
             // Scrolled up - click to scroll to bottom and re-lock
@@ -3883,7 +4190,7 @@
           }
         }}
         class="absolute bottom-2 right-2 text-muted-foreground bg-sidebar rounded-sm transition-all opacity-0 group-hover/panel:opacity-100 active:scale-95 {showLock
-          ? 'opacity-0!'
+          ? 'opacity-0! pointer-events-none'
           : ''}"
         title={showLock
           ? m.chat_chatPanel_autoScrollLocked_tooltip()
@@ -3896,35 +4203,9 @@
     {/if}
   </div>
 
-  <!-- Queued Messages: hidden while the question wizard is expanded; shown
-       with a held-for-questions hint while it is Ignore-collapsed (question
-       hold, PROTOCOL §5.5). -->
-  {#if queuedMessagesVisibility.showQueue}
-    <QueuedMessageList
-      bind:this={queuedMessageListRef}
-      messages={$queuedMessages$}
-      heldForQuestions={queuedMessagesVisibility.heldForQuestions}
-      onedit={handleEditQueuedMessage}
-      onremove={handleRemoveQueuedMessage}
-      onsendnow={handleSendQueuedMessageNow}
-      ondone={() => inputComponent?.focus?.()}
-    />
-  {/if}
-
-  <!-- Monitored PRs (PROTOCOL §6.9): faint chip row above the hooks row,
-       visible only while the active agent has active PR monitors. -->
-  {#if workspace?.id && agentId}
-    <MonitoredPrsRow workspaceId={workspace.id} {agentId} />
-  {/if}
-
-  <!-- Background hooks (PROTOCOL §5.40): faint chip row above the input,
-       visible only while the active agent has scheduled/running hooks. -->
-  {#if workspace?.id && agentId}
-    <BackgroundHooksRow workspaceId={workspace.id} {agentId} />
-  {/if}
-
   <!-- Message Input with Aurora Background -->
   <div
+    bind:this={composerElement}
     class="conversation-composer relative z-20 w-full"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
@@ -3942,7 +4223,7 @@
 
     {#if pendingQuestions}
       {#key pendingQuestions.messageId}
-        <div class="w-full pb-2">
+        <div class="w-full" data-testid="question-wizard-slot">
           <QuestionWizard
             questions={pendingQuestions.questions}
             collapsed={questionWizardCollapsed}
@@ -3983,6 +4264,7 @@
         editorClassName={isChiefWorkspace ? 'w-full px-1.5!' : 'w-full px-4! sm:px-6!'}
         contentInsetClassName={isChiefWorkspace ? 'w-full px-1.5' : 'w-full px-4 sm:px-6'}
         edgeDocked
+        externalDropTarget
         requiresModelSwitchConfirmation={!canChangeProvider}
         providerId={inputProviderId}
       />

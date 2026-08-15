@@ -2,7 +2,6 @@ import {
   call,
   cancelled,
   delay,
-  fork,
   put,
   race,
   take,
@@ -11,12 +10,15 @@ import {
 } from 'typed-redux-saga';
 
 import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
+import {
+  getAgentQueueEventSnapshotSeq,
+  hydrateAgentQueue,
+} from '$features/agent/agent-queue-read-service';
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import type { AgentSession, Workspace } from '$shared/types';
-import { WorkspaceStatusEnum } from '$shared/types';
+import type { AgentSession } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryLastMessageRequested,
@@ -41,7 +43,6 @@ import {
 import { clearChatDraft } from '../../transient-ui/transient-ui-slice';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtual-workspace';
-import { requestUnarchiveWorkspace } from '../../workspace-operations/workspace-operations-slice';
 import {
   workspaceDeleted,
   workspaceUnmounted,
@@ -85,6 +86,7 @@ type LifecycleSendOptions = {
   fileBlocks?: SendMessagePayload['fileBlocks'];
   noteIds?: string[];
   messageMetadata?: SendMessagePayload['messageMetadata'];
+  userAppMessageId?: string;
   model?: string;
   priority?: 'interrupt';
 };
@@ -156,37 +158,6 @@ function* sendQueuedNow(agentId: string, wsId: string, messageId: string): SagaG
   }
 }
 
-async function suggestUnarchiveIfArchived(workspace: Workspace): Promise<void> {
-  if (!workspace.archived && workspace.status !== WorkspaceStatusEnum.Archived) return;
-  try {
-    const { toast } = await import('svelte-sonner');
-    toast.info(m.agent_chatSend_archivedWorkspace_toast(), {
-      id: `chat-send-unarchive-${workspace.id}`,
-      action: {
-        label: m.agent_chatSend_archivedWorkspace_unarchive_label(),
-        onClick: () => {
-          void (async () => {
-            try {
-              const { store } = await import('../../../store');
-              store.dispatch(requestUnarchiveWorkspace(workspace.id));
-            } catch (error) {
-              logger.error('Unarchive from chat-send suggestion toast failed', {
-                workspaceId: workspace.id,
-                error,
-              });
-            }
-          })();
-        },
-      },
-    });
-  } catch (error) {
-    logger.warn('Failed to surface archived-workspace suggestion toast', {
-      workspaceId: workspace.id,
-      error,
-    });
-  }
-}
-
 function* dispatchToLifecycle(
   agentId: string,
   wsId: string,
@@ -203,7 +174,6 @@ function* dispatchToLifecycle(
     yield* put(chatSendFailed(agentId, m.agent_chatSend_workspaceNotFound_error({ id: wsId })));
     return;
   }
-  yield* fork(suggestUnarchiveIfArchived, workspace);
   const content = workspaceContextStr ? `${workspaceContextStr}\n\n${text.trim()}` : text.trim();
 
   yield* call(hydrateBeforeSend, agentId, wsId);
@@ -216,6 +186,12 @@ function* dispatchToLifecycle(
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
       };
+      // Captured BEFORE the wire call: an authoritative snapshot folded while
+      // the RPC is in flight — a live agent:queue:updated fold
+      // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
+      // advances this seq, and the queue-on-send seed below must then yield
+      // to it.
+      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
       const result =
         Object.keys(queueOptions).length > 0
           ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
@@ -233,9 +209,31 @@ function* dispatchToLifecycle(
         if (typeof turnId === 'string') {
           yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
         }
-        const existing = yield* selectAgentQueueMessages.effect(agentId);
-        if (!existing.some((message) => message.id === queuedMessage.id)) {
-          yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+        // Seed only when no authoritative snapshot — live agent:queue:updated
+        // fold or hydrate-reconciled fold — landed since the send started: a
+        // snapshot (including the shrunk-after-drain one) is at least as
+        // fresh as this echo, so seeding over it would re-add a just-drained
+        // row (monorepo#2481).
+        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
+          const existing = yield* selectAgentQueueMessages.effect(agentId);
+          if (!existing.some((message) => message.id === queuedMessage.id)) {
+            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+          }
+        } else {
+          logger.debug(
+            'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
+            { agentId, queuedMessageId: queuedMessage.id },
+          );
+          // Client-side apply order cannot rank the superseding snapshot
+          // against this echo — a hydrate whose getQueue the daemon served
+          // BEFORE this send would wrongly suppress a still-queued row
+          // (monorepo#2486 review). By now the daemon has processed the
+          // enqueue, so one reconciling hydrate returns the true queue in
+          // both directions: the row if still queued, without it if drained.
+          // Swallowed on failure — the enqueue itself succeeded, so a hydrate
+          // error must not surface as chatSendFailed; the service leaves the
+          // prior mirror intact on error.
+          yield* call(() => hydrateAgentQueue(agentId).catch(() => undefined));
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {
@@ -279,6 +277,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
       fileBlocks: payload.fileBlocks,
       noteIds: payload.noteIds,
       messageMetadata: payload.messageMetadata,
+      userAppMessageId: payload.userAppMessageId,
       priority: forceSubmit ? 'interrupt' : undefined,
     },
     forceSubmit,

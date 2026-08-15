@@ -11,10 +11,12 @@
     faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
+    faDownload,
     faPencil,
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
+  import { toast } from 'svelte-sonner';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
@@ -30,9 +32,12 @@
   } from '$features/layout/panel-layout-adapter';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
-  import { selectIsDaemonLocal } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import OpenPanelIndicator from '$lib/components/workspace/sidebar/OpenPanelIndicator.svelte';
 
   // Sentinel path for inline creation node
   const CREATING_SENTINEL_PATH = '__creating_new_file__';
@@ -66,6 +71,8 @@
     overscan?: number;
     /** Callback when external files are dropped onto the tree */
     onExternalFilesDrop?: (files: File[], targetPath: string | null) => void;
+    openPanelTabs?: PanelTab[];
+    activePanelTab?: PanelTab | null;
   }
 
   let {
@@ -82,6 +89,8 @@
     itemHeight = 25, // Match ListItem sm size
     overscan = 5,
     onExternalFilesDrop,
+    openPanelTabs = [],
+    activePanelTab,
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
@@ -760,6 +769,28 @@
     );
   }
 
+  // Save a copy of a file (or a zip of a folder) via the main process's native
+  // save dialog. Workspace-host-local only — the local main process reads the path.
+  async function handleDownload(node: FileNode) {
+    try {
+      const result = await invoke<{
+        success: boolean;
+        canceled?: boolean;
+        data?: { filePath: string };
+        error?: { code: string; message: string };
+      }>('file:download', { path: node.path });
+      if (result?.success && result.data?.filePath) {
+        toast.success(
+          m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
+        );
+      } else if (!result?.canceled) {
+        toast.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
+      }
+    } catch {
+      toast.error(m.fileExplorer_tree_downloadFailed_error());
+    }
+  }
+
   function getBackgroundContextMenuItems(): SidebarMenuEntry[] {
     const items: SidebarMenuEntry[] = [];
     if (onCreateFile) {
@@ -852,10 +883,24 @@
       });
     }
 
-    // Add reveal-in-file-manager option — daemon-host desktop action, only
-    // offered when the daemon runs on this machine (PROTOCOL §5.14 locality).
-    if (selectIsDaemonLocal.select(appStore.state)) {
+    // Add download and reveal-in-file-manager options — desktop actions on
+    // workspace file paths, only offered when the daemon runs on this machine
+    // (PROTOCOL §5.14 locality) AND the workspace checkout lives on the daemon
+    // host, i.e. not a remote (SSH) workspace (monorepo#2171).
+    if (selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)) {
       items.push({ type: 'separator' });
+      items.push({
+        id: 'download',
+        label:
+          node.type === 'file'
+            ? m.fileExplorer_tree_download_label()
+            : m.fileExplorer_tree_downloadZip_label(),
+        icon: faDownload,
+        onClick: () => {
+          closeContextMenu();
+          void handleDownload(node);
+        },
+      });
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),
@@ -949,6 +994,14 @@
       return nodePath.endsWith(`/${selectedFile}`);
     }
     return false;
+  }
+
+  function getFilePanelState(filePath: string) {
+    return getPanelTabOpenState(openPanelTabs, activePanelTab, workspaceId, {
+      type: 'file',
+      filePath,
+      workspaceId,
+    });
   }
 
   // Scroll state
@@ -1118,6 +1171,8 @@
             {@const hasChanges =
               (flatNode.gitStatus?.additions ?? 0) > 0 || (flatNode.gitStatus?.deletions ?? 0) > 0}
             {@const isModified = isFileModified(node.path) && node.type === 'file'}
+            {@const panelState =
+              node.type === 'file' ? getFilePanelState(node.path) : { count: 0, isActive: false }}
             {@const isDropTarget =
               isExternalFileDragOver &&
               dropTargetPath !== null &&
@@ -1212,6 +1267,7 @@
                       {@html getFileTypeIconSvg(node.name)}
                     </span>
                   {/snippet}
+                  <OpenPanelIndicator count={panelState.count} active={panelState.isActive} />
                 </ListItem>
               {/if}
               {#if hasChanges}

@@ -4,8 +4,9 @@
    *
    * - Running: workspaces with active streaming agents
    * - Unread: workspaces with unread messages (edited within last 24h)
-   * - Waiting: workspaces the daemon reports as in_progress with no streaming
-   *   agents (agents waiting on background hooks or delegated work)
+   * - Waiting: workspaces the daemon flags as `waiting` (agents purely waiting
+   *   on external conditions: hooks, PR monitors, watched agents) with no
+   *   streaming agents
    * - Pinned: user-pinned workspaces
    *
    * Supports mark-as-read and pin/unpin actions.
@@ -92,10 +93,11 @@
       .sort((a, b) => compareWorkspaceActivityDisplayTimeDesc(a.workspace, b.workspace));
   });
 
-  // Waiting workspaces: the daemon promotes displayStatus to 'in_progress' when an
-  // agent runs, a background hook is ACTIVE, or an idle coordinator still awaits
-  // delegated agents (PROTOCOL §5.1). With no streaming agents, that leaves exactly
-  // the hook-waiting / delegation-waiting cases. Unread wins over Waiting.
+  // Waiting workspaces: keyed off the BE-derived orthogonal `waiting` flag
+  // (PROTOCOL §5.1) — true when the workspace's agents are purely waiting on
+  // external conditions (active hooks, PR monitors, watched agents). It
+  // overlays displayStatus rather than folding into it, so a `complete`
+  // workspace can still be Waiting. Running and Unread win over Waiting.
   const waitingWorkspaces = $derived.by(() => {
     void activeStreamsVersion;
     const unreadIds = new Set(unreadWorkspaces.map((u) => u.workspace.id));
@@ -103,7 +105,7 @@
       .filter((w) => {
         if (w.status === WorkspaceStatusEnum.Archived || w.status === WorkspaceStatusEnum.Deleted)
           return false;
-        if (w.displayStatus !== 'in_progress') return false;
+        if (w.waiting !== true) return false;
         if (activeStreamsTracker.getStreamingAgentIdsForWorkspace(w.id).length > 0) return false;
         if (unreadIds.has(w.id)) return false;
         return true;
@@ -398,6 +400,7 @@
         <WorkspaceCard
           {workspace}
           variant="compact"
+          isWaiting={true}
           isPinned={$pinnedIds$.includes(workspace.id)}
           highlighted={keyboardNavActive &&
             highlightedIndex === (_visibleIdIndex.get(workspace.id) ?? -1)}

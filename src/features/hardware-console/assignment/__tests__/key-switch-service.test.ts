@@ -123,6 +123,10 @@ function focusPanelCalls(): unknown[] {
   return dispatched.filter((a) => a.type === 'panelLayout/focusPanel').map((a) => a.payload);
 }
 
+function openWorkspaceTabCalls(): unknown[] {
+  return dispatched.filter((a) => a.type === 'tabState/openWorkspaceTab').map((a) => a.payload);
+}
+
 beforeEach(() => {
   dispatched.length = 0;
   mockState.workspace.activeWorkspaceId = 'ws-other';
@@ -141,6 +145,7 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     focusWorkspaceSlot(WS);
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(openWorkspaceTabCalls()).toEqual([[WS]]);
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't3', panelId: 'panel-1' }),
     ]);
@@ -193,6 +198,7 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     focusWorkspaceSlot(WS);
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(openWorkspaceTabCalls()).toEqual([[WS]]);
     expect(setActiveTabCalls()).toEqual([]);
     expect(focusPanelCalls()).toEqual([]);
   });
@@ -217,6 +223,10 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
     expect(dispatched).toEqual([
       expect.objectContaining({
+        type: 'tabState/openWorkspaceTab',
+        payload: [WS],
+      }),
+      expect.objectContaining({
         type: 'workspaceAgents/setActiveAgentId',
         payload: [WS, 'agent-a'],
       }),
@@ -228,11 +238,13 @@ describe('focusWorkspaceSlot — first press (workspace not active)', () => {
     expect(focusComposer).toHaveBeenCalledWith('agent-a');
   });
 
-  it('only navigates when the workspace has no open tabs and no agents', () => {
+  it('opens the workspace tab and navigates when the workspace has no open tabs and no agents', () => {
     focusWorkspaceSlot(WS, { focusComposer });
 
     expect(navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
-    expect(dispatched).toHaveLength(0);
+    expect(dispatched).toEqual([
+      expect.objectContaining({ type: 'tabState/openWorkspaceTab', payload: [WS] }),
+    ]);
     expect(focusComposer).not.toHaveBeenCalled();
   });
 });
@@ -248,6 +260,7 @@ describe('focusWorkspaceSlot — subsequent presses (workspace active)', () => {
     focusWorkspaceSlot(WS);
 
     expect(navigateToRoute).not.toHaveBeenCalled();
+    expect(openWorkspaceTabCalls()).toEqual([]);
     expect(setActiveTabCalls()).toEqual([
       expect.objectContaining({ wsId: WS, tabId: 't2', panelId: 'panel-1' }),
     ]);

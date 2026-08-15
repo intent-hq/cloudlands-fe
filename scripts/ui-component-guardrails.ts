@@ -1,6 +1,6 @@
 export const uiComponentGuardrails = {
   internalImports: {
-    '$lib/components/ui/button/button.svelte': 37,
+    '$lib/components/ui/button/button.svelte': 36,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 3,
     '$lib/components/ui/dropdown/Dropdown.svelte': 1,
@@ -12,7 +12,7 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/separator/index.js': 1,
     '$lib/components/ui/sheet/index.js': 1,
     '$lib/components/ui/skeleton/index.js': 1,
-    '$lib/components/ui/skeleton/skeleton.svelte': 3,
+    '$lib/components/ui/skeleton/skeleton.svelte': 2,
     '$lib/components/ui/switch/switch.svelte': 3,
     '$lib/components/ui/textarea/textarea.svelte': 2,
     '$lib/components/ui/toast/ErrorToast.svelte': 1,
@@ -27,7 +27,7 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/tooltip/link-tooltip-state.svelte': 1,
     'relative:src/lib/components/ui/GrokLogo.svelte': 1,
     'relative:src/lib/components/ui/CollapsiblePanel.svelte': 1,
-    'relative:src/lib/components/ui/Header.svelte': 6,
+    'relative:src/lib/components/ui/Header.svelte': 5,
     'relative:src/lib/components/ui/Portal.svelte': 3,
     'relative:src/lib/components/ui/VSCodePanel.svelte': 1,
     'relative:src/lib/components/ui/VSCodeScrollablePanel.svelte': 4,
@@ -49,5 +49,5 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/tooltip/Tooltip.svelte': 2,
     'relative:src/lib/components/ui/tooltip/index.ts': 2,
   },
-  rawControls: { button: 649, input: 85, select: 0, textarea: 11 },
+  rawControls: { button: 627, input: 85, select: 0, textarea: 11 },
 } as const;

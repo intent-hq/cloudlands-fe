@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { isUserQueuedMessage } from './queued-message-visibility';
 import type { QueuedMessage } from '$shared/types';
 
-function makeMessage(messageMetadata?: unknown): QueuedMessage {
+function makeMessage(messageMetadata?: unknown, content = 'hello'): QueuedMessage {
   return {
     id: 'qm-1',
-    content: 'hello',
+    content,
     queuedAt: '2026-08-04T00:00:00Z',
     position: 0,
     ...(messageMetadata !== undefined
@@ -62,6 +62,17 @@ describe('isUserQueuedMessage', () => {
     expect(isUserQueuedMessage(makeMessage({ fromAgentId: 'agent-2' }))).toBe(false);
   });
 
+  it('shows the Q&A wizard answer message (type question_answers)', () => {
+    // User-authored despite the tag: sent through the ordinary send path and
+    // possibly auto-queued during the turn-startup race — must stay
+    // editable/removable/sendable in the queue.
+    expect(
+      isUserQueuedMessage(
+        makeMessage({ type: 'question_answers', answeredQuestionsMessageId: 'msg-q1' }),
+      ),
+    ).toBe(true);
+  });
+
   it('shows entries whose metadata carries only benign fields (userAppMessageId)', () => {
     expect(isUserQueuedMessage(makeMessage({ userAppMessageId: 'app-msg-1' }))).toBe(true);
   });
@@ -81,5 +92,34 @@ describe('isUserQueuedMessage', () => {
     expect(isUserQueuedMessage(makeMessage({ type: 7 }))).toBe(true);
     expect(isUserQueuedMessage(makeMessage({ fromAgentId: '   ' }))).toBe(true);
     expect(isUserQueuedMessage(makeMessage({ source: 'user' }))).toBe(true);
+  });
+
+  it('hides PR-monitor wakes (type pr_monitor_wake)', () => {
+    expect(
+      isUserQueuedMessage(
+        makeMessage({
+          type: 'pr_monitor_wake',
+          monitorId: 'mon-1',
+          repo: 'acme/widgets',
+          prNumber: 7,
+          reason: 'changed',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('hides entries with an unknown string type', () => {
+    expect(isUserQueuedMessage(makeMessage({ type: 'mystery_wake' }))).toBe(false);
+  });
+
+  it('keeps fail-open semantics for [WORKSPACE EVENTS] content without daemon metadata', () => {
+    expect(
+      isUserQueuedMessage(makeMessage(undefined, '[WORKSPACE EVENTS] You have been woken up')),
+    ).toBe(true);
+    expect(
+      isUserQueuedMessage(
+        makeMessage({ source: 'system' }, '[WORKSPACE EVENTS] You have been woken up'),
+      ),
+    ).toBe(false);
   });
 });

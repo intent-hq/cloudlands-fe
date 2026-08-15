@@ -98,7 +98,31 @@ jobs:
     permissions:
       pull-requests: read
     steps:
+      # Intermittent TLS failures reaching api.github.com can kill this action
+      # sub-second, before it validates anything — a spurious red that reads
+      # like a bad title (intent-hq/monorepo#2098). Tolerate a first-attempt
+      # failure and retry once; the retry is authoritative, so a genuinely
+      # bad title still fails the job.
       - uses: amannn/action-semantic-pull-request@v6
+        id: title_check
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+            perf
+      - name: Wait before retrying title validation
+        if: steps.title_check.outcome == 'failure'
+        run: sleep 15
+      - uses: amannn/action-semantic-pull-request@v6
+        if: steps.title_check.outcome == 'failure'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -160,6 +184,55 @@ jobs:
           fi
           echo "No conflict markers in ${#files[@]} changed file(s)."
 
+  # Release-PR fast path (ported from intentd's ci.yml release-fast-path job;
+  # intent-hq/monorepo#1374): release-please PRs change only version strings +
+  # changelog (CHANGELOG.md / package.json / .release-please-manifest.json),
+  # so the built/tested code is identical to what main already validated and
+  # the heavy jobs (checks / build-web / test) add no signal — their wall time
+  # just delays the release. This job diffs the PR against its base and emits
+  # fast_path=true only when the diff has exactly the release shape (files ⊆
+  # {CHANGELOG.md, package.json, .release-please-manifest.json}, pure
+  # modifications, and every non-changelog change is a uniform old→new
+  # version-string flip; see scripts/release-pr-fast-path.mjs). The diff shape
+  # is the ONLY signal — never branch name or author — so a PR can't spoof its
+  # way past the heavy checks: any real code change breaks the shape.
+  # Fail-safe, not fail-open: the heavy jobs skip only when the output is
+  # exactly 'true' (script error, missing output, or job failure leaves it
+  # empty and falls back to full CI), and pr-title / conflict-markers / route
+  # / gate still run on every PR. Unlike intentd's matrix build job, all three
+  # heavy jobs here are non-matrix and the only required context is "CI Gate"
+  # (which always runs), so a job-level skip is safe.
+  release-fast-path:
+    name: Release PR Fast Path
+    # Seconds-long job: pinned to ubuntu-latest (see pr-title).
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      fast_path: ${{ steps.decide.outputs.fast_path }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch PR base commit
+        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+      - name: Evaluate diff shape
+        id: decide
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Script contract: prints fast_path=true|false; non-zero exit means
+          # no-match. Never fail this step — a broken checker must degrade to
+          # full CI, not block the PR.
+          out=$(node scripts/release-pr-fast-path.mjs "$BASE_SHA" HEAD) || {
+            echo "release-pr-fast-path.mjs exited non-zero — falling back to full CI"
+            out="fast_path=false"
+          }
+          printf '%s\n' "$out"
+          line=$(printf '%s\n' "$out" | grep -E '^fast_path=(true|false)$' | tail -n1 || true)
+          echo "${line:-fast_path=false}" >> "$GITHUB_OUTPUT"
+
   # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
   # jobs (typecheck-renderer, typecheck-main, typecheck-preload,
   # static-checks); as separate self-hosted jobs each would pay its own
@@ -168,7 +241,16 @@ jobs:
   # back-to-back.
   checks:
     name: Type Check & Lint
-    needs: route
+    # Skipped at job level when the diff is release-PR-shaped (fast_path ==
+    # 'true'; see release-fast-path — safe because this is a non-matrix job
+    # and only "CI Gate" is a required context). Fail-safe: skips only when
+    # the output is exactly 'true'; a release-fast-path failure leaves the
+    # output empty and full CI runs. The route.result guard preserves the
+    # pre-existing behavior that a route failure skips this job (`!cancelled()`
+    # alone would run it without runner labels); the gate still fails on such
+    # a skip unless the fast path was taken.
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -268,7 +350,10 @@ jobs:
     name: Build (web)
     # Moved from m1mac to the self-hosted Linux runner (tinybox, 64 cores /
     # 125 GB) so the single-slot Mac is free for release/signing work.
-    needs: route
+    # Skipped at job level on release-fast-path PRs — see the checks job's
+    # comment for the full skip/fail-safe rationale.
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -318,8 +403,11 @@ jobs:
     # pay their own checkout/install overhead (and queued serially in the
     # single-slot era), so one job stays cheaper — vitest parallelism uses
     # the 64 cores within the single job.
+    # Skipped at job level on release-fast-path PRs — see the checks job's
+    # comment for the full skip/fail-safe rationale.
     name: Unit & Integration Tests
-    needs: route
+    needs: [route, release-fast-path]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
     timeout-minutes: 30
     permissions:
@@ -350,24 +438,117 @@ jobs:
       - name: Integration tests
         run: pnpm run test:integration
 
+  # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
+  # monorepo#2091). Pinned to ubuntu-latest rather than routed: browser
+  # provisioning needs `playwright install --with-deps` (sudo apt), which the
+  # self-hosted tinybox runner doesn't offer, and the suite is small (~40
+  # tests, minutes) so it isn't worth a tinybox slot. Browsers are installed
+  # via the run-ct-tests.mjs launcher so their version matches the CT-aligned
+  # playwright runner (1.58.x, NOT the repo's top-level playwright — see
+  # monorepo#1586), and the binary cache is keyed on that same version.
+  # Skipped at job level on release-fast-path PRs — see the checks job's
+  # comment for the full skip/fail-safe rationale.
+  test-ct:
+    name: Component Tests
+    needs: [release-fast-path]
+    if: ${{ !cancelled() && needs.release-fast-path.outputs.fast_path != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node.js
+        # Always GH-hosted (never tinybox), so the pnpm cache is always
+        # worthwhile — unlike the routed jobs' burst-gated cache.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The CT bundle imports paraglide messages; the compiled output is
+        # gitignored. (build-config / ipc-channels are main-process-only and
+        # not needed by the CT vite build.)
+        run: pnpm run generate:i18n
+      - name: Resolve CT playwright version
+        id: ct-playwright
+        run: echo "version=$(node scripts/run-ct-tests.mjs --print-playwright-version)" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
+      - name: Install Playwright browsers
+        # --with-deps runs even on a cache hit (OS packages aren't cached),
+        # but the browser download itself is skipped when already present.
+        run: node scripts/run-ct-tests.mjs --install-browsers --with-deps chromium
+      - name: Component tests
+        # list for readable logs; html feeds the failure artifact below (it
+        # never auto-opens when CI is set).
+        run: pnpm run test:ct --reporter=list,html
+      - name: Upload playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   # Single required status check for branch protection: fans in pr-title,
-  # conflict-markers, and the three heavy jobs (checks / build-web / test).
-  # All five must succeed outright.
+  # conflict-markers, and the heavy jobs (checks / build-web / test /
+  # test-ct). pr-title / conflict-markers must succeed outright on every PR.
+  # The heavy jobs must succeed outright too, EXCEPT on release-fast-path PRs
+  # (fast_path == 'true'), where their job-level skip is the expected outcome
+  # (see release-fast-path). The acceptance keys on the fast-path OUTPUT —
+  # never on the skipped status itself — so a skip from any other cause (a
+  # route failure, or a failed release-fast-path job leaving the output
+  # empty) still fails the gate: fail-safe, not fail-open (mirrors intentd's
+  # event/shape-aware gate reasoning, adapted to this workflow's
+  # pull_request-only trigger and non-matrix heavy jobs).
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
     permissions: {}
     if: always()
-    needs: [pr-title, conflict-markers, checks, build-web, test]
+    needs: [release-fast-path, pr-title, conflict-markers, checks, build-web, test, test-ct]
     steps:
       - name: Check results
+        env:
+          FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
         run: |
           if [ "${{ needs.pr-title.result }}" != "success" ] || \
-             [ "${{ needs.conflict-markers.result }}" != "success" ] || \
-             [ "${{ needs.checks.result }}" != "success" ] || \
-             [ "${{ needs.build-web.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ]; then
+             [ "${{ needs.conflict-markers.result }}" != "success" ]; then
             echo "One or more required jobs failed"
             exit 1
           fi
+          # Heavy jobs: success, or skipped ONLY via the release-PR fast path.
+          check_heavy() {
+            if [ "$2" = "success" ]; then
+              return 0
+            fi
+            if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
+              echo "$1 skipped via release-PR fast path — accepted"
+              return 0
+            fi
+            echo "$1 result '$2' not acceptable (fast_path='$FAST_PATH')"
+            exit 1
+          }
+          check_heavy "checks" "${{ needs.checks.result }}"
+          check_heavy "build-web" "${{ needs.build-web.result }}"
+          check_heavy "test" "${{ needs.test.result }}"
+          check_heavy "test-ct" "${{ needs.test-ct.result }}"

@@ -36,10 +36,12 @@ describe('cardStateColor wait/blocked/failed tokens', () => {
     }
   });
 
-  it('unread renders the blue accent token — non-urgent, never warning/red', () => {
-    expect(cardStateColor('unread')).toBe('hsl(var(--ring))');
-    expect(cardStateColor('unread')).not.toBe(WARNING);
-    expect(cardStateColor('unread')).not.toBe(RED);
+  it('the unread overlay token stays the blue accent — non-urgent, never warning/red', () => {
+    // Unread is no longer a card state (intentd#1186) — the token drives the
+    // flag-driven border blink and the UNREAD state bar.
+    expect(HUD_STATE_COLORS.unread).toBe('hsl(var(--ring))');
+    expect(HUD_STATE_COLORS.unread).not.toBe(WARNING);
+    expect(HUD_STATE_COLORS.unread).not.toBe(RED);
   });
 });
 
@@ -88,7 +90,6 @@ describe('canonical HUD state→color mapping (drift pin)', () => {
     expect(cardStateColor('wait')).toBe(HUD_STATE_COLORS.attention);
     expect(cardStateColor('blocked')).toBe(HUD_STATE_COLORS.failed);
     expect(cardStateColor('failed')).toBe(HUD_STATE_COLORS.failed);
-    expect(cardStateColor('unread')).toBe(HUD_STATE_COLORS.unread);
     expect(cardStateColor('pr_open')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_ready')).toBe(HUD_STATE_COLORS.pr);
     expect(cardStateColor('pr_merged')).toBe(HUD_STATE_COLORS.prMerged);

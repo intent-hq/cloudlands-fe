@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import DialogOverlay from './dialog-overlay.svelte';
   import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     ref = $bindable(null),
@@ -10,7 +11,7 @@
     portalProps,
     showCloseButton = true,
     closeDisabled = false,
-    closeLabel = 'Close dialog',
+    closeLabel = m.ui_dialog_close_ariaLabel(),
     children,
     ...restProps
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {

@@ -74,7 +74,7 @@ export const selectSpec = store.createSelector(
 );
 
 export const selectAllNotes = store.createSelector(
-  (state, workspaceId?: string): Note[] => {
+  (state, workspaceId?: string | null): Note[] => {
     if (!workspaceId) return [];
     const ws = state.workspaceNotes.byWorkspaceId[workspaceId];
     if (!ws) return [];

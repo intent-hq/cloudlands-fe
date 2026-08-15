@@ -35,11 +35,13 @@ describe('production route graph', () => {
     expect(routeFiles).toEqual([
       '(app)/+error.svelte',
       '(app)/+layout.svelte',
+      '(app)/+page.svelte',
       '(app)/agent/[id]/+page.svelte',
       '(app)/settings/+page.svelte',
       '(app)/workspace/[id]/+page.svelte',
       '(app)/workspace/[id]/files/+page.svelte',
       '(app)/workspace/creating/+page.svelte',
+      '+error.svelte',
       '+layout.svelte',
       '+layout.ts',
       'hud/+page.svelte',

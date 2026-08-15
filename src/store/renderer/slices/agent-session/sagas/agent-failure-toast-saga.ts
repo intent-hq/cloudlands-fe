@@ -23,6 +23,7 @@
  * Switch To performs the SAME navigation but never calls `agent.retry`.
  */
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
+import type { ComponentProps } from 'svelte';
 import { call, cancelled, fork, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import {
@@ -93,6 +94,11 @@ async function loadToastArtifacts() {
   return { toast, AgentFailureToast: component.default };
 }
 
+/** Toast component props, derived from the dynamic import to avoid a static import edge. */
+type AgentFailureToastProps = ComponentProps<
+  Awaited<ReturnType<typeof loadToastArtifacts>>['AgentFailureToast']
+>;
+
 /**
  * Lazily pull the connected key-slot resolver. The badge is optional: an
  * import or resolution failure degrades to a `null` key slot so the toast
@@ -143,7 +149,7 @@ function* buildToastProps(
   entry: AgentFailureEntry,
   state: AgentToastState,
   emit: FailureEmitter,
-): SagaGenerator<Record<string, unknown>> {
+): SagaGenerator<AgentFailureToastProps> {
   const session = yield* selectAgentSession.effect(entry.agentId);
   const agentName = session?.name && session.name.length > 0 ? session.name : undefined;
   const workspace = yield* selectWorkspaceById.effect(entry.workspaceId);

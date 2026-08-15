@@ -10,7 +10,7 @@ describe('editorial workspace shell presentation contract', () => {
     const layout = source('../PanelLayout.svelte');
 
     expect(layout).toContain(
-      "contained ? 'overflow-hidden py-2 pl-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
+      "contained ? 'overflow-hidden py-2 px-2' : 'overflow-x-auto py-2 pr-2 sm:py-3 sm:pr-3'",
     );
     expect(layout).toContain("use:scrollFade={{ axis: 'x', fadeSize: contained ? 0 : 24 }}");
     expect(layout).toContain('data-testid="panel-workspace-inset"');
@@ -23,14 +23,18 @@ describe('editorial workspace shell presentation contract', () => {
 
     expect(workspace).toContain('workspace-sidebar-panel workspace-sidebar-{sidebarSide}');
     expect(workspace).toContain('@media (max-width: 639px)');
-    expect(workspace).toContain('.upper-area :global(.workspace-sidebar-panel)');
+    expect(workspace).toContain(
+      '.upper-area:not(.workspace-column-layout) :global(.workspace-sidebar-panel)',
+    );
     expect(workspace).toContain('position: absolute');
   });
 
   it('uses a clipped semantic card surface with a consistent light border', () => {
     const panel = source('../Panel.svelte');
 
-    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50 bg-card');
+    expect(panel).toContain('overflow-hidden rounded-lg border border-border/50');
+    expect(panel).toContain("? 'bg-transparent text-sidebar-foreground'");
+    expect(panel).toContain(": 'bg-card text-card-foreground'");
     expect(panel).toContain('width: 100%');
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
@@ -113,31 +117,32 @@ describe('editorial workspace shell presentation contract', () => {
   it('uses equal muted launchers with direct item actions that disappear when expanded', () => {
     const workspace = source('../../../workspace/WorkspaceLayout.svelte');
     const sidebar = source('../../../workspace/MultiSelectTabbedSidebar.svelte');
+    const headerAction = source('../../../workspace/sidebar/SidebarHeaderAction.svelte');
     const tabDefinitions = source('../../../workspace/multi-select-sidebar-tabs.ts');
     const launcherMarkup = sidebar.slice(sidebar.indexOf('<!-- Lightweight launchers'));
 
     expect(workspace).toContain('sidebarMinWidth = 280');
     expect(workspace).toContain('sidebarDefaultWidth = 360');
     expect(workspace).toContain('sidebarPercentageWeight = 0');
-    expect(tabDefinitions).toContain("label: 'Context'");
+    expect(tabDefinitions).toContain('m.workspace_multiSelectSidebar_contextTab_label()');
     expect(sidebar).toContain('grid h-56 w-full auto-rows-fr grid-cols-2 gap-3');
     expect(launcherMarkup).toContain('h-full min-h-0');
-    expect(launcherMarkup).toContain('rounded-lg bg-card border border-border p-3');
+    expect(launcherMarkup).toContain('rounded-lg border border-border bg-card p-2 text-foreground');
     expect(sidebar).toContain('<AuggieAvatar');
     expect(launcherMarkup).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-change={changePath}');
+    expect(launcherMarkup).not.toContain('data-sidebar-change');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
     expect(launcherMarkup).not.toContain('faFolderTree');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_232px]');
     expect(sidebar).toContain('grid-rows-[minmax(0,1fr)_0px]');
     expect(sidebar).toContain('{#if isLauncherOverview}');
-    expect(sidebar).toContain('aria-label={m.ui_tab_close_ariaLabel()}');
-    expect(sidebar).toContain('data-sidebar-close');
-    expect(sidebar).toContain('hover:bg-transparent hover:text-foreground');
+    expect(sidebar).toContain('label={m.ui_tab_close_ariaLabel()}');
+    expect(headerAction).toContain('data-sidebar-close');
+    expect(headerAction).toContain('hover:bg-muted/50!');
     expect(sidebar).toContain('sidebar-expanded-card relative z-10 flex');
-    expect(sidebar).toContain('rounded-lg bg-background border border-border');
+    expect(sidebar).toContain('rounded-lg border border-border bg-card');
     expect(sidebar).not.toContain('.sidebar-expanded-card :global(*)');
     expect(sidebar).not.toContain('view-transition-name: sidebar-section');
     expect(sidebar).toContain('in:cardMorph|global');
@@ -149,7 +154,6 @@ describe('editorial workspace shell presentation contract', () => {
     const titlebar = source('../../WindowTitleBar.svelte');
     const tabs = source('../../WorkspaceTabStrip.svelte');
     const nav = source('../../sidebar-nav/SidebarNav.svelte');
-    const chiefTrigger = source('../../sidebar-nav/ChiefTrigger.svelte');
     const workspaceHeader = source('../../../workspace/WorkspaceSidebarHeader.svelte');
     const progressCard = source('../../../workspace/sidebar/WorkspaceProgressCard.svelte');
 
@@ -175,7 +179,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('style="-webkit-app-region: no-drag"');
     expect(titlebar).toContain('<WorkspaceRepoLauncher />');
     expect(titlebar).toContain('data-titlebar-settings');
-    expect(titlebar).toContain('icon={faSettings}');
+    expect(titlebar).toContain('<IntentNavigationIcon name="settings" size={16}');
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
@@ -186,8 +190,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
-    expect(chiefTrigger).toContain("togglePanel('chief')");
-    expect(chiefTrigger).toContain('data-chief-trigger');
+    expect(nav).toContain('data-titlebar-spaces-control');
+    expect(nav).toContain('name="dandelion"');
+    expect(nav).not.toContain('name="spaces"');
+    expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
     expect(progressCard).toContain('label: m.ui_sidebar_toggle_label()');
@@ -202,20 +208,19 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('style:transform="scale({$counterScale})"');
   });
 
-  it('moves the Chief trigger to the title bar and removes its former workspace notch', () => {
+  it('consolidates Chief and Spaces in the title bar and removes the former workspace notch', () => {
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
-    const chiefTrigger = source('../../sidebar-nav/ChiefTrigger.svelte');
+    const navigation = source('../../sidebar-nav/SidebarNav.svelte');
     const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(chiefTrigger).toContain('aria-label="Toggle Chief of Staff"');
-    expect(chiefTrigger).toContain('aria-expanded={isActive}');
-    expect(chiefTrigger).not.toContain('aria-pressed');
-    expect(chiefTrigger).not.toContain('bg-sidebar-accent');
-    expect(chiefTrigger).toContain('<AuggieAvatar size={20} />');
+    expect(navigation).toContain('aria-label={m.ui_shortcuts_toggleSpaces_label()}');
+    expect(navigation).toContain('aria-pressed={active}');
+    expect(navigation).toContain('aria-haspopup="dialog"');
+    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
@@ -240,11 +245,14 @@ describe('editorial workspace shell presentation contract', () => {
     const terminal = source('../../../terminal/QuakeTerminalOverlay.svelte');
     const route = source('../../../../../routes/(app)/workspace/[id]/WorkspaceSurface.svelte');
 
-    expect(sidebar).toContain('<WorkspaceTerminalDock {workspaceId} />');
-    expect(sidebar).toContain("class={cn('flex h-full flex-col bg-transparent', className)}");
+    expect(sidebar).toContain('<WorkspaceTerminalDock');
+    expect(sidebar).toContain("onExpand={() => handleTabClick('shell')}");
+    expect(sidebar).toContain(
+      "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
+    );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
-    expect(dock).toContain('rounded-lg border border-border bg-card px-4 py-2');
+    expect(dock).toContain('rounded-lg border border-border bg-card px-3 text-foreground');
     expect(dock).toContain('border-0 bg-transparent p-0');
     expect(dock).not.toContain('faPlus');
     expect(dock).not.toContain('faChevron');

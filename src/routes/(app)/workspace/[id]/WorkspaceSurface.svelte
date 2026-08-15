@@ -67,6 +67,7 @@
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
   import ResourceNotFound from '$lib/components/common/ResourceNotFound.svelte';
+  import WorkspaceSurfaceLoadBoundary from './WorkspaceSurfaceLoadBoundary.svelte';
   import InputDialog from '$lib/components/modals/InputDialog.svelte';
   import QuakeTerminalOverlay from '$lib/components/terminal/QuakeTerminalOverlay.svelte';
   import { PanelLayout } from '$lib/components/layout/panel-system';
@@ -107,6 +108,7 @@
     active?: boolean;
     manageTab?: boolean;
     columnMode?: boolean;
+    retainWorkspaceSessionOnUnmount?: boolean;
     onCloseWorkspace?: (event: MouseEvent) => void;
     onSidebarWidthChange?: (width: number) => void;
     onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
@@ -119,6 +121,7 @@
     active = true,
     manageTab = true,
     columnMode = false,
+    retainWorkspaceSessionOnUnmount = false,
     onCloseWorkspace,
     onSidebarWidthChange,
     onPanelMovePreviewWidthRatioChange,
@@ -132,6 +135,7 @@
   const panelColumnCountsByWorkspaceId$ = selectPanelColumnCountsByWorkspaceId();
   const columnPanelCount = $derived($panelColumnCountsByWorkspaceId$[panelLayoutId] ?? 0);
   let sidebarFillsAvailableWidth = $state(false);
+  let availablePanelCanvasWidth = $state(0);
   let previousColumnPanelCount: number | null = null;
   let sidebarFillTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -171,25 +175,18 @@
   const sidebarSide$ = selectSidebarSide();
 
   // Create unified state for this workspace
-  // @ts-expect-error - Svelte 5 rune scoping issue
-  let workspaceState = $state(null);
-  // @ts-expect-error - Svelte 5 rune scoping issue
+  let workspaceState = $state<ReturnType<typeof createWorkspacePageState> | null>(null);
   let stateDisposing = $state(false);
-  // @ts-expect-error - Svelte 5 rune scoping issue
-  let previousWorkspaceId = $state(null);
+  let previousWorkspaceId = $state<string | null>(null);
   // Fade-in transition for fresh workspace creation (crossfade with onboarding page)
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let isFreshCreation = $state(false);
 
   // Crossfade transition state: onboardingHoldActive keeps onboarding visible
   // during the fade-out after workspaceId changes from 'new' to a real ID.
   // showOnboarding is derived after workspaceId is defined (see below).
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let onboardingHoldActive = $state(false);
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let onboardingFadingOut = $state(false);
   // Create file dialog state
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let createFileDialogOpen = $state(false);
   let createFileFolderPath = '';
   let surfaceElement = $state<HTMLElement | null>(null);
@@ -292,7 +289,6 @@
   // and explicitly click to proceed, so they can review agent setup.
 
   // Track previous showOnboarding state to detect onboarding→workspace transition
-  // @ts-expect-error - Svelte 5 rune scoping issue
   let prevShowOnboarding = $state(true);
 
   // Expand the sidebar when transitioning from onboarding to workspace.
@@ -881,7 +877,7 @@
 
     // Dispatch workspaceUnmounted so sagas can clean up (cancel agent loading,
     // terminal loading, spec panel, window event watchers for this workspace).
-    if (workspaceId) {
+    if (workspaceId && !retainWorkspaceSessionOnUnmount) {
       appStore.dispatch(workspaceUnmounted(workspaceId));
     }
 
@@ -892,8 +888,10 @@
     workspaceState = null;
 
     // Clear all local state
-    appStore.dispatch(setAgents(workspaceId, []));
-    appStore.dispatch(setAgentsLoaded(workspaceId, false));
+    if (!retainWorkspaceSessionOnUnmount) {
+      appStore.dispatch(setAgents(workspaceId, []));
+      appStore.dispatch(setAgentsLoaded(workspaceId, false));
+    }
 
     // Dispose all managed resources (timers, intervals, etc.)
     cleanupManager.dispose();
@@ -941,12 +939,12 @@
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
+        {availablePanelCanvasWidth}
         {onCloseWorkspace}
         draggableTitleRegion={columnMode}
         onCreateNote={handleCreateNote}
         onCreateFile={handleCreateFile}
         onFileRenamed={handleFileRenamed}
-        onAcceptChanges={() => workspaceState?.openAcceptChanges()}
         isNewWorkspaceSession={$isNewWorkspaceSession$}
         onCreateAgent={handleCreateAgent}
         onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
@@ -1005,6 +1003,7 @@
             onCreateNote={handleCreateNote}
             {onPanelMovePreviewWidthRatioChange}
             {onPanelCanvasWidthChange}
+            onAvailableCanvasWidthChange={(width) => (availablePanelCanvasWidth = width)}
             {onCyclePanelBoundary}
           />
         </div>
@@ -1042,19 +1041,28 @@
   data-active={active}
   data-loading={!$workspace}
 >
-  <WorkspaceLayout
-    sidebar={sidebarContent}
-    content={mainContent}
-    terminalOverlay={terminalOverlayContent}
-    modals={modalsContent}
-    sidebarSide={$sidebarSide$}
-    sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
-    sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
-    {sidebarFillsAvailableWidth}
-    disableSidebarWidthTransition={columnMode}
-    {onSidebarWidthChange}
-    startCollapsed={isOnboarding}
-  />
+  <WorkspaceSurfaceLoadBoundary
+    loadError={isCreatingWorkspace ? null : workspaceLoader.loadError}
+    resourceLabel={m.workspace_page_workspaceResource_label()}
+    resourceId={workspaceId}
+    onNavigateAway={() => void navigateToFirstWorkspace()}
+  >
+    {#snippet children()}
+      <WorkspaceLayout
+        sidebar={sidebarContent}
+        content={mainContent}
+        terminalOverlay={terminalOverlayContent}
+        modals={modalsContent}
+        sidebarSide={$sidebarSide$}
+        sidebarStorageKey={`workspace-left-panel-width:${workspaceId}`}
+        sidebarExpandedStorageKey={`workspace-left-panel-expanded-width:${workspaceId}`}
+        {sidebarFillsAvailableWidth}
+        disableSidebarWidthTransition={columnMode}
+        {onSidebarWidthChange}
+        startCollapsed={isOnboarding}
+      />
+    {/snippet}
+  </WorkspaceSurfaceLoadBoundary>
 </div>
 
 <style>

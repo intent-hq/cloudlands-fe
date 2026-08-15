@@ -205,7 +205,7 @@ async function prepareCommitContext(
   try {
     const historyResult = await gitClient.getHistory(workspace.id, 5);
     if (historyResult.ok) {
-      recentCommits = historyResult.data.map((commit) => commit.message).filter(Boolean);
+      recentCommits = historyResult.data.items.map((commit) => commit.message).filter(Boolean);
     }
   } catch (error) {
     logger.warn('Failed to get recent commits:', error);
@@ -322,14 +322,14 @@ async function preparePRContext(
     const historyResult = await gitClient.getHistory(workspace.id, 50);
     if (historyResult.ok) {
       const hashSet = new Set(context.includeCommitHashes);
-      commits = historyResult.data
+      commits = historyResult.data.items
         .filter((c) => hashSet.has(c.hash))
         .map((c) => ({ sha: c.hash, message: c.message, author: c.author, date: c.date }));
     }
   } else {
     const historyResult = await gitClient.getHistory(workspace.id, 20);
     if (historyResult.ok) {
-      commits = historyResult.data.map((c) => ({
+      commits = historyResult.data.items.map((c) => ({
         sha: c.hash,
         message: c.message,
         author: c.author,

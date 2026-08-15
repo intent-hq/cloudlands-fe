@@ -63,9 +63,6 @@ vi.mock('$lib/components/layout/sidebar-nav', async () => ({
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$lib/components/UpdateDownloadIndicator.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/ui/toast/Toast.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.28.0",
+  "version": "2.49.1",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -48,7 +48,7 @@
     "reset-onboarding:restore": "bash scripts/reset-onboarding.sh restore",
     "test:diff-viewer": "tsx test/test-diff-viewer.ts",
     "test:diff-viewer:watch": "tsx watch test/test-diff-viewer.ts",
-    "check": "svelte-check --tsconfig ./tsconfig.json --output human --threshold error",
+    "check": "node scripts/run-svelte-check.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . && pnpm run lint:i18n-strings && pnpm run lint:i18n-completeness",

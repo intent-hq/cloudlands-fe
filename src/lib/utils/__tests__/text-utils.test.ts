@@ -14,9 +14,26 @@ import {
   extractTextFromBlocks,
   getAgentSummaryText,
   stripUserMessagePrefixes,
+  stripGroupTags,
 } from '../text-utils';
 
 describe('text-utils', () => {
+  describe('stripGroupTags', () => {
+    it('should strip open and close group tags', () => {
+      expect(stripGroupTags('<group:Work>doing stuff</group:Work>')).toBe('doing stuff');
+      expect(stripGroupTags('<group:Work>doing stuff</group>')).toBe('doing stuff');
+    });
+
+    it('should strip the empty-name close tag </group:>', () => {
+      expect(stripGroupTags('doing stuff</group:>')).toBe('doing stuff');
+    });
+
+    it('should strip the fused malformed form <group:Name</group:>', () => {
+      expect(stripGroupTags('<group:Wrapping up</group:>\nall done')).toBe('all done');
+      expect(stripGroupTags('<group:Wrapping up</group>\nall done')).toBe('all done');
+    });
+  });
+
   describe('getLastMeaningfulLine', () => {
     it('should return empty string for empty input', () => {
       expect(getLastMeaningfulLine('')).toBe('');
