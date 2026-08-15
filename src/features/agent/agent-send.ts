@@ -41,7 +41,7 @@ import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/c
 import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
 import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
-import { getAgentQueueEventSnapshotSeq } from './agent-queue-read-service';
+import { getAgentQueueEventSnapshotSeq, hydrateAgentQueue } from './agent-queue-read-service';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -459,8 +459,9 @@ export async function sendMessage(
                             { agentId, queuedMessageId: queuedMessage.id },
                           );
                         }
-                        // Seed only when no live agent:queue:updated snapshot
-                        // was folded since the send started — a snapshot
+                        // Seed only when no authoritative snapshot — live
+                        // agent:queue:updated fold or hydrate-reconciled fold
+                        // — landed since the send started: a snapshot
                         // (including the shrunk-after-drain one) is at least
                         // as fresh as this echo, so seeding over it would
                         // re-add a just-drained row (monorepo#2481).
@@ -475,9 +476,20 @@ export async function sendMessage(
                           dispatchRedux(replaceAgentQueue(agentId, next));
                         } else {
                           logger.debug(
-                            'skipping queued-response queue seed; superseded by a live agent:queue:updated snapshot',
+                            'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
                             { agentId, queuedMessageId: queuedMessage.id },
                           );
+                          // Client-side apply order cannot rank the superseding
+                          // snapshot against this echo — a hydrate whose
+                          // getQueue the daemon served BEFORE this send would
+                          // wrongly suppress a still-queued row (monorepo#2486
+                          // review). By now the daemon has processed the send,
+                          // so one reconciling hydrate returns the true queue
+                          // in both directions: the row if still queued,
+                          // without it if drained. Swallowed on failure — the
+                          // send itself succeeded, and the service leaves the
+                          // prior mirror intact on error.
+                          await hydrateAgentQueue(agentId).catch(() => undefined);
                         }
                       }
 
