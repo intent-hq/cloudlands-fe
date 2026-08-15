@@ -180,42 +180,48 @@ describe('findModelTabByExactUrl (#2541)', () => {
 
   it('returns a tab this agent opened on the exact URL and refreshes its lease', async () => {
     const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: URL_A, title: 'A' }]);
     mocks.getAllWebContents.mockReturnValue([fakeWebview(41, URL_A)]);
     service.registerTab('tab-a', 41);
     service.touchLease('tab-a', 'agent-1');
 
-    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBe('tab-a');
+    await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBe('tab-a');
     // Reuse re-claims the lease for the requesting agent
     expect(service.findIdleTab('agent-1')).toBeUndefined();
   });
 
   it('never returns a user-opened tab (no lease entry)', async () => {
     const service = await loadService();
+    wireRenderer([{ tabId: 'tab-user', url: URL_A, title: 'A' }]);
     mocks.getAllWebContents.mockReturnValue([fakeWebview(42, URL_A)]);
     service.registerTab('tab-user', 42);
 
-    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
+    await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBeUndefined();
   });
 
   it('skips a tab actively leased by a different agent', async () => {
     const service = await loadService();
+    wireRenderer([{ tabId: 'tab-other', url: URL_A, title: 'A' }]);
     mocks.getAllWebContents.mockReturnValue([fakeWebview(43, URL_A)]);
     service.registerTab('tab-other', 43);
     service.touchLease('tab-other', 'agent-2');
 
-    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
+    await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBeUndefined();
   });
 
   it("claims another agent's tab once its lease has expired", async () => {
     vi.useFakeTimers();
     try {
       const service = await loadService();
+      wireRenderer([{ tabId: 'tab-expired', url: URL_A, title: 'A' }]);
       mocks.getAllWebContents.mockReturnValue([fakeWebview(44, URL_A)]);
       service.registerTab('tab-expired', 44);
       service.touchLease('tab-expired', 'agent-2');
       vi.advanceTimersByTime(4 * 60 * 1000); // past the 3-minute idle timeout
 
-      expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBe('tab-expired');
+      await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBe(
+        'tab-expired',
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -223,11 +229,26 @@ describe('findModelTabByExactUrl (#2541)', () => {
 
   it('matches by exact string equality only — no URL normalization', async () => {
     const service = await loadService();
+    wireRenderer([{ tabId: 'tab-slash', url: `${URL_A}/`, title: 'A' }]);
     mocks.getAllWebContents.mockReturnValue([fakeWebview(45, `${URL_A}/`)]);
     service.registerTab('tab-slash', 45);
     service.touchLease('tab-slash', 'agent-1');
 
-    expect(service.findModelTabByExactUrl(URL_A, 'agent-1')).toBeUndefined();
-    expect(service.findModelTabByExactUrl(`${URL_A}/`, 'agent-1')).toBe('tab-slash');
+    await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBeUndefined();
+    await expect(service.findModelTabByExactUrl(`${URL_A}/`, 'agent-1', 'ws-1')).resolves.toBe(
+      'tab-slash',
+    );
+  });
+
+  it("never returns a matching tab from another workspace's panel layout", async () => {
+    const service = await loadService();
+    // The requesting workspace's layout has no tab on URL_A; the live
+    // webview belongs to a different workspace's layout.
+    wireRenderer([]);
+    mocks.getAllWebContents.mockReturnValue([fakeWebview(46, URL_A)]);
+    service.registerTab('tab-elsewhere', 46);
+    service.touchLease('tab-elsewhere', 'agent-1');
+
+    await expect(service.findModelTabByExactUrl(URL_A, 'agent-1', 'ws-1')).resolves.toBeUndefined();
   });
 });
