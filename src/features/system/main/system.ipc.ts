@@ -72,9 +72,11 @@ import { withDiffTempFiles } from '../../ide/main/diff-temp-files.service';
 import {
   getWindowAppearanceOptions,
   getWindowBackgroundColor,
+  getWindowTitleBarOptions,
 } from '../../../shared/main/window-appearance';
 import { meetsMinimumVersion } from '../../../shared/utils/version-compare';
 import { posixSingleQuote } from '../../../shared/utils/posix-single-quote';
+import { resolveAppTitle } from '../../../main/utils/resolve-app-title';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -864,6 +866,7 @@ export function setupSystemIPC() {
     }
 
     const isDarkMode = nativeTheme.shouldUseDarkColors;
+    const isDev = process.env.NODE_ENV === 'development';
     const newWindow = new BrowserWindow({
       width: 1920,
       height: 1080,
@@ -877,15 +880,13 @@ export function setupSystemIPC() {
         nodeIntegration: false,
         webviewTag: true,
       },
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      frame: process.platform !== 'darwin',
-      ...(process.platform === 'darwin' && {
-        trafficLightPosition: { x: 9, y: 11 },
-        tabbingIdentifier: 'intent',
-      }),
-      title: 'Intent',
+      ...getWindowTitleBarOptions(isDev),
+      title: resolveAppTitle(),
       ...getWindowAppearanceOptions(isDarkMode),
     });
+    if (isDev) {
+      newWindow.on('page-title-updated', (event) => event.preventDefault());
+    }
     forwardRendererConsoleToMainLog(newWindow);
 
     // Register BEFORE loadURL so a concurrent HUD-open request reuses this
@@ -899,8 +900,6 @@ export function setupSystemIPC() {
     });
 
     // Load the app with the specified route
-    const isDev = process.env.NODE_ENV === 'development';
-
     if (isDev) {
       const devPort = process.env.DEV_PORT || '5190';
       const baseUrl = `http://127.0.0.1:${devPort}`;

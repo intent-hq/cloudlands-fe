@@ -11,6 +11,7 @@ const electronMocks = vi.hoisted(() => {
     static fromWebContents = vi.fn(() => undefined);
 
     id: number;
+    options: Record<string, unknown>;
     destroyed = false;
     minimized = false;
     loadedUrl: string | null = null;
@@ -36,8 +37,9 @@ const electronMocks = vi.hoisted(() => {
       send: vi.fn(),
     };
 
-    constructor(_options: unknown) {
+    constructor(options: Record<string, unknown>) {
       this.id = constructed.length + 1;
+      this.options = options;
       constructed.push(this);
     }
 
@@ -151,5 +153,29 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     )) as { success: boolean; windowId: number };
     expect(viaCreate).toEqual({ success: true, windowId: electronMocks.constructed[0].id });
     expect(electronMocks.constructed).toHaveLength(1);
+  });
+
+  it('uses the shared development title and native title-bar contract', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousDevName = process.env.DEV_NAME;
+    process.env.NODE_ENV = 'development';
+    process.env.DEV_NAME = 'polish-ui';
+
+    try {
+      await handlerFor(WINDOW_CHANNELS.OPEN_NEW)({ sender: {} }, { route: '/hud' });
+      const window = electronMocks.constructed[0];
+
+      expect(window.options).toMatchObject({
+        title: 'Electron [polish-ui]',
+        titleBarStyle: 'default',
+        frame: true,
+      });
+      expect(window.on).toHaveBeenCalledWith('page-title-updated', expect.any(Function));
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousDevName === undefined) delete process.env.DEV_NAME;
+      else process.env.DEV_NAME = previousDevName;
+    }
   });
 });

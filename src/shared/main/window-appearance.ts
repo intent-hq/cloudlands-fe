@@ -16,3 +16,23 @@ export function getWindowAppearanceOptions(
 ): BrowserWindowConstructorOptions {
   return { backgroundColor: getWindowBackgroundColor(isDarkMode, platform) };
 }
+
+export function getWindowTitleBarOptions(
+  isDevelopment: boolean,
+  platform: NodeJS.Platform = process.platform,
+): BrowserWindowConstructorOptions {
+  if (platform !== 'darwin') {
+    return { titleBarStyle: 'default', frame: true };
+  }
+
+  if (isDevelopment) {
+    return { titleBarStyle: 'default', frame: true, tabbingIdentifier: 'intent' };
+  }
+
+  return {
+    titleBarStyle: 'hiddenInset',
+    frame: false,
+    trafficLightPosition: { x: 9, y: 11 },
+    tabbingIdentifier: 'intent',
+  };
+}

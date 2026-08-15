@@ -10,7 +10,10 @@ import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { getWindowAppearanceOptions } from '../shared/main/window-appearance';
+import {
+  getWindowAppearanceOptions,
+  getWindowTitleBarOptions,
+} from '../shared/main/window-appearance';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -103,12 +106,7 @@ function buildWindowOptions(opts: {
       nodeIntegration: false,
       webviewTag: true,
     },
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    frame: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' && {
-      trafficLightPosition: { x: 9, y: 11 },
-      tabbingIdentifier: 'intent',
-    }),
+    ...getWindowTitleBarOptions(process.env.NODE_ENV === 'development'),
     title: opts.title,
     ...getWindowAppearanceOptions(isDarkMode),
     ...(opts.iconPath && { icon: opts.iconPath }),
