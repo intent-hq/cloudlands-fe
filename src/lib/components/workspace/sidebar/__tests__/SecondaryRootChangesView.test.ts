@@ -528,4 +528,66 @@ describe('SecondaryRootChangesView', () => {
     await waitFor(() => expect(mocks.commitDetails).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(1));
   });
+
+  it('resets expand state on a root switch and drops a stale in-flight details response', async () => {
+    mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
+    mocks.getHistory.mockResolvedValue({
+      ok: true,
+      data: { items: [makeCommit('aaaa111', 'feat: shared commit')] },
+    });
+    // Old root's details read stays in flight across the root switch.
+    let resolveDetails!: (value: unknown) => void;
+    mocks.commitDetails.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDetails = resolve;
+      }),
+    );
+    const { getAllByTestId, queryAllByTestId, rerender } = await renderView(
+      makeEntry('main', 'root-9'),
+    );
+    const toggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-9' }),
+    );
+
+    // Switch roots: the $effect resets expandedCommits + commitFileCache.
+    await rerender({ workspaceId: 'ws-1', entry: makeEntry('main', 'root-10') });
+    await waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2));
+
+    // The stale response resolves after the switch — it must be discarded, so
+    // the new root's row stays collapsed with an empty cache (no file rows).
+    resolveDetails({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: shared commit',
+      files: ['src/stale.ts'],
+      fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
+    });
+    await waitFor(() => expect(queryAllByTestId('file-row')).toHaveLength(0));
+
+    // Expanding on the new root fetches fresh, scoped to the new gitRootId.
+    mocks.commitDetails.mockResolvedValueOnce({
+      commitHash: 'aaaa111',
+      author: 'Dev',
+      authorEmail: 'dev@example.com',
+      date: '2026-07-01T00:00:00Z',
+      message: 'feat: shared commit',
+      files: ['src/fresh.ts'],
+      fileDetails: [{ path: 'src/fresh.ts', additions: 1, deletions: 0 }],
+    });
+    const newToggle = await waitFor(() => getAllByTestId('secondary-root-commit-toggle')[0]);
+    await fireEvent.click(newToggle);
+    await waitFor(() =>
+      expect(mocks.commitDetails).toHaveBeenCalledWith('ws-1', 'aaaa111', { gitRootId: 'root-10' }),
+    );
+    const rows = await waitFor(() => {
+      const fileRows = queryAllByTestId('file-row');
+      expect(fileRows).toHaveLength(1);
+      return fileRows;
+    });
+    expect(rows[0].getAttribute('data-file-path')).toBe('src/fresh.ts');
+  });
 });

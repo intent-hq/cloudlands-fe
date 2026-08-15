@@ -420,6 +420,8 @@
           toggleCommitExpanded(commit);
         }}
         title={m.workspace_prSection_toggleFileList_tooltip()}
+        aria-expanded={isExpanded}
+        aria-label={m.workspace_prSection_toggleFileList_tooltip()}
         data-testid="secondary-root-commit-toggle"
       >
         <Fa
