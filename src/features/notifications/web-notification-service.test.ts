@@ -11,11 +11,17 @@ const { mockAppStore, mockState, mockPlayNotificationSound, mockBackendRequest }
         soundOnlyWhenUnfocused: false,
         volume: 0.5,
       },
-      workspace: { activeWorkspaceId: null as string | null },
+      tabState: { currentTabId: null as string | null },
     };
     return {
       mockState,
-      mockAppStore: { state: mockState, dispatch: vi.fn() },
+      mockAppStore: {
+        state: mockState,
+        dispatch: vi.fn(),
+        createSelector: (selector: (state: typeof mockState) => unknown) => ({
+          select: (state: typeof mockState) => selector(state),
+        }),
+      },
       mockPlayNotificationSound: vi.fn(() => Promise.resolve()),
       mockBackendRequest: vi.fn(),
     };
@@ -190,7 +196,7 @@ describe('web-notification-service', () => {
     mockState.userPreferences.soundEnabled = true;
     mockState.userPreferences.soundOnlyWhenUnfocused = false;
     mockState.userPreferences.volume = 0.5;
-    mockState.workspace.activeWorkspaceId = null;
+    mockState.tabState.currentTabId = null;
     MockNotification.permission = 'granted';
     MockNotification.instances = [];
     MockNotification.requestPermission = vi.fn(async () => MockNotification.permission);
@@ -477,7 +483,7 @@ describe('web-notification-service', () => {
 
     it('suppresses the banner when focused viewing the workspace with soundOnlyWhenUnfocused (sound gate still runs and declines while focused)', async () => {
       mockState.userPreferences.soundOnlyWhenUnfocused = true;
-      mockState.workspace.activeWorkspaceId = 'ws-1';
+      mockState.tabState.currentTabId = 'ws-1';
       hasFocusSpy.mockReturnValue(true);
 
       await handleWebAgentIdle(makeIdleEvent());
@@ -493,7 +499,7 @@ describe('web-notification-service', () => {
 
     it('shows the banner when focused on a DIFFERENT workspace with soundOnlyWhenUnfocused', async () => {
       mockState.userPreferences.soundOnlyWhenUnfocused = true;
-      mockState.workspace.activeWorkspaceId = 'ws-other';
+      mockState.tabState.currentTabId = 'ws-other';
       hasFocusSpy.mockReturnValue(true);
 
       await handleWebAgentIdle(makeIdleEvent());
@@ -502,7 +508,7 @@ describe('web-notification-service', () => {
     });
 
     it('shows the banner when focused viewing the workspace with soundOnlyWhenUnfocused OFF', async () => {
-      mockState.workspace.activeWorkspaceId = 'ws-1';
+      mockState.tabState.currentTabId = 'ws-1';
       hasFocusSpy.mockReturnValue(true);
 
       await handleWebAgentIdle(makeIdleEvent());

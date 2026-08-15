@@ -69,8 +69,8 @@ describe('workspaceSwitcherReducer', () => {
 describe('workspace switcher selectors', () => {
   function stateWith(selectedIndex: number, selectionHandled: boolean) {
     return {
+      tabState: { currentTabId: 'ws-1' },
       workspace: {
-        activeWorkspaceId: 'ws-1',
         recency: { lastViewedAt: { 'ws-2': 20, 'ws-1': 10, 'ws-3': 5 } },
         workspaces: createCollection(
           'id',
@@ -95,12 +95,22 @@ describe('workspace switcher selectors', () => {
   it('selects the ordered workspace ids and current selection while open', () => {
     const state = stateWith(1, false);
     expect(selectSwitcherState.select(state as never)).toEqual(state.workspaceSwitcher);
-    expect(selectSwitcherWorkspaceIds.select(state as never)).toEqual(['ws-1', 'ws-2', 'ws-3']);
-    expect(selectSelectedWorkspaceId.select(state as never)).toBe('ws-2');
+    expect(
+      selectSwitcherWorkspaceIds.select(state as never, state.tabState.currentTabId),
+    ).toEqual(['ws-1', 'ws-2', 'ws-3']);
+    expect(
+      selectSelectedWorkspaceId.select(state as never, state.tabState.currentTabId),
+    ).toBe('ws-2');
   });
 
   it('returns no ids while closed and null for an out-of-range selection', () => {
-    expect(selectSwitcherWorkspaceIds.select(stateWith(0, true) as never)).toEqual([]);
-    expect(selectSelectedWorkspaceId.select(stateWith(3, false) as never)).toBeNull();
+    const closed = stateWith(0, true);
+    expect(
+      selectSwitcherWorkspaceIds.select(closed as never, closed.tabState.currentTabId),
+    ).toEqual([]);
+    const outOfRange = stateWith(3, false);
+    expect(
+      selectSelectedWorkspaceId.select(outOfRange as never, outOfRange.tabState.currentTabId),
+    ).toBeNull();
   });
 });

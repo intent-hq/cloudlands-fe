@@ -7,37 +7,31 @@
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import {
-  setPostMergeState,
-  setGitOperationFlag,
-  loadGitStatus,
-} from '$store/renderer/slices/git/git-slice';
+    loadGitStatus,
+    setPostMergeState,
+    setGitOperationFlag,
+  } from '$store/renderer/slices/git/git-slice';
   import {
-  refreshAcceptChangesStatus,
-  clearOlderCommits as ftClearOlderCommits,
-  refreshRequested,
-} from '$store/renderer/slices/changes/changes-slice';
+    refreshAcceptChangesStatus,
+    clearOlderCommits as ftClearOlderCommits,
+    refreshRequested,
+  } from '$store/renderer/slices/changes/changes-slice';
   import {
-  selectPostMergeState,
-  selectGitOperationFlags,
-} from '$store/renderer/slices/git/git-selectors';
+    selectPostMergeState,
+    selectGitOperationFlags,
+  } from '$store/renderer/slices/git/git-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  loadWorkspacesRequested,
-  setWorkspaceEntity,
-} from '$store/renderer/slices/workspace/workspace-slice';
-
-
+    loadWorkspacesRequested,
+    setWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
 
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { PostMergeState } from '$store/renderer/slices/git/git-types';
-  import {
-  faRotateLeft,
-  faRocket,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faRotateLeft, faRocket, faSpinner } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
@@ -50,7 +44,6 @@
   }
 
   let { workspaceId, hasNoLocalChanges, trunkBranch }: Props = $props();
-
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -102,7 +95,8 @@
     }
 
     // Open the create workspace modal
-    const { setShowCreateModal } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+    const { setShowCreateModal } =
+      await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
     appStore.dispatch(setShowCreateModal(true));
   }
 
@@ -127,7 +121,7 @@
           // Clear older commits pagination cache which may reference commits from old history
           appStore.dispatch(ftClearOlderCommits(workspaceId));
 
-          // Refresh all stores in parallel
+          // Git and Changes have separate canonical read owners; preserve dispatch order.
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
             appStore.dispatch(refreshRequested(workspaceId, true)),
@@ -205,12 +199,7 @@
   {#if hasNoLocalChanges && !$workspace?.archived}
     <!-- Archive and start new space button -->
     <div>
-      <Button
-        variant="outline"
-        size="sm"
-        class="w-full gap-2"
-        onclick={handleStartNewSpace}
-      >
+      <Button variant="outline" size="sm" class="w-full gap-2" onclick={handleStartNewSpace}>
         <Fa icon={faRocket} size="sm" class="text-primary" />
         <span>{m.workspace_postMerge_archiveStartNew_label()}</span>
       </Button>

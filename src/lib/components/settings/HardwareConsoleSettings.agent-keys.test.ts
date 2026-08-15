@@ -61,7 +61,6 @@ async function buildState() {
   return {
     hardwareConsole: { ...initialState, enabled: true },
     workspace: {
-      activeWorkspaceId: null,
       workspaces: createCollection('id', [
         workspace('ws-a', 'Alpha', '2026-08-01T12:00:00Z'),
         workspace('ws-b', 'Beta', '2026-08-01T11:00:00Z'),

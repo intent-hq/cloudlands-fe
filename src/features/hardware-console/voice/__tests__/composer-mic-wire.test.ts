@@ -13,8 +13,8 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const mockState = {
+  tabState: { currentTabId: 'ws-1' },
   workspace: {
-    activeWorkspaceId: 'ws-1',
     workspaces: createCollection('id', [
       { id: 'ws-1', title: 'Feature add', branch: 'feature-add' } as never,
     ]),
@@ -31,6 +31,9 @@ vi.mock('$store/renderer/store', () => ({
       return mockState;
     },
     dispatch: vi.fn((action: { type: string }) => action),
+    createSelector: (fn: (state: unknown, ...args: unknown[]) => unknown) => ({
+      select: (state: unknown, ...args: unknown[]) => fn(state, ...args),
+    }),
   },
 }));
 vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
@@ -104,6 +107,7 @@ describe('composer mic latch → voice.transcribe wire contract', () => {
   it('latch stop sends the exact §5.41 request and inserts the mock transcript', async () => {
     const mockInvoke = vi.fn().mockResolvedValue({ ok: true, result: TRANSCRIBE_RESULT });
     vi.stubGlobal('window', {
+      location: { pathname: '/workspace/ws-1' },
       electronAPI: { invoke: mockInvoke, on: vi.fn(), offById: vi.fn() },
     });
 

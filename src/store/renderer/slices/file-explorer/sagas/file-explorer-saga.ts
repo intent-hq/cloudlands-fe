@@ -15,10 +15,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { getAgentFileEdits, propagateAgentEditsToParents } from '$lib/utils/agent-file-edits';
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 import type { FileGitStatus, FileNode } from '$shared/types';
-import {
-  workspaceDeleted,
-  workspaceUnmounted,
-} from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectFileExplorerState } from '../file-explorer-selectors';
 import {
   addExpandedPath,
@@ -57,7 +54,7 @@ type EditRefreshAction =
 
 function isWorkspaceCleanup(action: ObservedAction, wsId: string): boolean {
   return (
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === wsId
   );

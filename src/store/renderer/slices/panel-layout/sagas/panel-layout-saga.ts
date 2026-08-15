@@ -33,7 +33,6 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
 import {
   resolveCanonicalInitialAgent,
   selectAllWorkspaceAgents,
@@ -620,8 +619,7 @@ function* handleNewWorkspaceBootstrap(
   yield* call(reconcileDeferredSpec, wsId);
 }
 
-function* retroactiveRestore(): SagaGenerator<void> {
-  const activeWsId = yield* selectActiveWorkspaceId.effect();
+function* retroactiveRestore(activeWsId: string | null): SagaGenerator<void> {
   if (isValidWorkspaceId(activeWsId)) {
     yield* call(handleWorkspaceMountedRestore, workspaceMounted(activeWsId));
   }
@@ -633,7 +631,8 @@ function* retroactiveRestore(): SagaGenerator<void> {
  * with nothing saved must be reset rather than left showing (and later
  * persisting) the previous backend's layout.
  */
-function* restoreWorkspaceAfterBackendSwitch(wsId: string): SagaGenerator<void> {
+function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
+  if (!isValidWorkspaceId(wsId)) return;
   restoredWorkspaceIds.add(wsId);
   yield* put(setRestoreStatus(wsId, 'pending'));
   const stored = yield* call(loadLayoutFromStorage, wsId);
@@ -662,17 +661,16 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
   restoredUnderBackendIds.clear();
-  const wsIds = new Set(mountedWorkspaceIds);
-  const activeWsId = yield* selectActiveWorkspaceId.effect();
-  if (isValidWorkspaceId(activeWsId)) wsIds.add(activeWsId);
-  for (const wsId of wsIds) {
-    if (!isValidWorkspaceId(wsId)) continue;
-    yield* call(restoreWorkspaceAfterBackendSwitch, wsId);
+  for (const wsId of [...mountedWorkspaceIds]) {
+    yield* call(restoreAfterBackendSwitch, wsId);
   }
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* panelLayoutSaga(): SagaGenerator<void> {
+export function* panelLayoutSaga(options?: {
+  activeWorkspaceId?: string | null;
+}): SagaGenerator<void> {
+  let workspaceIdContext = options?.activeWorkspaceId ?? null;
   const historyMailboxes = new Map<string, HistoryMailbox>();
   function* queueHistorySaveForAction(action: {
     type: string;
@@ -684,6 +682,13 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     action: ReturnType<typeof workspaceUnmounted> | ReturnType<typeof panelLayoutScopeUnmounted>,
   ): SagaGenerator<void> {
     yield* handleWorkspaceUnmounted(historyMailboxes, action);
+  }
+  function* handleWorkspaceMountedAction(
+    action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
+  ): SagaGenerator<void> {
+    const [workspaceId] = action.payload;
+    workspaceIdContext = workspaceId;
+    yield* handleWorkspaceMountedRestore(action);
   }
   try {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
@@ -699,12 +704,12 @@ export function* panelLayoutSaga(): SagaGenerator<void> {
     yield* takeLeading(connectionsListReceived, handleBackendSwitch, {
       id: yield* selectActiveBackendId(),
     });
-    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedRestore);
+    yield* takeEvery([workspaceMounted, panelLayoutScopeMounted], handleWorkspaceMountedAction);
     yield* takeEvery(
       [workspaceUnmounted, panelLayoutScopeUnmounted],
       handleWorkspaceUnmountedAction,
     );
-    yield* call(retroactiveRestore);
+    yield* call(retroactiveRestore, workspaceIdContext);
     yield* join(historyWatcher);
   } finally {
     const flushHistory = yield* cancelled();

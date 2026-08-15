@@ -1,7 +1,6 @@
 import { WorkspaceStatusEnum } from '$shared/types';
 import { store } from '../../store';
 import {
-  selectActiveWorkspaceId,
   selectWorkspaceItems,
   selectWorkspacesSortedByRecency,
 } from '../workspace/workspace-selectors';
@@ -11,9 +10,11 @@ export const selectSwitcherState = store.createSelector((state): WorkspaceSwitch
   return state.workspaceSwitcher;
 });
 
-export const selectSwitcherWorkspaceIds = store.createSelector((state): string[] => {
+export const selectSwitcherWorkspaceIds = store.createSelector<
+  [activeWorkspaceId: string | null],
+  string[]
+>((state, activeWorkspaceId) => {
   if (state.workspaceSwitcher.selectionHandled) return [];
-  const activeWorkspaceId = selectActiveWorkspaceId.select(state);
   const activeWorkspaces = selectWorkspaceItems
     .select(state)
     .filter((workspace) => workspace.status !== WorkspaceStatusEnum.Archived);
@@ -24,6 +25,12 @@ export const selectSwitcherWorkspaceIds = store.createSelector((state): string[]
   return (current ? [current, ...others] : others).map((workspace) => workspace.id);
 });
 
-export const selectSelectedWorkspaceId = store.createSelector((state): string | null => {
-  return selectSwitcherWorkspaceIds.select(state)[state.workspaceSwitcher.selectedIndex] ?? null;
-});
+export const selectSelectedWorkspaceId = store.createSelector<
+  [activeWorkspaceId: string | null],
+  string | null
+>(
+  (state, activeWorkspaceId) =>
+    selectSwitcherWorkspaceIds.select(state, activeWorkspaceId)[
+      state.workspaceSwitcher.selectedIndex
+    ] ?? null,
+);

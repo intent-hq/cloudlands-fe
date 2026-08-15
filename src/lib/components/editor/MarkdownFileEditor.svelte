@@ -20,10 +20,9 @@
     extractFrontMatter,
   } from '$lib/utils/markdown-processor';
   import BubbleMenu from '$lib/components/tiptap/BubbleMenu.svelte';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     /** Markdown content (two-way bindable) */
@@ -35,6 +34,8 @@
   }
 
   let { value = $bindable(), readOnly = false, externalContentVersion = 0 }: Props = $props();
+
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   let element: HTMLDivElement | undefined = $state();
   let editor: Editor | null = $state(null);
@@ -108,10 +109,9 @@
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
         const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
         const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-        const wsId = selectActiveWorkspaceId.select(appStore.state);
-        if (wsId) {
+        if (workspaceId) {
           appStore.dispatch(
-            openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
+            openWorkspaceFile(workspaceId, filePath, { openInAdjacentPanel, sourcePanelId }),
           );
         }
       },

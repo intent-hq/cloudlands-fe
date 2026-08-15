@@ -1214,7 +1214,7 @@
             {/if}
 
             {#if selectedScriptId}
-              {#key selectedScriptId}
+              {#key `${workspaceId}:${selectedScriptId}`}
                 <ScriptOutputViewer
                   scriptId={selectedScriptId}
                   {workspaceId}

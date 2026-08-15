@@ -51,10 +51,6 @@ const linkedNoteState = vi.hoisted(() => {
   };
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => mockReadable('workspace-1'),
-}));
-
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => linkedNoteState.readable, {
     select: () => linkedNoteState.get(),

@@ -13,7 +13,7 @@
   import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import AuggieAvatar from '$features/agent/components/auggie-avatar/AuggieAvatar.svelte';
@@ -51,7 +51,7 @@
     onShow,
   }: Props = $props();
 
-  const activeWorkspace = selectActiveWorkspace();
+  const workspaceId = getWorkspaceRouteContext()?.workspaceId;
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
   $effect(() => {
@@ -60,17 +60,16 @@
 
   // Reactive agent session from Redux. The ensure saga dispatch below
   // triggers the disk restore; running it in an effect ensures we
-  // re-dispatch when the active workspace or agentId changes while the
+  // re-dispatch when the route workspace or agentId changes while the
   // component stays mounted.
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
   console.log('LOAD');
   $effect(() => {
-    const workspace = $activeWorkspace;
-    if (!workspace?.id) return;
+    if (!workspaceId) return;
     console.log('LOAD');
-    appStore.dispatch(ensureAgentSessionLoaded(String(workspace.id), agentId));
+    appStore.dispatch(ensureAgentSessionLoaded(workspaceId, agentId));
   });
 
   // Get line change stats
@@ -214,7 +213,7 @@
             const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
             const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
             const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-            const wsId = $activeWorkspace?.id;
+            const wsId = workspaceId;
             if (wsId) {
               appStore.dispatch(
                 openAgentTabRequested(wsId, {

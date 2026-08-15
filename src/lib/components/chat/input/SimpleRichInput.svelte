@@ -1211,14 +1211,14 @@
     };
   });
 
-  // Track last workspace ID to prevent unnecessary updates
+  // Track the last owning workspace ID for local change detection.
   let lastWorkspaceId = $state<string | undefined>(undefined);
 
-  // Update workspace when it changes
+  // Keep the local workspace snapshot aligned with the owning component prop;
+  // workspace identity is supplied by the route/component boundary.
   $effect(() => {
     if (workspace?.id && workspace.id !== lastWorkspaceId) {
       lastWorkspaceId = workspace.id;
-      // Workspace tracking now handled by Redux setActiveWorkspaceId
     }
   });
 

@@ -1,46 +1,30 @@
 <script lang="ts">
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
-  import {
-  monaco,
-  initializeMonaco,
-  ensureMonacoInitialized,
-} from '$lib/utils/monaco-workers';
-  import {
-  defineMonacoThemes,
-  getActiveMonacoThemeName,
-} from '$lib/utils/monaco-theme';
+  import { monaco, initializeMonaco, ensureMonacoInitialized } from '$lib/utils/monaco-workers';
+  import { defineMonacoThemes, getActiveMonacoThemeName } from '$lib/utils/monaco-theme';
   import { createLogger } from '$lib/utils/client-logger';
   import AgentTypingAnimation from './AgentTypingAnimation.svelte';
-  import {
-  type LineChange,
-  createLineChangeDecorations,
-} from '$lib/utils/line-change-decorations';
+  import { type LineChange, createLineChangeDecorations } from '$lib/utils/line-change-decorations';
 
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import {
-  faExternalLinkAlt,
-  faFolderOpen,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faExternalLinkAlt, faFolderOpen } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import {
-  selectActiveWorkspace,
-  selectIsWorkspaceHostLocal,
-  selectWorkspaceById,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectIsWorkspaceHostLocal,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectIsFollowing } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
-  createUniqueMonacoModelPath,
-  normalizeMonacoModelPath,
-} from '$lib/utils/monaco-model-uri';
+    createUniqueMonacoModelPath,
+    normalizeMonacoModelPath,
+  } from '$lib/utils/monaco-model-uri';
   import { m } from '$shared/paraglide/messages.js';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('CodeEditor');
 
@@ -97,7 +81,7 @@
 
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const isDarkTheme = selectIsDarkTheme();
-  const activeWorkspace = selectActiveWorkspace();
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId;
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -112,9 +96,10 @@
       ? m.layout_panelTabBar_fileManagerFinder_label()
       : m.layout_panelTabBar_fileManagerGeneric_label();
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
-  const workspaceIdStore = writable(workspaceId ?? '');
+  const resolvedWorkspaceId = $derived(workspaceId ?? routeWorkspaceId ?? undefined);
+  const workspaceIdStore = writable(workspaceId ?? routeWorkspaceId ?? '');
   $effect(() => {
-    workspaceIdStore.set(workspaceId ?? '');
+    workspaceIdStore.set(workspaceId ?? routeWorkspaceId ?? '');
   });
   const workspaceById = selectWorkspaceById(workspaceIdStore);
   // Reveal-in-file-manager and Open-in-VS-Code run against a workspace file
@@ -125,7 +110,7 @@
   const isWorkspaceHostLocal$ = selectIsWorkspaceHostLocal(workspaceIdStore);
 
   function getResolvedWorkspace() {
-    return workspaceId ? $workspaceById : $activeWorkspace;
+    return $workspaceById;
   }
 
   // Content size tracking
@@ -970,7 +955,7 @@
           <p class="text-sm">
             {m.editor_codeEditor_fileTooLarge_description({ size: formatFileSize(contentSize) })}
           </p>
-          {#if workspaceId && filePath && $isWorkspaceHostLocal$}
+          {#if resolvedWorkspaceId && filePath && $isWorkspaceHostLocal$}
             <div class="mt-4 flex items-center justify-center gap-2">
               <Button variant="secondary" size="sm" onclick={openInVSCode}>
                 <Fa icon={faExternalLinkAlt} class="mr-2" />

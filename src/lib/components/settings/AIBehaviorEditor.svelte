@@ -29,7 +29,7 @@
     deleteFileSpecialist as deleteFileSpecialistAction,
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
@@ -59,19 +59,24 @@
     generateUniqueSpecialistId,
     type SpecialistModelOption,
   } from '$shared/specialist-file-types';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   // i18n-ignore (file path)
   const getSpecialistOverridePath = (id: string) => `~/.intent/specialists/${id}.md`;
 
   interface Props {
     activeView: AIBehaviorView;
+    /** Explicit owner for settings opened outside a workspace route. */
+    workspaceId?: WorkspaceId | null;
     onSpecialistCreated?: (id: string) => void;
     onSpecialistDeleted?: () => void;
     onDiscard?: () => void;
   }
 
-  let { activeView, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props = $props();
+  let { activeView, workspaceId, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props =
+    $props();
 
   const specialists = selectSpecialists();
   const fileSpecialists$ = selectFileSpecialists();
@@ -79,6 +84,10 @@
   const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
+  const routeWorkspaceContext = getWorkspaceRouteContext();
+  const routeWorkspaceId = $derived(
+    workspaceId !== undefined ? workspaceId : routeWorkspaceContext?.workspaceId,
+  );
 
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -92,7 +101,8 @@
   const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
 
   function getCurrentWorkspacePath(): string | undefined {
-    const workspace = selectActiveWorkspace.select(appStore.state);
+    if (!routeWorkspaceId) return undefined;
+    const workspace = selectWorkspaceById.select(appStore.state, routeWorkspaceId);
     return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
   }
 

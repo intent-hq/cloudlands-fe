@@ -9,10 +9,6 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => ({}), dispatch: vi.fn() });
 });
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: { select: () => 'ws-1' },
-}));
-
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: () => undefined },
 }));

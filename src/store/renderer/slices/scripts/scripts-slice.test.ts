@@ -72,9 +72,8 @@ function makeChunk(index: number, text = `chunk ${index}\n`): ScriptOutputChunk 
   };
 }
 
-function makeState(scripts: Record<string, any>, activeWorkspaceId: string | null = WS): any {
+function makeState(scripts: Record<string, any>): any {
   return {
-    workspace: { activeWorkspaceId },
     scripts: {
       byWorkspaceId: {
         [WS]: {
@@ -268,8 +267,8 @@ describe('scripts selectors', () => {
     const entry = makeScriptEntry({ id: 'script-1' }, runtime);
     const state = makeState({ 'script-1': entry });
 
-    expect(selectScriptEntries.select(state)).toEqual([entry]);
-    expect(selectScriptEntries.select(state)[0]).toBe(entry);
+    expect(selectScriptEntries.select(state, WS)).toEqual([entry]);
+    expect(selectScriptEntries.select(state, WS)[0]).toBe(entry);
     expect(selectWorkspaceScriptEntries.select(state, WS)[0]).toBe(entry);
   });
 
@@ -277,15 +276,14 @@ describe('scripts selectors', () => {
     const legacyEntry = makeScript({ id: 'legacy-1' }) as any;
     const state = makeState({ 'legacy-1': legacyEntry });
 
-    expect(selectScriptRuntime.select(state, 'legacy-1')).toEqual(makeRuntime());
+    expect(selectScriptRuntime.select(state, WS, 'legacy-1')).toEqual(makeRuntime());
     expect(selectWorkspaceScriptRuntime.select(state, WS, 'missing')).toEqual(makeRuntime());
-    expect(selectRunningScripts.select(state)).toEqual([]);
+    expect(selectRunningScripts.select(state, WS)).toEqual([]);
   });
 
   it('selects scripts initialized state', () => {
     // uninitialized state
     const uninitState = {
-      workspace: { activeWorkspaceId: WS },
       scripts: {
         byWorkspaceId: {
           [WS]: {
@@ -296,12 +294,11 @@ describe('scripts selectors', () => {
         },
       },
     };
-    expect(selectScriptsInitialized.select(uninitState)).toBe(false);
+    expect(selectScriptsInitialized.select(uninitState, WS)).toBe(false);
     expect(selectWorkspaceScriptsInitialized.select(uninitState, WS)).toBe(false);
 
     // initialized state
     const initState = {
-      workspace: { activeWorkspaceId: WS },
       scripts: {
         byWorkspaceId: {
           [WS]: {
@@ -312,17 +309,16 @@ describe('scripts selectors', () => {
         },
       },
     };
-    expect(selectScriptsInitialized.select(initState)).toBe(true);
+    expect(selectScriptsInitialized.select(initState, WS)).toBe(true);
     expect(selectWorkspaceScriptsInitialized.select(initState, WS)).toBe(true);
 
     // no workspace state defaults to false
     const noWsState = {
-      workspace: { activeWorkspaceId: WS },
       scripts: {
         byWorkspaceId: {},
       },
     };
-    expect(selectScriptsInitialized.select(noWsState)).toBe(false);
+    expect(selectScriptsInitialized.select(noWsState, WS)).toBe(false);
     expect(selectWorkspaceScriptsInitialized.select(noWsState, WS)).toBe(false);
   });
 });

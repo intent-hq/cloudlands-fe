@@ -32,7 +32,6 @@
   import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
   import type { ContextProvider } from '$features/context/types';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
@@ -68,10 +67,12 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   function getOwningWorkspaceId(): string | undefined {
-    return workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? undefined);
+    return workspace?.id ? String(workspace.id) : routeWorkspaceId;
   }
 
   function getPanelOptions(event?: MouseEvent) {
@@ -807,7 +808,7 @@
   // tab. A missing file (deleted from disk out-of-band) or a failed lookup
   // surfaces a toast — never a crash.
   function openAttachmentReference(block: ContentBlock & { attachmentId?: string }) {
-    const wsId = workspace?.id ? String(workspace.id) : ($activeWorkspaceId ?? '');
+    const wsId = getOwningWorkspaceId();
     if (!block.attachmentId || !wsId) return;
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
   }

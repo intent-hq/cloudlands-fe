@@ -163,8 +163,9 @@ vi.mock('$features/accept-changes/background-git-actions.service', () => ({
   },
 }));
 
+const mockExecute = vi.hoisted(() => vi.fn());
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: { execute: vi.fn().mockResolvedValue({ success: true }) },
+  AcceptChangesClient: { execute: mockExecute },
 }));
 
 vi.mock('$features/git/git-cache', () => ({
@@ -318,6 +319,7 @@ describe('PRSection', () => {
     mocks.dispatch.mockClear();
     mockCreatePR.mockClear();
     mockCreatePR.mockResolvedValue({ success: true });
+    mockExecute.mockReset().mockResolvedValue({ success: true });
     mockCommitDetails.mockReset();
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
@@ -387,6 +389,38 @@ describe('PRSection', () => {
       );
     });
     expect(mockCreatePR).not.toHaveBeenCalled();
+  });
+
+  it('refreshes Git status before broad Changes data after a successful push', async () => {
+    const { container } = await renderPR({
+      hasOpenPR: true,
+      hasUnpushedCommits: true,
+      unpushedCount: 1,
+      commits: [makePushedCommit('abc')],
+    });
+    mocks.dispatch.mockClear();
+    const push = await waitFor(() => {
+      const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
+        candidate.textContent?.includes('Push 1 Commit'),
+      );
+      expect(button).toBeDefined();
+      return button!;
+    });
+
+    await fireEvent.click(push);
+    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
+
+    expect(
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter(
+          (action) =>
+            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
+        ),
+    ).toEqual([
+      { type: 'git/loadStatus', payload: ['ws-1', true] },
+      { type: 'changes/refreshRequested', payload: ['ws-1'] },
+    ]);
   });
 
   it('toggles the Connect Remote drawer when the button is clicked', async () => {

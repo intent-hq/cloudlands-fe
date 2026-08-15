@@ -3,6 +3,7 @@ import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
 import type { TabState } from './tab-state-slice';
 import {
+  selectActiveWorkspaceIds,
   selectPersistedWorkspaceTabsState,
   selectWorkspaceTabOrder,
   selectWorkspaceTabsHydrated,
@@ -28,6 +29,26 @@ const tabState: TabState = {
 const state = { tabState } as unknown as StoreState;
 
 describe('tab state selectors', () => {
+  it('selects open workspace IDs in openTabs object-key order', () => {
+    const stateWithFlags = {
+      tabState: {
+        ...tabState,
+        openTabs: { 'ws-2': true, 'ws-1': false, 'ws-3': true, 'ws-4': false },
+        workspaceStacks: [['ws-1'], ['ws-2', 'ws-3']],
+      },
+    } as unknown as StoreState;
+
+    expect(selectActiveWorkspaceIds.select(stateWithFlags)).toEqual(['ws-2', 'ws-3']);
+  });
+
+  it('returns no IDs when openTabs is empty', () => {
+    const stateWithNoOpenTabs = {
+      tabState: { ...tabState, openTabs: {} },
+    } as unknown as StoreState;
+
+    expect(selectActiveWorkspaceIds.select(stateWithNoOpenTabs)).toEqual([]);
+  });
+
   it('derives flat workspace order from workspaceStacks', () => {
     expect(selectWorkspaceTabOrder.select(state)).toEqual(['ws-2', 'ws-1', 'ws-3']);
   });

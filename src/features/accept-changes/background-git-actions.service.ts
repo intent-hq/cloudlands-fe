@@ -8,7 +8,6 @@
 
 import { AcceptChangesClient } from './accept-changes.client';
 import { commit as commitViaSeam } from '$features/git/git-write-service';
-import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { PullRequestStatus } from '$shared/types';
@@ -70,7 +69,6 @@ class BackgroundGitActionsService {
         // Refresh file-tracking stores to update UI (the seam already reconciled
         // git status). TODO: drop these once file-tracking moves off legacy IPC.
         try {
-          appStore.dispatch(loadGitStatus(workspaceId, true));
           appStore.dispatch(refreshRequested(workspaceId, true));
         } catch (refreshError) {
           // Refresh failed but commit succeeded - UI will update on next refresh
@@ -150,7 +148,6 @@ class BackgroundGitActionsService {
         }
 
         // Fire-and-forget refresh: let UI update reactively
-        appStore.dispatch(loadGitStatus(workspaceId, true));
         appStore.dispatch(refreshRequested(workspaceId, true));
 
         return {

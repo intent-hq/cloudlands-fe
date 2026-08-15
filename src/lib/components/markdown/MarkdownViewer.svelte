@@ -15,7 +15,7 @@
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { TasksBlock } from '$lib/components/tiptap/TasksBlock';
   import { handleLink } from '$features/navigation/link-handler';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   import {
     openWorkspaceFile,
@@ -23,8 +23,6 @@
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
-
-  const activeWorkspaceId = selectActiveWorkspaceId();
 
   // Use shared safe lowlight instance (handles unregistered languages gracefully)
   const lowlight = safeLowlight;
@@ -46,7 +44,7 @@
     content,
     isStreaming = false,
     className = '',
-    workspaceId,
+    workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
 
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
@@ -281,9 +279,7 @@
       event.stopImmediatePropagation();
 
       const sourcePanelId = getSourcePanelId(event);
-      const owningWorkspaceId = workspaceId
-        ? WorkspaceId(workspaceId)
-        : ($activeWorkspaceId ?? undefined);
+      const owningWorkspaceId = workspaceId ? WorkspaceId(workspaceId) : undefined;
 
       handleLink(anchor.href, {
         workspaceId: owningWorkspaceId,
@@ -319,7 +315,7 @@
         if (onFileClick) {
           onFileClick(filePath, { openInAdjacentPanel, sourcePanelId });
         } else {
-          const wsId = workspaceId ?? $activeWorkspaceId;
+          const wsId = workspaceId;
           if (wsId) {
             appStore.dispatch(
               openWorkspaceFile(wsId, filePath, { openInAdjacentPanel, sourcePanelId }),
@@ -338,7 +334,7 @@
         const sourcePanelId = getSourcePanelId(event);
         const openInAdjacentPanel = event.metaKey || event.ctrlKey;
 
-        const wsIdNote = workspaceId ?? $activeWorkspaceId;
+        const wsIdNote = workspaceId;
         if (wsIdNote) {
           appStore.dispatch(
             openWorkspaceNote(wsIdNote, noteId, {

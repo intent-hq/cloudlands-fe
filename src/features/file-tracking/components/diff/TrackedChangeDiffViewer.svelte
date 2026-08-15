@@ -15,10 +15,7 @@
   import { selectOriginalFileContent } from '$store/renderer/slices/files/files-selectors';
   import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
   import type { FileReadResponse } from '$store/renderer/slices/files/files-types';
-  import {
-    selectActiveWorkspace,
-    selectActiveWorkspaceId,
-  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
@@ -36,6 +33,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   const logger = createLogger('TrackedChangeDiffViewer');
   const MAX_CONTENT_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -96,7 +94,7 @@
 
   let {
     change,
-    workspaceId,
+    workspaceId: workspaceIdProp,
     viewMode = 'unified',
     showHeader = false,
     foldUnchanged = true,
@@ -118,6 +116,9 @@
     gitRootId = undefined,
     gitRootPath = undefined,
   }: Props = $props();
+
+  const workspaceId =
+    untrack(() => workspaceIdProp) ?? getWorkspaceRouteContext()?.workspaceId ?? '';
 
   // Unique instance ID for debugging
   const instanceId = Math.random().toString(36).substring(2, 8);
@@ -171,8 +172,7 @@
 
   // Prevent multiple simultaneous staging operations
   let isProcessingLineAction = $state(false);
-  const activeWorkspace = selectActiveWorkspace();
-  const activeWorkspaceId = selectActiveWorkspaceId();
+  const workspace$ = selectWorkspaceById(workspaceId);
   const filePathStore = writable<string | null | undefined>(undefined);
   const effectiveWorkspaceIdStore = writable<string>('');
   const workingTreeFileContentStore = selectOriginalFileContent(
@@ -181,7 +181,7 @@
   );
 
   // Get workspace info
-  const workspace = $derived($activeWorkspace);
+  const workspace = $derived($workspace$);
   // When a secondary git root scopes this diff (v6.15), its path is the base
   // for absolute↔relative path resolution instead of the workspace worktree.
   const workspacePath = $derived(
@@ -1038,7 +1038,7 @@
   });
 
   $effect(() => {
-    const wsId = workspaceId || $activeWorkspaceId || '';
+    const wsId = workspaceId;
     const filePath = resolveRelativeFilePath(change?.relativePath || change?.file || '');
     const absolutePath = getAbsoluteFilePath(filePath);
     const fileKey = `${wsId}:${filePath}`;

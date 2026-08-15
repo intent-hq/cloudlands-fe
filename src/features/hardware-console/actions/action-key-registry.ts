@@ -85,7 +85,6 @@ const logger = createLogger('HardwareConsoleActionKeyRegistry');
 /** The narrow slice of the app store state the action registry reads. */
 export interface ActionKeyState {
   workspace: {
-    activeWorkspaceId: string | null;
     workspaces: Collection<Workspace, 'id'>;
   };
   workspaceAgents: {
@@ -112,6 +111,7 @@ export interface ActionKeyState {
 /** Everything an action needs to check availability and run. */
 export interface ActionKeyContext {
   state: ActionKeyState;
+  workspaceId: string | null;
   dispatch: (action: unknown) => unknown;
   /** Navigate the app to a route (workspace switching). */
   navigate: (route: string) => Promise<void>;
@@ -155,8 +155,8 @@ const LAYOUT_PRESETS = ['planning', 'agents-row', 'changes', 'review'] as const;
 /** Transient per-workspace cursor for layout-preset cycling (UI-only). */
 const layoutPresetCursor = new Map<string, number>();
 
-function activeWorkspaceId(state: ActionKeyState): string | null {
-  const wsId = state.workspace.activeWorkspaceId;
+function activeWorkspaceId(context: ActionKeyContext): string | null {
+  const wsId = context.workspaceId;
   if (typeof wsId !== 'string' || wsId.length === 0 || wsId === CHIEF_WORKSPACE_ID) return null;
   return wsId;
 }
@@ -191,8 +191,9 @@ function nextLayoutPreset(state: ActionKeyState, wsId: string): (typeof LAYOUT_P
 }
 
 /** The globally focused agent: the active workspace's active agent id. */
-function focusedAgentId(state: ActionKeyState): string | null {
-  const wsId = activeWorkspaceId(state);
+function focusedAgentId(context: ActionKeyContext): string | null {
+  const { state } = context;
+  const wsId = activeWorkspaceId(context);
   const current = wsId === null ? null : workspaceActiveAgentId(state, wsId);
   return current === null ? null : String(current);
 }
@@ -276,10 +277,10 @@ function focusAgent(context: ActionKeyContext, wsId: string, agentId: string): v
  * Per-family round-robin cursor: the stop key (`cycleStopKey`) a cycle
  * action last stepped to. The state-derived anchor (active workspace + its
  * active agent) lags after a cross-workspace hop — `navigate()` resolves
- * before the route mounts and dispatches `setActiveWorkspaceId`, and the
- * workspace loader may re-point `activeAgentId` — so anchoring on it alone
- * re-entered the walk at the same position press after press. Transient
- * UI-only state (like `layoutPresetCursor` below).
+ * before the route mounts and activates the workspace tab, and the workspace
+ * loader may re-point `activeAgentId` — so anchoring on it alone re-entered
+ * the walk at the same position press after press. Transient UI-only state
+ * (like `layoutPresetCursor` below).
  */
 const lastCycledStopByAction = new Map<ActionKeyActionId, string>();
 
@@ -342,12 +343,12 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       const { state } = context;
       const entries = spec.collect(state);
       if (entries.length === 0) return;
-      const focused = focusedAgentId(state);
+      const focused = focusedAgentId(context);
       const alreadyThere =
         entries.length === 1 &&
         (entries[0].agentId !== null
           ? entries[0].agentId === focused
-          : entries[0].wsId === activeWorkspaceId(state));
+          : entries[0].wsId === activeWorkspaceId(context));
       if (alreadyThere) {
         lastCycledStopByAction.set(spec.id, cycleStopKey(entries[0]));
         // Workspace-level stop we're already on: still (re-)request hydration
@@ -377,7 +378,7 @@ function makeGlobalCycleAction(spec: GlobalCycleSpec): ActionKeyDefinition {
       // HUD (the middleware hides it after inactivity).
       const remaining = spec.countRemaining?.(state, entries, next) ?? entries.length - 1;
       context.dispatch(actionHudShown(spec.getHudLabel?.(remaining) ?? spec.getLabel()));
-      if (next.wsId !== activeWorkspaceId(state)) {
+      if (next.wsId !== activeWorkspaceId(context)) {
         void context.navigate(`/workspace/${next.wsId}`);
       }
       if (next.agentId !== null) {
@@ -482,15 +483,16 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return m.hardwareConsole_actionKey_stopAgent_label();
     },
     icon: faStop,
-    isAvailable({ state }) {
-      const wsId = activeWorkspaceId(state);
+    isAvailable(context) {
+      const { state } = context;
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return false;
       const agentId = workspaceActiveAgentId(state, wsId);
       return agentId !== null && isSessionInProgress(state.agentSessions.byAgentId[agentId]);
     },
     execute(context) {
       const { state, dispatch } = context;
-      const wsId = activeWorkspaceId(state);
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
       const agentId = workspaceActiveAgentId(state, wsId);
       if (agentId === null || !isSessionInProgress(state.agentSessions.byAgentId[agentId])) return;
@@ -505,11 +507,12 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return m.hardwareConsole_actionKey_seeSpec_label();
     },
     icon: faFileLines,
-    isAvailable({ state }) {
-      return activeWorkspaceId(state) !== null;
+    isAvailable(context) {
+      return activeWorkspaceId(context) !== null;
     },
-    execute({ state, dispatch }) {
-      const wsId = activeWorkspaceId(state);
+    execute(context) {
+      const { dispatch } = context;
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
       dispatch(openWorkspaceNote(wsId, SPEC_NOTE_ID));
     },
@@ -520,11 +523,12 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return m.hardwareConsole_actionKey_toggleSidebarTabs_label();
     },
     icon: faTableColumns,
-    isAvailable({ state }) {
-      return activeWorkspaceId(state) !== null;
+    isAvailable(context) {
+      return activeWorkspaceId(context) !== null;
     },
-    execute({ state, dispatch }) {
-      const wsId = activeWorkspaceId(state);
+    execute(context) {
+      const { state, dispatch } = context;
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
       const order =
         state.sidebarNav.multiSelectTabOrder.length > 0
@@ -541,11 +545,12 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return m.hardwareConsole_actionKey_newAgent_label();
     },
     icon: faRobot,
-    isAvailable({ state }) {
-      return activeWorkspaceId(state) !== null;
+    isAvailable(context) {
+      return activeWorkspaceId(context) !== null;
     },
-    execute({ state, dispatch }) {
-      const wsId = activeWorkspaceId(state);
+    execute(context) {
+      const { dispatch } = context;
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
       dispatch(createAgentWithSpecialistRequested(wsId, null));
     },
@@ -569,11 +574,12 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return m.hardwareConsole_actionKey_switchWindowLayouts_label();
     },
     icon: faWindowRestore,
-    isAvailable({ state }) {
-      return activeWorkspaceId(state) !== null;
+    isAvailable(context) {
+      return activeWorkspaceId(context) !== null;
     },
-    execute({ state, showHint }) {
-      const wsId = activeWorkspaceId(state);
+    execute(context) {
+      const { state, showHint } = context;
+      const wsId = activeWorkspaceId(context);
       if (wsId === null) return;
       const presetId = nextLayoutPreset(state, wsId);
       // Dynamic import: panel-layout-adapter/preset-executor transitively pull

@@ -4,7 +4,7 @@
    * Includes its own executor and renders without a header wrapper
    */
 
-  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectCurrentStagedWorkingChanges } from '$store/renderer/slices/changes/changes-selectors';
 
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
@@ -29,7 +29,7 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { fly } from 'svelte/transition';
   import { store as appStore } from '$store/renderer/store';
-  import { m } from '$shared/paraglide/messages.js';
+  import * as m from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaceId: string;
@@ -37,10 +37,13 @@
 
   let { workspaceId }: Props = $props();
 
-  // Get workspace and staged files
-  const activeWorkspace = selectActiveWorkspace();
-  const workspace = $derived($activeWorkspace);
-  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
+  // Get the tab's workspace and its staged files. The tab workspace is authoritative;
+  // this must not follow the globally active workspace when multiple tabs are open.
+  // svelte-ignore state_referenced_locally - selector readables are created at component init; workspaceId is stable per tab
+  const workspace$ = selectWorkspaceById(workspaceId);
+  const workspace = $derived($workspace$);
+  // svelte-ignore state_referenced_locally - selector readables are created at component init; workspaceId is stable per tab
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges(workspaceId);
   const workspacePath = $derived(workspace?.worktreePath || workspace?.repositoryPath || '');
 
   // Review state
@@ -222,6 +225,7 @@
         <!-- Walkthrough section -->
         <CodeWalkthroughSection
           {walkthrough}
+          {workspaceId}
           {workspacePath}
           changes={$ftStagedChanges$}
           status={walkthroughStatus}

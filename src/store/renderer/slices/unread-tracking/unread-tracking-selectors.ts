@@ -6,12 +6,15 @@ import { store } from '../../store';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { DividerSession } from './unread-tracking-types';
 
-export type DividerBoundarySnapshot = {
-  activeWorkspaceId: string | null;
+export type DividerBoundaryStateSnapshot = {
   chiefCardVisible: boolean;
   chiefSessionAgentIds: string[];
   dividerSessionAgentIds: string[];
   openAgentTabIds: string[];
+};
+
+export type DividerBoundarySnapshot = DividerBoundaryStateSnapshot & {
+  activeWorkspaceId: string | null;
 };
 
 /**
@@ -29,8 +32,8 @@ export const selectCurrentlyViewedAgentId = store.createSelector(
   (state): string | null => state.unreadTracking.currentlyViewedAgentId,
 );
 
-export const selectDividerBoundarySnapshot = store.createSelector(
-  (state): DividerBoundarySnapshot => {
+export const selectDividerBoundaryStateSnapshot = store.createSelector(
+  (state): DividerBoundaryStateSnapshot => {
     const openAgentTabIds: string[] = [];
     for (const workspace of Object.values(state.panelLayout.byWorkspaceId)) {
       for (const panel of Object.values(workspace.panels)) {
@@ -45,7 +48,6 @@ export const selectDividerBoundarySnapshot = store.createSelector(
     );
     const nav = state.sidebarNav;
     return {
-      activeWorkspaceId: state.workspace.activeWorkspaceId,
       chiefCardVisible:
         nav.panelItem === 'chief' || (nav.expandedItem ?? nav.hoveredItem) === 'chief',
       chiefSessionAgentIds: dividerSessionAgentIds.filter((id) => chiefAgentIds.has(id)),

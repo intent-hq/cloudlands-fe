@@ -78,7 +78,7 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '../../workspace/workspace-slice';
-import { selectActiveWorkspaceId, selectWorkspaceById } from '../../workspace/workspace-selectors';
+import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
 import {
   createWorkspaceReadScheduler,
@@ -96,18 +96,25 @@ const PR_STATUS_REFRESH_TTL_MS = 60_000;
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
-    (action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type) &&
+    action.type === workspaceUnmounted.type &&
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId;
 }
 
 function isWorkspaceCleanupAction(action: { type: string }): boolean {
-  return action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type;
+  return action.type === workspaceUnmounted.type;
 }
 
 function workspaceReadContext(action: { type: string; payload: [string, ...unknown[]] }) {
   const context = action.payload[0];
   return isWorkspaceCleanupAction(action) ? { context, cancel: true as const } : context;
+}
+
+function scriptsReadContext(action: { type: string; payload: [string, ...unknown[]] }) {
+  const context = action.payload[0];
+  return action.type === workspaceDeleted.type || action.type === workspaceUnmounted.type
+    ? { context, cancel: true as const }
+    : context;
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
@@ -189,6 +196,10 @@ function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<vo
   }
 }
 
+/**
+ * Broad refreshes own the Changes slice. Git status is read here only as
+ * reconciliation input; gitReadSaga is the sole owner of Git-slice updates.
+ */
 function* refreshChanges(workspaceId: string): SagaGenerator<void> {
   const { status, trackedChanges, commitsEnvelope } = yield* all({
     status: call([appClient.git, appClient.git.status], workspaceId),
@@ -296,9 +307,9 @@ function* withReadSlot(
   scheduler: WorkspaceReadScheduler,
   workspaceId: string,
   worker: WorkspaceRead,
+  workspaceIdContext: string | null,
 ): SagaGenerator<void> {
-  const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
-  const slot = scheduler.acquire(workspaceId === activeWorkspaceId);
+  const slot = scheduler.acquire(workspaceId === workspaceIdContext);
   try {
     // Uncontended reads start synchronously — only a queued read awaits.
     if (!slot.granted) yield* call(() => slot.acquired);
@@ -319,16 +330,17 @@ function* runWorkspaceRead(
   workspaceId: string,
   worker: WorkspaceRead,
   cancelOnWorkspaceCleanup = true,
+  workspaceIdContext: string | null = null,
 ) {
   if (!workspaceId) return;
   try {
     if (cancelOnWorkspaceCleanup) {
       yield* race({
-        read: call(withReadSlot, scheduler, workspaceId, worker),
+        read: call(withReadSlot, scheduler, workspaceId, worker, workspaceIdContext),
         cleanup: take(matchesWorkspaceCleanup(workspaceId)),
       });
     } else {
-      yield* call(withReadSlot, scheduler, workspaceId, worker);
+      yield* call(withReadSlot, scheduler, workspaceId, worker, workspaceIdContext);
     }
   } catch (error) {
     logger.error(`Refresh failed for ${key}:${workspaceId}`, error);
@@ -389,10 +401,7 @@ function* loadWorkspacesWorker() {
 }
 
 type TasksReadAction = ReturnType<
-  | typeof ensureWorkspaceTasksLoaded
-  | typeof loadWorkspaceTasksRequested
-  | typeof workspaceDeleted
-  | typeof workspaceUnmounted
+  typeof ensureWorkspaceTasksLoaded | typeof loadWorkspaceTasksRequested | typeof workspaceUnmounted
 >;
 
 function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
@@ -410,6 +419,7 @@ function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadActi
 function* tasksWorker(
   scheduler: WorkspaceReadScheduler,
   pendingForcedReads: Set<string>,
+  workspaceIdContext: string | null,
   action: TasksReadAction,
 ) {
   if (isWorkspaceCleanupAction(action)) return;
@@ -423,42 +433,79 @@ function* tasksWorker(
       yield* refreshTasks(id, !force);
     },
     false,
+    workspaceIdContext,
   );
 }
 
 function* eventsWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof loadEventsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'events', action.payload[0], refreshEvents);
+  yield* runWorkspaceRead(
+    scheduler,
+    'events',
+    action.payload[0],
+    refreshEvents,
+    true,
+    workspaceIdContext,
+  );
 }
 
 function* tokenUsageWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof fetchWorkspaceTokenUsage>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'tokenUsage', action.payload[0], refreshTokenUsage);
+  yield* runWorkspaceRead(
+    scheduler,
+    'tokenUsage',
+    action.payload[0],
+    refreshTokenUsage,
+    true,
+    workspaceIdContext,
+  );
 }
 
 function* taskAgentLinksWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof hydrateTaskAgentAssociationsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'taskAgentLinks', action.payload[0], refreshTaskAgentLinks);
+  yield* runWorkspaceRead(
+    scheduler,
+    'taskAgentLinks',
+    action.payload[0],
+    refreshTaskAgentLinks,
+    true,
+    workspaceIdContext,
+  );
 }
 
 function* skillsWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof loadSkillsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'skills', action.payload[0], refreshSkills);
+  yield* runWorkspaceRead(
+    scheduler,
+    'skills',
+    action.payload[0],
+    refreshSkills,
+    true,
+    workspaceIdContext,
+  );
 }
 
 type ScriptsReadAction = ReturnType<
   typeof refreshScripts | typeof workspaceDeleted | typeof workspaceUnmounted
 >;
 
-function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAction) {
+function* scriptsWorker(
+  scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
+  action: ScriptsReadAction,
+) {
   if (!isWorkspaceCleanupAction(action)) {
     yield* runWorkspaceRead(
       scheduler,
@@ -466,39 +513,65 @@ function* scriptsWorker(scheduler: WorkspaceReadScheduler, action: ScriptsReadAc
       action.payload[0],
       refreshWorkspaceScripts,
       false,
+      workspaceIdContext,
     );
   }
 }
 
 type ChangesReadAction = ReturnType<
-  | typeof refreshRequested
-  | typeof loadWorkspaceDataRequested
-  | typeof workspaceDeleted
-  | typeof workspaceUnmounted
+  typeof refreshRequested | typeof loadWorkspaceDataRequested | typeof workspaceUnmounted
 >;
 
-function* changesWorker(scheduler: WorkspaceReadScheduler, action: ChangesReadAction) {
+function* changesWorker(
+  scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
+  action: ChangesReadAction,
+) {
   if (isWorkspaceCleanupAction(action)) return;
   if (action.type === refreshRequested.type || action.type === loadWorkspaceDataRequested.type) {
-    yield* runWorkspaceRead(scheduler, 'changes', action.payload[0], refreshChanges, false);
+    yield* runWorkspaceRead(
+      scheduler,
+      'changes',
+      action.payload[0],
+      refreshChanges,
+      false,
+      workspaceIdContext,
+    );
   }
 }
 
-type AgentsReadAction = ReturnType<
-  typeof hydrateAgentsRequested | typeof workspaceDeleted | typeof workspaceUnmounted
->;
+type AgentsReadAction = ReturnType<typeof hydrateAgentsRequested | typeof workspaceUnmounted>;
 
-function* coalescedAgentsWorker(scheduler: WorkspaceReadScheduler, action: AgentsReadAction) {
+function* coalescedAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
+  action: AgentsReadAction,
+) {
   if (!isWorkspaceCleanupAction(action)) {
-    yield* runWorkspaceRead(scheduler, 'agents', action.payload[0], hydrateAgents, false);
+    yield* runWorkspaceRead(
+      scheduler,
+      'agents',
+      action.payload[0],
+      hydrateAgents,
+      false,
+      workspaceIdContext,
+    );
   }
 }
 
 function* terminalsWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof hydrateTerminalsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'terminals', action.payload[0], refreshTerminals);
+  yield* runWorkspaceRead(
+    scheduler,
+    'terminals',
+    action.payload[0],
+    refreshTerminals,
+    true,
+    workspaceIdContext,
+  );
 }
 
 function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
@@ -516,9 +589,17 @@ function* prStatusWorker(action: ReturnType<typeof refreshPRStatusRequested>) {
 
 function* olderCommitsWorker(
   scheduler: WorkspaceReadScheduler,
+  workspaceIdContext: string | null,
   action: ReturnType<typeof loadOlderCommitsRequested>,
 ) {
-  yield* runWorkspaceRead(scheduler, 'olderCommits', action.payload.wsId, refreshOlderCommits);
+  yield* runWorkspaceRead(
+    scheduler,
+    'olderCommits',
+    action.payload.wsId,
+    refreshOlderCommits,
+    true,
+    workspaceIdContext,
+  );
 }
 
 function* agentLineStatsWorker(action: ReturnType<typeof requestAgentLineStats>) {
@@ -549,13 +630,6 @@ function* contextWorker(
   }
 }
 
-function* clearDeletedInitializedContext(
-  initializedContexts: Set<string>,
-  action: ReturnType<typeof workspaceDeleted>,
-) {
-  initializedContexts.delete(action.payload[0]);
-}
-
 function* clearUnmountedInitializedContext(
   initializedContexts: Set<string>,
   action: ReturnType<typeof workspaceUnmounted>,
@@ -563,9 +637,12 @@ function* clearUnmountedInitializedContext(
   initializedContexts.delete(action.payload[0]);
 }
 
-export function* lifecycleReadSaga(): SagaGenerator<void> {
+export function* lifecycleReadSaga(options?: {
+  activeWorkspaceId?: string | null;
+}): SagaGenerator<void> {
   const initializedContexts = new Set<string>();
   const pendingForcedTaskReads = new Set<string>();
+  const workspaceIdContext = options?.activeWorkspaceId ?? null;
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
@@ -573,54 +650,64 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
     yield* all([
       takeLeading(loadWorkspacesRequested, loadWorkspacesWorker),
       takeSingleFlightInContext(
-        [
-          ensureWorkspaceTasksLoaded,
-          loadWorkspaceTasksRequested,
-          workspaceDeleted,
-          workspaceUnmounted,
-        ],
+        [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
         (action) => tasksReadContext(pendingForcedTaskReads, action),
         tasksWorker,
         scheduler,
         pendingForcedTaskReads,
+        workspaceIdContext,
       ),
-      takeLeadingByWorkspace(loadEventsRequested, eventsWorker, scheduler),
-      takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
+      takeLeadingByWorkspace(loadEventsRequested, eventsWorker, scheduler, workspaceIdContext),
+      takeLeadingByWorkspace(
+        fetchWorkspaceTokenUsage,
+        tokenUsageWorker,
+        scheduler,
+        workspaceIdContext,
+      ),
       takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
       takeLeadingByWorkspace(
         hydrateTaskAgentAssociationsRequested,
         taskAgentLinksWorker,
         scheduler,
+        workspaceIdContext,
       ),
-      takeLeadingByWorkspace(loadSkillsRequested, skillsWorker, scheduler),
+      takeLeadingByWorkspace(loadSkillsRequested, skillsWorker, scheduler, workspaceIdContext),
       takeSingleFlightInContext(
         [refreshScripts, workspaceDeleted, workspaceUnmounted],
-        workspaceReadContext,
+        scriptsReadContext,
         scriptsWorker,
         scheduler,
+        workspaceIdContext,
       ),
       takeLeadingByWorkspace(refreshPRStatusRequested, prStatusWorker),
       takeSingleFlightInContext(
-        [refreshRequested, loadWorkspaceDataRequested, workspaceDeleted, workspaceUnmounted],
+        [refreshRequested, loadWorkspaceDataRequested, workspaceUnmounted],
         workspaceReadContext,
         changesWorker,
         scheduler,
+        workspaceIdContext,
       ),
       takeLeadingInContext(
         loadOlderCommitsRequested,
         (action) => action.payload.wsId,
         olderCommitsWorker,
         scheduler,
+        workspaceIdContext,
       ),
       takeLeadingByAgent(requestAgentLineStats, agentLineStatsWorker),
       takeSingleFlightInContext(
-        [hydrateAgentsRequested, workspaceDeleted, workspaceUnmounted],
+        [hydrateAgentsRequested, workspaceUnmounted],
         workspaceReadContext,
         coalescedAgentsWorker,
         scheduler,
+        workspaceIdContext,
       ),
-      takeLeadingByWorkspace(hydrateTerminalsRequested, terminalsWorker, scheduler),
-      takeEvery(workspaceDeleted, clearDeletedInitializedContext, initializedContexts),
+      takeLeadingByWorkspace(
+        hydrateTerminalsRequested,
+        terminalsWorker,
+        scheduler,
+        workspaceIdContext,
+      ),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);
   } finally {

@@ -14,7 +14,7 @@ vi.mock('$features/agent/mark-agent-seen', async (importOriginal) => {
 
 import { sendMessage } from '../../chat-state/chat-state-slice';
 import { closeTab } from '../../panel-layout/panel-layout-slice';
-import { setActiveWorkspaceId } from '../../workspace/workspace-slice';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { agentStreamUpdateReceived } from '../../workspace-agents/workspace-agents-stream-slice';
 import type { StoreState } from '../../../types';
 import type { DividerBoundarySnapshot } from '../unread-tracking-selectors';
@@ -34,7 +34,7 @@ function state(
   agentSessionsByAgentId: Record<string, { messages: unknown[]; isStreaming?: boolean }> = {},
 ): StoreState {
   return {
-    workspace: { activeWorkspaceId: current.activeWorkspaceId },
+    tabState: { currentTabId: current.activeWorkspaceId },
     sidebarNav: {
       panelItem: current.chiefCardVisible ? 'chief' : null,
       expandedItem: null,
@@ -78,6 +78,26 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function startSaga(
+  channel: ReturnType<typeof stdChannel>,
+  dispatch: ReturnType<typeof vi.fn>,
+  getState: () => StoreState,
+) {
+  const listeners = new Set<() => void>();
+  const reduxStore = {
+    getState,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  const task = runSaga(
+    { channel, dispatch, getState, context: { reduxStore } },
+    unreadTrackingSaga,
+  );
+  return { task, notify: () => listeners.forEach((listener) => listener()) };
+}
+
 describe('detectDividerSessionBoundary', () => {
   it('detects only sessions whose previously open tab closed', () => {
     const previous = snapshot({
@@ -98,7 +118,7 @@ describe('detectDividerSessionBoundary', () => {
       dividerSessionAgentIds: ['a1', 'chief-1'],
       chiefSessionAgentIds: ['chief-1'],
     });
-    expect(detectDividerSessionBoundary(previous, current, setActiveWorkspaceId.type)).toEqual({
+    expect(detectDividerSessionBoundary(previous, current, openWorkspaceTab.type)).toEqual({
       kind: 'workspace-switch',
       agentIds: ['a1'],
       previousWorkspaceId: 'ws-1',
@@ -122,10 +142,7 @@ describe('unreadTrackingSaga', () => {
   it('owns user-send and terminal-stream mark-seen triggers', async () => {
     const channel = stdChannel();
     const current = snapshot();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state(current) },
-      unreadTrackingSaga,
-    );
+    const { task } = startSaga(channel, vi.fn(), () => state(current));
     channel.put(sendMessage('a1', { wsId: 'ws-1', text: 'hello' }));
     channel.put(
       agentStreamUpdateReceived({
@@ -146,11 +163,59 @@ describe('unreadTrackingSaga', () => {
     const channel = stdChannel();
     let current = snapshot({ dividerSessionAgentIds: ['a1'], openAgentTabIds: ['a1'] });
     const dispatch = vi.fn();
-    const task = runSaga({ channel, dispatch, getState: () => state(current) }, unreadTrackingSaga);
+    const { task } = startSaga(channel, dispatch, () => state(current));
     await settle();
     current = snapshot({ dividerSessionAgentIds: ['a1'] });
     channel.put(closeTab('ws-1', 'tab-a1'));
     await settle();
+    expect(marks.boundary).toHaveBeenCalledWith(['a1']);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/endDividerSession',
+      payload: ['a1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes workspace boundaries from the selected workspace', async () => {
+    const channel = stdChannel();
+    let current = snapshot({
+      activeWorkspaceId: 'ws-1',
+      dividerSessionAgentIds: ['a1'],
+    });
+    const dispatch = vi.fn();
+    const { task, notify } = startSaga(channel, dispatch, () => state(current));
+    await settle();
+
+    expect(marks.boundary).not.toHaveBeenCalled();
+    current = { ...current, activeWorkspaceId: 'ws-2' };
+    notify();
+    await settle();
+
+    expect(marks.boundary).toHaveBeenCalledWith(['a1']);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'unreadTracking/endDividerSession',
+      payload: ['a1'],
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('routes clearing the selected workspace', async () => {
+    const channel = stdChannel();
+    let current = snapshot({
+      activeWorkspaceId: 'ws-1',
+      dividerSessionAgentIds: ['a1'],
+    });
+    const dispatch = vi.fn();
+    const { task, notify } = startSaga(channel, dispatch, () => state(current));
+    await settle();
+
+    expect(marks.boundary).not.toHaveBeenCalled();
+    current = { ...current, activeWorkspaceId: null };
+    notify();
+    await settle();
+
     expect(marks.boundary).toHaveBeenCalledWith(['a1']);
     expect(dispatch).toHaveBeenCalledWith({
       type: 'unreadTracking/endDividerSession',
@@ -173,10 +238,7 @@ describe('unreadTrackingSaga', () => {
         ],
       },
     };
-    const task = runSaga(
-      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
-      unreadTrackingSaga,
-    );
+    const { task } = startSaga(channel, dispatch, () => state(current, agentSessionsByAgentId));
     await settle();
     current = snapshot({ dividerSessionAgentIds: ['a1'] });
     channel.put(closeTab('ws-1', 'tab-a1'));
@@ -202,10 +264,7 @@ describe('unreadTrackingSaga', () => {
         ],
       },
     };
-    const task = runSaga(
-      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
-      unreadTrackingSaga,
-    );
+    const { task } = startSaga(channel, dispatch, () => state(current, agentSessionsByAgentId));
     await settle();
     current = snapshot({ dividerSessionAgentIds: ['a1'] });
     channel.put(closeTab('ws-1', 'tab-a1'));
@@ -227,10 +286,7 @@ describe('unreadTrackingSaga', () => {
         messages: [{ id: 'msg-1', role: 'assistant', isStreaming: false }],
       },
     };
-    const task = runSaga(
-      { channel, dispatch, getState: () => state(current, agentSessionsByAgentId) },
-      unreadTrackingSaga,
-    );
+    const { task } = startSaga(channel, dispatch, () => state(current, agentSessionsByAgentId));
     await settle();
     current = snapshot({ dividerSessionAgentIds: ['a1'] });
     channel.put(closeTab('ws-1', 'tab-a1'));

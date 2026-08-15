@@ -1,34 +1,21 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
-  import {
-  formatDistanceToNow,
-  formatFullDateTime,
-  formatShortDate,
-} from '$lib/i18n/format';
+  import { formatDistanceToNow, formatFullDateTime, formatShortDate } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { slide } from 'svelte/transition';
   import InitialsAvatar from './InitialsAvatar.svelte';
-  import {
-  faEdit,
-  faCheck,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
-  import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '$lib/utils/markdown-processor';
-
+  import { faEdit, faCheck, faTimes } from '@fortawesome/free-solid-svg-icons';
+  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
@@ -98,6 +85,8 @@
     onSaveEdit,
     onCancelEdit,
   }: Props = $props();
+
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   function formatTimestamp(dateStr?: string) {
     if (!dateStr) return '';
@@ -227,8 +216,7 @@
         {#if comment.createdAt}
           <span
             class="text-subtle whitespace-nowrap {timestampSize}"
-            title={formatFullDateTime(comment.createdAt)}
-            >{formatTimestamp(comment.createdAt)}</span
+            title={formatFullDateTime(comment.createdAt)}>{formatTimestamp(comment.createdAt)}</span
           >
         {/if}
         {#if showType && comment.type && comment.type !== 'comment'}
@@ -318,7 +306,9 @@
       {/if}
       <div class="flex items-center gap-2 mt-2">
         <Button size="sm" onclick={saveEdit}>{m.tiptap_comment_save_label()}</Button>
-        <Button size="sm" variant="ghost" onclick={cancelEdit}>{m.tiptap_comment_cancel_label()}</Button>
+        <Button size="sm" variant="ghost" onclick={cancelEdit}
+          >{m.tiptap_comment_cancel_label()}</Button
+        >
       </div>
     {:else if (commentText || '').length > 180}
       <div class="text-xs">
@@ -354,9 +344,7 @@
           const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
           const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
           const openInAdjacentPanel = e.metaKey || e.ctrlKey;
-          const wsId =
-            workspace?.id ??
-            selectActiveWorkspaceId.select(appStore.state);
+          const wsId = workspace?.id ?? routeWorkspaceId;
           if (wsId) {
             appStore.dispatch(
               openAgentTabRequested(wsId, {

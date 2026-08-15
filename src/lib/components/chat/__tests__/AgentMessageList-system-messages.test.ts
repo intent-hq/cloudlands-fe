@@ -19,16 +19,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   },
 }));
 
-// Mock workspace selectors
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => ({
-    subscribe: (fn: (value: any) => void) => {
-      fn(null);
-      return () => {};
-    },
-  }),
-}));
-
 describe('AgentMessageList - System Messages', () => {
   it('renders system message as interruption notice', () => {
     const messages: AgentMessage[] = [

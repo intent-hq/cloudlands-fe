@@ -439,7 +439,7 @@ export class TerminalProvider implements Provider {
       }
 
       // Get terminals from the overlay store (these are the visible terminal tabs)
-      const terminalTabs = selectTerminals.select(state);
+      const terminalTabs = selectTerminals.select(state, context.workspaceId);
 
       // Also load metadata for terminals that might not be in tabs yet
       const storedMetadata = terminalManager.loadTerminalMetadata(context.workspaceId);
@@ -452,7 +452,7 @@ export class TerminalProvider implements Provider {
         seen.add(tab.id);
         allTerminals.push({
           id: tab.id,
-          name: selectTerminalDisplayName.select(state, tab.id),
+          name: selectTerminalDisplayName.select(state, context.workspaceId, tab.id),
         });
       }
 
@@ -516,7 +516,7 @@ export class ScriptProvider implements Provider {
         return [];
       }
 
-      const scripts = selectScriptEntries.select(appStore.state);
+      const scripts = selectScriptEntries.select(appStore.state, context.workspaceId);
       if (scripts.length === 0) {
         return [];
       }
@@ -537,12 +537,11 @@ export class ScriptProvider implements Provider {
       return filtered.slice(0, 10).map((script) => {
         const status = script.runtime.status;
         // Live statuses (running/restarting) reuse the running treatment.
-        const statusLabel =
-          isLiveScriptStatus(status)
-            ? m.chat_mentions_scriptRunning_label()
-            : status === 'exited'
-              ? m.chat_mentions_scriptExited_label()
-              : m.chat_mentions_scriptIdle_label();
+        const statusLabel = isLiveScriptStatus(status)
+          ? m.chat_mentions_scriptRunning_label()
+          : status === 'exited'
+            ? m.chat_mentions_scriptExited_label()
+            : m.chat_mentions_scriptIdle_label();
         return {
           id: script.id,
           type: 'script' as MentionType,
@@ -554,12 +553,11 @@ export class ScriptProvider implements Provider {
           meta: {
             workspaceId: context.workspaceId,
             command: script.command,
-            status:
-              isLiveScriptStatus(status)
-                ? ('ok' as const)
-                : status === 'exited'
-                  ? ('warning' as const)
-                  : undefined,
+            status: isLiveScriptStatus(status)
+              ? ('ok' as const)
+              : status === 'exited'
+                ? ('warning' as const)
+                : undefined,
           },
         };
       });

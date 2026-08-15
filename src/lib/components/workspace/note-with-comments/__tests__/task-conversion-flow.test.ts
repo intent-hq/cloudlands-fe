@@ -290,10 +290,6 @@ vi.mock('$store/renderer/configured-store', () => ({
   store: mockSelectorStore,
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectActiveWorkspaceId: () => constantReadable('ws-1'),
-}));
-
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => currentNoteReadable, {
     select: (_state: any, _workspaceId: string, noteId: string) => getNoteById(noteId),
