@@ -27,8 +27,9 @@
     selectSpecialistName,
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
-  import { faCheck, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { m } from '$shared/paraglide/messages.js';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -101,6 +102,16 @@
   // Get task note ID
   const agentTaskNoteId = $derived(
     agentSession?.metadata?.taskNoteId || agentSession?.agentMetadata?.taskNoteId || null,
+  );
+
+  // Read-only harness version stamp (PROTOCOL §5.5). Mirrors the AgentCard
+  // context-menu entry: hidden for sessions from daemons that predate the
+  // field; when the session carries a harnessFeatures snapshot the entry is
+  // a flyout listing each feature's on/off state (check = on), otherwise a
+  // plain disabled item. Informational only — never actionable.
+  const harnessVersion = $derived($agent$?.harnessVersion ?? null);
+  const harnessFeatureEntries = $derived(
+    Object.entries($agent$?.harnessFeatures ?? {}).sort(([a], [b]) => a.localeCompare(b)),
   );
 
   // Copy/delete state
@@ -196,6 +207,32 @@
     disabled={isAgentDeleting}
     destructive
   />
+  {#if harnessVersion}
+    <Menu.Separator />
+    {#if harnessFeatureEntries.length > 0}
+      <Menu.Sub>
+        <Menu.SubTrigger>
+          <Fa icon={faCircleInfo} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
+          <span class="min-w-0 flex-1 truncate">
+            {m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+          </span>
+        </Menu.SubTrigger>
+        <Menu.SubContent>
+          {#each harnessFeatureEntries as [feature, enabled] (feature)}
+            <!-- Wire identifier from the §5.12 feature catalog, rendered
+                 verbatim. i18n-ignore (daemon-provided identifier) -->
+            <Menu.CommandItem icon={enabled ? faCheck : undefined} label={feature} disabled />
+          {/each}
+        </Menu.SubContent>
+      </Menu.Sub>
+    {:else}
+      <Menu.CommandItem
+        icon={faCircleInfo}
+        label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+        disabled
+      />
+    {/if}
+  {/if}
 {/snippet}
 
 {#if tab.agentId}
