@@ -25,6 +25,22 @@
   }
 
   /**
+   * Format a disk byte count with decimal (SI) units — TB = 1000^4 — so
+   * values match what the OS (e.g. macOS Finder) reports for the same
+   * volume. At most 3 significant figures, trailing zeros trimmed:
+   * 2,000,000,000,000 B → `2 TB`; 1,070,000,000,000 B → `1.07 TB`;
+   * 994,080,000,000 B → `994 GB`.
+   */
+  export function formatDiskSize(bytes: number): string {
+    const TB = 1000 ** 4;
+    const GB = 1000 ** 3;
+    const MB = 1000 ** 2;
+    const [value, unit] =
+      bytes >= TB ? [bytes / TB, 'TB'] : bytes >= GB ? [bytes / GB, 'GB'] : [bytes / MB, 'MB'];
+    return `${Number(value.toPrecision(3))} ${unit}`;
+  }
+
+  /**
    * Strip a leading `v` from a version string. system.status may report a
    * v-prefixed version (the pin comparator accepts it), but the mismatch
    * messages prepend their own `v` — without normalization a valid `v0.9.1`
@@ -163,10 +179,10 @@
     const total = $stats$?.workspacesDiskTotalBytes;
     return total !== undefined
       ? m.layout_daemonStatus_workspaceDiskFreeOfTotal_label({
-          free: formatMemory(available),
-          total: formatMemory(total),
+          free: formatDiskSize(available),
+          total: formatDiskSize(total),
         })
-      : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatMemory(available) });
+      : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatDiskSize(available) });
   });
 
   // A version mismatch or low workspace disk turns an otherwise-healthy dot

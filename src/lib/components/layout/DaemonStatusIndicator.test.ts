@@ -368,32 +368,42 @@ describe('DaemonStatusIndicator', () => {
     }
 
     const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
-    const GB = 1024 ** 3;
-    const TB = 1024 ** 4;
+    // Disk sizes render with decimal (SI) units so they match Finder.
+    const GB = 1000 ** 3;
+    const TB = 1000 ** 4;
+
+    it('formats disk bytes with decimal units, at most 3 significant figures', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatDiskSize(2_000_000_000_000)).toBe('2 TB');
+      expect(formatDiskSize(1_070_000_000_000)).toBe('1.07 TB');
+      expect(formatDiskSize(994_080_000_000)).toBe('994 GB');
+      expect(formatDiskSize(246_600_000)).toBe('247 MB');
+      expect(formatDiskSize(0)).toBe('0 MB');
+    });
 
     it('renders the row as "free of total" when the daemon reports both fields', async () => {
-      // 412.5 GB free of 1 TB — well above the 10% threshold.
-      mockStoreState = withDisk({ availableBytes: 412.5 * GB, totalBytes: TB });
+      // 1.07 TB free of 2 TB — well above the 10% threshold.
+      mockStoreState = withDisk({ availableBytes: 1_070_000_000_000, totalBytes: 2 * TB });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
-      expect(screen.getByText('412.50 GB free of 1.00 TB')).toBeTruthy();
+      expect(screen.getByText('1.07 TB free of 2 TB')).toBeTruthy();
       // No warning at >= 10% free.
       expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
     });
 
     it('renders only the free part when the daemon omits the total', async () => {
-      mockStoreState = withDisk({ availableBytes: 100 * GB });
+      mockStoreState = withDisk({ availableBytes: 994_080_000_000 });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
-      expect(screen.getByText('100.00 GB free')).toBeTruthy();
+      expect(screen.getByText('994 GB free')).toBeTruthy();
       // No low-disk warning without a total to compare against.
       expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
     });
@@ -421,7 +431,7 @@ describe('DaemonStatusIndicator', () => {
       expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
 
       await fireEvent.click(trigger);
-      expect(screen.getByText('50.00 GB free of 1.00 TB')).toBeTruthy();
+      expect(screen.getByText('50 GB free of 1 TB')).toBeTruthy();
       const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
       // role="img" so the aria-label on the plain span is reliably exposed.
       expect(icon.getAttribute('role')).toBe('img');
