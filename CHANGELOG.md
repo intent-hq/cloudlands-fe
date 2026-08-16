@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.53.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.52.0...v2.53.0) (2026-08-16)
+
+
+### 🚀 Features
+
+* show harness version in conversation ellipsis menu ([#1303](https://github.com/intent-hq/cloudlands-fe/issues/1303)) ([39e1e7a](https://github.com/intent-hq/cloudlands-fe/commit/39e1e7aec944180cbc5d57059006236f8e97040a))
+* show workspace disk space in the daemon status menu ([#1300](https://github.com/intent-hq/cloudlands-fe/issues/1300)) ([0d08884](https://github.com/intent-hq/cloudlands-fe/commit/0d088841c4cb2a3ba8e6963ede30c05d075885ba))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.7.7 ([#1310](https://github.com/intent-hq/cloudlands-fe/issues/1310)) ([9fffeaa](https://github.com/intent-hq/cloudlands-fe/commit/9fffeaac02ed4118821e1b91ee3e50923846fb23))
+* implement workspace.get + task.listAgentLinks in the dev:web browser mock ([#1305](https://github.com/intent-hq/cloudlands-fe/issues/1305)) ([8a2f716](https://github.com/intent-hq/cloudlands-fe/commit/8a2f716447d78675894c7ca8c0146fd430353400))
+
 ## [2.52.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.51.5...v2.52.0) (2026-08-16)
 
 
