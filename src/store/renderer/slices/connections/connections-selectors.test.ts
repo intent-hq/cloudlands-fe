@@ -12,7 +12,7 @@ import type {
   ConnectionAuthRejectedEvent,
   ConnectionProtocolMismatchEvent,
 } from './connections-types';
-import { initialState } from './connections-slice';
+import { initialState, connectionsReducer, protocolMismatchReceived } from './connections-slice';
 import {
   selectConnections,
   selectActiveConnectionId,
@@ -48,7 +48,9 @@ function stateWith(overrides: Partial<ConnectionsState>): StoreState {
   const connections = Array.isArray(overrides.connections)
     ? createCollection<ConnectionRecord, 'id'>('id', overrides.connections)
     : overrides.connections;
-  return { connections: { ...initialState, ...overrides, ...(connections ? { connections } : {}) } } as unknown as StoreState;
+  return {
+    connections: { ...initialState, ...overrides, ...(connections ? { connections } : {}) },
+  } as unknown as StoreState;
 }
 
 describe('connections selectors', () => {
@@ -149,6 +151,28 @@ describe('connections selectors', () => {
       });
       expect(selectProtocolMismatchModal.select(dismissed)).toBeNull();
       expect(selectActiveProtocolMismatch.select(dismissed)).toEqual(PROTOCOL_MISMATCH);
+    });
+
+    it('boot-origin mismatch keeps the menu warning but never shows the modal', () => {
+      const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'boot' };
+      const connections = connectionsReducer(
+        { ...initialState, activeId: 'remote-1' },
+        protocolMismatchReceived(event),
+      );
+      const state = stateWith(connections);
+      expect(selectActiveProtocolMismatch.select(state)).toEqual(event);
+      expect(selectProtocolMismatchModal.select(state)).toBeNull();
+    });
+
+    it('switch-origin mismatch shows the modal until dismissed (unchanged behavior)', () => {
+      const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'switch' };
+      const connections = connectionsReducer(
+        { ...initialState, activeId: 'remote-1' },
+        protocolMismatchReceived(event),
+      );
+      const state = stateWith(connections);
+      expect(selectActiveProtocolMismatch.select(state)).toEqual(event);
+      expect(selectProtocolMismatchModal.select(state)).toEqual(event);
     });
   });
 });

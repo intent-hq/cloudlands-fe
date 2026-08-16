@@ -266,6 +266,15 @@ export interface ConnectionProtocolMismatchEvent {
   localProtocolVersion: string;
   /** The remote daemon's reported protocolVersion. */
   remoteProtocolVersion: string;
+  /**
+   * Which flow detected the mismatch. `'boot'` when it was latched while boot
+   * reconciliation restored a persisted remote — the renderer suppresses the
+   * advisory modal (the user did not just initiate a switch) and keeps the
+   * persistent menu warning. `'switch'` (or absent, for older payloads) for an
+   * explicit backend switch — modal-worthy. Carried on the sticky
+   * `connections:list` replay too. Additive.
+   */
+  origin?: 'boot' | 'switch';
 }
 
 /**

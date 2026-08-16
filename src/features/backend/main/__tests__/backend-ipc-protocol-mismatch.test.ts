@@ -169,6 +169,8 @@ describe('protocol-compat check on remote connect', () => {
       port: 8443,
       localProtocolVersion: '1',
       remoteProtocolVersion: '2.0',
+      // An explicit switchBackend mismatch is switch-origin (modal-worthy).
+      origin: 'switch',
     });
   });
 
@@ -233,6 +235,7 @@ describe('protocol-compat check on remote connect', () => {
       port: 8443,
       localProtocolVersion: '1',
       remoteProtocolVersion: '2',
+      origin: 'switch',
     });
   });
 
@@ -265,6 +268,8 @@ describe('sticky protocol mismatch replayed on connections:list', () => {
       port: 8443,
       localProtocolVersion: '1',
       remoteProtocolVersion: '2',
+      // The replayed sticky payload carries the origin tag too.
+      origin: 'switch',
     });
   });
 
