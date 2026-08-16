@@ -10,7 +10,7 @@
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { BackendConnectionConfig } from './backend-connection';
 import {
@@ -112,8 +112,6 @@ const WSS_CONFIG: BackendConnectionConfig = {
 /** Manager + fake-socket harness with per-test option overrides. */
 function makeManager(
   options: {
-    idleTimeoutMs?: number;
-    idleCheckIntervalMs?: number;
     backpressureHighWaterMark?: number;
     openTimeoutMs?: number;
     connectTimeoutMs?: number;
@@ -408,7 +406,7 @@ describe('TunnelManager', () => {
     const refused = await connectClient(deadLocal);
     await waitForClose(refused);
 
-    // The refused forward is gone without waiting for the idle sweep …
+    // The refused forward is dropped immediately …
     await waitFor(() => manager.activeForwards().length === 1);
     expect(manager.activeForwards()).toEqual([
       { remotePort: healthy.port, localPort: healthyLocal },
@@ -542,25 +540,25 @@ describe('TunnelManager', () => {
     expect((await received).equals(payload)).toBe(true);
   });
 
-  it('closes idle forwards after the idle timeout, keeping active ones', async () => {
-    const idle = await startEchoServer();
-    const busy = await startEchoServer();
-    onCleanup(() => {
-      idle.server.close();
-      busy.server.close();
-    });
-    const { manager } = makeManager({ idleTimeoutMs: 150, idleCheckIntervalMs: 25 });
-    onCleanup(() => manager.dispose());
-
-    const idleLocal = await manager.forwardPort(idle.port);
-    const busyLocal = await manager.forwardPort(busy.port);
-    const client = await connectClient(busyLocal);
+  it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    // Fake the JS timers (real net I/O keeps flowing) so any lingering idle
+    // sweep armed at construction/forward time would fire during the jump.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] });
+    let localPort: number;
+    try {
+      const { manager } = makeManager();
+      onCleanup(() => manager.dispose());
+      localPort = await manager.forwardPort(port);
+      vi.advanceTimersByTime(11 * 60_000);
+      expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The forward still accepts connections and relays after the idle jump.
+    const client = await connectClient(localPort);
     onCleanup(() => client.destroy());
-
-    await waitFor(() => manager.activeForwards().length === 1);
-    expect(manager.activeForwards()).toEqual([{ remotePort: busy.port, localPort: busyLocal }]);
-    await expect(connectClient(idleLocal)).rejects.toThrow();
-    // The busy forward still relays.
     const payload = Buffer.from('still alive');
     const received = collectUntil(client, payload.length);
     client.write(payload);
