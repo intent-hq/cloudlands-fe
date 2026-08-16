@@ -8,11 +8,16 @@
   }
 
   /**
-   * Format a byte count as human-readable MB/GB, e.g. `512.0 MB` or `1.25 GB`.
+   * Format a byte count as human-readable MB/GB/TB, e.g. `512.0 MB`,
+   * `1.25 GB` or `1.00 TB`.
    */
   export function formatMemory(bytes: number): string {
+    const TB = 1024 ** 4;
     const GB = 1024 ** 3;
     const MB = 1024 ** 2;
+    if (bytes >= TB) {
+      return `${(bytes / TB).toFixed(2)} TB`;
+    }
     if (bytes >= GB) {
       return `${(bytes / GB).toFixed(2)} GB`;
     }
@@ -142,10 +147,34 @@
     return cmp && (cmp.comparison === 'older' || cmp.comparison === 'newer') ? cmp : null;
   });
 
-  // A version mismatch turns an otherwise-healthy dot yellow; degraded
-  // (already yellow) and down (red) are unchanged.
+  // Low workspaces-volume disk space (< 10% free, both fields present) is a
+  // derived display-only warning — it never mutates the health state itself.
+  const workspaceDiskLow = $derived.by(() => {
+    const available = $stats$?.workspacesDiskAvailableBytes;
+    const total = $stats$?.workspacesDiskTotalBytes;
+    return available !== undefined && total !== undefined && total > 0 && available / total < 0.1;
+  });
+
+  // Formatted workspace-disk value: "free of total", or just the free part
+  // when the daemon omits the total. Null hides the row entirely.
+  const workspaceDiskValue = $derived.by(() => {
+    const available = $stats$?.workspacesDiskAvailableBytes;
+    if (available === undefined) return null;
+    const total = $stats$?.workspacesDiskTotalBytes;
+    return total !== undefined
+      ? m.layout_daemonStatus_workspaceDiskFreeOfTotal_label({
+          free: formatMemory(available),
+          total: formatMemory(total),
+        })
+      : m.layout_daemonStatus_workspaceDiskFree_label({ free: formatMemory(available) });
+  });
+
+  // A version mismatch or low workspace disk turns an otherwise-healthy dot
+  // yellow; degraded (already yellow) and down (red) are unchanged.
   const dotColorClass = $derived(
-    $health$ === 'healthy' && versionMismatch ? 'bg-yellow-500' : healthColors[$health$],
+    $health$ === 'healthy' && (versionMismatch || workspaceDiskLow)
+      ? 'bg-yellow-500'
+      : healthColors[$health$],
   );
 
   const triggerLabel = $derived(
@@ -408,7 +437,7 @@
             <span
               class={cn(
                 'font-medium',
-                $health$ === 'healthy' ? 'text-green-500' : 'text-yellow-500',
+                $health$ === 'healthy' && !workspaceDiskLow ? 'text-green-500' : 'text-yellow-500',
               )}
             >
               {$health$ === 'healthy'
@@ -514,6 +543,40 @@
                   >{formatMemory($stats$.memoryBytes)}</span
                 >
               </div>
+            {/if}
+
+            <!-- Workspace disk (only when the daemon reports it) -->
+            {#if workspaceDiskValue !== null}
+              {#if workspaceDiskLow}
+                <Tooltip side="left" contentClass="z-[10001]" class="w-full">
+                  {#snippet content()}
+                    <span>{m.layout_daemonStatus_workspaceDiskLow_tooltip()}</span>
+                  {/snippet}
+                  <div class="flex justify-between text-xs w-full">
+                    <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
+                    <span class="flex items-center gap-1.5">
+                      <!--
+                        Same pattern as the version-mismatch icon above: menu
+                        focus management prevents keyboard-triggered tooltips,
+                        so expose the warning as the icon's accessible name.
+                      -->
+                      <span
+                        class="text-warning"
+                        role="img"
+                        aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
+                      >
+                        <Fa icon={faTriangleExclamation} />
+                      </span>
+                      <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                    </span>
+                  </div>
+                </Tooltip>
+              {:else}
+                <div class="flex justify-between text-xs">
+                  <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
+                  <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                </div>
+              {/if}
             {/if}
 
             <!-- Host OS/Arch -->
