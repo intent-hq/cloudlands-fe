@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
@@ -81,8 +75,9 @@ describe('sendToWorkspaceWindows routing', () => {
     const winA = makeWindow();
     const winB = makeWindow();
     electronMocks.getAllWindows.mockReturnValue([winA, winB]);
+    electronMocks.broadcastToBrowserIpcClients.mockReturnValue(false);
 
-    sendToWorkspaceWindows(undefined, 'websocket-api:discovery-auto-disabled', {});
+    const delivery = sendToWorkspaceWindows(undefined, 'websocket-api:discovery-auto-disabled', {});
 
     expect(winA.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
     expect(winB.webContents.send).toHaveBeenCalledWith('websocket-api:discovery-auto-disabled', {});
@@ -91,6 +86,31 @@ describe('sendToWorkspaceWindows routing', () => {
       {},
       undefined,
     );
+    expect(delivery).toEqual({ windowCount: 2, browserClientsNotified: false, delivered: true });
+  });
+
+  // Regression (intent-hq/monorepo#2602): delivery used to be invisible to the
+  // caller — a workspace-scoped message dropped because no window has the
+  // workspace open reported nothing, so openTab/focusTab claimed success on
+  // messages nothing received.
+  it('reports zero delivery when a workspace-scoped message reaches no window or browser client', () => {
+    electronMocks.broadcastToBrowserIpcClients.mockReturnValue(false);
+
+    const delivery = sendToWorkspaceWindows('ws-missing', 'agent:status-changed', {
+      workspaceId: 'ws-missing',
+    });
+
+    expect(delivery).toEqual({ windowCount: 0, browserClientsNotified: false, delivered: false });
+  });
+
+  it('counts browser-mode WebSocket delivery even when no Electron window matches', () => {
+    electronMocks.broadcastToBrowserIpcClients.mockReturnValue(true);
+
+    const delivery = sendToWorkspaceWindows('ws-missing', 'agent:status-changed', {
+      workspaceId: 'ws-missing',
+    });
+
+    expect(delivery).toEqual({ windowCount: 0, browserClientsNotified: true, delivered: true });
   });
 });
 

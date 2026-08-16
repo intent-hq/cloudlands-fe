@@ -19,7 +19,7 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     getFirstTab: vi.fn().mockReturnValue(null),
     evaluate: vi.fn().mockResolvedValue(undefined),
-    focusTab: vi.fn(),
+    focusTab: vi.fn().mockReturnValue(true),
     closeTab: vi.fn().mockResolvedValue({ tabId: 'tab-1' }),
     touchLease: vi.fn(),
     releaseLease: vi.fn(),

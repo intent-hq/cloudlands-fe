@@ -313,6 +313,12 @@ async function executeAction(
 
       case 'focusTab': {
         const result = embeddedBrowserCdp.focusTab(tabId || '', workspaceId);
+        if (!result) {
+          const error = tabId
+            ? `Could not focus tab ${tabId}: workspace ${workspaceId} is not open in any window.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            : 'focusTab requires a tabId.'; // i18n-ignore (agent-facing protocol error, not user-facing)
+          return { action: 'focusTab', success: false, error };
+        }
         return { action: 'focusTab', success: true, result };
       }
 
@@ -531,7 +537,15 @@ async function executeAction(
         if (agentId && result.success && result.tabId) {
           embeddedBrowserCdp.touchLease(result.tabId, agentId);
         }
-        return { action: 'openTab', success: result.success, result: { ...result, ...echo } };
+        return {
+          action: 'openTab',
+          success: result.success,
+          result: { ...result, ...echo },
+          // Surface the failure message (e.g. "workspace not open in any
+          // window", intent-hq/monorepo#2602) as the action error so the
+          // sequence-level error is descriptive instead of "undefined".
+          ...(result.success ? {} : { error: result.message }),
+        };
       }
 
       case 'closeTab': {

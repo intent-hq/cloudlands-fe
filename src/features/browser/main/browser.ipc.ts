@@ -77,13 +77,28 @@ function openBrowserTab(
   // Include workspaceId in the payload so the renderer can open the browser tab
   // in the correct workspace's panel layout — not just whichever workspace the
   // user happens to be viewing at the moment.
-  sendToWorkspaceWindows(workspacePayload.workspaceId, IPC_CHANNELS.BROWSER.OPEN_TAB, {
-    url,
-    position,
-    ...workspacePayload,
-    tabId,
-    ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
-  });
+  const delivery = sendToWorkspaceWindows(
+    workspacePayload.workspaceId,
+    IPC_CHANNELS.BROWSER.OPEN_TAB,
+    {
+      url,
+      position,
+      ...workspacePayload,
+      tabId,
+      ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+    },
+  );
+  if (!delivery.delivered) {
+    // No window (or browser-mode client) received the message, so no tab was
+    // created — returning the pre-generated tabId here would hand the caller
+    // a phantom tab (intent-hq/monorepo#2602).
+    logger.warn('browser:open-tab reached no window', { url, workspaceId });
+    return {
+      success: false,
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      message: `Cannot open browser tab: workspace ${workspacePayload.workspaceId} is not open in any window.`,
+    };
+  }
   logger.info('Sent browser:open-tab', { url, position, workspaceId, tabId, allowDuplicate });
   // i18n-ignore (agent-facing protocol message, not user-facing)
   return { success: true, message: `Opening browser tab with URL: ${url}`, tabId };

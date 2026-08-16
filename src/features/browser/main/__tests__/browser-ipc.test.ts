@@ -40,6 +40,11 @@ describe('browser:exec IPC workspace routing', () => {
   beforeEach(() => {
     vi.mocked(ipcMain.handle).mockReset();
     mocks.sendToWorkspaceWindows.mockReset();
+    mocks.sendToWorkspaceWindows.mockReturnValue({
+      windowCount: 1,
+      browserClientsNotified: false,
+      delivered: true,
+    });
     vi.spyOn(Date, 'now').mockReturnValue(123);
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
@@ -82,6 +87,43 @@ describe('browser:exec IPC workspace routing', () => {
         },
       ],
     });
+  });
+
+  // Regression (intent-hq/monorepo#2602): openTab used to return
+  // { success: true } plus a pre-generated tabId even when zero windows
+  // received the message — a phantom tab that never existed.
+  it('fails openTab with a clear error when the workspace is not open in any window', async () => {
+    mocks.sendToWorkspaceWindows.mockReturnValue({
+      windowCount: 0,
+      browserClientsNotified: false,
+      delivered: false,
+    });
+    const handler = registerAndGetExecHandler();
+
+    const result = await handler(
+      {},
+      {
+        actions: [{ action: 'openTab', url: 'https://example.test' }],
+        workspaceId: 'ws-closed',
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      results: [
+        {
+          action: 'openTab',
+          success: false,
+          result: {
+            success: false,
+            message: expect.stringContaining('workspace ws-closed is not open in any window'),
+          },
+        },
+      ],
+    });
+    expect(
+      (result as { results: Array<{ result: { tabId?: string } }> }).results[0].result.tabId,
+    ).toBeUndefined();
   });
 
   it.each([undefined, '', '   ', '\t\n', null, 42, { workspaceId: 'ws-1' }])(

@@ -223,6 +223,21 @@ export function getWindowIdsForWorkspace(workspaceId: string): number[] {
 }
 
 /**
+ * Delivery report from {@link sendToWorkspaceWindows} (intent-hq/monorepo#2602).
+ * Lets callers detect messages that were dropped because the target workspace
+ * has no open window (and no browser-mode WebSocket client) instead of
+ * reporting phantom success.
+ */
+export interface WorkspaceWindowDelivery {
+  /** Number of Electron windows the message was sent to. */
+  windowCount: number;
+  /** Whether the browser-mode WebSocket bridge accepted the broadcast. */
+  browserClientsNotified: boolean;
+  /** True when at least one window or the browser bridge received the message. */
+  delivered: boolean;
+}
+
+/**
  * Send an IPC message to all windows viewing a specific workspace.
  * Workspace-scoped messages are delivered only to windows that have that
  * workspace active or open in a tab. If no matching windows exist, the Electron
@@ -232,12 +247,15 @@ export function getWindowIdsForWorkspace(workspaceId: string): number[] {
  *
  * This is the preferred way to send workspace-scoped IPC messages from the main process.
  * Use this instead of manually calling BrowserWindow.getAllWindows() + webContents.send().
+ *
+ * @returns a delivery report so callers can surface "nothing received this
+ *          message" instead of silently succeeding (intent-hq/monorepo#2602)
  */
 export function sendToWorkspaceWindows(
   workspaceId: string | undefined,
   channel: string,
   data: unknown,
-): void {
+): WorkspaceWindowDelivery {
   let targetWindows: BrowserWindow[];
   const isContentBearing = isContentBearingWorkspaceChannel(channel, data);
   const effectiveWorkspaceId =
@@ -261,19 +279,29 @@ export function sendToWorkspaceWindows(
     targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
   }
 
+  let windowCount = 0;
   for (const window of targetWindows) {
     if (window.webContents && !window.webContents.isDestroyed()) {
       window.webContents.send(channel, data);
+      windowCount++;
     }
   }
 
   // Also broadcast to browser-mode WebSocket clients (if any are connected).
   // The named adapter owns the legacy global hook used by the HTTP MCP bridge.
+  let browserClientsNotified = false;
   try {
-    broadcastToBrowserIpcClients(channel, data, effectiveWorkspaceId);
+    browserClientsNotified =
+      broadcastToBrowserIpcClients(channel, data, effectiveWorkspaceId) === true;
   } catch {
     // Ignore — WebSocket bridge may not be initialized yet
   }
+
+  return {
+    windowCount,
+    browserClientsNotified,
+    delivered: windowCount > 0 || browserClientsNotified,
+  };
 }
 
 /**
