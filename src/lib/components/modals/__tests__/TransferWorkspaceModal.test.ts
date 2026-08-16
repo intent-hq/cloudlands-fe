@@ -4,6 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { ConnectionRecord } from '$store/renderer/slices/connections/connections-types';
 import type { TransferPlan } from '$store/renderer/slices/workspace-transfer/workspace-transfer-types';
 
@@ -24,7 +25,7 @@ const remote = (id: string, host: string): ConnectionRecord => ({
 });
 
 const local: ConnectionRecord = {
-  id: 'local',
+  id: LOCAL_CONNECTION_ID,
   label: 'This machine (local)',
   host: null,
   port: null,
@@ -96,7 +97,7 @@ describe('TransferWorkspaceModal — destination step', () => {
       },
     });
 
-    const localOption = screen.getByTestId('transfer-server-local');
+    const localOption = screen.getByTestId(`transfer-server-${LOCAL_CONNECTION_ID}`);
     expect(localOption.textContent).toContain('This machine (local)');
     expect(localOption.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('laptop');
     // Remotes keep the server icon.
@@ -105,7 +106,10 @@ describe('TransferWorkspaceModal — destination step', () => {
     ).toBe('server');
 
     await fireEvent.click(localOption);
-    expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'server', connectionId: 'local' });
+    expect(onSelectDestination).toHaveBeenCalledWith({
+      kind: 'server',
+      connectionId: LOCAL_CONNECTION_ID,
+    });
   });
 
   it('option rows are not height-constrained so two-line labels render fully', async () => {
