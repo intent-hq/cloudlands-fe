@@ -33,7 +33,7 @@ describe('scrollWorkspaceColumnIntoView', () => {
     column.scrollIntoView = vi.fn();
     container.append(column);
     setHorizontalRect(container, 0, 500);
-    setHorizontalRect(column, -100, 300);
+    setHorizontalRect(column, 100, 300);
 
     expect(scrollWorkspaceColumnIntoView(container, 'ws-visible', 'smooth')).toBe(false);
     expect(column.scrollIntoView).not.toHaveBeenCalled();
@@ -110,6 +110,25 @@ describe('scrollWorkspaceColumnIntoView', () => {
 
     expect(scrollWorkspacePanelIntoView(container, 'ws-visible', 'panel-visible')).toBe(false);
     expect(panel.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['left', -50, 300],
+    ['right', 200, 550],
+  ])('reveals a panel that is partly clipped on the %s', (_side, left, right) => {
+    const container = document.createElement('div');
+    const column = document.createElement('section');
+    const panel = document.createElement('div');
+    column.dataset.workspaceColumn = 'ws-clipped';
+    panel.dataset.panelId = 'panel-clipped';
+    panel.scrollIntoView = vi.fn();
+    column.append(panel);
+    container.append(column);
+    setHorizontalRect(container, 0, 500);
+    setHorizontalRect(panel, left, right);
+
+    expect(scrollWorkspacePanelIntoView(container, 'ws-clipped', 'panel-clipped')).toBe(true);
+    expect(panel.scrollIntoView).toHaveBeenCalledOnce();
   });
 
   it('does nothing when a panel is outside the owning workspace', () => {

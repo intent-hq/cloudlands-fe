@@ -1,4 +1,5 @@
 const WORKSPACE_COLUMN_SCROLL_DURATION_MS = 360;
+const HORIZONTAL_VISIBILITY_TOLERANCE_PX = 1;
 const activeHorizontalScrollFrames = new WeakMap<HTMLElement, number>();
 
 function cancelHorizontalScroll(container: HTMLElement): void {
@@ -83,5 +84,8 @@ function isHorizontallyVisible(container: HTMLElement, target: HTMLElement): boo
   const targetRect = target.getBoundingClientRect();
   if (viewport.right <= viewport.left || targetRect.right <= targetRect.left) return false;
 
-  return targetRect.right > viewport.left && targetRect.left < viewport.right;
+  return (
+    targetRect.left >= viewport.left - HORIZONTAL_VISIBILITY_TOLERANCE_PX &&
+    targetRect.right <= viewport.right + HORIZONTAL_VISIBILITY_TOLERANCE_PX
+  );
 }

@@ -115,6 +115,7 @@
   let visibleStackKeys = $state<string[]>([]);
   let materializingWorkspaceId = $state<string | null>(null);
   const panelRevealFrames = new Map<string, number>();
+  const panelRevealSettleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
   );
@@ -175,19 +176,36 @@
     const scroller = columnsScroller;
     if (!scroller) return;
     for (const [workspaceId, request] of Object.entries(requests)) {
-      if (panelRevealFrames.has(request.requestId)) continue;
+      if (
+        panelRevealFrames.has(request.requestId) ||
+        panelRevealSettleTimers.has(request.requestId)
+      )
+        continue;
       materializingWorkspaceId = workspaceId;
       panelRevealFrames.set(request.requestId, -1);
       void tick().then(() => {
-        const frame = requestAnimationFrame(() => {
+        const latest = $panelRevealRequestsByWorkspaceId$[workspaceId];
+        if (latest?.requestId !== request.requestId || columnsScroller !== scroller) {
           panelRevealFrames.delete(request.requestId);
-          const latest = $panelRevealRequestsByWorkspaceId$[workspaceId];
-          if (latest?.requestId !== request.requestId || columnsScroller !== scroller) return;
-          scrollWorkspacePanelIntoView(scroller, workspaceId, request.panelId, 'smooth');
-          appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
-          if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
-        });
-        panelRevealFrames.set(request.requestId, frame);
+          if (!latest && materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
+          return;
+        }
+        scheduleRevealAfterLayout(
+          (behavior) => {
+            const current = $panelRevealRequestsByWorkspaceId$[workspaceId];
+            if (current?.requestId !== request.requestId || columnsScroller !== scroller) {
+              if (!current && materializingWorkspaceId === workspaceId)
+                materializingWorkspaceId = null;
+              return;
+            }
+            scrollWorkspacePanelIntoView(scroller, workspaceId, request.panelId, behavior);
+            appStore.dispatch(consumePanelReveal(workspaceId, request.requestId));
+            if (materializingWorkspaceId === workspaceId) materializingWorkspaceId = null;
+          },
+          undefined,
+          true,
+          request.requestId,
+        );
       });
     }
   });
@@ -252,22 +270,34 @@
     reveal: (behavior: ScrollBehavior) => void,
     behaviorOverride?: ScrollBehavior,
     waitForLayout = true,
+    requestId?: string,
   ) {
-    cancelPendingReveal();
     const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const behavior: ScrollBehavior = prefersReducedMotion
       ? 'auto'
       : (behaviorOverride ?? (lifecycleMotionReady ? 'smooth' : 'auto'));
+    const settleDelay = waitForLayout && layoutMotionDuration > 0 ? LAYOUT_WIDTH_SETTLE_MS : 0;
 
+    if (requestId) {
+      const frame = requestAnimationFrame(() => {
+        panelRevealFrames.delete(requestId);
+        const timer = setTimeout(() => {
+          panelRevealSettleTimers.delete(requestId);
+          reveal(behavior);
+        }, settleDelay);
+        panelRevealSettleTimers.set(requestId, timer);
+      });
+      panelRevealFrames.set(requestId, frame);
+      return;
+    }
+
+    cancelPendingReveal();
     revealFrame = requestAnimationFrame(() => {
       revealFrame = null;
-      revealSettleTimer = setTimeout(
-        () => {
-          reveal(behavior);
-          revealSettleTimer = null;
-        },
-        waitForLayout && layoutMotionDuration > 0 ? LAYOUT_WIDTH_SETTLE_MS : 0,
-      );
+      revealSettleTimer = setTimeout(() => {
+        reveal(behavior);
+        revealSettleTimer = null;
+      }, settleDelay);
     });
   }
 
@@ -338,7 +368,9 @@
     cancelPendingReveal();
     if (visibilityMeasurementFrame !== null) cancelAnimationFrame(visibilityMeasurementFrame);
     for (const frame of panelRevealFrames.values()) if (frame >= 0) cancelAnimationFrame(frame);
+    for (const timer of panelRevealSettleTimers.values()) clearTimeout(timer);
     panelRevealFrames.clear();
+    panelRevealSettleTimers.clear();
   });
 
   function updateSidebarWidth(workspaceId: string, width: number) {

@@ -20,7 +20,9 @@ const panelCanvasWidths = writable<Record<string, number>>({});
 const resizablePanelSizes = writable<Record<string, number>>({});
 const hydratedResizablePanelSizes = writable<Record<string, true>>({});
 const panelTabCounts = writable<Record<string, number>>({});
-const panelRevealRequests = writable<Record<string, never>>({});
+const panelRevealRequests = writable<
+  Record<string, { panelId: string; tabId: string; requestId: string }>
+>({});
 const workspaceItems = writable<Array<{ id: string; title: string }>>([]);
 const workspaceStatuses = writable<Record<string, never>>({});
 const focusedPanelTargets = writable<
@@ -771,7 +773,7 @@ describe('WorkspaceColumnsView', () => {
     const scrollIntoView = vi.fn();
     target.scrollIntoView = scrollIntoView;
     scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
-    target.getBoundingClientRect = vi.fn(() => ({ left: 500, right: 860 }) as DOMRect);
+    target.getBoundingClientRect = vi.fn(() => ({ left: 400, right: 760 }) as DOMRect);
 
     currentWorkspaceId.set('ws-3');
     await tick();
@@ -823,6 +825,103 @@ describe('WorkspaceColumnsView', () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'normal motion',
+      reducedMotion: false,
+      viewportRight: 800,
+      panelLeft: 700,
+      panelRight: 900,
+      expectedBehavior: 'smooth',
+    },
+    {
+      label: 'reduced motion in a narrow 200% layout',
+      reducedMotion: true,
+      viewportRight: 400,
+      panelLeft: -20,
+      panelRight: 380,
+      expectedBehavior: 'auto',
+    },
+  ])(
+    'reveals and consumes a reused panel once with $label',
+    async ({ reducedMotion, viewportRight, panelLeft, panelRight, expectedBehavior }) => {
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({ matches: reducedMotion })),
+      );
+      render(WorkspaceColumnsView);
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      const scroller = screen.getByLabelText('Open spaces in columns');
+      const panel = document.querySelector<HTMLElement>('[data-panel-id="panel-ws-2"]')!;
+      const scrollIntoView = vi.fn();
+      panel.scrollIntoView = scrollIntoView;
+      scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: viewportRight }) as DOMRect);
+      panel.getBoundingClientRect = vi.fn(
+        () => ({ left: panelLeft, right: panelRight }) as DOMRect,
+      );
+
+      panelRevealRequests.set({
+        'ws-2': { panelId: 'panel-ws-2', tabId: 'tab-ws-2', requestId: 'reuse-request' },
+      });
+      await tick();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: expectedBehavior,
+        block: 'nearest',
+        inline: 'end',
+      });
+      expect(
+        mocks.dispatch.mock.calls.filter(
+          ([action]) => action.type === 'panelLayout/consumePanelReveal',
+        ),
+      ).toEqual([
+        [
+          {
+            type: 'panelLayout/consumePanelReveal',
+            payload: ['ws-2', 'reuse-request'],
+          },
+        ],
+      ]);
+      vi.unstubAllGlobals();
+    },
+  );
+
+  it('ignores a stale reused-panel reveal after a newer request replaces it', async () => {
+    render(WorkspaceColumnsView);
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    const scroller = screen.getByLabelText('Open spaces in columns');
+    const panel = document.querySelector<HTMLElement>('[data-panel-id="panel-ws-2"]')!;
+    const scrollIntoView = vi.fn();
+    panel.scrollIntoView = scrollIntoView;
+    scroller.getBoundingClientRect = vi.fn(() => ({ left: 0, right: 800 }) as DOMRect);
+    panel.getBoundingClientRect = vi.fn(() => ({ left: 700, right: 900 }) as DOMRect);
+
+    panelRevealRequests.set({
+      'ws-2': { panelId: 'panel-ws-2', tabId: 'old-tab', requestId: 'old-request' },
+    });
+    await tick();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    panelRevealRequests.set({
+      'ws-2': { panelId: 'panel-ws-2', tabId: 'new-tab', requestId: 'new-request' },
+    });
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(
+      mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'panelLayout/consumePanelReveal'),
+    ).toEqual([
+      {
+        type: 'panelLayout/consumePanelReveal',
+        payload: ['ws-2', 'new-request'],
+      },
+    ]);
   });
 
   it('closes a column without activating it and routes away when closing the active column', async () => {
