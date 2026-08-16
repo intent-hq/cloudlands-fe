@@ -6,9 +6,9 @@
   import UnsavedIndicator from '$lib/components/ui/indicators/UnsavedIndicator.svelte';
   import AgentBadge from '$lib/components/ui/indicators/AgentBadge.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import AugieAvatarWithState, {
+  import AgentAvatarWithState, {
     type AvatarState,
-  } from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  } from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
 
   interface RunningAgent {
     agentId: string;
@@ -74,6 +74,7 @@
   data-tab-id={id}
   aria-selected={active}
   aria-label={m.ui_tab_spaceTab_ariaLabel({ id: id ?? '' })}
+  aria-describedby={runningAgents.length > 2 ? `tab-${id ?? 'untitled'}-agent-overflow` : undefined}
   class={cn(
     'tab-button group/tab-button relative h-9 px-1 text-sm font-medium cursor-pointer',
     active ? 'bg-sidebar text-foreground rounded-t-lg' : '',
@@ -148,16 +149,18 @@
       <div class="flex items-center gap-1 ml-auto">
         <!-- Running/unread agents with avatars -->
         {#if runningAgents.length > 0}
-          <div class="flex items-center -space-x-1">
+          <div class="tab-agent-stack" data-agent-avatar-stack>
             {#each runningAgents.slice(0, 2) as { agentId, state, specialist } (agentId)}
-              <AugieAvatarWithState {agentId} size={14} {state} {specialist} class="" />
+              <AgentAvatarWithState {agentId} variant="emphasized" {state} {specialist} />
             {/each}
             {#if runningAgents.length > 2}
-              <div
-                class="flex items-center justify-center w-3.5 h-3.5 text-ui font-medium text-subtle"
+              <span
+                id={`tab-${id ?? 'untitled'}-agent-overflow`}
+                class="tab-agent-overflow"
+                data-agent-avatar-overflow
               >
                 +{runningAgents.length - 2}
-              </div>
+              </span>
             {/if}
           </div>
         {:else if agentCount > 0}
@@ -202,6 +205,40 @@
 </div>
 
 <style>
+  .tab-agent-stack {
+    display: flex;
+    flex: none;
+    align-items: center;
+    width: max-content;
+    min-width: 0;
+  }
+
+  .tab-agent-stack > :global([data-agent-avatar-with-state] + [data-agent-avatar-with-state]) {
+    margin-inline-start: calc(-1 * var(--agent-avatar-emphasized-stack-overlap));
+  }
+
+  .tab-agent-overflow {
+    display: inline-flex;
+    width: max-content;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    margin-inline-start: 0.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  @media (forced-colors: active) {
+    .tab-agent-overflow {
+      color: CanvasText;
+    }
+  }
+
   .tab-button {
     -webkit-app-region: no-drag;
     /* Smooth transitions for all state changes */

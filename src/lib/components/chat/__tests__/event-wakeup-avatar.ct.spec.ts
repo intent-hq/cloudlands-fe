@@ -66,6 +66,9 @@ test('keeps named standard wake-up avatars optically centered at every required 
             row: rect(row),
             overflow: rect(overflow),
             overflowRadius: overflowStyle.borderRadius,
+            overflowBackground: overflowStyle.backgroundColor,
+            overflowBorder: overflowStyle.borderTopWidth,
+            overflowShadow: overflowStyle.boxShadow,
             overflowAlignment: [overflowStyle.alignItems, overflowStyle.justifyContent],
             overflowText: overflow.textContent?.trim(),
             devicePixelRatio: window.devicePixelRatio,
@@ -104,11 +107,19 @@ test('keeps named standard wake-up avatars optically centered at every required 
             value.avatars[index - 1].trigger.right - value.avatars[index].trigger.left,
           ).toBeCloseTo(5 * zoom, 1);
         }
-        expect(value.avatars.at(-1)!.trigger.right - value.overflow.left).toBeCloseTo(5 * zoom, 1);
-        expect(value.overflow.width).toBeCloseTo(20 * zoom, 1);
-        expect(value.overflow.height).toBeCloseTo(20 * zoom, 1);
-        expect(value.overflowRadius).toBe('6px');
+        expect(value.overflow.left - value.avatars.at(-1)!.trigger.right).toBeCloseTo(4 * zoom, 1);
+        expect(value.overflow.width).toBeGreaterThan(0);
+        expect(value.overflow.width).toBeLessThan(20 * zoom);
+        expect(value.overflow.height).toBeCloseTo(12 * zoom, 1);
+        expect(value.overflowRadius).toBe('0px');
+        expect(value.overflowBackground).toBe('rgba(0, 0, 0, 0)');
+        expect(value.overflowBorder).toBe('0px');
+        expect(value.overflowShadow).toBe('none');
         expect(value.overflowAlignment).toEqual(['center', 'center']);
+        expect(
+          Math.abs(value.overflow.centerY - value.avatars.at(-1)!.surface.centerY) *
+            value.devicePixelRatio,
+        ).toBeLessThanOrEqual(0.5);
         expect(value.overflowText).toBe('+1');
       }
     }

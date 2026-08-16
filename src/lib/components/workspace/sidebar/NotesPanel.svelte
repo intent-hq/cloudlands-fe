@@ -24,11 +24,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import {
     type AvatarState,
     getAvatarState,
-  } from '$features/agent/components/auggie-avatar/avatar-state';
+  } from '$features/agent/components/agent-avatar/avatar-state';
   import {
     selectAgentIsResponding,
     selectAgentIsWaiting,
@@ -592,13 +592,16 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-ui text-subtle ml-1">
+                      <span
+                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        data-agent-avatar-overflow
+                      >
                         +{activeAgents.length - 3}
-                      </div>
+                      </span>
                     {/if}
                   </div>
                 {/if}
@@ -728,13 +731,16 @@
                         onclick={onClick}
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
-                        <AugieAvatarWithState {agentId} size={16} {state} {specialist} />
+                        <AgentAvatarWithState {agentId} size={16} {state} {specialist} />
                       </button>
                     {/each}
                     {#if activeAgents.length > 3}
-                      <div class="text-ui text-subtle ml-1">
+                      <span
+                        class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+                        data-agent-avatar-overflow
+                      >
                         +{activeAgents.length - 3}
-                      </div>
+                      </span>
                     {/if}
                   </div>
                 {/if}

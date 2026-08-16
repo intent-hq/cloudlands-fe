@@ -387,8 +387,9 @@
                 {/each}
                 {#if agentEvents.length > 5}
                   <span
-                    class="event-wakeup-avatar-overflow text-ui text-subtle"
+                    class="event-wakeup-avatar-overflow text-xs text-subtle"
                     data-testid="event-wakeup-avatar-overflow"
+                    data-agent-avatar-overflow
                   >
                     +{formatInteger(agentEvents.length - 5)}
                   </span>
@@ -514,15 +515,15 @@
 
   .event-wakeup-avatar-overflow {
     display: inline-flex;
-    box-sizing: border-box;
-    width: var(--agent-avatar-standard-surface-size);
-    height: var(--agent-avatar-standard-surface-size);
+    width: max-content;
     flex: none;
     align-items: center;
     justify-content: center;
-    border: var(--agent-avatar-standard-ring-width) solid hsl(var(--background) / 0.72);
-    border-radius: var(--agent-avatar-standard-corner-radius);
-    background: hsl(var(--muted));
+    margin-inline-start: 0.25rem !important;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.75rem;
     line-height: 1;
   }
 </style>

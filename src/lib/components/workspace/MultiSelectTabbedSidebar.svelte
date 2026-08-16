@@ -153,9 +153,9 @@
     'launcher-glyph flex size-5 items-center justify-center rounded-sm transition-colors group-hover/preview:opacity-90 group-focus-visible/preview:opacity-80';
   const LAUNCHER_OVERFLOW_BUTTON_CLASS =
     // i18n-ignore (Tailwind utility classes)
-    'launcher-overflow-button pointer-events-auto relative z-10 flex h-9 min-w-9 w-auto shrink-0 cursor-pointer items-center justify-center rounded-sm! bg-card text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:bg-background/70 focus-visible:z-30 focus-visible:bg-background/80';
+    'launcher-overflow-button pointer-events-auto relative z-10 flex h-5 w-auto shrink-0 cursor-pointer items-center justify-center border-0! bg-transparent! px-0! text-xs font-medium leading-3 whitespace-nowrap text-muted-foreground shadow-none! outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
   const LAUNCHER_OVERFLOW_STYLE =
-    'line-height: 12px; font-weight: 500; border-radius: 0.125rem; padding: 0; box-shadow: none;';
+    'line-height: 12px; font-weight: 500; border-radius: 0; padding: 0; background: transparent; box-shadow: none;';
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -232,8 +232,8 @@
       (tabId === 'context' && launcherNoteOverflowCount > 0);
     if (hasOverflow) {
       return itemCount > 2
-        ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`
-        : `${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`;
+        ? `repeat(${itemCount - 2}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_TARGET_SIZE}px max-content`
+        : `${LAUNCHER_TARGET_SIZE}px max-content`;
     }
     return itemCount > 1
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
@@ -1163,6 +1163,7 @@
                             handleTabClick('agents');
                           }}
                           data-sidebar-agent-overflow={launcherAgentOverflowCount}
+                          data-agent-avatar-overflow
                           data-launcher-preview-item
                         >
                           <span aria-hidden="true">+{launcherAgentOverflowCount}</span>

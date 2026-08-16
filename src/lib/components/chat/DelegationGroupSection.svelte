@@ -139,7 +139,10 @@
           </div>
         {/each}
         {#if orderedAgentIds.length > 5}
-          <span class="text-ui text-subtle pl-2">
+          <span
+            class="ml-1! inline-flex w-max flex-none items-center bg-transparent text-xs leading-none text-subtle"
+            data-agent-avatar-overflow
+          >
             +{orderedAgentIds.length - 5}
           </span>
         {/if}

@@ -6,8 +6,8 @@
    * Uses similar styling to AgentCard but more compact for visualization.
    */
   import type { AgentNode } from './types';
-  import AugieAvatarWithState from '$features/agent/components/auggie-avatar/AugieAvatarWithState.svelte';
-  import { getAvatarState } from '$features/agent/components/auggie-avatar/avatar-state';
+  import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
 
   import {
     selectSpecialistName,
@@ -69,20 +69,13 @@
   {onclick}
 >
   <!-- Avatar -->
-  <div class="relative">
-    <AugieAvatarWithState
+  <div>
+    <AgentAvatarWithState
       agentId={node.agentId}
       size={node.isCoordinator ? 32 : 24}
       {state}
       specialist={specialist as BuiltinSpecialistId | null}
     />
-    {#if node.isCoordinator}
-      <div
-        class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full flex items-center justify-center"
-      >
-        <span class="text-xs text-primary-foreground font-bold leading-none">★</span>
-      </div>
-    {/if}
   </div>
 
   <!-- Name -->

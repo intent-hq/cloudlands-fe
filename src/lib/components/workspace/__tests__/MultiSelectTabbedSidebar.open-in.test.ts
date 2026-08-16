@@ -492,9 +492,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(stack.classList.contains('grid')).toBe(true);
       expect(stack.classList.contains('grid-flow-col')).toBe(true);
       expect(stack.className).not.toContain('grid-cols-');
-      expect(stack.style.gridTemplateColumns).toBe(
-        'repeat(5, 16px) 36px minmax(36px, max-content)',
-      );
+      expect(stack.style.gridTemplateColumns).toBe('repeat(5, 16px) 36px max-content');
       expect(itemCount).toBe(7);
       expect(card.classList.contains('overflow-hidden')).toBe(true);
     }
@@ -512,17 +510,20 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(overflow.className).toContain('leading-3');
       expect(overflow.className).toContain('text-muted-foreground');
       expect(overflow.className).toContain('whitespace-nowrap');
-      expect(overflow.className).toContain('bg-card');
+      expect(overflow.className).toContain('bg-transparent!');
+      expect(overflow.className).toContain('border-0!');
+      expect(overflow.className).toContain('px-0!');
       expect(overflow.className).toContain('shadow-none!');
-      expect(overflow.className).toContain('rounded-sm!');
-      expect(overflow.className).toContain('hover:bg-background/70');
-      expect(overflow.className).toContain('focus-visible:bg-background/80');
+      expect(overflow.className).not.toMatch(/min-w-|rounded|hover:bg-|focus-visible:bg-/);
+      expect(overflow.className).toContain('hover:text-foreground');
+      expect(overflow.className).toContain('focus-visible:text-foreground');
       expect(overflow.className).not.toMatch(/font-semibold/);
       const style = getComputedStyle(overflow);
       expect(overflow.style.fontSize).toBe('');
       expect(style.lineHeight).toBe('12px');
       expect(style.fontWeight).toBe('500');
-      expect(style.borderRadius).toBe('0.125rem');
+      expect(style.borderRadius).toBe('0px');
+      expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
       expect(style.paddingTop).toBe('0px');
       expect(style.boxShadow).toBe('none');
     };
@@ -551,8 +552,12 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
   });
 
   it('uses contained outline-free keyboard focus states for every preview target', async () => {
-    mocks.agents = [makeAgent('agent')];
-    mocks.notes = [{ id: 'spec', title: 'Spec', content: '' }];
+    mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
+    mocks.notes = Array.from({ length: 8 }, (_, index) => ({
+      id: index === 7 ? 'spec' : `note-${index}`,
+      title: `Note ${index}`,
+      content: '',
+    }));
     mocks.changes = [{ id: 'change', file: '/tmp/file.ts', relativePath: 'file.ts' }];
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
     const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
@@ -575,7 +580,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         expect(target.className).not.toContain('focus-visible:bg-background/80');
       } else {
         // Overflow buttons
-        expect(target.className).toContain('focus-visible:bg-background/80');
+        expect(target.className).toContain('bg-transparent!');
+        expect(target.className).toContain('focus-visible:text-foreground');
+        expect(target.className).not.toMatch(/focus-visible:bg-|hover:bg-/);
       }
       expect(target.className).not.toMatch(/(?:^|\s)focus-visible:ring-/);
       expect(target.className).not.toMatch(/(?:^|\s)focus-visible:outline-(?!none)/);
