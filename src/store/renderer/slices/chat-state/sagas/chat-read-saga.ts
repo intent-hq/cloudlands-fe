@@ -43,6 +43,7 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
@@ -69,17 +70,20 @@ import { selectTranscriptHydration, selectTranscriptSnapshotMeta } from '../chat
 
 const logger = createLogger('ChatReadSaga');
 const PAGE_LIMIT = 200;
+/** Margin for the healed registration's fresh snapshot to arrive and apply. */
+const SNAPSHOT_HEAL_MARGIN_MS = 2_000;
 /**
  * Bounded wait for the standing subscription's seq-0 snapshot — the SOLE
  * hydration source. It normally applies within tens of milliseconds; the
  * bound only converts a broken subscription into the error/retry surface
- * instead of a permanent skeleton. Sized to survive one full LiveChatClient
- * self-heal cycle (5s seq-0 timeout + 1s first retry delay + the fresh
- * registration's snapshot), so a subscription the client heals on its own
- * still settles in-window; a snapshot landing even later is caught by the
- * recovery watcher (`snapshotRecoveryWorker`).
+ * instead of a permanent skeleton. Derived from LiveChatClient's own
+ * constants so it stays strictly larger than one full self-heal cycle (seq-0
+ * timeout + first retry delay + the fresh registration's snapshot RTT) and
+ * the relationship cannot silently invert: a subscription the client heals
+ * on its own settles in-window; a snapshot landing even later is caught by
+ * the recovery watcher (`snapshotRecoveryWorker`).
  */
-const SNAPSHOT_WAIT_MS = 12_000;
+const SNAPSHOT_WAIT_MS = SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SNAPSHOT_HEAL_MARGIN_MS;
 /** Mirror of the agent-session slice's message prune cap — paging past it is discarded. */
 const MAX_STORE_MESSAGES = 500;
 

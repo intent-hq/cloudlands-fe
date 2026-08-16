@@ -19,6 +19,11 @@
  *    transcript: a slower chat-read hydrate whose pages predate a finalize
  *    would otherwise clobber the finalized row this stream already delivered
  *    (monorepo#1161).
+ *  - `refreshChatTranscriptRequested` while hydration sits in `error` (the
+ *    retry surface) replays what the registration holds — a deferred
+ *    pre-session snapshot or the last reconciled snapshot — or force-cycles
+ *    the registration for a fresh seq-0 snapshot, so a manual retry can heal
+ *    a subscription that will never re-emit on its own.
  *  - `clearCurrentlyViewedAgent` (chat close / panel destroy) closes all
  *    non-chief subscriptions — but only when the clear actually applied (no
  *    agent remains viewed after the reducer). A background panel's trailing
@@ -812,11 +817,53 @@ function replayPendingSnapshot(coordinator: SubscriptionCoordinator, agentId: st
   }
 }
 
+/**
+ * Manual retry / forced rehydration support: the error surface's retry
+ * dispatches `refreshChatTranscriptRequested`, which the chat-read saga
+ * answers by re-entering its bounded snapshot wait — but that wait alone
+ * cannot heal a subscription that will never (re-)emit: a dead registration,
+ * or a healthy one whose only snapshot was consumed while it could not
+ * apply. When hydration sits in `error`, give the wait something to settle
+ * on: replay a deferred pre-session snapshot if one is held; re-emit the
+ * entry's last reconciled snapshot if one applied (meta exists but the store
+ * rows were lost); otherwise force a resnapshot by closing and reopening the
+ * registration (fresh `chat.subscribe` → fresh seq-0 snapshot). Strictly a
+ * no-op outside the error state, so the §7.1 `resumed: false` rehydration —
+ * which dispatches this same action right after its snapshot applied — never
+ * cycles the registration it just opened (and a re-emitted `resumed: false`
+ * snapshot cannot re-trigger itself).
+ */
+function* handleTranscriptRefresh(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+  wsId: string,
+): SagaGenerator<void> {
+  const hydration = yield* selectTranscriptHydration.effect(agentId);
+  if (hydration !== 'error') return;
+  const entry = coordinator.subscriptions.get(agentId);
+  if (entry?.pendingSnapshot) {
+    replayPendingSnapshot(coordinator, agentId);
+    return;
+  }
+  if (entry?.lastTranscript?.fromSnapshot === true) {
+    coordinator.events.put({
+      kind: 'transcript',
+      agentId,
+      token: entry.token,
+      transcript: entry.lastTranscript,
+    });
+    return;
+  }
+  const close = enqueueClose(coordinator, agentId);
+  yield* enqueueOpen(coordinator, agentId, wsId, [close]);
+}
+
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
+  | ReturnType<typeof refreshChatTranscriptRequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
   | ReturnType<typeof upsertSession>
   | ReturnType<typeof bulkUpsertSessions>
@@ -843,6 +890,11 @@ function* routeLifecycleAction(
   } else if (action.type === transcriptHydrationSettled.type) {
     const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];
     enqueueHydrationSettled(coordinator, agentId);
+  } else if (action.type === refreshChatTranscriptRequested.type) {
+    const [wsId, agentId] = action.payload as ReturnType<
+      typeof refreshChatTranscriptRequested
+    >['payload'];
+    yield* handleTranscriptRefresh(coordinator, agentId, wsId);
   } else if (action.type === clearCurrentlyViewedAgent.type) {
     const [scopeAgentId] = action.payload as ReturnType<
       typeof clearCurrentlyViewedAgent
@@ -912,6 +964,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
+      refreshChatTranscriptRequested,
       clearCurrentlyViewedAgent,
       upsertSession,
       bulkUpsertSessions,

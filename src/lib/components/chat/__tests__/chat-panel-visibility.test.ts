@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { AgentStatus, type AgentSession } from '$shared/types';
+import type { StoreState } from '$store/renderer/types';
+import {
+  chatStateReducer,
+  initialState as chatStateInitialState,
+  transcriptHydrationFailed,
+  transcriptHydrationStarted,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  selectTranscriptHydratedOnce,
+  selectTranscriptHydration,
+} from '$store/renderer/slices/chat-state/chat-state-selectors';
 
 import {
   deriveQueuedMessagesVisibility,
@@ -386,28 +397,34 @@ describe('shouldShowTranscriptUtilityStack', () => {
     ).toBe(true);
   });
 
+  // These two scenarios derive the gate's inputs from REAL reducer
+  // transitions (mapped exactly as ChatPanel maps its selectors), so they
+  // catch a regression in how those states project onto the gate — not just
+  // in the pure function itself.
+  const gateInputs = (state: ReturnType<typeof chatStateReducer>, agentId: string) => {
+    const storeState = { chatState: state } as unknown as StoreState;
+    return {
+      transcriptHydratedOnce: selectTranscriptHydratedOnce.select(storeState, agentId),
+      hydrationSettled: selectTranscriptHydration.select(storeState, agentId) === 'settled',
+    };
+  };
+
   it('re-hides on switch to a not-yet-hydrated agent (fresh per-agent state)', () => {
     // Agent/workspace switches remount the card via {#key}; the gate then
     // reads the NEW agent's per-agent hydration state, which starts unlatched
     // and unsettled — so the card is hidden again until that agent's first
     // hydration settles.
-    expect(
-      shouldShowTranscriptUtilityStack({
-        transcriptHydratedOnce: false,
-        hydrationSettled: false,
-      }),
-    ).toBe(false);
+    expect(shouldShowTranscriptUtilityStack(gateInputs(chatStateInitialState, 'agent-fresh'))).toBe(
+      false,
+    );
   });
 
   it('stays hidden when the first hydration fails into the error/retry surface', () => {
     // hydration === 'error': neither latched nor settled — only a retry that
     // settles reveals the card.
-    expect(
-      shouldShowTranscriptUtilityStack({
-        transcriptHydratedOnce: false,
-        hydrationSettled: false,
-      }),
-    ).toBe(false);
+    const loading = chatStateReducer(chatStateInitialState, transcriptHydrationStarted('agent-1'));
+    const failed = chatStateReducer(loading, transcriptHydrationFailed('agent-1'));
+    expect(shouldShowTranscriptUtilityStack(gateInputs(failed, 'agent-1'))).toBe(false);
   });
 });
 
