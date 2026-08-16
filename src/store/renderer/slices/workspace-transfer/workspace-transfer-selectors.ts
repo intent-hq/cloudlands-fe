@@ -35,13 +35,15 @@ export const selectTransferPlanError = store.createSelector(
 );
 
 /**
- * Remote connections eligible as transfer targets: the connections list minus
- * the local entry and minus the currently-active backend (the source).
+ * Connections eligible as transfer targets: the connections list minus the
+ * currently-active backend (the source). When a remote is active this includes
+ * the local entry; when local is active it is excluded by the activeId check,
+ * leaving only remotes (unchanged behavior).
  */
 export const selectTransferTargetConnections = store.createSelector(
   (state): ConnectionRecord[] => {
     const { connections, activeId } = state.connections;
-    return getItems(connections).filter((c) => !c.isLocal && c.id !== activeId);
+    return getItems(connections).filter((c) => c.id !== activeId);
   },
 );
 

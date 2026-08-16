@@ -23,6 +23,15 @@ const remote = (id: string, host: string): ConnectionRecord => ({
   isLocal: false,
 });
 
+const local: ConnectionRecord = {
+  id: 'local',
+  label: 'This machine (local)',
+  host: null,
+  port: null,
+  fingerprint: null,
+  isLocal: true,
+};
+
 const plan: TransferPlan = {
   manifest: {
     formatVersion: 1,
@@ -71,6 +80,32 @@ describe('TransferWorkspaceModal — destination step', () => {
 
     await fireEvent.click(screen.getByTestId('transfer-download-option'));
     expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'download' });
+  });
+
+  it('renders a local entry with the laptop icon as a selectable destination', async () => {
+    const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
+    const onSelectDestination = vi.fn();
+
+    render(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'My Space',
+        step: 'destination',
+        connections: [local, remote('conn-2', '10.0.0.3')],
+        onSelectDestination,
+      },
+    });
+
+    const localOption = screen.getByTestId('transfer-server-local');
+    expect(localOption.textContent).toContain('This machine (local)');
+    expect(localOption.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('laptop');
+    // Remotes keep the server icon.
+    expect(
+      screen.getByTestId('transfer-server-conn-2').querySelector('.fa-icon')?.getAttribute('data-icon'),
+    ).toBe('server');
+
+    await fireEvent.click(localOption);
+    expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'server', connectionId: 'local' });
   });
 
   it('option rows are not height-constrained so two-line labels render fully', async () => {
