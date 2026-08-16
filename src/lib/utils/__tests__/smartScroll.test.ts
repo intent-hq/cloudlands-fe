@@ -158,12 +158,28 @@ describe('followBottom policy', () => {
     Object.defineProperties(container, {
       scrollHeight: { configurable: true, get: () => scrollHeight },
       clientHeight: { configurable: true, get: () => clientHeight },
+      clientWidth: { configurable: true, value: 300 },
+      offsetWidth: { configurable: true, value: 320 },
       scrollTop: {
         configurable: true,
         get: () => scrollTop,
         set: (value: number) => {
           scrollTop = Math.max(0, Math.min(value, scrollHeight - clientHeight));
         },
+      },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({
+          bottom: 300,
+          height: 300,
+          left: 0,
+          right: 320,
+          top: 0,
+          width: 320,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }),
       },
     });
   });
@@ -238,6 +254,85 @@ describe('followBottom policy', () => {
 
     expect(isFollowingBottom(container)).toBe(true);
     expect(followChanges).toEqual([true]);
+    action.destroy();
+  });
+
+  it('stays unlocked after a content click, collapse clamp, and later growth', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 }));
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }));
+
+    scrollHeight = 600;
+    scrollTop = 300;
+    container.dispatchEvent(new Event('scroll'));
+    scrollHeight = 700;
+    fireResize();
+    runFrame();
+
+    expect(scrollTop).toBe(300);
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(followChanges).toEqual([false]);
+    action.destroy();
+  });
+
+  it('re-locks after a downward scrollbar drag reaches the bottom', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    scrollTop = 300;
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+    scrollTop = 600;
+    container.dispatchEvent(new Event('scroll'));
+
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([true]);
+    action.destroy();
+  });
+
+  it('does not re-lock after a scrollbar interaction moves upward because of a clamp', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: false,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    scrollTop = 500;
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+    scrollHeight = 600;
+    scrollTop = 300;
+    container.dispatchEvent(new Event('scroll'));
+    window.dispatchEvent(new MouseEvent('pointerup'));
+    scrollHeight = 700;
+    fireResize();
+
+    expect(scrollTop).toBe(300);
+    expect(isFollowingBottom(container)).toBe(false);
+    expect(followChanges).toEqual([]);
+    action.destroy();
+  });
+
+  it('keeps a followed scrollbar hold locked through shrink and later growth', () => {
+    const followChanges: boolean[] = [];
+    const action = followBottom(container, {
+      follow: true,
+      onFollowChange: (follow) => followChanges.push(follow),
+    });
+    container.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 315 }));
+    scrollHeight = 600;
+    scrollTop = 300;
+    container.dispatchEvent(new Event('scroll'));
+    scrollHeight = 700;
+    fireResize();
+    runFrame();
+
+    expect(scrollTop).toBe(400);
+    expect(isFollowingBottom(container)).toBe(true);
+    expect(followChanges).toEqual([]);
     action.destroy();
   });
 

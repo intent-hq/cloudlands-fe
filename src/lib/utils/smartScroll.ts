@@ -51,6 +51,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let onScrollStateChange = options.onScrollStateChange;
   let threshold = options.threshold ?? 100;
   let pointerScrolling = false;
+  let pointerMaximum = 0;
+  let pointerDistanceFromBottom = 0;
+  let pointerMovedTowardBottom = false;
 
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
@@ -189,19 +192,57 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     }
   }
 
-  function handleScroll() {
-    if (pointerScrolling) setFollowing(checkIfAtBottom());
-    else reportState();
+  function isVerticalScrollbarPointer(e: PointerEvent): boolean {
+    if (e.button !== 0 || e.target !== container) return false;
+    const gutterWidth = Math.max(0, container.offsetWidth - container.clientWidth);
+    if (gutterWidth === 0) return false;
+    const rect = container.getBoundingClientRect();
+    const visualGutterWidth =
+      container.offsetWidth > 0 ? gutterWidth * (rect.width / container.offsetWidth) : gutterWidth;
+    return getComputedStyle(container).direction === 'rtl'
+      ? e.clientX <= rect.left + visualGutterWidth
+      : e.clientX >= rect.right - visualGutterWidth;
   }
 
-  function handlePointerDown() {
-    pointerScrolling = true;
+  function handleScroll() {
+    if (!pointerScrolling) {
+      reportState();
+      return;
+    }
+
+    const nextMaximum = maximumScrollTop();
+    const nextDistance = Math.max(0, nextMaximum - container.scrollTop);
+    if (nextMaximum !== pointerMaximum) {
+      pointerMaximum = nextMaximum;
+      pointerDistanceFromBottom = nextDistance;
+      pointerMovedTowardBottom = false;
+      reportState();
+      return;
+    }
+
+    const distanceDelta = nextDistance - pointerDistanceFromBottom;
+    pointerDistanceFromBottom = nextDistance;
+    if (distanceDelta > 0) {
+      pointerMovedTowardBottom = false;
+      setFollowing(false);
+    } else if (distanceDelta < 0) {
+      pointerMovedTowardBottom = true;
+      if (checkIfAtBottom()) follower.followAndScroll();
+      else reportState();
+    } else reportState();
+  }
+
+  function handlePointerDown(e: PointerEvent) {
+    pointerScrolling = isVerticalScrollbarPointer(e);
+    pointerMaximum = maximumScrollTop();
+    pointerDistanceFromBottom = Math.max(0, pointerMaximum - container.scrollTop);
+    pointerMovedTowardBottom = false;
   }
 
   function handlePointerUp() {
     if (!pointerScrolling) return;
     pointerScrolling = false;
-    if (checkIfAtBottom()) follower.followAndScroll();
+    if (pointerMovedTowardBottom && checkIfAtBottom()) follower.followAndScroll();
     else reportState();
   }
 
