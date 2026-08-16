@@ -27,7 +27,7 @@ export const OPERATIONAL_EXPANDED_GUIDE_CLASS =
 export const OPERATIONAL_PRIMARY_CLASS = 'text-foreground';
 
 export const OPERATIONAL_SECONDARY_CLASS =
-  'text-muted-foreground transition-colors group-hover:text-foreground group-focus-within:text-foreground';
+  'text-foreground/70 transition-colors group-hover:text-foreground group-focus-within:text-foreground';
 
 export const OPERATIONAL_ICON_BOX_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${OPERATIONAL_SECONDARY_CLASS}`;
 

@@ -292,7 +292,7 @@ describe('editorial conversation presentation contract', () => {
     expect(operationalRow).toContain('type-body font-family-child font-normal');
     expect(operationalRow).toContain("OPERATIONAL_PRIMARY_CLASS = 'text-foreground'");
     expect(operationalRow).toContain(
-      "OPERATIONAL_SECONDARY_CLASS =\n  'text-muted-foreground transition-colors group-hover:text-foreground group-focus-within:text-foreground'",
+      "OPERATIONAL_SECONDARY_CLASS =\n  'text-foreground/70 transition-colors group-hover:text-foreground group-focus-within:text-foreground'",
     );
     for (const component of [toolCall, reasoning, contextEngine]) {
       expect(component).toContain('OPERATIONAL_ROW_CONTAINER_CLASS');
