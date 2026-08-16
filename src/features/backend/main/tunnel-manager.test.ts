@@ -504,7 +504,7 @@ describe('TunnelManager', () => {
     onCleanup(() => again.destroy());
   });
 
-  it('tears down local servers and sockets when the tunnel drops', async () => {
+  it('destroys in-flight streams but keeps forwards and listeners when the tunnel drops', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
     const { manager, created } = makeManager();
@@ -514,30 +514,43 @@ describe('TunnelManager', () => {
     const client = await connectClient(localPort);
     const closed = waitForClose(client);
     created[0].drop();
+    // The in-flight stream is destroyed …
     await closed;
-    expect(manager.activeForwards()).toEqual([]);
-    // The local listener is gone: a fresh connect must fail.
-    await expect(connectClient(localPort)).rejects.toThrow();
+    // … but the forward stays registered on the SAME local port …
+    expect(manager.activeForwards()).toEqual([{ remotePort: port, localPort }]);
+    // … and its listener still accepts: the next connection reconnects the
+    // tunnel lazily and relays through the fresh socket.
+    const revived = await connectClient(localPort);
+    onCleanup(() => revived.destroy());
+    const payload = Buffer.from('same port after drop');
+    const received = collectUntil(revived, payload.length);
+    revived.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
   });
 
-  it('reconnects lazily after a drop and the new forward works', async () => {
+  it('reconnects lazily after a drop and the surviving forward keeps working', async () => {
     const { server, port } = await startEchoServer();
     onCleanup(() => server.close());
     const { manager, created } = makeManager();
     onCleanup(() => manager.dispose());
 
-    await manager.forwardPort(port);
-    created[0].drop();
-    await waitFor(() => manager.activeForwards().length === 0);
-
     const localPort = await manager.forwardPort(port);
-    expect(created.length).toBe(2);
+    created[0].drop();
+
+    // The drop alone triggers no reconnect, and forwardPort keeps returning
+    // the surviving forward's local port without touching the tunnel.
+    await expect(manager.forwardPort(port)).resolves.toBe(localPort);
+    expect(created.length).toBe(1);
+
+    // The first accepted connection reconnects and relays.
     const client = await connectClient(localPort);
     onCleanup(() => client.destroy());
     const payload = Buffer.from('after reconnect');
     const received = collectUntil(client, payload.length);
     client.write(payload);
     expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
   });
 
   it('keeps an idle forward alive well past the old 10-minute idle timeout', async () => {
