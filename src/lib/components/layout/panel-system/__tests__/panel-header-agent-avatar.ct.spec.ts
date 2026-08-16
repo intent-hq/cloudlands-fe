@@ -36,21 +36,27 @@ for (const theme of ['light', 'dark'] as const) {
     expect(geometry.centerDeltaY).toBeCloseTo(0, 1);
 
     await avatar.evaluate((element) => element.setAttribute('data-identity-proof', 'original'));
+    let activeSurface = '';
     for (const scenario of ['responding', 'processing'] as const) {
       await component.update({ props: { theme, width: 260, zoom: 2, scenario } });
       await expect(avatar).toHaveAttribute('data-avatar-state', 'running');
       await expect(avatar).toHaveAttribute('data-identity-proof', 'original');
       await expect
-        .poll(() =>
-          avatar.evaluate((element) => {
+        .poll(async () => {
+          const colors = await avatar.evaluate((element) => {
             const probe = document.createElement('span');
             probe.style.backgroundColor = 'hsl(var(--agent-avatar-surface-active))';
             element.parentElement!.append(probe);
-            const activeSurface = getComputedStyle(probe).backgroundColor;
+            const resolvedActiveSurface = getComputedStyle(probe).backgroundColor;
             probe.remove();
-            return getComputedStyle(element).backgroundColor === activeSurface;
-          }),
-        )
+            return {
+              background: getComputedStyle(element).backgroundColor,
+              activeSurface: resolvedActiveSurface,
+            };
+          });
+          activeSurface = colors.activeSurface;
+          return colors.background === colors.activeSurface;
+        })
         .toBe(true);
     }
 
@@ -75,6 +81,32 @@ for (const theme of ['light', 'dark'] as const) {
     await avatar.evaluate((element) => element.setAttribute('data-completion-proof', 'same-node'));
     await component.update({ props: { theme, width: 260, zoom: 2, scenario: 'completed' } });
     await expect(avatar).toHaveAttribute('data-avatar-state', 'idle');
+    await expect(avatar).toHaveAttribute('data-completion-proof', 'same-node');
+
+    const oppositeTheme = theme === 'light' ? 'dark' : 'light';
+    await component.update({
+      props: { theme: oppositeTheme, width: 260, zoom: 2, scenario: 'responding' },
+    });
+    await expect(avatar).toHaveAttribute('data-avatar-state', 'running');
+    let oppositeActiveSurface = '';
+    await expect
+      .poll(async () => {
+        const colors = await avatar.evaluate((element) => {
+          const probe = document.createElement('span');
+          probe.style.backgroundColor = 'hsl(var(--agent-avatar-surface-active))';
+          element.parentElement!.append(probe);
+          const resolvedActiveSurface = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return {
+            background: getComputedStyle(element).backgroundColor,
+            activeSurface: resolvedActiveSurface,
+          };
+        });
+        oppositeActiveSurface = colors.activeSurface;
+        return colors.background === colors.activeSurface && colors.activeSurface !== activeSurface;
+      })
+      .toBe(true);
+    expect(oppositeActiveSurface).not.toBe(activeSurface);
     await expect(avatar).toHaveAttribute('data-completion-proof', 'same-node');
   });
 }

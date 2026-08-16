@@ -39,6 +39,13 @@
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
 
+  $effect(() => {
+    const root = document.documentElement;
+    const hadDarkClass = root.classList.contains('dark');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => root.classList.toggle('dark', hadDarkClass);
+  });
+
   function session(id: typeof agentA, name: string): AgentSession {
     return {
       id,
@@ -112,11 +119,11 @@
 </script>
 
 <section
-  class:dark={theme === 'dark'}
   class="overflow-hidden bg-background text-foreground"
   style:width={`${width}px`}
   style:zoom
   data-testid="panel-avatar-host"
+  data-theme={theme}
   data-active-agent={activeTabId === 'tab-b' ? agentB : agentA}
 >
   <PanelTabBar {tabs} {activeTabId} panelId="panel-avatar" {workspaceId} isFocused />
