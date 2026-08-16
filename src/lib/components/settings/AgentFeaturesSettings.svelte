@@ -29,20 +29,11 @@
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
 
-  // i18n-ignore (wire setting paths, not user-facing text)
-  const FEATURE_PATHS = [
-    'agentFeatures.backgroundHooks',
-    'agentFeatures.hostExec',
-    'agentFeatures.scripts',
-    'agentFeatures.terminalAccess',
-    'agentFeatures.browserAutomation',
-    'agentFeatures.richChatBlocks',
-    'agentFeatures.structuredQuestions',
-    'agentFeatures.attentionRequests',
-    'agentFeatures.stateSnapshot',
-    'agentFeatures.prMonitor',
-    'agentFeatures.taskGraph',
-  ] as const;
+  import {
+    FEATURE_PATHS,
+    FEATURES,
+    type FeaturePath,
+  } from '$lib/components/settings/agent-feature-definitions';
 
   // i18n-ignore (wire setting path, not user-facing text)
   const TASK_GRAPH_PATH = 'agentFeatures.taskGraph';
@@ -52,66 +43,6 @@
   // Daemon-side registered bounds for prMonitor.debounceSeconds (§6.9).
   const MIN_DEBOUNCE_SECONDS = 10;
   const MAX_DEBOUNCE_SECONDS = 86400;
-
-  type FeaturePath = (typeof FEATURE_PATHS)[number];
-
-  const FEATURES: { path: FeaturePath; label: () => string; description: () => string }[] = [
-    {
-      path: 'agentFeatures.backgroundHooks',
-      label: () => m.settings_agentFeatures_backgroundHooks_label(),
-      description: () => m.settings_agentFeatures_backgroundHooks_description(),
-    },
-    {
-      path: 'agentFeatures.hostExec',
-      label: () => m.settings_agentFeatures_hostExec_label(),
-      description: () => m.settings_agentFeatures_hostExec_description(),
-    },
-    {
-      path: 'agentFeatures.scripts',
-      label: () => m.settings_agentFeatures_scripts_label(),
-      description: () => m.settings_agentFeatures_scripts_description(),
-    },
-    {
-      path: 'agentFeatures.terminalAccess',
-      label: () => m.settings_agentFeatures_terminalAccess_label(),
-      description: () => m.settings_agentFeatures_terminalAccess_description(),
-    },
-    {
-      path: 'agentFeatures.browserAutomation',
-      label: () => m.settings_agentFeatures_browserAutomation_label(),
-      description: () => m.settings_agentFeatures_browserAutomation_description(),
-    },
-    {
-      path: 'agentFeatures.richChatBlocks',
-      label: () => m.settings_agentFeatures_richChatBlocks_label(),
-      description: () => m.settings_agentFeatures_richChatBlocks_description(),
-    },
-    {
-      path: 'agentFeatures.structuredQuestions',
-      label: () => m.settings_agentFeatures_structuredQuestions_label(),
-      description: () => m.settings_agentFeatures_structuredQuestions_description(),
-    },
-    {
-      path: 'agentFeatures.attentionRequests',
-      label: () => m.settings_agentFeatures_attentionRequests_label(),
-      description: () => m.settings_agentFeatures_attentionRequests_description(),
-    },
-    {
-      path: 'agentFeatures.stateSnapshot',
-      label: () => m.settings_agentFeatures_stateSnapshot_label(),
-      description: () => m.settings_agentFeatures_stateSnapshot_description(),
-    },
-    {
-      path: 'agentFeatures.prMonitor',
-      label: () => m.settings_agentFeatures_prMonitor_label(),
-      description: () => m.settings_agentFeatures_prMonitor_description(),
-    },
-    {
-      path: 'agentFeatures.taskGraph',
-      label: () => m.settings_agentFeatures_taskGraph_label(),
-      description: () => m.settings_agentFeatures_taskGraph_description(),
-    },
-  ];
 
   // taskGraph is the one opt-in feature (default off); all others default on,
   // so an absent settings.list entry coerces to the feature's own default.

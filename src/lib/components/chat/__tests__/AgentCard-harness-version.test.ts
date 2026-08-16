@@ -6,11 +6,12 @@
  *
  * Renders the REAL component against the REAL configured store: seeds an
  * agent session (with/without `harnessVersion` / `harnessFeatures`), opens
- * the context menu, and asserts the item's visibility, the feature-list
- * flyout (on/off states), and that legacy/absent shapes render sensibly.
+ * the context menu, and asserts the item's visibility, that selecting it
+ * opens the read-only harness-features modal, and that legacy/absent
+ * shapes render sensibly.
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -57,24 +58,12 @@ describe('AgentCard harness version context-menu item', () => {
     appStore.dispatch(removeSession(agentId));
   });
 
-  it('shows a disabled "Harness v1.0" item for a legacy session without a features snapshot', async () => {
-    appStore.dispatch(bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })]));
-
-    render(AgentCard, { props: { agentId } });
-    await openContextMenu();
-
-    const item = await screen.findByText('Harness v1.0');
-    const menuButton = item.closest('button');
-    expect(menuButton).not.toBeNull();
-    expect(menuButton!.disabled).toBe(true);
-  });
-
-  it('lists feature on/off states in a flyout when the session carries harnessFeatures', async () => {
+  it('opens the harness-features modal when clicked (features snapshot present)', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
         makeSession({
           harnessVersion: '1.0',
-          harnessFeatures: { structuredQuestions: true, agentActions: false },
+          harnessFeatures: { structuredQuestions: true, taskGraph: false },
         }),
       ]),
     );
@@ -85,25 +74,62 @@ describe('AgentCard harness version context-menu item', () => {
     const item = await screen.findByText('Harness v1.0');
     const menuButton = item.closest('button');
     expect(menuButton).not.toBeNull();
-    // Parent is enabled so the flyout can open, and marked as a submenu host.
+    // Enabled, plain menu item (no flyout).
     expect(menuButton!.disabled).toBe(false);
-    expect(menuButton!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(menuButton!.getAttribute('aria-haspopup')).not.toBe('menu');
 
     await fireEvent.click(menuButton!);
 
-    // Feature identifiers rendered verbatim; enabled entries show the check.
-    const enabledEntry = await screen.findByText('structuredQuestions');
-    const disabledEntry = await screen.findByText('agentActions');
-    const enabledButton = enabledEntry.closest('button');
-    const disabledButton = disabledEntry.closest('button');
-    expect(enabledButton!.querySelector('svg')).not.toBeNull();
-    expect(disabledButton!.querySelector('svg')).toBeNull();
-    // Submenu entries are informational (inert).
-    expect(enabledButton!.disabled).toBe(true);
-    expect(disabledButton!.disabled).toBe(true);
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    // Selecting the item closes the context menu.
+    expect(screen.queryByText('Open')).toBeNull();
+    // Settings-page labels, not raw keys; snapshot value wins and catalog
+    // keys absent from the snapshot render OFF.
+    expect(screen.getByText('Structured questions')).toBeTruthy();
+    const states = Array.from(
+      dialog.querySelectorAll('[data-testid="harness-feature-state"]'),
+    ) as HTMLElement[];
+    const stateFor = (key: string) => states.find((el) => el.dataset.feature === key);
+    expect(stateFor('structuredQuestions')!.dataset.enabled).toBe('true');
+    expect(stateFor('taskGraph')!.dataset.enabled).toBe('false');
+    expect(stateFor('backgroundHooks')!.dataset.enabled).toBe('false');
+  });
 
-    // Opening the flyout does not close the menu (informational, not an action).
-    expect(screen.queryByText('Open')).toBeTruthy();
+  it('opens the modal for a legacy session without a features snapshot (all OFF)', async () => {
+    appStore.dispatch(bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })]));
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+
+    const item = await screen.findByText('Harness v1.0');
+    const menuButton = item.closest('button');
+    expect(menuButton).not.toBeNull();
+    expect(menuButton!.disabled).toBe(false);
+
+    await fireEvent.click(menuButton!);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    const states = Array.from(
+      dialog.querySelectorAll('[data-testid="harness-feature-state"]'),
+    ) as HTMLElement[];
+    expect(states.length).toBeGreaterThan(0);
+    expect(states.every((el) => el.dataset.enabled === 'false')).toBe(true);
+  });
+
+  it('dismisses the modal with Escape', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ harnessVersion: '1.0', harnessFeatures: { structuredQuestions: true } }),
+      ]),
+    );
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+    await fireEvent.click(await screen.findByText('Harness v1.0'));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('renders the version verbatim (no reformatting)', async () => {
@@ -126,17 +152,4 @@ describe('AgentCard harness version context-menu item', () => {
     expect(screen.queryByText(/^Harness v/)).toBeNull();
   });
 
-  it('does not close the menu when the disabled item is clicked', async () => {
-    appStore.dispatch(bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })]));
-
-    render(AgentCard, { props: { agentId } });
-    await openContextMenu();
-
-    const item = await screen.findByText('Harness v1.0');
-    await fireEvent.click(item);
-
-    // Still rendered: a disabled menu item is inert.
-    expect(screen.queryByText('Harness v1.0')).toBeTruthy();
-    expect(screen.queryByText('Open')).toBeTruthy();
-  });
 });

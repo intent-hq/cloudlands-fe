@@ -47,6 +47,7 @@
   } from '$features/layout/panel-layout-adapter';
   import type { Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
+  import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
 
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
@@ -154,6 +155,9 @@
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
+
+  // Read-only harness-features modal (opened from the context menu).
+  let harnessModalOpen = $state(false);
 
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
@@ -390,38 +394,22 @@
       },
     });
 
-    // Read-only harness version stamp (PROTOCOL §5.5). Informational only.
-    // When the session carries a harnessFeatures snapshot, selecting the item
-    // opens a flyout listing each feature's on/off state (check = on) — the
-    // parent stays enabled so the submenu can open, but a submenu parent's
-    // onClick is never invoked, keeping it non-actionable. Legacy sessions
-    // without a snapshot render a plain disabled item; sessions from daemons
-    // that predate the field omit the item entirely.
+    // Read-only harness version stamp (PROTOCOL §5.5). Selecting the item
+    // opens the harness-features modal (monorepo#2459) — legacy sessions
+    // without a harnessFeatures snapshot open it too (every catalog feature
+    // renders OFF); sessions from daemons that predate the field omit the
+    // item entirely.
     const harnessVersion = $agent$?.harnessVersion;
     if (harnessVersion) {
-      const harnessFeatures = $agent$?.harnessFeatures ?? {};
-      const featureEntries = Object.entries(harnessFeatures).sort(([a], [b]) =>
-        a.localeCompare(b),
-      );
       items.push({ type: 'separator' });
       items.push({
         id: 'harness-version',
         label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
         icon: faCircleInfo,
-        ...(featureEntries.length > 0
-          ? {
-              submenu: featureEntries.map(([feature, enabled]) => ({
-                id: `harness-feature-${feature}`,
-                // Wire identifier from the §5.12 feature catalog, rendered
-                // verbatim. i18n-ignore (daemon-provided identifier)
-                label: feature,
-                checked: enabled,
-                disabled: true,
-                onClick: () => {},
-              })),
-            }
-          : { disabled: true }),
-        onClick: () => {},
+        onClick: () => {
+          harnessModalOpen = true;
+          closeContextMenu();
+        },
       });
     }
 
@@ -828,6 +816,14 @@
     y={contextMenu.y}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
+  />
+{/if}
+
+{#if $agent$?.harnessVersion}
+  <HarnessFeaturesModal
+    bind:open={harnessModalOpen}
+    version={$agent$.harnessVersion}
+    features={$agent$?.harnessFeatures ?? null}
   />
 {/if}
 

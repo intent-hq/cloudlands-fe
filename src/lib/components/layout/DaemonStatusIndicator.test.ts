@@ -368,32 +368,61 @@ describe('DaemonStatusIndicator', () => {
     }
 
     const dotOf = (trigger: HTMLElement) => trigger.querySelector('.rounded-full')!;
-    const GB = 1024 ** 3;
-    const TB = 1024 ** 4;
+    // Disk sizes render with decimal (SI) units so they match Finder.
+    const GB = 1000 ** 3;
+    const TB = 1000 ** 4;
+
+    it('formats disk bytes with decimal units, at most 3 significant figures', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatDiskSize(2_000_000_000_000)).toBe('2 TB');
+      expect(formatDiskSize(1_070_000_000_000)).toBe('1.07 TB');
+      expect(formatDiskSize(994_080_000_000)).toBe('994 GB');
+      expect(formatDiskSize(246_600_000)).toBe('247 MB');
+      expect(formatDiskSize(0)).toBe('0 MB');
+    });
+
+    it('takes the larger unit at the half-step threshold so rounding never shows 4 digits', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      // The whole [999.5 GB, 1 TB) window renders "1 TB", never "1000 GB".
+      expect(formatDiskSize(999_500_000_000)).toBe('1 TB');
+      expect(formatDiskSize(999_990_000_000)).toBe('1 TB');
+      expect(formatDiskSize(999_999_999_999)).toBe('1 TB');
+      // Just below the half-step threshold stays in GB.
+      expect(formatDiskSize(999_400_000_000)).toBe('999 GB');
+      // Same half-step at the MB → GB boundary.
+      expect(formatDiskSize(999_500_000)).toBe('1 GB');
+      expect(formatDiskSize(999_400_000)).toBe('999 MB');
+    });
+
+    it('clamps sub-MB values instead of rendering fractions like "0.0005 MB"', async () => {
+      const { formatDiskSize } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatDiskSize(500)).toBe('0 MB');
+      expect(formatDiskSize(500_000)).toBe('0.5 MB');
+    });
 
     it('renders the row as "free of total" when the daemon reports both fields', async () => {
-      // 412.5 GB free of 1 TB — well above the 10% threshold.
-      mockStoreState = withDisk({ availableBytes: 412.5 * GB, totalBytes: TB });
+      // 1.07 TB free of 2 TB — well above the 10% threshold.
+      mockStoreState = withDisk({ availableBytes: 1_070_000_000_000, totalBytes: 2 * TB });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
-      expect(screen.getByText('412.50 GB free of 1.00 TB')).toBeTruthy();
+      expect(screen.getByText('1.07 TB free of 2 TB')).toBeTruthy();
       // No warning at >= 10% free.
       expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
     });
 
     it('renders only the free part when the daemon omits the total', async () => {
-      mockStoreState = withDisk({ availableBytes: 100 * GB });
+      mockStoreState = withDisk({ availableBytes: 994_080_000_000 });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
 
       expect(screen.getByText('Workspace disk')).toBeTruthy();
-      expect(screen.getByText('100.00 GB free')).toBeTruthy();
+      expect(screen.getByText('994 GB free')).toBeTruthy();
       // No low-disk warning without a total to compare against.
       expect(screen.queryByLabelText('Less than 10% of the workspaces volume is free')).toBeNull();
     });
@@ -421,7 +450,7 @@ describe('DaemonStatusIndicator', () => {
       expect(dotOf(trigger).classList.contains('bg-green-500')).toBe(false);
 
       await fireEvent.click(trigger);
-      expect(screen.getByText('50.00 GB free of 1.00 TB')).toBeTruthy();
+      expect(screen.getByText('50 GB free of 1 TB')).toBeTruthy();
       const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
       // role="img" so the aria-label on the plain span is reliably exposed.
       expect(icon.getAttribute('role')).toBe('img');
@@ -480,6 +509,49 @@ describe('DaemonStatusIndicator', () => {
       const style = menu.getAttribute('style') ?? '';
       expect(style).toContain('max-height: var(--bits-dropdown-menu-content-available-height)');
       expect(style).not.toContain('24rem');
+    });
+  });
+
+  describe('menu width', () => {
+    it('auto-sizes to content between the 224px floor and 320px cap instead of a fixed width', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            transport: { mode: 'external-ws' as const, target: 'wss://some-host.example.com:4180/ws' },
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const wrapper = screen.getByText('Agent slots').closest('.min-w-56')!;
+      expect(wrapper).toBeTruthy();
+      // Intrinsic width with floor + cap, not the old fixed w-56.
+      expect(wrapper.classList.contains('w-max')).toBe(true);
+      expect(wrapper.classList.contains('max-w-80')).toBe(true);
+      expect(wrapper.classList.contains('w-56')).toBe(false);
+
+      // Stat rows keep label and value on one line.
+      const statRow = screen.getByText('Agent slots').closest('div')!;
+      expect(statRow.classList.contains('whitespace-nowrap')).toBe(true);
+
+      // The Connection row's value still truncates (cap-constrained) rather
+      // than driving the width.
+      const connectionValue = screen.getByTitle('external (wss://some-host.example.com:4180/ws)');
+      expect(connectionValue.classList.contains('truncate')).toBe(true);
+      expect(connectionValue.classList.contains('min-w-0')).toBe(true);
     });
   });
 
