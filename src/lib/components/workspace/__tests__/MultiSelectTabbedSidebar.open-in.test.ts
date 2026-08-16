@@ -492,7 +492,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(stack.classList.contains('grid')).toBe(true);
       expect(stack.classList.contains('grid-flow-col')).toBe(true);
       expect(stack.className).not.toContain('grid-cols-');
-      expect(stack.style.gridTemplateColumns).toBe('repeat(5, minmax(0, 16px)) 16px 20px');
+      expect(stack.style.gridTemplateColumns).toBe(
+        'repeat(5, minmax(0, 16px)) 36px minmax(36px, max-content)',
+      );
       expect(itemCount).toBe(7);
       expect(card.classList.contains('overflow-hidden')).toBe(true);
     }

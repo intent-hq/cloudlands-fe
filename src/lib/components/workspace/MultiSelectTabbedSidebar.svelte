@@ -230,8 +230,8 @@
       (tabId === 'context' && launcherNoteOverflowCount > 0);
     if (hasOverflow) {
       return itemCount > 2
-        ? `repeat(${itemCount - 2}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_STEP_SIZE}px ${LAUNCHER_VISIBLE_SIZE}px`
-        : `${LAUNCHER_STEP_SIZE}px ${LAUNCHER_VISIBLE_SIZE}px`;
+        ? `repeat(${itemCount - 2}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`
+        : `${LAUNCHER_TARGET_SIZE}px minmax(${LAUNCHER_TARGET_SIZE}px, max-content)`;
     }
     return itemCount > 1
       ? `repeat(${itemCount - 1}, minmax(0, ${LAUNCHER_STEP_SIZE}px)) ${LAUNCHER_VISIBLE_SIZE}px`
@@ -1129,7 +1129,7 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
                           onpointerdown={(event) => event.stopPropagation()}
                           onclick={(event) => {
                             event.stopPropagation();
@@ -1182,7 +1182,7 @@
                         <Button
                           variant="plain"
                           class={LAUNCHER_OVERFLOW_BUTTON_CLASS}
-                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
+                          style={`${LAUNCHER_OVERFLOW_STYLE} justify-self: start; height: ${LAUNCHER_VISIBLE_SIZE}px;`}
                           onclick={() => handleTabClick('context')}
                           aria-label={launcherNoteOverflowLabel}
                           data-sidebar-context-overflow={launcherNoteOverflowCount}

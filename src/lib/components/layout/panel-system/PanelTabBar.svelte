@@ -1208,7 +1208,7 @@
           aria-label={m.ui_breadcrumb_more_label()}
           data-testid="panel-actions-trigger"
         >
-          <KebabIcon class="pointer-events-none size-3" />
+          <KebabIcon class="pointer-events-none size-3!" />
         </Button>
       </Tooltip>
     {/snippet}
@@ -1274,7 +1274,7 @@
         aria-label={m.layout_panelTabBar_closePanel_label()}
         data-testid="panel-close-button"
       >
-        <Fa icon={faXmark} size={12} class="size-3" />
+        <Fa icon={faXmark} size={12} class="size-3!" />
       </Button>
     </Tooltip>
   {/if}
@@ -2114,5 +2114,10 @@
     padding-inline-start: calc(
       (var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2
     );
+  }
+
+  .panel-header-leading-surface {
+    position: relative;
+    top: 0.5px;
   }
 </style>
