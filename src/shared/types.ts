@@ -60,6 +60,7 @@ import type {
 import { isProposal, isProposalKind, PROPOSAL_KINDS } from './types/proposal';
 import {
   isContentBlock,
+  dedupeAgentVideoContentBlocks,
   normalizeAgentVideoContentBlocks,
   normalizeContentBlock,
   normalizeContentBlocks,
@@ -139,6 +140,7 @@ export {
   isAudioBlock,
   isCodeBlock,
   isContentBlock,
+  dedupeAgentVideoContentBlocks,
   isErrorBlock,
   isFileBlock,
   isImageBlock,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContentBlock, VideoContentBlock } from '../content-block';
-import { normalizeAgentVideoContentBlocks } from '../content-block';
+import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '../content-block';
 import { isMediaBlock, isVideoBlock } from '../content-block.guards';
 
 const block = (value: unknown) => value as ContentBlock;
@@ -102,6 +102,17 @@ describe('agent video content normalization', () => {
       type: 'video',
       source: { kind: 'remote', url: 'https://media.example/recording.webm' },
     });
+  });
+
+  it('deduplicates normalized video sources across top-level and nested output', () => {
+    const source = { kind: 'remote' as const, url: 'https://media.example/recording.mp4' };
+    const result = dedupeAgentVideoContentBlocks([
+      block({ type: 'video', source }),
+      block({ type: 'tool_result', output: [{ type: 'video', source }] }),
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result[1].output).toEqual([]);
   });
 
   it.each(['user', 'system', 'error'] as const)('does not normalize %s-role content', (role) => {

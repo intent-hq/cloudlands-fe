@@ -7,7 +7,11 @@
     ProposalActionDetail,
     MessageRole,
   } from '$shared/types';
-  import { isProposal, normalizeAgentVideoContentBlocks } from '$shared/types';
+  import {
+    dedupeAgentVideoContentBlocks,
+    isProposal,
+    normalizeAgentVideoContentBlocks,
+  } from '$shared/types';
   import {
     buildToolResultsMap,
     findToolResult,
@@ -29,6 +33,7 @@
   import ChatDiffViewer from './ChatDiffViewer.svelte';
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
   import ChatImageBlock from './ChatImageBlock.svelte';
+  import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$features/file-tracking/components/diff';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
@@ -154,9 +159,8 @@
     // renders per resource, preferring the daemon-canonical variant.
     // Agent Q&A questions are wizard-only: they never render in the
     // transcript (pending or resolved), so strip them up front.
-    const rawBlocks = normalizeAgentVideoContentBlocks(
-      dedupeResourceBlocks(content || []),
-      role,
+    const rawBlocks = dedupeAgentVideoContentBlocks(
+      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(content || []), role),
     ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
@@ -771,6 +775,14 @@
               mimeType={nestedBlock.mimeType}
               alt={m.chat_chatMessage_attachedImage_alt({ number: String(nestedIndex + 1) })}
             />
+          {:else if nestedBlock?.type === 'video' && nestedBlock.source}
+            <ChatVideoBlock
+              source={nestedBlock.source}
+              name={nestedBlock.fileName}
+              poster={typeof nestedBlock.metadata?.poster === 'string'
+                ? nestedBlock.metadata.poster
+                : undefined}
+            />
           {/if}
         {/each}
       {/if}
@@ -789,6 +801,12 @@
     />
   {:else if block.type === 'image' && block.data && block.mimeType}
     <ChatImageBlock data={block.data} mimeType={block.mimeType} />
+  {:else if block.type === 'video' && block.source}
+    <ChatVideoBlock
+      source={block.source}
+      name={block.fileName}
+      poster={typeof block.metadata?.poster === 'string' ? block.metadata.poster : undefined}
+    />
   {/if}
 {/snippet}
 

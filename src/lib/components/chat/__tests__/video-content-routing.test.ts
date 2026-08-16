@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentBlock } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
@@ -32,6 +32,7 @@ describe('agent video renderer routing', () => {
     });
 
     expect(container.querySelector('[data-message-content-block="video"]')).toBeTruthy();
+    expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
   });
 
   it.each([true, false])(
@@ -49,6 +50,7 @@ describe('agent video renderer routing', () => {
       });
 
       expect(container.querySelector('[data-message-content-block="video"]')).toBeTruthy();
+      expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
     },
   );
 
@@ -63,5 +65,42 @@ describe('agent video renderer routing', () => {
 
     expect(container.querySelector('[data-message-content-block="video"]')).toBeNull();
     expect(container.querySelector('[data-message-content-block="file"]')).toBeTruthy();
+  });
+
+  it('renders nested tool-result videos in static and streaming transcripts', async () => {
+    const nested = block({
+      type: 'tool_result',
+      tool_use_id: 'tool-1',
+      output: [{ type: 'resource_link', uri: 'https://media.example/tool-result.mp4' }],
+    });
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    render(MessageContent, { props: { content: [nested], role: 'assistant' } });
+    expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
+    cleanup();
+
+    const StreamingMessageContent = (await import('../StreamingMessageContent.svelte')).default;
+    render(StreamingMessageContent, {
+      props: {
+        content: [block({ type: 'tool_use', id: 'tool-1', name: 'record', input: {} }), nested],
+        role: 'assistant',
+        isStreaming: true,
+      },
+    });
+    expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
+  });
+
+  it('deduplicates repeated normalized video sources', async () => {
+    const MessageContent = (await import('../MessageContent.svelte')).default;
+    render(MessageContent, {
+      props: {
+        content: [
+          block({ type: 'resource_link', uri: 'https://media.example/repeated.mp4' }),
+          block({ type: 'resource_link', uri: 'https://media.example/repeated.mp4' }),
+        ],
+        role: 'assistant',
+      },
+    });
+
+    expect(screen.getAllByTestId('chat-video-snapshot')).toHaveLength(1);
   });
 });

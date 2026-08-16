@@ -279,6 +279,47 @@ export function normalizeAgentVideoContentBlocks(
   return changed ? normalized : (blocks as ContentBlock[]);
 }
 
+function videoSourceIdentity(source: VideoSource): string {
+  return source.kind === 'inline'
+    ? `inline:${source.mimeType}:${source.data}`
+    : `remote:${source.url}`;
+}
+
+/** Keep the first occurrence of each normalized video source, including nested tool results. */
+export function dedupeAgentVideoContentBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
+  const seen = new Set<string>();
+
+  function dedupeArray(values: readonly unknown[]): unknown[] {
+    let changed = false;
+    const result: unknown[] = [];
+    for (const value of values) {
+      if (isRecord(value) && value.type === 'video' && isRecord(value.source)) {
+        const source = value.source as VideoSource;
+        const key = videoSourceIdentity(source);
+        if (seen.has(key)) {
+          changed = true;
+          continue;
+        }
+        seen.add(key);
+      }
+
+      if (isRecord(value) && value.type === 'tool_result') {
+        const output = Array.isArray(value.output) ? dedupeArray(value.output) : value.output;
+        const content = Array.isArray(value.content) ? dedupeArray(value.content) : value.content;
+        if (output !== value.output || content !== value.content) {
+          result.push({ ...value, output, content });
+          changed = true;
+          continue;
+        }
+      }
+      result.push(value);
+    }
+    return changed ? result : (values as unknown[]);
+  }
+
+  return dedupeArray(blocks) as ContentBlock[];
+}
+
 /**
  * Normalize a ContentBlock to ensure consistent field names
  * Converts legacy field names to primary names

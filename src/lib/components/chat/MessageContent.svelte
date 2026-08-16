@@ -6,7 +6,11 @@
     ProposalActionDetail,
     MessageRole,
   } from '$shared/types';
-  import { isProposal, normalizeAgentVideoContentBlocks } from '$shared/types';
+  import {
+    dedupeAgentVideoContentBlocks,
+    isProposal,
+    normalizeAgentVideoContentBlocks,
+  } from '$shared/types';
   import {
     buildToolResultsMap,
     findToolResult,
@@ -30,6 +34,7 @@
   import DetectedScriptsCard from './DetectedScriptsCard.svelte';
   import ChatWorkspaceCard from './ChatWorkspaceCard.svelte';
   import ChatImageBlock from './ChatImageBlock.svelte';
+  import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
@@ -93,9 +98,8 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    const filtered = normalizeAgentVideoContentBlocks(
-      dedupeResourceBlocks(content || []),
-      role,
+    const filtered = dedupeAgentVideoContentBlocks(
+      normalizeAgentVideoContentBlocks(dedupeResourceBlocks(content || []), role),
     ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.
@@ -520,6 +524,12 @@
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
       <ChatImageBlock data={block.data} mimeType={block.mimeType} />
     </div>
+  {:else if block.type === 'video' && block.source}
+    <ChatVideoBlock
+      source={block.source}
+      name={block.fileName}
+      poster={typeof block.metadata?.poster === 'string' ? block.metadata.poster : undefined}
+    />
   {:else if block.type === 'tool_use'}
     {@const toolBlock = block as ToolUseBlock}
     {@const toolResult = findToolResult(toolResultsMap, toolBlock)}
@@ -560,6 +570,14 @@
                 data={nestedBlock.data}
                 mimeType={nestedBlock.mimeType}
                 alt={m.chat_messageContent_toolResultImage_alt()}
+              />
+            {:else if nestedBlock.type === 'video' && nestedBlock.source}
+              <ChatVideoBlock
+                source={nestedBlock.source}
+                name={nestedBlock.fileName}
+                poster={typeof nestedBlock.metadata?.poster === 'string'
+                  ? nestedBlock.metadata.poster
+                  : undefined}
               />
             {:else if nestedBlock.type === 'tool_use'}
               {@const nestedToolBlock = nestedBlock as ToolUseBlock}
