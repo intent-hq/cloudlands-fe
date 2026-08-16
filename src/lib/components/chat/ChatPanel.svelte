@@ -146,7 +146,7 @@
     animateScrollTo,
     followToBottom,
     followBottom,
-    scrollToBottom as scrollToBottomUtil,
+    type FollowBottomState,
   } from '$lib/utils/smartScroll';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
@@ -418,6 +418,18 @@
       userMessages: userMessageNavigationItems,
     });
   });
+
+  function handleBottomStateChange(state: FollowBottomState) {
+    const previousDistance = distanceFromBottom;
+    distanceFromBottom = state.distanceFromBottom;
+    if (
+      previousDistance > SCROLL_BOTTOM_THRESHOLD &&
+      state.distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD &&
+      state.isFollowing
+    ) {
+      flashLockConfirmation();
+    }
+  }
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
   // scrolling crosses back to the bottom and auto-follow re-engages. Purely
   // decorative (aria-hidden, pointer-events-none) so it can never intercept
@@ -1660,9 +1672,8 @@
           // Guard against component destruction during tick
           if (isComponentDestroyed) return;
           const startedTransition = startPendingSendTransitions();
-          if (scrollContainer && shouldScroll && !startedTransition) {
-            scrollToBottomUtil(scrollContainer);
-          }
+          if (!startedTransition && scrollContainer && shouldScroll)
+            followToBottom(scrollContainer);
         });
       }
     }
@@ -1885,18 +1896,12 @@
     // sends anything on mount — chat-history hydration renders the daemon-
     // delivered message once it arrives.
 
-    // Scroll handling on mount
+    // Empty chats start at the top and unlock until the first send. Non-empty
+    // chats are positioned by the follow action itself.
     const initialScrollFrame = requestAnimationFrame(() => {
-      if (scrollContainer) {
-        if ($agentMessages$.length > 0) {
-          // Scroll to bottom if there are messages
-          scrollToBottomUtil(scrollContainer);
-        } else {
-          // Scroll to top for empty panel (shows specialist switcher)
-          scrollContainer.scrollTop = 0;
-          // Don't auto-follow until user sends a message
-          shouldFollowBottom = false;
-        }
+      if (scrollContainer && $agentMessages$.length === 0) {
+        scrollContainer.scrollTop = 0;
+        shouldFollowBottom = false;
       }
     });
 
@@ -2042,7 +2047,8 @@
     // Clamp index to valid range, or -1 for "at bottom"
     if (index < 0) {
       currentMessageIndex = -1;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+      shouldFollowBottom = true;
+      followToBottom(scrollContainer);
       return;
     }
 
@@ -2311,7 +2317,7 @@
     const targetElement = dividerElement ?? anchorElement;
     if (!targetElement) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(scrollContainer);
       scheduleDeepOpenRelease();
       return;
     }
@@ -2326,7 +2332,7 @@
       )
     ) {
       shouldFollowBottom = true;
-      scrollToBottomUtil(scrollContainer);
+      followToBottom(scrollContainer);
       scheduleDeepOpenRelease();
       return;
     }
@@ -2437,60 +2443,6 @@
 
     return () => {
       window.removeEventListener('panel:focus-content', handlePanelFocusContent);
-    };
-  });
-
-  // Track scroll distance from bottom for the lock button
-  // Use onMount pattern to avoid effect loops - scrollContainer binding can cause
-  // effects to re-run when state changes trigger re-renders
-  onMount(() => {
-    let destroyed = false;
-    let readinessFrame: number | null = null;
-    let initialCalculationFrame: number | null = null;
-    let boundContainer: HTMLDivElement | null = null;
-
-    const handleScroll = () => {
-      if (!boundContainer) return;
-      const { scrollTop, scrollHeight, clientHeight } = boundContainer;
-      const newDistance = scrollHeight - scrollTop - clientHeight;
-      // Only update if changed to avoid unnecessary re-renders
-      if (newDistance !== distanceFromBottom) {
-        // Crossing back into the at-bottom zone re-locks auto-follow; flash
-        // the decorative lock confirmation so the re-lock is visible.
-        if (
-          distanceFromBottom > SCROLL_BOTTOM_THRESHOLD &&
-          newDistance <= SCROLL_BOTTOM_THRESHOLD
-        ) {
-          flashLockConfirmation();
-        }
-        distanceFromBottom = newDistance;
-      }
-    };
-
-    // Wait for scrollContainer to be bound, then set up
-    const setupWhenReady = () => {
-      readinessFrame = null;
-      if (destroyed) return;
-      if (!scrollContainer) {
-        readinessFrame = requestAnimationFrame(setupWhenReady);
-        return;
-      }
-      boundContainer = scrollContainer;
-      boundContainer.addEventListener('scroll', handleScroll, { passive: true });
-      // Initial calculation (deferred to avoid effect loops)
-      initialCalculationFrame = requestAnimationFrame(handleScroll);
-    };
-    readinessFrame = requestAnimationFrame(setupWhenReady);
-
-    return () => {
-      destroyed = true;
-      if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
-      if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
-      boundContainer?.removeEventListener('scroll', handleScroll);
-      if (lockConfirmationTimer !== null) {
-        clearTimeout(lockConfirmationTimer);
-        lockConfirmationTimer = null;
-      }
     };
   });
 
@@ -2656,6 +2608,10 @@
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
     cancelAllSendTransitions();
+    if (lockConfirmationTimer !== null) {
+      clearTimeout(lockConfirmationTimer);
+      lockConfirmationTimer = null;
+    }
 
     // Clear currently viewed agent so other agents can properly be marked as
     // unread — scoped so a cached background tab's destroy cannot tear down
@@ -2890,7 +2846,7 @@
 
     if (options.followBottom) {
       shouldFollowBottom = true;
-      if (scrollContainer) scrollToBottomUtil(scrollContainer);
+      if (scrollContainer) followToBottom(scrollContainer);
     }
   }
 
@@ -3430,6 +3386,7 @@
         onFollowChange: (f) => {
           shouldFollowBottom = f;
         },
+        onScrollStateChange: handleBottomStateChange,
       }}
       class="flex-1 overflow-y-auto"
       class:agent-font-monospace={$isAgentMonospace}

@@ -1,4 +1,5 @@
 import { USER_MESSAGE_SURFACE_CLASS, USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
+import { followToBottom } from '$lib/utils/smartScroll';
 
 export const MESSAGE_SEND_TRANSITION_DURATION_MS = 280;
 export const MESSAGE_SEND_TRANSITION_EASING = 'cubic-bezier(0.2, 0, 0, 1)';
@@ -124,10 +125,7 @@ export function animateMessageSend({
 
   try {
     if (followBottom) {
-      scrollContainer.scrollTop = Math.max(
-        0,
-        scrollContainer.scrollHeight - scrollContainer.clientHeight,
-      );
+      followToBottom(scrollContainer);
     }
     if (reducedMotion || !target.isConnected || signal?.aborted || document.hidden) {
       cleanup();

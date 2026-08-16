@@ -90,6 +90,8 @@
  * and it requires a simultaneous under- and overestimated placeholder pair
  * near the bottom.
  */
+import { isFollowingBottom } from '$lib/utils/smartScroll';
+
 export interface ScrollerSnapshot {
   scrollTop: number;
   scrollHeight: number;
@@ -143,6 +145,9 @@ export function createHeightLedger(
       const delta = newHeight - lastHeight;
       lastHeight = newHeight;
       if (delta === 0) return;
+      // The follow action is the sole absolute bottom writer. Keep this
+      // ledger's baseline current, but never compete with a captured lock.
+      if (isFollowingBottom(scroller)) return;
       const scrollerTop = scroller.getBoundingClientRect().top;
       const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
       // How far the native clamp moved scrollTop at flush time: it fires

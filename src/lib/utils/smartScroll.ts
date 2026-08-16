@@ -8,8 +8,8 @@
  * - Resumes when user scrolls DOWN to the bottom
  * - Uses RAF for smooth scrolling during streaming
  *
- * Key insight: We ONLY change isAtBottom based on user INPUT events (wheel, touch, keyboard),
- * NOT based on scroll events. This prevents browser/programmatic scrolls from changing state.
+ * Follow policy changes only from consumer intent or user input. Layout and
+ * programmatic scroll events report geometry but never detach or re-lock it.
  */
 
 export interface FollowBottomOptions {
@@ -19,114 +19,135 @@ export interface FollowBottomOptions {
   threshold?: number;
   /** Callback when follow state changes due to user interaction */
   onFollowChange?: (follow: boolean) => void;
+  /** Reports live geometry for controls outside the scroll container. */
+  onScrollStateChange?: (state: FollowBottomState) => void;
+}
+
+export interface FollowBottomState {
+  distanceFromBottom: number;
+  isAtBottom: boolean;
+  isFollowing: boolean;
 }
 
 interface BottomFollower {
   followAndScroll: () => void;
+  isFollowing: () => boolean;
 }
 
 const bottomFollowers = new WeakMap<HTMLElement, BottomFollower>();
+export const FOLLOW_BOTTOM_MAX_SETTLE_FRAMES = 32;
+const FOLLOW_BOTTOM_STABLE_FRAMES = 2;
 
 /**
  * Svelte action that follows the bottom of a scrollable container.
  *
- * The consumer owns the follow policy: mutation/resize observers only
- * auto-scroll to bottom when `follow` is true, and `update()` never initiates
- * a scroll on its own. Callers that want to snap to bottom must do so
- * explicitly (see `scrollToBottom` below) in addition to flipping `follow`.
+ * The consumer owns the follow policy. Mutation and resize observers capture
+ * that policy before they run and keep a followed viewport at the exact
+ * maximum through a bounded settle. Enabling follow also snaps immediately.
  */
 export function followBottom(container: HTMLElement, options: FollowBottomOptions) {
-  let isAtBottom = options.follow;
+  let isFollowing = options.follow;
   let onFollowChange = options.onFollowChange;
-  const threshold = options.threshold ?? 100;
-
-  // Track if we're in the middle of a USER scroll (not programmatic)
-  // This prevents auto-scroll from fighting with user scrolls
-  let isUserScrolling = false;
-  let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  // Track if we're doing a programmatic scroll
-  let isProgrammaticScroll = false;
+  let onScrollStateChange = options.onScrollStateChange;
+  let threshold = options.threshold ?? 100;
+  let pointerScrolling = false;
 
   let mutationObserver: MutationObserver | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let settleFrame: number | null = null;
-  let confirmationFrame: number | null = null;
+  let settleFramesRemaining = 0;
+  let stableFrames = 0;
+  let previousMaximum: number | null = null;
 
   function cancelSettle() {
     if (settleFrame !== null) cancelAnimationFrame(settleFrame);
-    if (confirmationFrame !== null) cancelAnimationFrame(confirmationFrame);
     settleFrame = null;
-    confirmationFrame = null;
+    settleFramesRemaining = 0;
+    stableFrames = 0;
+    previousMaximum = null;
   }
 
-  function setExactBottom() {
-    container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+  function maximumScrollTop(): number {
+    return Math.max(0, container.scrollHeight - container.clientHeight);
   }
 
-  function scheduleBottomSettle() {
-    if (settleFrame !== null || !isAtBottom || isUserScrolling) return;
-    isProgrammaticScroll = true;
-    settleFrame = requestAnimationFrame(() => {
-      settleFrame = null;
-      if (!isAtBottom || isUserScrolling) {
-        isProgrammaticScroll = false;
-        return;
-      }
-      setExactBottom();
-      confirmationFrame = requestAnimationFrame(() => {
-        confirmationFrame = null;
-        if (isAtBottom && !isUserScrolling) setExactBottom();
-        isProgrammaticScroll = false;
-      });
-    });
+  function setExactBottom(): number {
+    const maximum = maximumScrollTop();
+    if (container.scrollTop !== maximum) container.scrollTop = maximum;
+    return maximum;
   }
 
   function checkIfAtBottom(): boolean {
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    return scrollTop + clientHeight >= scrollHeight - threshold;
+    return maximumScrollTop() - container.scrollTop <= threshold;
   }
 
-  function setIsAtBottom(value: boolean) {
-    if (isAtBottom !== value) {
-      isAtBottom = value;
-      onFollowChange?.(value);
+  function reportState() {
+    const distance = Math.max(0, maximumScrollTop() - container.scrollTop);
+    onScrollStateChange?.({
+      distanceFromBottom: distance,
+      isAtBottom: distance <= threshold,
+      isFollowing,
+    });
+  }
+
+  function setFollowing(value: boolean, notify = true) {
+    if (isFollowing !== value) {
+      isFollowing = value;
+      if (notify) onFollowChange?.(value);
+    }
+    if (!value) cancelSettle();
+    reportState();
+  }
+
+  function runSettleFrame() {
+    settleFrame = null;
+    if (!isFollowing) return;
+    const maximum = setExactBottom();
+    reportState();
+    if (maximum === previousMaximum) stableFrames += 1;
+    else stableFrames = 0;
+    previousMaximum = maximum;
+    settleFramesRemaining -= 1;
+    if (settleFramesRemaining > 0 && stableFrames < FOLLOW_BOTTOM_STABLE_FRAMES) {
+      settleFrame = requestAnimationFrame(runSettleFrame);
     }
   }
 
-  // Called when DOM or size changes
-  function scrollIfNeeded() {
-    if (document.body.classList.contains('panel-resizing')) return;
-    // Only auto-scroll if following and not actively user-scrolling
-    // Note: We check isAtBottom (the "following" state), not the actual scroll position.
-    // This is important because when content first becomes scrollable, the actual position
-    // might not be at bottom, but we still want to scroll if we were following.
-    if (isAtBottom && !isUserScrolling) scheduleBottomSettle();
+  function scheduleBottomSettle() {
+    if (settleFrame !== null || !isFollowing) return;
+    settleFramesRemaining = FOLLOW_BOTTOM_MAX_SETTLE_FRAMES;
+    stableFrames = 0;
+    previousMaximum = null;
+    settleFrame = requestAnimationFrame(runSettleFrame);
+  }
+
+  function handleLayoutChange() {
+    if (isFollowing) {
+      setExactBottom();
+      scheduleBottomSettle();
+    }
+    reportState();
   }
 
   const follower: BottomFollower = {
     followAndScroll() {
-      isUserScrolling = false;
-      setIsAtBottom(true);
-      isProgrammaticScroll = true;
+      setFollowing(true);
       setExactBottom();
+      reportState();
       scheduleBottomSettle();
     },
+    isFollowing: () => isFollowing,
   };
   bottomFollowers.set(container, follower);
 
   // Handle wheel events - user is scrolling with mouse/trackpad
   function handleWheel(e: WheelEvent) {
     if (e.deltaY < 0) {
-      // User scrolling UP - stop following
-      setIsAtBottom(false);
+      setFollowing(false);
     } else if (e.deltaY > 0) {
-      // User scrolling DOWN - check if at bottom after a short delay
-      // (the scroll hasn't happened yet when wheel fires)
       requestAnimationFrame(() => {
-        if (checkIfAtBottom()) {
-          setIsAtBottom(true);
-        }
+        if (checkIfAtBottom()) follower.followAndScroll();
+        else reportState();
       });
     }
   }
@@ -142,8 +163,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     const deltaY = touchStartY - touchY; // positive = scrolling down, negative = scrolling up
 
     if (deltaY < 0) {
-      // User dragging down (scrolling up) - stop following
-      setIsAtBottom(false);
+      setFollowing(false);
     }
     // For scrolling down, we'll check in touchend
   }
@@ -151,36 +171,38 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   function handleTouchEnd() {
     // Check if at bottom after touch scroll ends
     requestAnimationFrame(() => {
-      if (checkIfAtBottom()) {
-        setIsAtBottom(true);
-      }
+      if (checkIfAtBottom()) follower.followAndScroll();
+      else reportState();
     });
   }
 
   // Handle keyboard events for scroll keys
   function handleKeyDown(e: KeyboardEvent) {
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
-      setIsAtBottom(false);
+      setFollowing(false);
     } else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) {
       // Check if at bottom after keyboard scroll
       requestAnimationFrame(() => {
-        if (checkIfAtBottom()) {
-          setIsAtBottom(true);
-        }
+        if (checkIfAtBottom()) follower.followAndScroll();
+        else reportState();
       });
     }
   }
 
-  // Handle scroll events - only track USER scrolls, not programmatic ones
   function handleScroll() {
-    // Ignore programmatic scrolls
-    if (isProgrammaticScroll) return;
+    if (pointerScrolling) setFollowing(checkIfAtBottom());
+    else reportState();
+  }
 
-    isUserScrolling = true;
-    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-    scrollEndTimeout = setTimeout(() => {
-      isUserScrolling = false;
-    }, 150);
+  function handlePointerDown() {
+    pointerScrolling = true;
+  }
+
+  function handlePointerUp() {
+    if (!pointerScrolling) return;
+    pointerScrolling = false;
+    if (checkIfAtBottom()) follower.followAndScroll();
+    else reportState();
   }
 
   function setupObservers() {
@@ -198,7 +220,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           }
         }
       }
-      scrollIfNeeded();
+      handleLayoutChange();
     });
     mutationObserver.observe(container, {
       childList: true,
@@ -207,7 +229,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     });
 
     // Watch for size changes
-    resizeObserver = new ResizeObserver(scrollIfNeeded);
+    resizeObserver = new ResizeObserver(handleLayoutChange);
     resizeObserver.observe(container);
 
     // Also observe children for size changes
@@ -230,40 +252,30 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   container.addEventListener('touchmove', handleTouchMove, { passive: true });
   container.addEventListener('touchend', handleTouchEnd, { passive: true });
   container.addEventListener('keydown', handleKeyDown);
+  container.addEventListener('pointerdown', handlePointerDown, { passive: true });
+  window.addEventListener('pointerup', handlePointerUp, { passive: true });
+  window.addEventListener('pointercancel', handlePointerUp, { passive: true });
 
   // Initial setup
   setupObservers();
-  if (isAtBottom) {
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: 'instant',
-    });
-  }
+  if (isFollowing) setExactBottom();
+  reportState();
 
   return {
     update(newOptions: FollowBottomOptions) {
       onFollowChange = newOptions.onFollowChange;
+      onScrollStateChange = newOptions.onScrollStateChange;
+      threshold = newOptions.threshold ?? 100;
 
-      // Sync internal follow state with the consumer's intent. We intentionally
-      // never initiate a scroll here — consumers that want to snap to bottom
-      // must call `scrollToBottom(container)` explicitly. The observers below
-      // will keep the viewport pinned to the bottom while `follow` is true as
-      // new content streams in.
-      //
-      // Assign `isAtBottom` directly rather than through `setIsAtBottom` so this
-      // consumer-driven change doesn't echo back via `onFollowChange`. That
-      // callback is reserved for user-input pathways (wheel/touch/keyboard); if
-      // we routed through it, toggling `follow` (e.g. when search opens) would
-      // flip the consumer's own follow flag and leave auto-follow disabled when
-      // the consumer next sets `follow: true`.
-      if (newOptions.follow && !isAtBottom) {
-        isUserScrolling = false;
-        isAtBottom = true;
-      } else if (!newOptions.follow && isAtBottom) {
-        isAtBottom = false;
-        cancelSettle();
-        isProgrammaticScroll = false;
-      }
+      // Consumer-driven changes do not echo through onFollowChange. That
+      // callback is reserved for wheel, touch, keyboard, and scrollbar input.
+      if (newOptions.follow && !isFollowing) {
+        setFollowing(true, false);
+        setExactBottom();
+        reportState();
+        scheduleBottomSettle();
+      } else if (!newOptions.follow && isFollowing) setFollowing(false, false);
+      else reportState();
     },
 
     destroy() {
@@ -276,9 +288,15 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
       container.removeEventListener('keydown', handleKeyDown);
-      if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
+      container.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     },
   };
+}
+
+export function isFollowingBottom(element: HTMLElement): boolean {
+  return bottomFollowers.get(element)?.isFollowing() ?? false;
 }
 
 /**

@@ -114,7 +114,37 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 }));
 vi.mock('$lib/utils/smartScroll', () => ({
   followToBottom: vi.fn(),
-  followBottom: () => ({ update: () => {}, destroy: () => {} }),
+  followBottom: (
+    node: HTMLElement,
+    initial: {
+      follow: boolean;
+      threshold?: number;
+      onScrollStateChange?: (state: {
+        distanceFromBottom: number;
+        isAtBottom: boolean;
+        isFollowing: boolean;
+      }) => void;
+    },
+  ) => {
+    let options = initial;
+    const report = () => {
+      const distance = Math.max(0, node.scrollHeight - node.clientHeight - node.scrollTop);
+      options.onScrollStateChange?.({
+        distanceFromBottom: distance,
+        isAtBottom: distance <= (options.threshold ?? 100),
+        isFollowing: options.follow,
+      });
+    };
+    node.addEventListener('scroll', report);
+    report();
+    return {
+      update: (next: typeof initial) => {
+        options = next;
+        report();
+      },
+      destroy: () => node.removeEventListener('scroll', report),
+    };
+  },
   scrollToBottom: vi.fn(),
 }));
 vi.mock('../message-send-transition', () => ({
@@ -679,24 +709,23 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(view.container.querySelector(selector)).toBeNull();
   });
 
-  it('sets up and tears down sticky scroll tracking and resize observation normally', async () => {
+  it('tears down the single scroll authority and resize observation normally', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const view = render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
     });
     await tick();
     const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
-    const addListener = vi.spyOn(scrollContainer, 'addEventListener');
     const removeListener = vi.spyOn(scrollContainer, 'removeEventListener');
 
     flushFrame();
-    expect(addListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1);
     expect(mocks.resizeObserve).toHaveBeenCalledWith(scrollContainer);
 
     scrollContainer.dispatchEvent(new Event('scroll'));
-    expect(frames.length).toBeGreaterThan(0);
     view.unmount();
 
+    // One listener belongs to the scroll authority; the other is the read-only
+    // pinned-prompt tracker.
     expect(removeListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2);
     expect(mocks.resizeDisconnect).toHaveBeenCalledTimes(2);
     expect(frames).toHaveLength(0);

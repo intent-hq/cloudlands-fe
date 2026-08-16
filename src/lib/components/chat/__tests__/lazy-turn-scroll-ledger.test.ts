@@ -8,8 +8,15 @@
  * top-of-chat jump while scrolling through history. The ledger reconciles the
  * turn's height on every swap flush and every ResizeObserver fire.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createHeightLedger, snapshotScroller } from '../lazy-turn-scroll-ledger';
+import { isFollowingBottom } from '$lib/utils/smartScroll';
+
+vi.mock('$lib/utils/smartScroll', () => ({ isFollowingBottom: vi.fn(() => false) }));
+
+afterEach(() => {
+  vi.mocked(isFollowingBottom).mockReturnValue(false);
+});
 
 interface FakeTurn {
   height: number;
@@ -203,6 +210,20 @@ describe('LazyTurn height ledger', () => {
     h.ledger.account(); // ResizeObserver fires for the same change
     h.ledger.account();
     expect(h.scroller.scrollTop).toBe(after);
+  });
+
+  it('defers bottom ownership while follow is active but advances its baseline', () => {
+    const h = makeHarness({ height: 500, contentTop: 200, connected: true });
+    h.ledger.account();
+    vi.mocked(isFollowingBottom).mockReturnValue(true);
+    h.turn.height = 540;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1000);
+
+    vi.mocked(isFollowingBottom).mockReturnValue(false);
+    h.turn.height = 550;
+    h.ledger.account();
+    expect(h.scroller.scrollTop).toBe(1010);
   });
 
   it('interleaves swap-flush and resize accounting without drift', () => {
