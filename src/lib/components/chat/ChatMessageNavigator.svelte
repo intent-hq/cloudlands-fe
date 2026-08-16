@@ -22,6 +22,7 @@
   let query = $state('');
   let activeIndex = $state(0);
   let searchInput: HTMLInputElement | null = $state(null);
+  let pointerDownOnTrigger = $state(false);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
   const filteredMessages = $derived.by(() => {
@@ -43,6 +44,23 @@
   function handleInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
     activeIndex = 0;
+  }
+
+  function handleTriggerFocus(event: FocusEvent) {
+    const previousTarget = event.relatedTarget;
+    if (
+      pointerDownOnTrigger ||
+      (previousTarget instanceof Element && previousTarget.closest('[data-popover-content]'))
+    ) {
+      return;
+    }
+    handleOpenChange(true);
+  }
+
+  function handleTriggerKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    if (!open) handleOpenChange(true);
   }
 
   async function selectMessage(messageId: string) {
@@ -95,6 +113,11 @@
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           title={m.chat_messageNavigator_open_ariaLabel()}
           aria-expanded={open}
+          onfocus={handleTriggerFocus}
+          onkeydown={handleTriggerKeydown}
+          onpointerdown={() => (pointerDownOnTrigger = true)}
+          onpointerup={() => (pointerDownOnTrigger = false)}
+          onpointercancel={() => (pointerDownOnTrigger = false)}
           data-testid="chat-message-navigator-trigger"
         >
           <Fa icon={faList} size={CHAT_ICON_SIZE.header} class="size-3!" />

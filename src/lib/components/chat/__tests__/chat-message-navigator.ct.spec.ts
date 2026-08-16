@@ -186,4 +186,39 @@ test.describe('chat message navigator production path', () => {
         .toBeLessThanOrEqual(2);
     });
   }
+
+  test('preserves keyboard, pointer, focus, and outside interaction ordering', async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(ChatMessageNavigatorIntegrationHost);
+    const trigger = component.getByTestId('chat-message-navigator-trigger');
+    const outside = component.getByTestId('panel-actions-trigger');
+    const title = component.getByText('Navigation agent', { exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Browse user messages' });
+
+    await trigger.press('Space');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    await outside.focus();
+    await trigger.focus();
+    await expect(dialog).toBeVisible();
+    const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
+    await expect(search).toBeFocused();
+    await dialog.getByRole('option').first().focus();
+    await expect(dialog).toBeVisible();
+    await outside.focus();
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.hover();
+    await expect(dialog).toBeVisible();
+    await dialog.hover();
+    await page.waitForTimeout(200);
+    await expect(dialog).toBeVisible();
+    await title.click();
+    await expect(dialog).toHaveCount(0);
+  });
 });

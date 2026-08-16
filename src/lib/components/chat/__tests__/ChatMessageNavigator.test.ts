@@ -115,6 +115,40 @@ describe('ChatMessageNavigator', () => {
     expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
   });
 
+  it('opens with Space and from focus without a click', async () => {
+    renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    await fireEvent.keyDown(trigger, { key: ' ' });
+    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+
+    trigger.focus();
+    await waitFor(() => expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('combobox')));
+  });
+
+  it('stays open while pointer and focus move from the trigger into the panel', async () => {
+    vi.useFakeTimers();
+    renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    await fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+    await vi.advanceTimersByTimeAsync(120);
+    await Promise.resolve();
+    const panel = screen.getByTestId('chat-message-navigator-panel');
+
+    await fireEvent.pointerLeave(trigger, { pointerType: 'mouse' });
+    await fireEvent.pointerEnter(panel, { pointerType: 'mouse' });
+    await vi.advanceTimersByTimeAsync(181);
+    expect(screen.getByTestId('chat-message-navigator-panel')).toBe(panel);
+
+    const option = screen.getAllByTestId('chat-message-navigator-result')[1];
+    option.focus();
+    await fireEvent.focusIn(option);
+    expect(screen.getByTestId('chat-message-navigator-panel')).toBe(panel);
+  });
+
   it('opens from the trigger and closes on Escape', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');
