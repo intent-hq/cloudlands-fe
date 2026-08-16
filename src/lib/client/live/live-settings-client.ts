@@ -204,7 +204,7 @@ export class LiveSettingsClient implements SettingsClient {
             "mcp.servers.getStatus",
             { serverId },
           );
-          return fromWireMcpStatus(result?.status);
+          return fromWireMcpStatus(serverId, result?.status);
         } catch {
           return null;
         }
@@ -347,18 +347,28 @@ interface WireMcpServerStatus {
   lastError?: string;
 }
 
-/** Map a wire status (§5.22) to the FE runtime-status shape; `null` when malformed. */
-function fromWireMcpStatus(wire: WireMcpServerStatus | undefined): McpServerRuntimeStatus | null {
-  if (typeof wire?.serverId !== "string" || !wire.serverId) return null;
+/**
+ * Map a wire status (§5.22) to the FE runtime-status shape; `null` when
+ * malformed. Keyed by the *requested* serverId — a conforming daemon echoes
+ * the same id back (§5.22), so correlation must not depend on the echo; a
+ * mismatched echo is dropped rather than mis-correlated.
+ */
+function fromWireMcpStatus(
+  serverId: string,
+  wire: WireMcpServerStatus | undefined,
+): McpServerRuntimeStatus | null {
+  if (typeof wire?.serverId === "string" && wire.serverId && wire.serverId !== serverId) {
+    return null;
+  }
   if (
-    wire.state !== "stopped" &&
-    wire.state !== "starting" &&
-    wire.state !== "running" &&
-    wire.state !== "error"
+    wire?.state !== "stopped" &&
+    wire?.state !== "starting" &&
+    wire?.state !== "running" &&
+    wire?.state !== "error"
   ) {
     return null;
   }
-  const status: McpServerRuntimeStatus = { serverId: wire.serverId, state: wire.state };
+  const status: McpServerRuntimeStatus = { serverId, state: wire.state };
   if (typeof wire.lastError === "string" && wire.lastError) status.lastError = wire.lastError;
   return status;
 }

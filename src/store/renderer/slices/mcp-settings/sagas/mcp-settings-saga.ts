@@ -204,7 +204,11 @@ function* load(): SagaGenerator<void> {
     yield* put(clearAllErrorMessages());
     yield* put(setDisabledServers(disabled));
     yield* put(bulkSetServerStatus(statuses));
-    yield* call(fetchDaemonStatuses, servers);
+    // Forked (not called) so a slow daemon status fan-out never delays
+    // `setLoading(false)` — the list renders with config-derived badges that
+    // upgrade when statuses land. Attached fork: a newer `loadServers` still
+    // cancels it via takeLatest, so no stale overlay can apply.
+    yield* fork(fetchDaemonStatuses, servers);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_loadServersFailed_error())));
   } finally {
