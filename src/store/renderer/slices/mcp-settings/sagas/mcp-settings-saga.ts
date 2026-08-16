@@ -146,9 +146,52 @@ function* persist(
     );
     if (!result.success) {
       yield* put(setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())));
+      return;
     }
+    yield* fork(refreshDaemonIdsAndStatuses);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
+  }
+}
+
+/**
+ * After a successful save, re-read the canonical list so daemon-assigned ids
+ * reach Redux (`setMcpServers` returns only `{ success }`), then run the same
+ * daemon-status overlay as the load path. Without this, neither the status
+ * fetch nor live `mcp.servers:status-changed` events can correlate a runtime
+ * status back to a just-saved server until the next `loadServers`. Ids merge
+ * by name into the current optimistic list; credentials stay stripped.
+ *
+ * Call sites `fork` this helper rather than `call` it: the whole refresh is
+ * fire-and-forget (redux-saga's attached-fork model would otherwise make the
+ * caller wait for it, delaying e.g. `saveAdvanced`'s reset timer), and a
+ * refresh failure is non-fatal — the save itself already succeeded, so the
+ * body is fully wrapped in try/catch to keep an abort from surfacing as a
+ * save error.
+ */
+function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
+  try {
+    const response: Awaited<ReturnType<typeof appClient.settings.getMcpServers>> = yield* call(
+      [appClient.settings, appClient.settings.getMcpServers],
+    );
+    const canonical = response.map(copyServerForState);
+    const idByName = new Map(
+      canonical.flatMap((server) => (server.id ? [[server.name, server.id] as const] : [])),
+    );
+    const current: McpServerConfig[] = yield* selectMcpServers.effect();
+    let changed = false;
+    const merged = current.map((server) => {
+      const id = idByName.get(server.name);
+      if (id === undefined || server.id === id) return server;
+      changed = true;
+      const copy = copyServerForState(server);
+      copy.id = id;
+      return copy;
+    });
+    if (changed) yield* put(setServers(merged));
+    yield* fork(fetchDaemonStatuses, canonical);
+  } catch (error) {
+    logger.warn('Failed to refresh daemon MCP server ids after save', { error });
   }
 }
 
@@ -156,7 +199,11 @@ function* persist(
  * Fetch daemon-reported runtime statuses (`mcp.servers.getStatus`, §5.22) for
  * enabled servers carrying a daemon id, and overlay them on the status map.
  * A wire failure leaves the config-derived statuses in place — live updates
- * still arrive via `mcp.servers:status-changed`.
+ * still arrive via `mcp.servers:status-changed`. Mirroring the events bridge,
+ * a non-error status clears any stale `errorMessages` entry. Because the
+ * fan-out is forked, the list may change while it is in flight (e.g. a
+ * remove-and-re-add of the same name assigns a new daemon id), so a status is
+ * only applied when the current list still maps the queried id to that name.
  */
 function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
   const nameById = new Map(
@@ -169,14 +216,19 @@ function* fetchDaemonStatuses(servers: McpServerConfig[]): SagaGenerator<void> {
         [appClient.settings, appClient.settings.getMcpServerStatuses],
         [...nameById.keys()],
       );
+    const current: McpServerConfig[] = yield* selectMcpServers.effect();
+    const currentIdByName = new Map(current.map((server) => [server.name, server.id]));
     const statusMap: Record<string, McpServerStatus> = {};
     for (const status of statuses) {
       const name = nameById.get(status.serverId);
       const mapped = mapDaemonMcpState(status.state);
       if (!name || mapped === null) continue;
+      if (currentIdByName.get(name) !== status.serverId) continue;
       statusMap[name] = mapped;
       if (mapped === 'error' && status.lastError) {
         yield* put(setServerErrorMessage(name, status.lastError));
+      } else {
+        yield* put(clearServerErrorMessage(name));
       }
     }
     if (Object.keys(statusMap).length > 0) yield* put(bulkSetServerStatus(statusMap));
@@ -383,6 +435,7 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
   }
   yield* put(setAdvancedSaveStatus('saved'));
   yield* fork(resetAdvancedStatus);
+  yield* fork(refreshDaemonIdsAndStatuses);
 }
 
 function* resetAdvancedStatus(): SagaGenerator<void> {
