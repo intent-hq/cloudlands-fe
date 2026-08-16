@@ -414,13 +414,18 @@
   {/snippet}
 
   {#snippet content()}
-    <div class="w-56">
+    <!--
+      Intrinsic width: grow to fit the widest stat row (no value wrapping)
+      between the 224px floor and a 320px cap. At the cap the Connection
+      row's min-w-0 truncate takes over instead of widening the menu.
+    -->
+    <div class="min-w-56 w-max max-w-80">
       <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
       {#if $health$ === 'down'}
         <!-- Down state: show placeholders -->
         <div class="px-3 py-2 space-y-1.5">
-          <div class="flex justify-between text-xs">
+          <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
             <span class="text-red-500 font-medium">{m.layout_daemonStatus_notRunning_label()}</span>
           </div>
@@ -432,7 +437,7 @@
       {:else}
         <!-- Healthy/Degraded state: show stats -->
         <div class="px-3 py-2 space-y-1.5">
-          <div class="flex justify-between text-xs">
+          <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
             <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
             <span
               class={cn(
@@ -450,7 +455,7 @@
             <div class="h-px bg-border my-1"></div>
 
             <!-- Agent slots -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
               <span class="font-mono">
                 {$stats$.agents}/{$stats$.maxAgents ?? '?'}
@@ -458,13 +463,13 @@
             </div>
 
             <!-- Connected clients -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
               <span class="font-mono">{$stats$.clients}</span>
             </div>
 
             <!-- Transport -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_transport_label()}</span>
               <span class="font-mono text-xs">
                 {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
@@ -478,7 +483,7 @@
                   {#snippet content()}
                     <span>{versionMismatchTooltip}</span>
                   {/snippet}
-                  <div class="flex justify-between text-xs w-full">
+                  <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
                     <span class="flex items-center gap-1.5">
                       <!--
@@ -500,7 +505,7 @@
                   </div>
                 </Tooltip>
               {:else}
-                <div class="flex justify-between text-xs">
+                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle">{m.layout_daemonStatus_version_label()}</span>
                   <span class="font-mono text-xs">{$stats$.version}</span>
                 </div>
@@ -509,7 +514,7 @@
 
             <!-- Protocol version -->
             {#if $stats$.protocolVersion !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
                 <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
               </div>
@@ -517,7 +522,7 @@
 
             <!-- Uptime -->
             {#if liveUptimeSeconds !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatUptime(liveUptimeSeconds)}</span
@@ -527,7 +532,7 @@
 
             <!-- CPU (only when the daemon reports it) -->
             {#if $stats$.cpuPercent !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatCpu($stats$.cpuPercent)}</span
@@ -537,7 +542,7 @@
 
             <!-- Memory (only when the daemon reports it) -->
             {#if $stats$.memoryBytes !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatMemory($stats$.memoryBytes)}</span
@@ -552,7 +557,7 @@
                   {#snippet content()}
                     <span>{m.layout_daemonStatus_workspaceDiskLow_tooltip()}</span>
                   {/snippet}
-                  <div class="flex justify-between text-xs w-full">
+                  <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
                     <span class="flex items-center gap-1.5">
                       <!--
@@ -572,7 +577,7 @@
                   </div>
                 </Tooltip>
               {:else}
-                <div class="flex justify-between text-xs">
+                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
                   <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
                 </div>
@@ -580,7 +585,7 @@
             {/if}
 
             <!-- Host OS/Arch -->
-            <div class="flex justify-between text-xs">
+            <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
               <span class="text-subtle">{m.layout_daemonStatus_host_label()}</span>
               <span class="font-mono text-xs">{$stats$.os}/{$stats$.arch}</span>
             </div>
@@ -618,7 +623,7 @@
 
             <!-- Model (HF repo id, shortened) -->
             {#if $unslothStatus$.repoId}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
                 <Tooltip side="left" contentClass="z-[10001]">
                   {#snippet content()}
@@ -631,7 +636,7 @@
 
             <!-- Phase -->
             {#if $unslothStatus$.phase}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
                 <span
                   class={cn(
@@ -646,7 +651,7 @@
 
             <!-- Port -->
             {#if $unslothStatus$.port !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
                 <span class="font-mono text-xs">{$unslothStatus$.port}</span>
               </div>
@@ -654,7 +659,7 @@
 
             <!-- Uptime -->
             {#if $unslothStatus$.uptimeSecs !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatUptime($unslothStatus$.uptimeSecs)}</span
@@ -664,7 +669,7 @@
 
             <!-- CPU (process tree) -->
             {#if $unslothStatus$.cpuPercent !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatCpu($unslothStatus$.cpuPercent)}</span
@@ -674,7 +679,7 @@
 
             <!-- Memory (process tree) -->
             {#if $unslothStatus$.memoryBytes !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
                 <span class="font-mono text-xs" aria-live="off"
                   >{formatMemory($unslothStatus$.memoryBytes)}</span
@@ -684,7 +689,7 @@
 
             <!-- Attached agents (omitted when the agent manager is not attached) -->
             {#if $unslothStatus$.attachedAgentCount !== undefined}
-              <div class="flex justify-between text-xs">
+              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                 <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
                 <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
               </div>

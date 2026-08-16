@@ -483,6 +483,49 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('menu width', () => {
+    it('auto-sizes to content between the 224px floor and 320px cap instead of a fixed width', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            transport: { mode: 'external-ws' as const, target: 'wss://some-host.example.com:4180/ws' },
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      const wrapper = screen.getByText('Agent slots').closest('.min-w-56')!;
+      expect(wrapper).toBeTruthy();
+      // Intrinsic width with floor + cap, not the old fixed w-56.
+      expect(wrapper.classList.contains('w-max')).toBe(true);
+      expect(wrapper.classList.contains('max-w-80')).toBe(true);
+      expect(wrapper.classList.contains('w-56')).toBe(false);
+
+      // Stat rows keep label and value on one line.
+      const statRow = screen.getByText('Agent slots').closest('div')!;
+      expect(statRow.classList.contains('whitespace-nowrap')).toBe(true);
+
+      // The Connection row's value still truncates (cap-constrained) rather
+      // than driving the width.
+      const connectionValue = screen.getByTitle('external (wss://some-host.example.com:4180/ws)');
+      expect(connectionValue.classList.contains('truncate')).toBe(true);
+      expect(connectionValue.classList.contains('min-w-0')).toBe(true);
+    });
+  });
+
   describe('daemon-vs-pin version mismatch', () => {
     function withVersions(opts: {
       health?: 'healthy' | 'degraded' | 'down';
