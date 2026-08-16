@@ -241,6 +241,7 @@
     shouldShowPendingAssistantStatus,
     shouldShowSetupCardOnly,
     shouldShowTranscriptSkeleton,
+    shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
@@ -350,6 +351,15 @@
     !$transcriptHydratedOnce$ && $transcriptHydration$ === 'loading',
   );
   const transcriptHydrationFailed = $derived($transcriptHydration$ === 'error');
+  // Utility stack gate: the hooks/monitors/subscriptions card never renders
+  // before the transcript reveal — hidden until this agent's first hydration
+  // settles (data prefetch is unaffected; only the render is gated).
+  const showTranscriptUtilityCard = $derived(
+    shouldShowTranscriptUtilityStack({
+      transcriptHydratedOnce: $transcriptHydratedOnce$,
+      hydrationSettled: $transcriptHydration$ === 'settled',
+    }),
+  );
   const authoritativeConversationEvidence = $derived(
     hasAuthoritativeConversationEvidence(
       $agentSession$ ?? null,
@@ -4225,8 +4235,10 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale subscription UI from leaking across switches. -->
-          {#if workspace?.id}
+             preventing stale subscription UI from leaking across switches.
+             Hidden until the transcript hydration settles so the card never
+             pops in ahead of (or during) the transcript skeleton. -->
+          {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
               <EventSubscriptionsCard
                 workspaceId={workspace.id}

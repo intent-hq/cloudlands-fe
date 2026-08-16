@@ -59,17 +59,21 @@ interface ChatSnapshotResult {
 
 const EMPTY_SNAPSHOT: ChatSnapshotResult = { messages: [], truncated: false, totalMessages: 0 };
 
-/** Wall-clock ceiling for the seq-0 push after `chat.subscribe` resolves. */
-const SNAPSHOT_TIMEOUT_MS = 5_000;
+/**
+ * Wall-clock ceiling for the seq-0 push after `chat.subscribe` resolves.
+ * Exported so the chat-read saga's bounded hydration wait can be derived
+ * from it (it must stay strictly larger than one self-heal cycle).
+ */
+export const SNAPSHOT_TIMEOUT_MS = 5_000;
 
 /**
  * Initial delay before a self-heal re-registration of the standing
  * subscription (rejected `chat.subscribe` or seq-0 snapshot timeout). Each
  * consecutive failure doubles the delay up to `MAX_RETRY_DELAY_MS`; the
  * backoff resets once a snapshot hydrates the transcript (and on transport
- * reconnect).
+ * reconnect). Exported for the same derivation as `SNAPSHOT_TIMEOUT_MS`.
  */
-const INITIAL_RETRY_DELAY_MS = 1_000;
+export const INITIAL_RETRY_DELAY_MS = 1_000;
 
 /** Ceiling for the self-heal retry backoff. */
 const MAX_RETRY_DELAY_MS = 30_000;
