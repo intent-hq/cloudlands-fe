@@ -6,7 +6,25 @@ function source(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8');
 }
 
+function hasUnqualifiedClassToken(content: string, token: string) {
+  return content.split(/[\s'"`]+/u).includes(token);
+}
+
 describe('editorial conversation presentation contract', () => {
+  it('allows variant-prefixed primary selection tokens', () => {
+    const selectionClasses = 'selection:bg-primary selection:text-primary-foreground';
+
+    expect(hasUnqualifiedClassToken(selectionClasses, 'bg-primary')).toBe(false);
+    expect(hasUnqualifiedClassToken(selectionClasses, 'text-primary-foreground')).toBe(false);
+  });
+
+  it('detects unqualified primary user-surface tokens', () => {
+    const primarySurfaceClasses = 'rounded-lg bg-primary text-primary-foreground';
+
+    expect(hasUnqualifiedClassToken(primarySurfaceClasses, 'bg-primary')).toBe(true);
+    expect(hasUnqualifiedClassToken(primarySurfaceClasses, 'text-primary-foreground')).toBe(true);
+  });
+
   it('lets the transcript, questions, and composer fill the panel width', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
 
@@ -51,8 +69,8 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
     expect(surface).toContain('bg-secondary');
     expect(surface).toContain('text-secondary-foreground');
-    expect(surface).not.toContain('bg-primary');
-    expect(surface).not.toContain('text-primary-foreground');
+    expect(hasUnqualifiedClassToken(surface, 'bg-primary')).toBe(false);
+    expect(hasUnqualifiedClassToken(surface, 'text-primary-foreground')).toBe(false);
   });
 
   it('keeps the pinned row stable while its turn spans the container top (no sticky flicker)', () => {
