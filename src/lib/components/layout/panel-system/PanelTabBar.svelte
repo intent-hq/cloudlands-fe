@@ -58,7 +58,6 @@
     takePanelDragSnapshot,
   } from './panel-drag';
 
-  import { faNote } from '$lib/icons/faNote';
   import EditableName from '$lib/components/ui/EditableName.svelte';
   import { isSpecNote } from '$shared/constants/notes';
 
@@ -97,6 +96,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelHeaderActions } from './panel-header-context.svelte';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
   // Detect platform for file manager labels
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -1311,6 +1312,7 @@
         {@const shortcutKey = index < 9 ? `⌘${index + 1}` : null}
         {@const isDragOver = dragOverTabId === tab.id}
         {@const tabTitle = getTabTitle(tab)}
+        {@const resourceKind = getResourceIconKind(tab.type)}
         <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
         <Tooltip
           content={shortcutKey && isFocused ? `${tabTitle} (${shortcutKey})` : tabTitle}
@@ -1365,6 +1367,8 @@
                     import('$lib/constants/specialists').BuiltinSpecialistId | null}
                   class="shrink-0"
                 />
+              {:else if resourceKind}
+                <ResourceIconTile kind={resourceKind} />
               {:else if tab.faviconUrl}
                 <img
                   src={tab.faviconUrl}
@@ -1534,7 +1538,7 @@
                       close();
                     }}
                   >
-                    <Fa icon={faNote} size="xs" class="text-ghost" />
+                    <Fa icon={RESOURCE_ICON_BY_KIND.note} size="xs" class="text-ghost" />
                     <span>{m.menu_new_note()}</span>
                   </button>
                 {/if}
@@ -1584,11 +1588,11 @@
   <!-- Compact header bar (breadcrumb style) -->
   {#if activeTab}
     {@const activeTabPath = getTabPath(activeTab)}
-    {@const hidesBreadcrumb = activeTab.type === 'changes'}
+    {@const activeResourceKind = getResourceIconKind(activeTab.type)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
-        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center border-b border-border/50 bg-card pl-4 pr-2.5 sm:pl-6 active:cursor-grabbing',
+        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center border-b border-border/50 bg-card pr-2.5 active:cursor-grabbing',
         isFocused && 'focused',
       )}
       oncontextmenu={(event) => handlePanelContextMenu(event, activeTab.id)}
@@ -1600,29 +1604,40 @@
       data-panel-content-header
     >
       <!-- Left: one content title + optional context (changes tabs provide their own header). -->
-      {#if !hidesBreadcrumb}
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <!-- Type icon / agent avatar for the active content. -->
-          {#if activeTab.type === 'agent' && activeTab.agentId}
-            <span
-              class="flex size-5 shrink-0 items-center justify-center self-center"
-              data-testid="panel-header-agent-avatar-slot"
-            >
-              <AgentAvatarWithState
-                agentId={activeTab.agentId}
-                variant="standard"
-                state={activeAgentAvatarState}
-                specialist={getAgentSpecialistType(activeTab) as
-                  import('$lib/constants/specialists').BuiltinSpecialistId | null}
-              />
-            </span>
-          {:else if activeTab.faviconUrl}
+      <div class="flex min-w-0 flex-1 items-center gap-2">
+        <!-- Type icon / agent avatar for the active content. -->
+        {#if activeTab.type === 'agent' && activeTab.agentId}
+          <span
+            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
+            data-testid="panel-header-agent-avatar-slot"
+            data-panel-header-leading-surface
+          >
+            <AgentAvatarWithState
+              agentId={activeTab.agentId}
+              variant="standard"
+              state={activeAgentAvatarState}
+              specialist={getAgentSpecialistType(activeTab) as
+                import('$lib/constants/specialists').BuiltinSpecialistId | null}
+            />
+          </span>
+        {:else if activeResourceKind}
+          <span
+            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
+            data-panel-header-leading-surface
+          >
+            <ResourceIconTile kind={activeResourceKind} />
+          </span>
+        {:else if activeTab.faviconUrl}
+          <span
+            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
+            data-panel-header-leading-surface
+          >
             <img
               src={activeTab.faviconUrl}
               alt=""
-              width="14"
-              height="14"
-              class="shrink-0 self-center rounded-sm"
+              width="12"
+              height="12"
+              class="shrink-0 rounded-sm"
               onerror={(e) => {
                 const target = e.currentTarget as HTMLImageElement;
                 target.style.display = 'none';
@@ -1631,94 +1646,94 @@
               }}
             />
             <!-- Fallback icon, hidden by default, shown if favicon fails to load -->
-            <span class="shrink-0 self-center" style="display: none;">
+            <span style="display: none;">
               <Fa
                 icon={getTabIcon(activeTab.type)}
-                size={14}
+                size={12}
                 class={isFocused ? 'text-subtle' : 'text-ghost'}
               />
             </span>
-          {:else}
-            <span class="shrink-0 self-center">
-              <Fa
-                icon={getTabIcon(activeTab.type)}
-                size={14}
-                class={isFocused ? 'text-subtle' : 'text-ghost'}
-              />
-            </span>
-          {/if}
-          <!-- Single content title; type/category is conveyed by the content itself. -->
-          {#if isTabRenameable(activeTab) && onTabRename}
-            <EditableName
-              value={getTabTitle(activeTab)}
-              onSave={(newName) => handleTabRename(activeTab, newName)}
-              textClass="text-sm shrink font-medium {isFocused ? 'text-foreground' : 'text-subtle'}"
-              title={m.ui_editableName_rename_tooltip()}
-              maxWidth={240}
+          </span>
+        {:else}
+          <span
+            class="panel-header-leading-surface flex size-5 shrink-0 items-center justify-center self-center"
+            data-panel-header-leading-surface
+          >
+            <Fa
+              icon={getTabIcon(activeTab.type)}
+              size={12}
+              class={isFocused ? 'text-subtle' : 'text-ghost'}
             />
-          {:else}
+          </span>
+        {/if}
+        <!-- Single content title; type/category is conveyed by the content itself. -->
+        {#if isTabRenameable(activeTab) && onTabRename}
+          <EditableName
+            value={getTabTitle(activeTab)}
+            onSave={(newName) => handleTabRename(activeTab, newName)}
+            textClass="text-sm shrink font-medium {isFocused ? 'text-foreground' : 'text-subtle'}"
+            title={m.ui_editableName_rename_tooltip()}
+            maxWidth={240}
+          />
+        {:else}
+          <span
+            class="text-sm truncate shrink font-medium {isFocused
+              ? 'text-foreground'
+              : 'text-subtle'}"
+          >
+            {getTabTitle(activeTab)}
+          </span>
+        {/if}
+
+        <!-- Keep useful agent context, but suppress a specialist name that repeats the title. -->
+        {#if activeTab.type === 'agent'}
+          {@const specialist = getAgentSpecialist(activeTab)}
+          {@const delegatedBy = activeAgentDelegatedByName}
+          {@const showSpecialist =
+            specialist?.toLocaleLowerCase() !== getTabTitle(activeTab).toLocaleLowerCase()
+              ? specialist
+              : null}
+          {#if showSpecialist || delegatedBy}
             <span
-              class="text-sm truncate shrink font-medium {isFocused
-                ? 'text-foreground'
-                : 'text-subtle'}"
+              class="text-xs shrink-5 truncate whitespace-nowrap {isFocused
+                ? 'text-subtle'
+                : 'text-ghost'}"
             >
-              {getTabTitle(activeTab)}
+              {#if showSpecialist && delegatedBy}
+                {m.layout_panelTabBar_specialistDelegatedBy_label({
+                  specialist: showSpecialist,
+                  name: delegatedBy,
+                })}
+              {:else if showSpecialist}
+                {m.layout_panelTabBar_specialistAgent_label({ specialist: showSpecialist })}
+              {:else if delegatedBy}
+                {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
+              {/if}
             </span>
           {/if}
+        {/if}
 
-          <!-- Keep useful agent context, but suppress a specialist name that repeats the title. -->
-          {#if activeTab.type === 'agent'}
-            {@const specialist = getAgentSpecialist(activeTab)}
-            {@const delegatedBy = activeAgentDelegatedByName}
-            {@const showSpecialist =
-              specialist?.toLocaleLowerCase() !== getTabTitle(activeTab).toLocaleLowerCase()
-                ? specialist
-                : null}
-            {#if showSpecialist || delegatedBy}
-              <span
-                class="text-xs shrink-5 truncate whitespace-nowrap {isFocused
-                  ? 'text-subtle'
-                  : 'text-ghost'}"
-              >
-                {#if showSpecialist && delegatedBy}
-                  {m.layout_panelTabBar_specialistDelegatedBy_label({
-                    specialist: showSpecialist,
-                    name: delegatedBy,
-                  })}
-                {:else if showSpecialist}
-                  {m.layout_panelTabBar_specialistAgent_label({ specialist: showSpecialist })}
-                {:else if delegatedBy}
-                  {m.layout_panelTabBar_delegatedBy_label({ name: delegatedBy })}
-                {/if}
-              </span>
-            {/if}
+        <!-- Path (for file-based tabs) -->
+        {#if activeTabPath}
+          {@const lastSlash = activeTabPath.lastIndexOf('/')}
+          {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
+          {#if dirPath}
+            <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
+              {dirPath}
+            </span>
           {/if}
+        {/if}
 
-          <!-- Path (for file-based tabs) -->
-          {#if activeTabPath}
-            {@const lastSlash = activeTabPath.lastIndexOf('/')}
-            {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
-            {#if dirPath}
-              <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
-                {dirPath}
-              </span>
-            {/if}
+        <!-- Commit hash (for diff tabs with committed changes) -->
+        {#if activeTab.type === 'diff'}
+          {@const change = activeTab.data?.change as { commitHash?: string } | undefined}
+          {#if change?.commitHash}
+            <span class="text-xs font-mono {isFocused ? 'text-subtle' : 'text-ghost'}">
+              @ {change.commitHash.substring(0, 7)}
+            </span>
           {/if}
-
-          <!-- Commit hash (for diff tabs with committed changes) -->
-          {#if activeTab.type === 'diff'}
-            {@const change = activeTab.data?.change as { commitHash?: string } | undefined}
-            {#if change?.commitHash}
-              <span class="text-xs font-mono {isFocused ? 'text-subtle' : 'text-ghost'}">
-                @ {change.commitHash.substring(0, 7)}
-              </span>
-            {/if}
-          {/if}
-        </div>
-      {:else}
-        <!-- Spacer for changes tabs -->
-        <div class="flex-1"></div>
-      {/if}
+        {/if}
+      </div>
 
       <!-- Right: stable content controls, grouped actions, and close. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
@@ -2093,5 +2108,11 @@
   /* CSS variables for panel tab bar heights */
   .panel-tab-wrapper {
     --panel-header-height: clamp(2rem, 3rem, 10cqh);
+  }
+
+  .panel-header {
+    padding-inline-start: calc(
+      (var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2
+    );
   }
 </style>

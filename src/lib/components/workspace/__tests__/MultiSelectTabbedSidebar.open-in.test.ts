@@ -563,8 +563,10 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
           expect(glyph.className).toContain('group-hover/preview:opacity-90');
           expect(glyph.className).toContain('group-focus-visible/preview:opacity-80');
         } else {
-          // Note glyphs use background transitions
-          expect(glyph.className).toContain('group-focus-visible/preview:bg-background/80');
+          // Note resource tiles own the visible background transitions.
+          const tile = glyph.querySelector<HTMLElement>('[data-resource-icon-tile]');
+          expect(tile?.className).toContain('group-hover/preview:bg-background/70!');
+          expect(tile?.className).toContain('group-focus-visible/preview:bg-background/80!');
         }
         expect(target.className).not.toContain('focus-visible:bg-background/80');
       } else {

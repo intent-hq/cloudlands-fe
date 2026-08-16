@@ -18,7 +18,12 @@
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
-  import { faNote } from '$lib/icons/faNote';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
+  import {
+    getResourceIconKind,
+    RESOURCE_ICON_BY_KIND,
+    type ResourceIconKind,
+  } from '$lib/components/shared/resource-icon';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
@@ -94,7 +99,7 @@
       case 'agent':
         return faRobot;
       case 'note':
-        return faNote;
+        return RESOURCE_ICON_BY_KIND.note;
       case 'terminal':
         return faTerminal;
       case 'browser':
@@ -142,6 +147,7 @@
     id: string;
     label: string;
     icon: IconDefinition;
+    resourceKind?: ResourceIconKind;
     action: () => void;
   };
 
@@ -157,7 +163,8 @@
     {
       id: 'note',
       label: m.layout_panelEmptyState_note_label(),
-      icon: faNote,
+      icon: RESOURCE_ICON_BY_KIND.note,
+      resourceKind: 'note',
       action: () => onCreateNote?.(),
     },
     {
@@ -221,11 +228,15 @@
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-          >
-            <Fa icon={action.icon} class="size-3.5" />
-          </span>
+          {#if action.resourceKind}
+            <ResourceIconTile kind={action.resourceKind} />
+          {:else}
+            <span
+              class="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
+            >
+              <Fa icon={action.icon} class="size-3.5" />
+            </span>
+          {/if}
           <span class="min-w-0 truncate font-medium">
             {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           </span>
@@ -240,12 +251,17 @@
           <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
         </div>
         {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
+          {@const resourceKind = getResourceIconKind(item.tab.type)}
           <button
             class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
             onclick={handleReopenItem}
             title={m.layout_panelEmptyState_reopen_tooltip({ title: item.tab.title })}
           >
-            <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            {#if resourceKind}
+              <ResourceIconTile kind={resourceKind} />
+            {:else}
+              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+            {/if}
             <span class="flex-1 truncate">{item.tab.title}</span>
             <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
           </button>

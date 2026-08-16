@@ -12,7 +12,10 @@ describe('panel content insets', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
 
-    expect(header).toContain('bg-card pl-4 pr-2.5 sm:pl-6');
+    expect(header).toContain('bg-card pr-2.5');
+    expect(header).toContain(
+      '(var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2',
+    );
     expect(panel).not.toContain('max-w-[var(--content-measure-');
     expect(panel).toContain(": 'px-4 pt-2 sm:px-6'");
     expect(panel).toContain('class:pb-3={!isChiefWorkspace && isCompactMode}');

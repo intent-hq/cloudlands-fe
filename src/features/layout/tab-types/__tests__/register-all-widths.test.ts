@@ -22,6 +22,7 @@ vi.mock('../OverviewTabType.svelte', mockTabType);
 
 import { registerAllTabTypes } from '../register-all';
 import { tabTypeRegistry } from '../registry';
+import { RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
 const expectedTiers = {
   agent: 'narrow',
@@ -56,5 +57,14 @@ describe('registered panel default width tiers', () => {
     expect(tabTypeRegistry.getDefaultWidth('agent', 1200)).toBe(500);
     expect(tabTypeRegistry.getDefaultWidth('note', 1200)).toBe(720);
     expect(tabTypeRegistry.getDefaultWidth('browser', 1200)).toBe(960);
+  });
+
+  it('uses one note icon and one changes icon for every alias', () => {
+    registerAllTabTypes();
+
+    expect(tabTypeRegistry.getIcon('note')).toBe(RESOURCE_ICON_BY_KIND.note);
+    for (const type of ['changes', 'local-changes', 'chat-changes', 'activity-changes']) {
+      expect(tabTypeRegistry.getIcon(type)).toBe(RESOURCE_ICON_BY_KIND.changes);
+    }
   });
 });

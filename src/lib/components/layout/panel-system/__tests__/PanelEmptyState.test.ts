@@ -8,6 +8,7 @@ import PanelEmptyState from '../PanelEmptyState.svelte';
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   focusedPanelId: 'panel-1' as string | null,
+  recentlyClosed: [] as Array<{ tab: Record<string, unknown>; closedAt: number }>,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -21,7 +22,7 @@ vi.mock('$store/renderer/store', () => ({
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async () => {
   const { readable } = await import('svelte/store');
   return {
-    selectRecentlyClosed: () => readable([]),
+    selectRecentlyClosed: () => readable(mocks.recentlyClosed),
     selectFocusedPanelId: { select: () => mocks.focusedPanelId },
   };
 });
@@ -60,6 +61,7 @@ describe('PanelEmptyState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.focusedPanelId = 'panel-1';
+    mocks.recentlyClosed = [];
   });
 
   it('creates an agent directly from the primary action', async () => {
@@ -129,5 +131,22 @@ describe('PanelEmptyState', () => {
     ).not.toContain('border-t');
     expect(screen.queryByText('Empty panel')).toBeNull();
     expect(screen.queryByText(/Start something here/)).toBeNull();
+  });
+
+  it('uses resource tiles for the note action and every changes recent alias', () => {
+    mocks.recentlyClosed = ['changes', 'local-changes', 'chat-changes', 'activity-changes'].map(
+      (type, index) => ({
+        tab: { id: `recent-${index}`, type, title: `Recent ${index}` },
+        closedAt: Date.now() - index,
+      }),
+    );
+    renderEmptyState({ onCreateNote: vi.fn() });
+
+    expect(
+      screen.getByRole('button', { name: 'New Note' }).querySelector('[data-resource-kind="note"]'),
+    ).toBeTruthy();
+    expect(document.querySelectorAll('.recent-item [data-resource-kind="changes"]')).toHaveLength(
+      4,
+    );
   });
 });

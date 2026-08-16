@@ -17,7 +17,7 @@
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
-  import { faNote } from '$lib/icons/faNote';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
   import {
     markNoteRead,
@@ -145,8 +145,7 @@
     'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible text-muted-foreground';
   const LAUNCHER_ICON_BUTTON_CLASS =
     'launcher-icon-button group/preview pointer-events-auto relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none transition-colors hover:z-20 hover:text-foreground focus-visible:z-30 focus-visible:text-foreground';
-  const LAUNCHER_GLYPH_CLASS =
-    'launcher-glyph flex size-5 items-center justify-center rounded-sm bg-card transition-colors group-hover/preview:bg-background/70 group-focus-visible/preview:bg-background/80';
+  const LAUNCHER_GLYPH_CLASS = 'launcher-glyph relative flex size-5 items-center justify-center';
   const LAUNCHER_AGENT_GLYPH_CLASS =
     // i18n-ignore (Tailwind utility classes)
     'launcher-glyph flex size-5 items-center justify-center rounded-sm transition-colors group-hover/preview:opacity-90 group-focus-visible/preview:opacity-80';
@@ -1165,14 +1164,11 @@
                             data-launcher-leading-item={index === 0 ? 'true' : undefined}
                             data-launcher-preview-item
                           >
-                            <span
-                              class={LAUNCHER_GLYPH_CLASS}
-                              style={`width: ${LAUNCHER_VISIBLE_SIZE}px; height: ${LAUNCHER_VISIBLE_SIZE}px; box-shadow: inset 0 0 0 1px var(--color-card);`}
-                              data-sidebar-launcher-glyph
-                              data-launcher-avatar-seam="surface-1px"
-                              data-launcher-avatar-size={LAUNCHER_VISIBLE_SIZE}
-                            >
-                              <Fa icon={faNote} class="size-5!" />
+                            <span class={LAUNCHER_GLYPH_CLASS} data-sidebar-launcher-glyph>
+                              <ResourceIconTile
+                                kind="note"
+                                class="transition-colors group-hover/preview:bg-background/70! group-focus-visible/preview:bg-background/80!"
+                              />
                               <OpenPanelIndicator
                                 count={panelState.count}
                                 active={panelState.isActive}
@@ -1195,6 +1191,14 @@
                           <span aria-hidden="true">+{launcherNoteOverflowCount}</span>
                         </Button>
                       {/if}
+                    {:else if tab.id === 'changes'}
+                      <span
+                        class="pointer-events-none flex size-9 shrink-0 items-center justify-center"
+                        data-sidebar-changes-resource
+                        data-launcher-leading-item="true"
+                      >
+                        <ResourceIconTile kind="changes" />
+                      </span>
                     {/if}
                   </div>
                   <div

@@ -19,6 +19,7 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { m } from '$shared/paraglide/messages.js';
   import OpenPanelIndicator from './OpenPanelIndicator.svelte';
+  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
 
   interface Props {
     item: ContextItem;
@@ -159,13 +160,17 @@
   aria-current={isActive ? 'page' : undefined}
 >
   <!-- Provider Icon -->
-  <div class="w-5 h-5 rounded flex items-center justify-center shrink-0">
-    <ProviderIcon
-      provider={item.provider}
-      size={12}
-      class={isSelected ? 'text-primary' : isActive ? 'text-foreground' : 'opacity-70'}
-    />
-  </div>
+  {#if item.type === 'note'}
+    <ResourceIconTile kind="note" />
+  {:else}
+    <div class="w-5 h-5 rounded flex items-center justify-center shrink-0">
+      <ProviderIcon
+        provider={item.provider}
+        size={12}
+        class={isSelected ? 'text-primary' : isActive ? 'text-foreground' : 'opacity-70'}
+      />
+    </div>
+  {/if}
 
   <!-- Content -->
   <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
