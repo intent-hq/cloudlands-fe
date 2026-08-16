@@ -164,6 +164,21 @@ describe('connectionsReducer', () => {
       expect(next.protocolMismatchModalDismissed).toBe(false);
     });
 
+    it('switch-origin event un-dismisses the modal (explicit switch is modal-worthy)', () => {
+      const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'switch' };
+      const state = { ...initialState, protocolMismatchModalDismissed: true };
+      const next = connectionsReducer(state, protocolMismatchReceived(event));
+      expect(next.protocolMismatch).toEqual(event);
+      expect(next.protocolMismatchModalDismissed).toBe(false);
+    });
+
+    it('boot-origin event latches the mismatch but keeps the modal suppressed', () => {
+      const event: ConnectionProtocolMismatchEvent = { ...PROTOCOL_MISMATCH, origin: 'boot' };
+      const next = connectionsReducer(initialState, protocolMismatchReceived(event));
+      expect(next.protocolMismatch).toEqual(event);
+      expect(next.protocolMismatchModalDismissed).toBe(true);
+    });
+
     it('protocolMismatchModalDismissed keeps the event but hides the modal (warn-but-allow)', () => {
       const state = { ...initialState, protocolMismatch: PROTOCOL_MISMATCH };
       const next = connectionsReducer(state, protocolMismatchModalDismissed());

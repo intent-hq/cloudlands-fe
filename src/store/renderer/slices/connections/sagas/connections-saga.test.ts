@@ -114,6 +114,32 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('boot-origin replay latches the mismatch with the modal suppressed', async () => {
+    const mismatch = {
+      id: 'remote-1',
+      host: '10.0.0.5',
+      port: 8443,
+      localProtocolVersion: '1',
+      remoteProtocolVersion: '2',
+      origin: 'boot',
+    };
+    invoke.mockImplementation(async (channel: string) =>
+      channel === CONNECTION_CHANNELS.LIST
+        ? { connections: [LOCAL, REMOTE], activeId: REMOTE.id, protocolMismatch: mismatch }
+        : { fingerprint: 'AB:CD' },
+    );
+    const run = start();
+    await settle();
+
+    // Origin carried through the replay: menu warning state latched, modal
+    // pre-dismissed (boot restore is not modal-worthy).
+    expect(run.getState().connections.protocolMismatch).toEqual(mismatch);
+    expect(run.getState().connections.protocolMismatchModalDismissed).toBe(true);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('replays a sticky auth rejection from the initial list fetch', async () => {
     const authRejected = { id: 'remote-1', host: '10.0.0.5', port: 8443, statusCode: 401 };
     invoke.mockImplementation(async (channel: string) =>
