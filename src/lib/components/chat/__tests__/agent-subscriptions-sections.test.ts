@@ -856,6 +856,27 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     await waitFor(() => expect(screen.queryByTestId('one-shot-watches')).toBeNull());
   });
 
+  it('keeps focused controls inside their stable keyed agent identity owner after reorder', async () => {
+    const wsId = 'ws-waiting-focused-identity';
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-focused', wsId, ['agent-a', 'agent-b'])]),
+    );
+    const row = agentRow('agent-a');
+    const control = within(row).getAllByRole('button')[0] as HTMLButtonElement;
+    control.focus();
+    expect(document.activeElement).toBe(control);
+    expect(control.closest('[data-agent-id]')?.getAttribute('data-agent-id')).toBe('agent-a');
+
+    await refetch(
+      wsId,
+      snapshot([oneShotSubscription('watch-focused', wsId, ['agent-b', 'agent-a'])]),
+    );
+    await waitFor(() => expect(visibleAgentIds()).toEqual(['agent-b', 'agent-a']));
+    expect(document.activeElement).toBe(control);
+    expect(control.closest('[data-agent-id]')?.getAttribute('data-agent-id')).toBe('agent-a');
+  });
+
   it('keeps per-agent stop and subscription-scoped cancel actions', async () => {
     const wsId = 'ws-waiting-actions-shot';
     await renderWithSnapshot(wsId, snapshot([oneShotSubscription('watch-a', wsId, ['agent-a'])]));

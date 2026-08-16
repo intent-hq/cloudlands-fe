@@ -25,7 +25,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
@@ -310,6 +310,7 @@
   const ungroupedAgentRows = $derived(
     shouldGroupFinishedAgents ? activeAgentRows : [...activeAgentRows, ...finishedAgentRows],
   );
+  const agentRowIdentityKey = $derived(waitingAgentRows.map((row) => row.agentId).join('\u001f'));
   const latestFinishedAt = $derived(
     shouldGroupFinishedAgents
       ? watchedAgentSessionsById.get(finishedAgentRows[0]?.agentId ?? '')?.updatedAt
@@ -323,6 +324,39 @@
   let waitingDisclosureKey = $state('');
   let finishedAgentsExpanded = $state(false);
   let finishedDisclosureKey = $state('');
+  let subscriptionCardElement: HTMLElement | undefined = $state();
+  let lastFocusedRowControl: { agentId: string; controlIndex: number } | null = $state(null);
+  let focusRestoreVersion = 0;
+
+  function rememberFocusedRowControl(event: FocusEvent) {
+    const target = event.target as HTMLElement | null;
+    const owner = target?.closest<HTMLElement>('[data-subscription-motion-row][data-agent-id]');
+    if (!target || !owner) return;
+    const controls = Array.from(owner.querySelectorAll<HTMLElement>('button, [href], [tabindex]'));
+    const controlIndex = controls.indexOf(target);
+    if (controlIndex >= 0) {
+      lastFocusedRowControl = { agentId: owner.dataset.agentId ?? '', controlIndex };
+    }
+  }
+
+  $effect(() => {
+    agentRowIdentityKey;
+    const focus = untrack(() => lastFocusedRowControl);
+    const version = ++focusRestoreVersion;
+    if (!focus?.agentId) return;
+    void tick().then(() => {
+      if (version !== focusRestoreVersion || !subscriptionCardElement) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement) return;
+      const owner = Array.from(
+        subscriptionCardElement.querySelectorAll<HTMLElement>(
+          '[data-subscription-motion-row][data-agent-id]',
+        ),
+      ).find((row) => row.dataset.agentId === focus.agentId);
+      const controls = owner?.querySelectorAll<HTMLElement>('button, [href], [tabindex]');
+      controls?.[focus.controlIndex]?.focus();
+    });
+  });
 
   $effect(() => {
     const nextKey = `${workspaceId}:${agentId}`;
@@ -581,10 +615,12 @@
 
 {#if showSubscriptionRow}
   <div
+    bind:this={subscriptionCardElement}
     class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {embedded ? '' : SUBSCRIPTION_CARD_SURFACE_CLASS}"
     data-conversation-layer="watched-agents"
     data-testid="agent-subscriptions-card"
     data-compact={compact}
+    onfocusin={rememberFocusedRowControl}
   >
     {#if isCompleted || $wokenUpInfo$}
       <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->

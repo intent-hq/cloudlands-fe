@@ -286,17 +286,14 @@ test('keeps keyed waiting and finished rows stable through add, remove, reorder,
   });
   await component.getByTestId('agent-list-item').first().locator('button').focus();
   const focusedId = await page.evaluate(() =>
-    document.activeElement
-      ?.closest('[data-testid="agent-list-item"]')
-      ?.getAttribute('data-agent-id'),
+    document.activeElement?.closest('[data-agent-id]')?.getAttribute('data-agent-id'),
   );
+  expect(focusedId).toBe('agent-subscription-inline-geometry');
 
   await component.update({ props: { agentCount: 7, finishedCount: 2, reverseAgents: true } });
   expect(
     await page.evaluate(() =>
-      document.activeElement
-        ?.closest('[data-testid="agent-list-item"]')
-        ?.getAttribute('data-agent-id'),
+      document.activeElement?.closest('[data-agent-id]')?.getAttribute('data-agent-id'),
     ),
   ).toBe(focusedId);
 
