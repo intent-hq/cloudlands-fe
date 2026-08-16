@@ -10,6 +10,7 @@
   import {
     addMessage,
     bulkUpsertSessions,
+    setAgentStreaming,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
@@ -22,6 +23,19 @@
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  let { theme = 'light' }: { theme?: 'light' | 'dark' } = $props();
+
+  $effect(() => {
+    const root = document.documentElement;
+    const hadLight = root.classList.contains('light');
+    const hadDark = root.classList.contains('dark');
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => {
+      root.classList.toggle('light', hadLight);
+      root.classList.toggle('dark', hadDark);
+    };
+  });
 
   function textMessage(id: string, role: AgentMessage['role'], text: string, second: number) {
     return {
@@ -112,6 +126,7 @@
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
 
   function appendStreamingMessage() {
+    store.dispatch(setAgentStreaming(agentId, true));
     store.dispatch(
       addMessage(
         agentId,
@@ -128,7 +143,11 @@
   onDestroy(disposeStore);
 </script>
 
-<div class="relative h-[640px] w-[720px]" data-testid="message-navigator-integration-host">
+<div
+  class="relative h-[min(640px,100vh)] w-full max-w-[720px]"
+  data-testid="message-navigator-integration-host"
+  data-theme={theme}
+>
   <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   <button
     type="button"

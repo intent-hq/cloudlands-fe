@@ -1,81 +1,189 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
+const cases = [
+  { theme: 'light', width: 900, height: 760, zoom: 1, label: 'light wide' },
+  { theme: 'dark', width: 900, height: 760, zoom: 1, label: 'dark wide' },
+  { theme: 'light', width: 680, height: 760, zoom: 2, label: 'light narrow at 200%' },
+  { theme: 'dark', width: 680, height: 760, zoom: 2, label: 'dark narrow at 200%' },
+] as const;
+
 test.describe('chat message navigator production path', () => {
-  test('registers in the real header and navigates virtualized history without restoring follow', async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 900, height: 760 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(ChatMessageNavigatorIntegrationHost);
+  for (const state of cases) {
+    test(`keeps the real header, picker, and transcript contract in ${state.label}`, async ({
+      context,
+      mount,
+      page,
+    }) => {
+      const viewport = { width: state.width / state.zoom, height: state.height / state.zoom };
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        ...viewport,
+        deviceScaleFactor: state.zoom,
+        mobile: false,
+        screenWidth: state.width,
+        screenHeight: state.height,
+      });
+      await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: state.theme });
+      const component = await mount(ChatMessageNavigatorIntegrationHost, {
+        props: { theme: state.theme },
+      });
 
-    const headerActions = component.locator('[data-panel-header-actions]');
-    const listButton = component.getByTestId('chat-message-navigator-trigger');
-    const downButton = component.getByTestId('chat-scroll-to-bottom-button');
-    await expect(headerActions).toBeVisible();
-    await expect(downButton).toBeDisabled();
-    expect(
-      await headerActions.evaluate(
-        (header, ids) => {
-          const nodes = ids.map((id) => header.querySelector(`[data-testid="${id}"]`));
-          return nodes.every(
-            (node, index) =>
-              node &&
-              (index === nodes.length - 1 ||
-                Boolean(
-                  node.compareDocumentPosition(nodes[index + 1]!) &
-                  Node.DOCUMENT_POSITION_FOLLOWING,
-                )),
-          );
-        },
-        [
-          'chat-message-navigator-trigger',
-          'chat-scroll-to-bottom-button',
-          'panel-actions-trigger',
-          'panel-close-button',
-        ],
-      ),
-    ).toBe(true);
-    await expect(listButton.locator('svg')).toHaveClass(/size-3/);
+      await expect(component).toHaveAttribute('data-theme', state.theme);
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.className))
+        .toContain(state.theme);
+      const header = component.locator('[data-panel-content-header]');
+      const headerActions = header.locator('[data-panel-header-actions]');
+      const title = header.getByText('Navigation agent', { exact: true });
+      const listButton = component.getByTestId('chat-message-navigator-trigger');
+      const downButton = component.getByTestId('chat-scroll-to-bottom-button');
+      await expect(headerActions).toBeVisible();
+      await expect(downButton).toBeDisabled();
+      expect(
+        await headerActions.evaluate(
+          (actions, ids) => {
+            const nodes = ids.map((id) => actions.querySelector(`[data-testid="${id}"]`));
+            return nodes.every(
+              (node, index) =>
+                node &&
+                (index === nodes.length - 1 ||
+                  Boolean(
+                    node.compareDocumentPosition(nodes[index + 1]!) &
+                    Node.DOCUMENT_POSITION_FOLLOWING,
+                  )),
+            );
+          },
+          [
+            'chat-message-navigator-trigger',
+            'chat-scroll-to-bottom-button',
+            'panel-actions-trigger',
+            'panel-close-button',
+          ],
+        ),
+      ).toBe(true);
+      const [titleBox, actionsBox, headerBox, listIconBox, arrowIconBox] = await Promise.all([
+        title.boundingBox(),
+        headerActions.boundingBox(),
+        header.boundingBox(),
+        listButton.locator('svg').boundingBox(),
+        downButton.locator('svg').boundingBox(),
+      ]);
+      if (!titleBox || !actionsBox || !headerBox || !listIconBox || !arrowIconBox) {
+        throw new Error('Expected complete production header geometry');
+      }
+      expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(actionsBox.x + 0.5);
+      expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(
+        headerBox.x + headerBox.width + 0.5,
+      );
+      expect(listIconBox.width).toBeCloseTo(12, 0);
+      expect(listIconBox.height).toBeCloseTo(12, 0);
+      expect(arrowIconBox.width).toBeCloseTo(11, 0);
+      expect(arrowIconBox.height).toBeCloseTo(11, 0);
+      await expect(downButton).toHaveAttribute('data-icon-size', '11');
 
-    const target = component.locator('[data-message-id="user-6"]');
-    await expect(target).toHaveCount(0);
-    await listButton.click();
-    const search = page.getByRole('combobox', { name: 'Filter user messages' });
-    await expect(search).toBeFocused();
-    await expect(page.getByRole('listbox')).toHaveCount(1);
-    await expect(page.getByRole('option')).toHaveCount(14);
-    await search.fill('Virtualized target six');
-    const option = page.getByRole('option', { name: 'Virtualized target six' });
-    await expect(option).toHaveCount(1);
-    await option.click();
+      const target = component.locator('[data-message-id="user-6"]');
+      await expect(target).toHaveCount(0);
+      await listButton.click();
+      const dialog = page.getByRole('dialog', { name: 'Browse user messages' });
+      const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
+      const options = dialog.getByRole('option');
+      await expect(search).toBeFocused();
+      await expect(dialog.getByRole('listbox')).toHaveCount(1);
+      await expect(options).toHaveCount(14);
+      const optionDetails = await options.evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          text: node.textContent?.trim(),
+          title: node.getAttribute('title'),
+          ariaLabel: node.getAttribute('aria-label'),
+        })),
+      );
+      expect(optionDetails).toHaveLength(14);
+      expect(optionDetails.some((item) => item.text?.includes('[SYSTEM NOTE]'))).toBe(false);
+      expect(optionDetails.some((item) => item.title?.includes('[SYSTEM NOTE]'))).toBe(false);
+      expect(optionDetails.some((item) => item.ariaLabel?.includes('[SYSTEM NOTE]'))).toBe(false);
+      expect(optionDetails).toContainEqual({
+        text: 'Virtualized target six',
+        title: 'Virtualized target six',
+        ariaLabel: null,
+      });
+      await expect(dialog.getByRole('option', { name: 'Internal-only picker row' })).toHaveCount(0);
+      const initialOption = options.first();
+      await expect(initialOption).toHaveAttribute('aria-selected', 'true');
+      expect(
+        await initialOption
+          .locator('span')
+          .evaluate((element) => getComputedStyle(element).fontWeight),
+      ).toBe('400');
+      expect(
+        await search.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { boxShadow: style.boxShadow, outline: style.outlineStyle };
+        }),
+      ).toEqual({ boxShadow: 'none', outline: 'none' });
+      await initialOption.focus();
+      await expect(initialOption).toBeFocused();
+      const rowFocus = await initialOption.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          boxShadow: style.boxShadow,
+          outline: style.outlineStyle,
+          backgroundColor: style.backgroundColor,
+        };
+      });
+      expect(rowFocus.boxShadow).toBe('none');
+      expect(rowFocus.outline).toBe('none');
+      expect(rowFocus.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      await search.focus();
 
-    await expect(page.getByRole('dialog', { name: 'Browse user messages' })).toHaveCount(0);
-    await expect(target).toHaveCount(1);
-    await expect(target).toHaveClass(/message-highlight-flash/);
-    await expect(downButton).toBeEnabled();
-    const scrollContainer = component.locator('.conversation-column').locator('..');
-    const header = component.locator('[data-panel-content-header]');
-    const [targetBox, scrollBox, headerBox] = await Promise.all([
-      target.boundingBox(),
-      scrollContainer.boundingBox(),
-      header.boundingBox(),
-    ]);
-    if (!targetBox || !scrollBox || !headerBox) {
-      throw new Error('Expected the production header, transcript, and selected message');
-    }
-    expect(targetBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
-    expect(Math.abs(targetBox.y - scrollBox.y)).toBeLessThanOrEqual(3);
+      const dialogBox = await dialog.boundingBox();
+      if (!dialogBox) throw new Error('Expected the message picker dialog');
+      expect(dialogBox.width).toBeLessThanOrEqual(Math.min(448, viewport.width - 16) + 0.5);
+      expect(dialogBox.x).toBeGreaterThanOrEqual(7.5);
+      expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(viewport.width - 7.5);
+      expect(dialogBox.y).toBeGreaterThanOrEqual(0);
+      expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewport.height + 0.5);
 
-    const selectedScrollTop = await scrollContainer.evaluate((element) => element.scrollTop);
-    await component.getByTestId('append-streaming-message').click();
-    await page.waitForTimeout(100);
-    expect(await scrollContainer.evaluate((element) => element.scrollTop)).toBeCloseTo(
-      selectedScrollTop,
-      0,
-    );
-    await downButton.click();
-    await expect(downButton).toBeDisabled();
-  });
+      await search.pressSequentially('hidden picker suffix');
+      await expect(search).toHaveValue('hidden picker suffix');
+      await expect(options).toHaveCount(0);
+      await search.fill('Virtualized target six');
+      const option = dialog.getByRole('option', { name: 'Virtualized target six', exact: true });
+      await expect(option).toHaveCount(1);
+      await expect(option).toHaveAttribute('title', 'Virtualized target six');
+      await option.click();
+
+      await expect(dialog).toHaveCount(0);
+      await expect(target).toHaveCount(1);
+      await expect(target).toContainText('hidden picker suffix');
+      await expect(target).toHaveClass(/message-highlight-flash/);
+      await expect(downButton).toBeEnabled();
+      const scrollContainer = component.locator('.conversation-column').locator('..');
+      const [targetBox, scrollBox] = await Promise.all([
+        target.boundingBox(),
+        scrollContainer.boundingBox(),
+      ]);
+      if (!targetBox || !scrollBox) {
+        throw new Error('Expected the production transcript and selected message');
+      }
+      expect(targetBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+      expect(Math.abs(targetBox.y - scrollBox.y)).toBeLessThanOrEqual(3);
+
+      const selectedScrollTop = await scrollContainer.evaluate((element) => element.scrollTop);
+      await component.getByTestId('append-streaming-message').click();
+      await expect
+        .poll(() => scrollContainer.evaluate((element) => element.scrollTop))
+        .toBeCloseTo(selectedScrollTop, 0);
+      await expect(downButton).toBeEnabled();
+      await downButton.click();
+      await expect(downButton).toBeDisabled();
+      await expect
+        .poll(() =>
+          scrollContainer.evaluate(
+            (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+          ),
+        )
+        .toBeLessThanOrEqual(2);
+    });
+  }
 });
