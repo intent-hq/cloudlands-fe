@@ -28,6 +28,31 @@ describe('chat user-message navigation', () => {
     );
   });
 
+  it('strips the exact system-note marker and suffix from previews without changing source data', () => {
+    const source = message(
+      'system-note',
+      'user',
+      'Keep this prompt\n\n[SYSTEM NOTE] This internal suffix must not appear',
+    );
+    expect(getPlainTextMessagePreview(source)).toBe('Keep this prompt');
+    expect(getUserMessageNavigationItems([source])).toEqual([
+      { id: 'system-note', text: 'Keep this prompt' },
+    ]);
+    expect(source.contentBlocks[0]).toEqual({
+      type: 'text',
+      text: 'Keep this prompt\n\n[SYSTEM NOTE] This internal suffix must not appear',
+    });
+  });
+
+  it('omits user rows that are empty after system-note stripping', () => {
+    expect(
+      getUserMessageNavigationItems([
+        message('empty-system-note', 'user', '[SYSTEM NOTE] Internal suffix only'),
+        message('similar-marker', 'user', '[System Note] Keep this differently-cased text'),
+      ]),
+    ).toEqual([{ id: 'similar-marker', text: '[System Note] Keep this differently-cased text' }]);
+  });
+
   it('keeps stable message order, deduplicates IDs, and keeps repeated content', () => {
     const items = getUserMessageNavigationItems([
       message('u-2', 'user', 'Repeat'),

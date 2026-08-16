@@ -18,10 +18,10 @@
   data-testid="chat-scroll-to-bottom-button"
   {onclick}
   {disabled}
-  class="type-body inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-40"
-  data-icon-size={CHAT_ICON_SIZE.default}
+  class="type-body inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent p-0 text-muted-foreground shadow-none transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-40"
+  data-icon-size={CHAT_ICON_SIZE.navigationArrow}
   aria-label={label}
   title={label}
 >
-  <Fa icon={faArrowDown} size={CHAT_ICON_SIZE.default} />
+  <Fa icon={faArrowDown} size={CHAT_ICON_SIZE.navigationArrow} class="size-[11px]!" />
 </button>

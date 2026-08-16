@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { tick } from 'svelte';
+  import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
   import { faList } from '@fortawesome/free-solid-svg-icons';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
+  import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
+  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import type { UserMessageNavigationItem } from './chat-message-navigation';
 
   interface Props {
@@ -18,145 +19,151 @@
 
   let { messages, isAtBottom, onSelectMessage, onScrollToBottom }: Props = $props();
   let open = $state(false);
-  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
-  let pointerInside = false;
-  let suppressFocusOpen = false;
-  let listRegion: HTMLDivElement | null = $state(null);
-  let panelRegion: HTMLDivElement | null = $state(null);
+  let query = $state('');
+  let activeIndex = $state(0);
+  let searchInput: HTMLInputElement | null = $state(null);
+  const navigatorId = $props.id();
+  const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
+  const filteredMessages = $derived.by(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return messages;
+    return messages.filter((message) => message.text.toLocaleLowerCase().includes(normalizedQuery));
+  });
+  const activeOptionId = $derived(
+    filteredMessages.length > 0 ? `${listboxId}-option-${activeIndex}` : undefined,
+  );
 
-  function containsNavigationTarget(target: Node | null) {
-    return Boolean(target && (listRegion?.contains(target) || panelRegion?.contains(target)));
+  function handleOpenChange(nextOpen: boolean) {
+    open = nextOpen;
+    if (!nextOpen) return;
+    query = '';
+    activeIndex = 0;
   }
 
-  function clearHoverTimer() {
-    if (hoverTimer !== null) clearTimeout(hoverTimer);
-    hoverTimer = null;
-  }
-
-  function openFromPointer() {
-    pointerInside = true;
-    clearHoverTimer();
-    hoverTimer = setTimeout(() => {
-      open = true;
-    }, 120);
-  }
-
-  function closeFromPointer() {
-    pointerInside = false;
-    clearHoverTimer();
-    hoverTimer = setTimeout(() => {
-      if (!containsNavigationTarget(document.activeElement)) open = false;
-    }, 180);
-  }
-
-  function handleFocusIn() {
-    if (pointerInside || suppressFocusOpen) return;
-    open = true;
-  }
-
-  function handleFocusOut(event: FocusEvent) {
-    const next = event.relatedTarget as Node | null;
-    if (containsNavigationTarget(next)) return;
-    suppressFocusOpen = false;
-    if (!pointerInside) open = false;
-  }
-
-  function handleEscapeCapture(event: KeyboardEvent) {
-    if (event.key !== 'Escape') return;
-    pointerInside = false;
-    suppressFocusOpen = true;
-    open = false;
+  function handleInput(event: Event) {
+    query = (event.currentTarget as HTMLInputElement).value;
+    activeIndex = 0;
   }
 
   async function selectMessage(messageId: string) {
-    suppressFocusOpen = true;
     await onSelectMessage(messageId);
     open = false;
+  }
+
+  function handleSearchKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      open = false;
+      return;
+    }
+    if (filteredMessages.length === 0) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      activeIndex = (activeIndex + 1) % filteredMessages.length;
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      activeIndex = (activeIndex - 1 + filteredMessages.length) % filteredMessages.length;
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      activeIndex = 0;
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      activeIndex = filteredMessages.length - 1;
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      void selectMessage(filteredMessages[activeIndex].id);
+    }
   }
 
   $effect(() => {
     if (!open) return;
     void tick().then(() => {
-      const firstItem = panelRegion?.querySelector<HTMLElement>('[role="menuitem"]');
-      const menu = panelRegion?.closest<HTMLElement>('[role="menu"]');
-      (firstItem ?? menu)?.focus();
+      searchInput?.focus();
     });
   });
-
-  $effect(() => {
-    if (!open) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!containsNavigationTarget(event.target as Node)) {
-        suppressFocusOpen = true;
-        open = false;
-      }
-    };
-    window.addEventListener('pointerdown', closeOnOutsidePointer, true);
-    return () => window.removeEventListener('pointerdown', closeOnOutsidePointer, true);
-  });
-
-  onDestroy(clearHoverTimer);
 </script>
 
 <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
-  <div
-    bind:this={listRegion}
-    class="relative flex shrink-0"
-    role="group"
-    aria-label={m.chat_messageNavigator_open_ariaLabel()}
-    onpointerenter={openFromPointer}
-    onpointerleave={closeFromPointer}
-    onfocusin={handleFocusIn}
-    onfocusout={handleFocusOut}
-    onkeydowncapture={handleEscapeCapture}
-  >
-    <DropdownMenu
-      bind:open
-      align="end"
-      side="bottom"
-      contentClass="w-[28rem] max-w-[calc(100vw-1rem)] p-1 focus-visible:border-border focus-visible:ring-0"
-    >
-      {#snippet trigger({ toggle, props })}
+  <Popover.Root bind:open onOpenChange={handleOpenChange}>
+    <Popover.Trigger openOnHover openDelay={120} closeDelay={180}>
+      {#snippet child({ props })}
         <Button
           {...props}
           variant="ghost-light"
           size="icon-lg"
-          onclick={toggle}
+          class="focus-visible:border-border focus-visible:bg-muted focus-visible:ring-0"
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           title={m.chat_messageNavigator_open_ariaLabel()}
           aria-expanded={open}
           data-testid="chat-message-navigator-trigger"
         >
-          <Fa icon={faList} size={20} />
+          <Fa icon={faList} size={CHAT_ICON_SIZE.header} class="size-3!" />
         </Button>
       {/snippet}
-      {#snippet content()}
-        <div
-          bind:this={panelRegion}
-          class="max-h-80 min-w-0 overflow-y-auto"
-          data-testid="chat-message-navigator-panel"
-          role="presentation"
-          onkeydowncapture={handleEscapeCapture}
-          onpointerenter={() => {
-            pointerInside = true;
-            clearHoverTimer();
-          }}
-          onpointerleave={closeFromPointer}
-        >
-          {#each messages as message (message.id)}
-            <Menu.Item
-              class="min-w-0 overflow-hidden focus-visible:outline-none focus-visible:ring-0"
-              textValue={message.text}
-              onclick={() => void selectMessage(message.id)}
-              aria-label={message.text}
-              title={message.text}
-              data-testid="chat-message-navigator-result"
-              data-message-id={message.id}
+    </Popover.Trigger>
+    <Popover.Portal>
+      <Popover.Content
+        role="dialog"
+        aria-label={m.chat_messageNavigator_open_ariaLabel()}
+        align="end"
+        side="bottom"
+        sideOffset={4}
+        collisionPadding={8}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        class="z-(--layer-popover) w-[28rem] max-w-[calc(100vw-1rem)] rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
+      >
+        <div class="min-w-0" data-testid="chat-message-navigator-panel">
+          <input
+            bind:this={searchInput}
+            value={query}
+            oninput={handleInput}
+            onkeydown={handleSearchKeydown}
+            role="combobox"
+            aria-label={m.chat_messageNavigator_search_ariaLabel()}
+            aria-controls={listboxId}
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
+            autocomplete="off"
+            placeholder={m.chat_messageNavigator_search_placeholder()}
+            class="type-caption h-8 w-full rounded-(--radius-small) border border-border bg-card px-2 text-foreground outline-none placeholder:text-muted-foreground/70 hover:border-input focus-visible:border-foreground/40 focus-visible:ring-0"
+            data-testid="chat-message-navigator-search"
+          />
+          {#if filteredMessages.length > 0}
+            <div
+              id={listboxId}
+              role="listbox"
+              class="mt-1 max-h-72 min-w-0 overflow-y-auto overscroll-contain"
             >
-              <span class="type-caption block min-w-0 flex-1 truncate whitespace-nowrap">
-                {message.text}
-              </span>
-            </Menu.Item>
+              {#each filteredMessages as message, index (message.id)}
+                <button
+                  type="button"
+                  id={`${listboxId}-option-${index}`}
+                  role="option"
+                  tabindex="-1"
+                  aria-selected={index === activeIndex}
+                  class={cn(
+                    'type-caption flex min-h-(--control-height-compact) min-w-0 cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-2 py-1 font-normal text-muted-foreground outline-none transition-colors duration-(--motion-fast)',
+                    index === activeIndex && 'bg-muted text-foreground',
+                  )}
+                  onclick={() => void selectMessage(message.id)}
+                  onkeydown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void selectMessage(message.id);
+                    }
+                  }}
+                  onpointerenter={() => (activeIndex = index)}
+                  title={message.text}
+                  data-testid="chat-message-navigator-result"
+                  data-message-id={message.id}
+                >
+                  <span class="block min-w-0 flex-1 truncate whitespace-nowrap font-normal">
+                    {message.text}
+                  </span>
+                </button>
+              {/each}
+            </div>
           {:else}
             <div
               class="type-caption px-2 py-6 text-center text-muted-foreground"
@@ -164,10 +171,10 @@
             >
               {m.chat_messageNavigator_empty_label()}
             </div>
-          {/each}
+          {/if}
         </div>
-      {/snippet}
-    </DropdownMenu>
-  </div>
+      </Popover.Content>
+    </Popover.Portal>
+  </Popover.Root>
   <ScrollToBottomButton disabled={isAtBottom} onclick={onScrollToBottom} />
 </div>

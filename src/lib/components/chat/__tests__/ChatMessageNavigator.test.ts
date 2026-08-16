@@ -37,104 +37,100 @@ describe('ChatMessageNavigator', () => {
     expect(buttons[0]).toBe(screen.getByTestId('chat-message-navigator-trigger'));
     expect(buttons[1]).toBe(screen.getByTestId('chat-scroll-to-bottom-button'));
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(true);
+    expect(buttons[0].querySelector('[data-icon]')?.classList.contains('size-3!')).toBe(true);
+    expect(buttons[1].querySelector('[data-icon]')?.classList.contains('size-[11px]!')).toBe(true);
   });
 
-  it('opens as one menu, focuses the first row, and renders responsive quiet chrome', async () => {
+  it('opens a valid searchable listbox and autofocuses its quiet field', async () => {
     renderNavigator();
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
     const results = await screen.findAllByTestId('chat-message-navigator-result');
-    const menu = screen.getByRole('menu');
-    await waitFor(() => expect(document.activeElement).toBe(results[0]));
-    expect(screen.queryByTestId('chat-message-navigator-search')).toBeNull();
-    expect(screen.queryByRole('listbox')).toBeNull();
-    expect(results.every((result) => result.getAttribute('role') === 'menuitem')).toBe(true);
-    expect(results.every((result) => menu.contains(result))).toBe(true);
-    expect(menu.className).toContain('w-[28rem]');
-    expect(menu.className).toContain('max-w-[calc(100vw-1rem)]');
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    const listbox = screen.getByRole('listbox');
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(results.every((result) => result.getAttribute('role') === 'option')).toBe(true);
+    expect(results.every((result) => listbox.contains(result))).toBe(true);
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(input.getAttribute('aria-activedescendant')).toBe(results[0].id);
+    expect(input.className).toContain('focus-visible:ring-0');
+    expect(input.className).toContain('focus-visible:border-foreground/40');
+
+    const panel = screen.getByTestId('chat-message-navigator-panel').parentElement!;
+    expect(panel.className).toContain('w-[28rem]');
+    expect(panel.className).toContain('max-w-[calc(100vw-1rem)]');
 
     const longResult = results.at(-1)!;
     expect(longResult.getAttribute('title')).toBe(messages.at(-1)!.text);
-    expect(longResult.getAttribute('aria-label')).toBe(messages.at(-1)!.text);
-    expect(longResult.className).toContain('focus:bg-accent');
-    expect(longResult.className).toContain('focus:text-accent-foreground');
-    expect(longResult.className).toContain('data-[highlighted]:bg-accent');
-    expect(longResult.className).toContain('focus-visible:ring-0');
-    expect(longResult.querySelector('span')?.className).toContain('type-caption');
+    expect(results[0].className).toContain('bg-muted');
+    expect(results[0].className).toContain('text-foreground');
+    expect(longResult.className).toContain('type-caption');
+    expect(longResult.className).toContain('font-normal');
     expect(longResult.querySelector('span')?.className).toContain('truncate');
     expect(longResult.querySelector('span')?.className).toContain('whitespace-nowrap');
   });
 
-  it('cycles matching initial letters with wrap and preserves roving movement keys', async () => {
+  it('keeps printable input in the search field and filters sanitized previews', async () => {
     renderNavigator();
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
-    const [alpha, beta, another, azure, last] = await screen.findAllByRole('menuitem');
-    await waitFor(() => expect(document.activeElement).toBe(alpha));
-
-    await fireEvent.keyDown(alpha, { key: 'a' });
-    await waitFor(() => expect(document.activeElement).toBe(another));
-    await fireEvent.keyDown(another, { key: 'a' });
-    await waitFor(() => expect(document.activeElement).toBe(azure));
-    await fireEvent.keyDown(azure, { key: 'a' });
-    await waitFor(() => expect(document.activeElement).toBe(alpha));
-
-    await fireEvent.keyDown(alpha, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(beta);
-    await fireEvent.keyDown(beta, { key: 'End' });
-    expect(document.activeElement).toBe(last);
-    await fireEvent.keyDown(last, { key: 'Home' });
-    expect(document.activeElement).toBe(alpha);
+    const input = screen.getByRole('combobox', {
+      name: 'Filter user messages',
+    }) as HTMLInputElement;
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    await fireEvent.input(input, { target: { value: 'azure' } });
+    expect(input.value).toBe('azure');
+    expect(document.activeElement).toBe(input);
+    const result = screen.getByRole('option', { name: 'Azure user message' });
+    expect(screen.getAllByRole('option')).toEqual([result]);
+    expect(input.getAttribute('aria-activedescendant')).toBe(result.id);
   });
 
-  it.each([
-    ['Enter', { key: 'Enter' }],
-    ['Space', { key: ' ', code: 'Space' }],
-  ])('selects the focused row with %s', async (_label, keyboardEvent) => {
+  it('keeps focus in the field while Arrow, Home, End, and Enter navigate options', async () => {
     const { onSelectMessage } = renderNavigator();
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
-    const first = (await screen.findAllByRole('menuitem'))[0];
-    await waitFor(() => expect(document.activeElement).toBe(first));
-    await fireEvent.keyDown(first, keyboardEvent);
+    const input = screen.getByRole('combobox', { name: 'Filter user messages' });
+    const options = screen.getAllByRole('option');
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[1].id);
+    expect(document.activeElement).toBe(input);
+    await fireEvent.keyDown(input, { key: 'End' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(options.at(-1)!.id);
+    await fireEvent.keyDown(input, { key: 'Home' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0].id);
+    await fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(onSelectMessage).toHaveBeenCalledWith('alpha'));
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
   });
 
-  it('opens with hover intent and stays open while the pointer is in the panel', async () => {
+  it('opens with hover intent', async () => {
     vi.useFakeTimers();
     renderNavigator();
-    const region = screen.getByRole('group', { name: 'Browse user messages' });
-    await fireEvent.pointerEnter(region);
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    await fireEvent.pointerEnter(trigger);
     await vi.advanceTimersByTimeAsync(119);
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
     await vi.advanceTimersByTimeAsync(1);
     await Promise.resolve();
-    const panel = screen.getByTestId('chat-message-navigator-panel');
-    await fireEvent.pointerLeave(region);
-    await fireEvent.pointerEnter(panel);
-    await vi.advanceTimersByTimeAsync(200);
     expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
   });
 
-  it('opens from keyboard focus and closes on Escape and outside interaction', async () => {
+  it('opens from the trigger and closes on Escape', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');
-    trigger.focus();
-    const first = (await screen.findAllByRole('menuitem'))[0];
-    await waitFor(() => expect(document.activeElement).toBe(first));
-    await fireEvent.keyDown(first, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
-
-    await fireEvent.click(trigger);
-    await screen.findByTestId('chat-message-navigator-panel');
-    await fireEvent.pointerDown(document.body, { pointerType: 'mouse' });
-    await fireEvent.click(document.body);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    await fireEvent.keyDown(input, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
   });
 
-  it('shows a quiet empty state without a text field', async () => {
+  it('shows a quiet empty state with its search field', async () => {
     renderNavigator(false, []);
     await fireEvent.click(screen.getByTestId('chat-message-navigator-trigger'));
     expect(screen.getByTestId('chat-message-navigator-empty')).toBeTruthy();
     expect(screen.getByTestId('chat-message-navigator-empty').className).toContain('type-caption');
-    expect(screen.queryByTestId('chat-message-navigator-search')).toBeNull();
+    expect(screen.getByTestId('chat-message-navigator-search')).toBeTruthy();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
