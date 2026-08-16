@@ -327,7 +327,9 @@ describe('editorial conversation presentation contract', () => {
 
     expect(operationalRow).toContain('CHAT_OPERATIONAL_ROW_CLASS');
     expect(operationalRow).toContain('relative grid h-9 w-full min-w-0 max-w-full');
-    expect(operationalRow).toContain('font-normal text-muted-foreground transition-colors');
+    expect(operationalRow).toContain(
+      "CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground'",
+    );
     expect(operationalRow).toContain("CHAT_OPERATIONAL_ICON_CLASS = 'h-4! w-4! shrink-0'");
     expect(sharedRow).toContain('data-chat-operational-row');
     expect(sharedRow).toContain("{adjacentOperationalRow ? 'mt-1' : ''}");

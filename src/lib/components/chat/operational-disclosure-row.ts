@@ -29,8 +29,10 @@ export const OPERATIONAL_PRIMARY_CLASS = 'text-foreground';
 export const OPERATIONAL_SECONDARY_CLASS =
   'text-foreground/70 transition-colors group-hover:text-foreground group-focus-within:text-foreground';
 
-export const CHAT_OPERATIONAL_SUMMARY_TONE_CLASS =
-  'font-normal text-muted-foreground transition-colors group-hover:text-foreground group-focus-within:text-foreground';
+export const CHAT_OPERATIONAL_SUMMARY_TONE_CLASS = 'font-normal text-muted-foreground';
+
+export const CHAT_OPERATIONAL_CONTAINER_CLASS =
+  'tool-call-container group relative block w-full min-w-0 max-w-full overflow-hidden type-body font-family-child font-normal text-muted-foreground';
 
 export const CHAT_OPERATIONAL_ICON_CLASS = 'h-4! w-4! shrink-0';
 

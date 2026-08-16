@@ -3,9 +3,9 @@
   import { safeSlide } from '$lib/utils/animations';
   import {
     CHAT_OPERATIONAL_LEADING_CLASS,
+    CHAT_OPERATIONAL_CONTAINER_CLASS,
     CHAT_OPERATIONAL_ROW_CLASS,
     CHAT_OPERATIONAL_SUMMARY_CLASS,
-    OPERATIONAL_ROW_CONTAINER_CLASS,
   } from './operational-disclosure-row';
 
   interface Props {
@@ -62,7 +62,7 @@
 </script>
 
 <div
-  class="{OPERATIONAL_ROW_CONTAINER_CLASS} {adjacentOperationalRow ? 'mt-1' : ''} {className}"
+  class="{CHAT_OPERATIONAL_CONTAINER_CLASS} {adjacentOperationalRow ? 'mt-1' : ''} {className}"
   data-chat-operational-row
   data-adjacent-operational-row={adjacentOperationalRow || undefined}
   data-testid={testId}
@@ -74,7 +74,7 @@
     {#if interactive}
       <button
         type="button"
-        class="col-span-2 flex min-w-0 w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:outline-none"
+        class="col-span-2 flex min-w-0 w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
         data-testid={disclosureTestId}
         aria-label={ariaLabel}
         aria-expanded={expanded}

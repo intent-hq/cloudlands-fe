@@ -110,6 +110,46 @@ for (const theme of ['light', 'dark'] as const) {
           .locator('[data-testid="assistant-prose-lane"]')
           .evaluate((element) => getComputedStyle(element).backgroundColor);
         expect(contrastRatio(summaryStyles[0].color, laneBackground)).toBeGreaterThanOrEqual(4.5);
+
+        const disclosure = baseline
+          .locator('[data-testid="thinking-row"] [data-testid="reasoning-disclosure"]')
+          .first();
+        const captureDisclosureState = () =>
+          disclosure.evaluate((element) => {
+            const row = element.closest('[data-operational-disclosure-row]') as HTMLElement;
+            const summary = element.querySelector('[data-operational-summary]') as HTMLElement;
+            const leading = element.querySelector('[data-operational-leading]') as HTMLElement;
+            const icon = leading.querySelector('svg') as SVGElement;
+            const style = getComputedStyle(element);
+            const rowStyle = getComputedStyle(row);
+            const summaryStyle = getComputedStyle(summary);
+            const leadingStyle = getComputedStyle(leading);
+            const iconStyle = getComputedStyle(icon);
+            const box = row.getBoundingClientRect();
+            return {
+              geometry: [box.x, box.y, box.width, box.height],
+              row: [
+                rowStyle.backgroundColor,
+                rowStyle.color,
+                rowStyle.opacity,
+                rowStyle.borderColor,
+              ],
+              disclosure: [style.backgroundColor, style.color, style.opacity, style.borderColor],
+              summary: [summaryStyle.color, summaryStyle.opacity],
+              leading: [leadingStyle.color, leadingStyle.opacity],
+              icon: [iconStyle.color, iconStyle.opacity],
+              focusIndicator: style.textDecorationLine,
+            };
+          });
+        const restingState = await captureDisclosureState();
+        await disclosure.hover();
+        expect(await captureDisclosureState()).toEqual(restingState);
+        await disclosure.focus();
+        const focusedState = await captureDisclosureState();
+        expect({ ...focusedState, focusIndicator: restingState.focusIndicator }).toEqual(
+          restingState,
+        );
+        expect(focusedState.focusIndicator).toContain('underline');
         for (const marker of await prose.all()) {
           const firstChild = marker.locator(':scope > *').first();
           const box = await firstChild.boundingBox();

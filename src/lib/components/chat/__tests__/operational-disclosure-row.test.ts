@@ -76,6 +76,7 @@ import ToolCall from '../ToolCall.svelte';
 import {
   CHAT_OPERATIONAL_ICON_CLASS,
   CHAT_OPERATIONAL_LEADING_CLASS,
+  CHAT_OPERATIONAL_CONTAINER_CLASS,
   CHAT_OPERATIONAL_ROW_CLASS,
   CHAT_OPERATIONAL_SUMMARY_CLASS,
   CHAT_OPERATIONAL_SUMMARY_TONE_CLASS,
@@ -176,7 +177,7 @@ describe('shared operational disclosure-row contract', () => {
 
     for (const setup of cases) {
       const { view, host, summary, shared } = setup();
-      expectClasses(host, OPERATIONAL_ROW_TONE_CLASS);
+      expectClasses(host, shared ? CHAT_OPERATIONAL_CONTAINER_CLASS : OPERATIONAL_ROW_TONE_CLASS);
       expectRenderedContract(view.container, summary, shared);
       if (shared) expect(host.hasAttribute('data-chat-operational-row')).toBe(true);
       cleanup();
@@ -513,6 +514,10 @@ describe('shared operational disclosure-row contract', () => {
 
         expect(within(row).getAllByRole('button')).toHaveLength(1);
         expect(disclosure.className).toContain('cursor-pointer');
+        expect(disclosure.className).toContain('focus-visible:underline');
+        expect(disclosure.className).not.toMatch(
+          /hover:(?:bg|text|border|opacity)|group-hover:(?:bg|text|border|opacity)/,
+        );
         expect(disclosure.getAttribute('aria-label')).toMatch(accessibleName);
         expect(disclosure.getAttribute('aria-expanded')).toBe('false');
         expect(disclosure.querySelector(iconSelector)).toBeTruthy();
