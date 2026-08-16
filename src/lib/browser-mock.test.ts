@@ -248,6 +248,112 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(typeof sub.result?.subscriptionId).toBe('string');
   });
 
+  it('backend:request workspace.get resolves the workspace by id as { ok: true, result: { workspace } } (monorepo#2605)', async () => {
+    const res = await api.invoke('backend:request', {
+      method: 'workspace.get',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result?.workspace?.id).toBe('mock-ws-1');
+    expect(res.result.workspace.title).toBe('Example Project');
+  });
+
+  it('backend:request workspace.get for an unknown id returns a structured error envelope (PROTOCOL §5.1)', async () => {
+    const res = await api.invoke('backend:request', {
+      method: 'workspace.get',
+      params: { workspaceId: 'no-such-ws' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('INVALID_PARAMS');
+    expect(res.error?.message).toContain('no-such-ws');
+  });
+
+  it('backend:request task.listAgentLinks returns the empty links + linksByNoteId shape (monorepo#2605, PROTOCOL §5.4)', async () => {
+    const res = await api.invoke('backend:request', {
+      method: 'task.listAgentLinks',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toEqual({ links: [], linksByNoteId: {} });
+  });
+
+  it('backend:request serves the remaining workspace-open lifecycle reads as ok envelopes', async () => {
+    // These are hit by the lifecycle read saga right after workspace.get /
+    // task.listAgentLinks when a workspace opens in dev:web.
+    const tokenUsage = await api.invoke('backend:request', {
+      method: 'workspace.getTokenUsage',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(tokenUsage.ok).toBe(true);
+    expect(tokenUsage.result?.tokenUsage?.totals).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    expect(tokenUsage.result?.tokenUsage?.lastScanAt).toBeNull();
+
+    const context = await api.invoke('backend:request', {
+      method: 'workspace.getContext',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(context.ok).toBe(true);
+    expect(Array.isArray(context.result?.items)).toBe(true);
+
+    const scripts = await api.invoke('backend:request', {
+      method: 'script.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(scripts.ok).toBe(true);
+    expect(Array.isArray(scripts.result?.scripts)).toBe(true);
+
+    // v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+    const terminals = await api.invoke('backend:request', {
+      method: 'terminal.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(terminals.ok).toBe(true);
+    expect(Array.isArray(terminals.result?.terminals)).toBe(true);
+    expect(typeof terminals.result?.daemonBootId).toBe('string');
+
+    const active = await api.invoke('backend:request', {
+      method: 'agent.listActive',
+      params: {},
+    });
+    expect(active.ok).toBe(true);
+    expect(active.result).toEqual({ streams: [] });
+
+    const monitors = await api.invoke('backend:request', {
+      method: 'prMonitor.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(monitors.ok).toBe(true);
+    expect(monitors.result).toEqual({ monitors: [] });
+
+    const gitRoots = await api.invoke('backend:request', {
+      method: 'gitRoot.list',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(gitRoots.ok).toBe(true);
+    expect(gitRoots.result).toEqual({ gitRoots: [] });
+
+    // §5.9 file.tree returns a bare array.
+    const tree = await api.invoke('backend:request', {
+      method: 'file.tree',
+      params: { workspaceId: 'mock-ws-1', path: '.' },
+    });
+    expect(tree.ok).toBe(true);
+    expect(tree.result).toEqual([]);
+  });
+
+  it('resolves workspaces.get through the live client (workspace open path)', async () => {
+    const { LiveAppClient } = await import('./client');
+    const client = new LiveAppClient();
+    const workspace = await client.workspaces.get('mock-ws-1');
+    expect(workspace).not.toBeNull();
+    expect(String(workspace?.id)).toBe('mock-ws-1');
+  });
+
   it('backend:request for an unimplemented method returns a structured error envelope', async () => {
     const res = await api.invoke('backend:request', { method: 'no.suchMethod' });
     expect(res.ok).toBe(false);

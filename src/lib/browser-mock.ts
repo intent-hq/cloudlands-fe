@@ -88,9 +88,57 @@ const MOCK_WORKSPACES = [
 
 let subscriptionIdCounter = 0;
 
-/** Mock results for the daemon JSON-RPC methods hit at boot. */
-function mockBackendMethodResult(method: string): unknown {
+/**
+ * Mock results for the daemon JSON-RPC methods hit at boot and during the
+ * workspace-open lifecycle reads. Returns `{ error }` for structured wire
+ * errors (mirroring the daemon's -32602 responses) and `undefined` for
+ * methods the mock does not implement.
+ */
+function mockBackendMethodResult(
+  method: string,
+  params?: Record<string, unknown>,
+): unknown | { error: { code: string; message: string } } {
   if (method === 'workspace.list') return { workspaces: MOCK_WORKSPACES };
+  // Workspace open (monorepo#2605): resolve by id per PROTOCOL §5.1
+  // ({ workspace } envelope; -32602 when not found).
+  if (method === 'workspace.get') {
+    const workspace = MOCK_WORKSPACES.find((ws) => ws.id === params?.workspaceId);
+    if (!workspace) {
+      return {
+        error: {
+          code: 'INVALID_PARAMS',
+          message: `Browser mock: workspace "${String(params?.workspaceId)}" not found`,
+        },
+      };
+    }
+    return { workspace };
+  }
+  // Tab registration (monorepo#2605): PROTOCOL §5.4 — flat list plus the
+  // byNoteId → byTaskKey map; empty is a valid daemon response.
+  if (method === 'task.listAgentLinks') return { links: [], linksByNoteId: {} };
+  // Remaining workspace-open lifecycle reads (lifecycle-read-saga):
+  // PROTOCOL §5.23 TokenUsage rollup — lastScanAt null before the first scan.
+  if (method === 'workspace.getTokenUsage') {
+    const totals = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    return { tokenUsage: { byAgentId: {}, totals, byModel: {}, lastScanAt: null } };
+  }
+  if (method === 'workspace.getContext') return { items: [] };
+  if (method === 'script.list') return { scripts: [] };
+  // §5.13 v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+  if (method === 'terminal.list') {
+    return { terminals: [], daemonBootId: 'browser-mock-boot' };
+  }
+  // Other empty-safe reads hit during workspace open (audit, monorepo#2605).
+  if (method === 'agent.listActive') return { streams: [] };
+  if (method === 'prMonitor.list') return { monitors: [] };
+  if (method === 'gitRoot.list') return { gitRoots: [] };
+  // §5.9 file.tree returns a bare array.
+  if (method === 'file.tree') return [];
   if (method === 'repo.list') return { repos: [] };
   if (method === 'settings.list') return { settings: [] };
   if (method === 'agent.list') return { agents: [] };
@@ -132,7 +180,10 @@ function mockBackendInvoke(channel: string, data?: any): any {
     if (typeof method !== 'string' || method.length === 0) {
       return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
     }
-    const result = mockBackendMethodResult(method);
+    const result = mockBackendMethodResult(method, data?.params);
+    if (result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)) {
+      return { ok: false, error: (result as { error: { code: string; message: string } }).error };
+    }
     if (result !== undefined) {
       return { ok: true, result };
     }
