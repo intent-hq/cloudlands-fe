@@ -148,7 +148,7 @@ function* persist(
       yield* put(setError(toMcpErrorMessage(result.error, m.mcp_management_saveServersFailed_error())));
       return;
     }
-    yield* call(refreshDaemonIdsAndStatuses);
+    yield* fork(refreshDaemonIdsAndStatuses);
   } catch (error) {
     yield* put(setError(toMcpErrorMessage(error, m.mcp_management_saveServersFailed_error())));
   }
@@ -160,8 +160,14 @@ function* persist(
  * daemon-status overlay as the load path. Without this, neither the status
  * fetch nor live `mcp.servers:status-changed` events can correlate a runtime
  * status back to a just-saved server until the next `loadServers`. Ids merge
- * by name into the current optimistic list; credentials stay stripped. A
- * refresh failure is non-fatal — the save itself already succeeded.
+ * by name into the current optimistic list; credentials stay stripped.
+ *
+ * Call sites `fork` this helper rather than `call` it: the whole refresh is
+ * fire-and-forget (redux-saga's attached-fork model would otherwise make the
+ * caller wait for it, delaying e.g. `saveAdvanced`'s reset timer), and a
+ * refresh failure is non-fatal — the save itself already succeeded, so the
+ * body is fully wrapped in try/catch to keep an abort from surfacing as a
+ * save error.
  */
 function* refreshDaemonIdsAndStatuses(): SagaGenerator<void> {
   try {
@@ -428,8 +434,8 @@ function* saveAdvanced(json: string): SagaGenerator<void> {
     return;
   }
   yield* put(setAdvancedSaveStatus('saved'));
-  yield* call(refreshDaemonIdsAndStatuses);
   yield* fork(resetAdvancedStatus);
+  yield* fork(refreshDaemonIdsAndStatuses);
 }
 
 function* resetAdvancedStatus(): SagaGenerator<void> {
