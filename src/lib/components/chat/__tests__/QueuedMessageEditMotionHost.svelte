@@ -33,6 +33,10 @@
   function report(state: FollowBottomState) {
     distance = state.distanceFromBottom;
   }
+
+  function preserveEditorFocus(event: PointerEvent) {
+    event.preventDefault();
+  }
 </script>
 
 <section
@@ -65,11 +69,24 @@
   </div>
   <output data-testid="queued-edit-bottom-state">{follow ? 'locked' : 'unlocked'}:{distance}</output
   >
-  <div aria-hidden="true">
-    <button data-testid="queued-edit-refresh" onclick={() => (refresh += 1)}>Refresh</button>
-    <button data-testid="queued-edit-reorder" onclick={() => (reversed = !reversed)}>Reorder</button
+  <div role="group" aria-label="Daemon queue controls">
+    <button
+      type="button"
+      data-testid="queued-edit-refresh"
+      onpointerdown={preserveEditorFocus}
+      onclick={() => (refresh += 1)}>Refresh</button
     >
-    <button data-testid="queued-edit-remove" onclick={() => (removed = [...removed, 'motion-1'])}>
+    <button
+      type="button"
+      data-testid="queued-edit-reorder"
+      onpointerdown={preserveEditorFocus}
+      onclick={() => (reversed = !reversed)}>Reorder</button
+    >
+    <button
+      type="button"
+      data-testid="queued-edit-remove"
+      onclick={() => (removed = [...removed, 'motion-1'])}
+    >
       Remove
     </button>
   </div>
