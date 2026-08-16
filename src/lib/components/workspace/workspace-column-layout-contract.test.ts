@@ -97,7 +97,7 @@ describe('workspace column layout contract', () => {
     expect(panelLayout).toContain("contained ? 'overflow-hidden py-2 px-2'");
     expect(panelLayout).toContain('panelLayoutScopeMounted(mountedLayoutId)');
     expect(panelLayout).toContain('panelLayoutScopeUnmounted(mountedLayoutId)');
-    expect(noteTab).toContain('class="h-full bg-background text-foreground"');
+    expect(noteTab).toContain('<NoteContentSurface state={noteContentState}>');
     expect(columns).toContain('onCloseWorkspace={(event) => closeWorkspace(workspaceId, event)}');
     expect(columns).not.toContain('absolute right-2 top-2');
     expect(surface).toContain('{onCloseWorkspace}');
