@@ -1,4 +1,6 @@
 import { safeSlide } from '$lib/utils/animations';
+import { cubicOut } from 'svelte/easing';
+import type { TransitionConfig } from 'svelte/transition';
 
 export const SUBSCRIPTION_ICON_CLASS = 'text-ghost opacity-60';
 export const SUBSCRIPTION_CARD_CONTAINMENT_CLASS =
@@ -27,4 +29,33 @@ export function safeSubscriptionSlide(node: Element) {
     typeof window !== 'undefined' &&
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   return safeSlide(node, { axis: 'y', duration: reduced ? 0 : 150 });
+}
+
+/** Keyed row motion: zero height to natural height, then back to zero on removal. */
+export function safeSubscriptionRowTransition(node: Element): TransitionConfig {
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return { duration: 0 };
+
+  const style = getComputedStyle(node);
+  const height = Number.parseFloat(style.height);
+  if (!Number.isFinite(height)) return { duration: 0 };
+
+  const value = (property: keyof CSSStyleDeclaration) => {
+    const parsed = Number.parseFloat(String(style[property]));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const opacity = Number.parseFloat(style.opacity);
+
+  return {
+    duration: 160,
+    easing: cubicOut,
+    css: (t, u) =>
+      `overflow:hidden;height:${t * height}px;` +
+      `padding-top:${t * value('paddingTop')}px;padding-bottom:${t * value('paddingBottom')}px;` +
+      `margin-top:${t * value('marginTop')}px;margin-bottom:${t * value('marginBottom')}px;` +
+      `border-top-width:${t * value('borderTopWidth')}px;border-bottom-width:${t * value('borderBottomWidth')}px;` +
+      `opacity:${t * (Number.isFinite(opacity) ? opacity : 1)};transform:translateY(${-2 * u}px);`,
+  };
 }

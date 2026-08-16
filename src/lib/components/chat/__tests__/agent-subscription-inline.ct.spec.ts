@@ -202,12 +202,16 @@ test('aligns the foreground waiting header to the standard avatar grid', async (
             const title = element('one-shot-summary-title');
             const avatar = element('agent-card-avatar-wrapper');
             const name = element('agent-card-name');
+            const headerRow = element('one-shot-header');
+            const agentRow = element('agent-list-item').querySelector('button')!;
             return {
               slot: rect(element('one-shot-leading-column')),
               icon: rect(icon),
               avatar: rect(avatar),
               title: rect(title),
               name: rect(name),
+              headerRow: rect(headerRow),
+              agentRow: rect(agentRow),
               iconStyle: {
                 color: getComputedStyle(icon).color,
                 opacity: getComputedStyle(icon).opacity,
@@ -226,15 +230,21 @@ test('aligns the foreground waiting header to the standard avatar grid', async (
           expect(deviceDelta(expanded.slot.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
             0.5,
           );
-          expect(deviceDelta(expanded.slot.centerY, expanded.avatar.centerY)).toBeLessThanOrEqual(
-            0.5,
-          );
+          expect(
+            deviceDelta(
+              expanded.slot.centerY - expanded.headerRow.top,
+              expanded.avatar.centerY - expanded.agentRow.top,
+            ),
+          ).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.icon.centerX, expanded.avatar.centerX)).toBeLessThanOrEqual(
             0.5,
           );
-          expect(deviceDelta(expanded.icon.centerY, expanded.avatar.centerY)).toBeLessThanOrEqual(
-            0.5,
-          );
+          expect(
+            deviceDelta(
+              expanded.icon.centerY - expanded.headerRow.top,
+              expanded.avatar.centerY - expanded.agentRow.top,
+            ),
+          ).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
           expect(expanded.iconStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
           expect(expanded.titleStyle).toEqual({ color: expanded.nameColor, opacity: '1' });
@@ -265,6 +275,55 @@ test('aligns the foreground waiting header to the standard avatar grid', async (
       }
     }
   }
+});
+
+test('keeps keyed waiting and finished rows stable through add, remove, reorder, and interruption', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: 7, finishedCount: 2 },
+  });
+  await component.getByTestId('agent-list-item').first().locator('button').focus();
+  const focusedId = await page.evaluate(() =>
+    document.activeElement
+      ?.closest('[data-testid="agent-list-item"]')
+      ?.getAttribute('data-agent-id'),
+  );
+
+  await component.update({ props: { agentCount: 7, finishedCount: 2, reverseAgents: true } });
+  expect(
+    await page.evaluate(() =>
+      document.activeElement
+        ?.closest('[data-testid="agent-list-item"]')
+        ?.getAttribute('data-agent-id'),
+    ),
+  ).toBe(focusedId);
+
+  await component.update({ props: { agentCount: 3, reverseAgents: true } });
+  await component.update({ props: { agentCount: 9, reverseAgents: false } });
+  await component.update({ props: { agentCount: 4, reverseAgents: true } });
+  await page.waitForTimeout(220);
+
+  const rows = component.locator('[data-subscription-motion-row]');
+  await expect(rows).toHaveCount(4);
+  expect(
+    await rows.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-agent-id'))),
+  ).toEqual([
+    'agent-subscription-filler-3',
+    'agent-subscription-filler-2',
+    'agent-subscription-filler-1',
+    'agent-subscription-inline-geometry',
+  ]);
+  expect(
+    await component.getByTestId('one-shot-agent-list').evaluate((list) => ({
+      height: list.getBoundingClientRect().height,
+      rowHeight: Array.from(list.querySelectorAll('[data-subscription-motion-row]')).reduce(
+        (total, row) => total + row.getBoundingClientRect().height,
+        0,
+      ),
+    })),
+  ).toEqual({ height: 144, rowHeight: 144 });
 });
 
 test('uses exact named standard avatar geometry in every subscription row', async ({ mount }) => {

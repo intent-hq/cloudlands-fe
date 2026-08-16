@@ -21,6 +21,8 @@
     mode?: 'agents' | 'mixed';
     agentCount?: number;
     longLabels?: boolean;
+    reverseAgents?: boolean;
+    finishedCount?: number;
   }
 
   let {
@@ -31,6 +33,8 @@
     mode = 'agents',
     agentCount = 7,
     longLabels = false,
+    reverseAgents = false,
+    finishedCount = 0,
   }: Props = $props();
   const agentId = 'agent-subscription-inline-geometry';
   const workspaceId = 'workspace-subscription-inline-geometry';
@@ -89,8 +93,8 @@
     disposeStore();
   });
 
-  const agents = $derived(
-    Array.from({ length: agentCount }, (_, index) => ({
+  const agents = $derived.by(() => {
+    const rows = Array.from({ length: agentCount }, (_, index) => ({
       id: index === 0 ? agentId : `agent-subscription-filler-${index}`,
       name:
         index === 0
@@ -98,8 +102,10 @@
             ? 'Primary Agent With An Extremely Long Unicode Name 超長い名前 ABCDEFGHIJKLMNOPQRSTUVWXYZ'
             : 'Primary Agent'
           : `Filler ${index}`,
-    })),
-  );
+      finished: index >= agentCount - finishedCount,
+    }));
+    return reverseAgents ? rows.reverse() : rows;
+  });
 </script>
 
 {#snippet mixedPreview()}

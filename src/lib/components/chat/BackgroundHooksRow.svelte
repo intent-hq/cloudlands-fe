@@ -46,6 +46,7 @@
   import { store as appStore } from '$store/renderer/store';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
+    safeSubscriptionRowTransition,
     safeSubscriptionSlide,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
@@ -184,7 +185,12 @@
   >
     {#each agentHooks as hook (hook.hookId)}
       {@const detailsId = `background-hook-details-${hook.hookId}`}
-      <div class="border-t border-border/40 first:border-t-0" data-hook-state={hook.state}>
+      <div
+        class="overflow-hidden border-t border-border/40 first:border-t-0"
+        data-hook-state={hook.state}
+        data-subscription-motion-row="hook"
+        transition:safeSubscriptionRowTransition
+      >
         <div class="flex min-h-9 min-w-0 max-w-full items-center gap-2 px-3 py-2 text-subtle">
           <Button
             variant="plain"

@@ -49,6 +49,7 @@
   import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
   import {
+    safeSubscriptionRowTransition,
     safeSubscriptionSlide,
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
@@ -486,7 +487,9 @@
   {@const watchedAgentId = row.agentId}
   <div
     class="group/watch w-full min-w-0 max-w-full overflow-hidden border-t border-border/40 first:border-t-0"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    data-agent-id={watchedAgentId}
+    data-subscription-motion-row={finished ? 'finished' : 'waiting'}
+    transition:safeSubscriptionRowTransition
   >
     {#snippet oneShotActions()}
       {#if !isCompleted && !isolatedPreview}

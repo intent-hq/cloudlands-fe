@@ -250,6 +250,78 @@ describe('EventWakeupBanner details disclosure', () => {
     );
   });
 
+  it.each([
+    ['one event', [{ type: 'agent:idle', data: { agentName: 'Alpha' } }], 'Alpha finished'],
+    [
+      'two events with failure',
+      [
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:failed', data: { agentName: 'Beta' } },
+      ],
+      'Alpha finished & Beta failed',
+    ],
+    [
+      'four ordered events with duplicate and attention',
+      [
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:idle', data: { agentName: 'Alpha' } },
+        { type: 'agent:status-changed', data: { agentName: 'Beta', status: 'waiting' } },
+        { type: 'custom:unknown', data: {} },
+      ],
+      'Alpha finished & Beta is waiting & Custom unknown',
+    ],
+  ])('uses a descriptive, ordered, deduplicated header for %s', (_, events, expected) => {
+    renderBanner({
+      type: 'event_notification',
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+      events: events.map((event, index) => ({
+        ...event,
+        timestamp: `2026-08-16T03:0${index}:00.000Z`,
+      })),
+    });
+
+    const summary = screen.getByTestId('event-wakeup-summary');
+    expect(summary.getAttribute('aria-label')).toBe(expected);
+    expect(within(summary).getByTitle(expected)).toBeTruthy();
+  });
+
+  it('keeps five-event bursts count-only and exposes the full truncated header accessibly', async () => {
+    const events = Array.from({ length: 5 }, (_, index) => ({
+      type: 'agent:completed',
+      timestamp: `2026-08-16T03:0${index}:00.000Z`,
+      data: { agentName: `Agent ${index}` },
+    }));
+    const { rerender } = renderBanner({
+      type: 'event_notification',
+      eventCount: events.length,
+      eventTypes: events.map((event) => event.type),
+      events,
+    });
+    expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-label')).toBe('5 events');
+
+    const longName = 'Long agent identity '.repeat(8).trim();
+    await rerender({
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:failed'],
+        events: [
+          {
+            type: 'agent:failed',
+            timestamp: '2026-08-16T03:00:00.000Z',
+            data: { agentName: longName },
+          },
+        ],
+      },
+      asDivider: true,
+      showAgentCards: false,
+    });
+    const fullLabel = `${longName} failed`;
+    expect(screen.getByTestId('event-wakeup-summary').getAttribute('aria-label')).toBe(fullLabel);
+    expect(within(screen.getByTestId('event-wakeup-summary')).getByTitle(fullLabel)).toBeTruthy();
+  });
+
   it('renders PR notifications and a navigable legacy completion avatar inside the same surface', async () => {
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     const { rerender } = renderBanner({
