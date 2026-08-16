@@ -266,6 +266,10 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(res.ok).toBe(false);
     expect(res.error?.code).toBe('INVALID_PARAMS');
     expect(res.error?.message).toContain('no-such-ws');
+    // Mirrors JsonRpcError.toErrorPayload(): data.code + numeric rpcCode
+    // (isDaemonErrorResponse duck-types daemon rejections on rpcCode).
+    expect(res.error?.data).toEqual({ code: 'INVALID_PARAMS' });
+    expect(res.error?.rpcCode).toBe(-32602);
   });
 
   it('backend:request task.listAgentLinks returns the empty links + linksByNoteId shape (monorepo#2605, PROTOCOL §5.4)', async () => {
@@ -344,6 +348,21 @@ describe('browser-mock backend:* transport envelope', () => {
     });
     expect(tree.ok).toBe(true);
     expect(tree.result).toEqual([]);
+
+    // §5.19 file-tracking reads (refreshChanges in the lifecycle saga).
+    const changes = await api.invoke('backend:request', {
+      method: 'file-tracking.getChanges',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(changes.ok).toBe(true);
+    expect(changes.result).toEqual({ changes: [], truncated: false, totalCount: 0 });
+
+    const commits = await api.invoke('backend:request', {
+      method: 'file-tracking.loadCommits',
+      params: { workspaceId: 'mock-ws-1' },
+    });
+    expect(commits.ok).toBe(true);
+    expect(commits.result).toEqual({ commits: [], boundarySha: null, nextToken: null });
   });
 
   it('resolves workspaces.get through the live client (workspace open path)', async () => {
