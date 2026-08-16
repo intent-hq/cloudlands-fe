@@ -113,6 +113,7 @@ describe('ChatMessageNavigator', () => {
     await vi.advanceTimersByTimeAsync(1);
     await Promise.resolve();
     expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('chat-message-navigator-search'));
   });
 
   it('opens with Space and from focus without a click', async () => {
@@ -127,6 +128,32 @@ describe('ChatMessageNavigator', () => {
     trigger.focus();
     await waitFor(() => expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy());
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('combobox')));
+  });
+
+  it('does not steal focus after dismissal or message selection', async () => {
+    const { onSelectMessage } = renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    const downButton = screen.getByTestId('chat-scroll-to-bottom-button');
+
+    await fireEvent.click(trigger);
+    let input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    downButton.focus();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(downButton);
+
+    await fireEvent.keyDown(trigger, { key: ' ' });
+    input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    onSelectMessage.mockImplementation(async () => {
+      downButton.focus();
+      return true;
+    });
+    await fireEvent.click(screen.getAllByRole('option')[0]);
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    expect(document.activeElement).toBe(downButton);
   });
 
   it('stays open while pointer and focus move from the trigger into the panel', async () => {

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { tick } from 'svelte';
   import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
   import { faList } from '@fortawesome/free-solid-svg-icons';
@@ -63,6 +62,11 @@
     if (!open) handleOpenChange(true);
   }
 
+  function handleOpenAutoFocus(event: Event) {
+    event.preventDefault();
+    searchInput?.focus();
+  }
+
   async function selectMessage(messageId: string) {
     await onSelectMessage(messageId);
     open = false;
@@ -92,13 +96,6 @@
       void selectMessage(filteredMessages[activeIndex].id);
     }
   }
-
-  $effect(() => {
-    if (!open) return;
-    void tick().then(() => {
-      searchInput?.focus();
-    });
-  });
 </script>
 
 <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
@@ -132,7 +129,7 @@
         side="bottom"
         sideOffset={4}
         collisionPadding={8}
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        onOpenAutoFocus={handleOpenAutoFocus}
         class="z-(--layer-popover) w-[28rem] max-w-[calc(100vw-1rem)] rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
       >
         <div class="min-w-0" data-testid="chat-message-navigator-panel">
