@@ -3,6 +3,7 @@ import { call, put, takeLatest, takeLeading, type SagaGenerator } from 'typed-re
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
+import { selectDirectoryPickerListing } from '../directory-picker-selectors';
 import {
   directoryListingFailed,
   directoryListingLoaded,
@@ -35,12 +36,41 @@ function* loadDirectory(requestedPath: string | null): SagaGenerator<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('host.listDirectory failed', { requestedPath, error: message });
-    if (requestedPath !== null && isMissingPathError(message)) {
+    const missing = isMissingPathError(message);
+    // The modal resets the slice on close, so a null listing means this is the
+    // initial load of a remembered path; anything else is explicit navigation.
+    const current = yield* selectDirectoryPickerListing.effect();
+    if (requestedPath !== null && missing && current === null) {
       logger.info('initial path missing; falling back to daemon-host home', { requestedPath });
-      yield* call(loadDirectory, null);
+      yield* call(loadHomeFallback, requestedPath);
+    } else if (requestedPath !== null && current !== null) {
+      // Navigation failure: keep the current listing and surface an inline
+      // hint instead of silently jumping to home.
+      const hint = missing ? m.onboarding_dirPicker_pathNotFound_error() : message;
+      yield* put(pathNavigationFailed(requestedPath, hint));
     } else {
       yield* put(directoryListingFailed(requestedPath, message));
     }
+  }
+}
+
+/**
+ * Initial-load fallback: the remembered path is gone, so list the daemon-host
+ * home instead — echoing the originally requested path so the reducer (which
+ * discards responses whose `requestedPath` does not match) accepts the result.
+ */
+function* loadHomeFallback(requestedPath: string): SagaGenerator<void> {
+  try {
+    const listing: DirectoryPickerListing = yield* call(
+      backendRequest<DirectoryPickerListing>,
+      'host.listDirectory',
+      {},
+    );
+    yield* put(directoryListingLoaded(requestedPath, listing));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('daemon-host home fallback failed', { requestedPath, error: message });
+    yield* put(directoryListingFailed(requestedPath, message));
   }
 }
 
