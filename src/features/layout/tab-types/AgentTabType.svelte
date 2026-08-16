@@ -29,7 +29,7 @@
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { faCheck, faCircleInfo, faCopy, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { m } from '$shared/paraglide/messages.js';
   import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -106,13 +106,12 @@
 
   // Read-only harness version stamp (PROTOCOL §5.5). Mirrors the AgentCard
   // context-menu entry: hidden for sessions from daemons that predate the
-  // field; when the session carries a harnessFeatures snapshot the entry is
-  // a flyout listing each feature's on/off state (check = on), otherwise a
-  // plain disabled item. Informational only — never actionable.
+  // field; selecting the item opens the read-only harness-features modal
+  // (monorepo#2459). Legacy sessions without a harnessFeatures snapshot
+  // still open the modal — every catalog feature renders OFF.
   const harnessVersion = $derived($agent$?.harnessVersion ?? null);
-  const harnessFeatureEntries = $derived(
-    Object.entries($agent$?.harnessFeatures ?? {}).sort(([a], [b]) => a.localeCompare(b)),
-  );
+  const harnessFeatures = $derived($agent$?.harnessFeatures ?? null);
+  let harnessModalOpen = $state(false);
 
   // Copy/delete state
   let agentCopyFeedback = $state<string | null>(null);
@@ -209,39 +208,21 @@
   />
   {#if harnessVersion}
     <Menu.Separator />
-    {#if harnessFeatureEntries.length > 0}
-      <Menu.Sub>
-        <Menu.SubTrigger>
-          <Fa icon={faCircleInfo} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
-          <span class="min-w-0 flex-1 truncate">
-            {m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
-          </span>
-        </Menu.SubTrigger>
-        <Menu.SubContent>
-          {#each harnessFeatureEntries as [feature, enabled] (feature)}
-            <!-- Wire identifier from the §5.12 feature catalog, rendered
-                 verbatim. i18n-ignore (daemon-provided identifier). The icon
-                 column is always reserved so on/off labels align. -->
-            <Menu.Item disabled>
-              <span class="flex w-4 shrink-0 items-center justify-center" aria-hidden="true">
-                {#if enabled}
-                  <Fa icon={faCheck} size="xs" class="text-muted-foreground opacity-70" />
-                {/if}
-              </span>
-              <span class="min-w-0 flex-1 truncate">{feature}</span>
-            </Menu.Item>
-          {/each}
-        </Menu.SubContent>
-      </Menu.Sub>
-    {:else}
-      <Menu.CommandItem
-        icon={faCircleInfo}
-        label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
-        disabled
-      />
-    {/if}
+    <Menu.CommandItem
+      icon={faCircleInfo}
+      label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+      onclick={() => (harnessModalOpen = true)}
+    />
   {/if}
 {/snippet}
+
+{#if harnessVersion}
+  <HarnessFeaturesModal
+    bind:open={harnessModalOpen}
+    version={harnessVersion}
+    features={harnessFeatures}
+  />
+{/if}
 
 {#if tab.agentId}
   {#if $workspace}

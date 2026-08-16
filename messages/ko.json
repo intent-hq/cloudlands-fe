@@ -1688,6 +1688,8 @@
   "chat_agentCard_delegatedBy_label": "· {name}이(가) 위임함",
   "chat_agentCard_menu_delete_label": "삭제",
   "chat_agentCard_menu_harnessVersion_label": "하네스 v{version}",
+  "chat_harnessFeaturesModal_description": "이 에이전트 세션이 생성될 때 적용된 기능입니다. 이 스냅샷은 읽기 전용이며 세션이 유지되는 동안 변경되지 않습니다.",
+  "chat_harnessFeaturesModal_title": "하네스 v{version}",
   "chat_agentCard_menu_open_label": "열기",
   "chat_agentCard_menu_rename_label": "이름 바꾸기",
   "chat_agentCard_fileManager_label": "파일 관리자",
