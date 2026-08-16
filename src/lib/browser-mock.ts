@@ -88,9 +88,85 @@ const MOCK_WORKSPACES = [
 
 let subscriptionIdCounter = 0;
 
-/** Mock results for the daemon JSON-RPC methods hit at boot. */
-function mockBackendMethodResult(method: string): unknown {
+/** §5.13 `daemonBootId` is a per-boot UUID; a page load is the mock's boot. */
+const MOCK_DAEMON_BOOT_ID = crypto.randomUUID();
+
+/**
+ * Module-private sentinel marking a structured wire error from
+ * `mockBackendMethodResult`. A symbol key cannot collide with a legitimate
+ * mocked result shape (unlike an `'error' in result` check).
+ */
+const MOCK_ERROR = Symbol('browser-mock-error');
+
+interface MockErrorEnvelope {
+  [MOCK_ERROR]: { code: string; message: string; data: { code: string }; rpcCode: number };
+}
+
+/** Structured wire error mirroring `JsonRpcError.toErrorPayload()`: the real
+ * bridge always carries `data.code` and the numeric `rpcCode` alongside
+ * `code`/`message` (`isDaemonErrorResponse` duck-types on `rpcCode`). */
+function mockError(code: string, rpcCode: number, message: string): MockErrorEnvelope {
+  return { [MOCK_ERROR]: { code, message, data: { code }, rpcCode } };
+}
+
+function isMockError(value: unknown): value is MockErrorEnvelope {
+  return typeof value === 'object' && value !== null && MOCK_ERROR in value;
+}
+
+/**
+ * Mock results for the daemon JSON-RPC methods hit at boot and during the
+ * workspace-open lifecycle reads. Returns a `MOCK_ERROR`-keyed envelope for
+ * structured wire errors (mirroring the daemon's -32602 responses) and
+ * `undefined` for methods the mock does not implement.
+ */
+function mockBackendMethodResult(method: string, params?: Record<string, unknown>): unknown {
   if (method === 'workspace.list') return { workspaces: MOCK_WORKSPACES };
+  // Workspace open (monorepo#2605): resolve by id per PROTOCOL §5.1
+  // ({ workspace } envelope; -32602 when not found).
+  if (method === 'workspace.get') {
+    const workspace = MOCK_WORKSPACES.find((ws) => ws.id === params?.workspaceId);
+    if (!workspace) {
+      return mockError(
+        'INVALID_PARAMS',
+        -32602,
+        `Browser mock: workspace "${String(params?.workspaceId)}" not found`,
+      );
+    }
+    return { workspace };
+  }
+  // Tab registration (monorepo#2605): PROTOCOL §5.4 — flat list plus the
+  // byNoteId → byTaskKey map; empty is a valid daemon response.
+  if (method === 'task.listAgentLinks') return { links: [], linksByNoteId: {} };
+  // Remaining workspace-open lifecycle reads (lifecycle-read-saga):
+  // PROTOCOL §5.23 TokenUsage rollup — lastScanAt null before the first scan.
+  if (method === 'workspace.getTokenUsage') {
+    const totals = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    };
+    return { tokenUsage: { byAgentId: {}, totals, byModel: {}, lastScanAt: null } };
+  }
+  if (method === 'workspace.getContext') return { items: [] };
+  if (method === 'script.list') return { scripts: [] };
+  // §5.13 v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+  if (method === 'terminal.list') {
+    return { terminals: [], daemonBootId: MOCK_DAEMON_BOOT_ID };
+  }
+  // Other empty-safe reads hit during workspace open (audit, monorepo#2605).
+  if (method === 'agent.listActive') return { streams: [] };
+  if (method === 'prMonitor.list') return { monitors: [] };
+  if (method === 'gitRoot.list') return { gitRoots: [] };
+  // §5.9 file.tree returns a bare array.
+  if (method === 'file.tree') return [];
+  // §5.19 file-tracking reads (refreshChanges in the lifecycle saga).
+  if (method === 'file-tracking.getChanges') {
+    return { changes: [], truncated: false, totalCount: 0 };
+  }
+  if (method === 'file-tracking.loadCommits') {
+    return { commits: [], boundarySha: null, nextToken: null };
+  }
   if (method === 'repo.list') return { repos: [] };
   if (method === 'settings.list') return { settings: [] };
   if (method === 'agent.list') return { agents: [] };
@@ -132,7 +208,10 @@ function mockBackendInvoke(channel: string, data?: any): any {
     if (typeof method !== 'string' || method.length === 0) {
       return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
     }
-    const result = mockBackendMethodResult(method);
+    const result = mockBackendMethodResult(method, data?.params);
+    if (isMockError(result)) {
+      return { ok: false, error: result[MOCK_ERROR] };
+    }
     if (result !== undefined) {
       return { ok: true, result };
     }
