@@ -44,6 +44,8 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   let scrollHeight = 900;
   let scrollTop = 600;
   let animationFrames: FrameRequestCallback[] = [];
+  const observed: Element[] = [];
+  const unobserved: Element[] = [];
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     animationFrames.push(callback);
     return animationFrames.length;
@@ -52,7 +54,12 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      observe() {}
+      observe(element: Element) {
+        observed.push(element);
+      }
+      unobserve(element: Element) {
+        unobserved.push(element);
+      }
       disconnect() {}
     },
   );
@@ -64,7 +71,9 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
     },
   );
   const root = document.createElement('div');
-  root.append(node);
+  const wrapper = document.createElement('div');
+  wrapper.append(node);
+  root.append(wrapper);
   Object.defineProperties(root, {
     scrollHeight: { configurable: true, get: () => scrollHeight },
     clientHeight: { configurable: true, value: 300 },
@@ -84,6 +93,8 @@ function scrollHarness(node: HTMLElement, follow: boolean) {
       callbacks.forEach((callback) => callback(performance.now()));
     },
     scrollTop: () => scrollTop,
+    observed,
+    unobserved,
   };
 }
 
@@ -110,14 +121,21 @@ describe('queued message row motion', () => {
 
   it('interrupts and reverses from the current visual height', () => {
     const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, true);
     captureQueuedMessageRowMotion(harness.node)();
+    expect(scroll.observed.filter((element) => element === harness.node)).toHaveLength(1);
     harness.setVisualHeight(46);
     const reverse = captureQueuedMessageRowMotion(harness.node);
+    expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(0);
+    expect(scroll.observed.filter((element) => element === harness.node)).toHaveLength(1);
     reverse();
 
     expect(harness.animations[0].cancel).toHaveBeenCalledOnce();
     const frames = harness.animate.mock.calls[1][0] as Keyframe[];
     expect(frames[0].height).toBe('46px');
+    harness.animations[1].onfinish?.();
+    expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(1);
+    scroll.action.destroy();
   });
 
   it('uses an immediate shell transition for reduced motion', () => {
@@ -152,12 +170,14 @@ describe('queued message row motion', () => {
     const harness = motionNode(28, 76);
     const scroll = scrollHarness(harness.node, true);
     captureQueuedMessageRowMotion(harness.node)();
+    expect(scroll.observed).toContain(harness.node);
 
     scroll.grow(12);
     scroll.runFrame();
     expect(scroll.scrollTop()).toBe(612);
 
     harness.animations[0].onfinish?.();
+    expect(scroll.unobserved).toContain(harness.node);
     scroll.grow(8);
     scroll.runFrame();
     expect(scroll.scrollTop()).toBe(620);
@@ -174,6 +194,27 @@ describe('queued message row motion', () => {
     transition.tick?.(0, 1);
 
     expect(scroll.scrollTop()).toBe(600);
+    expect(scroll.observed).not.toContain(harness.node);
+    scroll.action.destroy();
+  });
+
+  it('reacquires and settles a production bidirectional transition through outro t=0', () => {
+    const harness = motionNode(28, 76);
+    const scroll = scrollHarness(harness.node, true);
+    const transition = queuedMessageRowTransition(harness.node, undefined, { direction: 'both' });
+
+    transition.tick?.(0, 1);
+    expect(scroll.unobserved).not.toContain(harness.node);
+    transition.tick?.(0.5, 0.5);
+    transition.tick?.(1, 0);
+    expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(1);
+
+    scroll.grow(13);
+    transition.tick?.(0.5, 0.5);
+    expect(scroll.scrollTop()).toBe(613);
+    expect(scroll.observed.filter((element) => element === harness.node)).toHaveLength(2);
+    transition.tick?.(0, 1);
+    expect(scroll.unobserved.filter((element) => element === harness.node)).toHaveLength(2);
     scroll.action.destroy();
   });
 });

@@ -117,6 +117,8 @@ describe('followToBottom', () => {
 describe('followBottom policy', () => {
   let animationFrames: FrameRequestCallback[];
   let resizeCallbacks: ResizeObserverCallback[];
+  let resizeObserved: Element[];
+  let resizeUnobserved: Element[];
   let mutationCallbacks: MutationCallback[];
   let scrollHeight: number;
   let clientHeight: number;
@@ -126,6 +128,8 @@ describe('followBottom policy', () => {
   beforeEach(() => {
     animationFrames = [];
     resizeCallbacks = [];
+    resizeObserved = [];
+    resizeUnobserved = [];
     mutationCallbacks = [];
     scrollHeight = 900;
     clientHeight = 300;
@@ -141,7 +145,12 @@ describe('followBottom policy', () => {
         constructor(callback: ResizeObserverCallback) {
           resizeCallbacks.push(callback);
         }
-        observe() {}
+        observe(element: Element) {
+          resizeObserved.push(element);
+        }
+        unobserve(element: Element) {
+          resizeUnobserved.push(element);
+        }
         disconnect() {}
       },
     );
@@ -200,6 +209,10 @@ describe('followBottom policy', () => {
     resizeCallbacks[0]?.([], {} as ResizeObserver);
   }
 
+  function fireResizeFor(element: Element) {
+    if (resizeObserved.includes(element)) fireResize();
+  }
+
   function fireMutation() {
     mutationCallbacks[0]?.([], {} as MutationObserver);
   }
@@ -243,6 +256,70 @@ describe('followBottom policy', () => {
     mutation.settle();
     expect(scrollTop).toBe(654);
     action.destroy();
+  });
+
+  it('corrects narrow leased growth before an already-queued sampler frame', () => {
+    const wrapper = document.createElement('div');
+    const row = document.createElement('div');
+    wrapper.append(row);
+    container.append(wrapper);
+    const action = followBottom(container, { follow: true });
+    const trace: Array<{
+      phase: string;
+      maximum: number;
+      scrollTop: number;
+      distance: number;
+      settleFrames: number;
+    }> = [];
+    requestAnimationFrame(() => {
+      const maximum = scrollHeight - clientHeight;
+      trace.push({
+        phase: 'edit-grow-first-frame',
+        maximum,
+        scrollTop,
+        distance: maximum - scrollTop,
+        settleFrames: animationFrames.length,
+      });
+    });
+
+    const mutation = beforeFollowBottomMutation(row);
+    expect(resizeObserved).toContain(row);
+    expect(animationFrames).toHaveLength(2);
+    scrollHeight += 13;
+    fireResizeFor(row);
+    runFrame();
+
+    expect(trace).toEqual([
+      {
+        phase: 'edit-grow-first-frame',
+        maximum: 613,
+        scrollTop: 613,
+        distance: 0,
+        settleFrames: 0,
+      },
+    ]);
+    mutation.settle();
+    expect(resizeUnobserved).toContain(row);
+    action.destroy();
+  });
+
+  it('invalidates descendant leases when the follow action is destroyed', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    const action = followBottom(container, { follow: true });
+    const mutation = beforeFollowBottomMutation(child);
+    action.destroy();
+    const framesAfterDestroy = animationFrames.length;
+
+    scrollHeight = 1000;
+    mutation.request();
+    mutation.settle();
+
+    expect(scrollTop).toBe(600);
+    expect(animationFrames).toHaveLength(framesAfterDestroy);
+    runFrame();
+    expect(scrollTop).toBe(600);
+    expect(animationFrames).toHaveLength(0);
   });
 
   it('leaves an unlocked viewport unchanged through descendant mutation requests', () => {

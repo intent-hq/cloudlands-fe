@@ -92,20 +92,28 @@ export function queuedMessageRowTransition(
   _params?: undefined,
   options: { direction?: 'in' | 'out' | 'both' } = {},
 ): TransitionConfig {
-  const bottomMutation = beforeFollowBottomMutation(node);
+  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(node);
+  let previousT: number | null = null;
+  let phase: 'intro' | 'idle' | 'outro' = options.direction === 'out' ? 'outro' : 'intro';
+  const acquireBottomMutation = () => {
+    bottomMutation ??= beforeFollowBottomMutation(node);
+  };
+  const settleBottomMutation = () => {
+    bottomMutation?.settle();
+    bottomMutation = null;
+  };
   if (reducedMotion()) {
-    bottomMutation.settle();
+    settleBottomMutation();
     return { duration: 0 };
   }
   cancelQueuedMessageRowMotion(node);
   const style = getComputedStyle(node);
   const height = node.getBoundingClientRect().height;
   if (!Number.isFinite(height) || height <= 0) {
-    bottomMutation.settle();
+    settleBottomMutation();
     return { duration: 0 };
   }
   const opacity = numericStyle(style, 'opacity') || 1;
-  let settled = false;
 
   return {
     duration: DURATION_MS,
@@ -116,12 +124,24 @@ export function queuedMessageRowTransition(
       `padding-bottom:${t * numericStyle(style, 'paddingBottom')}px;` +
       `opacity:${t * opacity};`,
     tick: (t) => {
-      bottomMutation.request();
-      const finished = options.direction === 'out' ? t === 0 : t === 1;
-      if (!settled && finished) {
-        settled = true;
-        bottomMutation.settle();
+      if (options.direction === 'both' && previousT !== null) {
+        if (t < previousT) {
+          acquireBottomMutation();
+          phase = 'outro';
+        } else if (t > previousT) {
+          acquireBottomMutation();
+          phase = 'intro';
+        }
       }
+      bottomMutation?.request();
+      if (t === 1 && phase === 'intro') {
+        settleBottomMutation();
+        phase = 'idle';
+      } else if (t === 0 && phase === 'outro') {
+        settleBottomMutation();
+        phase = 'idle';
+      }
+      previousT = t;
     },
   };
 }

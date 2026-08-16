@@ -32,7 +32,7 @@ export interface FollowBottomState {
 interface BottomFollower {
   followAndScroll: () => void;
   isFollowing: () => boolean;
-  beforeMutation: () => FollowBottomMutation;
+  beforeMutation: (element: HTMLElement) => FollowBottomMutation;
 }
 
 export interface FollowBottomMutation {
@@ -73,6 +73,8 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   let stableFrames = 0;
   let previousMaximum: number | null = null;
   let activeMutationLocks = 0;
+  let destroyed = false;
+  const mutationElements = new Map<HTMLElement, number>();
 
   function cancelSettle() {
     if (settleFrame !== null) cancelAnimationFrame(settleFrame);
@@ -116,7 +118,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
 
   function runSettleFrame() {
     settleFrame = null;
-    if (!isFollowing) return;
+    if (destroyed || !isFollowing) return;
     const maximum = setExactBottom();
     reportState();
     if (maximum === previousMaximum) stableFrames += 1;
@@ -132,7 +134,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function scheduleBottomSettle(reset = false) {
-    if (!isFollowing) return;
+    if (destroyed || !isFollowing) return;
     if (reset || settleFramesRemaining === 0) {
       settleFramesRemaining = FOLLOW_BOTTOM_MAX_SETTLE_FRAMES;
       stableFrames = 0;
@@ -143,7 +145,7 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
   }
 
   function requestBottomSettle() {
-    if (!isFollowing) return;
+    if (destroyed || !isFollowing) return;
     setExactBottom();
     reportState();
     scheduleBottomSettle(true);
@@ -165,19 +167,28 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       scheduleBottomSettle();
     },
     isFollowing: () => isFollowing,
-    beforeMutation() {
-      if (!isFollowing) return inertFollowBottomMutation;
+    beforeMutation(element) {
+      if (destroyed || !isFollowing) return inertFollowBottomMutation;
       activeMutationLocks += 1;
+      const elementLocks = mutationElements.get(element) ?? 0;
+      mutationElements.set(element, elementLocks + 1);
+      if (elementLocks === 0) resizeObserver?.observe(element);
       requestBottomSettle();
       let active = true;
       return {
         request() {
-          if (active) requestBottomSettle();
+          if (active && !destroyed) requestBottomSettle();
         },
         settle() {
-          if (!active) return;
+          if (!active || destroyed) return;
           active = false;
           activeMutationLocks = Math.max(0, activeMutationLocks - 1);
+          const remainingElementLocks = (mutationElements.get(element) ?? 1) - 1;
+          if (remainingElementLocks > 0) mutationElements.set(element, remainingElementLocks);
+          else {
+            mutationElements.delete(element);
+            resizeObserver?.unobserve?.(element);
+          }
           requestBottomSettle();
         },
       };
@@ -362,6 +373,9 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
     },
 
     destroy() {
+      destroyed = true;
+      activeMutationLocks = 0;
+      mutationElements.clear();
       cancelSettle();
       if (bottomFollowers.get(container) === follower) bottomFollowers.delete(container);
       teardownObservers();
@@ -390,7 +404,7 @@ export function beforeFollowBottomMutation(element: HTMLElement): FollowBottomMu
   let current: HTMLElement | null = element;
   while (current) {
     const follower = bottomFollowers.get(current);
-    if (follower) return follower.beforeMutation();
+    if (follower) return follower.beforeMutation(element);
     current = current.parentElement;
   }
   return inertFollowBottomMutation;
