@@ -931,6 +931,7 @@
   "workspace_compactInitializer_checkingDependencies_label": "依存関係を確認しています...",
   "workspace_compactInitializer_createFailed_error": "ワークスペースを作成できませんでした",
   "workspace_compactInitializer_firstMessageSendFailed_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました — もう一度作成を押して再試行してください",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "ワークスペースは作成されましたが、メッセージの送信に失敗しました: {detail} — もう一度作成を押して再試行してください",
   "workspace_compactInitializer_createWorkspace_label": "ワークスペースを作成",
   "workspace_compactInitializer_detectingSetupScript_label": "セットアップスクリプトを検出しています…",
   "workspace_compactInitializer_downloadGit_label": "Git をダウンロード →",

@@ -938,6 +938,7 @@
   "workspace_compactInitializer_enhanceFailedWithMessage_error": "Failed to enhance prompt: {message}",
   "workspace_compactInitializer_enhanceFailed_error": "Failed to enhance prompt",
   "workspace_compactInitializer_firstMessageSendFailed_error": "The workspace was created, but sending your message failed — press Create again to retry",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "The workspace was created, but sending your message failed: {detail} — press Create again to retry",
   "workspace_compactInitializer_enhanceUnavailable_error": "Prompt enhancement is not available with the current provider",
   "workspace_compactInitializer_enhancePrompt_tooltip": "Enhance prompt",
   "workspace_compactInitializer_filesTooLarge_error": "Files too large (max 10MB): {files}",

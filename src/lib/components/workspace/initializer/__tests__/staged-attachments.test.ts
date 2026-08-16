@@ -11,7 +11,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ContextItem } from '$lib/components/chat/input/context-api';
-import { redeemStagedAttachments } from '../staged-attachments';
+import {
+  redeemStagedAttachments,
+  sendHeldFirstMessage,
+  type HeldFirstMessage,
+} from '../staged-attachments';
 
 const stagedItem = (overrides: Partial<ContextItem> = {}): ContextItem => ({
   id: 'staged-file-1',
@@ -98,18 +102,15 @@ describe('redeemStagedAttachments', () => {
   });
 
   it('is fail-soft per item: one failure does not stop the rest', async () => {
-    const place = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('stale'))
-      .mockResolvedValueOnce({
-        ok: true,
-        path: '.intent/attachments/b.txt',
-        fileName: 'b.txt',
-        size: 2,
-        attachmentId: 'att-uuid-2',
-        mimeType: 'text/plain',
-        uploadedAt: '2026-08-12T00:00:00Z',
-      });
+    const place = vi.fn().mockRejectedValueOnce(new Error('stale')).mockResolvedValueOnce({
+      ok: true,
+      path: '.intent/attachments/b.txt',
+      fileName: 'b.txt',
+      size: 2,
+      attachmentId: 'att-uuid-2',
+      mimeType: 'text/plain',
+      uploadedAt: '2026-08-12T00:00:00Z',
+    });
 
     const result = await redeemStagedAttachments(
       'ws-1',
@@ -150,5 +151,125 @@ describe('redeemStagedAttachments', () => {
         size: 1024,
       },
     ]);
+  });
+});
+
+/**
+ * Simulate a Svelte `$state` deep-reactive value: `$state` wraps objects and
+ * their nested arrays/objects in Proxies, and Electron's structured clone
+ * (`ipcRenderer.invoke`) rejects ANY Proxy with "An object could not be
+ * cloned" — the exact failure behind monorepo#2576.
+ */
+const deepProxy = <T>(value: T): T => {
+  if (value === null || typeof value !== 'object') return value;
+  const wrapped: any = Array.isArray(value) ? [] : {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    wrapped[key] = deepProxy(entry);
+  }
+  return new Proxy(wrapped, {}) as T;
+};
+
+const heldMessage = (overrides: Partial<HeldFirstMessage> = {}): HeldFirstMessage => ({
+  workspaceId: 'ws-1',
+  agentId: 'agent-1',
+  content: 'first message',
+  imageBlocks: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+  contextReferences: [{ type: 'file', path: '/tmp/a.ts', title: 'a.ts' }],
+  ...overrides,
+});
+
+const fileBlock = {
+  type: 'file' as const,
+  attachmentId: 'att-uuid-1',
+  fileName: 'notes.txt',
+  mimeType: 'text/plain',
+  size: 1024,
+};
+
+describe('sendHeldFirstMessage', () => {
+  it('sends structured-clone-safe params even when the held message is a $state proxy (monorepo#2576)', async () => {
+    // The held first message lives in Svelte `$state` between create and
+    // send, so every nested array/object arrives as a reactive Proxy.
+    const pending = deepProxy(heldMessage());
+    const request = vi.fn(async (_method: string, params?: unknown) => {
+      // Electron IPC structured-clones the params; a Proxy anywhere in the
+      // tree throws DataCloneError and the send never reaches the daemon.
+      structuredClone(params);
+      return { success: true };
+    });
+
+    const result = await sendHeldFirstMessage(pending, [fileBlock], request);
+
+    expect(result).toEqual({ sent: true });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('agent.sendMessage', {
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      content: 'first message',
+      imageBlocks: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+      fileBlocks: [fileBlock],
+      contextReferences: [{ type: 'file', path: '/tmp/a.ts', title: 'a.ts' }],
+    });
+  });
+
+  it('omits empty imageBlocks/fileBlocks/contextReferences instead of sending empty arrays', async () => {
+    const request = vi.fn().mockResolvedValue({ success: true });
+
+    await sendHeldFirstMessage(
+      heldMessage({ imageBlocks: [], contextReferences: [] }),
+      [],
+      request,
+    );
+
+    expect(request).toHaveBeenCalledWith('agent.sendMessage', {
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      content: 'first message',
+    });
+  });
+
+  it('skips the send when there is no agent or nothing to deliver', async () => {
+    const request = vi.fn();
+
+    expect(
+      await sendHeldFirstMessage(heldMessage({ agentId: undefined }), [fileBlock], request),
+    ).toEqual({ sent: true });
+    expect(
+      await sendHeldFirstMessage(
+        heldMessage({ content: '', imageBlocks: [], contextReferences: [] }),
+        [],
+        request,
+      ),
+    ).toEqual({ sent: true });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the daemon rejection reason on a { success: false } result', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValue({ success: false, error: 'unknown agent id: agent-1' });
+
+    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+
+    expect(result).toEqual({ sent: false, errorDetail: 'unknown agent id: agent-1' });
+  });
+
+  it('surfaces the thrown error detail (structured data.detail preferred, like #1287)', async () => {
+    const structured = Object.assign(new Error('Internal error'), {
+      data: { detail: 'agent session vanished mid-send' },
+    });
+    const request = vi.fn().mockRejectedValue(structured);
+
+    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+
+    expect(result).toEqual({ sent: false, errorDetail: 'agent session vanished mid-send' });
+  });
+
+  it('returns no detail for generic transport fallbacks so callers keep localized copy', async () => {
+    const request = vi.fn().mockRejectedValue(new Error('Backend request failed'));
+
+    const result = await sendHeldFirstMessage(heldMessage(), [fileBlock], request);
+
+    expect(result).toEqual({ sent: false, errorDetail: undefined });
   });
 });

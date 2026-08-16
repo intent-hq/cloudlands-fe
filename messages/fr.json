@@ -931,6 +931,7 @@
   "workspace_compactInitializer_checkingDependencies_label": "Vérification des dépendances...",
   "workspace_compactInitializer_createFailed_error": "Impossible de créer l'espace de travail",
   "workspace_compactInitializer_firstMessageSendFailed_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué — appuyez à nouveau sur Créer pour réessayer",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "L'espace de travail a été créé, mais l'envoi de votre message a échoué : {detail} — appuyez à nouveau sur Créer pour réessayer",
   "workspace_compactInitializer_createWorkspace_label": "Créer un espace de travail",
   "workspace_compactInitializer_detectingSetupScript_label": "Détection du script de configuration…",
   "workspace_compactInitializer_downloadGit_label": "Télécharger Git →",

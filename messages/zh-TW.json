@@ -931,6 +931,7 @@
   "workspace_compactInitializer_checkingDependencies_label": "正在檢查依賴…",
   "workspace_compactInitializer_createFailed_error": "建立工作區失敗",
   "workspace_compactInitializer_firstMessageSendFailed_error": "工作區已建立，但訊息傳送失敗 — 再次點擊建立以重試",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "工作區已建立，但訊息傳送失敗：{detail} — 再次點擊建立以重試",
   "workspace_compactInitializer_createWorkspace_label": "建立工作區",
   "workspace_compactInitializer_detectingSetupScript_label": "正在偵測安裝指令碼…",
   "workspace_compactInitializer_downloadGit_label": "下載 Git →",

@@ -931,6 +931,7 @@
   "workspace_compactInitializer_checkingDependencies_label": "Abhängigkeiten werden geprüft...",
   "workspace_compactInitializer_createFailed_error": "Arbeitsbereich konnte nicht erstellt werden",
   "workspace_compactInitializer_firstMessageSendFailed_error": "Der Workspace wurde erstellt, aber das Senden der Nachricht ist fehlgeschlagen — erneut auf Erstellen klicken",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "Der Workspace wurde erstellt, aber das Senden der Nachricht ist fehlgeschlagen: {detail} — erneut auf Erstellen klicken",
   "workspace_compactInitializer_createWorkspace_label": "Arbeitsbereich erstellen",
   "workspace_compactInitializer_detectingSetupScript_label": "Setup-Skript wird erkannt…",
   "workspace_compactInitializer_downloadGit_label": "Git herunterladen →",

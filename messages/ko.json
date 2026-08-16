@@ -931,6 +931,7 @@
   "workspace_compactInitializer_checkingDependencies_label": "종속성 확인 중...",
   "workspace_compactInitializer_createFailed_error": "작업 공간을 생성하지 못했습니다",
   "workspace_compactInitializer_firstMessageSendFailed_error": "워크스페이스는 생성되었지만 메시지 전송에 실패했습니다 — 만들기를 다시 눌러 재시도하세요",
+  "workspace_compactInitializer_firstMessageSendFailedDetail_error": "워크스페이스는 생성되었지만 메시지 전송에 실패했습니다: {detail} — 만들기를 다시 눌러 재시도하세요",
   "workspace_compactInitializer_createWorkspace_label": "작업 공간 생성",
   "workspace_compactInitializer_detectingSetupScript_label": "설정 스크립트 감지 중…",
   "workspace_compactInitializer_downloadGit_label": "Git 다운로드 →",

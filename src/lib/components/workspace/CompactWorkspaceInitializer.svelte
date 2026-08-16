@@ -122,8 +122,12 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
-  import { hasStagedFileItems, redeemStagedAttachments } from './initializer/staged-attachments';
-  import { backendRequest } from '$lib/client/live/backend-transport';
+  import {
+    hasStagedFileItems,
+    redeemStagedAttachments,
+    sendHeldFirstMessage,
+    type HeldFirstMessage,
+  } from './initializer/staged-attachments';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
   import {
     clearNewWorkspaceDraft,
@@ -2541,35 +2545,25 @@
       return false;
     }
 
-    if (pending.agentId && (pending.content || redemption.fileBlocks.length > 0)) {
-      try {
-        // `backendRequest` resolves normal daemon send failures as
-        // `{ success: false, error }` rather than rejecting — check it, or a
-        // failed send would silently drop the held message and its retry path.
-        const sendResult = await backendRequest<{ success?: boolean; error?: string }>(
-          'agent.sendMessage',
-          {
-            agentId: pending.agentId,
-            workspaceId: pending.workspaceId,
-            content: pending.content,
-            imageBlocks: pending.imageBlocks.length > 0 ? pending.imageBlocks : undefined,
-            fileBlocks: redemption.fileBlocks.length > 0 ? redemption.fileBlocks : undefined,
-            contextReferences:
-              pending.contextReferences.length > 0 ? pending.contextReferences : undefined,
-          },
-        );
-        if (sendResult?.success === false) {
-          logger.error('First-message send rejected after attachment placement', {
-            error: sendResult.error,
-          });
-          error = m.workspace_compactInitializer_firstMessageSendFailed_error();
-          return false;
-        }
-      } catch (err) {
-        logger.error('First-message send failed after attachment placement', { error: err });
-        error = m.workspace_compactInitializer_firstMessageSendFailed_error();
-        return false;
-      }
+    // `sendHeldFirstMessage` rebuilds the wire params as plain JSON: this
+    // pending state is a Svelte $state deep-reactive Proxy tree, which
+    // Electron's structured clone rejects outright — passing it through
+    // verbatim made every staged-attachment first send fail before reaching
+    // the daemon (monorepo#2576).
+    const sendResult = await sendHeldFirstMessage(
+      $state.snapshot(pending) as HeldFirstMessage,
+      redemption.fileBlocks,
+    );
+    if (!sendResult.sent) {
+      logger.error('First-message send failed after attachment placement', {
+        error: sendResult.errorDetail,
+      });
+      error = sendResult.errorDetail
+        ? m.workspace_compactInitializer_firstMessageSendFailedDetail_error({
+            detail: sendResult.errorDetail,
+          })
+        : m.workspace_compactInitializer_firstMessageSendFailed_error();
+      return false;
     }
     pendingFirstMessage = null;
     return true;
