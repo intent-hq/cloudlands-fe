@@ -20,6 +20,10 @@ describe('resource icon tile source contract', () => {
 
   it('migrates every scoped sidebar resource surface without changing task-state icons', () => {
     const sidebar = source('../workspace/MultiSelectTabbedSidebar.svelte');
+    const browser = source('../workspace/SidebarBrowserLauncher.svelte');
+    const terminal = source('../workspace/WorkspaceTerminalDock.svelte');
+    const strip = source('../workspace/SidebarExpandedTabStrip.svelte');
+    const transitions = source('../workspace/multi-select-sidebar-transitions.css');
     const notes = source('../workspace/sidebar/NotesPanel.svelte');
     const context = source('../workspace/sidebar/ContextItemRow.svelte');
     const tabs = source('../workspace/multi-select-sidebar-tabs.ts');
@@ -34,11 +38,21 @@ describe('resource icon tile source contract', () => {
     expect(context).toContain('<ResourceIconTile kind="note" />');
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.note');
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.changes');
+    expect(sidebar).toContain('border border-border bg-sidebar p-2');
+    expect(sidebar).toContain('border border-border bg-sidebar"');
+    expect(sidebar).toContain('background-color: hsl(var(--sidebar))');
+    expect(browser).toContain('border border-border bg-sidebar px-3');
+    expect(terminal).toContain('border border-border bg-sidebar px-3');
+    expect(strip).toContain('border border-border bg-sidebar px-4!');
+    expect(transitions).toContain('background-color: hsl(var(--sidebar))');
   });
 
   it('migrates panel tabs, compact headers, and empty or recent items', () => {
     const tabBar = source('../layout/panel-system/PanelTabBar.svelte');
     const empty = source('../layout/panel-system/PanelEmptyState.svelte');
+    const navigator = source('../chat/ChatMessageNavigator.svelte');
+    const scrollButton = source('../chat/ScrollToBottomButton.svelte');
+    const chatSizes = source('../chat/chat-icon-size.ts');
 
     expect(tabBar).toContain('<ResourceIconTile kind={resourceKind} />');
     expect(tabBar).toContain('<ResourceIconTile kind={activeResourceKind} />');
@@ -46,6 +60,12 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('size={12}');
     expect(tabBar).toContain('width="12"');
     expect(tabBar).not.toMatch(/size=\{14\}|width="14"|height="14"/);
+    expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3" />');
+    expect(tabBar).toContain('<Fa icon={faXmark} size={12} class="size-3" />');
+    expect(navigator).toContain('size={CHAT_ICON_SIZE.header} class="size-3!"');
+    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.navigationArrow} class="size-[11px]!"');
+    expect(chatSizes).toContain('header: 12');
+    expect(chatSizes).toContain('navigationArrow: 11');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');
     expect(tabBar).toContain(
       '(var(--panel-header-height) - var(--agent-avatar-standard-surface-size)) / 2',

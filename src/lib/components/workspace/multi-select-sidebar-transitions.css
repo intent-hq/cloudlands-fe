@@ -13,7 +13,7 @@
 
 .sidebar-expanded-tab-action {
   border-radius: 0;
-  background-color: hsl(var(--card));
+  background-color: hsl(var(--sidebar));
   opacity: 1;
 }
 

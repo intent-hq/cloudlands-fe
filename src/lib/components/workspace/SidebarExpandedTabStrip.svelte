@@ -75,7 +75,7 @@
     >
       <Button
         variant="plain"
-        class="sidebar-expanded-tab-action relative h-full w-full min-w-0 cursor-pointer justify-start gap-0! overflow-hidden rounded-none border border-border bg-card px-4! py-2 text-foreground opacity-100 outline-none hover:bg-muted focus-visible:bg-muted"
+        class="sidebar-expanded-tab-action relative h-full w-full min-w-0 cursor-pointer justify-start gap-0! overflow-hidden rounded-none border border-border bg-sidebar px-4! py-2 text-foreground opacity-100 outline-none hover:bg-muted focus-visible:bg-muted"
         onclick={() => onActivate(tab.id)}
         aria-expanded={expanded}
         aria-current={active ? 'page' : undefined}

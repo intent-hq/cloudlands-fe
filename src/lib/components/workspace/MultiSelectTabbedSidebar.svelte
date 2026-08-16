@@ -292,7 +292,7 @@
         const shellProgress = direction === 'expand' ? cubicOut(t) : cubicIn(t);
         const shellInverse = 1 - shellProgress;
         const contentProgress = Math.max(0, Math.min(1, (t - 0.72) / 0.28));
-        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--card)); --sidebar-card-content-opacity: ${contentProgress}; --sidebar-card-content-y: ${(1 - contentProgress) * 4}px; will-change: transform;`;
+        return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); --sidebar-card-content-opacity: ${contentProgress}; --sidebar-card-content-y: ${(1 - contentProgress) * 4}px; will-change: transform;`;
       },
     };
   }
@@ -749,7 +749,7 @@
             {#each orderedSelectedTabs as tabId (tabId)}
               {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
               <div
-                class="sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card"
+                class="sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
                 data-sidebar-card-surface
                 in:cardMorph|global={{
                   tabId: tabId as LauncherTabId,
@@ -1031,7 +1031,7 @@
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
             {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
               <div
-                class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-card p-2 text-foreground transition-colors"
+                class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-sidebar p-2 text-foreground transition-colors"
                 data-sidebar-launcher={tab.id}
                 data-sidebar-card-surface
                 data-launcher-top-inset="8"
@@ -1202,7 +1202,7 @@
                     {/if}
                   </div>
                   <div
-                    class="flex h-7 min-w-0 items-center justify-between gap-2"
+                    class="flex h-7 min-w-0 items-center justify-between gap-2 pl-2"
                     data-sidebar-label-row
                   >
                     <span

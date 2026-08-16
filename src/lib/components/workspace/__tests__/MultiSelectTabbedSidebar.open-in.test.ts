@@ -413,6 +413,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         expect(card.dataset.launcherTopInset).toBe('8');
         expect(card.dataset.launcherInlineInset).toBe('8');
         expect(card.classList.contains('p-2')).toBe(true);
+        expect(card.classList.contains('bg-sidebar')).toBe(true);
+        expect(label.parentElement?.classList.contains('pl-2')).toBe(true);
         const isAgentStack = tabId === 'agents';
         expect(stack.dataset.launcherLayout).toBe('horizontal');
         expect(stack.dataset.launcherPack).toBe('left');

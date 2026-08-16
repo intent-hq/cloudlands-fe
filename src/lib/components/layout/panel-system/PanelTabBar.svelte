@@ -1208,7 +1208,7 @@
           aria-label={m.ui_breadcrumb_more_label()}
           data-testid="panel-actions-trigger"
         >
-          <KebabIcon class="pointer-events-none size-4" />
+          <KebabIcon class="pointer-events-none size-3" />
         </Button>
       </Tooltip>
     {/snippet}
@@ -1274,7 +1274,7 @@
         aria-label={m.layout_panelTabBar_closePanel_label()}
         data-testid="panel-close-button"
       >
-        <Fa icon={faXmark} size={16} class="size-4" />
+        <Fa icon={faXmark} size={12} class="size-3" />
       </Button>
     </Tooltip>
   {/if}

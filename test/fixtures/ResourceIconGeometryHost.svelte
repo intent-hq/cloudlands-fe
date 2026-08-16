@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
+  import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
   import { registerAllTabTypes } from '$features/layout/tab-types/register-all';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
@@ -38,6 +39,15 @@
   );
 </script>
 
+{#snippet headerActions()}
+  <ChatMessageNavigator
+    messages={[{ id: 'message-1', text: 'Geometry message' }]}
+    isAtBottom={false}
+    onSelectMessage={() => true}
+    onScrollToBottom={() => {}}
+  />
+{/snippet}
+
 {#each scenarios as scenario (scenario.id)}
   <div
     class:dark={scenario.theme === 'dark'}
@@ -58,6 +68,8 @@
       activeTabId={scenario.tab.id}
       panelId={`panel-${scenario.id}`}
       workspaceId={`workspace-${scenario.id}`}
+      contentActions={{ primary: headerActions }}
+      onClosePanel={() => {}}
       showTabStrip
     />
   </div>
