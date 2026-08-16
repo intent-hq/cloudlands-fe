@@ -148,6 +148,7 @@
     scrollToBottom as scrollToBottomUtil,
   } from '$lib/utils/smartScroll';
   import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
+  import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
@@ -417,7 +418,11 @@
   const cachedScrollRestoreTop =
     cachedScroll && !cachedScroll.shouldFollowBottom ? cachedScroll.scrollTop : null;
   let shouldFollowBottom = $state(cachedScroll?.shouldFollowBottom ?? true);
-  let distanceFromBottom = $state(0); // Track actual scroll distance from bottom
+  // Committed (damped) visibility for the scroll-to-bottom button. Driven by
+  // the hysteresis + settle-window controller below so per-frame
+  // distance-from-bottom jitter (transient scrollHeight changes: lazy-turn
+  // placeholder swaps, image loads) can never strobe the button.
+  let scrollButtonVisible = $state(false);
   // Transient "scroll re-locked" confirmation: a lock icon briefly flashes when
   // scrolling crosses back to the bottom and auto-follow re-engages. Purely
   // decorative (aria-hidden, pointer-events-none) so it can never intercept
@@ -2479,22 +2484,23 @@
     let initialCalculationFrame: number | null = null;
     let boundContainer: HTMLDivElement | null = null;
 
+    // Damps raw distanceFromBottom jitter into a stable committed button
+    // state: shows only after the distance holds beyond the hysteresis band
+    // for a settle window, hides immediately at the bottom, and flashes the
+    // re-lock confirmation only on a committed shown → hidden transition so
+    // the same jitter can never re-trigger it.
+    const buttonVisibility = createScrollBottomButtonVisibility({
+      atBottomThreshold: SCROLL_BOTTOM_THRESHOLD,
+      onVisibilityChange: (visible) => {
+        scrollButtonVisible = visible;
+      },
+      onRelock: flashLockConfirmation,
+    });
+
     const handleScroll = () => {
       if (!boundContainer) return;
       const { scrollTop, scrollHeight, clientHeight } = boundContainer;
-      const newDistance = scrollHeight - scrollTop - clientHeight;
-      // Only update if changed to avoid unnecessary re-renders
-      if (newDistance !== distanceFromBottom) {
-        // Crossing back into the at-bottom zone re-locks auto-follow; flash
-        // the decorative lock confirmation so the re-lock is visible.
-        if (
-          distanceFromBottom > SCROLL_BOTTOM_THRESHOLD &&
-          newDistance <= SCROLL_BOTTOM_THRESHOLD
-        ) {
-          flashLockConfirmation();
-        }
-        distanceFromBottom = newDistance;
-      }
+      buttonVisibility.update(scrollHeight - scrollTop - clientHeight);
     };
 
     // Wait for scrollContainer to be bound, then set up
@@ -2517,6 +2523,7 @@
       if (readinessFrame !== null) cancelAnimationFrame(readinessFrame);
       if (initialCalculationFrame !== null) cancelAnimationFrame(initialCalculationFrame);
       boundContainer?.removeEventListener('scroll', handleScroll);
+      buttonVisibility.destroy();
       if (lockConfirmationTimer !== null) {
         clearTimeout(lockConfirmationTimer);
         lockConfirmationTimer = null;
@@ -4257,8 +4264,10 @@
     <!-- Scroll-to-bottom button: rendered only while scrolled up so no
          invisible control overlaps the message actions bar or lingers in the
          tab order while at the bottom. Auto-follow re-locks on click or on
-         scrolling back to the bottom; scrolling up unlocks it. -->
-    {#if $agentMessages$.length > 0 && distanceFromBottom > SCROLL_BOTTOM_THRESHOLD}
+         scrolling back to the bottom; scrolling up unlocks it. Visibility is
+         the damped (hysteresis + settle window) state, not the raw distance,
+         so per-frame scroll-metric jitter cannot strobe the button. -->
+    {#if $agentMessages$.length > 0 && scrollButtonVisible}
       <Button
         variant="outline"
         size="icon-xs"
