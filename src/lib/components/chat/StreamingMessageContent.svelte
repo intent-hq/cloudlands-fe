@@ -5,8 +5,9 @@
     ToolResultBlock,
     Proposal,
     ProposalActionDetail,
+    MessageRole,
   } from '$shared/types';
-  import { isProposal } from '$shared/types';
+  import { isProposal, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     buildToolResultsMap,
     findToolResult,
@@ -57,6 +58,7 @@
   import ResponseGroup from './ResponseGroup.svelte';
   import {
     getOperationalClusterSpacingClass,
+    isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
@@ -83,6 +85,7 @@
     hideToolCalls?: boolean;
     hideSetupScripts?: boolean;
     workspaceId?: string;
+    role?: MessageRole;
     onSetupScriptGenerated?: (script: {
       name: string;
       description: string;
@@ -96,6 +99,7 @@
     hideToolCalls = false,
     hideSetupScripts = false,
     workspaceId,
+    role = 'assistant',
     onSetupScriptGenerated,
   }: Props = $props();
 
@@ -150,9 +154,10 @@
     // renders per resource, preferring the daemon-canonical variant.
     // Agent Q&A questions are wizard-only: they never render in the
     // transcript (pending or resolved), so strip them up front.
-    const rawBlocks = dedupeResourceBlocks(content || []).filter(
-      (block) => !isQuestionResourceBlock(block),
-    );
+    const rawBlocks = normalizeAgentVideoContentBlocks(
+      dedupeResourceBlocks(content || []),
+      role,
+    ).filter((block) => !isQuestionResourceBlock(block));
 
     // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
@@ -566,7 +571,7 @@
       isNavLinkBlock(contentBlock) ||
       resolveCard(contentBlock, cardHandlers) ||
       getProposalFromBlock(contentBlock) ||
-      ['text', 'tool_use', 'thinking', 'image'].includes(contentBlock.type),
+      ['text', 'tool_use', 'thinking', 'image', 'video'].includes(contentBlock.type),
     );
   }
 </script>
@@ -679,6 +684,7 @@
   parsedKey: string,
   blockIndex: number,
   nested = false,
+  adjacentOperationalRow = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full">
@@ -755,6 +761,7 @@
         toolState={toolStates.get(toolBlock.id) || 'running'}
         result={resultContent}
         {workspaceId}
+        {adjacentOperationalRow}
       />
       {#if Array.isArray(resultContent)}
         {#each resultContent as nestedBlock, nestedIndex (`${toolBlock.id}-image-${nestedIndex}`)}
@@ -778,6 +785,7 @@
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       isStreaming={isStreaming && blockIndex === groupedBlocks.length - 1}
       {workspaceId}
+      {adjacentOperationalRow}
     />
   {:else if block.type === 'image' && block.data && block.mimeType}
     <ChatImageBlock data={block.data} mimeType={block.mimeType} />
@@ -825,7 +833,7 @@
           {/snippet}
         </ResponseGroup>
       </div>
-    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image'].includes(block.type)}
+    {:else if isNavLinkBlock(block as ContentBlock) || resolveCard(block, cardHandlers) || getProposalFromBlock(block as ContentBlock) || ['text', 'tool_use', 'thinking', 'image', 'video'].includes(block.type)}
       <div
         class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
           ? 'nav-link'
@@ -842,7 +850,13 @@
         data-message-content-block={block.type}
         use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
       >
-        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
+        {@render renderContentBlock(
+          block as ContentBlock,
+          String(blockIndex),
+          blockIndex,
+          false,
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+        )}
       </div>
     {/if}
   {/each}

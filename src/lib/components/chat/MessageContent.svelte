@@ -1,6 +1,12 @@
 <script lang="ts">
-  import type { ContentBlock, ToolUseBlock, Proposal, ProposalActionDetail } from '$shared/types';
-  import { isProposal } from '$shared/types';
+  import type {
+    ContentBlock,
+    ToolUseBlock,
+    Proposal,
+    ProposalActionDetail,
+    MessageRole,
+  } from '$shared/types';
+  import { isProposal, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     buildToolResultsMap,
     findToolResult,
@@ -43,6 +49,7 @@
   import ResponseGroup from './ResponseGroup.svelte';
   import {
     getOperationalClusterSpacingClass,
+    isAdjacentOperationalClusterRow,
     isOperationalClusterBlock,
     OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
@@ -73,9 +80,10 @@
     content: ContentBlock[];
     isStreaming?: boolean;
     workspaceId?: string;
+    role?: MessageRole;
   }
 
-  let { content, isStreaming = false, workspaceId }: Props = $props();
+  let { content, isStreaming = false, workspaceId, role = 'assistant' }: Props = $props();
 
   // Filter out empty text blocks and deduplicate tool_use blocks by ID.
   // Deduplication: when a skeleton tool_use (vague label) and its follow-up
@@ -85,7 +93,10 @@
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
     // renders per resource, preferring the daemon-canonical variant.
-    const filtered = dedupeResourceBlocks(content || []).filter((block) => {
+    const filtered = normalizeAgentVideoContentBlocks(
+      dedupeResourceBlocks(content || []),
+      role,
+    ).filter((block) => {
       // Agent Q&A questions are wizard-only: they never render in the
       // transcript (pending or resolved), so strip them here.
       if (isQuestionResourceBlock(block)) {
@@ -127,12 +138,12 @@
   // Build a map of tool results from tool_result blocks, paired by
   // toolCallId ↔ tool_use_id per PROTOCOL.md §7.1, with position-based
   // fallback for error results with empty tool_use_id
-  const toolResultsMap = $derived.by(() => buildToolResultsMap(content || []));
+  const toolResultsMap = $derived.by(() => buildToolResultsMap(blocks));
 
   // Compute tool states based on results
   const toolStates = $derived.by(() => {
     const states = new Map<string, 'running' | 'completed' | 'error'>();
-    for (const block of content || []) {
+    for (const block of blocks) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
         const result = findToolResult(toolResultsMap, toolBlock);
@@ -441,6 +452,7 @@
   parsedKey: string,
   blockIndex: number,
   nested = false,
+  adjacentOperationalRow = false,
 )}
   {#if isNavLinkBlock(block)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
@@ -514,7 +526,13 @@
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = getToolResultPayload(toolResult)}
     <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
-      <ToolCall toolUse={toolBlock} {toolState} result={resultContent} {workspaceId} />
+      <ToolCall
+        toolUse={toolBlock}
+        {toolState}
+        result={resultContent}
+        {workspaceId}
+        {adjacentOperationalRow}
+      />
     </div>
   {:else if block.type === 'tool_result'}
     {@const resultPayload = getToolResultPayload(block)}
@@ -578,6 +596,7 @@
     <ThinkingBlock
       content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
       {workspaceId}
+      {adjacentOperationalRow}
     />
   {/if}
 {/snippet}
@@ -610,7 +629,13 @@
           {/snippet}
         </ResponseGroup>
       {:else}
-        {@render renderContentBlock(block as ContentBlock, String(blockIndex), blockIndex)}
+        {@render renderContentBlock(
+          block as ContentBlock,
+          String(blockIndex),
+          blockIndex,
+          false,
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex),
+        )}
       {/if}
     </div>
   {/each}

@@ -230,6 +230,7 @@
               <MessageContent
                 content={message.contentBlocks || []}
                 isStreaming={!!message.isStreaming}
+                role={message.role}
                 workspaceId={agent?.workspaceId
                   ? String(agent.workspaceId)
                   : $activeWorkspace?.id
