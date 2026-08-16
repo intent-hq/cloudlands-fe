@@ -15,6 +15,21 @@ const probes = [
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
+const sampledSelectors = [
+  ...probes.map(([, selector]) => selector),
+  '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
+  '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
+  '[data-testid="event-subscriptions-outer-header"]',
+  '[data-testid="event-subscriptions-preview"]',
+].join(', ');
+
+async function settleBorderStyles(page: Page) {
+  await page.locator(sampledSelectors).evaluateAll(async (elements) => {
+    const animations = elements.flatMap((element) => element.getAnimations());
+    await Promise.allSettled(animations.map((animation) => animation.finished));
+  });
+}
+
 async function border(locator: Locator, edge: Edge) {
   return locator.evaluate((element, measuredEdge) => {
     const style = getComputedStyle(element);
@@ -52,11 +67,13 @@ async function seam(page: Page, owner: string, adjacent: string, axis: 'x' | 'y'
 }
 
 test('production neutral borders share color and single-edge geometry', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(NeutralBorderContractHost);
 
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
       await component.update({ props: { theme, zoom } });
+      await settleBorderStyles(page);
       const styles = await Promise.all(
         probes.map(async ([name, selector, edge]) => ({
           name,
