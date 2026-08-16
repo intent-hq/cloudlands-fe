@@ -602,7 +602,7 @@ describe('ChatMessage hook wake attribution', () => {
     for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
       expect(header.classList.contains(token)).toBe(true);
     }
-    expect(surface.classList.contains('mt-5')).toBe(true);
+    expect(surface.classList.contains('mt-4')).toBe(true);
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
