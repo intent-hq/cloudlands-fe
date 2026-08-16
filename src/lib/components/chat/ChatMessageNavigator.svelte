@@ -21,7 +21,10 @@
   let query = $state('');
   let activeIndex = $state(0);
   let searchInput: HTMLInputElement | null = $state(null);
+  let triggerElement: HTMLElement | null = $state(null);
+  let contentElement: HTMLElement | null = $state(null);
   let pointerDownOnTrigger = $state(false);
+  let preserveOutsideFocusOnClose = $state(false);
   const navigatorId = $props.id();
   const listboxId = `chat-message-navigator-listbox-${navigatorId}`;
   const filteredMessages = $derived.by(() => {
@@ -36,6 +39,7 @@
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
     if (!nextOpen) return;
+    preserveOutsideFocusOnClose = false;
     query = '';
     activeIndex = 0;
   }
@@ -65,6 +69,19 @@
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
     searchInput?.focus();
+  }
+
+  function handleWindowFocusIn(event: FocusEvent) {
+    if (!open || !(event.target instanceof Node)) return;
+    if (triggerElement?.contains(event.target) || contentElement?.contains(event.target)) return;
+    preserveOutsideFocusOnClose = true;
+    handleOpenChange(false);
+  }
+
+  function handleCloseAutoFocus(event: Event) {
+    if (!preserveOutsideFocusOnClose) return;
+    event.preventDefault();
+    preserveOutsideFocusOnClose = false;
   }
 
   async function selectMessage(messageId: string) {
@@ -98,9 +115,11 @@
   }
 </script>
 
+<svelte:window onfocusin={handleWindowFocusIn} />
+
 <div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
-    <Popover.Trigger openOnHover openDelay={120} closeDelay={180}>
+    <Popover.Trigger bind:ref={triggerElement} openOnHover openDelay={120} closeDelay={180}>
       {#snippet child({ props })}
         <Button
           {...props}
@@ -123,13 +142,16 @@
     </Popover.Trigger>
     <Popover.Portal>
       <Popover.Content
+        bind:ref={contentElement}
         role="dialog"
         aria-label={m.chat_messageNavigator_open_ariaLabel()}
         align="end"
         side="bottom"
         sideOffset={4}
         collisionPadding={8}
+        trapFocus={false}
         onOpenAutoFocus={handleOpenAutoFocus}
+        onCloseAutoFocus={handleCloseAutoFocus}
         class="z-(--layer-popover) w-[28rem] max-w-[calc(100vw-1rem)] rounded-(--radius-medium) border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none"
       >
         <div class="min-w-0" data-testid="chat-message-navigator-panel">

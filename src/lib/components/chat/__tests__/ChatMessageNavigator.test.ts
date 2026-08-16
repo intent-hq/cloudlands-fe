@@ -176,6 +176,27 @@ describe('ChatMessageNavigator', () => {
     expect(screen.getByTestId('chat-message-navigator-panel')).toBe(panel);
   });
 
+  it('keeps trigger and content focus inside and dismisses on true outside focus', async () => {
+    renderNavigator();
+    const trigger = screen.getByTestId('chat-message-navigator-trigger');
+    const downButton = screen.getByTestId('chat-scroll-to-bottom-button');
+
+    trigger.focus();
+    const input = await screen.findByRole('combobox', { name: 'Filter user messages' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    const option = screen.getAllByRole('option')[1];
+    option.focus();
+    expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
+
+    trigger.focus();
+    expect(screen.getByTestId('chat-message-navigator-panel')).toBeTruthy();
+    option.focus();
+    downButton.focus();
+    await fireEvent.focusIn(downButton);
+    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
+    expect(document.activeElement).toBe(downButton);
+  });
+
   it('opens from the trigger and closes on Escape', async () => {
     renderNavigator();
     const trigger = screen.getByTestId('chat-message-navigator-trigger');

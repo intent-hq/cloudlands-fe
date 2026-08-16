@@ -13,6 +13,43 @@ async function expectUniqueVisible(locator: Locator) {
   await expect(locator).toBeVisible();
 }
 
+function splitShadowLayers(value: string) {
+  const layers: string[] = [];
+  let start = 0;
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === '(') depth += 1;
+    else if (value[index] === ')') depth -= 1;
+    else if (value[index] === ',' && depth === 0) {
+      layers.push(value.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  layers.push(value.slice(start).trim());
+  return layers;
+}
+
+function hasTransparentShadowColor(layer: string) {
+  if (/\btransparent\b/i.test(layer)) return true;
+  const color = layer.match(/\b(?:rgba?|hsla?|oklch|oklab|lab|lch|color)\([^)]*\)/i)?.[0];
+  if (!color) return false;
+  const slashAlpha = color.match(/\/\s*([0-9]*\.?[0-9]+)(%)?\s*\)$/);
+  if (slashAlpha) return Number(slashAlpha[1]) === 0;
+  if (!/^rgba|^hsla/i.test(color)) return false;
+  const commaAlpha = color.match(/,\s*([0-9]*\.?[0-9]+)(%)?\s*\)$/);
+  return commaAlpha ? Number(commaAlpha[1]) === 0 : false;
+}
+
+function hasVisibleBoxShadow(value: string) {
+  if (value === 'none') return false;
+  return splitShadowLayers(value).some((layer) => {
+    const lengths = layer.match(/-?(?:[0-9]+|[0-9]*\.[0-9]+)px/gi);
+    if (!lengths || lengths.length < 2 || lengths.length > 4) return true;
+    const hasNonZeroGeometry = lengths.some((length) => Number.parseFloat(length) !== 0);
+    return hasNonZeroGeometry && !hasTransparentShadowColor(layer);
+  });
+}
+
 async function pickerForTrigger(page: Page, trigger: Locator) {
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   const picker = page.getByRole('dialog', { name: 'Browse user messages' });
@@ -137,12 +174,12 @@ test.describe('chat message navigator production path', () => {
           .locator('span')
           .evaluate((element) => getComputedStyle(element).fontWeight),
       ).toBe('400');
-      expect(
-        await search.evaluate((element) => {
-          const style = getComputedStyle(element);
-          return { boxShadow: style.boxShadow, outline: style.outlineStyle };
-        }),
-      ).toEqual({ boxShadow: 'none', outline: 'none' });
+      const searchFocus = await search.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { boxShadow: style.boxShadow, outline: style.outlineStyle };
+      });
+      expect(hasVisibleBoxShadow(searchFocus.boxShadow)).toBe(false);
+      expect(searchFocus.outline).toBe('none');
       await initialOption.focus();
       await expect(initialOption).toBeFocused();
       const rowFocus = await initialOption.evaluate((element) => {
@@ -153,7 +190,7 @@ test.describe('chat message navigator production path', () => {
           backgroundColor: style.backgroundColor,
         };
       });
-      expect(rowFocus.boxShadow).toBe('none');
+      expect(hasVisibleBoxShadow(rowFocus.boxShadow)).toBe(false);
       expect(rowFocus.outline).toBe('none');
       expect(rowFocus.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
       await search.focus();
