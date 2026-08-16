@@ -15,9 +15,7 @@ async function expectUniqueVisible(locator: Locator) {
 
 async function pickerForTrigger(page: Page, trigger: Locator) {
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  const pickerId = await trigger.getAttribute('aria-controls');
-  if (!pickerId) throw new Error('Expected the scoped navigator trigger to control one picker');
-  const picker = page.locator(`[id="${pickerId}"]`);
+  const picker = page.getByRole('dialog', { name: 'Browse user messages' });
   await expectUniqueVisible(picker);
   return picker;
 }
