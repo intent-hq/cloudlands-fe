@@ -32,7 +32,7 @@
   <Dialog.Content>
     <Dialog.Header>
       <Dialog.Title>
-        {m.chat_agentCard_menu_harnessVersion_label({ version })}
+        {m.chat_harnessFeaturesModal_title({ version })}
       </Dialog.Title>
       <Dialog.Description>
         {m.chat_harnessFeaturesModal_description()}

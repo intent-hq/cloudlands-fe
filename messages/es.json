@@ -1689,6 +1689,7 @@
   "chat_agentCard_menu_delete_label": "Eliminar",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
   "chat_harnessFeaturesModal_description": "Capacidades con las que se creó esta sesión de agente. Esta instantánea es de solo lectura y permanece fija durante toda la sesión.",
+  "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_agentCard_menu_open_label": "Abrir",
   "chat_agentCard_menu_rename_label": "Cambiar nombre",
   "chat_agentCard_fileManager_label": "Administrador de archivos",

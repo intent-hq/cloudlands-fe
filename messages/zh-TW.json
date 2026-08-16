@@ -1689,6 +1689,7 @@
   "chat_agentCard_menu_delete_label": "刪除",
   "chat_agentCard_menu_harnessVersion_label": "Harness v{version}",
   "chat_harnessFeaturesModal_description": "此智慧體工作階段建立時啟用的功能。此快照為唯讀，在工作階段存續期間保持不變。",
+  "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_agentCard_menu_open_label": "開啟",
   "chat_agentCard_menu_rename_label": "重新命名",
   "chat_agentCard_fileManager_label": "檔案管理器",

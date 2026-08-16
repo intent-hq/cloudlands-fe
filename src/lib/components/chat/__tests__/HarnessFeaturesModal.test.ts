@@ -18,6 +18,7 @@ import {
   buildHarnessFeatureRows,
   humanizeHarnessFeatureKey,
 } from '../harness-feature-catalog';
+import { FEATURE_PATHS } from '$lib/components/settings/agent-feature-definitions';
 
 afterEach(cleanup);
 
@@ -32,6 +33,12 @@ function getStates(dialog: HTMLElement) {
 }
 
 describe('buildHarnessFeatureRows', () => {
+  it('stays in lockstep with the settings page feature definitions', () => {
+    expect(HARNESS_FEATURE_CATALOG.map((f) => f.key)).toEqual(
+      FEATURE_PATHS.map((path) => path.replace(/^agentFeatures\./, '')),
+    );
+  });
+
   it('renders the union: catalog keys plus snapshot-only keys', () => {
     const rows = buildHarnessFeatureRows({ structuredQuestions: true, agentActions: true });
     expect(rows).toHaveLength(HARNESS_FEATURE_CATALOG.length + 1);
@@ -39,6 +46,18 @@ describe('buildHarnessFeatureRows', () => {
     expect(unknown.known).toBe(false);
     expect(unknown.description).toBeNull();
     expect(unknown.label).toBe('Agent actions');
+  });
+
+  it('keeps catalog order and appends unknown snapshot keys at the end', () => {
+    const rows = buildHarnessFeatureRows({ zzzUnknown: true, aaaUnknown: false });
+    expect(rows.slice(0, HARNESS_FEATURE_CATALOG.length).map((row) => row.key)).toEqual(
+      HARNESS_FEATURE_CATALOG.map((feature) => feature.key),
+    );
+    // Unknown keys trail the catalog, sorted by label.
+    expect(rows.slice(HARNESS_FEATURE_CATALOG.length).map((row) => row.key)).toEqual([
+      'aaaUnknown',
+      'zzzUnknown',
+    ]);
   });
 
   it('snapshot value wins over the catalog default', () => {
@@ -110,11 +129,19 @@ describe('HarnessFeaturesModal', () => {
     expect(dialog.querySelector('[data-testid="harness-features-list"]')).not.toBeNull();
   });
 
-  it('dismisses via Escape and via the close button', async () => {
+  it('dismisses via Escape', async () => {
     renderModal({ version: '1.0', features: {} });
     const dialog = await screen.findByRole('dialog');
 
     await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('dismisses via the X close button', async () => {
+    renderModal({ version: '1.0', features: {} });
+    await screen.findByRole('dialog');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
