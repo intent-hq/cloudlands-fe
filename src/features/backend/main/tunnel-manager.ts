@@ -368,6 +368,13 @@ export class TunnelManager {
     if (this.disposed) return Promise.reject(new Error('TunnelManager disposed'));
     if (this.ws && this.ws.readyState === WS_OPEN) return Promise.resolve();
     if (this.connectPromise) return this.connectPromise;
+    if (this.ws) {
+      // The old socket is CLOSING/CLOSED but its 'close' event has not fired
+      // yet: drop it now. Waiting would let a replacement be adopted first,
+      // making the late close callback skip handleTunnelDrop (this.ws no
+      // longer matches) and leak the old streams' frames onto the new socket.
+      this.handleTunnelDrop();
+    }
     const config = this.getConfig();
     if (!config) {
       return Promise.reject(new Error('no active backend config for the tunnel'));

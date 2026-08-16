@@ -599,6 +599,39 @@ describe('TunnelManager', () => {
     expect((await received).equals(payload)).toBe(true);
   });
 
+  it('cleans up old streams when reconnecting past a CLOSING socket that never emitted close', async () => {
+    const { server, port } = await startEchoServer();
+    onCleanup(() => server.close());
+    const { manager, created } = makeManager();
+    onCleanup(() => manager.dispose());
+
+    const localPort = await manager.forwardPort(port);
+    const stale = await connectClient(localPort);
+    const staleClosed = waitForClose(stale);
+
+    // The socket enters CLOSING but its 'close' event has not fired yet
+    // (e.g. the close frame is in flight). The next accepted connection must
+    // reconnect AND clean up the old socket's streams — otherwise their
+    // frames would later land on the replacement with unknown stream IDs.
+    created[0].readyState = 2; // CLOSING
+
+    const fresh = await connectClient(localPort);
+    onCleanup(() => fresh.destroy());
+    const payload = Buffer.from('past closing');
+    const received = collectUntil(fresh, payload.length);
+    fresh.write(payload);
+    expect((await received).equals(payload)).toBe(true);
+    expect(created.length).toBe(2);
+    // The stale in-flight socket was destroyed by the reconnect cleanup …
+    await staleClosed;
+    // … and the old socket's late 'close' must not disturb the new tunnel.
+    created[0].drop();
+    const again = Buffer.from('still relaying');
+    const receivedAgain = collectUntil(fresh, again.length);
+    fresh.write(again);
+    expect((await receivedAgain).equals(again)).toBe(true);
+  });
+
   it('notifies onForwardDropped for refused-OPEN drops and explicit closeForward', async () => {
     const healthy = await startEchoServer();
     onCleanup(() => healthy.server.close());
